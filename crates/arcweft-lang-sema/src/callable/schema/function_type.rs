@@ -33,7 +33,7 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum CallableFunctionTypeProjectionError<E> {
     #[error("function type starts at missing callable group {group:?}")]
     MissingGroup { group: CallableGroupIndex },
@@ -45,7 +45,7 @@ pub(crate) enum CallableFunctionTypeProjectionError<E> {
     Projection(E),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum PreparedCallableFunctionTypeFailure<E: std::error::Error + 'static> {
     #[error(transparent)]
     Projection(#[from] TypeProjectionError<E>),
@@ -141,6 +141,7 @@ where
 
 struct PreparedFunctionProjection<'a, C> {
     schema: &'a CallableSignatureSchema,
+    result: Option<&'a super::CallableResultSchema>,
     terminal: &'a PreparedEffectRow,
     graph: &'a PreparedEffectGraph,
     first_group: CallableGroupIndex,
@@ -207,8 +208,12 @@ impl<C: TypeProjectionControl> FunctionTypeProjection for PreparedFunctionProjec
 
     fn result(&mut self) -> Result<TypeKind<PreparedEffects>, Self::Error> {
         let schema = self.schema;
-        let ty = schema
-            .value_type()
+        let ty = self
+            .result
+            .map_or_else(
+                || schema.value_type(),
+                super::CallableResultSchema::value_type,
+            )
             .ok_or(PreparedCallableFunctionTypeFailure::NonValueResult)?;
         self.project(ty, schema.groups().len() - self.first_group.get())
     }
@@ -566,10 +571,31 @@ impl CallableSignatureSchema {
         TypeKind<PreparedEffects>,
         CallableFunctionTypeProjectionError<PreparedCallableFunctionTypeFailure<C::Error>>,
     > {
+        self.prepare_function_type_with_result_from_position(
+            position,
+            terminal_effects,
+            None,
+            graph,
+            control,
+        )
+    }
+
+    pub(crate) fn prepare_function_type_with_result_from_position<C: TypeProjectionControl>(
+        &self,
+        position: CallableParameterCoordinate,
+        terminal_effects: &PreparedEffectRow,
+        result: Option<&super::CallableResultSchema>,
+        graph: &PreparedEffectGraph,
+        control: &mut C,
+    ) -> Result<
+        TypeKind<PreparedEffects>,
+        CallableFunctionTypeProjectionError<PreparedCallableFunctionTypeFailure<C::Error>>,
+    > {
         self.project_function_type(
             position,
             &mut PreparedFunctionProjection {
                 schema: self,
+                result,
                 terminal: terminal_effects,
                 graph,
                 first_group: position.group(),

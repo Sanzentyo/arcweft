@@ -470,7 +470,7 @@ impl Analyzer<'_, '_, '_> {
         match authored.kind() {
             HirExprKind::Call(_) => Ok(Some(expression)),
             HirExprKind::Pipe(authored_pipe) => match self.facts.expressions().get(&expression) {
-                Some(PreparedExpressionFact::Complete(checked)) => {
+                Some(PreparedExpressionFact::Resolved(checked)) => {
                     let CheckedExpressionResolution::Pipe(checked_pipe) = checked.resolution()
                     else {
                         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -719,7 +719,7 @@ impl Analyzer<'_, '_, '_> {
                 .get(&root)
                 .cloned()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            let PreparedExpressionFact::Complete(checked) = fact else {
+            let PreparedExpressionFact::Resolved(checked) = fact else {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             };
             let checked = match checked.evaluated_effect() {
@@ -731,7 +731,7 @@ impl Analyzer<'_, '_, '_> {
             };
             if sealed_effects.insert(root, effect).is_some()
                 || expression_replacements
-                    .insert(root, PreparedExpressionFact::Complete(checked))
+                    .insert(root, PreparedExpressionFact::Resolved(checked))
                     .is_some()
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -817,12 +817,14 @@ impl Analyzer<'_, '_, '_> {
             rich_text: Box::new(rich_text),
             line_result,
         };
-        let expression = CheckedExpression::typed_value(value, effects, resolution);
+        let expression = crate::final_analysis::prepared::PreparedResolvedExpression::typed_value(
+            value, effects, resolution,
+        );
         Ok(match nested_path {
             Some(evidence) => {
-                PreparedExpressionFact::Complete(expression.with_nested_path_evidence(evidence))
+                PreparedExpressionFact::Resolved(expression.with_nested_path_evidence(evidence))
             }
-            None => PreparedExpressionFact::Complete(expression),
+            None => PreparedExpressionFact::Resolved(expression),
         })
     }
 
@@ -963,7 +965,7 @@ impl Analyzer<'_, '_, '_> {
                     .callee()
                     .value_expression()
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                let Some(PreparedExpressionFact::Complete(checked)) =
+                let Some(PreparedExpressionFact::Resolved(checked)) =
                     self.facts.expressions().get(&target)
                 else {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -1268,15 +1270,19 @@ impl Analyzer<'_, '_, '_> {
             CheckedExpressionResolution::ContentApplication(Box::new(content_application));
         let expression = match result {
             super::super::prepared::PreparedExpressionResult::Value(value) => {
-                PreparedExpressionFact::Complete(CheckedExpression::typed_value(
-                    value, effects, resolution,
-                ))
+                PreparedExpressionFact::Resolved(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::typed_value(
+                        value, effects, resolution,
+                    ),
+                )
             }
             super::super::prepared::PreparedExpressionResult::NonValue(
                 super::super::prepared::PreparedNonValueExpressionResult::ContentEmission(callable),
-            ) => PreparedExpressionFact::Complete(CheckedExpression::content_emission(
-                callable, effects, resolution,
-            )),
+            ) => PreparedExpressionFact::Resolved(
+                crate::final_analysis::prepared::PreparedResolvedExpression::content_emission(
+                    callable, effects, resolution,
+                ),
+            ),
         };
         if content_result {
             traversal.leave_content_result_fragment(&fragment_coordinate)?;
@@ -1390,7 +1396,7 @@ impl Analyzer<'_, '_, '_> {
                             .typecheck_env()
                             .standard_dialogue_content_type()
                             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                        let Some(PreparedExpressionFact::Complete(checked)) =
+                        let Some(PreparedExpressionFact::Resolved(checked)) =
                             self.facts.expressions().get(&expression)
                         else {
                             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -1564,7 +1570,7 @@ impl Analyzer<'_, '_, '_> {
             surrounding_role,
             traversal,
         )?;
-        let PreparedExpressionFact::Complete(checked) = &sealed else {
+        let PreparedExpressionFact::Resolved(checked) = &sealed else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
         let CheckedExpressionResolution::ContentApplication(application) = checked.resolution()
@@ -1858,7 +1864,7 @@ impl Analyzer<'_, '_, '_> {
         {
             HirExprKind::Call(_) => Ok(root),
             HirExprKind::Pipe(pipe) => {
-                let Some(crate::final_analysis::PreparedExpressionFact::Complete(checked)) =
+                let Some(crate::final_analysis::PreparedExpressionFact::Resolved(checked)) =
                     self.facts.expressions().get(&root)
                 else {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -1991,7 +1997,7 @@ impl Analyzer<'_, '_, '_> {
             return Ok(None);
         };
         let expression = |owner| match self.facts.expressions().get(&owner) {
-            Some(PreparedExpressionFact::Complete(checked)) => Ok(checked),
+            Some(PreparedExpressionFact::Resolved(checked)) => Ok(checked),
             _ => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
         };
         let argument_expression = expression(argument_owner)?;

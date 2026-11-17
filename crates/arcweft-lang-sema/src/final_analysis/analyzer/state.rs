@@ -298,8 +298,8 @@ impl CandidateProjectionApplyFailure {
 /// rollback journal by mutating one fact map directly.
 pub(super) struct SemanticFactState {
     issuer: Arc<CandidateFactIssuer>,
-    locals: BTreeMap<LocalId, TypeKind>,
-    patterns: BTreeMap<PatternId, TypeKind>,
+    locals: BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
+    patterns: BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
     expressions: BTreeMap<ExprId, PreparedExpressionFact>,
     checked_content: PreparedCheckedContentCatalog,
     expression_stack: BTreeSet<ExprId>,
@@ -844,7 +844,9 @@ impl SemanticFactState {
         Ok(())
     }
 
-    pub(super) const fn locals(&self) -> &BTreeMap<LocalId, TypeKind> {
+    pub(super) const fn locals(
+        &self,
+    ) -> &BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>> {
         &self.locals
     }
 
@@ -911,6 +913,18 @@ impl SemanticFactState {
         self.ensure_healthy()?;
         self.prepared_calls_mut()?
             .effect_declarations_mut()
+            .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
+    }
+
+    pub(super) fn effect_declarations(
+        &self,
+    ) -> Result<
+        &crate::callable::PreparedCallableEffectDeclarations,
+        CandidateFactTransactionViolation,
+    > {
+        self.ensure_healthy()?;
+        self.prepared_calls()?
+            .effect_declarations()
             .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
     }
 
@@ -1007,7 +1021,9 @@ impl SemanticFactState {
             })
     }
 
-    pub(super) const fn patterns(&self) -> &BTreeMap<PatternId, TypeKind> {
+    pub(super) const fn patterns(
+        &self,
+    ) -> &BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>> {
         &self.patterns
     }
 

@@ -34,7 +34,7 @@ pub trait TypeProjectionControl {
 }
 
 /// Retains the consumer's exact abort separately from semantic invalidity.
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum TypeProjectionError<E: std::error::Error + 'static> {
     #[error(transparent)]
     Instantiation(#[from] TypeInstantiationError),

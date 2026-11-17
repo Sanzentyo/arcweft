@@ -138,17 +138,20 @@ impl<D: ConstraintDomain> ConstraintClosedEffectHeader<D> {
     }
 }
 
-pub(in crate::types::constraints) enum ConstraintProjectedEffectHeader<P = ()> {
+pub(in crate::types::constraints) enum ConstraintProjectedEffectHeader<
+    P = (),
+    E: crate::types::TypeEffectDomain = crate::types::CanonicalEffects,
+> {
     Original,
     Closed {
-        row: Option<EffectRow>,
-        predicate: Option<EffectPredicate>,
+        row: Option<E::Row>,
+        predicate: Option<E::Predicate>,
         proof: P,
     },
 }
 
-impl<P> ConstraintProjectedEffectHeader<P> {
-    pub(in crate::types::constraints) fn take_row(&mut self, original: &EffectRow) -> EffectRow {
+impl<P, E: crate::types::TypeEffectDomain> ConstraintProjectedEffectHeader<P, E> {
+    pub(in crate::types::constraints) fn take_row(&mut self, original: &E::Row) -> E::Row {
         match self {
             Self::Original => original.clone(),
             Self::Closed { row, .. } => row
@@ -159,8 +162,8 @@ impl<P> ConstraintProjectedEffectHeader<P> {
 
     pub(in crate::types::constraints) fn take_predicate(
         &mut self,
-        original: &EffectPredicate,
-    ) -> EffectPredicate {
+        original: &E::Predicate,
+    ) -> E::Predicate {
         match self {
             Self::Original => original.clone(),
             Self::Closed { predicate, .. } => predicate
@@ -170,7 +173,9 @@ impl<P> ConstraintProjectedEffectHeader<P> {
     }
 }
 
-impl<D: ConstraintDomain> ConstraintProjectedEffectHeader<Option<ConstraintClosedEffectHeader<D>>> {
+impl<D: ConstraintDomain, E: crate::types::TypeEffectDomain>
+    ConstraintProjectedEffectHeader<Option<ConstraintClosedEffectHeader<D>>, E>
+{
     /// Publishing the derivation requires consuming both fields through the
     /// corresponding function header rebuild.
     pub(in crate::types::constraints) fn finish(

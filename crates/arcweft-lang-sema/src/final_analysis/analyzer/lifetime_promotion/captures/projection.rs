@@ -34,7 +34,7 @@ impl Analyzer<'_, '_, '_> {
         self.facts
             .expressions()
             .get(&owner)
-            .and_then(PreparedExpressionFact::complete)
+            .and_then(PreparedExpressionFact::resolved)
             .and_then(crate::final_analysis::CheckedExpression::function_specialization_shared)
             .cloned()
             .ok_or(FinalSemanticAnalysisError::InvalidOwner)

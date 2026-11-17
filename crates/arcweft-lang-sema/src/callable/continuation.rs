@@ -37,7 +37,9 @@ mod application_owner;
 pub(crate) use application_owner::CallableConstraintApplication;
 mod declarations;
 mod effects;
-pub(crate) use declarations::PreparedCallableEffectDeclarations;
+pub(crate) use declarations::{
+    PreparedCallableEffectDeclarations, PreparedCallableValueTypeFailure,
+};
 mod specialization;
 use effects::PreparedEffectDelta;
 pub(crate) use effects::{

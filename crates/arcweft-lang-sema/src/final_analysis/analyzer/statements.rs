@@ -717,7 +717,7 @@ pub(super) fn checked_effect_expression(
         .map(|owner| {
             (
                 owner,
-                CheckedExpression::value(
+                crate::final_analysis::prepared::PreparedResolvedExpression::value(
                     TypeKind::Named("EffectCapability".to_owned()),
                     CheckedTypeSelection::Explicit,
                     EffectSet::new(),

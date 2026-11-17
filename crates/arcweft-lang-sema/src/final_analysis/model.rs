@@ -2688,12 +2688,12 @@ impl CheckedExpressionExecutionPlan {
 /// move one owner instead of retaining every checked atom on the native stack.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExpression {
-    data: Box<CheckedExpressionData>,
+    data: Box<ExpressionData>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct CheckedExpressionData {
-    result: CheckedExpressionResult,
+struct ExpressionData<R = CheckedExpressionResult> {
+    result: R,
     effects: EffectSet,
     resolution: CheckedExpressionResolution,
     mutable_place: Option<CheckedPlace>,
@@ -2704,10 +2704,414 @@ struct CheckedExpressionData {
     nested_path_evidence: Option<Result<NestedPathEvidence, super::CheckedChildEdgeError>>,
 }
 
+/// Source expression data shares the checked metadata grammar while its value
+/// type still belongs to the open preparation domain. Only a joint project
+/// seal may publish a completed checked expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedResolvedExpression {
+    data: Box<ExpressionData<super::prepared::PreparedExpressionResult>>,
+}
+
+impl<R> ExpressionData<R> {
+    pub const fn effects(&self) -> &EffectSet {
+        &self.effects
+    }
+
+    pub(crate) fn with_completed_effects(mut self, effects: EffectSet) -> Self {
+        self.effects = effects;
+        self
+    }
+
+    pub(super) fn with_completed_thread_body_effects(
+        mut self,
+        effects: EffectSet,
+    ) -> Result<Self, super::FinalSemanticAnalysisError> {
+        let CheckedExpressionResolution::Thread(thread) = &mut self.resolution else {
+            return Err(super::FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        thread.body_effects = effects;
+        Ok(self)
+    }
+
+    pub(crate) fn with_resolution(mut self, resolution: CheckedExpressionResolution) -> Self {
+        self.resolution = resolution;
+        self
+    }
+
+    pub const fn resolution(&self) -> &CheckedExpressionResolution {
+        &self.resolution
+    }
+
+    pub fn mutable_place(&self) -> Option<CheckedPlace> {
+        match self.resolution() {
+            CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
+                Some(CheckedPlace::from_local(*local))
+            }
+            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access))
+                if access.binding_place().is_some() =>
+            {
+                access.binding_place().cloned()
+            }
+            _ => self.mutable_place.clone(),
+        }
+    }
+
+    pub(crate) fn inspection_receiver(&self) -> Option<CheckedFieldReceiver> {
+        match self.resolution() {
+            CheckedExpressionResolution::Select(CheckedSelectResolution::DialogueView {
+                receiver,
+                ..
+            }) => Some(CheckedFieldReceiver::Expression(*receiver)),
+            CheckedExpressionResolution::Select(CheckedSelectResolution::AgentField {
+                field,
+                receiver,
+            }) if field.permits_copy_inspection() => {
+                Some(CheckedFieldReceiver::Expression(*receiver))
+            }
+            CheckedExpressionResolution::Select(CheckedSelectResolution::ProgressField {
+                receiver,
+                ..
+            }) => Some(CheckedFieldReceiver::Expression(*receiver)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn inspection_root(
+        &self,
+        source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
+    ) -> Option<LocalId> {
+        self.inspection_receiver()?.local_root(source)
+    }
+
+    pub(crate) fn local_place_source(&self) -> Option<CheckedFieldReceiver> {
+        match self.resolution() {
+            CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
+                Some(CheckedFieldReceiver::Binding(*local))
+            }
+            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access)) => {
+                Some(access.receiver())
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn field_root(
+        &self,
+        source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
+    ) -> Option<LocalId> {
+        match self.resolution() {
+            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access))
+                if access.selection().runtime_field().is_some() =>
+            {
+                access.receiver().local_root(source)
+            }
+            _ => None,
+        }
+    }
+
+    pub const fn execution_plan(&self) -> Option<&CheckedExpressionExecutionPlan> {
+        self.execution.as_ref()
+    }
+
+    pub fn evaluated_effect(&self) -> Option<&CheckedEvaluatedEffect> {
+        self.evaluated_effect.as_deref()
+    }
+
+    pub(super) fn with_execution_plan(
+        mut self,
+        execution: Option<CheckedExpressionExecutionPlan>,
+    ) -> Self {
+        self.execution = execution;
+        self
+    }
+
+    pub const fn execution_local_use(&self) -> Option<LocalId> {
+        match self.resolution() {
+            CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
+                Some(*local)
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn selected_postfix_candidate(&self) -> Option<ExprId> {
+        match self.resolution {
+            CheckedExpressionResolution::PostfixBracket(resolution) => Some(resolution.candidate()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn with_match_fact(mut self, fact: CheckedMatchFact) -> Self {
+        self.match_fact = Some(fact);
+        self
+    }
+
+    pub const fn match_fact(&self) -> Option<&CheckedMatchFact> {
+        self.match_fact.as_ref()
+    }
+
+    pub(crate) fn with_carrier_block(mut self, carrier: CheckedCarrierBlock) -> Self {
+        self.carrier_block = Some(Box::new(carrier));
+        self
+    }
+
+    pub fn carrier_block(&self) -> Option<&CheckedCarrierBlock> {
+        self.carrier_block.as_deref()
+    }
+
+    pub fn nested_path_evidence(
+        &self,
+    ) -> Option<&Result<NestedPathEvidence, super::CheckedChildEdgeError>> {
+        self.nested_path_evidence.as_ref()
+    }
+
+    pub(crate) fn with_nested_path_evidence(
+        mut self,
+        evidence: Result<NestedPathEvidence, super::CheckedChildEdgeError>,
+    ) -> Self {
+        self.nested_path_evidence = Some(evidence);
+        self
+    }
+}
+impl PreparedResolvedExpression {
+    pub(crate) const fn value_type(&self) -> Option<&TypeKind<crate::types::PreparedEffects>> {
+        self.data.result.value_type()
+    }
+    pub(crate) const fn source_value_type(
+        &self,
+    ) -> Option<&TypeKind<crate::types::PreparedEffects>> {
+        self.data.result.value_type()
+    }
+    pub(crate) const fn result(&self) -> &super::prepared::PreparedExpressionResult {
+        &self.data.result
+    }
+    pub(crate) const fn type_selection(&self) -> Option<CheckedTypeSelection> {
+        self.data.result.type_selection()
+    }
+    pub(crate) fn registry_address(address: Arc<CheckedRegistryAddress>) -> Self {
+        Self {
+            data: Box::new(ExpressionData {
+                result: crate::final_analysis::prepared::PreparedExpressionResult::NonValue(
+                    crate::final_analysis::prepared::PreparedNonValueExpressionResult::RegistryAddress(address.statement()),
+                ),
+                effects: EffectSet::new(),
+                resolution: CheckedExpressionResolution::RegistryAddress(address),
+                mutable_place: None,
+                execution: Some(CheckedExpressionExecutionPlan::structural(
+                    CheckedRuntimeValueDisposition::Omit,
+                    CheckedStructuralExecutionReason::RegistryAddress,
+                )),
+                evaluated_effect: None,
+                match_fact: None,
+                carrier_block: None,
+                nested_path_evidence: None,
+            }),
+        }
+    }
+
+    pub(crate) fn unavailable_call() -> Self {
+        Self {
+            data: Box::new(ExpressionData {
+                result: crate::final_analysis::prepared::PreparedExpressionResult::Unavailable,
+                effects: EffectSet::new(),
+                resolution: CheckedExpressionResolution::Call,
+                mutable_place: None,
+                execution: None,
+                evaluated_effect: None,
+                match_fact: None,
+                carrier_block: None,
+                nested_path_evidence: None,
+            }),
+        }
+    }
+
+    pub fn value(
+        ty: TypeKind<crate::types::PreparedEffects>,
+        type_selection: CheckedTypeSelection,
+        effects: EffectSet,
+        resolution: CheckedExpressionResolution,
+    ) -> Self {
+        Self::typed_value(
+            crate::final_analysis::prepared::PreparedTypedExpressionResult::new(ty, type_selection),
+            effects,
+            resolution,
+        )
+    }
+
+    pub(crate) fn typed_value(
+        result: crate::final_analysis::prepared::PreparedTypedExpressionResult,
+        effects: EffectSet,
+        resolution: CheckedExpressionResolution,
+    ) -> Self {
+        Self {
+            data: Box::new(ExpressionData {
+                result: crate::final_analysis::prepared::PreparedExpressionResult::Value(result),
+                effects,
+                resolution,
+                mutable_place: None,
+                execution: Some(CheckedExpressionExecutionPlan::structural(
+                    CheckedRuntimeValueDisposition::Retain,
+                    CheckedStructuralExecutionReason::Value,
+                )),
+                evaluated_effect: None,
+                match_fact: None,
+                carrier_block: None,
+                nested_path_evidence: None,
+            }),
+        }
+    }
+
+    pub fn content_emission(
+        callable: crate::callable::ContentCallableIdentity,
+        effects: EffectSet,
+        resolution: CheckedExpressionResolution,
+    ) -> Self {
+        Self {
+            data: Box::new(ExpressionData {
+                result: crate::final_analysis::prepared::PreparedExpressionResult::NonValue(
+                    crate::final_analysis::prepared::PreparedNonValueExpressionResult::ContentEmission(callable),
+                ),
+                effects,
+                resolution,
+                mutable_place: None,
+                execution: Some(CheckedExpressionExecutionPlan::structural(
+                    CheckedRuntimeValueDisposition::Omit,
+                    CheckedStructuralExecutionReason::ContentEmission,
+                )),
+                evaluated_effect: None,
+                match_fact: None,
+                carrier_block: None,
+                nested_path_evidence: None,
+            }),
+        }
+    }
+
+    pub(crate) fn required_type_selection(
+        &self,
+        owner: ExprId,
+    ) -> Result<CheckedTypeSelection, super::FinalSemanticAnalysisError> {
+        self.type_selection()
+            .ok_or(super::FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })
+    }
+
+    pub const fn effects(&self) -> &EffectSet {
+        self.data.effects()
+    }
+
+    pub(crate) fn with_completed_effects(mut self, effects: EffectSet) -> Self {
+        Self {
+            data: Box::new((*self.data).with_completed_effects()),
+        }
+    }
+
+    pub(super) fn with_completed_thread_body_effects(
+        mut self,
+        effects: EffectSet,
+    ) -> Result<Self, super::FinalSemanticAnalysisError> {
+        self.data.with_completed_thread_body_effects()
+    }
+
+    pub(crate) fn with_resolution(mut self, resolution: CheckedExpressionResolution) -> Self {
+        Self {
+            data: Box::new((*self.data).with_resolution()),
+        }
+    }
+
+    pub const fn resolution(&self) -> &CheckedExpressionResolution {
+        self.data.resolution()
+    }
+
+    pub fn mutable_place(&self) -> Option<CheckedPlace> {
+        self.data.mutable_place()
+    }
+
+    pub(crate) fn inspection_receiver(&self) -> Option<CheckedFieldReceiver> {
+        self.data.inspection_receiver()
+    }
+
+    pub(crate) fn inspection_root(
+        &self,
+        source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
+    ) -> Option<LocalId> {
+        self.data.inspection_root()
+    }
+
+    pub(crate) fn local_place_source(&self) -> Option<CheckedFieldReceiver> {
+        self.data.local_place_source()
+    }
+
+    pub(crate) fn field_root(
+        &self,
+        source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
+    ) -> Option<LocalId> {
+        self.data.field_root()
+    }
+
+    pub const fn execution_plan(&self) -> Option<&CheckedExpressionExecutionPlan> {
+        self.data.execution_plan()
+    }
+
+    pub fn evaluated_effect(&self) -> Option<&CheckedEvaluatedEffect> {
+        self.data.evaluated_effect()
+    }
+
+    pub(super) fn with_execution_plan(
+        mut self,
+        execution: Option<CheckedExpressionExecutionPlan>,
+    ) -> Self {
+        Self {
+            data: Box::new((*self.data).with_execution_plan()),
+        }
+    }
+
+    pub const fn execution_local_use(&self) -> Option<LocalId> {
+        self.data.execution_local_use()
+    }
+
+    pub(crate) const fn selected_postfix_candidate(&self) -> Option<ExprId> {
+        self.data.selected_postfix_candidate()
+    }
+
+    pub(crate) fn with_match_fact(mut self, fact: CheckedMatchFact) -> Self {
+        Self {
+            data: Box::new((*self.data).with_match_fact()),
+        }
+    }
+
+    pub const fn match_fact(&self) -> Option<&CheckedMatchFact> {
+        self.data.match_fact()
+    }
+
+    pub(crate) fn with_carrier_block(mut self, carrier: CheckedCarrierBlock) -> Self {
+        Self {
+            data: Box::new((*self.data).with_carrier_block()),
+        }
+    }
+
+    pub fn carrier_block(&self) -> Option<&CheckedCarrierBlock> {
+        self.data.carrier_block()
+    }
+
+    pub fn nested_path_evidence(
+        &self,
+    ) -> Option<&Result<NestedPathEvidence, super::CheckedChildEdgeError>> {
+        self.data.nested_path_evidence()
+    }
+
+    pub(crate) fn with_nested_path_evidence(
+        mut self,
+        evidence: Result<NestedPathEvidence, super::CheckedChildEdgeError>,
+    ) -> Self {
+        Self {
+            data: Box::new((*self.data).with_nested_path_evidence()),
+        }
+    }
+}
+
 impl CheckedExpression {
     pub(crate) fn registry_address(address: Arc<CheckedRegistryAddress>) -> Self {
         Self {
-            data: Box::new(CheckedExpressionData {
+            data: Box::new(ExpressionData {
                 result: CheckedExpressionResult::NonValue(
                     CheckedNonValueExpressionResult::RegistryAddress(address.statement()),
                 ),
@@ -2727,7 +3131,7 @@ impl CheckedExpression {
     }
     pub(crate) fn unavailable_call() -> Self {
         Self {
-            data: Box::new(CheckedExpressionData {
+            data: Box::new(ExpressionData {
                 result: CheckedExpressionResult::Unavailable,
                 effects: EffectSet::new(),
                 resolution: CheckedExpressionResolution::Call,
@@ -2760,7 +3164,7 @@ impl CheckedExpression {
         resolution: CheckedExpressionResolution,
     ) -> Self {
         Self {
-            data: Box::new(CheckedExpressionData {
+            data: Box::new(ExpressionData {
                 result: CheckedExpressionResult::Value(result),
                 effects,
                 resolution,
@@ -2783,7 +3187,7 @@ impl CheckedExpression {
         resolution: CheckedExpressionResolution,
     ) -> Self {
         Self {
-            data: Box::new(CheckedExpressionData {
+            data: Box::new(ExpressionData {
                 result: CheckedExpressionResult::NonValue(
                     CheckedNonValueExpressionResult::ContentEmission(callable),
                 ),
@@ -2897,109 +3301,66 @@ impl CheckedExpression {
     }
 
     pub const fn effects(&self) -> &EffectSet {
-        &self.data.effects
+        self.data.effects()
     }
 
     /// Replaces the analyzer's prepared effect row with the completed
     /// bottom-up execution fold while preserving every other checked atom.
     #[must_use]
     pub(crate) fn with_completed_effects(mut self, effects: EffectSet) -> Self {
-        self.data.effects = effects;
-        self
+        Self {
+            data: Box::new((*self.data).with_completed_effects()),
+        }
     }
 
     pub(super) fn with_completed_thread_body_effects(
         mut self,
         effects: EffectSet,
     ) -> Result<Self, super::FinalSemanticAnalysisError> {
-        let CheckedExpressionResolution::Thread(thread) = &mut self.data.resolution else {
-            return Err(super::FinalSemanticAnalysisError::WrongPayloadFamily);
-        };
-        thread.body_effects = effects;
-        Ok(self)
+        self.data.with_completed_thread_body_effects()
     }
 
     /// Replaces only the semantic resolution while retaining the already
     /// checked result, effects, nested Match payload, and path evidence.
     #[must_use]
     pub(crate) fn with_resolution(mut self, resolution: CheckedExpressionResolution) -> Self {
-        self.data.resolution = resolution;
-        self
+        Self {
+            data: Box::new((*self.data).with_resolution()),
+        }
     }
 
     pub const fn resolution(&self) -> &CheckedExpressionResolution {
-        &self.data.resolution
+        self.data.resolution()
     }
 
     /// Returns the checked writable place represented by this expression.
     /// Direct local values derive their place from the local resolution;
     /// direct project-field selections retain the place sealed with the field.
     pub fn mutable_place(&self) -> Option<CheckedPlace> {
-        match self.resolution() {
-            CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
-                Some(CheckedPlace::from_local(*local))
-            }
-            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access))
-                if access.binding_place().is_some() =>
-            {
-                access.binding_place().cloned()
-            }
-            _ => self.data.mutable_place.clone(),
-        }
+        self.data.mutable_place()
     }
 
     /// The selected schema owns whether a builtin field can inspect its receiver.
     pub(crate) fn inspection_receiver(&self) -> Option<CheckedFieldReceiver> {
-        match self.resolution() {
-            CheckedExpressionResolution::Select(CheckedSelectResolution::DialogueView {
-                receiver,
-                ..
-            }) => Some(CheckedFieldReceiver::Expression(*receiver)),
-            CheckedExpressionResolution::Select(CheckedSelectResolution::AgentField {
-                field,
-                receiver,
-            }) if field.permits_copy_inspection() => {
-                Some(CheckedFieldReceiver::Expression(*receiver))
-            }
-            CheckedExpressionResolution::Select(CheckedSelectResolution::ProgressField {
-                receiver,
-                ..
-            }) => Some(CheckedFieldReceiver::Expression(*receiver)),
-            _ => None,
-        }
+        self.data.inspection_receiver()
     }
 
     pub(crate) fn inspection_root(
         &self,
         source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
     ) -> Option<LocalId> {
-        self.inspection_receiver()?.local_root(source)
+        self.data.inspection_root()
     }
 
     pub(crate) fn local_place_source(&self) -> Option<CheckedFieldReceiver> {
-        match self.resolution() {
-            CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
-                Some(CheckedFieldReceiver::Binding(*local))
-            }
-            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access)) => {
-                Some(access.receiver())
-            }
-            _ => None,
-        }
+        self.data.local_place_source()
     }
 
     pub(crate) fn field_root(
         &self,
         source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
     ) -> Option<LocalId> {
-        match self.resolution() {
-            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(access))
-                if access.selection().runtime_field().is_some() =>
-            {
-                access.receiver().local_root(source)
-            }
-            _ => None,
-        }
+        self.data.field_root()
     }
 
     /// Attaches one sealed direct nominal-field place to its checked select.
@@ -3026,13 +3387,13 @@ impl CheckedExpression {
     /// Final sema-owned execution authority, absent for tooling-only call
     /// outcomes. Absence is not a structural instruction to omit the value.
     pub const fn execution_plan(&self) -> Option<&CheckedExpressionExecutionPlan> {
-        self.data.execution.as_ref()
+        self.data.execution_plan()
     }
 
     /// Checked evaluated-effect operation owned by this expression site, if
     /// the selected callable schema assigns one.
     pub fn evaluated_effect(&self) -> Option<&CheckedEvaluatedEffect> {
-        self.data.evaluated_effect.as_deref()
+        self.data.evaluated_effect()
     }
 
     /// Attaches one checked evaluated effect to its exact expression root.
@@ -3060,8 +3421,9 @@ impl CheckedExpression {
         mut self,
         execution: Option<CheckedExpressionExecutionPlan>,
     ) -> Self {
-        self.data.execution = execution;
-        self
+        Self {
+            data: Box::new((*self.data).with_execution_plan()),
+        }
     }
 
     /// Returns the execution-local use represented directly by this final
@@ -3072,12 +3434,7 @@ impl CheckedExpression {
     /// for semantic provenance, but that provenance is not an execution use
     /// and must not enter the implicit-callable capture ledger.
     pub const fn execution_local_use(&self) -> Option<LocalId> {
-        match self.resolution() {
-            CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
-                Some(*local)
-            }
-            _ => None,
-        }
+        self.data.execution_local_use()
     }
 
     /// Returns the exact postfix candidate selected by this checked fact.
@@ -3085,39 +3442,38 @@ impl CheckedExpression {
     /// the source-backed postfix owner.
     #[must_use]
     pub(crate) const fn selected_postfix_candidate(&self) -> Option<ExprId> {
-        match self.data.resolution {
-            CheckedExpressionResolution::PostfixBracket(resolution) => Some(resolution.candidate()),
-            _ => None,
-        }
+        self.data.selected_postfix_candidate()
     }
 
     /// Adds the checker-owned ordinary Match evidence to this expression.
     #[must_use]
     pub(crate) fn with_match_fact(mut self, fact: CheckedMatchFact) -> Self {
-        self.data.match_fact = Some(fact);
-        self
+        Self {
+            data: Box::new((*self.data).with_match_fact()),
+        }
     }
 
     /// Returns the exact checked Match evidence, when this owner is a Match.
     pub const fn match_fact(&self) -> Option<&CheckedMatchFact> {
-        self.data.match_fact.as_ref()
+        self.data.match_fact()
     }
 
     pub(crate) fn with_carrier_block(mut self, carrier: CheckedCarrierBlock) -> Self {
-        self.data.carrier_block = Some(Box::new(carrier));
-        self
+        Self {
+            data: Box::new((*self.data).with_carrier_block()),
+        }
     }
 
     /// Returns the local propagation contract of this carrier block's body.
     pub fn carrier_block(&self) -> Option<&CheckedCarrierBlock> {
-        self.data.carrier_block.as_deref()
+        self.data.carrier_block()
     }
 
     /// Returns accepted path-keyed nested child evidence for this owner.
     pub fn nested_path_evidence(
         &self,
     ) -> Option<&Result<NestedPathEvidence, super::CheckedChildEdgeError>> {
-        self.data.nested_path_evidence.as_ref()
+        self.data.nested_path_evidence()
     }
 
     #[must_use]
@@ -3125,8 +3481,9 @@ impl CheckedExpression {
         mut self,
         evidence: Result<NestedPathEvidence, super::CheckedChildEdgeError>,
     ) -> Self {
-        self.data.nested_path_evidence = Some(evidence);
-        self
+        Self {
+            data: Box::new((*self.data).with_nested_path_evidence()),
+        }
     }
 
     pub(crate) fn visit_types<E>(
@@ -3166,21 +3523,56 @@ pub use typed_binding::CheckedTypedBinding;
 /// Closed checked fact for one live pattern.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedPattern {
-    ty: TypeKind,
+    data: PatternData<crate::types::CanonicalEffects>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PatternData<D: crate::types::TypeEffectDomain> {
+    ty: TypeKind<D>,
     resolution: CheckedPatternResolution,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedResolvedPattern {
+    data: PatternData<crate::types::PreparedEffects>,
+}
+
+impl PreparedResolvedPattern {
+    pub(crate) const fn new(
+        ty: TypeKind<crate::types::PreparedEffects>,
+        resolution: CheckedPatternResolution,
+    ) -> Self {
+        Self {
+            data: PatternData { ty, resolution },
+        }
+    }
+    pub(crate) const fn ty(&self) -> &TypeKind<crate::types::PreparedEffects> {
+        &self.data.ty
+    }
+    pub(crate) const fn resolution(&self) -> &CheckedPatternResolution {
+        self.data.resolution()
+    }
+}
+
+impl<D: crate::types::TypeEffectDomain> PatternData<D> {
+    const fn resolution(&self) -> &CheckedPatternResolution {
+        &self.resolution
+    }
 }
 
 impl CheckedPattern {
     pub const fn new(ty: TypeKind, resolution: CheckedPatternResolution) -> Self {
-        Self { ty, resolution }
+        Self {
+            data: PatternData { ty, resolution },
+        }
     }
 
     pub const fn ty(&self) -> &TypeKind {
-        &self.ty
+        &self.data.ty
     }
 
     pub const fn resolution(&self) -> &CheckedPatternResolution {
-        &self.resolution
+        self.data.resolution()
     }
 
     pub(crate) fn visit_types<E>(

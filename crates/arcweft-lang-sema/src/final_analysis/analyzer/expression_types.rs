@@ -11,7 +11,7 @@ use arcweft_lang_hir::leaf::{HirUnitNumberLiteral, HirUnitNumberUnit};
 
 pub(super) fn unit_scalar_kind(
     unit: HirUnitNumberUnit,
-    expected: Option<&TypeKind>,
+    expected: Option<&TypeKind<crate::types::PreparedEffects>>,
 ) -> Option<CompileTimeScalarKind> {
     let length_expected = expected.is_some_and(|ty| match ty {
         TypeKind::CompileTimeScalar(scalar) => scalar.kind() == CompileTimeScalarKind::Length,
@@ -42,8 +42,11 @@ pub(super) fn unit_scalar_kind(
 
 pub(super) fn literal_type(
     literal: &HirLiteral,
-    expected: Option<&TypeKind>,
-) -> Option<(TypeKind, CheckedTypeSelection)> {
+    expected: Option<&TypeKind<crate::types::PreparedEffects>>,
+) -> Option<(
+    TypeKind<crate::types::PreparedEffects>,
+    CheckedTypeSelection,
+)> {
     let inferred = match literal {
         HirLiteral::String(_) => (TypeKind::String, CheckedTypeSelection::Inferred),
         HirLiteral::Character(_) => (TypeKind::Char, CheckedTypeSelection::Inferred),
@@ -69,7 +72,7 @@ pub(super) fn literal_type(
         },
         HirLiteral::UnitNumber(HirUnitNumberLiteral::Value { unit, .. }) => {
             if let Some(kind) = unit_scalar_kind(*unit, expected) {
-                let accepts = |ty: &&TypeKind| matches!(ty, TypeKind::CompileTimeScalar(scalar) if scalar.kind() == kind);
+                let accepts = |ty: &&TypeKind<crate::types::PreparedEffects>| matches!(ty, TypeKind::CompileTimeScalar(scalar) if scalar.kind() == kind);
                 let ty = match expected? {
                     TypeKind::Choice(items) => items.iter().find(accepts)?,
                     ty if accepts(&ty) => ty,
@@ -87,7 +90,9 @@ pub(super) fn literal_type(
     Some(inferred)
 }
 
-pub(super) fn expected_item(expected: Option<&TypeKind>) -> Option<&TypeKind> {
+pub(super) fn expected_item(
+    expected: Option<&TypeKind<crate::types::PreparedEffects>>,
+) -> Option<&TypeKind<crate::types::PreparedEffects>> {
     match expected {
         Some(
             TypeKind::Vec(item)
@@ -102,9 +107,9 @@ pub(super) fn expected_item(expected: Option<&TypeKind>) -> Option<&TypeKind> {
 }
 
 pub(super) fn common_type<'a>(
-    values: impl IntoIterator<Item = &'a TypeKind>,
-    expected: Option<&TypeKind>,
-) -> Option<TypeKind> {
+    values: impl IntoIterator<Item = &'a TypeKind<crate::types::PreparedEffects>>,
+    expected: Option<&TypeKind<crate::types::PreparedEffects>>,
+) -> Option<TypeKind<crate::types::PreparedEffects>> {
     let mut values = values.into_iter();
     let first = values.next().cloned().or_else(|| expected.cloned())?;
     values.try_fold(first, |joined, value| match (&joined, value) {
@@ -120,7 +125,9 @@ pub(super) fn common_type<'a>(
     })
 }
 
-pub(super) fn indexed_item(ty: &TypeKind) -> Option<TypeKind> {
+pub(super) fn indexed_item(
+    ty: &TypeKind<crate::types::PreparedEffects>,
+) -> Option<TypeKind<crate::types::PreparedEffects>> {
     match ty {
         TypeKind::Vec(item)
         | TypeKind::Array { item, .. }
@@ -132,8 +139,12 @@ pub(super) fn indexed_item(ty: &TypeKind) -> Option<TypeKind> {
 }
 
 pub(super) fn builtin_iteration(
-    ty: &TypeKind,
-) -> Option<(CheckedIteratorFamily, IteratorStateKind, TypeKind)> {
+    ty: &TypeKind<crate::types::PreparedEffects>,
+) -> Option<(
+    CheckedIteratorFamily,
+    IteratorStateKind,
+    TypeKind<crate::types::PreparedEffects>,
+)> {
     let (family, state, item) = match ty {
         TypeKind::Range(item) => (
             CheckedIteratorFamily::Range,
@@ -173,7 +184,7 @@ pub(super) fn builtin_iteration(
 pub(super) fn value_resolution_type(
     world: &RegisteredSemanticWorld,
     resolution: &CheckedValueResolution,
-) -> Option<TypeKind> {
+) -> Option<TypeKind<crate::types::PreparedEffects>> {
     match resolution {
         CheckedValueResolution::Local(_) | CheckedValueResolution::RegistryRead(_) => None,
         CheckedValueResolution::LineContext => Some(TypeKind::LineContext),

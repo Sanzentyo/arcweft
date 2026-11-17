@@ -10,6 +10,19 @@ use crate::{
     effect_row::{DecisionControl, DecisionWork},
 };
 
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub(crate) enum PreparedCallableValueTypeFailure<E: std::error::Error + 'static> {
+    #[error(transparent)]
+    Effect(#[from] PreparedEffectFailure<E>),
+    #[error(transparent)]
+    Projection(
+        #[from]
+        crate::callable::schema::CallableFunctionTypeProjectionError<
+            crate::callable::schema::PreparedCallableFunctionTypeFailure<E>,
+        >,
+    ),
+}
+
 pub(crate) struct PreparedCallableEffectDeclarations {
     graph: PreparedEffectGraph,
     declarations: BTreeMap<CheckedCallableId, PreparedCallableEffectDeclaration>,
@@ -33,6 +46,97 @@ impl PreparedCallableEffectDeclaration {
 }
 
 impl PreparedCallableEffectDeclarations {
+    pub(crate) fn prepare_declared_value_type<C>(
+        &mut self,
+        owner: &CheckedCallableId,
+        schema: &CallableSignatureSchema,
+        control: &mut C,
+    ) -> Result<
+        crate::types::TypeKind<crate::types::PreparedEffects>,
+        PreparedCallableValueTypeFailure<<C as crate::types::TypeProjectionControl>::Error>,
+    >
+    where
+        C: crate::types::TypeProjectionControl
+            + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
+    {
+        use crate::effect_row::prepared::PreparedEffectRow;
+        let header = self
+            .declarations
+            .get(owner)
+            .ok_or(PreparedEffectFailure::Invariant(
+                PreparedEffectInvariant::StaleReference,
+            ))?
+            .validate_schema(schema)
+            .map_err(PreparedEffectFailure::Invariant)?;
+        header
+            .validate(&self.graph)
+            .map_err(PreparedEffectFailure::Invariant)?;
+        let mut checkpoint = self.graph.checkpoint(control)?;
+        let prepared = (|| {
+            let mut arguments = Vec::new();
+            for parameter in header.parameters() {
+                control
+                    .charge(DecisionWork::Node)
+                    .map_err(PreparedEffectFailure::Control)?;
+                arguments.push(PreparedEffectRow::Canonical(
+                    crate::effect_row::EffectRow::open(
+                        crate::effects::EffectSet::new(),
+                        parameter.clone(),
+                    ),
+                ));
+            }
+            let row = self
+                .graph
+                .application(header.scheme(), arguments, control)?;
+            Ok(schema.prepare_function_type_from_position(
+                crate::callable::CallableParameterCoordinate::group_start(
+                    crate::callable::CallableGroupIndex::ZERO,
+                ),
+                &row,
+                &self.graph,
+                control,
+            )?)
+        })();
+        if prepared.is_ok() {
+            self.graph
+                .commit(&checkpoint)
+                .map_err(PreparedEffectFailure::Invariant)?;
+        } else {
+            self.graph
+                .rollback(&mut checkpoint)
+                .map_err(PreparedEffectFailure::Invariant)?;
+        }
+        prepared
+    }
+
+    pub(crate) fn prepare_known_value_type<C>(
+        &self,
+        schema: &CallableSignatureSchema,
+        row: &crate::effect_row::EffectRow,
+        result: Option<&crate::callable::CallableResultSchema>,
+        control: &mut C,
+    ) -> Result<
+        crate::types::TypeKind<crate::types::PreparedEffects>,
+        PreparedCallableValueTypeFailure<<C as crate::types::TypeProjectionControl>::Error>,
+    >
+    where
+        C: crate::types::TypeProjectionControl
+            + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
+    {
+        let row = row
+            .try_clone_with_control(control)
+            .map_err(PreparedEffectFailure::Control)?;
+        Ok(schema.prepare_function_type_with_result_from_position(
+            crate::callable::CallableParameterCoordinate::group_start(
+                crate::callable::CallableGroupIndex::ZERO,
+            ),
+            &crate::effect_row::prepared::PreparedEffectRow::Canonical(row),
+            result,
+            &self.graph,
+            control,
+        )?)
+    }
+
     /// Admission completes before this owner is installed into the live graph.
     pub(crate) fn declare<'a, C: DecisionControl>(
         inputs: impl IntoIterator<Item = (&'a CheckedCallableId, &'a CallableSignatureSchema)>,
@@ -85,6 +189,13 @@ impl PreparedCallableEffectDeclarations {
 }
 
 impl<P, U> PreparedCallGraph<P, U> {
+    pub(crate) fn effect_declarations(
+        &self,
+    ) -> Result<&PreparedCallableEffectDeclarations, CallConstraintInvariant> {
+        self.declarations
+            .as_ref()
+            .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)
+    }
     pub(crate) fn initialize_effect_declarations(
         &mut self,
         declarations: PreparedCallableEffectDeclarations,

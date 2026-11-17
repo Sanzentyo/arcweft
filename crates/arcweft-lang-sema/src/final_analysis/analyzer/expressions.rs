@@ -90,25 +90,25 @@ use super::entities::EntityReferenceResolutionError;
 #[derive(Clone, Debug)]
 pub(super) enum AnalyzerExpressionExpectation<'a> {
     Unconstrained,
-    Complete(&'a TypeKind),
+    Complete(&'a TypeKind<crate::types::PreparedEffects>),
     ApplicationCallee(AnalyzerApplicationCalleeExpectation<'a>),
     /// A compile-time PublicId accepts a normalized HIR entity-reference token.
     /// This is deliberately narrower than ordinary
     /// `String` expectation: entity references elsewhere still resolve to
     /// their project item and never become strings by source spelling.
-    CompileTimePublicId(&'a TypeKind),
+    CompileTimePublicId(&'a TypeKind<crate::types::PreparedEffects>),
     /// The parameter schema admits identifier tokens in this exact family.
     /// Its ordinary expected type remains authoritative for other values.
     PublicIdReference {
         expected: Box<Self>,
         family: arcweft_id::ProjectEntityReferenceFamily,
     },
-    EnumConstructorHead(&'a TypeKind),
+    EnumConstructorHead(&'a TypeKind<crate::types::PreparedEffects>),
     /// The borrowed callable component owns the conversion. Expression
     /// checking supplies its original scheme; it never opens a second solver.
     FunctionValueSource(Box<Self>),
     Parametric {
-        expected: &'a TypeKind,
+        expected: &'a TypeKind<crate::types::PreparedEffects>,
         unbound: Arc<[crate::types::constraints::ConstraintGenericParameterId]>,
         scope_lease: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
     },
@@ -125,14 +125,17 @@ pub(super) enum AnalyzerApplicationCalleePurpose {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct AnalyzerApplicationCalleeExpectation<'a> {
     pub(super) purpose: AnalyzerApplicationCalleePurpose,
-    pub(super) parameters: &'a [TypeKind],
-    pub(super) result: Option<&'a TypeKind>,
+    pub(super) parameters: &'a [TypeKind<crate::types::PreparedEffects>],
+    pub(super) result: Option<&'a TypeKind<crate::types::PreparedEffects>>,
     pub(super) scope_lease:
         Option<&'a crate::types::constraints::ImportedGenericParameterScopeLease>,
 }
 
 impl AnalyzerApplicationCalleeExpectation<'_> {
-    pub(super) fn for_candidate(self, candidate: &TypeKind) -> Option<TypeKind> {
+    pub(super) fn for_candidate(
+        self,
+        candidate: &TypeKind<crate::types::PreparedEffects>,
+    ) -> Option<TypeKind<crate::types::PreparedEffects>> {
         let mut expected = candidate.clone();
         let TypeKind::Function {
             params,
@@ -184,7 +187,9 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         }
     }
 
-    pub(super) fn function_value_target(&self) -> Option<&'a TypeKind> {
+    pub(super) fn function_value_target(
+        &self,
+    ) -> Option<&'a TypeKind<crate::types::PreparedEffects>> {
         self.contextual_shape()
             .filter(|ty| matches!(ty, TypeKind::Function { binder, .. } if binder.is_empty()))
     }
@@ -193,16 +198,20 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         matches!(self, Self::FunctionValueSource(_))
     }
 
-    pub(super) fn from_complete(expected: Option<&'a TypeKind>) -> Self {
+    pub(super) fn from_complete(
+        expected: Option<&'a TypeKind<crate::types::PreparedEffects>>,
+    ) -> Self {
         expected.map_or(Self::Unconstrained, Self::Complete)
     }
 
-    pub(super) const fn enum_constructor_head(expected: &'a TypeKind) -> Self {
+    pub(super) const fn enum_constructor_head(
+        expected: &'a TypeKind<crate::types::PreparedEffects>,
+    ) -> Self {
         Self::EnumConstructorHead(expected)
     }
 
     pub(super) fn parametric(
-        expected: &'a TypeKind,
+        expected: &'a TypeKind<crate::types::PreparedEffects>,
         unbound: &[crate::types::constraints::ConstraintGenericParameterId],
     ) -> Option<Self> {
         if unbound.is_empty() || !unbound.windows(2).all(|pair| pair[0] < pair[1]) {
@@ -230,7 +239,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
     }
 
     pub(super) fn parametric_with_scope_lease(
-        expected: &'a TypeKind,
+        expected: &'a TypeKind<crate::types::PreparedEffects>,
         scope_lease: crate::types::constraints::ImportedGenericParameterScopeLease,
     ) -> Option<Self> {
         let unbound = scope_lease.parameters();
@@ -245,7 +254,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         Some(expectation)
     }
 
-    pub(super) fn contextual_shape(&self) -> Option<&'a TypeKind> {
+    pub(super) fn contextual_shape(&self) -> Option<&'a TypeKind<crate::types::PreparedEffects>> {
         match self {
             Self::Unconstrained | Self::ApplicationCallee(_) => None,
             Self::FunctionValueSource(expected) | Self::PublicIdReference { expected, .. } => {
@@ -280,7 +289,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 
     /// Expectations usable by expression checks that require a closed result
     /// type. Nested calls use `nested_call_type` plus the retained scope lease.
-    pub(super) fn complete_type(&self) -> Option<&'a TypeKind> {
+    pub(super) fn complete_type(&self) -> Option<&'a TypeKind<crate::types::PreparedEffects>> {
         match self {
             Self::FunctionValueSource(expected) | Self::PublicIdReference { expected, .. } => {
                 expected.complete_type()
@@ -295,7 +304,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
     /// Result equation available to a nested call. Unlike `complete_type`, this
     /// preserves a parent-owned parametric expectation; the corresponding
     /// unbound parameters must accompany it as rigid enclosing parameters.
-    pub(super) fn nested_call_type(&self) -> Option<&'a TypeKind> {
+    pub(super) fn nested_call_type(&self) -> Option<&'a TypeKind<crate::types::PreparedEffects>> {
         match self {
             Self::PublicIdReference { expected, .. } => expected.nested_call_type(),
             Self::Complete(expected)
@@ -369,7 +378,9 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         matches!(self, Self::EnumConstructorHead(_))
     }
 
-    pub(super) const fn compile_time_public_id(expected: &'a TypeKind) -> Self {
+    pub(super) const fn compile_time_public_id(
+        expected: &'a TypeKind<crate::types::PreparedEffects>,
+    ) -> Self {
         Self::CompileTimePublicId(expected)
     }
 
@@ -393,7 +404,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 
     fn project<'b>(
         &self,
-        expected: Option<&'b TypeKind>,
+        expected: Option<&'b TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<AnalyzerExpressionExpectation<'b>, crate::types::TypeGenericUseError> {
         let Some(expected) = expected else {
             return Ok(AnalyzerExpressionExpectation::Unconstrained);
@@ -450,7 +461,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
     pub(super) fn project_checked<'b>(
         &self,
         owner: ExprId,
-        expected: Option<&'b TypeKind>,
+        expected: Option<&'b TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<AnalyzerExpressionExpectation<'b>, AnalyzerExpressionError> {
         self.project(expected).map_err(|_| AnalyzerExpressionError::Call {
             owner,
@@ -494,7 +505,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         fact: &PreparedExpressionFact,
     ) -> Result<bool, super::CandidateFactTransactionViolation> {
-        if !matches!(fact, PreparedExpressionFact::Complete(value)
+        if !matches!(fact, PreparedExpressionFact::Resolved(value)
             if matches!(value.result(), crate::final_analysis::CheckedExpressionResult::Unavailable)
                 && matches!(value.resolution(), CheckedExpressionResolution::Call))
         {
@@ -517,7 +528,7 @@ impl Analyzer<'_, '_, '_> {
     pub(super) fn check_expression_published(
         &mut self,
         owner: ExprId,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<super::PreparedExpressionFact, FinalSemanticAnalysisError> {
         let context = AnalyzerExpressionContext::published(Rc::clone(&self.call_frames));
         self.evaluate_expression(&context, owner, expected)
@@ -528,7 +539,7 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
         self.evaluate_expression_with_expectation(
             context,
@@ -674,7 +685,7 @@ impl Analyzer<'_, '_, '_> {
             (expectation.contextual_shape(), expression.kind())
             && let Some((ty, selection)) = literal_type(literal, Some(expected))
         {
-            let contextual = CheckedExpression::value(
+            let contextual = crate::final_analysis::prepared::PreparedResolvedExpression::value(
                 ty,
                 selection,
                 checked.effects().clone(),
@@ -942,7 +953,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         checked: super::PreparedExpressionFact,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
-        let super::PreparedExpressionFact::Complete(complete) = checked else {
+        let super::PreparedExpressionFact::Resolved(complete) = checked else {
             return Ok(checked);
         };
         let module = self
@@ -1026,7 +1037,7 @@ impl Analyzer<'_, '_, '_> {
                                     _ => None,
                                 }
                             }
-                            PreparedExpressionFact::Complete(_)
+                            PreparedExpressionFact::Resolved(_)
                             | PreparedExpressionFact::CompileTimeScalar(_)
                             | PreparedExpressionFact::DialogueApplication(_)
                             | PreparedExpressionFact::ContentApplication(_)
@@ -1223,7 +1234,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         placeholders: &[ExprId],
-    ) -> Result<TypeKind, AnalyzerExpressionError> {
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, AnalyzerExpressionError> {
         let HirExprKind::Binary(binary) = expression.kind() else {
             return Err(AnalyzerExpressionError::rejected(owner));
         };
@@ -1639,7 +1650,7 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         owner: ExprId,
         reference: &HirIdRef,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         let family = arcweft_id::ProjectEntityReferenceFamily::Entry;
         let public_id = reference.project_entity_public_id(family).ok_or_else(|| {
@@ -1686,14 +1697,16 @@ impl Analyzer<'_, '_, '_> {
             if expected.is_some_and(|expected| !expected.accepts(&ty)) {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
-            return Ok(PreparedExpressionFact::from(CheckedExpression::value(
-                ty,
-                type_selection,
-                EffectSet::new(),
-                CheckedExpressionResolution::Value(CheckedValueResolution::ImportedProjectEntity(
-                    imported,
-                )),
-            )));
+            return Ok(PreparedExpressionFact::from(
+                crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                    ty,
+                    type_selection,
+                    EffectSet::new(),
+                    CheckedExpressionResolution::Value(
+                        CheckedValueResolution::ImportedProjectEntity(imported),
+                    ),
+                ),
+            ));
         }
         let lookup_owner = local.ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
@@ -1884,7 +1897,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         path: &arcweft_lang_hir::leaf::HirPathValue,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         let path = path.as_resolved().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
@@ -1896,18 +1909,20 @@ impl Analyzer<'_, '_, '_> {
             let ty = match &resolution {
                 CheckedValueResolution::Local(local) => self.facts.locals().get(local).cloned(),
                 CheckedValueResolution::ProjectCallable(callable) => {
-                    Some(self.prepare_named_callable_value_type(owner, callable)?)
+                    Some(self.prepare_named_callable_value_type(callable)?)
                 }
                 _ => value_resolution_type(self.catalogs.world, &resolution),
             }
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-            return Ok(CheckedExpression::value(
-                ty,
-                CheckedTypeSelection::Inferred,
-                EffectSet::new(),
-                CheckedExpressionResolution::Value(resolution),
-            )
-            .into());
+            return Ok(
+                crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                    ty,
+                    CheckedTypeSelection::Inferred,
+                    EffectSet::new(),
+                    CheckedExpressionResolution::Value(resolution),
+                )
+                .into(),
+            );
         }
         if let Some(callable) = self.prepare_declared_callable_value(module, owner, expected)? {
             return Ok(callable);
@@ -1921,13 +1936,15 @@ impl Analyzer<'_, '_, '_> {
         {
             if let TypeKind::CompileTimeEnum(enum_type) = expected {
                 let value = self.resolve_closed_enum_value(owner, *enum_type, name)?;
-                return Ok(CheckedExpression::value(
-                    expected.clone(),
-                    CheckedTypeSelection::Expected,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::CompileTimeEnum(value),
-                )
-                .into());
+                return Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                        expected.clone(),
+                        CheckedTypeSelection::Expected,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::CompileTimeEnum(value),
+                    )
+                    .into(),
+                );
             }
             let (seed, ordinal) = self.resolve_short_variant(owner, expected, name, false)?;
             (
@@ -1971,7 +1988,7 @@ impl Analyzer<'_, '_, '_> {
         _module: &HirModule,
         owner: ExprId,
         expression: &HirExpr,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
         match expression.kind() {
             HirExprKind::Unit => Ok(structural_expression(
@@ -1988,12 +2005,14 @@ impl Analyzer<'_, '_, '_> {
                         &crate::checked_text_proxy::CheckedCompileTimeScalarKind::FontFamily,
                     )
                     .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
-                    return Ok(Some(CheckedExpression::value(
-                        expected.clone(),
-                        CheckedTypeSelection::Expected,
-                        EffectSet::new(),
-                        CheckedExpressionResolution::Literal(literal.clone()),
-                    )));
+                    return Ok(Some(
+                        crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                            expected.clone(),
+                            CheckedTypeSelection::Expected,
+                            EffectSet::new(),
+                            CheckedExpressionResolution::Literal(literal.clone()),
+                        ),
+                    ));
                 }
                 if let HirLiteral::UnitNumber(arcweft_lang_hir::leaf::HirUnitNumberLiteral::Value {
                     unit,
@@ -2022,21 +2041,25 @@ impl Analyzer<'_, '_, '_> {
                             CheckedTypeSelection::Inferred,
                         )
                     });
-                    return Ok(Some(CheckedExpression::value(
+                    return Ok(Some(
+                        crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                            ty,
+                            selection,
+                            EffectSet::new(),
+                            CheckedExpressionResolution::Literal(literal.clone()),
+                        ),
+                    ));
+                }
+                let (ty, selection) = literal_type(literal, expected)
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
                         ty,
                         selection,
                         EffectSet::new(),
                         CheckedExpressionResolution::Literal(literal.clone()),
-                    )));
-                }
-                let (ty, selection) = literal_type(literal, expected)
-                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                Ok(CheckedExpression::value(
-                    ty,
-                    selection,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::Literal(literal.clone()),
-                ))
+                    ),
+                )
             }
             _ => return Ok(None),
         }
@@ -2231,7 +2254,7 @@ impl Analyzer<'_, '_, '_> {
         _module: &HirModule,
         owner: ExprId,
         expression: &HirExpr,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
         match expression.kind() {
             HirExprKind::Binary(binary) => {
@@ -2382,12 +2405,14 @@ impl Analyzer<'_, '_, '_> {
                 ));
                 let mut effects = EffectSet::new();
                 effects.insert(EffectId::control_suspend());
-                Ok(CheckedExpression::value(
-                    ty,
-                    CheckedTypeSelection::Inferred,
-                    effects,
-                    resolution,
-                ))
+                Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                        ty,
+                        CheckedTypeSelection::Inferred,
+                        effects,
+                        resolution,
+                    ),
+                )
             }
             _ => return Ok(None),
         }
@@ -2440,9 +2465,9 @@ impl Analyzer<'_, '_, '_> {
         &self,
         module: &HirModule,
         body: ExprId,
-        body_type: TypeKind,
+        body_type: TypeKind<crate::types::PreparedEffects>,
         continuation: completion::BodyCompletion,
-    ) -> Result<TypeKind, AnalyzerExpressionError> {
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, AnalyzerExpressionError> {
         let mut results = continuation
             .returns()
             .iter()
@@ -2698,14 +2723,16 @@ impl Analyzer<'_, '_, '_> {
             arcweft_id::DeclarationName::try_new(namespace.name().as_str()).map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
             })?;
-        Ok(CheckedExpression::value(
-            if returns { TypeKind::Never } else { tail_type },
-            tail_selection,
-            EffectSet::new(),
-            CheckedExpressionResolution::Scope(crate::final_analysis::CheckedScopeIdentity::Named(
-                name,
-            )),
-        ))
+        Ok(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                if returns { TypeKind::Never } else { tail_type },
+                tail_selection,
+                EffectSet::new(),
+                CheckedExpressionResolution::Scope(
+                    crate::final_analysis::CheckedScopeIdentity::Named(name),
+                ),
+            ),
+        )
     }
 
     fn check_control_loop_expression(
@@ -2899,7 +2926,7 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         statements: &[super::StmtId],
-        out_expectation: Option<(ExprId, Option<&TypeKind>)>,
+        out_expectation: Option<(ExprId, Option<&TypeKind<crate::types::PreparedEffects>>)>,
     ) -> Result<Vec<super::StmtId>, AnalyzerExpressionError> {
         enum Work {
             Statement(super::StmtId),
@@ -3059,7 +3086,10 @@ impl Analyzer<'_, '_, '_> {
         Ok(line_outs)
     }
 
-    fn try_residuals_for_block(&self, owner: ExprId) -> Vec<&TypeKind> {
+    fn try_residuals_for_block(
+        &self,
+        owner: ExprId,
+    ) -> Vec<&TypeKind<crate::types::PreparedEffects>> {
         self.facts
             .expressions()
             .values()
@@ -3248,8 +3278,8 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         owner: ExprId,
         return_type: arcweft_lang_hir::identity::TypeId,
-        operand_error: &TypeKind,
-        return_error: &TypeKind,
+        operand_error: &TypeKind<crate::types::PreparedEffects>,
+        return_error: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<AnalyzerExpressionError, AnalyzerExpressionError> {
         Ok(AnalyzerExpressionError::fatal(
             FinalSemanticAnalysisError::PropagationErrorMismatch {
@@ -3436,16 +3466,18 @@ impl Analyzer<'_, '_, '_> {
                 .map_err(|violation| {
                     AnalyzerExpressionError::invariant(FinalSemanticAnalysisError::from(violation))
                 })?;
-                Ok(CheckedExpression::value(
-                    ty,
-                    if expected.is_some() {
-                        CheckedTypeSelection::Expected
-                    } else {
-                        CheckedTypeSelection::Inferred
-                    },
-                    EffectSet::new(),
-                    CheckedExpressionResolution::Closure(checked_closure),
-                ))
+                Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                        ty,
+                        if expected.is_some() {
+                            CheckedTypeSelection::Expected
+                        } else {
+                            CheckedTypeSelection::Inferred
+                        },
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Closure(checked_closure),
+                    ),
+                )
             }
             _ => return Ok(None),
         }
@@ -3599,12 +3631,14 @@ impl Analyzer<'_, '_, '_> {
                         .expect("the language-owned Thread effect is a valid effect identity"),
                 );
                 let thread = super::super::CheckedThread::from_source(thread, result);
-                Ok(CheckedExpression::value(
-                    TypeKind::ThreadHandle(Box::new(thread.result().clone())),
-                    CheckedTypeSelection::Inferred,
-                    effects,
-                    CheckedExpressionResolution::Thread(thread),
-                ))
+                Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                        TypeKind::ThreadHandle(Box::new(thread.result().clone())),
+                        CheckedTypeSelection::Inferred,
+                        effects,
+                        CheckedExpressionResolution::Thread(thread),
+                    ),
+                )
             }
             HirExprKind::Choice(choice) => self.check_choice_expression(
                 context,
@@ -3625,8 +3659,8 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         owner: ExprId,
         thread: &arcweft_lang_hir::expr::HirThreadExpr,
-        expected: Option<&TypeKind>,
-    ) -> Result<TypeKind, AnalyzerExpressionError> {
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, AnalyzerExpressionError> {
         let expected = match expected {
             Some(TypeKind::ThreadHandle(result)) => Some(result.as_ref()),
             Some(_) => return Err(AnalyzerExpressionError::rejected(owner)),
@@ -3844,18 +3878,20 @@ impl Analyzer<'_, '_, '_> {
                     .map(CheckedChoicePlan::new)
             })
             .transpose()?;
-        Ok(CheckedExpression::value(
-            ty,
-            if expectation.is_contextual() {
-                CheckedTypeSelection::Expected
-            } else {
-                CheckedTypeSelection::Inferred
-            },
-            effects,
-            CheckedExpressionResolution::Choice(CheckedChoice::new(
-                public_id, option_ids, gotos, plan,
-            )),
-        ))
+        Ok(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                ty,
+                if expectation.is_contextual() {
+                    CheckedTypeSelection::Expected
+                } else {
+                    CheckedTypeSelection::Inferred
+                },
+                effects,
+                CheckedExpressionResolution::Choice(CheckedChoice::new(
+                    public_id, option_ids, gotos, plan,
+                )),
+            ),
+        )
     }
 
     fn check_choice_cancel_trigger(
@@ -3946,7 +3982,7 @@ impl Analyzer<'_, '_, '_> {
     fn require_choice_trigger_pattern(
         &self,
         pattern: arcweft_lang_hir::identity::PatternId,
-        expected: &TypeKind,
+        expected: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), AnalyzerExpressionError> {
         (self.facts.patterns().get(&pattern) == Some(expected))
             .then_some(())
@@ -3961,7 +3997,7 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         module: &HirModule,
         pattern: arcweft_lang_hir::identity::PatternId,
-        expected: &TypeKind,
+        expected: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), AnalyzerExpressionError> {
         let mut locals = std::collections::BTreeMap::new();
         let mut patterns = std::collections::BTreeMap::new();
@@ -4059,7 +4095,7 @@ impl Analyzer<'_, '_, '_> {
             .expressions()
             .iter()
             .filter_map(|(owner, fact)| {
-                (matches!(fact, PreparedExpressionFact::Complete(_))
+                (matches!(fact, PreparedExpressionFact::Resolved(_))
                     && fact.value_type() == Some(&color_type)
                     && matches!(
                         fact.checked_resolution(),
@@ -4205,7 +4241,7 @@ impl Analyzer<'_, '_, '_> {
     fn prepare_project_nominal_field_expression(
         &self,
         owner: ExprId,
-        target_type: &TypeKind,
+        target_type: &TypeKind<crate::types::PreparedEffects>,
         mutable_base: Option<arcweft_lang_hir::identity::LocalId>,
         receiver: crate::final_analysis::CheckedFieldReceiver,
         effects: EffectSet,
@@ -4280,16 +4316,18 @@ impl Analyzer<'_, '_, '_> {
             && let Some(CheckedExpressionResolution::Value(receiver)) = target.checked_resolution()
             && let Some(character) = receiver.character()
         {
-            return Ok(PreparedExpressionFact::from(CheckedExpression::value(
-                TypeKind::StageApi(character.clone()),
-                CheckedTypeSelection::Inferred,
-                target.effects().clone(),
-                CheckedExpressionResolution::Value(CheckedValueResolution::CharacterField {
-                    receiver: Box::new(receiver.clone()),
-                    character,
-                    field: crate::types::CharacterField::Stage,
-                }),
-            )));
+            return Ok(PreparedExpressionFact::from(
+                crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                    TypeKind::StageApi(character.clone()),
+                    CheckedTypeSelection::Inferred,
+                    target.effects().clone(),
+                    CheckedExpressionResolution::Value(CheckedValueResolution::CharacterField {
+                        receiver: Box::new(receiver.clone()),
+                        character,
+                        field: crate::types::CharacterField::Stage,
+                    }),
+                ),
+            ));
         }
         let (ty, resolution) = if let Some((field, ty)) =
             target_type.agent_field_type(name.as_str())
@@ -4418,13 +4456,15 @@ impl Analyzer<'_, '_, '_> {
                 }
             }
         };
-        Ok(CheckedExpression::value(
-            ty,
-            CheckedTypeSelection::Inferred,
-            target.effects().clone(),
-            CheckedExpressionResolution::Select(resolution),
+        Ok(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                ty,
+                CheckedTypeSelection::Inferred,
+                target.effects().clone(),
+                CheckedExpressionResolution::Select(resolution),
+            )
+            .into(),
         )
-        .into())
     }
 
     fn prepare_qualified_variant_select(
@@ -4432,7 +4472,7 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         owner: ExprId,
         select: &HirSelectExpr,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<Option<PreparedExpressionFact>, AnalyzerExpressionError> {
         let HirSelectedMember::Name(case_name) = select.member() else {
             return Ok(None);
@@ -4482,9 +4522,10 @@ impl Analyzer<'_, '_, '_> {
                     {
                         nominal.clone()
                     }
-                    _ if declaration.type_parameters().is_empty() => {
-                        ProjectNominalType::new(declaration.id().clone(), Vec::<TypeKind>::new())
-                    }
+                    _ if declaration.type_parameters().is_empty() => ProjectNominalType::new(
+                        declaration.id().clone(),
+                        Vec::<TypeKind<crate::types::PreparedEffects>>::new(),
+                    ),
                     _ => return Err(AnalyzerExpressionError::rejected(owner)),
                 };
                 let ty = TypeKind::ProjectNominal(nominal.clone());
@@ -4609,12 +4650,14 @@ impl Analyzer<'_, '_, '_> {
             .compile_time_scalars()
             .type_for(crate::registration::CompileTimeScalarTypeRoleId::PublicId)
             .clone();
-        Ok(CheckedExpression::value(
-            ty,
-            CheckedTypeSelection::Expected,
-            EffectSet::new(),
-            CheckedExpressionResolution::ViewPartName(name),
-        ))
+        Ok(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                ty,
+                CheckedTypeSelection::Expected,
+                EffectSet::new(),
+                CheckedExpressionResolution::ViewPartName(name),
+            ),
+        )
     }
 
     fn check_view_call_expression(
@@ -4646,7 +4689,7 @@ impl Analyzer<'_, '_, '_> {
                 self.facts
                     .publish_new_expression(
                         *value,
-                        CheckedExpression::value(
+                        crate::final_analysis::prepared::PreparedResolvedExpression::value(
                             TypeKind::CompileTimeCallable(
                                 crate::types::CompileTimeCallableType::View(callee),
                             ),
@@ -4836,12 +4879,14 @@ impl Analyzer<'_, '_, '_> {
             *element =
                 crate::final_analysis::CheckedViewElementCall::new(element.element(), arguments);
         }
-        Ok(Some(CheckedExpression::value(
-            TypeKind::ViewValue,
-            super::CheckedTypeSelection::Inferred,
-            effects,
-            CheckedExpressionResolution::ViewCall(classification),
-        )))
+        Ok(Some(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                TypeKind::ViewValue,
+                super::CheckedTypeSelection::Inferred,
+                effects,
+                CheckedExpressionResolution::ViewCall(classification),
+            ),
+        ))
     }
 
     fn check_view_container_body(
@@ -4873,7 +4918,7 @@ impl Analyzer<'_, '_, '_> {
             if !element.is_layout_container() {
                 return Err(AnalyzerExpressionError::rejected(header));
             }
-            let checked = CheckedExpression::value(
+            let checked = crate::final_analysis::prepared::PreparedResolvedExpression::value(
                 TypeKind::CompileTimeCallable(crate::types::CompileTimeCallableType::View(
                     crate::types::ViewCallableId::Element(element),
                 )),
@@ -4916,18 +4961,23 @@ impl Analyzer<'_, '_, '_> {
         }
         let mut effects = checked_header.effects().clone();
         effects.union_with(body.effects());
-        Ok(CheckedExpression::value(
-            if body.value_type() == Some(&TypeKind::Never) {
-                TypeKind::Never
-            } else {
-                TypeKind::ViewValue
-            },
-            super::CheckedTypeSelection::Inferred,
-            effects,
-            CheckedExpressionResolution::ViewCall(CheckedViewCall::ContainerBody(
-                crate::final_analysis::CheckedViewContainerBody::new(header, application.body()),
-            )),
-        ))
+        Ok(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                if body.value_type() == Some(&TypeKind::Never) {
+                    TypeKind::Never
+                } else {
+                    TypeKind::ViewValue
+                },
+                super::CheckedTypeSelection::Inferred,
+                effects,
+                CheckedExpressionResolution::ViewCall(CheckedViewCall::ContainerBody(
+                    crate::final_analysis::CheckedViewContainerBody::new(
+                        header,
+                        application.body(),
+                    ),
+                )),
+            ),
+        )
     }
 
     fn direct_callee_name(
@@ -4992,7 +5042,7 @@ impl Analyzer<'_, '_, '_> {
         &self,
         owner: ExprId,
         expression: &HirExpr,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
         constructor_head: bool,
     ) -> Result<Option<PreparedExpressionFact>, AnalyzerExpressionError> {
         match expression.kind() {
@@ -5020,7 +5070,7 @@ impl Analyzer<'_, '_, '_> {
                     )
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
                     return Ok(Some(
-                        CheckedExpression::value(
+                        crate::final_analysis::prepared::PreparedResolvedExpression::value(
                             expected.clone(),
                             CheckedTypeSelection::Expected,
                             EffectSet::new(),
@@ -5032,7 +5082,7 @@ impl Analyzer<'_, '_, '_> {
                 if let TypeKind::CompileTimeEnum(enum_type) = expected {
                     let value = self.resolve_closed_enum_value(owner, *enum_type, name)?;
                     return Ok(Some(
-                        CheckedExpression::value(
+                        crate::final_analysis::prepared::PreparedResolvedExpression::value(
                             expected.clone(),
                             CheckedTypeSelection::Expected,
                             EffectSet::new(),
@@ -5065,7 +5115,7 @@ impl Analyzer<'_, '_, '_> {
     fn resolve_short_variant(
         &self,
         owner: ExprId,
-        expected: &TypeKind,
+        expected: &TypeKind<crate::types::PreparedEffects>,
         name: &arcweft_lang_hir::leaf::HirName,
         constructor_head: bool,
     ) -> Result<(super::PreparedVariantOwnerSeed, u32), AnalyzerExpressionError> {
@@ -5138,12 +5188,16 @@ impl Analyzer<'_, '_, '_> {
                 let literal = HirLiteral::String(HirStringLiteral::Value(
                     value.as_str().to_owned().into_boxed_str(),
                 ));
-                Ok(CheckedExpression::value(
-                    TypeKind::String,
-                    CheckedTypeSelection::Expected,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::Value(CheckedValueResolution::Constant(literal)),
-                ))
+                Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                        TypeKind::String,
+                        CheckedTypeSelection::Expected,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Value(CheckedValueResolution::Constant(
+                            literal,
+                        )),
+                    ),
+                )
             }
             HirExprKind::EntityReference(reference)
                 if matches!(
@@ -5177,12 +5231,16 @@ impl Analyzer<'_, '_, '_> {
                 let literal = HirLiteral::String(HirStringLiteral::Value(
                     value.as_str().to_owned().into_boxed_str(),
                 ));
-                Ok(CheckedExpression::value(
-                    TypeKind::String,
-                    CheckedTypeSelection::Expected,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::Value(CheckedValueResolution::Constant(literal)),
-                ))
+                Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                        TypeKind::String,
+                        CheckedTypeSelection::Expected,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Value(CheckedValueResolution::Constant(
+                            literal,
+                        )),
+                    ),
+                )
             }
             HirExprKind::EntityReference(reference) => {
                 let reference = reference.as_resolved().ok_or_else(|| {
@@ -5205,14 +5263,16 @@ impl Analyzer<'_, '_, '_> {
                     ) {
                         return Err(AnalyzerExpressionError::rejected(owner).into());
                     }
-                    return Ok(Some(CheckedExpression::value(
-                        ty,
-                        CheckedTypeSelection::Inferred,
-                        EffectSet::new(),
-                        CheckedExpressionResolution::Value(CheckedValueResolution::CatalogAsset(
-                            asset,
-                        )),
-                    )));
+                    return Ok(Some(
+                        crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                            ty,
+                            CheckedTypeSelection::Inferred,
+                            EffectSet::new(),
+                            CheckedExpressionResolution::Value(
+                                CheckedValueResolution::CatalogAsset(asset),
+                            ),
+                        ),
+                    ));
                 }
                 if matches!(
                     expected,
@@ -5246,12 +5306,14 @@ impl Analyzer<'_, '_, '_> {
                 ) {
                     return Err(AnalyzerExpressionError::rejected(owner).into());
                 }
-                Ok(CheckedExpression::value(
-                    ty,
-                    CheckedTypeSelection::Inferred,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::Value(item.into_value()),
-                ))
+                Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                        ty,
+                        CheckedTypeSelection::Inferred,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Value(item.into_value()),
+                    ),
+                )
             }
             HirExprKind::PostfixBracket(postfix) => self
                 .check_postfix_bracket(context, owner, postfix, expectation, transaction_authority)
@@ -5300,12 +5362,16 @@ impl Analyzer<'_, '_, '_> {
                         (ty, CheckedTypeSelection::Inferred)
                     }
                 };
-                Ok(CheckedExpression::value(
-                    ty,
-                    selection,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(read)),
-                ))
+                Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                        ty,
+                        selection,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(
+                            read,
+                        )),
+                    ),
+                )
             }
             HirExprKind::Choice(_) => Err(AnalyzerExpressionError::rejected(owner).into()),
             HirExprKind::Error(_) => Err(AnalyzerExpressionError::fatal(
@@ -5323,7 +5389,7 @@ impl Analyzer<'_, '_, '_> {
         location: HirSemanticPathLocation<'_>,
         activation: LifetimeLexicalActivation<'_>,
         key: &arcweft_id::LifetimeRegistryKey,
-    ) -> Result<Option<&TypeKind>, AnalyzerExpressionError> {
+    ) -> Result<Option<&TypeKind<crate::types::PreparedEffects>>, AnalyzerExpressionError> {
         let paths = self
             .topology
             .module(module.module_id())
@@ -5409,7 +5475,7 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         owner: ExprId,
         reference: &HirIdRef,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<CheckedExpression, AnalyzerExpressionError> {
         let family = arcweft_id::ProjectEntityReferenceFamily::DialogueLine;
         let public_id = reference.project_entity_public_id(family).ok_or_else(|| {
@@ -5434,14 +5500,16 @@ impl Analyzer<'_, '_, '_> {
             if expected.is_some_and(|expected| !expected.accepts(&ty)) {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
-            return Ok(CheckedExpression::value(
-                ty,
-                CheckedTypeSelection::Expected,
-                EffectSet::new(),
-                CheckedExpressionResolution::Value(CheckedValueResolution::ImportedProjectEntity(
-                    imported,
-                )),
-            ));
+            return Ok(
+                crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                    ty,
+                    CheckedTypeSelection::Expected,
+                    EffectSet::new(),
+                    CheckedExpressionResolution::Value(
+                        CheckedValueResolution::ImportedProjectEntity(imported),
+                    ),
+                ),
+            );
         }
         let target =
             arcweft_id::dialogue::DialogueLineId::try_new(public_id.as_str()).map_err(|_| {
@@ -5457,12 +5525,14 @@ impl Analyzer<'_, '_, '_> {
         if expected.is_some_and(|expected| !expected.accepts(&ty)) {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
-        Ok(CheckedExpression::value(
-            ty,
-            CheckedTypeSelection::Expected,
-            EffectSet::new(),
-            CheckedExpressionResolution::DialogueLineReference(target),
-        ))
+        Ok(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                ty,
+                CheckedTypeSelection::Expected,
+                EffectSet::new(),
+                CheckedExpressionResolution::DialogueLineReference(target),
+            ),
+        )
     }
 
     fn check_postfix_bracket(
@@ -5554,12 +5624,14 @@ impl Analyzer<'_, '_, '_> {
                 FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
             ))
         })?;
-        Ok(CheckedExpression::value(
-            checked_type,
-            checked_selection,
-            checked.effects().clone(),
-            CheckedExpressionResolution::PostfixBracket(resolution),
-        ))
+        Ok(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                checked_type,
+                checked_selection,
+                checked.effects().clone(),
+                CheckedExpressionResolution::PostfixBracket(resolution),
+            ),
+        )
     }
 
     fn probe_postfix_candidate(
@@ -5791,7 +5863,13 @@ fn checked_environment_field_selection(
     name: &arcweft_lang_hir::leaf::HirName,
     owner: ExprId,
     receiver: ExprId,
-) -> Result<(TypeKind, super::CheckedSelectResolution), AnalyzerExpressionError> {
+) -> Result<
+    (
+        TypeKind<crate::types::PreparedEffects>,
+        super::CheckedSelectResolution,
+    ),
+    AnalyzerExpressionError,
+> {
     let field = record
         .field(name.as_str())
         .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
@@ -5864,8 +5942,11 @@ fn environment_binding_for_path(
     crate::env::identity::EnvironmentBindingId::try_new(canonical).ok()
 }
 
-fn structural_expression(ty: TypeKind, selection: CheckedTypeSelection) -> CheckedExpression {
-    CheckedExpression::value(
+fn structural_expression(
+    ty: TypeKind<crate::types::PreparedEffects>,
+    selection: CheckedTypeSelection,
+) -> CheckedExpression {
+    crate::final_analysis::prepared::PreparedResolvedExpression::value(
         ty,
         selection,
         EffectSet::new(),
@@ -5875,9 +5956,9 @@ fn structural_expression(ty: TypeKind, selection: CheckedTypeSelection) -> Check
 
 fn checked_bracket_sequence_expression(
     owner: ExprId,
-    contextual_shape: Option<&TypeKind>,
-    complete_type: Option<&TypeKind>,
-    item: TypeKind,
+    contextual_shape: Option<&TypeKind<crate::types::PreparedEffects>>,
+    complete_type: Option<&TypeKind<crate::types::PreparedEffects>>,
+    item: TypeKind<crate::types::PreparedEffects>,
     element_count: usize,
     selection: CheckedTypeSelection,
 ) -> Result<CheckedExpression, AnalyzerExpressionError> {
@@ -5982,13 +6063,14 @@ mod expectation_tests {
         let parameter = generic(4);
         let first = TypeKind::Option(Box::new(TypeKind::generic_parameter(parameter.clone())));
         let second = TypeKind::Probe(Box::new(TypeKind::generic_parameter(parameter.clone())));
-        let checked: super::PreparedExpressionFact = CheckedExpression::value(
-            first.clone(),
-            CheckedTypeSelection::Expected,
-            EffectSet::new(),
-            CheckedExpressionResolution::Structural,
-        )
-        .into();
+        let checked: super::PreparedExpressionFact =
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                first.clone(),
+                CheckedTypeSelection::Expected,
+                EffectSet::new(),
+                CheckedExpressionResolution::Structural,
+            )
+            .into();
         let first_expectation =
             AnalyzerExpressionExpectation::parametric(&first, &[parameter.clone().into()])
                 .expect("first expectation");
@@ -5998,13 +6080,14 @@ mod expectation_tests {
         assert!(first_expectation.accepts_cached(&checked));
         assert!(!second_expectation.accepts_cached(&checked));
 
-        let inferred: super::PreparedExpressionFact = CheckedExpression::value(
-            TypeKind::Bool,
-            CheckedTypeSelection::Inferred,
-            EffectSet::new(),
-            CheckedExpressionResolution::Structural,
-        )
-        .into();
+        let inferred: super::PreparedExpressionFact =
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                TypeKind::Bool,
+                CheckedTypeSelection::Inferred,
+                EffectSet::new(),
+                CheckedExpressionResolution::Structural,
+            )
+            .into();
         assert!(second_expectation.accepts_cached(&inferred));
     }
 }

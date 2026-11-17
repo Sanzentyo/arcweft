@@ -86,7 +86,7 @@ impl PreparedContentApplication {
         shell: PreparedExpressionShell,
         content: Option<HirDialogueContentId>,
         emission: PreparedContentEmission,
-        expected_dialogue_content: Option<&TypeKind>,
+        expected_dialogue_content: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Option<Self> {
         if content.is_some_and(|content| content.owner() != owner) {
             return None;
@@ -237,7 +237,7 @@ pub(crate) struct PreparedDialogueApplication {
     target: CheckedCharacterDialogueTarget,
     application_patch: Option<CheckedCharacterDialoguePatch>,
     content: HirDialogueContentId,
-    line_result: TypeKind,
+    line_result: TypeKind<crate::types::PreparedEffects>,
     nested_path_evidence: Option<Result<NestedPathEvidence, CheckedChildEdgeError>>,
 }
 
@@ -247,7 +247,7 @@ impl PreparedDialogueApplication {
         target: CheckedCharacterDialogueTarget,
         application_patch: Option<CheckedCharacterDialoguePatch>,
         content: HirDialogueContentId,
-        line_result: TypeKind,
+        line_result: TypeKind<crate::types::PreparedEffects>,
         nested_path_evidence: Option<Result<NestedPathEvidence, CheckedChildEdgeError>>,
     ) -> Option<Self> {
         let expected_shell_type = TypeKind::DialogueLine(Box::new(line_result.clone()));
@@ -280,7 +280,7 @@ impl PreparedDialogueApplication {
         self.content
     }
 
-    pub(crate) const fn line_result(&self) -> &TypeKind {
+    pub(crate) const fn line_result(&self) -> &TypeKind<crate::types::PreparedEffects> {
         &self.line_result
     }
 
@@ -297,7 +297,7 @@ impl PreparedDialogueApplication {
         CheckedCharacterDialogueTarget,
         Option<CheckedCharacterDialoguePatch>,
         HirDialogueContentId,
-        TypeKind,
+        TypeKind<crate::types::PreparedEffects>,
         Option<Result<NestedPathEvidence, CheckedChildEdgeError>>,
     ) {
         (

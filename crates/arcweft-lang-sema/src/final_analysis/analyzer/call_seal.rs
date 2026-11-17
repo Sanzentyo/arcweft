@@ -405,7 +405,7 @@ fn checked_receiver_projection(
                 receiver,
                 expressions
                     .get(source)
-                    .and_then(PreparedExpressionFact::complete)
+                    .and_then(PreparedExpressionFact::resolved)
                     .map(CheckedExpression::resolution),
             ) {
                 (
@@ -1396,7 +1396,7 @@ impl SealedSelectedCall {
                     .with_type(ty)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
             ),
-            PreparedExpressionFact::Complete(previous) if specialization.is_some() => previous
+            PreparedExpressionFact::Resolved(previous) if specialization.is_some() => previous
                 .with_function_specialization(callee, specialization.expect("guarded above"))
                 .map_err(|error| {
                     final_call_seal_error(
@@ -1405,7 +1405,7 @@ impl SealedSelectedCall {
                     )
                 })?
                 .into(),
-            PreparedExpressionFact::Complete(previous) => previous
+            PreparedExpressionFact::Resolved(previous) => previous
                 .clone()
                 .with_sealed_value(
                     ty,
@@ -1421,7 +1421,7 @@ impl SealedSelectedCall {
                 .into(),
             PreparedExpressionFact::CompileTimeScalar(prepared) => {
                 let (shell, scalar, original) = prepared.into_parts();
-                let PreparedExpressionFact::Complete(previous) = original else {
+                let PreparedExpressionFact::Resolved(previous) = original else {
                     return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
                 };
                 PreparedExpressionFact::from(
@@ -2058,7 +2058,7 @@ impl super::Analyzer<'_, '_, '_> {
                                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
                                 )
                             }
-                            PreparedExpressionFact::Complete(previous) => previous
+                            PreparedExpressionFact::Resolved(previous) => previous
                                 .with_sealed_application(
                                     pending.owner,
                                     result,

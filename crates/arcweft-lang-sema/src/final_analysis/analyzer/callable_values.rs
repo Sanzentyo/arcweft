@@ -24,7 +24,11 @@ struct ReferenceTypeControl<'a> {
 impl TypeCompatibilityControl for ReferenceTypeControl<'_> {
     type Error = ResolveCallError;
 
-    fn enter(&mut self, _: &TypeKind, _: &TypeKind) -> Result<(), Self::Error> {
+    fn enter(
+        &mut self,
+        _: &TypeKind<crate::types::PreparedEffects>,
+        _: &TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<(), Self::Error> {
         if self.cancellation.load(Ordering::Acquire) {
             return Err(ResolveCallError::Cancelled);
         }
@@ -37,7 +41,7 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         module: &HirModule,
         owner: ExprId,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<Option<PreparedExpressionFact>, AnalyzerExpressionError> {
         let authority = CallResolverAuthority::accepted(
             self.project,
@@ -80,7 +84,7 @@ impl Analyzer<'_, '_, '_> {
         {
             let ty = match &resolution {
                 CheckedValueResolution::ProjectCallable(callable) => {
-                    self.prepare_named_callable_value_type(owner, callable)?
+                    self.prepare_named_callable_value_type(callable)?
                 }
                 _ => {
                     super::expression_types::value_resolution_type(self.catalogs.world, &resolution)
@@ -92,7 +96,7 @@ impl Analyzer<'_, '_, '_> {
                 }
             };
             return Ok(Some(
-                CheckedExpression::value(
+                crate::final_analysis::prepared::PreparedResolvedExpression::value(
                     ty,
                     CheckedTypeSelection::Inferred,
                     EffectSet::new(),
@@ -224,7 +228,7 @@ impl Analyzer<'_, '_, '_> {
             }
         }
         Ok(selected.map(|(checked, ty)| {
-            CheckedExpression::value(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
                 ty,
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),

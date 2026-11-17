@@ -232,7 +232,7 @@ pub(super) fn seal(
         {
             published = published.with_carrier_block(carrier.clone());
         }
-        replacements.insert(owner, PreparedExpressionFact::Complete(published));
+        replacements.insert(owner, PreparedExpressionFact::Resolved(published));
     }
 
     // Try rows are closed only after callable identities and expression
@@ -261,7 +261,7 @@ pub(super) fn seal(
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         replacements.insert(
             owner,
-            PreparedExpressionFact::Complete(CheckedExpression::typed_value(
+            PreparedExpressionFact::Resolved(CheckedExpression::typed_value(
                 value,
                 effects,
                 CheckedExpressionResolution::Try(checked),
@@ -297,7 +297,7 @@ pub(super) fn seal(
         }
         replacements.insert(
             owner,
-            PreparedExpressionFact::Complete(CheckedExpression::typed_value(
+            PreparedExpressionFact::Resolved(CheckedExpression::typed_value(
                 value,
                 effects,
                 CheckedExpressionResolution::ImplicitParameter(CheckedImplicitParameter::new(
@@ -352,7 +352,7 @@ pub(super) fn seal(
         }
         replacements.insert(
             owner,
-            PreparedExpressionFact::Complete(CheckedExpression::typed_value(
+            PreparedExpressionFact::Resolved(CheckedExpression::typed_value(
                 value,
                 effects,
                 CheckedExpressionResolution::PipeLeft(CheckedPipeLeft::new(
@@ -439,7 +439,7 @@ fn seal_pipe_rows(
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             replacements.insert(
                 *owner,
-                PreparedExpressionFact::Complete(CheckedExpression::typed_value(
+                PreparedExpressionFact::Resolved(CheckedExpression::typed_value(
                     value,
                     effects,
                     CheckedExpressionResolution::Pipe(checked),
@@ -911,7 +911,7 @@ fn seal_callable_seed(
     structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
 ) -> Result<CheckedImplicitCallable, FinalSemanticAnalysisError> {
     let body = match seed.body.expression() {
-        PreparedExpressionFact::Complete(body) => CheckedImplicitCallableBody::Plain(body.clone()),
+        PreparedExpressionFact::Resolved(body) => CheckedImplicitCallableBody::Plain(body.clone()),
         PreparedExpressionFact::OwnerBound(owner_bound) => {
             let resolution = seal_owner_bound_body(
                 topology,

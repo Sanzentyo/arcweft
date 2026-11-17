@@ -988,7 +988,9 @@ impl Analyzer<'_, '_, '_> {
         ) {
             Ok(CallQueryResolution::Callable(resolution)) => *resolution,
             Ok(CallQueryResolution::NonCallable) => {
-                return Ok(CheckedExpression::unavailable_call());
+                return Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::unavailable_call(),
+                );
             }
             Err(error) => return Err(error),
         };
@@ -2166,7 +2168,7 @@ impl Analyzer<'_, '_, '_> {
                     )
                     .map_err(AnalyzerExpressionError::fact)?;
                 Ok(CandidateFactTransactionAction::Commit(
-                    CheckedExpression::unavailable_call(),
+                    crate::final_analysis::prepared::PreparedResolvedExpression::unavailable_call(),
                 ))
             },
         )?
@@ -2269,7 +2271,7 @@ impl Analyzer<'_, '_, '_> {
             self.facts
                 .publish_new_expression(
                     *value_receiver,
-                    CheckedExpression::value(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
                         receiver_type.clone(),
                         CheckedTypeSelection::Inferred,
                         EffectSet::new(),
@@ -2946,11 +2948,13 @@ impl Analyzer<'_, '_, '_> {
                 FinalSemanticAnalysisError::WrongPayloadFamily,
             ));
         };
-        Ok(CheckedExpression::content_emission(
-            callable,
-            EffectSet::new(),
-            CheckedExpressionResolution::Call,
-        ))
+        Ok(
+            crate::final_analysis::prepared::PreparedResolvedExpression::content_emission(
+                callable,
+                EffectSet::new(),
+                CheckedExpressionResolution::Call,
+            ),
+        )
     }
 
     #[expect(
@@ -3286,7 +3290,7 @@ impl Analyzer<'_, '_, '_> {
         // callable closure and final execution-effect publication complete them.
         match result {
             CallableResultSchema::Value(result) => {
-                let checked = CheckedExpression::value(
+                let checked = crate::final_analysis::prepared::PreparedResolvedExpression::value(
                     result,
                     if source.expectation.complete_type().is_some() {
                         CheckedTypeSelection::Expected
@@ -3314,11 +3318,13 @@ impl Analyzer<'_, '_, '_> {
                         ),
                     ));
                 }
-                Ok(CheckedExpression::content_emission(
-                    callable,
-                    direct_effects,
-                    expression_resolution,
-                ))
+                Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::content_emission(
+                        callable,
+                        direct_effects,
+                        expression_resolution,
+                    ),
+                )
             }
         }
     }
@@ -3727,8 +3733,12 @@ impl Analyzer<'_, '_, '_> {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily),
             ));
         };
-        let checked =
-            CheckedExpression::value(value, selection, direct_effects, expression_resolution);
+        let checked = crate::final_analysis::prepared::PreparedResolvedExpression::value(
+            value,
+            selection,
+            direct_effects,
+            expression_resolution,
+        );
         let checked = match specialization {
             Some(specialization) => checked
                 .with_function_specialization(owner, specialization)
@@ -4104,7 +4114,7 @@ impl Analyzer<'_, '_, '_> {
                 },
             )
             .map_err(FinalSemanticAnalysisError::from)?;
-        Ok(CheckedExpression::unavailable_call())
+        Ok(crate::final_analysis::prepared::PreparedResolvedExpression::unavailable_call())
     }
 
     #[expect(
@@ -4183,7 +4193,7 @@ impl Analyzer<'_, '_, '_> {
                             self.facts
                                 .publish_new_expression(
                                     *value,
-                                    CheckedExpression::value(
+                                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
                                         ty,
                                         CheckedTypeSelection::Inferred,
                                         EffectSet::new(),
@@ -4257,7 +4267,7 @@ impl Analyzer<'_, '_, '_> {
                                 self.facts
                                     .publish_new_expression(
                                         *value_receiver,
-                                        CheckedExpression::value(
+                                        crate::final_analysis::prepared::PreparedResolvedExpression::value(
                                             ty,
                                             CheckedTypeSelection::Inferred,
                                             EffectSet::new(),
@@ -4295,7 +4305,7 @@ impl Analyzer<'_, '_, '_> {
                                         self.facts
                                             .publish_new_expression(
                                                 *value_receiver,
-                                                CheckedExpression::value(
+                                                crate::final_analysis::prepared::PreparedResolvedExpression::value(
                                                     ty,
                                                     CheckedTypeSelection::Inferred,
                                                     EffectSet::new(),
@@ -4364,7 +4374,7 @@ impl Analyzer<'_, '_, '_> {
                                             self.facts
                                                 .publish_new_expression(
                                                     *value_receiver,
-                                                    CheckedExpression::value(
+                                                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
                                                         TypeKind::LineContext,
                                                         CheckedTypeSelection::Inferred,
                                                         EffectSet::new(),
@@ -5322,17 +5332,19 @@ impl Analyzer<'_, '_, '_> {
                 let actual = self
                     .compact_numeric_element_type(sequence, ordinal, expectation.contextual_shape())
                     .map_err(AnalyzerExpressionError::fatal)?;
-                Ok(CheckedExpression::value(
-                    actual,
-                    if expectation.is_contextual() {
-                        CheckedTypeSelection::Expected
-                    } else {
-                        CheckedTypeSelection::Inferred
-                    },
-                    EffectSet::new(),
-                    CheckedExpressionResolution::Structural,
+                Ok(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                        actual,
+                        if expectation.is_contextual() {
+                            CheckedTypeSelection::Expected
+                        } else {
+                            CheckedTypeSelection::Inferred
+                        },
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Structural,
+                    )
+                    .into(),
                 )
-                .into())
             }
             AnalyzerCallConstraintSource::Argument {
                 source: CheckedCallArgumentSlotSource::Expression(expression),
@@ -5588,7 +5600,7 @@ impl Analyzer<'_, '_, '_> {
             self.facts
                 .publish_new_expression(
                     value,
-                    CheckedExpression::value(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
                         ty.clone(),
                         CheckedTypeSelection::Inferred,
                         EffectSet::new(),
@@ -5773,7 +5785,7 @@ impl Analyzer<'_, '_, '_> {
                 ),
             )
         } else {
-            CheckedExpression::value(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
                 ty,
                 CheckedTypeSelection::Inferred,
                 effects,
@@ -5956,13 +5968,14 @@ mod tests {
             None,
         )
         .expect("checked Character item");
-        let exact_checked =
-            crate::final_analysis::PreparedExpressionFact::from(CheckedExpression::value(
+        let exact_checked = crate::final_analysis::PreparedExpressionFact::from(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
                 exact_item.ty(),
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),
                 CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(exact_item)),
-            ));
+            ),
+        );
         assert!(matches!(
             checked_character_dialogue_target(expression, &exact_checked),
             Ok(Some(CheckedCharacterDialogueTarget::Character {
@@ -5971,13 +5984,14 @@ mod tests {
             })) if found == exact_character
         ));
 
-        let structural_checked =
-            crate::final_analysis::PreparedExpressionFact::from(CheckedExpression::value(
+        let structural_checked = crate::final_analysis::PreparedExpressionFact::from(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
                 TypeKind::entity_ref(crate::types::EntityKind::Character),
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),
                 CheckedExpressionResolution::Structural,
-            ));
+            ),
+        );
         assert!(matches!(
             checked_character_dialogue_target(expression, &structural_checked),
             Ok(Some(CheckedCharacterDialogueTarget::Character {

@@ -120,7 +120,10 @@ impl Analyzer<'_, '_, '_> {
                     }
                     _ => CheckedPatternResolution::Structural,
                 };
-                input.push_pattern(owner, CheckedPattern::new(ty, resolution));
+                input.push_pattern(
+                    owner,
+                    crate::final_analysis::model::PreparedResolvedPattern::new(ty, resolution),
+                );
             }
         }
         Ok(())
@@ -132,7 +135,7 @@ impl Analyzer<'_, '_, '_> {
         owner: PatternId,
         path: &HirPatternRecordPath,
         authored: &[HirPatternField],
-        ty: &TypeKind,
+        ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<PreparedRecordPattern, FinalSemanticAnalysisError> {
         let schema = resolve_record_pattern_schema(
             PatternSeedContext {
@@ -213,7 +216,7 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         module: &HirModule,
         pattern: PatternId,
-        ty: &TypeKind,
+        ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut locals = BTreeMap::new();
         let mut patterns = BTreeMap::new();
@@ -260,15 +263,15 @@ pub(super) fn seed_item_parameter_types(
     item: &HirItem,
     context: PatternSeedContext<'_>,
     catalog: &crate::callable::RegisteredCallableCatalog,
-    locals: &mut BTreeMap<LocalId, TypeKind>,
-    patterns: &mut BTreeMap<PatternId, TypeKind>,
+    locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
+    patterns: &mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     fn seed_parameter(
         parameter: &arcweft_lang_hir::item::HirParameter,
-        declared: &TypeKind,
+        declared: &TypeKind<crate::types::PreparedEffects>,
         context: PatternSeedContext<'_>,
-        locals: &mut BTreeMap<LocalId, TypeKind>,
-        patterns: &mut BTreeMap<PatternId, TypeKind>,
+        locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
+        patterns: &mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let binding = match parameter.kind() {
             arcweft_lang_hir::item::HirParameterKind::RestPositional => {
@@ -282,7 +285,7 @@ pub(super) fn seed_item_parameter_types(
     fn seed_attached_content(
         parameter: Option<HirCallableAttachedContentParameter>,
         environment: &TypeCheckEnv,
-        locals: &mut BTreeMap<LocalId, TypeKind>,
+        locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let Some(parameter) = parameter else {
             return Ok(());
@@ -487,14 +490,14 @@ pub(super) fn seed_item_parameter_types(
 #[derive(Clone, Copy)]
 pub(super) struct PatternSeedContext<'a> {
     pub(super) module: &'a HirModule,
-    pub(super) types: &'a BTreeMap<TypeId, TypeKind>,
+    pub(super) types: &'a BTreeMap<TypeId, TypeKind<crate::types::PreparedEffects>>,
     pub(super) symbols: &'a ProjectSymbolTable,
     pub(super) environment: &'a TypeCheckEnv,
 }
 
 struct ResolvedRecordPatternField {
     identity: PreparedRecordPatternFieldCoordinate,
-    ty: TypeKind,
+    ty: TypeKind<crate::types::PreparedEffects>,
 }
 
 enum ResolvedRecordPatternSchema<'a> {
@@ -539,7 +542,7 @@ impl ResolvedRecordPatternSchema<'_> {
         &self,
         owner: PatternId,
         name: &super::HirName,
-        types: &BTreeMap<TypeId, TypeKind>,
+        types: &BTreeMap<TypeId, TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<ResolvedRecordPatternField, FinalSemanticAnalysisError> {
         match self {
             Self::Project {
@@ -588,9 +591,9 @@ impl ResolvedRecordPatternSchema<'_> {
 pub(super) fn seed_pattern_locals(
     context: PatternSeedContext<'_>,
     pattern: PatternId,
-    ty: &TypeKind,
-    locals: &mut BTreeMap<LocalId, TypeKind>,
-    patterns: &mut BTreeMap<PatternId, TypeKind>,
+    ty: &TypeKind<crate::types::PreparedEffects>,
+    locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
+    patterns: &mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     PatternSeeder {
         module: context.module,
@@ -605,18 +608,18 @@ pub(super) fn seed_pattern_locals(
 
 struct PatternSeeder<'context, 'facts> {
     module: &'context HirModule,
-    types: &'context BTreeMap<TypeId, TypeKind>,
+    types: &'context BTreeMap<TypeId, TypeKind<crate::types::PreparedEffects>>,
     symbols: &'context ProjectSymbolTable,
     environment: &'context TypeCheckEnv,
-    locals: &'facts mut BTreeMap<LocalId, TypeKind>,
-    patterns: &'facts mut BTreeMap<PatternId, TypeKind>,
+    locals: &'facts mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
+    patterns: &'facts mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
 }
 
 impl PatternSeeder<'_, '_> {
     fn seed(
         &mut self,
         pattern: PatternId,
-        ty: &TypeKind,
+        ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let record = self
             .module
@@ -667,7 +670,7 @@ impl PatternSeeder<'_, '_> {
     fn validate_literal(
         pattern: PatternId,
         literal: &arcweft_lang_hir::leaf::HirLiteral,
-        ty: &TypeKind,
+        ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let (literal_ty, _) = literal_type(literal, Some(ty))
             .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
@@ -681,7 +684,7 @@ impl PatternSeeder<'_, '_> {
         &mut self,
         pattern: PatternId,
         variant: &HirVariantPattern,
-        ty: &TypeKind,
+        ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let payload = resolve_variant_pattern(
             PatternSeedContext {
@@ -715,7 +718,7 @@ impl PatternSeeder<'_, '_> {
         &mut self,
         pattern: PatternId,
         elements: &[PatternId],
-        ty: &TypeKind,
+        ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         match ty {
             TypeKind::Tuple(element_types) => {
@@ -754,7 +757,7 @@ impl PatternSeeder<'_, '_> {
         pattern: PatternId,
         path: &HirPatternRecordPath,
         fields: &[HirPatternField],
-        ty: &TypeKind,
+        ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let schema = resolve_record_pattern_schema(
             PatternSeedContext {
@@ -814,7 +817,7 @@ impl PatternSeeder<'_, '_> {
         pattern: PatternId,
         elements: &[PatternId],
         rest: &HirPatternSequenceRest,
-        ty: &TypeKind,
+        ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let item = match ty {
             TypeKind::Vec(item)
@@ -856,7 +859,7 @@ impl PatternSeeder<'_, '_> {
         pattern: PatternId,
         binding: &HirPatternBinding,
         annotation: TypeId,
-        ty: &TypeKind,
+        ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let annotation_ty = self
             .types
@@ -881,8 +884,8 @@ impl PatternSeeder<'_, '_> {
 
 fn insert_pattern_type(
     owner: PatternId,
-    ty: &TypeKind,
-    patterns: &mut BTreeMap<PatternId, TypeKind>,
+    ty: &TypeKind<crate::types::PreparedEffects>,
+    patterns: &mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     if patterns.get(&owner).is_some_and(|existing| existing != ty) {
         return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
@@ -893,8 +896,8 @@ fn insert_pattern_type(
 
 fn seed_pattern_binding(
     binding: &HirPatternBinding,
-    ty: &TypeKind,
-    locals: &mut BTreeMap<LocalId, TypeKind>,
+    ty: &TypeKind<crate::types::PreparedEffects>,
+    locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     match binding {
         HirPatternBinding::Bound { local, .. } => insert_local_type(*local, ty, locals),
@@ -904,8 +907,8 @@ fn seed_pattern_binding(
 
 fn insert_local_type(
     owner: LocalId,
-    ty: &TypeKind,
-    locals: &mut BTreeMap<LocalId, TypeKind>,
+    ty: &TypeKind<crate::types::PreparedEffects>,
+    locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     if locals.get(&owner).is_some_and(|existing| existing != ty) {
         return Err(FinalSemanticAnalysisError::LocalTypeUnavailable { owner });
@@ -918,7 +921,7 @@ fn resolve_record_pattern_schema<'a>(
     context: PatternSeedContext<'a>,
     owner: PatternId,
     path: &HirPatternRecordPath,
-    ty: &'a TypeKind,
+    ty: &'a TypeKind<crate::types::PreparedEffects>,
 ) -> Result<ResolvedRecordPatternSchema<'a>, FinalSemanticAnalysisError> {
     match ty {
         TypeKind::ProjectNominal(nominal) => {
@@ -1007,7 +1010,14 @@ pub(super) fn resolve_closed_variant_path(
     environment: &TypeCheckEnv,
     path: &arcweft_lang_hir::leaf::HirPath,
     owner: ExprId,
-) -> Result<Option<(TypeKind, super::PreparedVariantOwnerSeed, u32)>, FinalSemanticAnalysisError> {
+) -> Result<
+    Option<(
+        TypeKind<crate::types::PreparedEffects>,
+        super::PreparedVariantOwnerSeed,
+        u32,
+    )>,
+    FinalSemanticAnalysisError,
+> {
     if path.root() != HirPathRoot::ImplicitCrate {
         return Ok(None);
     }
@@ -1044,11 +1054,11 @@ pub(super) fn resolve_closed_variant_path(
 struct ResolvedVariantPattern {
     owner: super::PreparedVariantOwnerSeed,
     ordinal: u32,
-    payload: Option<TypeKind>,
+    payload: Option<TypeKind<crate::types::PreparedEffects>>,
 }
 
 impl ResolvedVariantPattern {
-    const fn payload(&self) -> Option<&TypeKind> {
+    const fn payload(&self) -> Option<&TypeKind<crate::types::PreparedEffects>> {
         self.payload.as_ref()
     }
 }
@@ -1057,7 +1067,7 @@ fn resolve_variant_pattern(
     context: PatternSeedContext<'_>,
     owner: PatternId,
     pattern: &HirVariantPattern,
-    ty: &TypeKind,
+    ty: &TypeKind<crate::types::PreparedEffects>,
 ) -> Result<ResolvedVariantPattern, FinalSemanticAnalysisError> {
     let HirVariantPatternName::Resolved(name) = pattern.name() else {
         return Err(FinalSemanticAnalysisError::RecoveredOwner);
@@ -1191,7 +1201,7 @@ fn resolve_closed_variant_pattern(
     environment: &TypeCheckEnv,
     owner: PatternId,
     pattern: &HirVariantPattern,
-    ty: &TypeKind,
+    ty: &TypeKind<crate::types::PreparedEffects>,
     name: &super::HirName,
 ) -> Result<ResolvedVariantPattern, FinalSemanticAnalysisError> {
     let schema = environment
@@ -1263,8 +1273,8 @@ fn validate_builtin_variant_head(
 fn pattern_local_type(
     module: &HirModule,
     pattern: PatternId,
-    locals: &BTreeMap<LocalId, TypeKind>,
-) -> Option<TypeKind> {
+    locals: &BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
+) -> Option<TypeKind<crate::types::PreparedEffects>> {
     module.locals().find_map(|(owner, local)| {
         (local.pattern() == Some(pattern))
             .then(|| locals.get(&owner).cloned())

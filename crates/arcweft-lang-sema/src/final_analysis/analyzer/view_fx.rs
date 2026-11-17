@@ -212,7 +212,7 @@ impl Analyzer<'_, '_, '_> {
                 .get(&owner)
                 .cloned()
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-            let PreparedExpressionFact::Complete(previous) = previous else {
+            let PreparedExpressionFact::Resolved(previous) = previous else {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             };
             if previous.value_type() != Some(&TypeKind::ViewValue)

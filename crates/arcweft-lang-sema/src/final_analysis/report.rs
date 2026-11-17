@@ -2902,7 +2902,7 @@ fn collect_sealed_expressions(
     prepared
         .into_iter()
         .map(|(owner, fact)| {
-            let super::PreparedExpressionFact::Complete(fact) = fact else {
+            let super::PreparedExpressionFact::Resolved(fact) = fact else {
                 return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
             };
             Ok((owner, fact))

@@ -152,7 +152,7 @@ pub(super) fn seal(
             };
             Ok((
                 owner,
-                super::PreparedExpressionFact::Complete(checked.with_execution_plan(plan)),
+                super::PreparedExpressionFact::Resolved(checked.with_execution_plan(plan)),
             ))
         })
         .collect::<Result<BTreeMap<_, _>, FinalSemanticAnalysisError>>()?;

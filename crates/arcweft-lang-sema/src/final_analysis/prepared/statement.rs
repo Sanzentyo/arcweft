@@ -20,7 +20,7 @@ use super::PreparedEvaluatedEffect;
 pub(crate) struct PreparedRegistryWrite {
     pub(crate) address: std::sync::Arc<crate::final_analysis::CheckedRegistryAddress>,
     pub(crate) value: ExprId,
-    pub(crate) value_type: TypeKind,
+    pub(crate) value_type: TypeKind<crate::types::PreparedEffects>,
 }
 
 /// One typed assignment awaiting the final target place seal.
@@ -31,11 +31,15 @@ pub(crate) struct PreparedRegistryWrite {
 pub(crate) struct PreparedAssignmentStatement {
     target: ExprId,
     value: ExprId,
-    target_type: TypeKind,
+    target_type: TypeKind<crate::types::PreparedEffects>,
 }
 
 impl PreparedAssignmentStatement {
-    pub(crate) const fn new(target: ExprId, value: ExprId, target_type: TypeKind) -> Self {
+    pub(crate) const fn new(
+        target: ExprId,
+        value: ExprId,
+        target_type: TypeKind<crate::types::PreparedEffects>,
+    ) -> Self {
         Self {
             target,
             value,
@@ -43,13 +47,13 @@ impl PreparedAssignmentStatement {
         }
     }
 
-    pub(crate) fn into_parts(self) -> (ExprId, ExprId, TypeKind) {
+    pub(crate) fn into_parts(self) -> (ExprId, ExprId, TypeKind<crate::types::PreparedEffects>) {
         (self.target, self.value, self.target_type)
     }
 
     fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(&TypeKind<crate::types::PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         visitor(&self.target_type)
     }
@@ -80,7 +84,7 @@ pub(crate) enum PreparedStatementPayload {
 impl PreparedStatementPayload {
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(&TypeKind<crate::types::PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
             Self::Assignment(value) => value.visit_types(visitor),

@@ -497,7 +497,7 @@ impl Analyzer<'_, '_, '_> {
         if storage == TypeStorage::Callable
             && !matches!(
                 fact,
-                PreparedExpressionFact::Complete(_)
+                PreparedExpressionFact::Resolved(_)
                     | PreparedExpressionFact::ProjectRecord(_)
                     | PreparedExpressionFact::ProjectField(_)
                     | PreparedExpressionFact::Variant(_)

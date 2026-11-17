@@ -991,10 +991,10 @@ fn validate_materialized_source_value(
 /// lower source coordinate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum AnalyzerPreparedSourceActual {
-    ValueReceiver(TypeKind),
+    ValueReceiver(TypeKind<crate::types::PreparedEffects>),
     DialogueApplicationMetadata(PreparedDialogueApplicationMetadataArgument),
-    DialogueApplicationOperand(TypeKind),
-    TextProxyObjectOperand(TypeKind),
+    DialogueApplicationOperand(TypeKind<crate::types::PreparedEffects>),
+    TextProxyObjectOperand(TypeKind<crate::types::PreparedEffects>),
 }
 
 impl AnalyzerPreparedSourceActual {
@@ -1026,7 +1026,7 @@ impl AnalyzerPreparedSourceActual {
         }
     }
 
-    const fn actual(&self) -> &TypeKind {
+    const fn actual(&self) -> &TypeKind<crate::types::PreparedEffects> {
         match self {
             Self::ValueReceiver(actual)
             | Self::DialogueApplicationOperand(actual)
@@ -1787,7 +1787,7 @@ impl<'a, 'project, 'catalog, 'control>
                             },
                         ))
                     }
-                    crate::final_analysis::PreparedExpressionFact::Complete(complete) => match
+                    crate::final_analysis::PreparedExpressionFact::Resolved(complete) => match
                         complete.resolution()
                     {
                         crate::final_analysis::CheckedExpressionResolution::Variant(variant) => {
@@ -4453,7 +4453,9 @@ impl AnalyzerPreparedCandidateRecord {
     }
 
     /// Actual value slots sealed by this application's selected type solution.
-    pub(crate) fn value_inputs(&self) -> impl Iterator<Item = (ExprId, &TypeKind)> {
+    pub(crate) fn value_inputs(
+        &self,
+    ) -> impl Iterator<Item = (ExprId, &TypeKind<crate::types::PreparedEffects>)> {
         self.component.sources().selected().filter_map(|probe| {
             let source = match probe.source().local() {
                 AnalyzerCallConstraintSource::Receiver { source }

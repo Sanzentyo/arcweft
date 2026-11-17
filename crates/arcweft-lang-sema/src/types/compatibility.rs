@@ -70,10 +70,10 @@ pub(crate) enum TypeCompatibilityFailure<E> {
 /// no forbidden node is found, and their subsequent compatibility traversal
 /// through the same hook. A forbidden node is terminal after its own control
 /// event, so the two-pass accounting remains deterministic on valid trees.
-pub(crate) trait TypeCompatibilityControl {
+pub(crate) trait TypeCompatibilityControl<D: super::TypeEffectDomain = super::CanonicalEffects> {
     type Error;
 
-    fn enter(&mut self, expected: &TypeKind, actual: &TypeKind) -> Result<(), Self::Error>;
+    fn enter(&mut self, expected: &TypeKind<D>, actual: &TypeKind<D>) -> Result<(), Self::Error>;
 }
 
 /// Control used by the recovery wrapper and unbudgeted semantic checks.

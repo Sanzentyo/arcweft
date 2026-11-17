@@ -1,5 +1,6 @@
 //! Private, consumable semantic facts that require the project-wide C2 seal.
 
+pub(crate) use super::model::PreparedResolvedExpression;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
     identity::{ExprId, ItemId, LocalId, PatternId},
@@ -13,14 +14,14 @@ use crate::{
     checked_text_proxy::CheckedCompileTimeScalar,
     effects::EffectSet,
     env::nominal::AcceptedEnvironmentRecord,
-    types::{SemanticTypeDigest, TypeKind},
+    types::{PreparedEffects, SemanticTypeDigest, TypeKind},
 };
 
 pub(crate) use super::model::{PreparedVariantCaseSeed, PreparedVariantOwnerSeed};
 use super::{
     CheckedCallableBoundary, CheckedExpression, CheckedExpressionResolution,
     CheckedFunctionSiteBoundary, CheckedPattern, CheckedProjectNominal, CheckedTryBoundaryOwner,
-    CheckedTryCarrier, CheckedTypeSelection, CheckedTypedExpressionResult,
+    CheckedTryCarrier, CheckedTypeSelection,
 };
 
 #[path = "prepared/evaluated_effect.rs"]
@@ -43,28 +44,59 @@ pub(crate) use statement::{
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum PreparedNonValueExpressionResult {
     ContentEmission(ContentCallableIdentity),
+    RegistryAddress(arcweft_lang_hir::identity::StmtId),
 }
 
 impl PreparedNonValueExpressionResult {}
 
+/// An inferred source value retains its open effect relation. A checked
+/// specialization or semantic digest can be issued only after the joint seal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedTypedExpressionResult {
+    ty: TypeKind<PreparedEffects>,
+    type_selection: CheckedTypeSelection,
+}
+
+impl PreparedTypedExpressionResult {
+    pub(crate) const fn new(
+        ty: TypeKind<PreparedEffects>,
+        type_selection: CheckedTypeSelection,
+    ) -> Self {
+        Self { ty, type_selection }
+    }
+
+    pub(crate) const fn ty(&self) -> &TypeKind<PreparedEffects> {
+        &self.ty
+    }
+
+    pub(crate) const fn source_type(&self) -> &TypeKind<PreparedEffects> {
+        &self.ty
+    }
+
+    pub(crate) const fn type_selection(&self) -> CheckedTypeSelection {
+        self.type_selection
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedExpressionResult {
-    Value(CheckedTypedExpressionResult),
+    Value(PreparedTypedExpressionResult),
     NonValue(PreparedNonValueExpressionResult),
+    Unavailable,
 }
 
 impl PreparedExpressionResult {
-    pub(crate) const fn value_type(&self) -> Option<&TypeKind> {
+    pub(crate) const fn value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
         match self {
             Self::Value(value) => Some(value.ty()),
-            Self::NonValue(_) => None,
+            Self::NonValue(_) | Self::Unavailable => None,
         }
     }
 
     pub(crate) const fn type_selection(&self) -> Option<CheckedTypeSelection> {
         match self {
             Self::Value(value) => Some(value.type_selection()),
-            Self::NonValue(_) => None,
+            Self::NonValue(_) | Self::Unavailable => None,
         }
     }
 }
@@ -79,12 +111,12 @@ pub(crate) struct PreparedExpressionShell {
 
 impl PreparedExpressionShell {
     pub(crate) const fn value(
-        ty: TypeKind,
+        ty: TypeKind<PreparedEffects>,
         type_selection: CheckedTypeSelection,
         effects: EffectSet,
     ) -> Self {
         Self {
-            result: PreparedExpressionResult::Value(CheckedTypedExpressionResult::new(
+            result: PreparedExpressionResult::Value(PreparedTypedExpressionResult::new(
                 ty,
                 type_selection,
             )),
@@ -108,7 +140,7 @@ impl PreparedExpressionShell {
         &self.result
     }
 
-    pub(crate) const fn value_type(&self) -> Option<&TypeKind> {
+    pub(crate) const fn value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
         self.result.value_type()
     }
 
@@ -120,42 +152,27 @@ impl PreparedExpressionShell {
         &self.effects
     }
 
-    pub(crate) fn into_value_parts(self) -> Option<(CheckedTypedExpressionResult, EffectSet)> {
+    pub(crate) fn into_value_parts(self) -> Option<(PreparedTypedExpressionResult, EffectSet)> {
         let PreparedExpressionResult::Value(value) = self.result else {
             return None;
         };
         Some((value, self.effects))
     }
 
-    pub(crate) fn source_value_type(&self) -> Option<&TypeKind> {
+    pub(crate) fn source_value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
         match &self.result {
             PreparedExpressionResult::Value(value) => Some(value.source_type()),
-            PreparedExpressionResult::NonValue(_) => None,
+            PreparedExpressionResult::NonValue(_) | PreparedExpressionResult::Unavailable => None,
         }
     }
 
     fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         if let PreparedExpressionResult::Value(value) = &self.result {
             visitor(value.ty())?;
-            if let Some(specialization) = value.specialization() {
-                specialization.visit_types(visitor)?;
-            }
         }
-        Ok(())
-    }
-
-    fn specialize(
-        &mut self,
-        owner: ExprId,
-        witness: Arc<crate::callable::CheckedFunctionSpecialization>,
-    ) -> Result<(), crate::callable::CallConstraintInvariant> {
-        let PreparedExpressionResult::Value(value) = &mut self.result else {
-            return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
-        };
-        *value = value.clone().with_function_specialization(owner, witness)?;
         Ok(())
     }
 }
@@ -187,7 +204,7 @@ impl PreparedMethodExpression {
     }
 
     #[must_use]
-    pub(crate) fn with_type(self, ty: TypeKind) -> Option<Self> {
+    pub(crate) fn with_type(self, ty: TypeKind<PreparedEffects>) -> Option<Self> {
         let (value, effects) = self.shell.into_value_parts()?;
         Some(Self {
             shell: PreparedExpressionShell::value(ty, value.type_selection(), effects),
@@ -229,7 +246,7 @@ impl PreparedImplicitCallableBody {
     ) -> Result<Self, super::FinalSemanticAnalysisError> {
         if !matches!(
             expression,
-            PreparedExpressionFact::Complete(_)
+            PreparedExpressionFact::Resolved(_)
                 | PreparedExpressionFact::OwnerBound(_)
                 | PreparedExpressionFact::ProjectField(_)
                 | PreparedExpressionFact::ProjectRecord(_)
@@ -264,18 +281,18 @@ impl PreparedImplicitCallableBody {
 /// placeholder marker above until the identity seal supplies its identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedImplicitCallable {
-    parameter: TypeKind,
-    result: TypeKind,
+    parameter: TypeKind<PreparedEffects>,
+    result: TypeKind<PreparedEffects>,
     body: PreparedImplicitCallableBody,
     parameter_occurrences: Box<[ExprId]>,
 }
 
 impl PreparedImplicitCallable {
-    pub(crate) const fn parameter(&self) -> &TypeKind {
+    pub(crate) const fn parameter(&self) -> &TypeKind<PreparedEffects> {
         &self.parameter
     }
 
-    pub(crate) const fn result(&self) -> &TypeKind {
+    pub(crate) const fn result(&self) -> &TypeKind<PreparedEffects> {
         &self.result
     }
 
@@ -294,7 +311,7 @@ impl PreparedImplicitCallable {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedImplicitParameter {
     callable: ExprId,
-    parameter: TypeKind,
+    parameter: TypeKind<PreparedEffects>,
 }
 
 impl PreparedImplicitParameter {
@@ -302,7 +319,7 @@ impl PreparedImplicitParameter {
         self.callable
     }
 
-    pub(crate) const fn parameter(&self) -> &TypeKind {
+    pub(crate) const fn parameter(&self) -> &TypeKind<PreparedEffects> {
         &self.parameter
     }
 }
@@ -340,22 +357,22 @@ pub(crate) enum PreparedTryBoundary {
     Infallible,
     Thread {
         lookup_owner: ExprId,
-        boundary_type: TypeKind,
+        boundary_type: TypeKind<PreparedEffects>,
     },
     CarrierBlock {
         lookup_owner: ExprId,
     },
     ExplicitFunctionSite {
         lookup_owner: ExprId,
-        boundary_type: TypeKind,
+        boundary_type: TypeKind<PreparedEffects>,
     },
     ImplicitFunctionSite {
         lookup_owner: ExprId,
-        boundary_type: TypeKind,
+        boundary_type: TypeKind<PreparedEffects>,
     },
     Callable {
         declaration: CallableDeclarationKey,
-        boundary_type: TypeKind,
+        boundary_type: TypeKind<PreparedEffects>,
     },
 }
 
@@ -384,7 +401,7 @@ impl TryDestination<'_> {
 }
 
 impl PreparedTryBoundary {
-    pub(crate) const fn boundary_type(&self) -> Option<&TypeKind> {
+    pub(crate) const fn boundary_type(&self) -> Option<&TypeKind<PreparedEffects>> {
         match self {
             Self::ExplicitFunctionSite { boundary_type, .. }
             | Self::Thread { boundary_type, .. }
@@ -401,7 +418,7 @@ impl PreparedTryBoundary {
 pub(crate) struct PreparedPipe {
     lookup_left: ExprId,
     lookup_right: ExprId,
-    left_value_type: TypeKind,
+    left_value_type: TypeKind<PreparedEffects>,
     placeholders: Box<[ExprId]>,
 }
 
@@ -409,7 +426,7 @@ impl PreparedPipe {
     pub(crate) fn new(
         lookup_left: ExprId,
         lookup_right: ExprId,
-        left_value_type: TypeKind,
+        left_value_type: TypeKind<PreparedEffects>,
         placeholders: impl Into<Box<[ExprId]>>,
     ) -> Self {
         Self {
@@ -428,7 +445,7 @@ impl PreparedPipe {
         self.lookup_right
     }
 
-    pub(crate) const fn left_value_type(&self) -> &TypeKind {
+    pub(crate) const fn left_value_type(&self) -> &TypeKind<PreparedEffects> {
         &self.left_value_type
     }
 
@@ -455,8 +472,8 @@ impl PreparedPipeLeft {
 
 impl PreparedOwnerBoundResolution {
     pub(crate) fn implicit_callable(
-        parameter: TypeKind,
-        result: TypeKind,
+        parameter: TypeKind<PreparedEffects>,
+        result: TypeKind<PreparedEffects>,
         body: PreparedImplicitCallableBody,
         parameter_occurrences: Box<[ExprId]>,
     ) -> Self {
@@ -468,7 +485,10 @@ impl PreparedOwnerBoundResolution {
         })
     }
 
-    pub(crate) fn implicit_parameter(callable: ExprId, parameter: TypeKind) -> Self {
+    pub(crate) fn implicit_parameter(
+        callable: ExprId,
+        parameter: TypeKind<PreparedEffects>,
+    ) -> Self {
         Self::ImplicitParameter(PreparedImplicitParameter {
             callable,
             parameter,
@@ -478,7 +498,7 @@ impl PreparedOwnerBoundResolution {
     pub(crate) fn pipe(
         lookup_left: ExprId,
         lookup_right: ExprId,
-        left_value_type: TypeKind,
+        left_value_type: TypeKind<PreparedEffects>,
         placeholders: impl Into<Box<[ExprId]>>,
     ) -> Self {
         Self::Pipe(PreparedPipe::new(
@@ -529,7 +549,7 @@ impl PreparedOwnerBoundExpression {
         (self.shell, self.resolution)
     }
 
-    pub(crate) const fn value_type(&self) -> Option<&TypeKind> {
+    pub(crate) const fn value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
         self.shell.value_type()
     }
 
@@ -557,7 +577,7 @@ impl PreparedOwnerBoundExpression {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.shell.visit_types(visitor)?;
         match self.resolution() {
@@ -663,7 +683,7 @@ pub(crate) struct PreparedVariantExpression {
 impl PreparedVariantExpression {
     pub(crate) fn try_map_types<E: From<super::CheckedVariantOwnerError>>(
         &self,
-        map: &mut impl FnMut(&TypeKind) -> Result<TypeKind, E>,
+        map: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<TypeKind<PreparedEffects>, E>,
     ) -> Result<Self, E> {
         let owner = self.owner.try_map_types(map)?;
         let shell = PreparedExpressionShell::value(
@@ -721,7 +741,7 @@ impl PreparedVariantExpression {
 pub(crate) struct PreparedProjectFieldSelection {
     pub(super) nominal: CheckedProjectNominal,
     pub(super) declaration_ordinal: u32,
-    pub(super) field_type: TypeKind,
+    pub(super) field_type: TypeKind<PreparedEffects>,
     pub(super) diagnostic_name: HirName,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -738,7 +758,7 @@ impl PreparedProjectFieldExpression {
         mutable_base: Option<LocalId>,
         receiver: super::CheckedFieldReceiver,
         declaration_ordinal: u32,
-        field_type: TypeKind,
+        field_type: TypeKind<PreparedEffects>,
         diagnostic_name: HirName,
     ) -> Self {
         Self {
@@ -774,7 +794,7 @@ impl PreparedProjectFieldExpression {
             .iter()
             .map(|field| (field.nominal.declaration(), field.declaration_ordinal))
     }
-    pub(crate) fn field_type(&self) -> &TypeKind {
+    pub(crate) fn field_type(&self) -> &TypeKind<PreparedEffects> {
         &self
             .fields
             .last()
@@ -791,7 +811,7 @@ impl PreparedProjectFieldExpression {
     }
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.shell.visit_types(visitor)?;
         for field in &self.fields {
@@ -867,7 +887,7 @@ pub(crate) enum PreparedRecordValueSource {
 pub(crate) struct PreparedProjectRecordExpressionField {
     source_ordinal: u32,
     declaration_ordinal: u32,
-    field_type: TypeKind,
+    field_type: TypeKind<PreparedEffects>,
     source: PreparedRecordValueSource,
 }
 
@@ -875,7 +895,7 @@ impl PreparedProjectRecordExpressionField {
     pub(crate) const fn new(
         source_ordinal: u32,
         declaration_ordinal: u32,
-        field_type: TypeKind,
+        field_type: TypeKind<PreparedEffects>,
         source: PreparedRecordValueSource,
     ) -> Self {
         Self {
@@ -891,7 +911,7 @@ impl PreparedProjectRecordExpressionField {
     pub(crate) const fn declaration_ordinal(&self) -> u32 {
         self.declaration_ordinal
     }
-    pub(crate) const fn field_type(&self) -> &TypeKind {
+    pub(crate) const fn field_type(&self) -> &TypeKind<PreparedEffects> {
         &self.field_type
     }
     pub(crate) const fn source(&self) -> PreparedRecordValueSource {
@@ -991,14 +1011,12 @@ impl PreparedCompileTimeScalarExpression {
     }
 }
 
-/// Analyzer-owned expression fact. Only `Complete` may enter the published
-/// report; every other row is consumed by the private project seal.
-/// Each variant owns a heap payload. `Complete` already owns that allocation
-/// through `CheckedExpression`; prepared payloads retain independent
-/// ownership across evaluation, candidate transactions and final sealing.
+/// Analyzer-owned expression facts retain open types in every value-bearing
+/// variant. Resolved metadata is source evidence; the joint project seal must
+/// consume the value type before any checked expression can be published.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedExpressionFact {
-    Complete(CheckedExpression),
+    Resolved(super::model::PreparedResolvedExpression),
     OwnerBound(Box<PreparedOwnerBoundExpression>),
     CompileTimeScalar(Box<PreparedCompileTimeScalarExpression>),
     DialogueApplication(Box<PreparedDialogueApplication>),
@@ -1011,9 +1029,9 @@ pub(crate) enum PreparedExpressionFact {
     ProjectNominalTypeValue(Box<PreparedProjectNominalTypeValueExpression>),
 }
 
-impl From<CheckedExpression> for PreparedExpressionFact {
-    fn from(value: CheckedExpression) -> Self {
-        Self::Complete(value)
+impl From<super::model::PreparedResolvedExpression> for PreparedExpressionFact {
+    fn from(value: super::model::PreparedResolvedExpression) -> Self {
+        Self::Resolved(value)
     }
 }
 
@@ -1112,7 +1130,7 @@ impl PreparedExpressionFact {
 
     pub(crate) fn carrier_block(&self) -> Option<&super::CheckedCarrierBlock> {
         match self {
-            Self::Complete(value) => value.carrier_block(),
+            Self::Resolved(value) => value.carrier_block(),
             Self::OwnerBound(value) => match value.resolution() {
                 PreparedOwnerBoundResolution::ImplicitCallable(callable) => {
                     callable.body().expression().carrier_block()
@@ -1125,7 +1143,7 @@ impl PreparedExpressionFact {
 
     pub(super) fn try_propagation(&self) -> Option<(TryDestination<'_>, &CheckedTryCarrier)> {
         match self {
-            Self::Complete(value) => {
+            Self::Resolved(value) => {
                 let CheckedExpressionResolution::Try(tried) = value.resolution() else {
                     return None;
                 };
@@ -1183,7 +1201,7 @@ impl PreparedExpressionFact {
 
     pub(crate) fn try_carrier(&self) -> Option<&CheckedTryCarrier> {
         match self {
-            Self::Complete(value) => match value.resolution() {
+            Self::Resolved(value) => match value.resolution() {
                 CheckedExpressionResolution::Try(tried) => Some(tried.carrier()),
                 _ => None,
             },
@@ -1197,30 +1215,10 @@ impl PreparedExpressionFact {
 
     pub(crate) fn supports_place_access(&self) -> bool {
         match self {
-            Self::Complete(value) => value.mutable_place().is_some(),
+            Self::Resolved(value) => value.mutable_place().is_some(),
             Self::ProjectField(field) => field.mutable_base.is_some(),
             _ => false,
         }
-    }
-    pub(crate) fn with_function_specialization(
-        mut self,
-        owner: ExprId,
-        witness: Arc<crate::callable::CheckedFunctionSpecialization>,
-    ) -> Result<Self, crate::callable::CallConstraintInvariant> {
-        match &mut self {
-            Self::Complete(value) => {
-                return value
-                    .clone()
-                    .with_function_specialization(owner, witness)
-                    .map(Self::Complete);
-            }
-            Self::OwnerBound(value) => value.shell.specialize(owner, witness)?,
-            Self::ProjectField(value) => value.shell.specialize(owner, witness)?,
-            _ => {
-                return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
-            }
-        }
-        Ok(self)
     }
 
     /// Returns the execution-local use represented directly by this prepared
@@ -1231,7 +1229,7 @@ impl PreparedExpressionFact {
     /// `CompileTimeScalar`'s retained source fact.
     pub(crate) const fn execution_local_use(&self) -> Option<LocalId> {
         match self {
-            Self::Complete(value) => value.execution_local_use(),
+            Self::Resolved(value) => value.execution_local_use(),
             Self::OwnerBound(_)
             | Self::CompileTimeScalar(_)
             | Self::DialogueApplication(_)
@@ -1249,7 +1247,7 @@ impl PreparedExpressionFact {
     /// Semantic-only scalar/type/callee facts and non-value content carriers
     /// remain available to semantic sealing but cannot seed runtime nominal
     /// projection.
-    pub(crate) const fn runtime_value_type(&self) -> Option<&TypeKind> {
+    pub(crate) const fn runtime_value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
         match self {
             Self::OwnerBound(value) => value.shell().value_type(),
             Self::CompileTimeScalar(_) | Self::DialogueApplication(_) | Self::Method(_) => None,
@@ -1258,7 +1256,7 @@ impl PreparedExpressionFact {
                 PreparedContentEmission::ObjectSpan(_)
                 | PreparedContentEmission::LanguageCallable(_) => None,
             },
-            Self::Complete(value) => match value.execution_plan() {
+            Self::Resolved(value) => match value.execution_plan() {
                 Some(plan) => match plan.value() {
                     super::CheckedRuntimeValueDisposition::Retain => value.value_type(),
                     super::CheckedRuntimeValueDisposition::Omit => None,
@@ -1273,9 +1271,9 @@ impl PreparedExpressionFact {
         }
     }
 
-    pub(crate) const fn value_type(&self) -> Option<&TypeKind> {
+    pub(crate) const fn value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
         match self {
-            Self::Complete(value) => value.value_type(),
+            Self::Resolved(value) => value.value_type(),
             Self::OwnerBound(value) => value.shell().value_type(),
             Self::CompileTimeScalar(value) => value.shell().value_type(),
             Self::DialogueApplication(value) => value.shell().value_type(),
@@ -1294,9 +1292,9 @@ impl PreparedExpressionFact {
     /// checked expression grants no continuation evidence.
     pub(crate) fn normal_continuation(&self) -> Option<super::completion::NormalContinuation> {
         use super::completion::NormalContinuation;
-        Some(match self {
-            Self::Complete(value) => {
-                return NormalContinuation::from_checked_result(value.result());
+        match self {
+            Self::Resolved(value) => {
+                return NormalContinuation::from_prepared_result(value.result());
             }
             Self::OwnerBound(value) => {
                 NormalContinuation::from_prepared_result(value.shell().result())
@@ -1324,12 +1322,12 @@ impl PreparedExpressionFact {
             Self::ProjectNominalTypeValue(value) => {
                 NormalContinuation::from_prepared_result(value.shell().result())
             }
-        })
+        }
     }
 
     pub(crate) const fn type_selection(&self) -> Option<CheckedTypeSelection> {
         match self {
-            Self::Complete(value) => value.type_selection(),
+            Self::Resolved(value) => value.type_selection(),
             Self::OwnerBound(value) => value.shell().type_selection(),
             Self::CompileTimeScalar(value) => value.shell().type_selection(),
             Self::DialogueApplication(value) => value.shell().type_selection(),
@@ -1353,7 +1351,7 @@ impl PreparedExpressionFact {
 
     pub(crate) const fn effects(&self) -> &EffectSet {
         match self {
-            Self::Complete(value) => value.effects(),
+            Self::Resolved(value) => value.effects(),
             Self::OwnerBound(value) => value.effects(),
             Self::CompileTimeScalar(value) => value.shell().effects(),
             Self::DialogueApplication(value) => value.shell().effects(),
@@ -1367,9 +1365,9 @@ impl PreparedExpressionFact {
         }
     }
 
-    pub(crate) const fn complete(&self) -> Option<&CheckedExpression> {
+    pub(crate) const fn resolved(&self) -> Option<&super::model::PreparedResolvedExpression> {
         match self {
-            Self::Complete(value) => Some(value),
+            Self::Resolved(value) => Some(value),
             Self::OwnerBound(_) => None,
             Self::CompileTimeScalar(_) => None,
             Self::Method(_)
@@ -1393,7 +1391,7 @@ impl PreparedExpressionFact {
     ) -> Option<&PreparedProjectNominalTypeValueExpression> {
         match self {
             Self::ProjectNominalTypeValue(value) => Some(value),
-            Self::Complete(_)
+            Self::Resolved(_)
             | Self::OwnerBound(_)
             | Self::CompileTimeScalar(_)
             | Self::DialogueApplication(_)
@@ -1406,9 +1404,9 @@ impl PreparedExpressionFact {
         }
     }
 
-    pub(crate) fn into_complete(self) -> Result<CheckedExpression, Self> {
+    pub(crate) fn into_resolved(self) -> Result<super::model::PreparedResolvedExpression, Self> {
         match self {
-            Self::Complete(value) => Ok(value),
+            Self::Resolved(value) => Ok(value),
             Self::OwnerBound(value) => Err(Self::OwnerBound(value)),
             Self::CompileTimeScalar(value) => {
                 let (shell, scalar, original) = value.into_parts();
@@ -1419,7 +1417,7 @@ impl PreparedExpressionFact {
                         original,
                     }));
                 };
-                match original.into_complete() {
+                match original.into_resolved() {
                     Ok(complete) => {
                         let resolution = CheckedExpressionResolution::CompileTimeScalar(
                             super::CheckedCompileTimeScalarExpression::new(
@@ -1427,7 +1425,9 @@ impl PreparedExpressionFact {
                                 complete.resolution().clone(),
                             ),
                         );
-                        Ok(CheckedExpression::typed_value(value, effects, resolution))
+                        Ok(super::model::PreparedResolvedExpression::typed_value(
+                            value, effects, resolution,
+                        ))
                     }
                     Err(original) => Err(Self::from(PreparedCompileTimeScalarExpression {
                         shell,
@@ -1449,7 +1449,7 @@ impl PreparedExpressionFact {
 
     pub(crate) const fn checked_resolution(&self) -> Option<&CheckedExpressionResolution> {
         match self {
-            Self::Complete(value) => Some(value.resolution()),
+            Self::Resolved(value) => Some(value.resolution()),
             Self::OwnerBound(_) => None,
             Self::CompileTimeScalar(value) => value.original().checked_resolution(),
             Self::DialogueApplication(_)
@@ -1486,7 +1486,7 @@ impl PreparedExpressionFact {
     /// second transfer of that same local.
     pub(crate) fn inspection_receiver(&self) -> Option<super::CheckedFieldReceiver> {
         match self {
-            Self::Complete(value) => value.inspection_receiver(),
+            Self::Resolved(value) => value.inspection_receiver(),
             Self::CompileTimeScalar(value) => value.original().inspection_receiver(),
             _ => None,
         }
@@ -1502,7 +1502,7 @@ impl PreparedExpressionFact {
     pub(crate) fn local_place_source(&self) -> Option<super::CheckedFieldReceiver> {
         match self {
             Self::ProjectField(field) => Some(field.receiver()),
-            Self::Complete(value) => value.local_place_source(),
+            Self::Resolved(value) => value.local_place_source(),
             Self::CompileTimeScalar(value) => value.original().local_place_source(),
             _ => None,
         }
@@ -1514,7 +1514,7 @@ impl PreparedExpressionFact {
     ) -> Option<LocalId> {
         match self {
             Self::ProjectField(field) => field.receiver().local_root(source),
-            Self::Complete(value) => value.field_root(source),
+            Self::Resolved(value) => value.field_root(source),
             Self::CompileTimeScalar(value) => value.original().field_root(source),
             _ => None,
         }
@@ -1540,7 +1540,10 @@ impl PreparedExpressionFact {
         }
     }
 
-    pub(crate) fn reusable_for_parametric_expectation(&self, expected: &TypeKind) -> bool {
+    pub(crate) fn reusable_for_parametric_expectation(
+        &self,
+        expected: &TypeKind<PreparedEffects>,
+    ) -> bool {
         let Some(value_type) = self.value_type() else {
             return false;
         };
@@ -1571,7 +1574,7 @@ impl PreparedExpressionFact {
                             crate::callable::CheckedAttachedContentApplicationFamily::ContentCall,
                     },
                 ),
-                Self::Complete(_)
+                Self::Resolved(_)
                 | Self::Method(_)
                 | Self::Entry(_)
                 | Self::Variant(_)
@@ -1584,7 +1587,7 @@ impl PreparedExpressionFact {
 
     pub(crate) const fn selected_postfix_candidate(&self) -> Option<ExprId> {
         match self {
-            Self::Complete(value) => value.selected_postfix_candidate(),
+            Self::Resolved(value) => value.selected_postfix_candidate(),
             Self::OwnerBound(_) => None,
             Self::CompileTimeScalar(value) => value.original().selected_postfix_candidate(),
             Self::DialogueApplication(_)
@@ -1600,10 +1603,10 @@ impl PreparedExpressionFact {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::Complete(value) => value.visit_types(visitor),
+            Self::Resolved(value) => value.visit_types(visitor),
             Self::OwnerBound(value) => value.visit_types(visitor),
             Self::CompileTimeScalar(value) => {
                 if let Some(ty) = value.shell().value_type() {
@@ -1650,14 +1653,14 @@ impl PreparedExpressionFact {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedVariantPattern {
-    ty: TypeKind,
+    ty: TypeKind<PreparedEffects>,
     owner: PreparedVariantOwnerSeed,
     selected_ordinal: u32,
 }
 
 impl PreparedVariantPattern {
     pub(crate) fn try_new(
-        ty: TypeKind,
+        ty: TypeKind<PreparedEffects>,
         owner: PreparedVariantOwnerSeed,
         selected_ordinal: u32,
     ) -> Option<Self> {
@@ -1674,13 +1677,13 @@ impl PreparedVariantPattern {
             selected_ordinal,
         })
     }
-    pub(crate) const fn ty(&self) -> &TypeKind {
+    pub(crate) const fn ty(&self) -> &TypeKind<PreparedEffects> {
         &self.ty
     }
     pub(crate) const fn owner(&self) -> &PreparedVariantOwnerSeed {
         &self.owner
     }
-    pub(crate) fn into_parts(self) -> (TypeKind, PreparedVariantOwnerSeed, u32) {
+    pub(crate) fn into_parts(self) -> (TypeKind<PreparedEffects>, PreparedVariantOwnerSeed, u32) {
         (self.ty, self.owner, self.selected_ordinal)
     }
 }
@@ -1716,7 +1719,7 @@ impl PreparedRecordPatternFieldCoordinate {
 pub(crate) struct PreparedRecordPatternField {
     source_ordinal: u32,
     coordinate: PreparedRecordPatternFieldCoordinate,
-    field_type: TypeKind,
+    field_type: TypeKind<PreparedEffects>,
     source: PreparedRecordPatternSource,
 }
 
@@ -1724,7 +1727,7 @@ impl PreparedRecordPatternField {
     pub(crate) const fn new(
         source_ordinal: u32,
         coordinate: PreparedRecordPatternFieldCoordinate,
-        field_type: TypeKind,
+        field_type: TypeKind<PreparedEffects>,
         source: PreparedRecordPatternSource,
     ) -> Self {
         Self {
@@ -1740,7 +1743,7 @@ impl PreparedRecordPatternField {
     pub(crate) const fn coordinate(&self) -> PreparedRecordPatternFieldCoordinate {
         self.coordinate
     }
-    pub(crate) const fn field_type(&self) -> &TypeKind {
+    pub(crate) const fn field_type(&self) -> &TypeKind<PreparedEffects> {
         &self.field_type
     }
     pub(crate) const fn source(&self) -> PreparedRecordPatternSource {
@@ -1752,7 +1755,7 @@ impl PreparedRecordPatternField {
     ) -> (
         u32,
         PreparedRecordPatternFieldCoordinate,
-        TypeKind,
+        TypeKind<PreparedEffects>,
         PreparedRecordPatternSource,
     ) {
         (
@@ -1789,7 +1792,7 @@ impl PreparedRecordPatternOwner {
         }
     }
 
-    fn matches_type(&self, ty: &TypeKind) -> bool {
+    fn matches_type(&self, ty: &TypeKind<PreparedEffects>) -> bool {
         match self {
             Self::Project(nominal) => ty == &nominal.ty(),
             Self::Environment { record } => ty
@@ -1827,7 +1830,7 @@ impl PreparedRecordPatternOwner {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedRecordPattern {
-    ty: TypeKind,
+    ty: TypeKind<PreparedEffects>,
     owner: PreparedRecordPatternOwner,
     fields: Box<[PreparedRecordPatternField]>,
     rest: PreparedRecordPatternRest,
@@ -1835,7 +1838,7 @@ pub(crate) struct PreparedRecordPattern {
 
 impl PreparedRecordPattern {
     pub(crate) fn try_new(
-        ty: TypeKind,
+        ty: TypeKind<PreparedEffects>,
         owner: PreparedRecordPatternOwner,
         fields: Box<[PreparedRecordPatternField]>,
         rest: PreparedRecordPatternRest,
@@ -1858,7 +1861,7 @@ impl PreparedRecordPattern {
             rest,
         })
     }
-    pub(crate) const fn ty(&self) -> &TypeKind {
+    pub(crate) const fn ty(&self) -> &TypeKind<PreparedEffects> {
         &self.ty
     }
     pub(crate) const fn owner(&self) -> &PreparedRecordPatternOwner {
@@ -1874,7 +1877,7 @@ impl PreparedRecordPattern {
     pub(crate) fn into_parts(
         self,
     ) -> (
-        TypeKind,
+        TypeKind<PreparedEffects>,
         PreparedRecordPatternOwner,
         Box<[PreparedRecordPatternField]>,
         PreparedRecordPatternRest,
@@ -1885,39 +1888,39 @@ impl PreparedRecordPattern {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedPatternFact {
-    Complete(CheckedPattern),
+    Resolved(super::model::PreparedResolvedPattern),
     Variant(PreparedVariantPattern),
     Record(PreparedRecordPattern),
 }
 
-impl From<CheckedPattern> for PreparedPatternFact {
-    fn from(value: CheckedPattern) -> Self {
-        Self::Complete(value)
+impl From<super::model::PreparedResolvedPattern> for PreparedPatternFact {
+    fn from(value: super::model::PreparedResolvedPattern) -> Self {
+        Self::Resolved(value)
     }
 }
 
 impl PreparedPatternFact {
-    pub(crate) const fn ty(&self) -> &TypeKind {
+    pub(crate) const fn ty(&self) -> &TypeKind<PreparedEffects> {
         match self {
-            Self::Complete(value) => value.ty(),
+            Self::Resolved(value) => value.ty(),
             Self::Variant(value) => value.ty(),
             Self::Record(value) => value.ty(),
         }
     }
 
-    pub(crate) fn into_complete(self) -> Result<CheckedPattern, Self> {
+    pub(crate) fn into_resolved(self) -> Result<super::model::PreparedResolvedPattern, Self> {
         match self {
-            Self::Complete(value) => Ok(value),
+            Self::Resolved(value) => Ok(value),
             other => Err(other),
         }
     }
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::Complete(value) => value.visit_types(visitor),
+            Self::Resolved(value) => value.visit_types(visitor),
             Self::Variant(value) => {
                 visitor(value.ty())?;
                 value.owner().visit_types(visitor)

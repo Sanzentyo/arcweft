@@ -41,16 +41,18 @@ impl NormalContinuation {
             CheckedExpressionResult::Unavailable => None,
         }
     }
-    pub(crate) fn from_prepared_result(result: &PreparedExpressionResult) -> Self {
+    pub(crate) fn from_prepared_result(result: &PreparedExpressionResult) -> Option<Self> {
         match result {
-            PreparedExpressionResult::Value(value) => Self::from_value_type(value.ty()),
+            PreparedExpressionResult::Value(value) => Some(Self::from_value_type(value.ty())),
             PreparedExpressionResult::NonValue(
-                PreparedNonValueExpressionResult::ContentEmission(_),
-            ) => Self::Unit,
+                PreparedNonValueExpressionResult::ContentEmission(_)
+                | PreparedNonValueExpressionResult::RegistryAddress(_),
+            ) => Some(Self::Unit),
+            PreparedExpressionResult::Unavailable => None,
         }
     }
-    pub(crate) fn from_value_type(ty: &TypeKind) -> Self {
-        if ty == &TypeKind::Never {
+    pub(crate) fn from_value_type<D: crate::types::TypeEffectDomain>(ty: &TypeKind<D>) -> Self {
+        if matches!(ty, TypeKind::Never) {
             Self::Never
         } else {
             Self::Unit

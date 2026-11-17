@@ -473,7 +473,7 @@ impl Analyzer<'_, '_, '_> {
             .expressions()
             .get(&expression)
             .ok_or_else(|| AnalyzerExpressionError::rejected(expression))?;
-        let PreparedExpressionFact::Complete(checked) = fact else {
+        let PreparedExpressionFact::Resolved(checked) = fact else {
             return Err(AnalyzerExpressionError::rejected(expression));
         };
         let application = self
@@ -1702,7 +1702,7 @@ impl Analyzer<'_, '_, '_> {
             self.facts
                 .publish_new_expression(
                     coordinate.value(),
-                    CheckedExpression::value(
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
                         ty,
                         CheckedTypeSelection::Inferred,
                         EffectSet::new(),

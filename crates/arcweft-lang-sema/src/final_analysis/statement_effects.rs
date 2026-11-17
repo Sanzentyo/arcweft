@@ -994,7 +994,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                         .and_then(|fact| fact.local_place_source())
                 })
                 .is_some();
-        let accepted_closure = matches!(fact, PreparedExpressionFact::Complete(expression)
+        let accepted_closure = matches!(fact, PreparedExpressionFact::Resolved(expression)
             if matches!(expression.resolution(), super::CheckedExpressionResolution::Closure(_)));
         let independent_computation = matches!(
             kind,

@@ -131,10 +131,10 @@ pub(crate) use analyzer::{
     PreparedStatementIngressSeal,
 };
 pub use error::{
-    CallableEffectClosureError, CandidateFactTransactionViolation, FinalCallConstraintFailure,
-    FinalCallFrameInvariant, FinalCallSealFailure, FinalCallSealLocation,
-    FinalSemanticAnalysisError, FinalSemanticProjectError, RecursiveCallableContractEdge,
-    SemanticFactFamily,
+    CallableEffectClosureError, CallableValueTypePreparationError,
+    CandidateFactTransactionViolation, FinalCallConstraintFailure, FinalCallFrameInvariant,
+    FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysisError,
+    FinalSemanticProjectError, RecursiveCallableContractEdge, SemanticFactFamily,
 };
 pub use execution_context::{
     CheckedClosedExecutionContext, CheckedExecutionContextError, CheckedExecutionEnvironment,

@@ -966,7 +966,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 .facts
                 .expressions()
                 .get(&handler)
-                .and_then(PreparedExpressionFact::complete)
+                .and_then(PreparedExpressionFact::resolved)
             else {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             };

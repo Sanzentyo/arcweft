@@ -1569,7 +1569,7 @@ fn evaluator_records_implicit_and_explicit_capture_modes_on_terminal_facts() {
                         | PreparedOwnerBoundResolution::ImplicitParameter(_)
                 ));
             }
-            PreparedExpressionFact::Complete(checked) => match checked.resolution() {
+            PreparedExpressionFact::Resolved(checked) => match checked.resolution() {
                 CheckedExpressionResolution::Closure(closure) => {
                     assert!(Arc::ptr_eq(closure.topology(), &analyzer.topology));
                     let [capture] = closure.captures() else {

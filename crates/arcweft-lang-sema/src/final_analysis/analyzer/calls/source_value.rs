@@ -12,7 +12,7 @@ enum ObservedValue {
     Expression(crate::final_analysis::PreparedExpressionFact),
     Prepared(AnalyzerPreparedSourceActual),
     #[cfg(test)]
-    Fixture(TypeKind),
+    Fixture(TypeKind<crate::types::PreparedEffects>),
 }
 
 pub(super) enum AnalyzerObservedSourceOrigin {
@@ -57,7 +57,7 @@ impl AnalyzerObservedSourceValue {
         })
     }
 
-    pub(super) fn actual(&self) -> &TypeKind {
+    pub(super) fn actual(&self) -> &TypeKind<crate::types::PreparedEffects> {
         match &self.value {
             // The private constructor rejects non-value expression facts.
             ObservedValue::Expression(value) => {
@@ -70,7 +70,10 @@ impl AnalyzerObservedSourceValue {
     }
 
     #[cfg(test)]
-    pub(super) fn fixture(source: AnalyzerCallConstraintSourceId, value: TypeKind) -> Arc<Self> {
+    pub(super) fn fixture(
+        source: AnalyzerCallConstraintSourceId,
+        value: TypeKind<crate::types::PreparedEffects>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             origin: AnalyzerObservedSourceOrigin::Check(source),
             original: fixture_original_context(),
@@ -97,7 +100,7 @@ impl crate::types::constraints::ConstraintSourceValueOwner<AnalyzerCallConstrain
             AnalyzerObservedSourceOrigin::Check(_) => None,
         }
     }
-    fn value_type(&self) -> &TypeKind {
+    fn value_type(&self) -> &TypeKind<crate::types::PreparedEffects> {
         self.actual()
     }
 }

@@ -334,7 +334,7 @@ impl CheckedCaptureExpression {
         source: impl Fn(ExprId) -> Option<super::CheckedFieldReceiver>,
         access: CaptureAccess,
     ) -> Result<Self, FinalSemanticAnalysisError> {
-        if let PreparedExpressionFact::Complete(checked) = checked {
+        if let PreparedExpressionFact::Resolved(checked) = checked {
             if matches!(
                 checked.resolution(),
                 CheckedExpressionResolution::Nominal(_)

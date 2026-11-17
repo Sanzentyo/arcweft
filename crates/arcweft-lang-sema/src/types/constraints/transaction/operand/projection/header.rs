@@ -3,7 +3,7 @@
 use crate::types::PreparedEffects;
 
 use super::*;
-use crate::effect_row::{EffectPredicate, EffectRow};
+use crate::effect_row::prepared::{PreparedEffectPredicate, PreparedEffectRow};
 
 #[derive(Clone, Copy)]
 pub(in crate::types::constraints) enum ConstraintEffectField {
@@ -14,8 +14,8 @@ pub(in crate::types::constraints) enum ConstraintEffectField {
 pub(in crate::types) struct ConstraintFunctionHeaderView<'a, D: ConstraintDomain> {
     pub(super) source: ConstraintOperandView<'a, D>,
     contents_scope: Arc<ConstraintLexicalScope>,
-    row: &'a EffectRow,
-    predicate: &'a EffectPredicate,
+    row: &'a PreparedEffectRow,
+    predicate: &'a PreparedEffectPredicate,
 }
 
 pub(in crate::types::constraints) struct ConstraintEffectHeaderDerivation<D: ConstraintDomain> {
@@ -60,11 +60,11 @@ impl<'a, D: ConstraintDomain> ConstraintOperandChildren<'a, D> {
 }
 
 impl<'a, D: ConstraintDomain> ConstraintFunctionHeaderView<'a, D> {
-    pub(in crate::types) fn row(&self) -> &'a EffectRow {
+    pub(in crate::types) fn row(&self) -> &'a PreparedEffectRow {
         self.row
     }
 
-    pub(in crate::types) fn predicate(&self) -> &'a EffectPredicate {
+    pub(in crate::types) fn predicate(&self) -> &'a PreparedEffectPredicate {
         self.predicate
     }
 

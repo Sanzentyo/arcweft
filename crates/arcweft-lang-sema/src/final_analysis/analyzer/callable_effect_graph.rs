@@ -834,10 +834,20 @@ pub(super) fn prepare_declarations(
         .map_err(FinalSemanticAnalysisError::from)
 }
 
-struct CallableEffectClosureWork<'a> {
+pub(super) struct CallableEffectClosureWork<'a> {
     control: FinalSemanticAnalysisControl<'a>,
     limit: u64,
     remaining: u64,
+}
+
+impl<'a> CallableEffectClosureWork<'a> {
+    pub(super) fn new(limit: u64, control: FinalSemanticAnalysisControl<'a>) -> Self {
+        Self {
+            control,
+            limit,
+            remaining: limit,
+        }
+    }
 }
 
 impl DecisionControl for CallableEffectClosureWork<'_> {

@@ -265,6 +265,36 @@ pub struct CallableEffectClosureError {
     source: crate::effect_row::prepared::PreparedEffectFailure<FinalSemanticAnalysisError>,
 }
 
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("callable value type preparation failed: {source}")]
+pub struct CallableValueTypePreparationError {
+    #[source]
+    source: crate::callable::PreparedCallableValueTypeFailure<FinalSemanticAnalysisError>,
+}
+
+impl From<crate::callable::PreparedCallableValueTypeFailure<FinalSemanticAnalysisError>>
+    for FinalSemanticAnalysisError
+{
+    fn from(source: crate::callable::PreparedCallableValueTypeFailure<Self>) -> Self {
+        use crate::callable::{
+            CallableFunctionTypeProjectionError as ArrowFailure,
+            PreparedCallableFunctionTypeFailure as PreparationFailure,
+            PreparedCallableValueTypeFailure as ValueFailure,
+        };
+        match source {
+            ValueFailure::Effect(error) => Self::from(error),
+            ValueFailure::Projection(ArrowFailure::Projection(PreparationFailure::Projection(
+                crate::types::TypeProjectionError::Control(error),
+            ))) => error,
+            source => {
+                Self::CallableValueTypePreparation(Box::new(CallableValueTypePreparationError {
+                    source,
+                }))
+            }
+        }
+    }
+}
+
 impl From<crate::effect_row::prepared::PreparedEffectFailure<FinalSemanticAnalysisError>>
     for FinalSemanticAnalysisError
 {
@@ -326,6 +356,8 @@ pub enum FinalSemanticAnalysisError {
     CallableEffectClosureWorkLimit { limit: u64 },
     #[error(transparent)]
     CallableEffectClosure(Box<CallableEffectClosureError>),
+    #[error(transparent)]
+    CallableValueTypePreparation(Box<CallableValueTypePreparationError>),
     #[error("project symbol authority does not match the executable HIR generation")]
     SymbolGenerationMismatch,
     #[error("semantic analysis contains duplicate {family:?} fact")]

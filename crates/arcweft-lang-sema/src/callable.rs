@@ -115,7 +115,8 @@ pub(crate) use continuation::{
     PreparedCallPrefixPayload, PreparedCallPrefixReplayMismatch, PreparedCallResultRef,
     PreparedCallSiteDelivery, PreparedCallableEffectDeclarations,
     PreparedCallableEffectProjectionSite, PreparedCallableEffectView,
-    PreparedChildConstraintInitialization, PreparedConstraintInitialization,
+    PreparedCallableValueTypeFailure, PreparedChildConstraintInitialization,
+    PreparedConstraintInitialization,
 };
 pub use continuation::{
     CheckedAttachedContentApplicationFamily, CheckedCallSite, PreparedCallGraphInvariant,
@@ -263,3 +264,5 @@ pub(crate) use specialization::{
     FunctionSpecializationSealFailure, SpecializedDeclarationProjection,
 };
 pub use view_modifier::ViewModifierId;
+
+pub(crate) use schema::{CallableFunctionTypeProjectionError, PreparedCallableFunctionTypeFailure};

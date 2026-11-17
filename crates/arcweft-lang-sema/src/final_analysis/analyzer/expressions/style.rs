@@ -109,16 +109,18 @@ impl Analyzer<'_, '_, '_> {
             ),
         };
         self.publish_style_callee(callee, StyleCallableId::Rgba)?;
-        Ok(Some(CheckedExpression::value(
-            TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(
-                arcweft_view::style::ViewStyleValueKind::Color,
-            )),
-            CheckedTypeSelection::Inferred,
-            effects,
-            CheckedExpressionResolution::StyleValue(
-                arcweft_view::style::ViewSpecifiedValue::Color { value: color },
+        Ok(Some(
+            crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                TypeKind::CompileTimeStyle(crate::types::CompileTimeStyleType::Value(
+                    arcweft_view::style::ViewStyleValueKind::Color,
+                )),
+                CheckedTypeSelection::Inferred,
+                effects,
+                CheckedExpressionResolution::StyleValue(
+                    arcweft_view::style::ViewSpecifiedValue::Color { value: color },
+                ),
             ),
-        )))
+        ))
     }
 
     pub(super) fn check_style_construction(
@@ -297,7 +299,7 @@ impl Analyzer<'_, '_, '_> {
         self.facts
             .publish_new_expression(
                 callee,
-                CheckedExpression::value(
+                crate::final_analysis::prepared::PreparedResolvedExpression::value(
                     TypeKind::CompileTimeCallable(crate::types::CompileTimeCallableType::Style(
                         callable,
                     )),
@@ -388,7 +390,7 @@ impl Analyzer<'_, '_, '_> {
     }
 
     fn checked_style_operand(operand: CheckedStyleOperand) -> CheckedExpression {
-        CheckedExpression::value(
+        crate::final_analysis::prepared::PreparedResolvedExpression::value(
             TypeKind::CompileTimeStyle(operand.style_type()),
             CheckedTypeSelection::Expected,
             EffectSet::new(),
@@ -397,7 +399,7 @@ impl Analyzer<'_, '_, '_> {
     }
 
     fn checked_style_value(value: ViewSpecifiedValue) -> CheckedExpression {
-        CheckedExpression::value(
+        crate::final_analysis::prepared::PreparedResolvedExpression::value(
             TypeKind::CompileTimeStyle(CompileTimeStyleType::Value(value.kind())),
             CheckedTypeSelection::Expected,
             EffectSet::new(),

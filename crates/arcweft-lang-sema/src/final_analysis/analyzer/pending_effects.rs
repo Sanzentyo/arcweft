@@ -31,7 +31,6 @@ use super::{
     },
     expression_error::AnalyzerExpressionError,
     items::{inferred_callable_result_schema, result_schema_has_omitted_function_rows},
-    state::CandidateFactTransactionAction,
 };
 
 impl Analyzer<'_, '_, '_> {
@@ -39,9 +38,9 @@ impl Analyzer<'_, '_, '_> {
     /// without claiming that the expression invoked the declaration.
     pub(super) fn prepare_named_callable_value_type(
         &mut self,
-        owner: arcweft_lang_hir::identity::ExprId,
         callable: &crate::final_analysis::CheckedProjectCallable,
-    ) -> Result<crate::types::TypeKind, AnalyzerExpressionError> {
+    ) -> Result<crate::types::TypeKind<crate::types::PreparedEffects>, AnalyzerExpressionError>
+    {
         let staged = self.staged_callables.as_ref().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
         })?;
@@ -71,34 +70,38 @@ impl Analyzer<'_, '_, '_> {
         .map_err(|_| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
         })?;
-        let result = self.run_candidate_fact_transaction(
-            |this, _, _| -> Result<_, AnalyzerExpressionError> {
-                this.prepare_callable_body_effects(
-                    PreparedCallableEffectProjectionSite::CallableValue(owner),
-                    &candidate,
-                )
-                .map_err(AnalyzerExpressionError::fatal)?;
-                let terminal = this
-                    .source_callable_terminal_effects(&candidate)
+        use crate::effect_row::{DecisionControl, DecisionWork};
+        let mut work = super::callable_effect_graph::CallableEffectClosureWork::new(
+            self.catalogs.callable_limits.max_catalog_build_work(),
+            self.control,
+        );
+        match self
+            .source_callable_terminal_effects(&candidate)
+            .map_err(AnalyzerExpressionError::fatal)?
+        {
+            CallableTerminalEffectProjection::Known {
+                effects,
+                result_schema,
+            } => self
+                .facts
+                .effect_declarations()
+                .map_err(AnalyzerExpressionError::fact)?
+                .prepare_known_value_type(candidate.schema(), effects, result_schema, &mut work)
+                .map_err(FinalSemanticAnalysisError::from)
+                .map_err(AnalyzerExpressionError::fatal),
+            CallableTerminalEffectProjection::Pending(owner) => {
+                work.charge(DecisionWork::Visit)
                     .map_err(AnalyzerExpressionError::fatal)?;
-                let ty = candidate.callable_value_type(terminal).map_err(|_| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::CheckedCallableCatalog,
-                    )
-                })?;
-                let CallableProjection::Ready(ty) = ty else {
-                    return Err(AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::CheckedCallableCatalog,
-                    ));
-                };
-                Ok(CandidateFactTransactionAction::Commit(ty))
-            },
-        )?;
-        result
-            .into_committed()
-            .map_err(AnalyzerExpressionError::fact)
+                let owner = owner.clone();
+                self.facts
+                    .effect_declarations_mut()
+                    .map_err(AnalyzerExpressionError::fact)?
+                    .prepare_declared_value_type(&owner, candidate.schema(), &mut work)
+                    .map_err(FinalSemanticAnalysisError::from)
+                    .map_err(AnalyzerExpressionError::fatal)
+            }
+        }
     }
-
     /// Only a projection that needs an inferred terminal row enters this
     /// prerequisite. Ordinary terminal calls retain their typed effect edge.
     pub(super) fn prepare_pending_result_projection(

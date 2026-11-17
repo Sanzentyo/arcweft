@@ -77,8 +77,8 @@ pub(super) struct InspectValues;
 impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
     type TypeInput = &'ty TypeKind<PreparedEffects>;
     type ConstInput = &'ty ArrayLength;
-    type Children = TypeConstraintChildren<'ty>;
-    type ShapeSeed = TypeConstraintShape<'ty>;
+    type Children = TypeConstraintChildren<'ty, PreparedEffects>;
+    type ShapeSeed = TypeConstraintShape<'ty, PreparedEffects>;
     type TypeOutput = TypeKind<PreparedEffects>;
     type ConstOutput = ArrayLength;
     type Effects = ConstraintOperandEffects<D>;

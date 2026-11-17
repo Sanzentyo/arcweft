@@ -2138,18 +2138,15 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> Drop for TypeConstraintCo
     }
 }
 
-impl<A, D> TypeCompatibilityControl for TypeConstraintContext<'_, A, D>
+impl<A, D, E> TypeCompatibilityControl<E> for TypeConstraintContext<'_, A, D>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
+    E: crate::types::TypeEffectDomain,
 {
     type Error = TypeConstraintError;
 
-    fn enter(
-        &mut self,
-        _expected: &TypeKind<PreparedEffects>,
-        _actual: &TypeKind<PreparedEffects>,
-    ) -> Result<(), Self::Error> {
+    fn enter(&mut self, _expected: &TypeKind<E>, _actual: &TypeKind<E>) -> Result<(), Self::Error> {
         self.enter_node()
     }
 }

@@ -64,7 +64,7 @@ impl Analyzer<'_, '_, '_> {
                             this.facts
                                 .publish_new_expression(
                                     target,
-                                    crate::final_analysis::CheckedExpression::registry_address(
+                                    crate::final_analysis::prepared::PreparedResolvedExpression::registry_address(
                                         address,
                                     ),
                                 )
