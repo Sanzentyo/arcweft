@@ -171,6 +171,49 @@ impl<'a> SourceTypePreparation<'a> {
         Ok(result)
     }
 
+    pub(super) fn project_variant_owner(
+        &self,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
+        declaration: &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclaration,
+        nominal: &crate::types::ProjectNominalType<crate::types::PreparedEffects>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+    ) -> Result<
+        super::PreparedVariantOwnerSeed<crate::types::PreparedEffects>,
+        super::FinalSemanticAnalysisError,
+    > {
+        use super::FinalSemanticAnalysisError;
+        use crate::types::TypeProjectionControl;
+        use arcweft_lang_hir::symbol::nominal::{ProjectNominalBody, ProjectNominalVariantPayload};
+        let ProjectNominalBody::Enum { variants } = declaration.body() else {
+            return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
+        };
+        let mut metadata_work = self.work.clone();
+        self.with_nominal_type_arguments(owner, declaration, nominal, graph, |nominal, project| {
+            // Each case and owned record field is admitted before allocation.
+            for variant in variants {
+                metadata_work.visit_binding()?;
+                if let ProjectNominalVariantPayload::Record(fields) = variant.payload() {
+                    for _ in fields {
+                        metadata_work.visit_binding()?;
+                    }
+                }
+            }
+            let mut cases = Vec::with_capacity(variants.len());
+            for (ordinal, variant) in variants.iter().enumerate() {
+                let ordinal = u32::try_from(ordinal)
+                    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                cases.push(super::PreparedVariantCaseSeed::from_project(
+                    ordinal,
+                    variant,
+                    &mut *project,
+                    |_| FinalSemanticAnalysisError::InvalidNominalOwner,
+                )?);
+            }
+            super::PreparedVariantOwnerSeed::try_project(nominal, cases)
+                .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)
+        })
+    }
+
     pub(super) fn environment_variant(
         &self,
         owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,

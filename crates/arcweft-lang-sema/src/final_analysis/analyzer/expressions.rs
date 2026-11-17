@@ -1750,7 +1750,7 @@ impl Analyzer<'_, '_, '_> {
             .symbols
             .nominal(expected_nominal.declaration())
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-        let ProjectNominalBody::Enum { variants } = declaration.body() else {
+        let ProjectNominalBody::Enum { .. } = declaration.body() else {
             return Err(AnalyzerExpressionError::rejected(owner));
         };
         let source = super::expression_types::SourceTypePreparation::new(
@@ -1767,7 +1767,6 @@ impl Analyzer<'_, '_, '_> {
             &self.topology,
             work.clone(),
         );
-        let mut metadata_work = work.clone();
         let (graph, _) = self
             .facts
             .prepared_calls_mut()
@@ -1781,38 +1780,7 @@ impl Analyzer<'_, '_, '_> {
             })?
             .relation();
         source
-            .with_nominal_type_arguments(
-                owner,
-                declaration,
-                expected_nominal,
-                graph,
-                |nominal, project| {
-                    use crate::types::TypeProjectionControl;
-                    use arcweft_lang_hir::symbol::nominal::ProjectNominalVariantPayload;
-                    // Admit every owned case/field record before its allocation.
-                    for variant in variants {
-                        metadata_work.visit_binding()?;
-                        if let ProjectNominalVariantPayload::Record(fields) = variant.payload() {
-                            for _ in fields {
-                                metadata_work.visit_binding()?;
-                            }
-                        }
-                    }
-                    let mut cases = Vec::with_capacity(variants.len());
-                    for (ordinal, variant) in variants.iter().enumerate() {
-                        let ordinal = u32::try_from(ordinal)
-                            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-                        cases.push(super::PreparedVariantCaseSeed::from_project(
-                            ordinal,
-                            variant,
-                            &mut *project,
-                            |_| FinalSemanticAnalysisError::InvalidNominalOwner,
-                        )?);
-                    }
-                    super::PreparedVariantOwnerSeed::try_project(nominal, cases)
-                        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)
-                },
-            )
+            .project_variant_owner(owner, declaration, expected_nominal, graph)
             .map_err(|error| match error {
                 FinalSemanticAnalysisError::SourceTypeRetention {
                     error:
@@ -4096,14 +4064,16 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<(), AnalyzerExpressionError> {
         let mut locals = std::collections::BTreeMap::new();
         let mut patterns = std::collections::BTreeMap::new();
-        super::patterns::seed_pattern_locals(
-            self.pattern_seed_context(module, context.work())
-                .map_err(AnalyzerExpressionError::fatal)?,
-            pattern,
-            expected,
-            &mut locals,
-            &mut patterns,
-        )
+        self.with_pattern_seed_context(module, context.work(), |seed_context, graph| {
+            super::patterns::seed_pattern_locals(
+                seed_context,
+                graph,
+                pattern,
+                expected,
+                &mut locals,
+                &mut patterns,
+            )
+        })
         .map_err(AnalyzerExpressionError::fatal)?;
         for (owner, ty) in locals {
             self.facts

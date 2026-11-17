@@ -451,7 +451,14 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         region: Option<ExprId>,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        use crate::types::TypeProjectionControl;
+        let mut module_work = context.work();
+        let mut modules = Vec::new();
         for module in self.modules.values() {
+            module_work.visit_binding()?;
+            modules.push(*module);
+        }
+        for module in modules {
             for (owner, local) in module.locals() {
                 if !self.is_language_semantic_owner(SyntheticOwner::Local(owner))? {
                     continue;
@@ -485,14 +492,18 @@ impl Analyzer<'_, '_, '_> {
                 }
                 let mut locals = BTreeMap::new();
                 let mut patterns = BTreeMap::new();
-                seed_item_parameter_types(
-                    owner,
-                    item,
-                    self.pattern_seed_context(module, context.work())?,
-                    self.catalogs.world.environment().callable_catalog(),
-                    &mut locals,
-                    &mut patterns,
-                )?;
+                let catalog = self.catalogs.world.environment().callable_catalog();
+                self.with_pattern_seed_context(module, context.work(), |seed_context, graph| {
+                    seed_item_parameter_types(
+                        owner,
+                        item,
+                        seed_context,
+                        graph,
+                        catalog,
+                        &mut locals,
+                        &mut patterns,
+                    )
+                })?;
                 Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
             }
             for (owner, expression) in module.expressions() {
@@ -523,12 +534,19 @@ impl Analyzer<'_, '_, '_> {
                                 self.retain_source_value_type(context, owner, &semantic)?;
                             let mut locals = BTreeMap::new();
                             let mut patterns = BTreeMap::new();
-                            seed_pattern_locals(
-                                self.pattern_seed_context(module, context.work())?,
-                                parameter.pattern(),
-                                &semantic,
-                                &mut locals,
-                                &mut patterns,
+                            self.with_pattern_seed_context(
+                                module,
+                                context.work(),
+                                |seed_context, graph| {
+                                    seed_pattern_locals(
+                                        seed_context,
+                                        graph,
+                                        parameter.pattern(),
+                                        &semantic,
+                                        &mut locals,
+                                        &mut patterns,
+                                    )
+                                },
                             )?;
                             Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
                         }
@@ -545,12 +563,19 @@ impl Analyzer<'_, '_, '_> {
                             };
                             let mut locals = BTreeMap::new();
                             let mut patterns = BTreeMap::new();
-                            seed_pattern_locals(
-                                self.pattern_seed_context(module, context.work())?,
-                                pattern,
-                                &TypeKind::Progress,
-                                &mut locals,
-                                &mut patterns,
+                            self.with_pattern_seed_context(
+                                module,
+                                context.work(),
+                                |seed_context, graph| {
+                                    seed_pattern_locals(
+                                        seed_context,
+                                        graph,
+                                        pattern,
+                                        &TypeKind::Progress,
+                                        &mut locals,
+                                        &mut patterns,
+                                    )
+                                },
                             )?;
                             Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
                         }
@@ -572,12 +597,19 @@ impl Analyzer<'_, '_, '_> {
                     let ty = TypeKind::entity_ref(EntityKind::ChoiceOption);
                     let mut locals = BTreeMap::new();
                     let mut patterns = BTreeMap::new();
-                    seed_pattern_locals(
-                        self.pattern_seed_context(module, context.work())?,
-                        pattern,
-                        &ty,
-                        &mut locals,
-                        &mut patterns,
+                    self.with_pattern_seed_context(
+                        module,
+                        context.work(),
+                        |seed_context, graph| {
+                            seed_pattern_locals(
+                                seed_context,
+                                graph,
+                                pattern,
+                                &ty,
+                                &mut locals,
+                                &mut patterns,
+                            )
+                        },
                     )?;
                     Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
                 }
@@ -607,12 +639,19 @@ impl Analyzer<'_, '_, '_> {
                             self.retain_source_value_type(context, pattern, &expected)?;
                         let mut locals = BTreeMap::new();
                         let mut patterns = BTreeMap::new();
-                        seed_pattern_locals(
-                            self.pattern_seed_context(module, context.work())?,
-                            pattern,
-                            &expected,
-                            &mut locals,
-                            &mut patterns,
+                        self.with_pattern_seed_context(
+                            module,
+                            context.work(),
+                            |seed_context, graph| {
+                                seed_pattern_locals(
+                                    seed_context,
+                                    graph,
+                                    pattern,
+                                    &expected,
+                                    &mut locals,
+                                    &mut patterns,
+                                )
+                            },
                         )?;
                         Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
                     }

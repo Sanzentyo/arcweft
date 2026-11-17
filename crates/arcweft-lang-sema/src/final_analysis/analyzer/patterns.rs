@@ -25,6 +25,36 @@ use arcweft_lang_hir::item::{
 use super::entities::EntityReferenceResolutionError;
 
 impl Analyzer<'_, '_, '_> {
+    /// Loan the original graph only for this pattern operation. Its source
+    /// context and work permission borrow disjoint analyzer fields.
+    pub(super) fn with_pattern_seed_context<T>(
+        &mut self,
+        module: &HirModule,
+        work: super::preparation_work::AnalyzerPreparationWork<'_>,
+        operation: impl FnOnce(
+            PatternSeedContext<'_>,
+            &mut crate::effect_row::prepared::PreparedEffectGraph,
+        ) -> Result<T, FinalSemanticAnalysisError>,
+    ) -> Result<T, FinalSemanticAnalysisError> {
+        let context = PatternSeedContext {
+            module,
+            symbols: self.symbols,
+            environment: self.catalogs.world.environment().typecheck_env(),
+            source: super::expression_types::SourceTypePreparation::new(
+                &self.types,
+                &self
+                    .staged_callables
+                    .as_ref()
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                    .builder,
+                &self.topology,
+                work,
+            ),
+        };
+        let (graph, _) = self.facts.effect_declarations_mut()?.relation();
+        operation(context, graph)
+    }
+
     pub(super) fn pattern_seed_context<'a>(
         &'a self,
         module: &'a HirModule,
@@ -39,12 +69,19 @@ impl Analyzer<'_, '_, '_> {
     }
 
     pub(super) fn analyze_patterns(
-        &self,
+        &mut self,
         input: &mut FinalSemanticAnalysisInput,
         selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let context = self.published_expression_context();
+        use crate::types::TypeProjectionControl;
+        let mut module_work = context.work();
+        let mut modules = Vec::new();
         for module in self.modules.values() {
+            module_work.visit_binding()?;
+            modules.push(*module);
+        }
+        for module in modules {
             for (owner, pattern) in module.patterns() {
                 if !selected
                     .contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Pattern(owner))
@@ -75,11 +112,12 @@ impl Analyzer<'_, '_, '_> {
                         continue;
                     }
                     HirPatternKind::Variant(variant) => {
-                        let resolved = resolve_variant_pattern(
-                            self.pattern_seed_context(module, context.work())?,
-                            owner,
-                            variant,
-                            &ty,
+                        let resolved = self.with_pattern_seed_context(
+                            module,
+                            context.work(),
+                            |seed_context, graph| {
+                                resolve_variant_pattern(seed_context, graph, owner, variant, &ty)
+                            },
                         )?;
                         let prepared = super::PreparedVariantPattern::try_new(
                             ty.clone(),
@@ -228,13 +266,9 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut locals = BTreeMap::new();
         let mut patterns = BTreeMap::new();
-        seed_pattern_locals(
-            self.pattern_seed_context(module, context.work())?,
-            pattern,
-            ty,
-            &mut locals,
-            &mut patterns,
-        )?;
+        self.with_pattern_seed_context(module, context.work(), |seed_context, graph| {
+            seed_pattern_locals(seed_context, graph, pattern, ty, &mut locals, &mut patterns)
+        })?;
         for (owner, value) in locals {
             if self.facts.locals().get(&owner).is_some_and(|existing| {
                 existing != &value
@@ -265,6 +299,7 @@ pub(super) fn seed_item_parameter_types(
     owner: arcweft_lang_hir::identity::ItemId,
     item: &HirItem,
     context: PatternSeedContext<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     catalog: &crate::callable::RegisteredCallableCatalog,
     locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
     patterns: &mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
@@ -273,6 +308,7 @@ pub(super) fn seed_item_parameter_types(
         parameter: &arcweft_lang_hir::item::HirParameter,
         declared: &TypeKind,
         context: PatternSeedContext<'_>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
         patterns: &mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<(), FinalSemanticAnalysisError> {
@@ -284,7 +320,14 @@ pub(super) fn seed_item_parameter_types(
             arcweft_lang_hir::item::HirParameterKind::Fixed
             | arcweft_lang_hir::item::HirParameterKind::ExtensionReceiver => declared.clone(),
         };
-        seed_pattern_locals(context, parameter.pattern(), &binding, locals, patterns)
+        seed_pattern_locals(
+            context,
+            graph,
+            parameter.pattern(),
+            &binding,
+            locals,
+            patterns,
+        )
     }
     fn seed_attached_content(
         parameter: Option<HirCallableAttachedContentParameter>,
@@ -342,7 +385,14 @@ pub(super) fn seed_item_parameter_types(
                 let declared = context
                     .environment
                     .canonical_accepted_type(declared.clone());
-                seed_parameter(parameter, &declared, context.clone(), locals, patterns)?;
+                seed_parameter(
+                    parameter,
+                    &declared,
+                    context.clone(),
+                    graph,
+                    locals,
+                    patterns,
+                )?;
             }
         }
         HirItemKind::Flow(flow) => {
@@ -351,6 +401,7 @@ pub(super) fn seed_item_parameter_types(
                     parameter,
                     parameter_type(HirCallableSourceOwner::Item, 0, index)?,
                     context.clone(),
+                    graph,
                     locals,
                     patterns,
                 )?;
@@ -363,6 +414,7 @@ pub(super) fn seed_item_parameter_types(
                         parameter,
                         parameter_type(HirCallableSourceOwner::Item, group_index, index)?,
                         context.clone(),
+                        graph,
                         locals,
                         patterns,
                     )?;
@@ -376,6 +428,7 @@ pub(super) fn seed_item_parameter_types(
                     parameter,
                     parameter_type(HirCallableSourceOwner::Item, 0, index)?,
                     context.clone(),
+                    graph,
                     locals,
                     patterns,
                 )?;
@@ -387,6 +440,7 @@ pub(super) fn seed_item_parameter_types(
                     parameter,
                     parameter_type(HirCallableSourceOwner::Item, 0, index)?,
                     context.clone(),
+                    graph,
                     locals,
                     patterns,
                 )?;
@@ -398,6 +452,7 @@ pub(super) fn seed_item_parameter_types(
                     parameter,
                     parameter_type(HirCallableSourceOwner::ViewItem, 0, index)?,
                     context.clone(),
+                    graph,
                     locals,
                     patterns,
                 )?;
@@ -418,6 +473,7 @@ pub(super) fn seed_item_parameter_types(
                             parameter,
                             parameter_type(source, group_index, index)?,
                             context.clone(),
+                            graph,
                             locals,
                             patterns,
                         )?;
@@ -442,6 +498,7 @@ pub(super) fn seed_item_parameter_types(
                             arcweft_lang_hir::item::HirMethodParameter::Receiver(receiver) => {
                                 seed_pattern_locals(
                                     context.clone(),
+                                    graph,
                                     receiver.pattern(),
                                     &context.source.retain(receiver.pattern(), declared)?,
                                     locals,
@@ -453,6 +510,7 @@ pub(super) fn seed_item_parameter_types(
                                     parameter,
                                     declared,
                                     context.clone(),
+                                    graph,
                                     locals,
                                     patterns,
                                 )?;
@@ -481,6 +539,7 @@ pub(super) fn seed_item_parameter_types(
                                 parameter,
                                 parameter_type(source, group_index, index)?,
                                 context.clone(),
+                                graph,
                                 locals,
                                 patterns,
                             )?;
@@ -598,6 +657,7 @@ impl ResolvedRecordPatternSchema<'_> {
 
 pub(super) fn seed_pattern_locals(
     context: PatternSeedContext<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     pattern: PatternId,
     ty: &TypeKind<crate::types::PreparedEffects>,
     locals: &mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
@@ -605,6 +665,7 @@ pub(super) fn seed_pattern_locals(
 ) -> Result<(), FinalSemanticAnalysisError> {
     PatternSeeder {
         context,
+        graph,
         locals,
         patterns,
     }
@@ -613,6 +674,7 @@ pub(super) fn seed_pattern_locals(
 
 struct PatternSeeder<'context, 'facts> {
     context: PatternSeedContext<'context>,
+    graph: &'facts mut crate::effect_row::prepared::PreparedEffectGraph,
     locals: &'facts mut BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
     patterns: &'facts mut BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
 }
@@ -689,9 +751,10 @@ impl PatternSeeder<'_, '_> {
         variant: &HirVariantPattern,
         ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let payload = resolve_variant_pattern(self.context.clone(), pattern, variant, ty)?
-            .payload()
-            .cloned();
+        let payload =
+            resolve_variant_pattern(self.context.clone(), self.graph, pattern, variant, ty)?
+                .payload()
+                .cloned();
         match (variant.payload(), payload) {
             (HirVariantPatternPayload::Absent, None) => Ok(()),
             (HirVariantPatternPayload::Pattern(child), Some(payload_ty)) => {
@@ -1043,6 +1106,7 @@ impl ResolvedVariantPattern {
 
 fn resolve_variant_pattern(
     context: PatternSeedContext<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     owner: PatternId,
     pattern: &HirVariantPattern,
     ty: &TypeKind<crate::types::PreparedEffects>,
@@ -1052,7 +1116,7 @@ fn resolve_variant_pattern(
     };
     match ty {
         TypeKind::ProjectNominal(nominal) => {
-            resolve_project_variant_pattern(context, owner, pattern, nominal, name)
+            resolve_project_variant_pattern(context, graph, owner, pattern, nominal, name)
         }
         TypeKind::Option(item) => {
             validate_builtin_variant_head(pattern.head(), BuiltinTypeConstructor::Option, owner)?;
@@ -1105,6 +1169,7 @@ fn resolve_variant_pattern(
 
 fn resolve_project_variant_pattern(
     context: PatternSeedContext<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     owner: PatternId,
     pattern: &HirVariantPattern,
     nominal: &ProjectNominalType<crate::types::PreparedEffects>,
@@ -1142,26 +1207,11 @@ fn resolve_project_variant_pattern(
         .enumerate()
         .find(|(_, variant)| variant.name().as_str() == name.as_str())
         .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
-    let substitutions = nominal_substitutions(declaration, nominal)
-        .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
     let selected_ordinal = u32::try_from(selected_ordinal)
         .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-    let mut cases = Vec::with_capacity(variants.len());
-    for (ordinal, case) in variants.iter().enumerate() {
-        let ordinal =
-            u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-        cases.push(super::PreparedVariantCaseSeed::from_project(
-            ordinal,
-            case,
-            |payload| {
-                let declared = context.source.declared_type(payload)?;
-                context.source.retain(owner, &substitutions.apply(declared))
-            },
-            |_| FinalSemanticAnalysisError::InvalidNominalOwner,
-        )?);
-    }
-    let owner = super::PreparedVariantOwnerSeed::try_project(nominal.clone(), cases)
-        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+    let owner = context
+        .source
+        .project_variant_owner(owner, declaration, nominal, graph)?;
     let payload = owner
         .case_payload_type(selected_ordinal)
         .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;

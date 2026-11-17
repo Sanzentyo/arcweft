@@ -907,6 +907,7 @@ fn seed_prepared(
 ) -> Result<(), FinalSemanticAnalysisError> {
     let mut locals = BTreeMap::new();
     let mut patterns = BTreeMap::new();
+    let (graph, _) = facts.effect_declarations_mut()?.relation();
     seed_pattern_locals(
         PatternSeedContext {
             module,
@@ -914,6 +915,7 @@ fn seed_prepared(
             environment,
             source: source.clone(),
         },
+        graph,
         pattern,
         ty,
         &mut locals,
