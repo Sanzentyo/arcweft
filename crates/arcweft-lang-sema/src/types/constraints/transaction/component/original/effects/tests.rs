@@ -21,6 +21,7 @@ use std::{any::Any, borrow::Cow, sync::atomic::AtomicBool};
 type Context<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
 type Component = OpenConstraintComponent<NoConstraintClient, ()>;
 
+mod completed_members;
 mod projection_ports;
 
 #[derive(Debug)]
@@ -522,9 +523,8 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
         ConstraintClosurePolicy, TypeConstraintSolution,
         normalization::project_closed_operand,
         transaction::{
-            ActiveConstraintProbe, ConstraintProbe, ConstraintSourceId,
-            PreparedConstraintSourceProjection, PreparedSourceOrdinal, SourceProbeObservation,
-            StoredSourceSelection,
+            ActiveConstraintProbe, ConstraintSourceId, PreparedConstraintSourceProjection,
+            PreparedSourceOrdinal, SourceProbeObservation, StoredSourceSelection,
         },
     };
     let cancellation = AtomicBool::new(false);
@@ -554,6 +554,17 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
     let product = &closed.products[0];
     let joint = &product.result.as_ref().unwrap()[0];
     assert!(Arc::ptr_eq(&joint.branch.lineage, &product.members));
+    assert_eq!(joint.completed.len(), members.len());
+    for (completed, member) in joint.completed.iter().zip(members) {
+        assert_eq!(completed.member, member);
+        assert_eq!(completed.component.selected().projections().len(), 1);
+        assert_eq!(
+            completed.component.selected().projections()[0]
+                .to_quantified_type()
+                .unwrap(),
+            TypeKind::I64
+        );
+    }
     let frames = context.lexical_frames().clone();
     for member in members {
         let source = closed.original.original_path(member).unwrap();
@@ -561,7 +572,7 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
         let request = &source.lineage.projections[0];
         context
             .with_original_scope(product.scope.clone(), |context| {
-                let source = ConstraintProbe::Active(ActiveConstraintProbe {
+                let source = ActiveConstraintProbe {
                     source: ConstraintSourceId::new(application, ()),
                     source_ordinal: PreparedSourceOrdinal {
                         application,
@@ -572,7 +583,7 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
                     prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
                     value_expected: None,
                     actual: context.fixture_operand(TypeKind::<PreparedEffects>::I64),
-                })
+                }
                 .close(&joint.branch, &joint.effects, graph.read(), context)?;
                 assert_eq!(source.actual(), &TypeKind::I64);
                 let solution = TypeConstraintSolution::complete_application_with_effects(

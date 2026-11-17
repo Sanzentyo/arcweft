@@ -17,7 +17,6 @@ use crate::{
             test_support::ConstraintTestSetup,
             transaction::{
                 ConstraintEquationId, ConstraintEquationTiming, ConstraintPath, PendingEquation,
-                close_source_rows,
             },
         },
         effect_domain::PreparedTypeEffectRoots,
@@ -134,36 +133,32 @@ fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
         pattern,
         actual: actual_operand.clone(),
         source_ordinal: Some(ordinal),
-        closed_relation: None,
         timing: ConstraintEquationTiming::Immediate,
     });
-    path.lineage
-        .probe_trace
-        .push(ConstraintProbe::Active(ActiveConstraintProbe {
-            source: ConstraintSourceId::new(application, ()),
-            source_ordinal: ordinal,
-            branch: SourceProbeObservation::closed_for_test((), ()),
-            selection: StoredSourceSelection::Checked {
-                alternative: (),
-                evidence: Arc::new(()),
-            },
-            prepared_source_projection: PreparedConstraintSourceProjection::InferSpreadContainer {
-                policy: ConstraintSourceContainerPolicy::Named,
-            },
-            value_expected: Some(context.fixture_operand(expected_function)),
-            actual: actual_operand,
-        }));
-    close_source_rows(&mut path, &effects, graph.read(), &mut context).unwrap();
-    let ConstraintProbe::Closed(closed) = &path.lineage.probe_trace[0] else {
-        panic!("closed source")
-    };
-    let relation = path.equations[0].closed_relation.as_ref().unwrap();
-    assert!(std::ptr::eq(relation.actual.value(), closed.actual()));
+    path.lineage.probe_trace.push(ActiveConstraintProbe {
+        source: ConstraintSourceId::new(application, ()),
+        source_ordinal: ordinal,
+        branch: SourceProbeObservation::closed_for_test((), ()),
+        selection: StoredSourceSelection::Checked {
+            alternative: (),
+            evidence: Arc::new(()),
+        },
+        prepared_source_projection: PreparedConstraintSourceProjection::InferSpreadContainer {
+            policy: ConstraintSourceContainerPolicy::Named,
+        },
+        value_expected: Some(context.fixture_operand(expected_function)),
+        actual: actual_operand,
+    });
+    let sources = path
+        .lineage
+        .close_trace(&path, &effects, graph.read(), &mut context)
+        .unwrap();
+    let closed = &sources[0];
+    closed.require_completion(&effects).unwrap();
     assert!(std::ptr::eq(
-        relation.expected.value(),
-        closed.final_expected().unwrap()
+        path.lineage.probe_trace[0].actual.value(),
+        before_actual.value()
     ));
-    assert!(Arc::ptr_eq(&relation.owner, &effects));
     assert!(std::ptr::eq(
         path.equations[0].actual.value(),
         before_actual.value()
@@ -187,20 +182,37 @@ fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
     assert_eq!(*binder, GenericBinder::new(1, 1, 0));
     assert!(closed.source_projection().matches_actual(closed.actual()));
     path.equations[0]
-        .validate_completed(&path, &effects, graph.read(), &mut context)
+        .validate_completed_source(closed, &path, &effects, graph.read(), &mut context)
         .unwrap();
     let other =
         ConstraintClosedEffects::for_path(&path, &original, &[], &mut graph, &mut context).unwrap();
     assert!(matches!(
-        path.equations[0].validate_completed(&path, &other, graph.read(), &mut context),
+        path.equations[0].validate_completed_source(
+            closed,
+            &path,
+            &other,
+            graph.read(),
+            &mut context
+        ),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::OriginalProducer
         ))
     ));
-    assert!(Arc::ptr_eq(
-        &path.equations[0].closed_relation.as_ref().unwrap().owner,
-        &effects
-    ));
+    closed.require_completion(&effects).unwrap();
+    let component = crate::types::constraints::CompletedConstraintComponent::from_closed_original(
+        &path,
+        application,
+        &path,
+        &effects,
+        graph.read(),
+        &mut context,
+    )
+    .unwrap();
+    assert_eq!(component.sources().all()[0].actual(), closed.actual());
+    assert_eq!(
+        component.sources().all()[0].final_expected(),
+        closed.final_expected()
+    );
 }
 
 #[test]
@@ -219,7 +231,7 @@ fn a_canonical_source_transport_keeps_real_frames_and_its_source_authority() {
     let effects =
         ConstraintClosedEffects::for_path(&path, &original, &[], &mut graph, &mut context).unwrap();
     let application = path.root_id();
-    let source = ConstraintProbe::Active(ActiveConstraintProbe {
+    let source = ActiveConstraintProbe {
         source: ConstraintSourceId::new(application, ()),
         source_ordinal: PreparedSourceOrdinal {
             application,
@@ -230,7 +242,7 @@ fn a_canonical_source_transport_keeps_real_frames_and_its_source_authority() {
         prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
         value_expected: None,
         actual: context.fixture_operand(value),
-    })
+    }
     .close(&path, &effects, graph.read(), &mut context)
     .unwrap();
     let source_context = source.actual_operand().original_context().clone();

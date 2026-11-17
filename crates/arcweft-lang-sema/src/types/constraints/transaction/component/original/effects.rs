@@ -122,7 +122,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     }
                 }
                 for source in &path.lineage.probe_trace {
-                    for ty in source.original_query_types()? {
+                    for ty in source.original_query_types() {
                         context.enter_node()?;
                         types.push(ty);
                     }

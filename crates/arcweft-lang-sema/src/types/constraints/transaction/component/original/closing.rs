@@ -5,7 +5,13 @@ use super::*;
 enum OriginalProductClosure<D: ConstraintDomain> {
     ExistingRejection,
     Rejected(OriginalProductRejection),
-    Accepted(Vec<(usize, Arc<ConstraintClosedEffects<D>>)>),
+    Accepted(
+        Vec<(
+            usize,
+            Arc<ConstraintClosedEffects<D>>,
+            Box<[CompletedOriginalMember<D>]>,
+        )>,
+    ),
 }
 
 impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
@@ -44,6 +50,9 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                 let mut accepted = Vec::new();
                 let mut rejected = None;
                 for (index, prepared) in prepared.iter().enumerate() {
+                    if !Arc::ptr_eq(&prepared.branch.lineage, &product.members) {
+                        return Err(PreparedValueFailure::from(TypeConstraintError::from(TypeConstraintInvariant::OriginalProducer)));
+                    }
                     let closed = context.with_original_scope(product.scope.clone(), |context| {
                         context.with_effect_transaction(graph, |context, graph| {
                             let effects = ConstraintClosedEffects::for_branch(
@@ -64,14 +73,24 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                                 graph,
                                 context,
                             )?;
-                            Ok::<_, OriginalInferenceFailure>(effects)
+                            let mut completed = Vec::new();
+                            for member in product.members.iter() {
+                                context.enter_node()?;
+                                let source = self.original.original_path(*member)?;
+                                let component = crate::types::constraints::CompletedConstraintComponent::from_closed_original(
+                                    source, source.root_id(), &prepared.branch, &effects, graph.read(), context,
+                                ).map_err(|error| reject(OriginalProductCheck::MemberCompletion(*member), error))?;
+                                context.enter_node()?;
+                                completed.push(CompletedOriginalMember { member: *member, component });
+                            }
+                            Ok::<_, OriginalInferenceFailure>((effects, completed.into_boxed_slice()))
                         })
                     });
                     match closed {
-                        Ok(effects) => {
+                        Ok((effects, completed)) => {
                             context.enter_node()?;
                             context.enter_node()?;
-                            accepted.push((index, effects));
+                            accepted.push((index, effects, completed));
                         }
                         Err(OriginalInferenceFailure::Rejected(reason)) => {
                             if rejected.is_none() {
@@ -119,13 +138,14 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                     for (index, prepared) in prepared.into_vec().into_iter().enumerate() {
                         if accepted
                             .peek()
-                            .is_some_and(|(selected, _)| *selected == index)
+                            .is_some_and(|(selected, _, _)| *selected == index)
                         {
-                            let (_, effects) =
+                            let (_, effects, completed) =
                                 accepted.next().expect("peeked validated original product");
                             closed.push(ClosedOriginalProduct {
                                 branch: prepared.branch,
                                 effects,
+                                completed,
                             });
                         }
                     }

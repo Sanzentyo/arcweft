@@ -232,7 +232,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     context,
                 )?,
                 source_ordinal: None,
-                closed_relation: None,
                 timing,
             });
             if timing == super::ConstraintEquationTiming::InferredEffectResult {

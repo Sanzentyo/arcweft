@@ -106,6 +106,7 @@ pub(in crate::types::constraints) struct ActiveConstraintProbe<D: ConstraintDoma
 /// binders retain their own owners. Residual callee quantifiers belong to the
 /// continuation result, not to an already evaluated operand.
 pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
+    completion: Arc<ConstraintClosedEffects<D>>,
     source: ConstraintSourceId<D::Source>,
     source_ordinal: PreparedSourceOrdinal,
     branch: Arc<SourceProbeObservation<D>>,
@@ -264,13 +265,23 @@ pub(crate) enum ClosedSourceSelection<D: ConstraintDomain> {
     },
 }
 
-pub(in crate::types::constraints) enum ConstraintProbe<D: ConstraintDomain> {
-    Active(ActiveConstraintProbe<D>),
-    Closed(ClosedConstraintProbe<D>),
-}
-
 impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
-    fn close<A: TypeConstraintAccounting, L>(
+    pub(in crate::types::constraints::transaction) fn original_query_types(
+        &self,
+    ) -> impl Iterator<Item = &TypeKind<crate::types::PreparedEffects>> {
+        std::iter::once(self.actual.value())
+            .chain(self.value_expected.as_ref().map(ConstraintOperand::value))
+    }
+
+    pub(super) const fn source(&self) -> ConstraintSourceId<D::Source> {
+        self.source
+    }
+
+    pub(super) const fn ordinal(&self) -> PreparedSourceOrdinal {
+        self.source_ordinal
+    }
+
+    pub(super) fn close<A: TypeConstraintAccounting, L>(
         self,
         path: &ConstraintInferenceBranch<D, L>,
         effects: &Arc<ConstraintClosedEffects<D>>,
@@ -336,6 +347,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
             }
         };
         Ok(ClosedConstraintProbe {
+            completion: Arc::clone(effects),
             source: self.source,
             source_ordinal: self.source_ordinal,
             branch: self.branch,
@@ -347,60 +359,21 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
     }
 }
 
-impl<D: ConstraintDomain> ConstraintProbe<D> {
-    pub(in crate::types::constraints::transaction) fn original_query_types(
-        &self,
-    ) -> Result<impl Iterator<Item = &TypeKind<crate::types::PreparedEffects>>, TypeConstraintError>
-    {
-        let Self::Active(probe) = self else {
-            return Err(protocol_error(
-                TypeConstraintSourceProtocolInvariant::Outcome,
-            ));
-        };
-        Ok(std::iter::once(probe.actual.value())
-            .chain(probe.value_expected.as_ref().map(ConstraintOperand::value)))
-    }
-
-    pub(super) fn close<A: TypeConstraintAccounting, L>(
-        self,
-        path: &ConstraintInferenceBranch<D, L>,
-        effects: &Arc<ConstraintClosedEffects<D>>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<ClosedConstraintProbe<D>, TypeConstraintError> {
-        match self {
-            Self::Active(probe) => probe.close(path, effects, graph, context),
-            Self::Closed(_) => Err(protocol_error(
-                TypeConstraintSourceProtocolInvariant::Outcome,
-            )),
-        }
-    }
-
-    pub(super) fn into_closed(self) -> Result<ClosedConstraintProbe<D>, TypeConstraintError> {
-        match self {
-            Self::Closed(probe) => Ok(probe),
-            Self::Active(_) => Err(protocol_error(
-                TypeConstraintSourceProtocolInvariant::Outcome,
-            )),
-        }
-    }
-
-    pub(super) const fn source(&self) -> ConstraintSourceId<D::Source> {
-        match self {
-            Self::Active(probe) => probe.source,
-            Self::Closed(probe) => probe.source,
-        }
-    }
-
-    pub(super) const fn ordinal(&self) -> PreparedSourceOrdinal {
-        match self {
-            Self::Active(probe) => probe.source_ordinal,
-            Self::Closed(probe) => probe.source_ordinal,
-        }
-    }
-}
-
 impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
+    pub(in crate::types::constraints::transaction) fn require_completion(
+        &self,
+        owner: &Arc<ConstraintClosedEffects<D>>,
+    ) -> Result<(), TypeConstraintError> {
+        if !Arc::ptr_eq(&self.completion, owner)
+            || self
+                .expected_operand()
+                .is_some_and(|expected| expected.scope() != self.actual.scope())
+        {
+            return Err(super::TypeConstraintInvariant::OriginalProducer.into());
+        }
+        Ok(())
+    }
+
     pub(super) fn actual_operand(&self) -> &ConstraintOperand<D, TypeKind> {
         &self.actual
     }
@@ -565,6 +538,7 @@ impl<D: ConstraintDomain> Eq for ClosedSourceSelection<D> {}
 impl<D: ConstraintDomain> Clone for ClosedConstraintProbe<D> {
     fn clone(&self) -> Self {
         Self {
+            completion: Arc::clone(&self.completion),
             source: self.source,
             source_ordinal: self.source_ordinal,
             branch: Arc::clone(&self.branch),
@@ -585,24 +559,3 @@ impl<D: ConstraintDomain> PartialEq for ClosedConstraintProbe<D> {
 }
 
 impl<D: ConstraintDomain> Eq for ClosedConstraintProbe<D> {}
-
-impl<D: ConstraintDomain> Clone for ConstraintProbe<D> {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Active(probe) => Self::Active(probe.clone()),
-            Self::Closed(probe) => Self::Closed(probe.clone()),
-        }
-    }
-}
-
-impl<D: ConstraintDomain> PartialEq for ConstraintProbe<D> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Active(left), Self::Active(right)) => left == right,
-            (Self::Closed(left), Self::Closed(right)) => left == right,
-            _ => false,
-        }
-    }
-}
-
-impl<D: ConstraintDomain> Eq for ConstraintProbe<D> {}

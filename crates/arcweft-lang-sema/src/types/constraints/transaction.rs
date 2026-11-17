@@ -33,6 +33,7 @@ use super::{
 };
 use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
+mod completed_component;
 mod operand;
 pub(in crate::types::constraints) use operand::ConstraintAliasStep;
 pub(in crate::types) use operand::{
@@ -53,27 +54,7 @@ pub(crate) struct PendingEquation<D: ConstraintDomain> {
     pattern: ConstraintOperand<D>,
     actual: ConstraintOperand<D>,
     pub(crate) source_ordinal: Option<PreparedSourceOrdinal>,
-    closed_relation: Option<ClosedConstraintRelation<D>>,
     timing: ConstraintEquationTiming,
-}
-
-/// The source close shares its exact canonical ports with final validation.
-/// Original prepared C remains unchanged; this witness belongs to one actual
-/// completion, including its supplied Future rows.
-struct ClosedConstraintRelation<D: ConstraintDomain> {
-    expected: ConstraintOperand<D, TypeKind>,
-    actual: ConstraintOperand<D, TypeKind>,
-    owner: Arc<ConstraintClosedEffects<D>>,
-}
-
-impl<D: ConstraintDomain> Clone for ClosedConstraintRelation<D> {
-    fn clone(&self) -> Self {
-        Self {
-            expected: self.expected.clone(),
-            actual: self.actual.clone(),
-            owner: Arc::clone(&self.owner),
-        }
-    }
 }
 
 impl<D: ConstraintDomain> Clone for PendingEquation<D> {
@@ -84,43 +65,12 @@ impl<D: ConstraintDomain> Clone for PendingEquation<D> {
             pattern: self.pattern.clone(),
             actual: self.actual.clone(),
             source_ordinal: self.source_ordinal,
-            closed_relation: self.closed_relation.clone(),
             timing: self.timing,
         }
     }
 }
 
 impl<D: ConstraintDomain> PendingEquation<D> {
-    pub(super) fn transport<A: TypeConstraintAccounting>(
-        &self,
-        target: &super::lexical::ConstraintLexicalScope,
-        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Self, crate::types::TypeProjectionError<TypeConstraintError>> {
-        let target = Arc::new(target.clone());
-        Ok(Self {
-            ordinal: self.ordinal,
-            direction: self.direction,
-            source_ordinal: self.source_ordinal,
-            timing: self.timing,
-            pattern: self.pattern.view().transport(&target, graph, context)?,
-            actual: self.actual.view().transport(&target, graph, context)?,
-            closed_relation: self
-                .closed_relation
-                .as_ref()
-                .map(|relation| {
-                    Ok::<_, crate::types::TypeProjectionError<TypeConstraintError>>(
-                        ClosedConstraintRelation {
-                            expected: relation.expected.transport_canonical(&target, context)?,
-                            actual: relation.actual.transport_canonical(&target, context)?,
-                            owner: Arc::clone(&relation.owner),
-                        },
-                    )
-                })
-                .transpose()?,
-        })
-    }
-
     pub(super) fn validate_completed<A: TypeConstraintAccounting, L>(
         &self,
         branch: &ConstraintInferenceBranch<D, L>,
@@ -134,10 +84,36 @@ impl<D: ConstraintDomain> PendingEquation<D> {
     }
 
     pub(super) fn scope(&self) -> &super::lexical::ConstraintLexicalScope {
-        self.closed_relation.as_ref().map_or_else(
-            || self.pattern.scope(),
-            |relation| relation.expected.scope(),
-        )
+        self.pattern.scope()
+    }
+
+    /// Final source equations borrow the source's canonical ports and exact
+    /// completion directly; no second final relation is stored in original C.
+    pub(super) fn validate_completed_source<A: TypeConstraintAccounting, L>(
+        &self,
+        source: &ClosedConstraintProbe<D>,
+        branch: &ConstraintInferenceBranch<D, L>,
+        effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        effects.require_branch(branch)?;
+        source.require_completion(effects)?;
+        if self.source_ordinal != Some(source.ordinal()) {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
+        }
+        match source.expected_operand() {
+            Some(expected) => self.compare_completed(
+                (expected.value(), expected.scope()),
+                (
+                    source.actual_operand().value(),
+                    source.actual_operand().scope(),
+                ),
+                effects,
+                context,
+            ),
+            None => self.validate_completed(branch, effects, graph, context),
+        }
     }
 
     fn validate_in_scope<A: TypeConstraintAccounting, L>(
@@ -147,20 +123,6 @@ impl<D: ConstraintDomain> PendingEquation<D> {
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        if let Some(relation) = &self.closed_relation {
-            effects.require_branch(branch)?;
-            if !Arc::ptr_eq(&relation.owner, effects)
-                || relation.expected.scope() != relation.actual.scope()
-            {
-                return Err(TypeConstraintInvariant::OriginalProducer.into());
-            }
-            return self.compare_completed(
-                (relation.expected.value(), relation.expected.scope()),
-                (relation.actual.value(), relation.actual.scope()),
-                effects,
-                context,
-            );
-        }
         let pattern = self.pattern.value();
         let project = |value: &TypeKind<PreparedEffects>,
                        context: &mut TypeConstraintContext<'_, A, D>| {
@@ -329,8 +291,8 @@ pub(crate) struct DeferredCycleWitness {
 }
 
 mod source;
+use source::ActiveConstraintProbe;
 pub(super) use source::SourceProbeObservation;
-use source::{ActiveConstraintProbe, ConstraintProbe};
 pub(crate) use source::{ClosedConstraintProbe, ClosedConstraintSourceTrace};
 
 pub(crate) enum StoredSourceSelection<D: ConstraintDomain> {
@@ -396,7 +358,7 @@ pub(crate) struct ConstraintSourceLineage<D: ConstraintDomain> {
     root: ConstraintApplicationId,
     pub(super) original: super::OriginalProducerContext,
     pub(super) scope: super::lexical::ConstraintLexicalScope,
-    pub(super) probe_trace: Vec<ConstraintProbe<D>>,
+    pub(super) probe_trace: Vec<ActiveConstraintProbe<D>>,
     pub(super) projections: Vec<Arc<ProjectionRequest<D>>>,
 }
 
@@ -1483,7 +1445,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 pattern: pattern_operand,
                 actual: actual_operand,
                 source_ordinal: None,
-                closed_relation: None,
                 timing,
             });
             if timing == ConstraintEquationTiming::InferredEffectResult {
@@ -2158,7 +2119,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             pattern,
                             actual: actual_operand.clone(),
                             source_ordinal: Some(operation.source_ordinal),
-                            closed_relation: None,
                             timing: ConstraintEquationTiming::Immediate,
                         });
                     }
@@ -2176,7 +2136,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             actual.clone(),
                         )
                     });
-                    let probe = ConstraintProbe::Active(ActiveConstraintProbe {
+                    let probe = ActiveConstraintProbe {
                         source: input.source,
                         source_ordinal: operation.source_ordinal,
                         branch: Arc::clone(&branch),
@@ -2184,7 +2144,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         prepared_source_projection: input.prepared.source_projection(),
                         value_expected,
                         actual: actual_operand,
-                    });
+                    };
                     path.lineage.probe_trace.push(probe);
 
                     let related = if pattern.is_some() {
@@ -2697,180 +2657,21 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         Ok(super::CompletedCandidateAlternatives::new(first, remaining))
     }
 
-    fn complete_component<A>(
-        path: &mut ConstraintPath<D>,
+    fn complete_component<A: TypeConstraintAccounting>(
+        path: &ConstraintPath<D>,
         selected: ConstraintApplicationId,
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<super::CompletedConstraintComponent<D>, TypeConstraintError>
-    where
-        A: TypeConstraintAccounting,
-    {
-        context.check_cancelled()?;
-        ensure_unique_sources(path)?;
+    ) -> Result<super::CompletedConstraintComponent<D>, TypeConstraintError> {
         let effects = super::normalization::ConstraintClosedEffects::for_path(path, context)?;
-        close_source_rows(path, &effects, graph.read(), context)?;
-        Self::validate_completed_equations(path, &effects, graph.read(), context)?;
-        context.validate_type_and_const_completion(path)?;
-        let selected_domain = path
-            .applications
-            .require_application(selected)?
-            .application();
-        for request in &path.lineage.projections {
-            path.applications.require_application(request.application)?;
-        }
-        let ordered = path
-            .applications
-            .applications()
-            .map(|scope| (scope.application(), scope.id()))
-            .collect::<BTreeMap<_, _>>();
-        let mut completed = BTreeMap::new();
-        for (domain, application) in ordered {
-            let solution = Arc::new(TypeConstraintSolution::complete_application_with_effects(
-                path,
-                application,
-                &effects,
-                graph.read(),
-                context,
-            )?);
-            let projections = Self::finish_projections(
-                path,
-                application,
-                &solution,
-                &effects,
-                graph.read(),
-                context,
-            )?;
-            completed.insert(
-                domain,
-                super::CompletedConstraintApplication::new(solution, projections),
-            );
-        }
-        path.lineage.projections.clear();
-        let closed_sources = core::mem::take(&mut path.lineage.probe_trace)
-            .into_iter()
-            .map(ConstraintProbe::into_closed)
-            .collect::<Result<Box<[_]>, _>>()?;
-        Ok(super::CompletedConstraintComponent::new(
-            selected_domain,
-            completed,
-            ClosedConstraintSourceTrace::new(
-                selected,
-                Arc::clone(&path.applications),
-                closed_sources,
-            ),
-        ))
-    }
-
-    fn validate_completed_equations<A: TypeConstraintAccounting>(
-        path: &ConstraintPath<D>,
-        effects: &Arc<ConstraintClosedEffects<D>>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(), TypeConstraintError> {
-        for equation in &path.equations {
-            equation.validate_completed(path, effects, graph, context)?;
-        }
-        Ok(())
-    }
-
-    fn finish_projections<A>(
-        path: &ConstraintPath<D>,
-        application: ConstraintApplicationId,
-        solution: &TypeConstraintSolution,
-        effects: &Arc<ConstraintClosedEffects<D>>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<
-        Box<[super::KeyedConstraintProjection<D::Application, D::Projection>]>,
-        TypeConstraintError,
-    >
-    where
-        A: TypeConstraintAccounting,
-    {
-        let mut projections = Vec::new();
-        for request in path
-            .lineage
-            .projections
-            .iter()
-            .filter(|request| request.application == application)
-        {
-            let policy = match request.closure {
-                TypeConstraintProjectionClosure::Closed => {
-                    ConstraintClosurePolicy::ProjectionClosed
-                }
-                TypeConstraintProjectionClosure::AllowFutureEligible => {
-                    ConstraintClosurePolicy::ProjectionFuture
-                }
-            };
-            let value =
-                project_closed_operand(request.value.view(), path, policy, effects, graph, context)
-                    .map_err(projection_error)?;
-            let input = request
-                .input
-                .as_ref()
-                .map(|input| {
-                    let projected = project_closed_operand(
-                        input.view(),
-                        path,
-                        ConstraintClosurePolicy::ProjectionClosed,
-                        effects,
-                        graph,
-                        context,
-                    )
-                    .map_err(projection_error)?;
-                    solution
-                        .reify_projection_input(
-                            &projected,
-                            path,
-                            application,
-                            effects,
-                            graph,
-                            context,
-                        )
-                        .map_err(projection_error)
-                })
-                .transpose()?;
-            projections.push(
-                solution
-                    .reify_projection(
-                        Arc::clone(&request.key),
-                        &value,
-                        path,
-                        application,
-                        policy,
-                        effects,
-                        graph,
-                        context,
-                    )
-                    .map_err(projection_error)?
-                    .with_source(
-                        request.source.as_ref().map(|source| {
-                            super::completion::CompletedProjectionAddress {
-                                application: path
-                                    .applications
-                                    .require_application(source.application)
-                                    .expect("projection source was admitted on this path")
-                                    .application(),
-                                key: Arc::clone(&source.key),
-                            }
-                        }),
-                        input,
-                    ),
-            );
-        }
-        projections.sort_by(|left, right| left.key().cmp(right.key()));
-        if projections
-            .windows(2)
-            .any(|pair| pair[0].key() == pair[1].key())
-        {
-            return Err(TypeConstraintError::Invariant(
-                TypeConstraintInvariant::Projection(
-                    TypeConstraintProjectionInvariant::DuplicateKey,
-                ),
-            ));
-        }
-        Ok(projections.into_boxed_slice())
+        super::CompletedConstraintComponent::from_closed_original(
+            path,
+            selected,
+            path,
+            &effects,
+            graph.read(),
+            context,
+        )
     }
 
     fn prepare_application<A>(
@@ -3107,36 +2908,23 @@ fn unique_request_ordinal<D: ConstraintDomain>(
             .map_err(|_| TypeConstraintError::Abort(TypeConstraintAbort::ArithmeticOverflow))?,
     ))
 }
-fn close_source_rows<A, D>(
-    path: &mut ConstraintPath<D>,
-    effects: &Arc<super::normalization::ConstraintClosedEffects<D>>,
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<(), TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    effects.require_path(path)?;
-    let probes = core::mem::take(&mut path.lineage.probe_trace);
-    let mut closed = Vec::with_capacity(probes.len());
-    for probe in probes {
-        let probe = probe.close(path, effects, graph, context)?;
-        for equation in &mut path.equations {
-            if equation.source_ordinal == Some(probe.ordinal()) {
-                if let Some(expected) = probe.expected_operand() {
-                    equation.closed_relation = Some(ClosedConstraintRelation {
-                        expected: expected.clone(),
-                        actual: probe.actual_operand().clone(),
-                        owner: Arc::clone(effects),
-                    });
-                }
-            }
+impl<D: ConstraintDomain> ConstraintSourceLineage<D> {
+    fn close_trace<A: TypeConstraintAccounting, L>(
+        &self,
+        branch: &ConstraintInferenceBranch<D, L>,
+        effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Box<[ClosedConstraintProbe<D>]>, TypeConstraintError> {
+        effects.require_branch(branch)?;
+        let mut closed = Vec::new();
+        for probe in &self.probe_trace {
+            context.enter_node()?;
+            context.enter_node()?;
+            closed.push(probe.clone().close(branch, effects, graph, context)?);
         }
-        closed.push(ConstraintProbe::Closed(probe));
+        Ok(closed.into_boxed_slice())
     }
-    path.lineage.probe_trace = closed;
-    Ok(())
 }
 
 fn path_correlation_cmp<D: ConstraintDomain>(

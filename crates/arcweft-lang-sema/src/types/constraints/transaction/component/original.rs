@@ -47,6 +47,7 @@ pub(super) enum OriginalProductCheck {
         parameter: GenericConstReference,
     },
     EffectRelation(OriginalProductMember),
+    MemberCompletion(OriginalProductMember),
     Completion,
 }
 
@@ -79,6 +80,14 @@ pub(crate) struct OriginalConstraintForest<D: ConstraintDomain, P> {
 pub(super) struct ClosedOriginalProduct<D: ConstraintDomain> {
     pub(super) branch: JointBranch<D>,
     pub(super) effects: Arc<ConstraintClosedEffects<D>>,
+    pub(super) completed: Box<[CompletedOriginalMember<D>]>,
+}
+
+/// Canonical materialization input remains correlated with the exact original
+/// producer/frontier/path. Its joint branch retains proofs, not a second value.
+pub(super) struct CompletedOriginalMember<D: ConstraintDomain> {
+    pub(super) member: OriginalProductMember,
+    pub(super) component: crate::types::constraints::CompletedConstraintComponent<D>,
 }
 
 /// Only this phase has checked original scope, binding and equation conditions
