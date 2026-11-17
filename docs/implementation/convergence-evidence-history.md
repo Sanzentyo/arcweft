@@ -18059,3 +18059,21 @@ ConstraintPathの新しいprepared操作は、lineageが保持する実frameの�
 Supersedes: 現状一覧の「下位freezeがΓ／D／Rを保持する」を、今回加えた実source path側のΓ／D／R準備と、既存freezeの保持に分けて更新した。Root／forest最終経路への接続、局所∀やcanonical最終化まで解消したとは扱わない。現状一覧は[current-status.md](current-status.md)だけとし、過去の失敗・実測・full SHA・原本とGeneric Match等の受入・公開済み状態を保持する。
 
 原本 [task-source-scoped-effects-checkpoint.raw.zip](acceptance-evidence/task-source-scoped-effects-checkpoint.raw.zip) は17 entries、ZIP 289216 bytes、SHA-256 `73c4f41093a7d461c556e97c1a4140bcfe609dd0453dbf4a2acaed661dc4d99c`。2回の入力・失敗ログ・fmt・公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Forest scoped effects checkpoint
+
+2026-11-18。基点 `a99a4f629f9c01ccfdab7de29e59fd78393cc68c`、移行Source `c3c99f6350c65c8aa35781c2a74c419003ddc64e`。10 Rust path、698追加／199削除、物理499 LOC増。既存mainへWIP commit・非force pushし、最終9ファイルの入力と公開blobのbyte SHA-256、1削除のpinned base blobと公開先／working treeでの不在を照合した。公開時のtracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+Source forestは各sourceの実Γ・宣言D・元Rを独立した `∀Γ.(D ⇒ R)` として準備し、source間のbinding照合から生じるRには元sourceのDのconjunctionを渡す。Source個別の証明を、共同前提が矛盾していることだけで消さない。旧来の元Rの共同scopeへの移動・平坦な連結を削除した。SourcePathとjoint branchは実Γ／applicationの同じ準備kernelを使い、仮source lineageを作らない。Original productのeffects payloadは、旧flat canonical tableから元C／local／Future／named入力を保持するScopedEffectCompletionへ移した。既存の最終binding validatorはConstraintClosedEffects専用のままで、新payloadとの型不整合が具体的に残る。Validator本体、scope・equation・型／const／effectの最終確認条件を削除・迂回せず、canonical結果を返すshimや成功fallbackも設けていない。最終completion・closed header・canonical投影の受入ではない。
+
+PreparedTypeEffectRootsは共通のexhaustive TypeConstraintShapeのchildrenを使い、prepared型を複製せず必要なrow／predicate portを借用する。元productが選択したsource型・predicate、projection、元bindingとjoint bindingをfreezeのquery rootに含め、未選択候補とValueDefinition::Useの後続値を元root／label supportから外す。新しい型grammarやsource再実行はない。各allocationの前に元workへ課金し、失敗したcollectionは部分inventoryを返さない。Source準備とjoint freezeは元graphのmetadata transactionで包み、workをrefundしない。
+
+新規fixtureは5本、446物理LOC。Forest 2本は、joint Dが矛盾していても個別sourceの不成立が消えない条件、および後続use由来のlabel／型rootを元入力へ含めない条件を対象にする。後者は明示したrecorded-use fixtureでroot選択だけを検査し、use-ticket protocol・source permission全体の受入を証明しない。Root collector 3本はnested headerと未準備named inputの保持、foreign termを貸さない条件、実測workの全枯渇境界で部分rootやgraph変更を返さない条件を対象にする。Library／test targetはコンパイル失敗し、新fixtureのcompile成立・実行成功は主張せず、PASSへ加算しない。旧R relocation helperはproduction利用側がなくなったため削除し、その旧契約だけを対象にした104 LOCのfixture 1本も削除した。新契約では元Rを移動せず各sourceのscopeに保持することが理由で、失敗を隠すための除外ではない。旧bytes・Source SHA・過去の実測はGitと履歴原本へ保持する。
+
+Locked Sema test target／全feature checkはdev01／dev02／dev04の3回を実行し、各終了101。Dev01はlibrary 533エラー・26警告、lib test 1,514エラー・45警告。Root collectorのmissing importとstructured failureのDebugを修正したdev02、および旧helper／fixture削除後の最終dev04はlibrary 532エラー・26警告、lib test 1,509エラー・45警告。最終の新fixture pathへのdiagnostic mentionは0件だが、targetのcompile成立を示さない。Original productの最終validatorと旧fixtureのpredicate／row observerの未移行を限定reviewへ記録した。Terminal summaryを件数のauthorityとする。Dev03はfmt後、削除ファイルをGet-FileHashへ渡す旧入力runnerの前提で中断し、Cargoは開始していない。4回のowner fmt checkは終了0。Dev04と公開照合は削除を別に記録し、存在しないファイルへhashを発行せず、base blobを保持する。旧／修正runner・照合scriptと中断記録も原本へ保持した。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。公開blobとの照合によるcommit前証拠の再利用で、commit後の再実行ではない。
+
+所有レビューは削除を含む10 pathのbase／現行LOC・bytes・分類・inline test LOCをJSONへ保持した。133 LOCのoriginal/effectsはsource／jointの数学的な準備とfreezeを所有し、74 LOCのrootsは既存grammarの借用queryを所有する。大きい既存original／componentは元product列挙・protocolの責務を維持し、独立state群や広いfacadeを増やさない。削除fileの現行LOCは0、現行hashはnullとし、base blobを入力・公開照合へ保持した。Cargo依存・layer方向・I/O・unsafe・codec・version・budget上限は不変。既存dependency graph証拠を再利用し、全体scannerは未実行。
+
+Supersedes: 現状一覧の「root／forestへの接続はまだ」を、今回接続したsource別／jointのfreeze入力と、まだ型不整合として残る最終validator／closed header・canonical投影へ分けた。旧R relocationの説明を現行手順として残さず、この履歴と原本の元SHA・失敗・実測を保持する。新しい型付き境界で現れたエラー件数を、Generic Match等の既受入機能の新たな不具合や再開の証拠とは扱わない。受入・公開済み状態と過去の成功実測は元Sourceのまま維持する。現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-forest-scoped-effects-checkpoint.raw.zip](acceptance-evidence/task-forest-scoped-effects-checkpoint.raw.zip) は30 entries、ZIP 440143 bytes、SHA-256 `7d52a27641a1457c139ad0a633d96e12c18a1dd77b21ada2bb47806b30c50efa`。3回のCargo入力・失敗ログ、4回のfmt、Cargo開始前中断、runner／照合script、公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
