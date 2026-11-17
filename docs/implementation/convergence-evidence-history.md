@@ -18031,3 +18031,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 現状一覧の「predicate同値の制約化」は今回の元Rへの追加と、依然未達のFn局所∀を含む最終確定へ分けた。Canonical finalization、joint completion／closed header、scheme contract移行や局所scopeの閉じ込みは残る。新しいprepared同値methodを成功したcanonical比較の代用品とは扱わない。現状一覧は[current-status.md](current-status.md)だけに集約する。過去の実測・失敗・full SHA・原本と、Generic Match等の受入・公開済み状態を保持する。エラー件数の変化を既受入機能の新たな不具合とみなさない。
 
 原本 [task-prepared-predicate-agreement-checkpoint.raw.zip](acceptance-evidence/task-prepared-predicate-agreement-checkpoint.raw.zip) は11 entries、ZIP 146743 bytes、SHA-256 `305636db92e0470666c46a54221f33f998d0bf246619fa50b7254a5311f7ebf9`。入力・失敗ログ・fmt・公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Prepared scoped constraints checkpoint
+
+2026-11-18。基点 `808dd6dc623bc29fee03efdcbb3dc34f462ffd98`、移行Source `8e0bc025dd75f5d72d8cf0a320a2d2cfabed93e8`。7 Rust path、328追加／16削除、物理312 LOC増。既存mainへWIP commit・非force pushし、最終7入力と公開blobのbyte SHA-256を照合した。公開時のtracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+Read viewは、callerが認可した完全なΓとD／Rを元issuerに結ぶimmutable ScopedConstraintを発行する。全参照のΓ所属、重複、raw inference keyの誤った全称入力化を拒否し、bounded copyを元workへ課金する。実frame・source参照権限の認可は引き続きtypes ownerが担う。この値はScopedObligationのArcと実issuerを保持する数学的な入力で、宣言変更・delta公開・completionのpermitではない。Freezeの既存signatureを直接更新し、全旧callerを移行した。追加Rのissuer／livenessを再検査し、元C、local／Future、named header、reachable rootと一緒に保持する。Named bodyを評価せず、別branchのRをlive graphへ追加しない。同じreceiptの再freezeは元fact identityを保持する。FrontendのΓ組立て、joint completion／closed headerへの接続は未完了で、freezeを具体解や受入sealとは扱わない。
+
+新規fixtureは4本、245物理LOC。元Cとbranch Rのjointな成立／矛盾と他branchの不変性、同じfactのidentity、whole-row implicationのvacuityと未使用Γ、Γ不足・重複・foreign・staleの拒否、scope発行／freezeの実測work量に対する全枯渇境界の原子性を対象にする。Library／test targetはコンパイル失敗し、新fixtureのcompile成立・実行成功は主張せず、PASSへ加算しない。Dev01のlocked Sema test target／全feature checkは終了101、library 532エラー・26警告、lib test 1,506エラー・46警告。Private field参照を、field可視性の拡張ではなくread ownerへのfactory移動で修正し、unused mutも除いた。最終dev02は終了101、library 531エラー・26警告、lib test 1,505エラー・45警告。2回のowner fmt checkは終了0。最終新fixture pathへのdiagnostic mentionは0件だが、targetのcompile成立を示さない。Terminal summaryを件数のauthorityとする。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。公開blobとの照合によるcommit前証拠の再利用で、commit後の再実行ではない。
+
+所有レビューは7 pathのbase／現行LOC・bytes・分類・inline test LOCをJSONへ保持した。Scopeは既存obligation grammar、scope発行はread owner、関係の保持は既存freezeへ置き、第二のsolverやreaderを足さない。Root prepared.rsは内部のnamed exportだけを追加し、public facadeは広げない。既存freeze／replay fixtureの変更は新引数の接続、追加fixtureは同責務のchildへ置いた。Cargo依存・layer方向・I/O・unsafe・codec・version・budget上限は不変。既存dependency graph証拠を再利用し、全体scannerは未実行。
+
+Supersedes: 現状一覧で累積していたopening・Γ admission・実適用の細部説明を、現在のownerと成立範囲へまとめ直した。旧記述を別の現状一覧として残さず、この履歴と各原本のfull SHA・失敗・実測を保持する。下位freezeの実装と、未達のfrontend joint completionを区別し、function-scheme contractの具体的な未移行も明示した。これは既存compile診断に基づく移行範囲の明確化であり、完了機能を再開する変更ではない。Generic Match等の受入・公開済み状態を維持し、現状一覧は[current-status.md](current-status.md)だけとする。
+
+原本 [task-prepared-scoped-constraints-checkpoint.raw.zip](acceptance-evidence/task-prepared-scoped-constraints-checkpoint.raw.zip) は17 entries、ZIP 288863 bytes、SHA-256 `16bd2eaa9780d90683c17cf63695eee8b3eb542952684bdb9e6646cf30b7cb06`。2回の入力・失敗ログ・fmt・公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
