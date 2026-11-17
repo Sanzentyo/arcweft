@@ -18225,3 +18225,21 @@ Dev01は新fixtureの括弧誤りでfmt apply／checkが終了1、Cargo開始前
 Supersedes: 現状一覧から「Byte collection／AgentValueの旧確定reader」を削除した。訂正理由は上記readerの実削除と実portによる条件付き準備への置換であり、Fn局所∀／guarded header、最終transaction・solution caller、frontend public switchやbody一回準備の受入まで達成したとは扱わない。Generic Match等の既受入項目と以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
 
 原本 [task-cross-shape-preparation-checkpoint.raw.zip](acceptance-evidence/task-cross-shape-preparation-checkpoint.raw.zip) は23 entries、305,693 bytes、SHA-256 `8001bf3bc556020a9b5ce32fdd1d46295529d7d742c7e49e95fd1878dc969250`。Fmtのみの停止とCargoを実行した2回の入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Completed type reification checkpoint
+
+2026-11-18。基点 `f108dcc8d2a94b3fa94443ea46eedf1441778e22`、移行Source `ece7270e337a09d8e6161b1bc5345359a6b53009`。5 Rust path、568追加／33削除、物理535 LOC増。ユーザー指定の途中WIPとしてcommit・非force pushし、最終5入力と公開blobのbyte SHA-256を照合した。公開時tracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+CompletedGenericContextの再具体化は、同じ元計算のclosed effectsを要求し、実operand由来・frameをgraph上で検査してから、そのprincipalでcanonical algebraへ移し、captureを保つreference transportを行う。Selected-call self比較もcanonical完了値に適用する。復元したcanonical解は明示的にprepared algebraへ戻してCompleted由来のoperandへ格納する。Projection input／solution seal／transactionの呼出しへ同じeffectsとgraph loanを渡し、偽source・再構築したsource権限・別の型modelは作らない。
+
+Future-result検査は完了値自身のscope／captureと共通canonical grammarを使い、active pathでの再置換を削除した。Type／const／effectのBoundを実occurrenceで検査し、Freeはその値のcaptureだけを認め、Inferenceを拒否する。Unresolved grammar node・不正lengthの拒否と、Future注釈で省略したrowの既存扱いを保持する。完了test helperは元bound calculation・実Future入力、または実closed effectsとgraphを明示して受け取るAPIへ移した。暗黙closureや不足Futureを空値へ変えるshimは置かない。既存の不正scalar-row fixtureは実original Cをfreezeして新APIを使い、既定予算を維持する。他の旧fixture callerの移行は残る。
+
+新規5 fixture、test分類pathの増分364 LOC。実Named本体の効果と無関係な未準備本体の保持、Future不足拒否と実値による再試行、等しい型でも別completionの拒否、受け手の宣言を元operandのFree権限にしない条件、完了値の3種port／binder／capture・省略row／不正nodeを対象とする。コンパイル未完了のため、5 fixtureのcompile成立・実行成功を主張せずPASSへ加算しない。
+
+Locked Sema／test target／全feature checkは2回とも終了101。Dev01はlibrary 498エラー・25警告、lib test 1,542エラー・44警告。所有する既存scalar-row fixtureを明示graph／original APIへ移行し、新fixtureへ省略rowと不正nodeの条件を追加した最終dev02はlibrary 498エラー・25警告、lib test 1,540エラー・44警告。2回のowner fmt checkは終了0。前Sourceのtest target 1,502からの増加には、旧helper callerが新しい明示入力をまだ渡していないAPI診断が含まれる。件数を動作退行の実測や既受入機能の再開根拠にしない。Solution本体と新transport／fixtureへの限定primary位置抽出は0件だが全targetの成功証明ではない。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。Commit前入力と公開blobの一致による再利用で、commit後の再実行ではない。Cargo cleanは02:09実施済みで繰り返していない。
+
+全5 pathのbase／現行LOC・bytes・分類を原本へ記録し、535 LOC増をowner内でレビューした。Transportは783 LOC／32,316 bytesで完了scope・captureの検査と再具体化を所有し、solutionは1,337 LOC／52,892 bytes。原本のinline_test_module_loc抽出は文字通りmod testsに限定したため0を返したが、solution末尾のmalformed_completed_testsは85 LOCである。この限定matcherの取りこぼしをここで明示して訂正し、実測原本は書き換えない。Path分類のproduction増分を純粋なproductionだけの量と解釈しない。Cargo依存・feature・layer・I/O・unsafe・codec／version・既定予算は不変。既存resolved graph／推移的reverse dependency証拠を再利用し、scannerは未実行。
+
+Supersedes: 現状一覧の細部が累積した準備手順を現在のowner・成立範囲へ整理し、再具体化／復元の実装と残る最終original-forest callerを区別した。旧helperの暗黙closure呼出しを現行手順として残さない。Fn局所∀／guarded header、全fixture移行、frontend public switchやbody一回準備の受入は未達のままである。Generic Match等の既受入項目と以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
+
+原本 [task-completed-type-reification-checkpoint.raw.zip](acceptance-evidence/task-completed-type-reification-checkpoint.raw.zip) は19 entries、309,435 bytes、SHA-256 `d1fb6e476393af1644f4dbf70ac14b93a3047b5bc119d3a1abc083dbf4a9830a`。2回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・最終の限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
