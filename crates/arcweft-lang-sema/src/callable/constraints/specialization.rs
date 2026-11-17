@@ -50,29 +50,16 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
                 }
                 continue;
             }
-            source
-                .semantic_identity_digest_in_scope_with_control(
-                    &GenericScope::default(),
-                    self.context,
-                )
-                .map_err(|error| match error {
-                    TypeProjectionError::Control(error) => {
-                        FunctionSpecializationFailure::Constraint(error.into())
-                    }
-                    TypeProjectionError::Instantiation(error) => {
-                        FunctionSpecializationFailure::Prepared(error.into())
-                    }
-                })?;
-            let initialization = graph
-                .issue_function_specialization(
-                    self.authority,
-                    receipt.clone(),
-                    application,
-                    source,
-                    enclosing,
-                    limits,
-                )
-                .map_err(FunctionSpecializationFailure::Prepared)?;
+            let initialization = graph.issue_function_specialization(
+                self.authority,
+                receipt.clone(),
+                application,
+                source,
+                alternative.source_scope(),
+                enclosing,
+                limits,
+                self.context,
+            )?;
             let (application, parameters, template) = initialization
                 .into_lower_parts(self.authority, &receipt)
                 .map_err(FunctionSpecializationFailure::Prepared)?;
@@ -110,7 +97,7 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
         &mut self,
         graph: &mut PreparedCallGraph<P, U>,
         application: D::Application,
-        source: &TypeKind,
+        source: &TypeKind<PreparedEffects>,
         enclosing: &EnclosingGenericParameterScope,
         limits: &CallableLimits,
         result: D::Projection,
@@ -121,29 +108,17 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
         graph
             .validate_constraint_authority(self.authority)
             .map_err(FunctionSpecializationFailure::Prepared)?;
-        // Admit the full source, including nested binders and effect DAGs, to
-        // this borrowed component's work before constructing its schema.
-        source
-            .semantic_identity_digest_in_scope_with_control(&GenericScope::default(), self.context)
-            .map_err(|error| match error {
-                TypeProjectionError::Control(error) => {
-                    FunctionSpecializationFailure::Constraint(error.into())
-                }
-                TypeProjectionError::Instantiation(error) => {
-                    FunctionSpecializationFailure::Prepared(error.into())
-                }
-            })?;
         let receipt = self.ticket.receipt();
-        let initialization = graph
-            .issue_function_specialization(
-                self.authority,
-                receipt.clone(),
-                application,
-                source,
-                enclosing,
-                limits,
-            )
-            .map_err(FunctionSpecializationFailure::Prepared)?;
+        let initialization = graph.issue_function_specialization(
+            self.authority,
+            receipt.clone(),
+            application,
+            source,
+            &GenericScope::default(),
+            enclosing,
+            limits,
+            self.context,
+        )?;
         let (application, parameters, template) = initialization
             .into_lower_parts(self.authority, &receipt)
             .map_err(FunctionSpecializationFailure::Prepared)?;
@@ -201,8 +176,8 @@ impl CandidateConstraintWorkSession<'_> {
         self,
         graph: &mut PreparedCallGraph<P, U>,
         application: crate::callable::CallableConstraintApplication,
-        source: &TypeKind,
-        expected: &TypeKind,
+        source: &TypeKind<PreparedEffects>,
+        expected: &TypeKind<PreparedEffects>,
         enclosing: &EnclosingGenericParameterScope,
         limits: &CallableLimits,
         result: D::Projection,
@@ -212,24 +187,14 @@ impl CandidateConstraintWorkSession<'_> {
         D::Projection: Clone,
     {
         let mut context = TypeConstraintContext::with_accounting(self);
-        source
-            .semantic_identity_digest_in_scope_with_control(&GenericScope::default(), &mut context)
-            .map_err(|error| match error {
-                TypeProjectionError::Control(error) => {
-                    FunctionSpecializationFailure::Constraint(error.into())
-                }
-                TypeProjectionError::Instantiation(error) => {
-                    FunctionSpecializationFailure::Prepared(error.into())
-                }
-            })?;
-        let (initialization, source, template) = graph
+        let (initialization, template) = graph
             .prepare_root_function_specialization(
                 application.expression(),
                 source,
                 enclosing,
                 limits,
-            )
-            .map_err(FunctionSpecializationFailure::Prepared)?
+                &mut context,
+            )?
             .into_parts();
         let (authority, parameters, inherited, imported) = initialization
             .into_lower_parts()
@@ -266,7 +231,7 @@ impl CandidateConstraintWorkSession<'_> {
             &mut context,
             effects,
             result.clone(),
-            &source,
+            source,
             &template,
         );
         lower.constrain(
@@ -320,24 +285,16 @@ where
         let authority = &self.callbacks.authority;
         let access = CandidateConstraintEffectAccess { authority };
         self.callbacks.client.with_effect_relation(access, |effects| {
-            self.lower.constrain_result_use(self.callbacks.context, effects, result, expected, |source, context| {
+            self.lower.constrain_result_use(self.callbacks.context, effects, result, expected, |source, graph, context| {
                 if !matches!(source.source_type(), TypeKind::Function { binder, .. } if !binder.is_empty()) {
                     return Ok(None);
                 }
-                source.source_type()
-                    .semantic_identity_digest_in_scope_with_control(
-                        source.source_scope(),
-                        context,
-                    )
+                let (initialization, template) = authority
+                    .prepare_function_specialization(source.source_type(), source.source_scope(), enclosing, limits, graph, context)
                     .map_err(|error| match error {
-                        TypeProjectionError::Control(error) => TypeConstraintFailure::from(error),
-                        TypeProjectionError::Instantiation(error) => {
-                            TypeConstraintFailure::client_invariant(invariant(error.into()))
-                        }
-                    })?;
-                let (initialization, _, template) = authority
-                    .prepare_function_specialization(source.source_type(), enclosing, limits)
-                    .map_err(|error| TypeConstraintFailure::client_invariant(invariant(error)))?
+                        FunctionSpecializationFailure::Prepared(error) => TypeConstraintFailure::client_invariant(invariant(error)),
+                        FunctionSpecializationFailure::Constraint(error) => error,
+                    })?
                     .into_parts();
                 let (_, parameters, inherited, imported) = initialization
                     .into_lower_parts()

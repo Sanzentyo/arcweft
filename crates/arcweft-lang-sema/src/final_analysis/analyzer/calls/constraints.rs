@@ -1696,7 +1696,7 @@ impl<'a, 'project, 'catalog, 'control>
                             .map_err(|error| {
                                 AnalyzerCallCheckFailure::expression(source_id, phase, error)
                             })?;
-                        let graph = self.analyzer.facts.prepared_calls().map_err(|error| {
+                        let graph = self.analyzer.facts.prepared_calls_mut().map_err(|error| {
                             AnalyzerCallCheckFailure::Invariant(
                                 AnalyzerCallClientInvariant::fact_transaction(source, error),
                             )

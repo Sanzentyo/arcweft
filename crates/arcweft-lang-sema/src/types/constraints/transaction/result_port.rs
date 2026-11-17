@@ -73,6 +73,10 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
         self.source.value()
     }
 
+    pub(crate) fn source_scope(&self) -> &crate::types::GenericScope {
+        self.source.scope().shape()
+    }
+
     /// Only an already registered source result can be consumed. The new
     /// projection owns that edge, and admission ensures its domain owner is
     /// distinct from every application already present on this exact path.
@@ -159,6 +163,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         expected: &TypeKind<PreparedEffects>,
         mut prepare: impl FnMut(
             &ConstraintResultUseSource<D>,
+            crate::effect_row::prepared::PreparedEffectReadView<'_>,
             &mut TypeConstraintContext<'_, A, D>,
         ) -> Result<
             Option<PreparedConstraintFunctionScheme<D>>,
@@ -198,7 +203,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 context,
             )?);
             let use_source = ConstraintResultUseSource::for_result(Arc::clone(&source))?;
-            let pattern = match prepare(&use_source, context)? {
+            let pattern = match prepare(&use_source, effects.read(), context)? {
                 Some(prepared) => {
                     let (next, operand) = prepared.instantiate(
                         &source,

@@ -78,7 +78,7 @@ fn a_result_use_retains_the_selected_request_and_the_binding_that_normalized_its
                 TypeKind::Tuple(vec![TypeKind::I64]),
                 crate::effect_row::EffectRow::closed(crate::effects::EffectSet::new()),
             ),
-            |source, context| {
+            |source, _graph, context| {
                 let TypeKind::Function {
                     params,
                     return_type,
@@ -217,8 +217,11 @@ fn a_scheme_opening_rejects_changed_value_ports_headers_and_parameter_roles() {
     for case in 0..5 {
         let cancellation = AtomicBool::new(false);
         let (mut context, mut transaction, scheme) = function_result(&cancellation);
-        let result =
-            transaction.constrain_result_use(&mut context, (), &scheme, |source, context| {
+        let result = transaction.constrain_result_use(
+            &mut context,
+            (),
+            &scheme,
+            |source, _graph, context| {
                 let TypeKind::Function {
                     binder,
                     params,
@@ -261,7 +264,8 @@ fn a_scheme_opening_rejects_changed_value_ports_headers_and_parameter_roles() {
                 Ok(Some(source.prepare_function_scheme(
                     1, parameters, template, context,
                 )?))
-            });
+            },
+        );
         assert!(
             matches!(
                 result,
@@ -284,29 +288,30 @@ fn equal_result_types_cannot_exchange_their_prepared_scheme_openings() {
     transaction.frontier.push(second);
     let mut retained = None;
     let mut visits = 0;
-    let result = transaction.constrain_result_use(&mut context, (), &scheme, |source, context| {
-        visits += 1;
-        if let Some(prepared) = retained.take() {
-            return Ok(Some(prepared));
-        }
-        let TypeKind::Function {
-            params,
-            return_type,
-            effects,
-            ..
-        } = source.source_type()
-        else {
-            panic!("scheme")
-        };
-        let template = TypeKind::function_with_effects(
-            params.clone(),
-            return_type.as_ref().clone(),
-            effects.clone(),
-        );
-        retained =
-            Some(source.prepare_function_scheme(1, scheme_parameters(), template, context)?);
-        Ok(None)
-    });
+    let result =
+        transaction.constrain_result_use(&mut context, (), &scheme, |source, _graph, context| {
+            visits += 1;
+            if let Some(prepared) = retained.take() {
+                return Ok(Some(prepared));
+            }
+            let TypeKind::Function {
+                params,
+                return_type,
+                effects,
+                ..
+            } = source.source_type()
+            else {
+                panic!("scheme")
+            };
+            let template = TypeKind::function_with_effects(
+                params.clone(),
+                return_type.as_ref().clone(),
+                effects.clone(),
+            );
+            retained =
+                Some(source.prepare_function_scheme(1, scheme_parameters(), template, context)?);
+            Ok(None)
+        });
     assert_eq!(visits, 2);
     assert!(matches!(
         result,
@@ -368,7 +373,7 @@ fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_cont
                 TypeKind::I64,
                 EffectRow::closed(EffectSet::new()),
             ),
-            |source, context| {
+            |source, _graph, context| {
                 let parameters = |predicate| {
                     TypeConstraintParameterScope::seal_call_scope(
                         binder,

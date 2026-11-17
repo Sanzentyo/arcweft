@@ -58,10 +58,18 @@ enum Source {
 }
 
 struct Client<'a> {
-    graph: &'a PreparedCallGraph<()>,
+    graph: &'a mut PreparedCallGraph<()>,
     application_owners: Vec<ExprId>,
     sources: &'a [Source],
-    observations: Arc<Mutex<Vec<(u8, TypeKind, Option<CallableConstraintApplication>)>>>,
+    observations: Arc<
+        Mutex<
+            Vec<(
+                u8,
+                TypeKind<PreparedEffects>,
+                Option<CallableConstraintApplication>,
+            )>,
+        >,
+    >,
     cancellation: &'a AtomicBool,
     cancel_during_probe: bool,
     check_foreign_graph: bool,
@@ -81,6 +89,21 @@ impl TypeConstraintClient<Domain> for Client<'_> {
     type MaterializationCheckpoint = ();
     type PreparedSealedBranchValue = ();
 
+    fn with_effect_relation<R>(
+        &mut self,
+        access: CandidateConstraintEffectAccess<'_>,
+        operation: impl FnOnce(&mut crate::effect_row::prepared::PreparedEffectGraph) -> R,
+    ) -> Result<R, SourceCheckpointFailure<Domain>> {
+        access
+            .with_graph(self.graph, operation)
+            .map_err(|error| match error {
+                CallConstraintInvariant::ForeignPreparedIssuer => {
+                    SourceCheckpointFailure::Protocol(TypeConstraintSourceProtocolInvariant::Ticket)
+                }
+                other => panic!("fixture effect graph: {other:?}"),
+            })
+    }
+
     fn probe_source(
         &mut self,
         _: &mut (),
@@ -88,19 +111,21 @@ impl TypeConstraintClient<Domain> for Client<'_> {
     ) -> Result<SourceProbeOutcome<Domain>, SourceCallbackFailure<Domain>> {
         let source = probe.source().local();
         match &self.sources[usize::from(source)] {
-            Source::Value(value) => {
-                probe.observe(SourceProbeResult::checked(value.clone(), 0, 0, ()))
-            }
+            Source::Value(value) => probe.observe(
+                self.graph.effect_declarations_mut().unwrap(),
+                SourceProbeResult::checked(prepared_type(value), 0, 0, ()),
+            ),
             Source::Scheme(scheme) | Source::ReturnedScheme(scheme) => {
+                let scheme = prepared_type(scheme);
                 if self.check_foreign_graph {
-                    let foreign = PreparedCallGraph::<()>::new();
+                    let mut foreign = PreparedCallGraph::<()>::new();
                     assert!(matches!(
                         probe.specialize_function_value(
-                            &foreign,
+                            &mut foreign,
                             CallableConstraintApplication::Specialize(
                                 self.application_owners[usize::from(source)]
                             ),
-                            scheme,
+                            &scheme,
                             &enclosing(),
                             &PRODUCTION_CALLABLE_LIMITS,
                             0,
@@ -117,15 +142,18 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                     if matches!(self.sources[usize::from(source)], Source::ReturnedScheme(_)) {
                         let owner = self.application_owners[1];
                         let parameter = super::super::tests::accepted_type(900, 0);
-                        let template = TypeKind::generic_parameter(parameter.clone());
+                        let template =
+                            prepared_type(&TypeKind::generic_parameter(parameter.clone()));
                         let parameters = TypeConstraintParameterScope::new([(
                             parameter,
                             TypeConstraintParameterEligibility::Bindable,
                         )])
                         .unwrap();
                         let nested = probe.ticket.fork_for_child(probe.context).unwrap();
+                        let (effects, _) = self.graph.effect_declarations_mut().unwrap().relation();
                         let mut child = TypeConstraintTransaction::initialize_from_nested_path(
                             probe.context,
+                            effects,
                             nested.original_context().unwrap().clone(),
                             CallableConstraintApplication::Call(owner),
                             parameters,
@@ -135,12 +163,14 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                         .unwrap();
                         child.constrain(
                             probe.context,
+                            effects,
                             &template,
-                            scheme,
+                            &scheme,
                             ConstraintAcceptance::PatternAcceptsActual,
                         );
                         child.request_projection(
                             probe.context,
+                            effects,
                             0,
                             &template,
                             crate::types::constraints::TypeConstraintProjectionClosure::Closed,
@@ -165,7 +195,7 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                             CallableConstraintApplication::Specialize(
                                 self.application_owners[usize::from(source)],
                             ),
-                            scheme,
+                            &scheme,
                             &enclosing(),
                             &PRODUCTION_CALLABLE_LIMITS,
                             0,
@@ -229,7 +259,10 @@ impl TypeConstraintClient<Domain> for Client<'_> {
         for request in sources {
             let result = request.result_projection();
             if let Some(result) = &result {
-                assert_eq!(result.projection().value().value(), request.actual());
+                assert_eq!(
+                    &prepared_type(result.projection().value().value()),
+                    request.actual()
+                );
                 assert!(result.projection().value().scope().binders().is_empty());
                 let (Source::Scheme(source) | Source::ReturnedScheme(source)) =
                     &self.sources[usize::from(request.source().local())]
@@ -251,7 +284,10 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                     .clone()
                     .with_function_specialization(witness.owner(), witness)
                     .unwrap();
-                assert_eq!(checked.value_type(), Some(request.actual()));
+                assert_eq!(
+                    checked.value_type(),
+                    Some(result.projection().value().value())
+                );
                 assert_eq!(checked.source_value_type(), Some(source));
                 assert_eq!(checked.effects(), source_fact.effects());
                 assert_eq!(checked.resolution(), source_fact.resolution());
@@ -341,6 +377,14 @@ fn scheme() -> TypeKind {
     )
 }
 
+fn prepared_type(ty: &TypeKind) -> TypeKind<PreparedEffects> {
+    ty.prepare_effects(
+        &GenericScope::default(),
+        &mut crate::types::UnmeteredTypeProjection,
+    )
+    .unwrap()
+}
+
 fn concrete(item: TypeKind, length: usize, effects: &[&str]) -> TypeKind {
     let array = TypeKind::Array {
         item: Box::new(item),
@@ -358,7 +402,6 @@ fn concrete(item: TypeKind, length: usize, effects: &[&str]) -> TypeKind {
 }
 
 fn drive(
-    graph: &PreparedCallGraph<()>,
     mut client: Client<'_>,
     scope: TypeConstraintParameterScope,
     expected: &[TypeKind],
@@ -388,7 +431,14 @@ fn drive(
     let session = work
         .begin_candidate_constraint_session(limits, client.cancellation)
         .unwrap();
-    let initialization = super::super::tests::initialization_from_graph(graph, scope);
+    client
+        .graph
+        .initialize_effect_declarations(
+            crate::callable::PreparedCallableEffectDeclarations::declare([], &mut Decisions)
+                .unwrap(),
+        )
+        .unwrap();
+    let initialization = super::super::tests::initialization_from_graph(client.graph, scope);
     session
         .with_fixture_driver::<Domain, _, _>(application, initialization, client, |mut driver| {
             for (index, expected) in expected.iter().enumerate() {
@@ -397,7 +447,7 @@ fn drive(
                         u8::try_from(index).unwrap(),
                         PreparedConstraintSourceProjection::Scalar,
                         [],
-                        PreparedSourceAlternative::new(0, (), expected.clone()),
+                        PreparedSourceAlternative::new(0, (), prepared_type(expected)),
                     )
                     .unwrap(),
                     ConstraintAcceptance::PatternAcceptsActual,
@@ -410,7 +460,7 @@ fn drive(
 
 #[test]
 fn source_scheme_uses_open_types_lengths_and_effects_independently_in_one_component() {
-    let graph = PreparedCallGraph::<()>::new();
+    let mut graph = PreparedCallGraph::<()>::new();
     let source = scheme();
     let original = source.semantic_identity_digest().unwrap();
     let sources = [
@@ -424,9 +474,8 @@ fn source_scheme_uses_open_types_lengths_and_effects_independently_in_one_compon
     let observations = Arc::new(Mutex::new(Vec::new()));
     let cancellation = AtomicBool::new(false);
     let solved = drive(
-        &graph,
         Client {
-            graph: &graph,
+            graph: &mut graph,
             application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::clone(&observations),
@@ -450,12 +499,12 @@ fn source_scheme_uses_open_types_lengths_and_effects_independently_in_one_compon
         observations[0],
         (
             0,
-            expected[0].clone(),
+            prepared_type(&expected[0]),
             Some(CallableConstraintApplication::Specialize(call_owner))
         )
     );
     assert_eq!(observations[1].0, 1);
-    assert_eq!(observations[1].1, expected[1]);
+    assert_eq!(observations[1].1, prepared_type(&expected[1]));
     assert_ne!(observations[1].2.unwrap().expression(), call_owner);
     assert!(
         observations
@@ -474,16 +523,15 @@ mod witness;
 
 #[test]
 fn pending_call_result_specializes_on_its_own_path_and_retains_same_expression_origin() {
-    let graph = PreparedCallGraph::<()>::new();
+    let mut graph = PreparedCallGraph::<()>::new();
     let source = scheme();
     let sources = [Source::ReturnedScheme(source.clone())];
     let expected = concrete(TypeKind::I64, 4, &["fs.read"]);
     let observations = Arc::new(Mutex::new(Vec::new()));
     let cancellation = AtomicBool::new(false);
     let solved = drive(
-        &graph,
         Client {
-            graph: &graph,
+            graph: &mut graph,
             application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::clone(&observations),
@@ -497,21 +545,20 @@ fn pending_call_result_specializes_on_its_own_path_and_retains_same_expression_o
     )
     .unwrap();
     assert_eq!(solved.component.applications().len(), 3);
-    assert_eq!(observations.lock().unwrap()[0].1, expected);
+    assert_eq!(observations.lock().unwrap()[0].1, prepared_type(&expected));
     assert_eq!(source, scheme());
 }
 
 #[test]
 fn source_predicate_rejects_forbidden_specialization_before_materialization() {
-    let graph = PreparedCallGraph::<()>::new();
+    let mut graph = PreparedCallGraph::<()>::new();
     let source = scheme();
     let sources = [Source::Scheme(source.clone())];
     let observations = Arc::new(Mutex::new(Vec::new()));
     let cancellation = AtomicBool::new(false);
     let result = drive(
-        &graph,
         Client {
-            graph: &graph,
+            graph: &mut graph,
             application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::clone(&observations),
@@ -533,7 +580,7 @@ fn source_predicate_rejects_forbidden_specialization_before_materialization() {
 
 #[test]
 fn specialization_waits_for_later_parent_operands_to_close_its_result() {
-    let graph = PreparedCallGraph::<()>::new();
+    let mut graph = PreparedCallGraph::<()>::new();
     let binder = GenericBinder::new(1, 0, 0);
     let scope = GenericScope::default().with_binder(binder);
     let value = TypeKind::GenericParam(scope.bound_type(0, 0).unwrap());
@@ -563,9 +610,8 @@ fn specialization_waits_for_later_parent_operands_to_close_its_result() {
     let observations = Arc::new(Mutex::new(Vec::new()));
     let cancellation = AtomicBool::new(false);
     let solved = drive(
-        &graph,
         Client {
-            graph: &graph,
+            graph: &mut graph,
             application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::clone(&observations),
@@ -581,25 +627,24 @@ fn specialization_waits_for_later_parent_operands_to_close_its_result() {
     assert_eq!(solved.component.applications().len(), 2);
     assert_eq!(
         observations.lock().unwrap()[0].1,
-        TypeKind::function_with_effects(
+        prepared_type(&TypeKind::function_with_effects(
             [TypeKind::I64],
             TypeKind::I64,
             EffectRow::closed(EffectSet::new())
-        )
+        ))
     );
 }
 
 #[test]
 fn specialization_cannot_open_a_known_expected_scheme() {
-    let graph = PreparedCallGraph::<()>::new();
+    let mut graph = PreparedCallGraph::<()>::new();
     let source = scheme();
     let sources = [Source::Scheme(source.clone())];
     let observations = Arc::new(Mutex::new(Vec::new()));
     let cancellation = AtomicBool::new(false);
     let result = drive(
-        &graph,
         Client {
-            graph: &graph,
+            graph: &mut graph,
             application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::clone(&observations),
@@ -624,9 +669,9 @@ fn specialization_cannot_open_a_known_expected_scheme() {
 
 #[test]
 fn specialization_uses_parent_cancellation_and_structural_budget() {
-    let graph = PreparedCallGraph::<()>::new();
     let sources = [Source::Scheme(scheme())];
     for cancelled in [false, true] {
+        let mut graph = PreparedCallGraph::<()>::new();
         let observations = Arc::new(Mutex::new(Vec::new()));
         let cancellation = AtomicBool::new(false);
         let limits = if cancelled {
@@ -635,9 +680,8 @@ fn specialization_uses_parent_cancellation_and_structural_budget() {
             PRODUCTION_CALLABLE_LIMITS.with_type_constraint_limits(1024, 20, 1024)
         };
         let result = drive(
-            &graph,
             Client {
-                graph: &graph,
+                graph: &mut graph,
                 application_owners: Vec::new(),
                 sources: &sources,
                 observations: Arc::clone(&observations),

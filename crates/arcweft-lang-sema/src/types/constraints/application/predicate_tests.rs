@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     effect_row::{
-        EffectConstraintVariable, EffectPredicate, EffectRow,
+        EffectPredicate, EffectRow,
         prepared::{
             PreparedEffectFailure, PreparedEffectGraph, PreparedEffectInvariant,
             PreparedEffectPredicate, PreparedEffectRelation, PreparedEffectRow,
@@ -40,24 +40,12 @@ fn formal() -> GenericEffectReference {
         .unwrap()
 }
 
-fn parameters(predicate: PreparedEffectPredicate) -> TypeConstraintParameterScope {
-    TypeConstraintParameterScope::seal_call_scope(
-        binder(),
-        [],
-        [],
-        TypeConstraintEffectScope::seal_call_scope_with_predicate(
-            [EffectConstraintVariable::new(
-                formal(),
-                EffectConstraintEligibility::Bindable,
-            )],
-            [],
-            predicate,
-        )
-        .unwrap(),
-        [],
-        [],
-    )
-    .unwrap()
+fn scheme_parameters(
+    predicate: PreparedEffectPredicate,
+    context: &mut Context<'_>,
+) -> TypeConstraintParameterScope {
+    TypeConstraintParameterScope::for_function_scheme(binder(), predicate, &[], &[], &[], context)
+        .unwrap()
 }
 
 fn truth() -> PreparedEffectPredicate {
@@ -131,9 +119,10 @@ fn completed_solution_equality_uses_canonical_values_instead_of_prepared_term_or
             )
             .unwrap();
         templates.push(predicate.clone());
+        let parameters = scheme_parameters(predicate, &mut context);
         let original = context.fixture_original_context(None).unwrap();
         let owner = context
-            .application_scope((), parameters(predicate), original.clone(), &mut graph)
+            .application_scope((), parameters, original.clone(), &mut graph)
             .unwrap();
         let path = context
             .start_path_with_imported(owner, None, original, graph.read())
@@ -186,7 +175,7 @@ fn an_application_opens_its_original_predicate_once_before_actual_named_and_futu
         )
         .unwrap();
     let template = predicate.clone();
-    let parameters = parameters(predicate);
+    let parameters = scheme_parameters(predicate, &mut context);
     let variable = parameters.opened_effect_variables()[0].variable().clone();
     let original = context.fixture_original_context(None).unwrap();
     let owner = context
@@ -296,8 +285,9 @@ fn invalid_predicate_issuers_and_parameters_fail_before_an_application_is_publis
     let mut graph = PreparedEffectGraph::default();
     let original = context.fixture_original_context(None).unwrap();
     let retained = graph.retained_terms();
+    let parameters = scheme_parameters(predicate, &mut context);
     assert!(matches!(
-        context.application_scope((), parameters(predicate), original.clone(), &mut graph),
+        context.application_scope((), parameters, original.clone(), &mut graph),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::PreparedEffect(PreparedEffectFailure::Invariant(
                 PreparedEffectInvariant::ForeignIssuer
@@ -322,7 +312,8 @@ fn invalid_predicate_issuers_and_parameters_fail_before_an_application_is_publis
         )
         .unwrap();
     let retained = graph.retained_terms();
-    match context.application_scope((), parameters(predicate), original.clone(), &mut graph) {
+    let parameters = scheme_parameters(predicate, &mut context);
+    match context.application_scope((), parameters, original.clone(), &mut graph) {
         Err(error) => assert_eq!(
             error,
             crate::types::constraints::effect_invariant(
@@ -333,8 +324,9 @@ fn invalid_predicate_issuers_and_parameters_fail_before_an_application_is_publis
         Ok(_) => panic!("foreign predicate parameter was admitted"),
     }
     assert_eq!(graph.retained_terms(), retained);
+    let parameters = scheme_parameters(truth(), &mut context);
     let owner = context
-        .application_scope((), parameters(truth()), original.clone(), &mut graph)
+        .application_scope((), parameters, original.clone(), &mut graph)
         .unwrap();
     context
         .start_path_with_imported(owner, None, original, graph.read())

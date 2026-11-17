@@ -489,7 +489,27 @@ mod tests {
             parameter,
             EffectRow::closed(EffectSet::new()),
         );
-        let graph = super::super::super::PreparedCallGraph::<()>::new();
+        use crate::types::constraints::{
+            NoConstraintClient,
+            context::{LocalConstraintAccounting, TypeConstraintContext, TypeConstraintLimits},
+        };
+        let cancelled = std::sync::atomic::AtomicBool::new(false);
+        let mut context = TypeConstraintContext::<_, NoConstraintClient>::with_accounting(
+            LocalConstraintAccounting::new(
+                TypeConstraintLimits::new(4096, 2048, 32, 32),
+                &cancelled,
+            ),
+        );
+        let function = function
+            .prepare_effects(&crate::types::GenericScope::default(), &mut context)
+            .unwrap();
+        let mut graph = super::super::super::PreparedCallGraph::<()>::new();
+        graph
+            .initialize_effect_declarations(
+                crate::callable::PreparedCallableEffectDeclarations::declare([], &mut context)
+                    .unwrap(),
+            )
+            .unwrap();
         assert!(
             graph
                 .prepare_root_function_specialization(
@@ -497,6 +517,7 @@ mod tests {
                     &function,
                     &scope,
                     &super::super::super::PRODUCTION_CALLABLE_LIMITS,
+                    &mut context,
                 )
                 .is_ok()
         );
@@ -506,8 +527,11 @@ mod tests {
                 &function,
                 &scope,
                 &super::super::super::PRODUCTION_CALLABLE_LIMITS,
+                &mut context,
             ),
-            Err(super::super::super::CallConstraintInvariant::PreparedCallSiteMismatch)
+            Err(crate::callable::FunctionSpecializationFailure::Prepared(
+                super::super::super::CallConstraintInvariant::PreparedCallSiteMismatch,
+            ))
         ));
         drop(analysis);
         assert!(source.admits(left));

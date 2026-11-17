@@ -35,14 +35,13 @@ impl TypeProjectionControl for Budget {
 
 #[test]
 fn witness_rejects_foreign_source_and_owner_and_charges_the_same_scoped_fold() {
-    let graph = PreparedCallGraph::<()>::new();
+    let mut graph = PreparedCallGraph::<()>::new();
     let source = scheme();
     let sources = [Source::ReturnedScheme(source.clone())];
     let cancellation = AtomicBool::new(false);
     let solved = drive(
-        &graph,
         Client {
-            graph: &graph,
+            graph: &mut graph,
             application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::new(Mutex::new(Vec::new())),

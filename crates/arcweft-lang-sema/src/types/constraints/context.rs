@@ -393,6 +393,75 @@ pub(super) struct CompletedParameterScope {
 }
 
 impl TypeConstraintParameterScope {
+    /// A value use opens exactly the outer binder. Enclosing references keep
+    /// their existing rigidity and the original predicate becomes the premise
+    /// of this application's slots.
+    pub(crate) fn for_function_scheme<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        binder: GenericBinder,
+        predicate: PreparedEffectPredicate,
+        enclosing_types: &[GenericTypeReference],
+        enclosing_consts: &[GenericConstReference],
+        enclosing_effects: &[GenericEffectReference],
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError> {
+        let scope = GenericScope::default().with_binder(binder);
+        let mut types = Vec::new();
+        for parameter in enclosing_types {
+            context.enter_node()?;
+            types.push(TypeConstraintTypeParameterScopeRow::new(
+                parameter.clone(),
+                TypeConstraintParameterEligibility::Rigid,
+            ));
+        }
+        for slot in 0..binder.types() {
+            context.enter_node()?;
+            types.push(TypeConstraintTypeParameterScopeRow::new(
+                scope.bound_type(0, slot)?,
+                TypeConstraintParameterEligibility::Bindable,
+            ));
+        }
+        let mut consts = Vec::new();
+        for parameter in enclosing_consts {
+            context.enter_node()?;
+            consts.push(TypeConstraintConstParameterScopeRow::new(
+                parameter.clone(),
+                TypeConstraintConstEligibility::Rigid,
+            ));
+        }
+        for slot in 0..binder.const_lengths() {
+            context.enter_node()?;
+            consts.push(TypeConstraintConstParameterScopeRow::new(
+                scope.bound_const(0, slot)?,
+                TypeConstraintConstEligibility::Bindable,
+            ));
+        }
+        let mut effects = Vec::new();
+        for parameter in enclosing_effects {
+            context.enter_node()?;
+            effects.push(EffectConstraintVariable::new(
+                parameter.clone(),
+                EffectConstraintEligibility::Rigid,
+            ));
+        }
+        for slot in 0..binder.effects() {
+            context.enter_node()?;
+            effects.push(EffectConstraintVariable::new(
+                scope.bound_effect(0, slot)?,
+                EffectConstraintEligibility::Bindable,
+            ));
+        }
+        let effects =
+            TypeConstraintEffectScope::seal_call_scope_with_predicate(effects, [], predicate)?;
+        Ok(Self::seal_call_scope(
+            binder,
+            types,
+            consts,
+            effects,
+            [],
+            [],
+        )?)
+    }
+
     /// Seal the exact kind-separated inventories and the inherited-key
     /// contract.  This is the only production constructor; callers must
     /// provide rows in canonical order and cannot ask the lower layer to sort

@@ -2479,67 +2479,29 @@ where
     } else {
         None
     };
-    issue_scope_initialization(
-        issuer,
-        ConstraintScopeUse::Call {
-            candidate,
-            transition,
-        },
-        enclosing,
-        continuation_seed,
-    )
-}
-
-/// A source scheme use opens its whole arrow without applying a parameter
-/// group. Both forms derive eligibility from the same schema inventory.
-enum ConstraintScopeUse<'a> {
-    Call {
-        candidate: &'a super::PreparedResolvedCallable,
-        transition: CallableGroupTransition,
-    },
-    Specialization(&'a super::CallableSignatureSchema),
+    issue_scope_initialization(issuer, candidate, transition, enclosing, continuation_seed)
 }
 
 fn issue_scope_initialization(
     issuer: Arc<PreparedCallGraphIssuer>,
-    usage: ConstraintScopeUse<'_>,
+    candidate: &super::PreparedResolvedCallable,
+    transition: CallableGroupTransition,
     enclosing: &EnclosingGenericParameterScope,
     continuation_seed: Option<PreparedCallContinuationSeed>,
 ) -> Result<PreparedConstraintInitialization, CallConstraintInvariant> {
-    let (schema, position, remaining, retain_result_binder, implicit_extension_group) = match usage
-    {
-        ConstraintScopeUse::Call {
-            candidate,
-            transition,
-        } => {
-            let position = candidate.position();
-            if transition.position() != position {
-                return Err(CallConstraintInvariant::PreparedGroupMismatch);
-            }
-            let implicit_extension_group = match candidate.instantiation() {
-                super::CallableInstantiation::Extension { group, .. }
-                    if *group > position.group() =>
-                {
-                    Some(*group)
-                }
-                _ => None,
-            };
-            (
-                candidate.schema(),
-                position,
-                transition.remaining_position(),
-                candidate.permits_residual_result(transition),
-                implicit_extension_group,
-            )
+    let position = candidate.position();
+    if transition.position() != position {
+        return Err(CallConstraintInvariant::PreparedGroupMismatch);
+    }
+    let implicit_extension_group = match candidate.instantiation() {
+        super::CallableInstantiation::Extension { group, .. } if *group > position.group() => {
+            Some(*group)
         }
-        ConstraintScopeUse::Specialization(schema) => (
-            schema,
-            CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO),
-            None,
-            false,
-            None,
-        ),
+        _ => None,
     };
+    let schema = candidate.schema();
+    let remaining = transition.remaining_position();
+    let retain_result_binder = candidate.permits_residual_result(transition);
     let inventory = schema.generic_inventory();
     if schema.group(position.group()).is_none() {
         return Err(CallConstraintInvariant::MalformedSchemaInventory);

@@ -40,13 +40,12 @@ fn specialization_preserves_a_nested_known_scheme_and_its_predicate() {
     );
     let original = source.semantic_identity_digest().unwrap();
     let sources = [Source::Scheme(source.clone())];
-    let graph = PreparedCallGraph::<()>::new();
+    let mut graph = PreparedCallGraph::<()>::new();
     let observations = Arc::new(Mutex::new(Vec::new()));
     let cancellation = AtomicBool::new(false);
     let solved = drive(
-        &graph,
         Client {
-            graph: &graph,
+            graph: &mut graph,
             application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::clone(&observations),
@@ -60,6 +59,6 @@ fn specialization_preserves_a_nested_known_scheme_and_its_predicate() {
     )
     .unwrap();
     assert_eq!(solved.component.applications().len(), 2);
-    assert_eq!(observations.lock().unwrap()[0].1, expected);
+    assert_eq!(observations.lock().unwrap()[0].1, prepared_type(&expected));
     assert_eq!(source.semantic_identity_digest().unwrap(), original);
 }
