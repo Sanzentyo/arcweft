@@ -143,13 +143,16 @@ fn occurs_check_visits_nested_binders_and_restores_the_enclosing_scope() {
     )])
     .expect("template parameter");
     let cancellation = AtomicBool::new(false);
-    let (mut context, path) = context(scope, &cancellation, 256).into_path();
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let (mut context, path) = context(scope, &cancellation, 256).into_path(&mut graph);
     let target = path
         .root_scope()
         .parameters()
         .type_reference(&(parameter).clone().into())
         .expect("active type");
-    let nested = nested_function();
+    let nested = nested_function()
+        .prepare_effects(&GenericScope::default(), &mut context)
+        .expect("authored closed headers enter the prepared effect domain");
     assert!(
         !occurs_in_type(&nested, &target, path.projection_view(), &mut context)
             .expect("function-local variables are rigid")

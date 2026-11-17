@@ -9,6 +9,7 @@ use crate::{
 // It may fork provisional rows, but all terminal compatibility verdicts still
 // go through this module's `SelectedCall` engine.
 pub(super) mod binding_plan;
+mod leaf;
 
 /// Selects the semantic contract used by the recursive type relation.
 ///
@@ -358,6 +359,13 @@ where
         return Ok(false);
     }
 
+    if let (Some(expected), Some(actual)) = (
+        super::constraints::TypeLeaf::from_type(expected),
+        super::constraints::TypeLeaf::from_type(actual),
+    ) {
+        return Ok(expected.accepts(actual, structural));
+    }
+
     if let Some(compatible) =
         nominal_types_compatible(expected, actual, policy, control, meter, structural)?
     {
@@ -365,67 +373,7 @@ where
     }
 
     match (expected, actual) {
-        (TypeKind::Bool, TypeKind::Bool)
-        | (TypeKind::I8, TypeKind::I8)
-        | (TypeKind::I16, TypeKind::I16)
-        | (TypeKind::I32, TypeKind::I32)
-        | (TypeKind::I64, TypeKind::I64)
-        | (TypeKind::I128, TypeKind::I128)
-        | (TypeKind::ISize, TypeKind::ISize)
-        | (TypeKind::U8, TypeKind::U8)
-        | (TypeKind::U16, TypeKind::U16)
-        | (TypeKind::U32, TypeKind::U32)
-        | (TypeKind::U64, TypeKind::U64)
-        | (TypeKind::U128, TypeKind::U128)
-        | (TypeKind::USize, TypeKind::USize)
-        | (TypeKind::F32, TypeKind::F32)
-        | (TypeKind::F64, TypeKind::F64)
-        | (TypeKind::String, TypeKind::String)
-        | (TypeKind::Char, TypeKind::Char)
-        | (TypeKind::Bytes, TypeKind::Bytes)
-        | (TypeKind::TextCluster, TypeKind::TextCluster)
-        | (TypeKind::Duration, TypeKind::Duration)
-        | (TypeKind::Progress, TypeKind::Progress)
-        | (TypeKind::LineContext, TypeKind::LineContext)
-        | (TypeKind::CueHandle, TypeKind::CueHandle)
-        | (TypeKind::VoiceHandle, TypeKind::VoiceHandle)
-        | (TypeKind::DisplayContext, TypeKind::DisplayContext)
-        | (TypeKind::DisplayError, TypeKind::DisplayError)
-        | (TypeKind::DebugStatePath, TypeKind::DebugStatePath)
-        | (TypeKind::ObservationFieldPath, TypeKind::ObservationFieldPath)
-        | (TypeKind::Predicate, TypeKind::Predicate)
-        | (TypeKind::Observation, TypeKind::Observation)
-        | (TypeKind::ObservedObject, TypeKind::ObservedObject)
-        | (TypeKind::AgentBBox, TypeKind::AgentBBox)
-        | (TypeKind::ActionTarget, TypeKind::ActionTarget)
-        | (TypeKind::ActionResult, TypeKind::ActionResult)
-        | (TypeKind::DataFormat, TypeKind::DataFormat)
-        | (TypeKind::DataValue, TypeKind::DataValue)
-        | (TypeKind::DataError, TypeKind::DataError)
-        | (TypeKind::DataErrorKind, TypeKind::DataErrorKind)
-        | (TypeKind::DataPath, TypeKind::DataPath)
-        | (TypeKind::DataPathSegment, TypeKind::DataPathSegment)
-        | (TypeKind::DataMapKind, TypeKind::DataMapKind)
-        | (TypeKind::AgentEntityMetadata, TypeKind::AgentEntityMetadata)
-        | (TypeKind::AgentSourceAnchor, TypeKind::AgentSourceAnchor)
-        | (TypeKind::AgentProjectGraphNeighborhood, TypeKind::AgentProjectGraphNeighborhood)
-        | (TypeKind::AgentProjectGraphSymbol, TypeKind::AgentProjectGraphSymbol)
-        | (TypeKind::AgentProjectGraphEdge, TypeKind::AgentProjectGraphEdge)
-        | (TypeKind::CaptureTarget, TypeKind::CaptureTarget)
-        | (TypeKind::CaptureRef, TypeKind::CaptureRef)
-        | (TypeKind::AgentResource, TypeKind::AgentResource)
-        | (TypeKind::AgentResourceBody, TypeKind::AgentResourceBody)
-        | (TypeKind::RagContextPack, TypeKind::RagContextPack)
-        | (TypeKind::FocusPatch, TypeKind::FocusPatch)
-        | (TypeKind::ViewValue, TypeKind::ViewValue)
-        | (TypeKind::Unit, TypeKind::Unit)
-        | (TypeKind::Never, TypeKind::Never) => Ok(true),
-        (TypeKind::DenseNumeric(expected), TypeKind::DenseNumeric(actual)) => {
-            Ok(expected == actual)
-        }
-        (TypeKind::StatementIngress(expected), TypeKind::StatementIngress(actual)) => {
-            Ok(expected == actual)
-        }
+        (TypeKind::Never, TypeKind::Never) => Ok(true),
         (TypeKind::VariantPayload(expected), TypeKind::VariantPayload(actual)) => {
             if !expected.has_same_header(actual) {
                 return Ok(false);
@@ -440,29 +388,6 @@ where
             }
             Ok(true)
         }
-        (TypeKind::StageApi(expected), TypeKind::StageApi(actual)) => Ok(expected == actual),
-        (
-            TypeKind::StageActorHandle(super::StageActorHandleType::Any),
-            TypeKind::StageActorHandle(super::StageActorHandleType::Exact(_)),
-        ) if !structural => Ok(true),
-        (TypeKind::StageActorHandle(expected), TypeKind::StageActorHandle(actual)) => {
-            Ok(expected == actual)
-        }
-        (TypeKind::CharacterDialogue(expected), TypeKind::CharacterDialogue(actual)) => {
-            Ok(if structural {
-                expected.character() == actual.character()
-            } else {
-                expected.accepts(actual)
-            })
-        }
-        (TypeKind::CharacterNominal(expected), TypeKind::CharacterNominal(actual)) => {
-            Ok(expected.family() == actual.family()
-                && expected.character() == actual.character()
-                && match (expected.part(), actual.part()) {
-                    (Some(expected), Some(actual)) => expected == actual,
-                    _ => true,
-                })
-        }
         (TypeKind::Bytes, TypeKind::Vec(inner) | TypeKind::Slice(inner) | TypeKind::Seq(inner))
             if !structural =>
         {
@@ -471,29 +396,8 @@ where
             }
             Ok(matches!(inner.as_ref(), TypeKind::U8))
         }
-        (TypeKind::ActionName, TypeKind::ActionName) => Ok(true),
-        (TypeKind::ActionName, TypeKind::String | TypeKind::Named(_)) if !structural => Ok(true),
-        (TypeKind::AgentValue, TypeKind::AgentValue) => Ok(true),
         (TypeKind::AgentValue, actual) if !structural => {
             is_agent_value_type(actual, policy, control, true, meter)
-        }
-        (TypeKind::AgentBuiltin(expected), TypeKind::AgentBuiltin(actual)) => {
-            Ok(expected == actual)
-        }
-        (TypeKind::CompileTimeCallable(expected), TypeKind::CompileTimeCallable(actual)) => {
-            Ok(expected == actual)
-        }
-        (TypeKind::CompileTimeScalar(expected), TypeKind::CompileTimeScalar(actual)) => {
-            Ok(expected == actual)
-        }
-        (TypeKind::CompileTimeStyle(expected), TypeKind::CompileTimeStyle(actual)) => {
-            Ok(expected == actual)
-        }
-        (TypeKind::CompileTimeEnum(expected), TypeKind::CompileTimeEnum(actual)) => {
-            Ok(expected.accepts(*actual))
-        }
-        (TypeKind::CompileTimeFx(expected), TypeKind::CompileTimeFx(actual)) => {
-            Ok(expected.accepts(actual))
         }
         (TypeKind::FixedVector(expected), TypeKind::FixedVector(actual))
             if expected.dimensions() == actual.dimensions() =>
@@ -511,9 +415,6 @@ where
             accepts_node(expected, actual, policy, control, meter, structural)
         }
         (TypeKind::Error(expected), TypeKind::Error(actual)) => Ok(expected == actual),
-        (TypeKind::CharacterPatch(expected), TypeKind::CharacterPatch(actual)) => {
-            Ok(expected == actual)
-        }
         (TypeKind::GenericParam(expected), TypeKind::GenericParam(actual)) => {
             Ok(expected == actual)
         }
@@ -544,10 +445,6 @@ where
         (TypeKind::SlotRef(expected), TypeKind::SlotRef(actual)) => {
             accepts_node(expected, actual, policy, control, meter, structural)
         }
-        (TypeKind::PresentationResource(expected), TypeKind::PresentationResource(actual)) => {
-            Ok(expected == actual)
-        }
-        (TypeKind::Named(expected), TypeKind::Named(actual)) => Ok(expected == actual),
         (TypeKind::Ref(expected), TypeKind::Ref(actual)) if expected.kind() == actual.kind() => {
             // A payload-free family constraint accepts a retained
             // specialization. Structural projection subjects require exact
@@ -1072,37 +969,10 @@ where
             });
         }
     }
+    if let super::constraints::TypeConstraintShape::Leaf(leaf) = ty.constraint_shape() {
+        return Ok(leaf.is_agent_value());
+    }
     match ty {
-        TypeKind::Bool
-        | TypeKind::I8
-        | TypeKind::I16
-        | TypeKind::I32
-        | TypeKind::I64
-        | TypeKind::I128
-        | TypeKind::ISize
-        | TypeKind::U8
-        | TypeKind::U16
-        | TypeKind::U32
-        | TypeKind::U64
-        | TypeKind::U128
-        | TypeKind::USize
-        | TypeKind::F32
-        | TypeKind::F64
-        | TypeKind::String
-        | TypeKind::Char
-        | TypeKind::Bytes
-        | TypeKind::Duration
-        | TypeKind::Progress
-        | TypeKind::DisplayContext
-        | TypeKind::DisplayError
-        | TypeKind::ActionName
-        | TypeKind::AgentValue
-        | TypeKind::ObservedObject
-        | TypeKind::AgentBBox
-        | TypeKind::CaptureRef
-        | TypeKind::AgentResource
-        | TypeKind::AgentResourceBody
-        | TypeKind::AgentBuiltin(_) => Ok(true),
         TypeKind::Ref(_) => Ok(true),
         TypeKind::Error(_) => Ok(matches!(policy, TypeCompatibilityPolicy::Recovery)),
         TypeKind::Vec(inner)
@@ -1391,6 +1261,31 @@ mod tests {
         assert!(!alice.accepts(&any));
         assert!(!alice.accepts(&bob));
         assert!(alice.first_mismatch(&any).is_some());
+    }
+
+    #[test]
+    fn recovered_action_names_do_not_become_selected_placeholder_evidence() {
+        let actual = TypeKind::Named("_".to_owned());
+        assert!(
+            accepts_with(
+                &TypeKind::ActionName,
+                &actual,
+                TypeCompatibilityPolicy::Recovery
+            )
+            .unwrap()
+        );
+        for policy in [
+            TypeCompatibilityPolicy::SelectedCall,
+            TypeCompatibilityPolicy::Invariant,
+        ] {
+            assert!(matches!(
+                accepts_with(&TypeKind::ActionName, &actual, policy),
+                Err(TypeCompatibilityFailure::Forbidden {
+                    side: super::TypeCompatibilitySide::Actual,
+                    kind: super::TypeCompatibilityForbidden::Placeholder,
+                })
+            ));
+        }
     }
 
     #[test]

@@ -64,6 +64,7 @@ pub(crate) use normalization::{
 pub(super) use normalization::{occurs_in_shape, seal_path, validate_type};
 pub(in crate::types) use shape::TypeConstraintChildren;
 pub(crate) use shape::TypeConstraintShape;
+pub(in crate::types) use shape::TypeLeaf;
 pub(crate) use solution::ClosedTypeInstantiation;
 pub(crate) use solution::TypeConstraintSolution;
 pub(crate) use solution::{LocalizedTypeTemplate, TypeTemplateLocalizer};

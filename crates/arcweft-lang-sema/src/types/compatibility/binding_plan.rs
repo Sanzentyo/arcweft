@@ -18,6 +18,9 @@ use crate::types::constraints::{
     project_closed_operand, resolve_const_alias, resolve_type_alias, seal_path, validate_type,
 };
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ConstraintAcceptance {
     PatternAcceptsActual,
@@ -172,6 +175,9 @@ where
     }
     let pattern_shape = pattern.value().constraint_shape();
     let actual_shape = actual.value().constraint_shape();
+    // Scalar structure is completely decided by the shared leaf algebra.
+    // Its provisional path still owes the original forest's final effect
+    // check; unrelated unprepared bodies cannot force that check here.
     if matches!(pattern_shape, TypeConstraintShape::Choice(_))
         || matches!(actual_shape, TypeConstraintShape::Choice(_))
     {
@@ -210,6 +216,10 @@ where
     };
     if matches!(pattern_shape, TypeConstraintShape::Choice(_))
         || matches!(actual_shape, TypeConstraintShape::Choice(_))
+        || matches!(
+            (pattern_shape, actual_shape),
+            (TypeConstraintShape::Leaf(_), TypeConstraintShape::Leaf(_))
+        )
     {
         return Ok(paths);
     }
@@ -944,8 +954,19 @@ where
         {
             relate_sliced_children(graph, pattern, actual, path, context, relation)
         }
-        (TypeConstraintShape::Leaf(_), _)
-        | (TypeConstraintShape::Never, TypeConstraintShape::Never) => Ok(vec![path]),
+        (TypeConstraintShape::Leaf(pattern), TypeConstraintShape::Leaf(actual)) => {
+            let accepted = match relation {
+                ConstraintRelation::Equal => pattern == actual,
+                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
+                    pattern.accepts(actual, false)
+                }
+                ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => {
+                    actual.accepts(pattern, false)
+                }
+            };
+            Ok(if accepted { vec![path] } else { Vec::new() })
+        }
+        (TypeConstraintShape::Never, TypeConstraintShape::Never) => Ok(vec![path]),
         _ => Ok(vec![path]),
     }
 }

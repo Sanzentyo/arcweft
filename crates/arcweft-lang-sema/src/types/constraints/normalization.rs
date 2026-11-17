@@ -544,7 +544,7 @@ where
 }
 
 pub(crate) fn occurs_in_shape<A, D>(
-    shape: TypeConstraintShape<'_>,
+    shape: TypeConstraintShape<'_, PreparedEffects>,
     parameter: &GenericTypeReference,
     view: ConstraintProjectionView<'_, D>,
     context: &mut TypeConstraintContext<'_, A, D>,
@@ -557,7 +557,7 @@ where
 }
 
 fn occurs_in_shape_inner<A, D>(
-    shape: TypeConstraintShape<'_>,
+    shape: TypeConstraintShape<'_, PreparedEffects>,
     parameter: &GenericTypeReference,
     view: ConstraintProjectionView<'_, D>,
     context: &mut TypeConstraintContext<'_, A, D>,

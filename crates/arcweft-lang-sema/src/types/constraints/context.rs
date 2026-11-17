@@ -1354,9 +1354,9 @@ where
 
     /// Validates references carried by a type node's header in the current
     /// lexical scope. Child traversal enters the node's binder separately.
-    pub(crate) fn validate_type_header(
+    pub(crate) fn validate_type_header<E: crate::types::TypeEffectDomain>(
         &self,
-        shape: TypeConstraintShape<'_>,
+        shape: TypeConstraintShape<'_, E>,
         view: ConstraintProjectionView<'_, D>,
     ) -> Result<(), TypeConstraintError> {
         match shape {
