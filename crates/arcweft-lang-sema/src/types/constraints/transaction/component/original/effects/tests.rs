@@ -184,7 +184,12 @@ fn contradictory_joint_premises_cannot_erase_an_individual_sources_failure() {
         ]
         .into();
         let original = component
-            .prepare_original_effects(&members, &mut graph, &mut context)
+            .prepare_original_effects(
+                &members,
+                &ConstraintLexicalScope::default(),
+                &mut graph,
+                &mut context,
+            )
             .unwrap();
         let mut branch = branch(&component, &members, &mut context);
         let impossible = graph.not(truth(), &mut context).unwrap();
@@ -289,7 +294,12 @@ fn a_later_use_is_not_an_original_label_or_type_root() {
         )
         .unwrap();
     let original = component
-        .prepare_original_effects(&members, &mut graph, &mut context)
+        .prepare_original_effects(
+            &members,
+            &ConstraintLexicalScope::default(),
+            &mut graph,
+            &mut context,
+        )
         .unwrap();
     let branch = branch(&component, &members, &mut context);
     let frozen = component
@@ -303,4 +313,184 @@ fn a_later_use_is_not_an_original_label_or_type_root() {
         )
         .unwrap();
     assert!(support(&frozen).is_empty());
+}
+
+#[test]
+fn independent_bound_premises_remain_independent_in_the_joint_domain() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let mut component = Component::new(&mut context, &graph).unwrap();
+    let mut members = Vec::new();
+    for lower_bound in [false, true] {
+        let previous = context.enter_binder_scope(crate::types::GenericBinder::new(0, 0, 1));
+        let key = context.lexical_frames().shape().bound_effect(0, 0).unwrap();
+        let parameter = EffectFormula::variable(key, &mut context).unwrap();
+        let domain = if lower_bound {
+            EffectFormula::literal(EffectSet::from_labels(["log.write"]).unwrap(), None)
+                .subset(&parameter, &mut context)
+                .unwrap()
+        } else {
+            parameter
+                .subset(&EffectFormula::empty(), &mut context)
+                .unwrap()
+        };
+        members.push(root(
+            &mut component,
+            &mut context,
+            &mut graph,
+            domain,
+            false,
+        ));
+        context.restore_binder_scope(previous);
+    }
+    let members: Arc<[OriginalProductMember]> = members.into();
+    let mut scope = ConstraintLexicalScope::default();
+    for member in members.iter() {
+        let path = component.original_path(*member).unwrap();
+        scope.merge(&path.lineage.scope, &mut context).unwrap();
+        path.applications
+            .merge_lexical_scopes(&mut scope, &mut context)
+            .unwrap();
+    }
+    assert_eq!(scope.shape().binders().len(), 2);
+    let original = component
+        .prepare_original_effects(&members, &scope, &mut graph, &mut context)
+        .unwrap();
+    let mut branch = branch(&component, &members, &mut context);
+    let impossible = graph.not(truth(), &mut context).unwrap();
+    branch
+        .effects
+        .restore_predicate(&impossible, &mut graph, &mut context)
+        .unwrap();
+    let frozen = component
+        .freeze_original_effects(
+            &branch,
+            &members,
+            &scope,
+            &original,
+            &mut graph,
+            &mut context,
+        )
+        .unwrap();
+    // The two premises are jointly satisfiable. A false R must fail; equal
+    // depth/slot spelling must not conflate the frames and make D vacuous.
+    assert_eq!(
+        frozen
+            .reduce(&mut context)
+            .unwrap()
+            .satisfiable()
+            .truth_value(),
+        Some(false)
+    );
+}
+
+#[test]
+fn final_forest_closure_waits_for_a_body_and_returns_the_same_forest_for_retry() {
+    use crate::effect_row::prepared::PreparedEffectInvariant;
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let named = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+        .unwrap();
+    let mut component = Component::new(&mut context, &graph).unwrap();
+    let member = root(
+        &mut component,
+        &mut context,
+        &mut graph,
+        EffectPredicate::unconstrained(),
+        false,
+    );
+    let forest = component
+        .infer_original_products(&mut context, &mut graph)
+        .unwrap();
+    let members = Arc::clone(&forest.products[0].members);
+    let retained = graph.retained_terms();
+    let failure = forest.close(&[], &mut graph, &mut context).err().unwrap();
+    let (error, forest) = failure.into_parts();
+    assert!(matches!(
+        error,
+        PreparedValueFailure::Constraint(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::PreparedEffect(PreparedEffectFailure::Invariant(
+                PreparedEffectInvariant::SchemeState
+            ))
+        ))
+    ));
+    assert!(Arc::ptr_eq(&members, &forest.products[0].members));
+    assert_eq!(forest.products[0].members.as_ref(), &[member]);
+    assert_eq!(graph.retained_terms(), retained);
+    graph
+        .prepare_body(
+            &named,
+            PreparedEffectRow::Canonical(EffectRow::closed(
+                EffectSet::from_labels(["body.actual"]).unwrap(),
+            )),
+            vec![],
+            &mut context,
+        )
+        .unwrap();
+    let closed = forest.close(&[], &mut graph, &mut context).unwrap();
+    assert!(Arc::ptr_eq(&members, &closed.products[0].members));
+    assert_eq!(closed.products[0].result.as_ref().unwrap().len(), 1);
+    assert_eq!(
+        closed.products[0].result.as_ref().unwrap()[0]
+            .effects
+            .predicate()
+            .value(),
+        &EffectPredicate::unconstrained()
+    );
+    assert!(closed.original.original_path(member).is_ok());
+    assert!(
+        graph
+            .prepare_body(
+                &named,
+                PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new(),)),
+                vec![],
+                &mut context
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn cancellation_does_not_consume_or_publish_a_prepared_forest() {
+    use crate::types::constraints::TypeConstraintAbort;
+    use std::sync::atomic::Ordering;
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let mut component = Component::new(&mut context, &graph).unwrap();
+    root(
+        &mut component,
+        &mut context,
+        &mut graph,
+        EffectPredicate::unconstrained(),
+        false,
+    );
+    let forest = component
+        .infer_original_products(&mut context, &mut graph)
+        .unwrap();
+    let members = Arc::clone(&forest.products[0].members);
+    let retained = graph.retained_terms();
+    let frames = context.lexical_frames().clone();
+    cancellation.store(true, Ordering::Relaxed);
+    let (error, forest) = forest
+        .close(&[], &mut graph, &mut context)
+        .err()
+        .unwrap()
+        .into_parts();
+    assert!(matches!(
+        error,
+        PreparedValueFailure::Constraint(TypeConstraintError::Abort(
+            TypeConstraintAbort::Cancelled
+        ))
+    ));
+    assert!(Arc::ptr_eq(&members, &forest.products[0].members));
+    assert_eq!(graph.retained_terms(), retained);
+    assert_eq!(context.lexical_frames(), &frames);
+    cancellation.store(false, Ordering::Relaxed);
+    let closed = forest.close(&[], &mut graph, &mut context).unwrap();
+    assert!(Arc::ptr_eq(&members, &closed.products[0].members));
+    assert!(closed.products[0].result.is_ok());
 }

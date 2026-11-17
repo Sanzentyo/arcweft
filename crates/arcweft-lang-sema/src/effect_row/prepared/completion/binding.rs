@@ -13,6 +13,24 @@ pub(crate) struct PreparedEffectScopedBinding {
     constraints: Box<[PreparedEffectScopedConstraint]>,
 }
 
+/// A source tuple whose local functions have been tied to its conditional
+/// minimum. Ordinary frozen relations cannot claim this phase authority.
+#[derive(Debug)]
+pub(crate) struct BoundScopedEffectCompletion(Arc<ScopedEffectCompletion>);
+
+impl BoundScopedEffectCompletion {
+    pub(crate) fn as_scoped(&self) -> &Arc<ScopedEffectCompletion> {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for BoundScopedEffectCompletion {
+    type Target = ScopedEffectCompletion;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl PreparedEffectScopedBinding {
     /// Freeze all candidate facts together. Preserve the original retained
     /// query ports by identity, including ports unrelated to an obligation.
@@ -22,7 +40,7 @@ impl PreparedEffectScopedBinding {
         self,
         graph: PreparedEffectReadView<'_>,
         control: &mut C,
-    ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<BoundScopedEffectCompletion, PreparedEffectFailure<C::Error>> {
         graph.validate_owner(&self.relation.owner)?;
         self.relation.relation.validate(graph, control)?;
         let original = &self.relation.relation.completion;
@@ -65,7 +83,9 @@ impl PreparedEffectScopedBinding {
                 .map_err(PreparedEffectFailure::Control)?;
             constraints.push(constraint);
         }
-        graph.freeze_scoped(&row_ports, &predicate_ports, &constraints, control)
+        graph
+            .freeze_scoped(&row_ports, &predicate_ports, &constraints, control)
+            .map(BoundScopedEffectCompletion)
     }
 }
 

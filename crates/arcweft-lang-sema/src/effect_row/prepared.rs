@@ -38,8 +38,8 @@ pub(crate) use completion::residual::{
     ResidualPreparedRowView, ResidualRowExpression, ResidualRowScope,
 };
 pub(crate) use completion::{
-    GuardedEffectFunction, PreparedEffectImportedRef, PreparedEffectImportedRelation,
-    PreparedEffectScopedBinding, ScopedEffectCompletion,
+    BoundScopedEffectCompletion, GuardedEffectFunction, PreparedEffectImportedRef,
+    PreparedEffectImportedRelation, PreparedEffectScopedBinding, ScopedEffectCompletion,
 };
 pub(crate) use functions::{
     PreparedEffectParameterScope, PreparedEffectUnknownEligibility, PreparedEffectUnknownRef,

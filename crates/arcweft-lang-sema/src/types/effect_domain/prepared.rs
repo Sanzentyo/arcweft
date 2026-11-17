@@ -205,6 +205,19 @@ where
 }
 
 impl TypeKind<PreparedEffects> {
+    /// Issued terms are known annotations. Only an authored canonical omitted
+    /// row requests initializer inference; use the shared shape grammar.
+    pub(crate) fn has_omitted_function_effect_rows_with_control<C: TypeProjectionControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<bool, TypeProjectionError<C::Error>> {
+        let roots = PreparedTypeEffectRoots::collect([self], std::iter::empty(), control)?;
+        Ok(roots
+            .rows()
+            .iter()
+            .any(|row| matches!(row, PreparedEffectRow::Canonical(row) if !row.is_known())))
+    }
+
     /// Projects free effect parameters under each exact nested binder. One edit
     /// spans the whole structural fold: a later failure invalidates every term
     /// built by this projection, while its input types and graph remain intact.

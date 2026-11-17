@@ -25,7 +25,9 @@ use crate::{
 mod original;
 #[cfg(test)]
 mod tests;
-pub(crate) use original::OriginalConstraintForest;
+pub(crate) use original::{
+    ClosedOriginalConstraintForest, OriginalConstraintForest, OriginalForestCloseFailure,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum PreparedValueFailure {

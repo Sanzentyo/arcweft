@@ -266,3 +266,108 @@ fn preparation_borrows_the_retained_frames_and_cancellation_preserves_the_branch
     assert_eq!(context.lexical_frames(), &other);
     context.restore_binder_scope(other_scope);
 }
+
+#[test]
+fn final_rows_keep_the_original_frames_and_only_their_actual_free_support() {
+    for bound in [false, true] {
+        let cancellation = AtomicBool::new(false);
+        let mut context = context(&cancellation);
+        let mut graph = PreparedEffectGraph::default();
+        let previous = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
+        let (source, mut path, key) = path(&mut context, &mut graph, false, true);
+        let key = key.unwrap();
+        let expected = if bound {
+            path.lineage.scope.shape().bound_effect(0, 0).unwrap()
+        } else {
+            source.effects[0].clone()
+        };
+        path.effects
+            .constrain_relation(
+                &mut graph,
+                PreparedEffectRelation::Equal,
+                &open(key.clone()),
+                &open(expected.clone()),
+                &mut context,
+            )
+            .unwrap();
+        let receipt = path
+            .prepare_effect_constraint(&mut graph, &mut context)
+            .unwrap();
+        let frozen = graph
+            .read()
+            .freeze_scoped(&[], &[], &[&receipt], &mut context)
+            .unwrap();
+        let bound_original = graph
+            .bind_original_scoped(&frozen, &mut context)
+            .unwrap()
+            .freeze(graph.read(), &mut context)
+            .unwrap();
+        context.restore_binder_scope(previous);
+        let previous = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
+        let caller_frames = context.lexical_frames().clone();
+        assert_ne!(&caller_frames, &path.lineage.scope);
+        let effects = ConstraintClosedEffects::for_path(
+            &path,
+            &bound_original,
+            &[],
+            &mut graph,
+            &mut context,
+        )
+        .unwrap();
+        let row = effects.row(&key).unwrap();
+        assert_eq!(row.value(), &EffectRow::open(EffectSet::new(), expected));
+        assert_eq!(row.scope(), &path.lineage.scope);
+        assert_eq!(effects.context.original_context(), &path.lineage.original);
+        let support = effects
+            .context
+            .support(row.value().variables().unwrap(), &mut context)
+            .unwrap();
+        assert!(!support.admits_original_parameter(&source.effects[1].clone().into()));
+        assert_eq!(context.lexical_frames(), &caller_frames);
+        context.restore_binder_scope(previous);
+    }
+}
+
+#[test]
+fn an_older_minimum_cannot_silently_admit_a_new_source_fact() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let (source, mut path, key) = path(&mut context, &mut graph, false, true);
+    let key = key.unwrap();
+    let application = path.applications.effect_application(&key).unwrap();
+    let mut edit = graph.edit_terms();
+    let query = application
+        .transport(&path.lineage.scope, &mut edit, &mut context)
+        .unwrap();
+    edit.commit().unwrap();
+    let receipt = path
+        .prepare_effect_constraint(&mut graph, &mut context)
+        .unwrap();
+    let frozen = graph
+        .read()
+        .freeze_scoped(&[&query], &[], &[&receipt], &mut context)
+        .unwrap();
+    let bound_original = graph
+        .bind_original_scoped(&frozen, &mut context)
+        .unwrap()
+        .freeze(graph.read(), &mut context)
+        .unwrap();
+    path.effects
+        .constrain_relation(
+            &mut graph,
+            PreparedEffectRelation::Equal,
+            &open(key),
+            &open(source.effects[0].clone()),
+            &mut context,
+        )
+        .unwrap();
+    let before = path.effects.clone();
+    let retained = graph.retained_terms();
+    assert!(
+        ConstraintClosedEffects::for_path(&path, &bound_original, &[], &mut graph, &mut context,)
+            .is_err()
+    );
+    assert_eq!(path.effects, before);
+    assert_eq!(graph.retained_terms(), retained);
+}

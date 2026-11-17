@@ -18,6 +18,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(super) fn prepare_original_effects<A: TypeConstraintAccounting>(
         &self,
         members: &[OriginalProductMember],
+        scope: &ConstraintLexicalScope,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<PreparedOriginalEffects, OriginalInferenceFailure> {
@@ -38,7 +39,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 crate::types::projection_control::visit_effect_predicate(context, &domain, 1)
                     .map_err(projection_failure)?;
                 context.enter_node()?;
-                domains.push(PreparedEffectPredicate::Canonical(domain.into_owned()));
+                let domain = scope
+                    .transport_predicate(path.lineage.original.gamma(), &domain, context)
+                    .map_err(projection_failure)?;
+                domains.push(PreparedEffectPredicate::Canonical(domain));
             }
             let joint_domain = graph.and(domains, context)?;
             Ok(PreparedOriginalEffects {

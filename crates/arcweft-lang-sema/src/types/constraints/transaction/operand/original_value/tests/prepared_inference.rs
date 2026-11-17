@@ -36,6 +36,98 @@ fn input(variable: GenericEffectReference) -> TypeKind<PreparedEffects> {
 }
 
 #[test]
+fn a_final_header_projects_the_actual_function_beneath_its_local_binder() {
+    use crate::effect_row::prepared::PreparedEffectRelation;
+    use crate::types::constraints::normalization::{ConstraintClosedEffects, close_type_operand};
+    use crate::types::constraints::transaction::ConstraintEffectField;
+    let cancellation = AtomicBool::new(false);
+    // This fixture runs final closure as well as source admission. The older
+    // admission-only fixtures retain their smaller, unchanged work allowance.
+    let mut context = TypeConstraintContext::with_accounting(LocalConstraintAccounting::new(
+        TypeConstraintLimits::new(131_072, 65_536, 1024, 1024),
+        &cancellation,
+    ));
+    let mut graph = PreparedEffectGraph::default();
+    context
+        .with_binder(GenericBinder::new(0, 0, 1), |context| {
+            let (source, mut path, key) = parent(context, &mut graph, 98_607);
+            let outer = path.lineage.scope.shape().bound_effect(0, 0)?;
+            path.effects.constrain_relation(
+                &mut graph,
+                PreparedEffectRelation::Equal,
+                &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), key.clone())),
+                &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), outer)),
+                context,
+            )?;
+            let lease = path.applications.import_parameters(&[key.clone().into()])?;
+            let original = context.fixture_original_context(Some(&lease))?;
+            let value: TypeKind<PreparedEffects> = TypeKind::function_with_contract(
+                GenericBinder::new(0, 0, 1),
+                PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+                [],
+                TypeKind::I64,
+                PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), key.clone())),
+            );
+            let input = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
+                &value,
+                Arc::new(original.gamma().clone()),
+                original,
+                &mut ConstraintEffectPhase::new(&mut graph),
+                context,
+            )?;
+            let previous = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
+            let children = input.view().children(context)?;
+            let header = children.function_header()?.unwrap();
+            context.restore_binder_scope(previous);
+            assert!(matches!(header.row(), PreparedEffectRow::Term(_)));
+            let receipt = path.prepare_effect_constraint(&mut graph, context)?;
+            let frozen = graph.read().freeze_scoped(
+                &[header.row()],
+                &[header.predicate()],
+                &[&receipt],
+                context,
+            )?;
+            let original = graph
+                .bind_original_scoped(&frozen, context)?
+                .freeze(graph.read(), context)?;
+            let effects =
+                ConstraintClosedEffects::for_path(&path, &original, &[], &mut graph, context)?;
+            let mut projected = effects.project_header(&header, graph.read(), context)?;
+            let row = projected.take_row(header.row());
+            let predicate = projected.take_predicate(header.predicate());
+            let proof = projected.finish()?.unwrap();
+            assert_eq!(proof.row_keys.as_ref(), &[key]);
+            assert!(proof.predicate_keys.is_empty());
+            assert!(!proof.admits(
+                ConstraintEffectField::Row,
+                &source.rigid_scope().effects[0].clone().into()
+            ));
+            assert_eq!(
+                row,
+                PreparedEffectRow::Canonical(EffectRow::open(
+                    EffectSet::new(),
+                    header.lexical_scope().shape().bound_effect(1, 0)?,
+                ))
+            );
+            assert_eq!(
+                predicate,
+                PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained())
+            );
+            let closed = close_type_operand(input.view(), &path, &effects, graph.read(), context)?;
+            assert_eq!(closed.scope(), &path.lineage.scope);
+            let TypeKind::Function {
+                effects: final_row, ..
+            } = closed.value()
+            else {
+                unreachable!()
+            };
+            assert_eq!(final_row, &row);
+            Ok::<_, TypeConstraintError>(())
+        })
+        .unwrap();
+}
+
+#[test]
 fn source_inference_uses_its_actual_application_beneath_local_binders() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);

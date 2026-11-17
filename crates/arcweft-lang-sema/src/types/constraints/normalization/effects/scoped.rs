@@ -27,7 +27,17 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
                 }
             },
         )?;
-        let domain = PreparedEffectPredicate::Canonical(domain.into_owned());
+        let domain = self
+            .lineage
+            .scope
+            .transport_predicate(self.lineage.original.gamma(), &domain, context)
+            .map_err(|error| match error {
+                crate::types::TypeProjectionError::Control(error) => error,
+                crate::types::TypeProjectionError::Instantiation(error) => {
+                    TypeConstraintInvariant::Instantiation(error).into()
+                }
+            })?;
+        let domain = PreparedEffectPredicate::Canonical(domain);
         self.prepare_effect_constraint_in(&self.lineage.scope, &domain, graph, context)
     }
 }

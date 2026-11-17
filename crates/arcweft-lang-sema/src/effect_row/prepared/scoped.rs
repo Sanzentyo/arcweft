@@ -20,6 +20,16 @@ pub(crate) struct PreparedEffectScopedConstraint {
     pub(super) obligation: Arc<ScopedObligation>,
 }
 
+impl PreparedEffectScopedConstraint {
+    pub(crate) fn domain(&self) -> &PreparedEffectPredicate {
+        &self.obligation.domain
+    }
+
+    pub(crate) fn predicate(&self) -> &PreparedEffectPredicate {
+        &self.obligation.predicate
+    }
+}
+
 impl PreparedEffectGraph {
     /// Retain D and C separately: pointwise implication of their membership
     /// formulas does not express implication between whole finite-row facts.

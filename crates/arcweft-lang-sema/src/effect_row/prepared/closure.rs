@@ -372,6 +372,79 @@ pub(crate) struct PrincipalEffectClosure {
     input_bindings: BTreeMap<u64, EffectRow>,
 }
 
+/// Functions actually used by one query, borrowed from its verified owner.
+/// Declaration formals remain inside their functions, never ambient Γ ports.
+pub(crate) struct PreparedEffectFunctionUses<'g> {
+    graph: &'g PreparedEffectDefinitions,
+    functions: BTreeSet<u64>,
+}
+
+impl PreparedEffectFunctionUses<'_> {
+    pub(crate) fn contains_unknown(
+        &self,
+        unknown: &PreparedEffectUnknownRef,
+    ) -> Result<bool, PreparedEffectInvariant> {
+        let reference = FunctionRef::Unknown(unknown.clone());
+        self.graph.function(&reference)?;
+        Ok(self.functions.contains(&reference.reference().ordinal))
+    }
+}
+
+impl PrincipalEffectClosure {
+    pub(crate) fn row_function_uses<C: DecisionControl>(
+        &self,
+        row: &PreparedEffectRow,
+        control: &mut C,
+    ) -> Result<PreparedEffectFunctionUses<'_>, PreparedEffectFailure<C::Error>> {
+        use super::read::dependencies::{Dependency, Reachable, SchemeDependencies};
+        let mut reachable = Reachable::new(self.graph.read(), SchemeDependencies::Headers);
+        reachable.push(Dependency::Row(row), control)?;
+        Ok(PreparedEffectFunctionUses {
+            graph: &self.graph,
+            functions: reachable.collect(control)?.functions,
+        })
+    }
+
+    pub(crate) fn predicate_function_uses<C: DecisionControl>(
+        &self,
+        predicate: &PreparedEffectPredicate,
+        control: &mut C,
+    ) -> Result<PreparedEffectFunctionUses<'_>, PreparedEffectFailure<C::Error>> {
+        use super::read::dependencies::{Dependency, Reachable, SchemeDependencies};
+        let mut reachable = Reachable::new(self.graph.read(), SchemeDependencies::Headers);
+        reachable.push(Dependency::Predicate(predicate), control)?;
+        Ok(PreparedEffectFunctionUses {
+            graph: &self.graph,
+            functions: reachable.collect(control)?.functions,
+        })
+    }
+
+    /// Replay an additional typed source fact against the same canonical tuple
+    /// and every retained witness. A successful result is the proved whole
+    /// fact ∀Γ.(D ⇒ R), rather than a guessed pointwise projection of R.
+    pub(crate) fn confirm_scoped_constraint<C: DecisionControl>(
+        &self,
+        constraint: &PreparedEffectScopedConstraint,
+        control: &mut C,
+    ) -> Result<EffectPredicate, PreparedEffectFailure<C::Error>> {
+        self.graph.read().validate_owner(&constraint.owner)?;
+        self.graph
+            .read()
+            .validate_retained_predicate(&constraint.obligation.domain)?;
+        self.graph
+            .read()
+            .validate_retained_predicate(&constraint.obligation.predicate)?;
+        let scope = FiniteRowValuation {
+            classes: self.layout.view().label_classes(),
+            owner: FormalOwner::Observation,
+            parameters: &constraint.obligation.parameters,
+        };
+        canonical::CanonicalReplay::new(self, scope)
+            .confirm_obligation(&constraint.obligation, &mut Work(control))?;
+        Ok(EffectPredicate::unconstrained())
+    }
+}
+
 impl PreparedEffectGraph {
     pub(super) fn label_support<C: DecisionControl>(
         &self,

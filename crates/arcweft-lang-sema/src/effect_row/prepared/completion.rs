@@ -7,7 +7,7 @@ pub(super) mod residual;
 use residual::EffectResidualProgram;
 
 mod binding;
-pub(crate) use binding::PreparedEffectScopedBinding;
+pub(crate) use binding::{BoundScopedEffectCompletion, PreparedEffectScopedBinding};
 mod closing;
 
 /// The immutable original relation, including dependency signatures, lexical

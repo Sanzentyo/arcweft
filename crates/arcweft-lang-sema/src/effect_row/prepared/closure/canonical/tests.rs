@@ -67,3 +67,101 @@ fn a_uniform_choice_is_not_a_finite_effect_row_variable() {
     .unwrap();
     replay.finite(&finite, &mut Work(&mut control)).unwrap();
 }
+
+#[test]
+fn a_new_scoped_fact_must_hold_for_every_retained_choice_witness() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let truth = PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained());
+    let falsity = PreparedEffectPredicate::Canonical(EffectPredicate::impossible());
+    let choice = graph.choice(&mut control).unwrap();
+    let conditional = graph
+        .select_predicate(&choice, truth.clone(), falsity, &mut control)
+        .unwrap();
+    let fact = graph
+        .read()
+        .scoped_constraint(&[], &truth, &conditional, &mut control)
+        .unwrap();
+    let principal = graph.solve_principal(&mut control).unwrap();
+    assert!(matches!(
+        principal.confirm_scoped_constraint(&fact, &mut control),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::PrincipalConfirmation
+        ))
+    ));
+}
+
+#[test]
+fn scoped_confirmation_proves_the_whole_implication_with_unused_inputs() {
+    let graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let gamma = crate::types::GenericScope::default()
+        .with_binder(crate::types::GenericBinder::new(0, 0, 2));
+    let parameters = [parameter(&gamma, 0), parameter(&gamma, 1)];
+    let truth = PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained());
+    let falsity = PreparedEffectPredicate::Canonical(EffectPredicate::impossible());
+    let principal = graph.solve_principal(&mut control).unwrap();
+    for (domain, accepted) in [(&truth, false), (&falsity, true)] {
+        let fact = graph
+            .read()
+            .scoped_constraint(&parameters, domain, &falsity, &mut control)
+            .unwrap();
+        let result = principal.confirm_scoped_constraint(&fact, &mut control);
+        if accepted {
+            assert_eq!(result.unwrap(), EffectPredicate::unconstrained());
+        } else {
+            assert!(matches!(
+                result,
+                Err(PreparedEffectFailure::Invariant(
+                    PreparedEffectInvariant::PrincipalConfirmation
+                ))
+            ));
+        }
+    }
+}
+
+#[test]
+fn query_function_uses_follow_actual_arguments_and_validate_owner_identity() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let mut declare = |graph: &mut PreparedEffectGraph| {
+        graph
+            .declare_unknown(
+                vec![],
+                PreparedEffectUnknownEligibility::Bindable,
+                &mut control,
+            )
+            .unwrap()
+    };
+    let used = declare(&mut graph);
+    let unused = declare(&mut graph);
+    let inner = graph
+        .unknown_application(&used, vec![], &mut control)
+        .unwrap();
+    let gamma = crate::types::GenericScope::default()
+        .with_binder(crate::types::GenericBinder::new(0, 0, 1));
+    let outer = graph
+        .declare_unknown(
+            vec![parameter(&gamma, 0)],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
+        .unwrap();
+    let row = graph
+        .unknown_application(&outer, vec![inner], &mut control)
+        .unwrap();
+    let principal = graph.solve_principal(&mut control).unwrap();
+    let uses = principal.row_function_uses(&row, &mut control).unwrap();
+    assert!(uses.contains_unknown(&used).unwrap());
+    assert!(uses.contains_unknown(&outer).unwrap());
+    assert!(!uses.contains_unknown(&unused).unwrap());
+    let mut foreign = PreparedEffectGraph::default();
+    let foreign = foreign
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut control,
+        )
+        .unwrap();
+    assert!(uses.contains_unknown(&foreign).is_err());
+}

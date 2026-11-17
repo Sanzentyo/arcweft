@@ -106,6 +106,10 @@ pub(crate) enum TypeConstraintRejection {
     },
     #[error("effect-row subset is missing effects {missing:?}")]
     EffectSubset { missing: EffectSet },
+    #[error("effect constraints have no solution")]
+    EffectUnsatisfiable,
+    #[error("effect constraints have no joint least solution")]
+    EffectNonPrincipal,
 }
 
 /// Kind-separated identity retained by constraint projection and source hints.
@@ -343,6 +347,12 @@ impl From<crate::effect_row::prepared::PreparedEffectFailure<Self>> for TypeCons
     fn from(error: crate::effect_row::prepared::PreparedEffectFailure<Self>) -> Self {
         match error.split_control() {
             Ok(error) => error,
+            Err(crate::effect_row::prepared::PreparedEffectFailure::Unsatisfiable) => {
+                TypeConstraintRejection::EffectUnsatisfiable.into()
+            }
+            Err(crate::effect_row::prepared::PreparedEffectFailure::NonPrincipal) => {
+                TypeConstraintRejection::EffectNonPrincipal.into()
+            }
             Err(failure) => TypeConstraintInvariant::PreparedEffect(failure).into(),
         }
     }

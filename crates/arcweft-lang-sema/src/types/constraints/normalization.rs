@@ -731,8 +731,8 @@ where
 /// Completed terms have already passed their own lexical-scope seal. Equality
 /// still visits every compared type and effect node using the live work owner.
 pub(in crate::types) fn completed_types_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
-    left: &TypeKind<PreparedEffects>,
-    right: &TypeKind<PreparedEffects>,
+    left: &TypeKind,
+    right: &TypeKind,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError> {
     context.enter_node()?;

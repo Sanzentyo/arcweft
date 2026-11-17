@@ -2,6 +2,7 @@
 
 use crate::types::PreparedEffects;
 
+mod closing;
 mod effects;
 #[cfg(test)]
 mod tests;
@@ -12,6 +13,7 @@ use crate::effect_row::{EffectConstraintEnvironment, EffectConstraintVariable};
 use crate::types::{
     compatibility::binding_plan::{unify_original_binding, unify_original_length},
     constraints::{
+        TypeConstraintInvariant,
         application::ConstraintApplicationInventory,
         lexical::ConstraintLexicalScope,
         normalization::{ConstraintClosedEffects, project_closed_type, seal_path},
@@ -56,22 +58,54 @@ pub(super) struct OriginalProductRejection {
 
 type JointBranch<D> = ConstraintInferenceBranch<D, Arc<[OriginalProductMember]>>;
 
-pub(super) struct OriginalProductSolution<D: ConstraintDomain> {
+pub(super) struct PreparedOriginalProduct<D: ConstraintDomain> {
     pub(super) branch: JointBranch<D>,
-    pub(super) effects: Arc<crate::effect_row::prepared::ScopedEffectCompletion>,
+    pub(super) effects: crate::effect_row::prepared::BoundScopedEffectCompletion,
 }
 
-pub(super) struct OriginalProductInference<D: ConstraintDomain> {
+pub(super) struct OriginalProductInference<S> {
     pub(super) members: Arc<[OriginalProductMember]>,
     pub(super) scope: ConstraintLexicalScope,
-    pub(super) result: Result<Box<[OriginalProductSolution<D>]>, OriginalProductRejection>,
+    pub(super) result: Result<Box<[S]>, OriginalProductRejection>,
 }
 
 /// Owns the unchanged original producer/source forest and its separate inferred
 /// products. No later use is an inference input, selector or applicability fact.
 pub(crate) struct OriginalConstraintForest<D: ConstraintDomain, P> {
     pub(super) original: OpenConstraintComponent<D, P>,
-    pub(super) products: Box<[OriginalProductInference<D>]>,
+    pub(super) products: Box<[OriginalProductInference<PreparedOriginalProduct<D>>]>,
+}
+
+pub(super) struct ClosedOriginalProduct<D: ConstraintDomain> {
+    pub(super) branch: JointBranch<D>,
+    pub(super) effects: Arc<ConstraintClosedEffects<D>>,
+}
+
+/// Only this phase has checked original scope, binding and equation conditions
+/// against actual inputs. A prepared forest cannot impersonate this result.
+pub(crate) struct ClosedOriginalConstraintForest<D: ConstraintDomain, P> {
+    pub(super) original: OpenConstraintComponent<D, P>,
+    pub(super) products: Box<[OriginalProductInference<ClosedOriginalProduct<D>>]>,
+}
+
+pub(crate) struct OriginalForestCloseFailure<D: ConstraintDomain, P> {
+    error: PreparedValueFailure,
+    forest: OriginalConstraintForest<D, P>,
+}
+
+impl<D: ConstraintDomain, P> std::fmt::Debug for OriginalForestCloseFailure<D, P> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("OriginalForestCloseFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<D: ConstraintDomain, P> OriginalForestCloseFailure<D, P> {
+    pub(crate) fn into_parts(self) -> (PreparedValueFailure, OriginalConstraintForest<D, P>) {
+        (self.error, self.forest)
+    }
 }
 
 impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
@@ -208,7 +242,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         scope: &ConstraintLexicalScope,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Box<[OriginalProductSolution<D>]>, OriginalInferenceFailure> {
+    ) -> Result<Box<[PreparedOriginalProduct<D>]>, OriginalInferenceFailure> {
         let mut applications = ConstraintApplicationInventory::empty();
         for member in members.iter() {
             applications.merge_original(&self.original_path(*member)?.applications, context)?;
@@ -239,7 +273,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             &crate::effect_row::EffectPredicate::unconstrained(),
             context,
         )?;
-        let original_effects = self.prepare_original_effects(members, graph, context)?;
+        let original_effects = self.prepare_original_effects(members, scope, graph, context)?;
         context.enter_node()?;
         let seed = ConstraintInferenceBranch {
             lineage: Arc::clone(members),
@@ -355,12 +389,11 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             let effects = graph
                 .bind_original_scoped(&effects, context)?
                 .freeze(graph.read(), context)?;
-            self.validate_original_bindings(&branch, members, scope, &effects, graph, context)?;
             context
                 .validate_type_and_const_completion(&branch)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
             context.enter_node()?;
-            solutions.push(OriginalProductSolution { branch, effects });
+            solutions.push(PreparedOriginalProduct { branch, effects });
         }
         Ok(solutions.into_boxed_slice())
     }
@@ -508,6 +541,8 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     .map_err(projection_failure)?;
                 let left = project(&TypeKind::GenericParam(parameter.clone()), context)?;
                 let right = project(&value, context)?;
+                let left = effects.canonicalize(&left, scope.shape(), context)?;
+                let right = effects.canonicalize(&right, scope.shape(), context)?;
                 if !crate::types::constraints::completed_types_equal(&left, &right, context)? {
                     return Err(reject(check, TypeConstraintRejection::Mismatch.into()));
                 }
@@ -548,7 +583,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     .transport(scope, context)
                     .map_err(projection_failure)?;
                 equation
-                    .validate_completed(branch, effects, context)
+                    .validate_completed(branch, effects, graph.read(), context)
                     .map_err(|error| reject(check, error))?;
             }
         }

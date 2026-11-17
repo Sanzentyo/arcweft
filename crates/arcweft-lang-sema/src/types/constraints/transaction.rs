@@ -98,10 +98,11 @@ impl<D: ConstraintDomain> PendingEquation<D> {
         &self,
         branch: &ConstraintInferenceBranch<D, L>,
         effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         context.with_original_scope(self.scope().clone(), |context| {
-            self.validate_in_scope(branch, effects, context)
+            self.validate_in_scope(branch, effects, graph, context)
         })
     }
 
@@ -113,6 +114,7 @@ impl<D: ConstraintDomain> PendingEquation<D> {
         &self,
         branch: &ConstraintInferenceBranch<D, L>,
         effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         let pattern = self
@@ -127,25 +129,33 @@ impl<D: ConstraintDomain> PendingEquation<D> {
                 branch,
                 ConstraintClosurePolicy::Hint,
                 effects,
+                graph,
                 context,
             )
         };
         let pattern = project(pattern, context)?;
+        let scope = context.lexical_scope().clone();
+        let pattern = effects.canonicalize(&pattern, &scope, context)?;
         let actual = context.with_original_scope(self.actual.scope().clone(), |context| {
             if self.timing == ConstraintEquationTiming::InferredEffectResult {
-                let annotation = project_type(
+                let annotation = project_closed_type(
                     self.actual.value(),
-                    branch.projection_view(),
+                    branch,
                     ConstraintClosurePolicy::ResultAnnotation,
+                    effects,
+                    graph,
                     context,
-                )?
-                .value;
+                )?;
+                let scope = context.lexical_scope().clone();
+                let annotation = effects.canonicalize(&annotation, &scope, context)?;
                 let completed = annotation
                     .binding_type_with_inferred_effects(&pattern)
                     .ok_or(TypeConstraintRejection::Mismatch)?;
-                project(&completed, context)
+                Ok(completed)
             } else {
-                project(self.actual.value(), context)
+                let value = project(self.actual.value(), context)?;
+                let scope = context.lexical_scope().clone();
+                effects.canonicalize(&value, &scope, context)
             }
         })?;
         let (expected, actual) = match self.direction {
@@ -184,7 +194,14 @@ impl ConstraintEquationTiming {
         Ok(
             if self == Self::ResultContext
                 && acceptance == ConstraintAcceptance::ActualAcceptsPattern
-                && actual.has_omitted_function_effect_rows_with_control(context)?
+                && actual
+                    .has_omitted_function_effect_rows_with_control(context)
+                    .map_err(|error| match error {
+                        crate::types::TypeProjectionError::Control(error) => error,
+                        crate::types::TypeProjectionError::Instantiation(error) => {
+                            TypeConstraintInvariant::Instantiation(error).into()
+                        }
+                    })?
             {
                 Self::InferredEffectResult
             } else {
@@ -2570,7 +2587,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         ensure_unique_sources(path)?;
         let effects = super::normalization::ConstraintClosedEffects::for_path(path, context)?;
         close_source_rows(path, &effects, context)?;
-        Self::validate_completed_equations(path, &effects, context)?;
+        Self::validate_completed_equations(path, &effects, graph.read(), context)?;
         context.validate_type_and_const_completion(path)?;
         let selected_domain = path
             .applications
@@ -2618,10 +2635,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     fn validate_completed_equations<A: TypeConstraintAccounting>(
         path: &ConstraintPath<D>,
         effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         for equation in &path.equations {
-            equation.validate_completed(path, effects, context)?;
+            equation.validate_completed(path, effects, graph, context)?;
         }
         Ok(())
     }

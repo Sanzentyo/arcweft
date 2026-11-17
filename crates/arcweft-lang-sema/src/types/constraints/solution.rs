@@ -1068,7 +1068,9 @@ fn map_completed_self_error(
         | TypeConstraintError::Rejected(TypeConstraintRejection::EscapingInstantiation {
             ..
         })
-        | TypeConstraintError::Rejected(TypeConstraintRejection::EffectSubset { .. }) => {
+        | TypeConstraintError::Rejected(TypeConstraintRejection::EffectSubset { .. })
+        | TypeConstraintError::Rejected(TypeConstraintRejection::EffectUnsatisfiable)
+        | TypeConstraintError::Rejected(TypeConstraintRejection::EffectNonPrincipal) => {
             completed_solution_invariant(
                 super::InheritedSolutionInvariantKind::Forbidden,
                 Some(binding_parameter),
