@@ -17753,3 +17753,18 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 前checkpointで未接続だった通常解析のwork入口を上記の共有ownerへ接続した。physical metadata、元relationのreplay、joint completionと最終canonical consumerの移行はまだ完了しておらず、Semaを動作可能・受入済みとはしない。過去のfull SHA・失敗・実測とGeneric Match等の既受入を保持する。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-prepared-work-loans-checkpoint.raw.zip](acceptance-evidence/task-prepared-work-loans-checkpoint.raw.zip) は11 entries、ZIP 149450 bytes、SHA-256 `16ab17d262ef1782105b43b826cc9efde43489c0edd2c442def7f4be57f45e63`。全データentryの長さ・SHA-256をreadback照合した。cleanはこの原本作成後の実行であり、上記の別記録として保持する。
+
+
+## Prepared original entrances migration checkpoint
+
+2026-11-17。基点 `784b40cdfb6a33bc0d7c1fa53058be78c3428a59`、移行Source `14956702c3df11e29149af4229b785ab1611368e`。10 Rust path、318追加／73削除を既存mainへ途中commit・非force pushし、全10最終入力hashと公開blobの一致を確認した。途中commitの正常動作を必須としないユーザー指示による未受入checkpointで、未追跡 `%SystemDrive%/` 4 pathを保持した。
+
+- 通常equationのactual、value-use projectionのinput、result-useのexpectedを、liveな元graph・元producer Γ・既存workでprepared operandへ取り込む入口に揃えた。既存shared scoped foldとaffine term editを使い、元scopeとoriginをoperandに保持する。旧canonical original admissionは検証fixture専用へ限定し、製品側の入口を残さない。
+- driverが持つ元PreparedConstraintAuthorityから短いgraph accessを貸す。別graphはoperationの実行前に拒否し、実AnalyzerのSemanticFactState内の同じregistryへ接続する。graphのloanはlower operation内だけに閉じ、source expression callbackを跨がない。予約やgraphを複製せず、新しい予算・source callback計数・fake pure・早期canonical化を追加しない。
+- callable driverのconstrain／result／projection portもprepared型を受け取る契約へ移した。function valueのvalue-use呼出しへmutableな元graphを渡す入口を配線したが、specializationのsource/schemaはまだcanonical契約で、prepared型のdigestを要求する旧順序も未置換である。この配線をspecialization・joint completionの完成とはしない。test clientと直接lower fixtureの新graph入口への移行も未了で、test targetのcompileを確認していない。
+- 別ownerのgraphを仕事前に拒否し、正しいownerで作った本体未準備の行を同じregistryへ保持するfixtureを1件追加した。既存2 fixtureは実際のprepared operand constructorを通し、入れ子の4 scalar port・元Γ拒否・named application保持を確認する形へ移した。いずれも未実行で、成功件数へ加算しない。
+- `cargo check --locked -p arcweft-lang-sema --lib --all-features` はdev01で終了101・663エラー・27警告。projection contextのAに必要なaccounting boundを付け、canonical fixture入口を製品buildから外したdev02は終了101・662エラー・28警告。最終Sourceは未使用TypeConstraintRejection importをcfg(test)へ移した1 pathだけがdev02入力と異なる。この後のcheckを実行したとはしない。最終owner fmt checkは終了0。Clippy・nextest・doctest・逆依存・全workspace／構造gateは、libraryの移行がコンパイル未完了のため未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- 所有レビューでは、source admissionを既存operand、graph貸出しを元driver authorityとfact ownerへ置いた。10 path内の成長245 LOCは既存の境界とfixtureへ収め、別type walker・外部API・Cargo・I/O・unsafe・codec・contract version・数値上限は追加・変更しない。元の予算・取消しは同じcontextへ通す。これは静的レビューで、実行成功やfrontend受入の代用ではない。
+- Supersedes: 前checkpointに残っていた3つのoriginal型入口を、上記のprepared admissionへ置換した。実行結果・過去のfull SHA・原本とGeneric Match等の既受入は保持する。現状一覧は[current-status.md](current-status.md)だけに置く。ユーザー指定の全体clean後に今回のcheckがtargetを再構築した事実も、cleanの成功と区別する。
+
+原本 [task-prepared-original-entrances-checkpoint.raw.zip](acceptance-evidence/task-prepared-original-entrances-checkpoint.raw.zip) は13 entries、ZIP 151550 bytes、SHA-256 `3cb120ca1f1cd5794a304b6b9252637d9dcab9d93218ae19a8d419604938e321`。途中・最終入力と実行ログ、最終fmt、公開照合、先行cleanのreceiptを保持し、全データentryの長さ・SHA-256をreadback照合した。
