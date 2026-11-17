@@ -142,6 +142,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn constrain_result_use<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut crate::effect_row::prepared::PreparedEffectGraph,
         key: D::Projection,
         expected: &TypeKind<PreparedEffects>,
         mut prepare: impl FnMut(
@@ -205,10 +206,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 },
                 direction: crate::types::ConstraintAcceptance::ActualAcceptsPattern,
                 pattern: pattern.clone(),
-                actual: super::ConstraintOperand::from_original_in(
+                actual: super::ConstraintOperand::from_prepared_original_in(
                     expected,
                     scope,
                     self.original.clone(),
+                    &mut super::operand::ConstraintEffectPhase::new(effects),
                     context,
                 )?,
                 source_ordinal: None,

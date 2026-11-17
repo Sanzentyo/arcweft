@@ -46,7 +46,7 @@ impl Analyzer<'_, '_, '_> {
     /// Standalone values are already checked. Calls returning a scheme use
     /// their live Call result port before completion instead of this boundary.
     pub(super) fn specialize_checked_function_value(
-        &self,
+        &mut self,
         owner: ExprId,
         checked: PreparedExpressionFact,
         expectation: &AnalyzerExpressionExpectation<'_>,
@@ -69,7 +69,7 @@ impl Analyzer<'_, '_, '_> {
         let enclosing = self.enclosing_constraint_scope(module, owner, None)?;
         let graph = self
             .facts
-            .prepared_calls()
+            .prepared_calls_mut()
             .map_err(AnalyzerExpressionError::fact)?;
         let mut work = ResolverWork::new(self.catalogs.callable_limits.max_query_work());
         let session = work

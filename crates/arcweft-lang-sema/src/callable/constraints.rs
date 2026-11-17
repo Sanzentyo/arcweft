@@ -23,7 +23,7 @@ use crate::types::constraints::{
     TypeConstraintFailureInvariant, TypeConstraintInitializationFailure, TypeConstraintInvariant,
     TypeConstraintSourceProtocolInvariant,
 };
-use crate::types::{ConstraintAcceptance, TypeKind};
+use crate::types::{ConstraintAcceptance, PreparedEffects, TypeKind};
 use std::sync::Arc;
 
 mod specialization;
@@ -42,6 +42,14 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
     type ProbeCheckpoint;
     type MaterializationCheckpoint;
     type PreparedSealedBranchValue;
+
+    /// Lend the running component its actual graph only for this lower
+    /// operation. Source expression callbacks run after the loan ends.
+    fn with_effect_relation<R>(
+        &mut self,
+        access: CandidateConstraintEffectAccess<'_>,
+        operation: impl FnOnce(&mut crate::effect_row::prepared::PreparedEffectGraph) -> R,
+    ) -> Result<R, SourceCheckpointFailure<D>>;
 
     fn probe_source(
         &mut self,
@@ -107,6 +115,24 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
     fn finish(&mut self) -> Result<(), SourceCheckpointFailure<D>>
     where
         Self: Sized;
+}
+
+/// A running driver's permission to borrow its exact prepared relation. The
+/// client cannot pair a foreign graph with the component's work or Γ.
+pub(crate) struct CandidateConstraintEffectAccess<'a> {
+    authority: &'a PreparedConstraintAuthority,
+}
+
+impl CandidateConstraintEffectAccess<'_> {
+    pub(crate) fn with_graph<P, U, R>(
+        self,
+        graph: &mut super::PreparedCallGraph<P, U>,
+        operation: impl FnOnce(&mut crate::effect_row::prepared::PreparedEffectGraph) -> R,
+    ) -> Result<R, CallConstraintInvariant> {
+        graph.validate_constraint_authority(self.authority)?;
+        let (effects, _) = graph.effect_declarations_mut()?.relation();
+        Ok(operation(effects))
+    }
 }
 
 /// A probe owns its exact lower ticket and borrows the running component's
@@ -563,11 +589,29 @@ where
     pub(crate) fn request_projection(
         &mut self,
         key: D::Projection,
-        value: &TypeKind,
+        value: &TypeKind<PreparedEffects>,
         closure: crate::types::constraints::TypeConstraintProjectionClosure,
     ) {
         self.lower
             .request_projection(self.context, key, value, closure);
+    }
+
+    fn with_effect_relation<R>(
+        &mut self,
+        operation: impl FnOnce(
+            &mut TypeConstraintTransaction<D>,
+            &mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
+            &mut crate::effect_row::prepared::PreparedEffectGraph,
+        ) -> R,
+    ) -> Result<R, TypeConstraintFailure<D>> {
+        let access = CandidateConstraintEffectAccess {
+            authority: &self.authority,
+        };
+        self.client
+            .with_effect_relation(access, |effects| {
+                operation(&mut self.lower, self.context, effects)
+            })
+            .map_err(Self::checkpoint_failure)
     }
 
     fn with_callback<R>(
@@ -1038,22 +1082,28 @@ where
 
     pub(crate) fn constrain(
         &mut self,
-        pattern: &TypeKind,
-        actual: &TypeKind,
+        pattern: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
     ) {
-        self.lower
-            .constrain(self.context, pattern, actual, acceptance);
+        if let Err(error) = self.with_effect_relation(|lower, context, effects| {
+            lower.constrain(context, effects, pattern, actual, acceptance);
+        }) {
+            self.lower.record_failure(error);
+        }
     }
 
     pub(crate) fn constrain_result(
         &mut self,
-        pattern: &TypeKind,
-        actual: &TypeKind,
+        pattern: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
     ) {
-        self.lower
-            .constrain_result(self.context, pattern, actual, acceptance);
+        if let Err(error) = self.with_effect_relation(|lower, context, effects| {
+            lower.constrain_result(context, effects, pattern, actual, acceptance);
+        }) {
+            self.lower.record_failure(error);
+        }
     }
 
     pub(crate) fn constrain_effect_equality(
@@ -2113,6 +2163,70 @@ pub(crate) mod tests {
 
     fn run(mode: CallbackMode, counts: Arc<Counts>) -> Result<(), TypeConstraintFailure<Domain>> {
         run_with_limits(mode, counts, PRODUCTION_CALLABLE_LIMITS).0
+    }
+
+    #[test]
+    fn effect_access_borrows_the_original_graph_and_rejects_a_foreign_graph_before_work() {
+        let cancellation = AtomicBool::new(false);
+        let mut resolver = ResolverWork::new(4_096);
+        let mut work = resolver
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .unwrap();
+        let mut graph = crate::callable::PreparedCallGraph::<()>::new();
+        let declarations = crate::callable::PreparedCallableEffectDeclarations::declare(
+            std::iter::empty::<(
+                &crate::callable::CheckedCallableId,
+                &crate::callable::CallableSignatureSchema,
+            )>(),
+            &mut work,
+        )
+        .unwrap();
+        graph.initialize_effect_declarations(declarations).unwrap();
+        let (authority, _, _, _) =
+            initialization_from_graph(&graph, TypeConstraintParameterScope::empty())
+                .into_lower_parts()
+                .unwrap();
+        let mut foreign = crate::callable::PreparedCallGraph::<()>::new();
+        let mut entered = false;
+        let rejected = (CandidateConstraintEffectAccess {
+            authority: &authority,
+        })
+        .with_graph(&mut foreign, |_| entered = true);
+        assert_eq!(
+            rejected,
+            Err(CallConstraintInvariant::ForeignPreparedIssuer)
+        );
+        assert!(!entered);
+
+        let row = (CandidateConstraintEffectAccess {
+            authority: &authority,
+        })
+        .with_graph(&mut graph, |relation| {
+            let scheme = relation
+                .declare(
+                    vec![],
+                    crate::effect_row::EffectPredicate::unconstrained(),
+                    &mut work,
+                )
+                .unwrap();
+            relation.application(&scheme, vec![], &mut work).unwrap()
+        })
+        .unwrap();
+        graph
+            .effect_declarations_mut()
+            .unwrap()
+            .relation()
+            .0
+            .validate_retained_row(&row)
+            .unwrap();
+        assert!(matches!(
+            row,
+            crate::effect_row::prepared::PreparedEffectRow::Term(_)
+        ));
+        drop(work);
+        assert!(resolver.type_constraint_report().nodes > 0);
+        assert_eq!(resolver.type_constraint_report().source_probes, 0);
+        assert_eq!(resolver.type_constraint_report().materializations, 0);
     }
 
     #[test]

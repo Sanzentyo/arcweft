@@ -956,7 +956,7 @@ impl SemanticFactState {
         })
     }
 
-    fn prepared_calls_mut(
+    pub(super) fn prepared_calls_mut(
         &mut self,
     ) -> Result<&mut AnalyzerPreparedCallGraph, CandidateFactTransactionViolation> {
         self.prepared_calls.as_mut().ok_or_else(|| {

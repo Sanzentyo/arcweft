@@ -118,10 +118,16 @@ fn prepared_original_admission_transports_all_scalar_ports_under_the_same_nested
     let value = make(original.scope(), 1, &mut context);
     let expected = make(target.shape(), 2, &mut context);
     let mut graph = PreparedEffectGraph::default();
-    let admitted = ConstraintEffectPhase::new(&mut graph)
-        .admit_type(&value, &target, &original, &mut context)
-        .unwrap();
-    assert_eq!(admitted, expected);
+    let admitted = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
+        &value,
+        Arc::new(target.clone()),
+        original.clone(),
+        &mut ConstraintEffectPhase::new(&mut graph),
+        &mut context,
+    )
+    .unwrap();
+    assert_eq!(admitted.value(), &expected);
+    assert_eq!(admitted.scope().shape(), target.shape());
     context.restore_binder_scope(enclosing);
 }
 
@@ -155,18 +161,28 @@ fn prepared_original_admission_retains_a_named_application_before_its_body_exist
         return_type: Box::new(TypeKind::I64),
         effects: input.clone(),
     };
-    let admitted = ConstraintEffectPhase::new(&mut graph)
-        .admit_type(&value, &target, &original, &mut context)
-        .unwrap();
-    let TypeKind::Function { effects, .. } = admitted else {
+    let admitted = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
+        &value,
+        Arc::new(target.clone()),
+        original.clone(),
+        &mut ConstraintEffectPhase::new(&mut graph),
+        &mut context,
+    )
+    .unwrap();
+    let TypeKind::Function { effects, .. } = admitted.value() else {
         panic!("prepared arrow")
     };
     assert!(matches!(effects, PreparedEffectRow::Term(_)));
     let ground = context.fixture_original_context(None).unwrap();
     assert_eq!(
-        ConstraintEffectPhase::new(&mut graph)
-            .admit_type(&value, &target, &ground, &mut context)
-            .err(),
+        ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
+            &value,
+            Arc::new(target),
+            ground,
+            &mut ConstraintEffectPhase::new(&mut graph),
+            &mut context,
+        )
+        .err(),
         Some(references::type_out_of_scope(&source.types[0])),
     );
     graph
@@ -179,7 +195,7 @@ fn prepared_original_admission_retains_a_named_application_before_its_body_exist
         .unwrap();
     let completed = graph.solve_principal(&mut context).unwrap();
     assert_eq!(completed.resolve_row(&input, &mut context).unwrap(), row);
-    assert_eq!(completed.resolve_row(&effects, &mut context).unwrap(), row);
+    assert_eq!(completed.resolve_row(effects, &mut context).unwrap(), row);
 }
 
 #[test]

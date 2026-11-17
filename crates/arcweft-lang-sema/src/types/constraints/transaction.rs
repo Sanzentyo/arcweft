@@ -1232,12 +1232,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn constrain<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut crate::effect_row::prepared::PreparedEffectGraph,
         pattern: &TypeKind<PreparedEffects>,
         actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
     ) {
         if let Err(error) = self.constrain_equation(
             context,
+            effects,
             pattern,
             actual,
             acceptance,
@@ -1253,12 +1255,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn constrain_result<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut crate::effect_row::prepared::PreparedEffectGraph,
         pattern: &TypeKind<PreparedEffects>,
         actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
     ) {
         if let Err(error) = self.constrain_equation(
             context,
+            effects,
             pattern,
             actual,
             acceptance,
@@ -1271,6 +1275,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     fn constrain_equation<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut crate::effect_row::prepared::PreparedEffectGraph,
         pattern: &TypeKind<PreparedEffects>,
         actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
@@ -1284,7 +1289,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             acceptance,
             timing,
             |_, scope, context| {
-                ConstraintOperand::from_original_in(actual, scope, original.clone(), context)
+                ConstraintOperand::from_prepared_original_in(
+                    actual,
+                    scope,
+                    original.clone(),
+                    &mut operand::ConstraintEffectPhase::new(effects),
+                    context,
+                )
             },
         )
     }
@@ -1482,23 +1493,49 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     pub(crate) fn request_projection<A: TypeConstraintAccounting>(
         &mut self,
-        context: &mut TypeConstraintContext<'_, A, D>,
+        _context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
         value: &TypeKind<PreparedEffects>,
         closure: TypeConstraintProjectionClosure,
     ) {
-        self.request_projection_inner(context, key, value, closure, None);
+        self.request_projection_inner(key, value, closure, None);
     }
 
     pub(crate) fn request_value_use_projection<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut crate::effect_row::prepared::PreparedEffectGraph,
         key: D::Projection,
         input: &TypeKind<PreparedEffects>,
         value: &TypeKind<PreparedEffects>,
     ) {
+        if self.first_failure.is_some() || self.closed {
+            return;
+        }
+        if self.probe.is_some() || self.probe_group.is_some() {
+            self.record_failure(
+                protocol_error(TypeConstraintSourceProtocolInvariant::Outcome).into(),
+            );
+            return;
+        }
+        let admitted = (|| {
+            let scope = Arc::new(context.capture_lexical_scope()?);
+            ConstraintOperand::from_prepared_original_in(
+                input,
+                scope,
+                self.original.clone(),
+                &mut operand::ConstraintEffectPhase::new(effects),
+                context,
+            )
+        })();
+        let input = match admitted {
+            Ok(input) => Arc::new(input),
+            Err(error) => {
+                self.record_failure(error.into());
+                return;
+            }
+        };
         self.request_projection_inner(
-            context,
             key,
             value,
             TypeConstraintProjectionClosure::Closed,
@@ -1506,13 +1543,12 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         );
     }
 
-    fn request_projection_inner<A: TypeConstraintAccounting>(
+    fn request_projection_inner(
         &mut self,
-        context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
         value: &TypeKind<PreparedEffects>,
         closure: TypeConstraintProjectionClosure,
-        input: Option<&TypeKind<PreparedEffects>>,
+        input: Option<Arc<ConstraintOperand<D>>>,
     ) {
         if self.first_failure.is_none() && !self.closed {
             if self.probe.is_some() || self.probe_group.is_some() {
@@ -1521,27 +1557,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 );
                 return;
             }
-            let input = match input {
-                Some(input) => match context.capture_lexical_scope() {
-                    Ok(scope) => match ConstraintOperand::from_original_in(
-                        input,
-                        Arc::new(scope),
-                        self.original.clone(),
-                        context,
-                    ) {
-                        Ok(input) => Some(Arc::new(input)),
-                        Err(error) => {
-                            self.record_failure(error.into());
-                            return;
-                        }
-                    },
-                    Err(error) => {
-                        self.record_failure(error.into());
-                        return;
-                    }
-                },
-                None => None,
-            };
             let request = Arc::new(ProjectionRequest {
                 application: self.application,
                 key: Arc::new(key),

@@ -97,7 +97,7 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
     /// protocol; no child solution seals before later parent operands arrive.
     pub(crate) fn specialize_function_value<P, U>(
         &mut self,
-        graph: &PreparedCallGraph<P, U>,
+        graph: &mut PreparedCallGraph<P, U>,
         application: D::Application,
         source: &TypeKind,
         enclosing: &EnclosingGenericParameterScope,
@@ -163,7 +163,17 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
                 }
             })
         })?;
-        lower.request_value_use_projection(self.context, result.clone(), source, &template);
+        let (effects, _) = graph
+            .effect_declarations_mut()
+            .map_err(FunctionSpecializationFailure::Prepared)?
+            .relation();
+        lower.request_value_use_projection(
+            self.context,
+            effects,
+            result.clone(),
+            source,
+            &template,
+        );
         lower
             .suspend_result(self.context, result)
             .and_then(|frontier| frontier.into_child(self.context))
@@ -177,7 +187,7 @@ impl CandidateConstraintWorkSession<'_> {
     /// synthesized, and the closed source is never resolved a second time.
     pub(crate) fn specialize_root_function_value<D, P, U>(
         self,
-        graph: &PreparedCallGraph<P, U>,
+        graph: &mut PreparedCallGraph<P, U>,
         application: crate::callable::CallableConstraintApplication,
         source: &TypeKind,
         expected: &TypeKind,
@@ -235,9 +245,20 @@ impl CandidateConstraintWorkSession<'_> {
                 }
             })
         })?;
-        lower.request_value_use_projection(&mut context, result.clone(), &source, &template);
+        let (effects, _) = graph
+            .effect_declarations_mut()
+            .map_err(FunctionSpecializationFailure::Prepared)?
+            .relation();
+        lower.request_value_use_projection(
+            &mut context,
+            effects,
+            result.clone(),
+            &source,
+            &template,
+        );
         lower.constrain(
             &mut context,
+            effects,
             &template,
             expected,
             ConstraintAcceptance::ActualAcceptsPattern,
@@ -278,14 +299,15 @@ where
         &mut self,
         application: D::Application,
         result: D::Projection,
-        expected: &TypeKind,
+        expected: &TypeKind<PreparedEffects>,
         enclosing: &EnclosingGenericParameterScope,
         limits: &CallableLimits,
         invariant: impl Fn(CallConstraintInvariant) -> D::ClientInvariant,
     ) -> Result<(), TypeConstraintFailure<D>> {
         let authority = &self.authority;
-        self.lower
-            .constrain_result_use(self.context, result, expected, |source, context| {
+        let access = CandidateConstraintEffectAccess { authority };
+        self.client.with_effect_relation(access, |effects| {
+            self.lower.constrain_result_use(self.context, effects, result, expected, |source, context| {
                 if !matches!(source.source_type(), TypeKind::Function { binder, .. } if !binder.is_empty()) {
                     return Ok(None);
                 }
@@ -314,6 +336,7 @@ where
                 }
                 Ok(Some(source.prepare_function_scheme(application, parameters, template, context)?))
             })
+        }).map_err(Self::checkpoint_failure)?
     }
 }
 

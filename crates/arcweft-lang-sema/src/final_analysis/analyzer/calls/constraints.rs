@@ -1759,7 +1759,7 @@ impl<'a, 'project, 'catalog, 'control>
                     })?;
                     let enclosing = self.analyzer.enclosing_constraint_scope(module, owner, None)
                         .map_err(|error| AnalyzerCallCheckFailure::expression(source_id, phase, error))?;
-                    let graph = self.analyzer.facts.prepared_calls().map_err(|error| {
+                    let graph = self.analyzer.facts.prepared_calls_mut().map_err(|error| {
                         AnalyzerCallCheckFailure::Invariant(AnalyzerCallClientInvariant::fact_transaction(source, error))
                     })?;
                     let pending = probe.specialize_function_value(
@@ -1955,6 +1955,12 @@ trait AnalyzerCallConstraintOperations {
     type MaterializationCheckpoint;
     type PreparedSealedBranchValue;
 
+    fn with_effect_relation<R>(
+        &mut self,
+        access: crate::callable::CandidateConstraintEffectAccess<'_>,
+        operation: impl FnOnce(&mut crate::effect_row::prepared::PreparedEffectGraph) -> R,
+    ) -> Result<R, crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>>;
+
     fn probe_source(
         &mut self,
         checkpoint: &mut Self::ProbeCheckpoint,
@@ -2042,6 +2048,28 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
     type ProbeCheckpoint = AnalyzerProbeCheckpoint;
     type MaterializationCheckpoint = AnalyzerMaterializationCheckpoint;
     type PreparedSealedBranchValue = AnalyzerCallPreparedSealedBranch;
+
+    fn with_effect_relation<R>(
+        &mut self,
+        access: crate::callable::CandidateConstraintEffectAccess<'_>,
+        operation: impl FnOnce(&mut crate::effect_row::prepared::PreparedEffectGraph) -> R,
+    ) -> Result<R, crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>> {
+        let source = AnalyzerCallConstraintSource::BaseInstantiation;
+        let graph = self
+            .analyzer
+            .facts
+            .prepared_calls_mut()
+            .map_err(|violation| {
+                crate::callable::SourceCheckpointFailure::client(
+                    AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                )
+            })?;
+        access.with_graph(graph, operation).map_err(|invariant| {
+            crate::callable::SourceCheckpointFailure::client(
+                AnalyzerCallClientInvariant::constraint(source, invariant),
+            )
+        })
+    }
 
     fn probe_source(
         &mut self,
@@ -2911,6 +2939,14 @@ impl<O: AnalyzerCallConstraintOperations>
     type ProbeCheckpoint = O::ProbeCheckpoint;
     type MaterializationCheckpoint = O::MaterializationCheckpoint;
     type PreparedSealedBranchValue = O::PreparedSealedBranchValue;
+
+    fn with_effect_relation<R>(
+        &mut self,
+        access: crate::callable::CandidateConstraintEffectAccess<'_>,
+        operation: impl FnOnce(&mut crate::effect_row::prepared::PreparedEffectGraph) -> R,
+    ) -> Result<R, crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>> {
+        self.operations.with_effect_relation(access, operation)
+    }
 
     fn probe_source(
         &mut self,

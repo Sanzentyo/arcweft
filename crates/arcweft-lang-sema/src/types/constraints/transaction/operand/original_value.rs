@@ -12,24 +12,29 @@ use crate::types::{GenericScope, TypeProjectionControl, TypeProjectionNodeKind};
 use std::sync::Arc;
 
 use super::{ConstraintOperand, ConstraintOperandOrigin};
+#[cfg(test)]
+use crate::effect_row::EffectPredicate;
+#[cfg(test)]
+use crate::types::constraints::TypeConstraintRejection;
+#[cfg(test)]
+use crate::types::constraints::solution::{
+    map_effects_with_control, map_predicate_with_control, map_term_with_control,
+};
 use crate::types::constraints::{
-    ConstraintDomain, OriginalProducerContext, TypeConstraintError, TypeConstraintRejection,
+    ConstraintDomain, OriginalProducerContext, TypeConstraintError,
     context::{TypeConstraintAccounting, TypeConstraintContext},
     lexical::ConstraintLexicalScope,
     references,
-    solution::{map_effects_with_control, map_predicate_with_control, map_term_with_control},
 };
 use crate::types::{
     ArrayLength, GenericConstReference, GenericTypeReference, TypeKind, TypeProjectionError,
 };
-use crate::{
-    effect_row::{EffectPredicate, EffectRow},
-    types::GenericEffectReference,
-};
+use crate::{effect_row::EffectRow, types::GenericEffectReference};
 
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
 pub(in crate::types::constraints) trait OriginalOperandValue:
     Sized
 {
@@ -41,6 +46,7 @@ pub(in crate::types::constraints) trait OriginalOperandValue:
     ) -> Result<Self, TypeConstraintError>;
 }
 
+#[cfg(test)]
 impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
     /// Admit in the owning source Γ and transport into the requested actual
     /// frames in one controlled fold. The target never reinterprets the input.
@@ -54,6 +60,27 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
         T: OriginalOperandValue,
     {
         let value = value.admit(&scope, &original, context)?;
+        Ok(Self {
+            value: Arc::new(value),
+            scope,
+            origin: Arc::new(ConstraintOperandOrigin::Original(original)),
+        })
+    }
+}
+
+impl<D: ConstraintDomain> ConstraintOperand<D, TypeKind<PreparedEffects>> {
+    /// Retain the source authority after transporting its prepared type in
+    /// the live relation. No completed type or digest is issued here.
+    pub(in crate::types::constraints::transaction) fn from_prepared_original_in<
+        A: TypeConstraintAccounting,
+    >(
+        value: &TypeKind<PreparedEffects>,
+        scope: Arc<ConstraintLexicalScope>,
+        original: OriginalProducerContext,
+        phase: &mut ConstraintEffectPhase<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError> {
+        let value = phase.admit_type(value, &scope, &original, context)?;
         Ok(Self {
             value: Arc::new(value),
             scope,
@@ -99,6 +126,7 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
     }
 }
 
+#[cfg(test)]
 impl OriginalOperandValue for TypeKind {
     fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
@@ -189,7 +217,13 @@ impl<'graph> ConstraintEffectPhase<'graph> {
     }
 }
 
-struct PreparedOriginalValueProjection<'phase, 'graph, 'control, A, D: ConstraintDomain> {
+struct PreparedOriginalValueProjection<
+    'phase,
+    'graph,
+    'control,
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+> {
     edit: PreparedEffectTermEdit<'graph>,
     target: &'phase ConstraintLexicalScope,
     original: &'phase OriginalProducerContext,
@@ -373,6 +407,7 @@ impl ArrayLength {
     }
 }
 
+#[cfg(test)]
 impl OriginalOperandValue for ArrayLength {
     fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
@@ -449,6 +484,7 @@ impl OriginalProducerContext {
             })
     }
 
+    #[cfg(test)]
     fn admit_primitive_effect<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         target: &ConstraintLexicalScope,
@@ -461,6 +497,7 @@ impl OriginalProducerContext {
     }
 }
 
+#[cfg(test)]
 impl OriginalOperandValue for EffectRow {
     fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
@@ -481,6 +518,7 @@ impl OriginalOperandValue for EffectRow {
     }
 }
 
+#[cfg(test)]
 impl OriginalOperandValue for EffectPredicate {
     fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
