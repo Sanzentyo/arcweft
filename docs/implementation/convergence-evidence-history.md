@@ -18243,3 +18243,21 @@ Locked Sema／test target／全feature checkは2回とも終了101。Dev01はlib
 Supersedes: 現状一覧の細部が累積した準備手順を現在のowner・成立範囲へ整理し、再具体化／復元の実装と残る最終original-forest callerを区別した。旧helperの暗黙closure呼出しを現行手順として残さない。Fn局所∀／guarded header、全fixture移行、frontend public switchやbody一回準備の受入は未達のままである。Generic Match等の既受入項目と以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
 
 原本 [task-completed-type-reification-checkpoint.raw.zip](acceptance-evidence/task-completed-type-reification-checkpoint.raw.zip) は19 entries、309,435 bytes、SHA-256 `d1fb6e476393af1644f4dbf70ac14b93a3047b5bc119d3a1abc083dbf4a9830a`。2回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・最終の限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Joint completion reader checkpoint
+
+2026-11-18。基点 `644c5f91b5643bc647802a891f58f67f32d728e9`、移行Source `5661ec12cf90d1682e8f498ec428f487ffebdfda`。7 Rust path、168追加／52削除、物理116 LOC増。ユーザー指定の途中WIPとしてcommit・非force pushし、最終7入力と公開blobのbyte SHA-256を照合した。公開時tracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+完了application・residual binder・capture transportは、型付きの実inference branchと同じclosed effectsを直接読む。単独sourceのConstraintPathを作って共同関係へ偽のlineageを与えない。Application inventoryとCが同じcompletionである検査を保持し、mutating source restorationや元bound calculationの明示入力はsource固有の契約のままとした。KeyedConstraintProjection.to_quantified_typeの戻り値も、完了ownerが実際に発行するcanonical TypeKindへ揃えた。
+
+Seal_pathは、各rowの投影中だけ元effectsを借りてからowned bindingを登録する。Effects environmentのcloneで借用競合を回避せず、元bindingの認証順、型／constの推移的投影、occurs check、frame、source lineageとgraph metadataを保持する。
+
+新規1 fixtureは2つの実rootをinfer／closeし、保持するjoint branchから各実applicationのsolutionとcanonical projectionを読み、元memberのArc identityと受け手frameの復元を検査する。既存の未実行Named fixtureも1本訂正した。Source `ece7270e337a09d8e6161b1bc5345359a6b53009` のfixtureは、元frozen graphへ未準備Namedを含めていた。Closure実装とfinal_forest_closure_waits_for_a_bodyの契約では元Named本体がすべて必要なため、無関係な宣言を追加する時点をclosure後へ移した。同じimmutable principalによるreaderが、拡張後のgraphを再closureしない条件へ改めた。この発見はownerのソース確認による未実行fixtureの訂正で、当該fixtureを実行して失敗したという記録ではない。以前の原本・Source・説明はこの理由とともに保持する。新規・訂正fixtureともcompile成立・実行成功を主張せずPASSへ加算しない。
+
+Locked Sema／test target／全feature checkは1回、終了101。Library 494エラー・25警告、lib test 1,535エラー・44警告。Owner fmt checkは終了0。変更7 pathへの限定primary位置抽出は0件だが、全targetのcompile・動作成功を証明しない。最終transaction materializationとの接続、既存fixtureの明示closure／graph入力、Fn局所∀／guarded header、frontend移行は継続する。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。Commit前入力と公開blob一致による再利用で、commit後の再実行ではない。Cargo cleanは02:09実施済みで繰り返していない。
+
+全7 pathのbase／現行LOC・bytes・分類・inline moduleを原本へ記録し、readonly completionのowner内でレビューした。Inline moduleの計測はnamed cfg(test) moduleも対象とし、前原本の限定matcherの取りこぼしを繰り返さない。独立したsource／型model、fallback reader、source再構築、暗黙Future値、反復した本体準備や予算の緩和はない。Cargo依存・feature・layer・I/O・unsafe・codec／versionも不変。既存resolved graph／推移的reverse dependency証拠を再利用し、scannerは未実行。
+
+Supersedes: 現状一覧のsolution readerを、実共同branchを直接受け取る現在の契約へ更新した。下位readerの接続を最終transactionのmaterialization完了へ広げない。未実行Named fixtureの誤った前提は上記理由で訂正する。Generic Match等の既受入項目と以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
+
+原本 [task-joint-completion-reader-checkpoint.raw.zip](acceptance-evidence/task-joint-completion-reader-checkpoint.raw.zip) は13 entries、159,176 bytes、SHA-256 `3b7f75db2c94e2b8fb799e0025d9842bfd3e5dbe70805b766975573bf2c7f597`。Check入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
