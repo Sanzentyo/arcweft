@@ -1,5 +1,7 @@
 //! Affine transformation of a pending result on the path that produced it.
 
+use crate::types::PreparedEffects;
+
 use super::{
     Arc, ConstraintDomain, ConstraintResultUseSource, ConstraintSourceReceipt,
     NestedConstraintPath, PendingChildAlternative, PendingChildConstraint,
@@ -65,7 +67,7 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
         }
     }
 
-    pub(crate) fn source_type(&self) -> &TypeKind {
+    pub(crate) fn source_type(&self) -> &TypeKind<PreparedEffects> {
         self.source.value()
     }
 
@@ -77,7 +79,7 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
         context: &mut TypeConstraintContext<'_, A, D>,
         application: D::Application,
         parameters: super::super::TypeConstraintParameterScope,
-        template: &TypeKind,
+        template: &TypeKind<PreparedEffects>,
         key: D::Projection,
     ) -> Result<PendingChildConstraint<D>, TypeConstraintFailure<D>>
     where
@@ -142,7 +144,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
-        expected: &TypeKind,
+        expected: &TypeKind<PreparedEffects>,
         mut prepare: impl FnMut(
             &ConstraintResultUseSource<D>,
             &mut TypeConstraintContext<'_, A, D>,

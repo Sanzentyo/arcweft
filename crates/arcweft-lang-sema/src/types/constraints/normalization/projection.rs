@@ -1,5 +1,7 @@
 //! Metered transitive projection of candidate bindings and scoped type terms.
 
+use crate::types::PreparedEffects;
+
 use std::collections::BTreeSet;
 
 use super::super::lexical::ConstraintLexicalScope;
@@ -29,7 +31,7 @@ use mode::{InspectValues, ProjectionMode, RetainOrigins};
 /// Bindings are followed transitively, with branch-local cycle guards; they
 /// are not the simultaneous closed substitutions used by runtime instances.
 pub(in crate::types::constraints) fn project_type<A, D>(
-    ty: &TypeKind,
+    ty: &TypeKind<PreparedEffects>,
     view: ConstraintProjectionView<'_, D>,
     policy: ConstraintClosurePolicy,
     context: &mut TypeConstraintContext<'_, A, D>,
@@ -139,12 +141,12 @@ where
 /// Read-only closure uses the same scoped header substitution as retained
 /// operands. Its raw result cannot acquire provenance or Free authorization.
 pub(in crate::types::constraints) fn project_closed_type<A, D, L>(
-    ty: &TypeKind,
+    ty: &TypeKind<PreparedEffects>,
     branch: &super::super::transaction::ConstraintInferenceBranch<D, L>,
     policy: ConstraintClosurePolicy,
     effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<TypeKind, TypeConstraintError>
+) -> Result<TypeKind<PreparedEffects>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
@@ -186,13 +188,13 @@ where
     })
 }
 pub(super) fn project_type_inner<'ty, A, D>(
-    ty: &'ty TypeKind,
+    ty: &'ty TypeKind<PreparedEffects>,
     view: ConstraintProjectionView<'ty, D>,
     policy: ConstraintClosurePolicy,
     context: &mut TypeConstraintContext<'_, A, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,
     remaining: &mut BTreeSet<RemainingConstraintParameter>,
-) -> Result<TypeKind, TypeConstraintError>
+) -> Result<TypeKind<PreparedEffects>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,

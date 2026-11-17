@@ -2,7 +2,7 @@
 
 use super::*;
 
-impl CheckedConstraintSourceProjection {
+impl CheckedConstraintSourceProjection<PreparedEffects> {
     /// The checked constructor selects the actual's header and the template's
     /// expected value. Retain those two roles explicitly: scalar is the
     /// template value, arrays additionally use the actual length, maps the

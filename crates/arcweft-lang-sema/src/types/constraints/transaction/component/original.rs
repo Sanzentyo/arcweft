@@ -1,5 +1,7 @@
 //! Consuming agreement of correlated original roots, before value-use Fits.
 
+use crate::types::PreparedEffects;
+
 #[cfg(test)]
 mod tests;
 
@@ -337,7 +339,8 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         effects: &Arc<ConstraintClosedEffects<D>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), OriginalInferenceFailure> {
-        let project = |ty: &TypeKind, context: &mut TypeConstraintContext<'_, A, D>| {
+        let project = |ty: &TypeKind<PreparedEffects>,
+                       context: &mut TypeConstraintContext<'_, A, D>| {
             project_closed_type(
                 ty,
                 branch,

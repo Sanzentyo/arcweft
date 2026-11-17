@@ -1,5 +1,7 @@
 //! Function headers borrow their exact operand port and actual contents scope.
 
+use crate::types::PreparedEffects;
+
 use super::*;
 use crate::effect_row::{EffectPredicate, EffectRow};
 
@@ -18,7 +20,7 @@ pub(in crate::types) struct ConstraintFunctionHeaderView<'a, D: ConstraintDomain
 
 pub(in crate::types::constraints) struct ConstraintEffectHeaderDerivation<D: ConstraintDomain> {
     pub(in crate::types::constraints::transaction::operand) source:
-        ConstraintOperandDerivation<D, TypeKind>,
+        ConstraintOperandDerivation<D, TypeKind<PreparedEffects>>,
     pub(in crate::types::constraints::transaction::operand) contents_scope:
         Arc<ConstraintLexicalScope>,
 }

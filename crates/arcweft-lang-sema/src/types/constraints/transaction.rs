@@ -1,5 +1,7 @@
 //! Candidate-wide equations, prepared source traces, and finalization.
 
+use crate::types::PreparedEffects;
+
 #[cfg(test)]
 mod tests;
 
@@ -118,7 +120,8 @@ impl<D: ConstraintDomain> PendingEquation<D> {
             .as_ref()
             .unwrap_or(&self.pattern)
             .value();
-        let project = |value: &TypeKind, context: &mut TypeConstraintContext<'_, A, D>| {
+        let project = |value: &TypeKind<PreparedEffects>,
+                       context: &mut TypeConstraintContext<'_, A, D>| {
             project_closed_type(
                 value,
                 branch,
@@ -174,7 +177,7 @@ enum ConstraintEquationTiming {
 impl ConstraintEquationTiming {
     fn for_actual<A: TypeConstraintAccounting, D: ConstraintDomain>(
         self,
-        actual: &TypeKind,
+        actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError> {
@@ -417,7 +420,7 @@ impl<D: ConstraintDomain> NestedConstraintPath<D> {
 }
 
 /// Owner-bound handle to a result projection registered on one admitted child
-/// application.  It carries no open `TypeKind`; the lower transaction opens
+/// application.  It carries no open `TypeKind<PreparedEffects>`; the lower transaction opens
 /// the schema term on the matching path when it submits the parent source.
 pub(crate) struct ConstraintResultProjection<D: ConstraintDomain> {
     application: ConstraintApplicationId,
@@ -589,7 +592,7 @@ pub(crate) struct ProbeInput<D: ConstraintDomain> {
 
 struct OwnedAlternativeHint<D: ConstraintDomain> {
     alternative: D::AlternativeIndex,
-    expected: TypeKind,
+    expected: TypeKind<PreparedEffects>,
     unbound: Box<[super::ConstraintGenericParameterId]>,
     scope_lease: Option<super::ImportedGenericParameterScopeLease>,
 }
@@ -892,7 +895,7 @@ fn materialization_identity_matches(
 pub(super) struct ProjectionRequest<D: ConstraintDomain> {
     application: ConstraintApplicationId,
     key: Arc<D::Projection>,
-    value: TypeKind,
+    value: TypeKind<PreparedEffects>,
     closure: TypeConstraintProjectionClosure,
     source: Option<ConstraintResultProjection<D>>,
     input: Option<Arc<ConstraintOperand<D>>>,
@@ -1187,8 +1190,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn constrain<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        pattern: &TypeKind,
-        actual: &TypeKind,
+        pattern: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
     ) {
         if let Err(error) = self.constrain_equation(
@@ -1208,8 +1211,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn constrain_result<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        pattern: &TypeKind,
-        actual: &TypeKind,
+        pattern: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
     ) {
         if let Err(error) = self.constrain_equation(
@@ -1226,8 +1229,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     fn constrain_equation<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        pattern: &TypeKind,
-        actual: &TypeKind,
+        pattern: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
         timing: ConstraintEquationTiming,
     ) -> Result<(), TypeConstraintError> {
@@ -1249,8 +1252,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     fn constrain_equation_from<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        pattern: &TypeKind,
-        actual: &TypeKind,
+        pattern: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
         timing: ConstraintEquationTiming,
         mut admit: impl FnMut(
@@ -1359,8 +1362,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(super) fn constrain_application_template<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        pattern: &TypeKind,
-        actual: &TypeKind,
+        pattern: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
         acceptance: ConstraintAcceptance,
     ) {
         let application = self.application;
@@ -1439,7 +1442,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
-        value: &TypeKind,
+        value: &TypeKind<PreparedEffects>,
         closure: TypeConstraintProjectionClosure,
     ) {
         self.request_projection_inner(context, key, value, closure, None);
@@ -1449,8 +1452,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
-        input: &TypeKind,
-        value: &TypeKind,
+        input: &TypeKind<PreparedEffects>,
+        value: &TypeKind<PreparedEffects>,
     ) {
         self.request_projection_inner(
             context,
@@ -1465,9 +1468,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
-        value: &TypeKind,
+        value: &TypeKind<PreparedEffects>,
         closure: TypeConstraintProjectionClosure,
-        input: Option<&TypeKind>,
+        input: Option<&TypeKind<PreparedEffects>>,
     ) {
         if self.first_failure.is_none() && !self.closed {
             if self.probe.is_some() || self.probe_group.is_some() {
@@ -2642,7 +2645,7 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
     path: &ConstraintPath<D>,
     target: &super::lexical::ConstraintLexicalScope,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<(TypeKind, ResolvedConstraintSource<D>), TypeConstraintError> {
+) -> Result<(TypeKind<PreparedEffects>, ResolvedConstraintSource<D>), TypeConstraintError> {
     match term {
         SourceProbeTerm::Value(owner) => ResolvedConstraintSource::value(owner, target, context),
         #[cfg(test)]
@@ -2669,13 +2672,13 @@ fn validate_source_selection<D: ConstraintDomain>(
     prepared: &PreparedSourceConstraint<D>,
     selected: D::AlternativeIndex,
     evidence: Arc<D::ObservedEvidence>,
-    actual: &TypeKind,
+    actual: &TypeKind<PreparedEffects>,
 ) -> Result<
     Option<(
         D::AlternativeIndex,
         Arc<D::ObservedEvidence>,
-        TypeKind,
-        CheckedConstraintSourceProjection,
+        TypeKind<PreparedEffects>,
+        CheckedConstraintSourceProjection<PreparedEffects>,
     )>,
     TypeConstraintError,
 > {

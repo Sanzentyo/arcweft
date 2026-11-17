@@ -1,5 +1,7 @@
 //! Borrowed, exact child projections of a retained operand.
 
+use crate::types::PreparedEffects;
+
 use super::*;
 use crate::types::constraints::shape::TypeConstraintChildren;
 
@@ -62,7 +64,7 @@ impl ConstraintOperandProjection {
 /// an owned, transported value; its proof keeps the exact projection address.
 pub(in crate::types) struct ConstraintOperandView<'a, D: ConstraintDomain> {
     root: &'a ConstraintOperand<D>,
-    value: &'a TypeKind,
+    value: &'a TypeKind<PreparedEffects>,
     scope: Arc<ConstraintLexicalScope>,
     address: Option<Arc<ConstraintOperandProjection>>,
     value_origin: Arc<ConstraintOperandOrigin<D>>,
@@ -82,7 +84,7 @@ impl<D: ConstraintDomain> Clone for ConstraintOperandView<'_, D> {
 
 pub(in crate::types) struct ConstraintOperandChildren<'a, D: ConstraintDomain> {
     parent: ConstraintOperandView<'a, D>,
-    children: std::iter::Enumerate<TypeConstraintChildren<'a>>,
+    children: std::iter::Enumerate<TypeConstraintChildren<'a, PreparedEffects>>,
     scope: Arc<ConstraintLexicalScope>,
 }
 
@@ -145,7 +147,7 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
         }
     }
 
-    pub(in crate::types) fn value(&self) -> &'a TypeKind {
+    pub(in crate::types) fn value(&self) -> &'a TypeKind<PreparedEffects> {
         self.value
     }
 

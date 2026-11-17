@@ -5,6 +5,8 @@
 //! evidence; the lower owner derives every checked projection and expected
 //! type from the prepared source constraint.
 
+use crate::types::{CanonicalEffects, PreparedEffects, TypeEffectDomain};
+
 use super::ConstraintSourceId;
 
 use super::transaction::SourceProbeObservation;
@@ -125,27 +127,32 @@ impl PreparedConstraintSourceProjection {
 
 /// Exact source projection derived after the callback's actual type is known.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedConstraintSourceProjection {
+pub enum CheckedConstraintSourceProjection<E: TypeEffectDomain = CanonicalEffects> {
     Scalar,
-    SpreadContainer(CheckedConstraintContainerConstructor),
+    SpreadContainer(CheckedConstraintContainerConstructor<E>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedConstraintContainerConstructor {
+pub enum CheckedConstraintContainerConstructor<E: TypeEffectDomain = CanonicalEffects> {
     Vec,
     Seq,
     Slice,
-    Array { len: ArrayLength },
-    MapValue { kind: MapKind, key: Box<TypeKind> },
+    Array {
+        len: ArrayLength,
+    },
+    MapValue {
+        kind: MapKind,
+        key: Box<TypeKind<E>>,
+    },
 }
 
-impl CheckedConstraintSourceProjection {
+impl<E: TypeEffectDomain> CheckedConstraintSourceProjection<E> {
     /// Derive the only admissible checked constructor from the prepared source
     /// shape and the callback's actual type.  Returning `None` is a lower
     /// mismatch; callers cannot manufacture a constructor in a callback.
     pub(crate) fn derive(
         prepared: PreparedConstraintSourceProjection,
-        actual: &TypeKind,
+        actual: &TypeKind<E>,
     ) -> Option<Self> {
         match prepared {
             PreparedConstraintSourceProjection::Scalar => Some(Self::Scalar),
@@ -179,7 +186,7 @@ impl CheckedConstraintSourceProjection {
     /// Validate that this lower-derived constructor still names the exact
     /// materialized actual. Scalar projection is the identity for every type;
     /// spread constructors retain all container header evidence.
-    pub(crate) fn matches_actual(&self, actual: &TypeKind) -> bool {
+    pub(crate) fn matches_actual(&self, actual: &TypeKind<E>) -> bool {
         match (self, actual) {
             (Self::Scalar, _) => true,
             (
@@ -218,7 +225,7 @@ impl CheckedConstraintSourceProjection {
     /// Compose the selected value expectation with this already checked
     /// source constructor.  Array length, map kind, and map key are retained
     /// exactly; no callable-side reconstruction is possible.
-    pub(crate) fn compose_expected(&self, value_expected: &TypeKind) -> TypeKind {
+    pub(crate) fn compose_expected(&self, value_expected: &TypeKind<E>) -> TypeKind<E> {
         match self {
             Self::Scalar => value_expected.clone(),
             Self::SpreadContainer(CheckedConstraintContainerConstructor::Vec) => {
@@ -254,14 +261,14 @@ impl CheckedConstraintSourceProjection {
 pub(crate) struct PreparedSourceAlternative<D: ConstraintDomain> {
     alternative: D::AlternativeIndex,
     evidence: Arc<D::EvidenceRule>,
-    value_expected: TypeKind,
+    value_expected: TypeKind<PreparedEffects>,
 }
 
 impl<D: ConstraintDomain> PreparedSourceAlternative<D> {
     pub(crate) fn new(
         alternative: D::AlternativeIndex,
         evidence: D::EvidenceRule,
-        value_expected: TypeKind,
+        value_expected: TypeKind<PreparedEffects>,
     ) -> Self {
         Self {
             alternative,
@@ -278,7 +285,7 @@ impl<D: ConstraintDomain> PreparedSourceAlternative<D> {
         self.evidence.as_ref()
     }
 
-    pub(crate) const fn value_expected(&self) -> &TypeKind {
+    pub(crate) const fn value_expected(&self) -> &TypeKind<PreparedEffects> {
         &self.value_expected
     }
 }
@@ -511,9 +518,9 @@ impl<'h, D: ConstraintDomain> SourceAlternativeHint<'h, D> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProjectedExpectedHint<'h> {
-    Complete(&'h TypeKind),
+    Complete(&'h TypeKind<PreparedEffects>),
     Parametric {
-        expected: &'h TypeKind,
+        expected: &'h TypeKind<PreparedEffects>,
         unbound: &'h [super::ConstraintGenericParameterId],
         scope_lease: &'h super::ImportedGenericParameterScopeLease,
     },
@@ -592,13 +599,13 @@ pub(crate) trait ConstraintSourceValueOwner<D: ConstraintDomain>: 'static {
     /// Rechecks have no probe authority. A successful probe value retains the
     /// exact receipt under which its owner was checked, including its branch.
     fn probe_receipt(&self) -> Option<&super::ConstraintSourceReceipt<D>>;
-    fn value_type(&self) -> &TypeKind;
+    fn value_type(&self) -> &TypeKind<PreparedEffects>;
 }
 
 pub(crate) enum SourceProbeTerm<D: ConstraintDomain> {
     Value(Arc<dyn ConstraintSourceValueOwner<D>>),
     #[cfg(test)]
-    Type(TypeKind),
+    Type(TypeKind<PreparedEffects>),
     Result(super::transaction::ConstraintResultProjection<D>),
 }
 
@@ -649,7 +656,10 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
     }
 
     #[cfg(test)]
-    pub(crate) fn unchecked(actual: TypeKind, canonical_branch: D::ProbeSemanticBranch) -> Self {
+    pub(crate) fn unchecked(
+        actual: TypeKind<PreparedEffects>,
+        canonical_branch: D::ProbeSemanticBranch,
+    ) -> Self {
         Self {
             actual: SourceProbeTerm::Type(actual),
             canonical_branch: SourceProbeObservation::new(canonical_branch),
@@ -659,7 +669,7 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
 
     #[cfg(test)]
     pub(crate) fn checked(
-        actual: TypeKind,
+        actual: TypeKind<PreparedEffects>,
         canonical_branch: D::ProbeSemanticBranch,
         alternative: D::AlternativeIndex,
         evidence: D::ObservedEvidence,
@@ -816,7 +826,7 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
         self.source.source_ref()
     }
 
-    pub(crate) fn expected(&self) -> Option<&'h TypeKind> {
+    pub(crate) fn expected(&self) -> Option<&'h TypeKind<PreparedEffects>> {
         self.source.final_expected()
     }
 
@@ -828,11 +838,13 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
         self.source.selection().evidence()
     }
 
-    pub(crate) fn actual(&self) -> &'h TypeKind {
+    pub(crate) fn actual(&self) -> &'h TypeKind<PreparedEffects> {
         self.source.actual()
     }
 
-    pub(crate) const fn source_projection(&self) -> &'h CheckedConstraintSourceProjection {
+    pub(crate) const fn source_projection(
+        &self,
+    ) -> &'h CheckedConstraintSourceProjection<PreparedEffects> {
         self.source.source_projection()
     }
 

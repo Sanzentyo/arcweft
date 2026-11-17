@@ -172,7 +172,7 @@ impl<D: ConstraintDomain> PreparedValueOriginalConstraint<'_, D> {
     ) -> impl ExactSizeIterator<
         Item = (
             &GenericTypeReference,
-            super::super::normalization::ConstraintBindingView<'_, TypeKind>,
+            super::super::normalization::ConstraintBindingView<'_, TypeKind<PreparedEffects>>,
         ),
     > {
         self.path.bindings.iter().map(|(parameter, value)| {

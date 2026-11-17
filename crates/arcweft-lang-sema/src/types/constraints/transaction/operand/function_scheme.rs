@@ -1,5 +1,7 @@
 //! One checked scheme opening consumes its exact normalized result source.
 
+use crate::types::PreparedEffects;
+
 use super::*;
 
 pub(crate) struct ConstraintResultUseSource<D: ConstraintDomain> {
@@ -10,7 +12,7 @@ pub(crate) struct PreparedConstraintFunctionScheme<D: ConstraintDomain> {
     source: Arc<ConstraintOperand<D>>,
     application: D::Application,
     parameters: super::super::super::TypeConstraintParameterScope,
-    template: TypeKind,
+    template: TypeKind<PreparedEffects>,
 }
 
 impl<D: ConstraintDomain> ConstraintResultUseSource<D> {
@@ -23,7 +25,7 @@ impl<D: ConstraintDomain> ConstraintResultUseSource<D> {
         Ok(Self { operand })
     }
 
-    pub(crate) fn source_type(&self) -> &TypeKind {
+    pub(crate) fn source_type(&self) -> &TypeKind<PreparedEffects> {
         self.operand.value()
     }
 
@@ -37,7 +39,7 @@ impl<D: ConstraintDomain> ConstraintResultUseSource<D> {
         &self,
         application: D::Application,
         parameters: super::super::super::TypeConstraintParameterScope,
-        template: TypeKind,
+        template: TypeKind<PreparedEffects>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<PreparedConstraintFunctionScheme<D>, TypeConstraintError> {
         let TypeKind::Function {

@@ -1,5 +1,7 @@
 //! Canonical type projection, path normalization, and equality.
 
+use crate::types::PreparedEffects;
+
 use super::ConstraintSourceId;
 use super::transaction::{ConstraintInferenceBranch, ConstraintOperand};
 
@@ -50,7 +52,7 @@ impl RemainingConstraintParameter {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectedConstraintType {
-    pub(crate) value: TypeKind,
+    pub(crate) value: TypeKind<PreparedEffects>,
     pub(crate) remaining: Box<[RemainingConstraintParameter]>,
 }
 
@@ -254,7 +256,7 @@ impl<A, P> KeyedConstraintProjection<A, P> {
 
     pub(crate) fn to_quantified_type(
         &self,
-    ) -> Result<TypeKind, super::solution::TypeInstantiationError> {
+    ) -> Result<TypeKind<PreparedEffects>, super::solution::TypeInstantiationError> {
         self.value.quantify()
     }
 }
@@ -290,20 +292,20 @@ impl<D: ConstraintDomain> fmt::Debug for SolvedCandidate<D> {
 pub(crate) struct RejectedConstraintSourceProjection<D: ConstraintDomain> {
     source: ConstraintSourceId<D::Source>,
     alternative: Option<D::AlternativeIndex>,
-    source_projection: CheckedConstraintSourceProjection,
+    source_projection: CheckedConstraintSourceProjection<PreparedEffects>,
     acceptance: ConstraintAcceptance,
-    expected: TypeKind,
-    actual: TypeKind,
+    expected: TypeKind<PreparedEffects>,
+    actual: TypeKind<PreparedEffects>,
 }
 
 impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
     pub(super) fn new(
         source: ConstraintSourceId<D::Source>,
         alternative: Option<D::AlternativeIndex>,
-        source_projection: CheckedConstraintSourceProjection,
+        source_projection: CheckedConstraintSourceProjection<PreparedEffects>,
         acceptance: ConstraintAcceptance,
-        expected: TypeKind,
-        actual: TypeKind,
+        expected: TypeKind<PreparedEffects>,
+        actual: TypeKind<PreparedEffects>,
     ) -> Self {
         Self {
             source,
@@ -323,7 +325,9 @@ impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
         self.alternative
     }
 
-    pub(crate) const fn source_projection(&self) -> &CheckedConstraintSourceProjection {
+    pub(crate) const fn source_projection(
+        &self,
+    ) -> &CheckedConstraintSourceProjection<PreparedEffects> {
         &self.source_projection
     }
 
@@ -331,11 +335,11 @@ impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
         self.acceptance
     }
 
-    pub(crate) const fn expected(&self) -> &TypeKind {
+    pub(crate) const fn expected(&self) -> &TypeKind<PreparedEffects> {
         &self.expected
     }
 
-    pub(crate) const fn actual(&self) -> &TypeKind {
+    pub(crate) const fn actual(&self) -> &TypeKind<PreparedEffects> {
         &self.actual
     }
 
@@ -343,10 +347,10 @@ impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
     pub(crate) fn test_new(
         source: ConstraintSourceId<D::Source>,
         alternative: Option<D::AlternativeIndex>,
-        source_projection: CheckedConstraintSourceProjection,
+        source_projection: CheckedConstraintSourceProjection<PreparedEffects>,
         acceptance: ConstraintAcceptance,
-        expected: TypeKind,
-        actual: TypeKind,
+        expected: TypeKind<PreparedEffects>,
+        actual: TypeKind<PreparedEffects>,
     ) -> Self {
         Self::new(
             source,
@@ -492,7 +496,7 @@ impl<D: ConstraintDomain> fmt::Debug for super::MaterializationImmediateFailure<
 }
 
 pub(super) fn validate_selected_call_self<A, D>(
-    value: &TypeKind,
+    value: &TypeKind<PreparedEffects>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<(), TypeConstraintError>
 where
@@ -512,7 +516,7 @@ where
 }
 
 pub(crate) fn validate_type<A, D>(
-    ty: &TypeKind,
+    ty: &TypeKind<PreparedEffects>,
     view: ConstraintProjectionView<'_, D>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<(), TypeConstraintError>
@@ -579,7 +583,7 @@ where
 }
 
 pub(crate) fn occurs_in_type<A, D>(
-    ty: &TypeKind,
+    ty: &TypeKind<PreparedEffects>,
     parameter: &GenericTypeReference,
     view: ConstraintProjectionView<'_, D>,
     context: &mut TypeConstraintContext<'_, A, D>,
@@ -592,7 +596,7 @@ where
 }
 
 fn occurs_in_type_inner<A, D>(
-    ty: &TypeKind,
+    ty: &TypeKind<PreparedEffects>,
     parameter: &GenericTypeReference,
     view: ConstraintProjectionView<'_, D>,
     context: &mut TypeConstraintContext<'_, A, D>,
@@ -658,11 +662,11 @@ where
 
 #[cfg(test)]
 pub(crate) fn seal_type<A, D>(
-    ty: &TypeKind,
+    ty: &TypeKind<PreparedEffects>,
     view: ConstraintProjectionView<'_, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<TypeKind, TypeConstraintError>
+) -> Result<TypeKind<PreparedEffects>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
@@ -702,8 +706,8 @@ where
 /// Completed terms have already passed their own lexical-scope seal. Equality
 /// still visits every compared type and effect node using the live work owner.
 pub(in crate::types) fn completed_types_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
-    left: &TypeKind,
-    right: &TypeKind,
+    left: &TypeKind<PreparedEffects>,
+    right: &TypeKind<PreparedEffects>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError> {
     context.enter_node()?;

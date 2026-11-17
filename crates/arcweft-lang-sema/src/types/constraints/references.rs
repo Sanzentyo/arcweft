@@ -1,5 +1,7 @@
 //! Scope-aware reference mapping over the shared semantic type shape.
 
+use crate::types::PreparedEffects;
+
 use super::super::{
     ArrayLength, GenericConstReference, GenericEffectReference, GenericScope, GenericTypeReference,
     TypeKind,
@@ -44,12 +46,12 @@ pub(super) trait ConstraintReferenceMap {
 }
 
 pub(super) fn map_type<A, D>(
-    ty: &TypeKind,
+    ty: &TypeKind<PreparedEffects>,
     mapping: &impl ConstraintReferenceMap,
     application: &ConstraintApplicationScope<D>,
     path: &ConstraintPath<D>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<TypeKind, TypeConstraintError>
+) -> Result<TypeKind<PreparedEffects>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,

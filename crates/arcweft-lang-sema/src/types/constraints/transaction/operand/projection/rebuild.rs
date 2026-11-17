@@ -1,5 +1,7 @@
 //! Move-only projection results keep a proof at every corresponding value port.
 
+use crate::types::PreparedEffects;
+
 use super::*;
 use crate::types::constraints::normalization::{
     ConstraintClosedEffects, ConstraintProjectedEffectHeader,
@@ -86,7 +88,7 @@ impl<D: ConstraintDomain, T> ConstraintProjectedOperand<D, T> {
 impl<D: ConstraintDomain> ConstraintOperandView<'_, D> {
     pub(in crate::types::constraints) fn projected_leaf(
         &self,
-    ) -> ConstraintProjectedOperand<D, TypeKind> {
+    ) -> ConstraintProjectedOperand<D, TypeKind<PreparedEffects>> {
         ConstraintProjectedOperand::new(
             self.value.clone(),
             ConstraintOperandDerivation::new(self.occurrence_origin(), Arc::clone(&self.scope)),
@@ -133,11 +135,11 @@ impl<'a, D: ConstraintDomain> ConstraintOperandChildren<'a, D> {
 impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
     pub(in crate::types::constraints) fn rebuild<A: TypeConstraintAccounting>(
         self,
-        children: Vec<ConstraintProjectedOperand<D, TypeKind>>,
+        children: Vec<ConstraintProjectedOperand<D, TypeKind<PreparedEffects>>>,
         length: Option<ConstraintProjectedOperand<D, ArrayLength>>,
         effects: &ConstraintOperandEffects<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<ConstraintProjectedOperand<D, TypeKind>, TypeConstraintError> {
+    ) -> Result<ConstraintProjectedOperand<D, TypeKind<PreparedEffects>>, TypeConstraintError> {
         let mut values = Vec::with_capacity(children.len());
         let mut proofs = Vec::with_capacity(children.len());
         for child in children {
@@ -199,8 +201,13 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
     }
 }
 
-impl<D: ConstraintDomain> ConstraintProjectedOperand<D, TypeKind> {
-    fn type_parts(self) -> (TypeKind, ConstraintOperandDerivation<D, TypeKind>) {
+impl<D: ConstraintDomain> ConstraintProjectedOperand<D, TypeKind<PreparedEffects>> {
+    fn type_parts(
+        self,
+    ) -> (
+        TypeKind<PreparedEffects>,
+        ConstraintOperandDerivation<D, TypeKind<PreparedEffects>>,
+    ) {
         self.parts(|steps, terminal| ConstraintOperandOrigin::TypeAlias { steps, terminal })
     }
 

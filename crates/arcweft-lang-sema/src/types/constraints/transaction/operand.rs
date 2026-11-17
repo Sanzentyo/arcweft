@@ -1,5 +1,7 @@
 //! Scoped equation terms retain their exact source or template authority.
 
+use crate::types::PreparedEffects;
+
 use super::*;
 use crate::types::constraints::{OriginalProducerContext, lexical::ConstraintLexicalScope};
 
@@ -42,7 +44,7 @@ impl<D: ConstraintDomain> ResolvedConstraintSource<D> {
         owner: Arc<dyn super::super::ConstraintSourceValueOwner<D>>,
         target: &ConstraintLexicalScope,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(TypeKind, Self), TypeConstraintError> {
+    ) -> Result<(TypeKind<PreparedEffects>, Self), TypeConstraintError> {
         use original_value::OriginalOperandValue;
 
         context.check_cancelled()?;
@@ -97,7 +99,7 @@ impl<D: ConstraintDomain> ResolvedConstraintResult<D> {
         result: ConstraintResultProjection<D>,
         path: &ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(TypeKind, Self), TypeConstraintError> {
+    ) -> Result<(TypeKind<PreparedEffects>, Self), TypeConstraintError> {
         let owner = path
             .applications
             .require_application_owner(result.application)?;
@@ -157,12 +159,12 @@ enum ConstraintOperandOrigin<D: ConstraintDomain> {
         source: Arc<ConstraintOperand<D>>,
     },
     SourceExpectation {
-        projection: CheckedConstraintSourceProjection,
+        projection: CheckedConstraintSourceProjection<PreparedEffects>,
         actual: ConstraintOperand<D>,
         value_expected: ConstraintOperand<D>,
     },
     Projection {
-        root: Arc<TypeKind>,
+        root: Arc<TypeKind<PreparedEffects>>,
         root_scope: Arc<ConstraintLexicalScope>,
         occurrence_scope: Arc<ConstraintLexicalScope>,
         // Result association stays with the observed root, including aliases.
@@ -175,13 +177,13 @@ enum ConstraintOperandOrigin<D: ConstraintDomain> {
     Rebuilt {
         source: Arc<ConstraintOperandOrigin<D>>,
         contents_scope: Arc<ConstraintLexicalScope>,
-        children: Box<[ConstraintOperandDerivation<D, TypeKind>]>,
+        children: Box<[ConstraintOperandDerivation<D, TypeKind<PreparedEffects>>]>,
         length: Option<ConstraintOperandDerivation<D, ArrayLength>>,
         header: Option<super::super::normalization::ConstraintClosedEffectHeader<D>>,
     },
     TypeAlias {
-        steps: Box<[ConstraintAliasStep<D, TypeKind>]>,
-        terminal: ConstraintOperandDerivation<D, TypeKind>,
+        steps: Box<[ConstraintAliasStep<D, TypeKind<PreparedEffects>>]>,
+        terminal: ConstraintOperandDerivation<D, TypeKind<PreparedEffects>>,
     },
     ConstAlias {
         steps: Box<[ConstraintAliasStep<D, ArrayLength>]>,
@@ -194,7 +196,7 @@ pub(in crate::types::constraints) struct ConstraintAliasStep<D: ConstraintDomain
     pub(in crate::types::constraints) replacement: ConstraintOperand<D, T>,
 }
 
-pub(in crate::types) struct ConstraintOperand<D: ConstraintDomain, T = TypeKind> {
+pub(in crate::types) struct ConstraintOperand<D: ConstraintDomain, T = TypeKind<PreparedEffects>> {
     value: Arc<T>,
     scope: Arc<ConstraintLexicalScope>,
     origin: Arc<ConstraintOperandOrigin<D>>,
@@ -304,7 +306,7 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
 impl<D: ConstraintDomain> ConstraintOperand<D> {
     pub(in crate::types::constraints) fn aliased(
         mut self,
-        steps: Box<[ConstraintAliasStep<D, TypeKind>]>,
+        steps: Box<[ConstraintAliasStep<D, TypeKind<PreparedEffects>>]>,
         terminal: Self,
     ) -> Result<Self, TypeConstraintError> {
         if !Self::valid_alias_steps(&steps, &terminal, &self.scope) {
@@ -317,7 +319,7 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
         Ok(self)
     }
     pub(super) fn source(
-        value: TypeKind,
+        value: TypeKind<PreparedEffects>,
         scope: Arc<ConstraintLexicalScope>,
         original: OriginalProducerContext,
         receipt: ConstraintSourceReceipt<D>,
@@ -335,7 +337,7 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
     }
 
     pub(super) fn result(
-        value: TypeKind,
+        value: TypeKind<PreparedEffects>,
         scope: Arc<ConstraintLexicalScope>,
         result: ResolvedConstraintResult<D>,
     ) -> Self {

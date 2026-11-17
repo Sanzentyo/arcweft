@@ -1,5 +1,7 @@
 //! Original lexical frames and metered transport into a joint inference scope.
 
+use crate::types::PreparedEffects;
+
 use std::sync::Arc;
 
 use super::{
@@ -285,9 +287,9 @@ impl ConstraintLexicalScope {
     pub(super) fn transport_type<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         original: &Self,
-        ty: &TypeKind,
+        ty: &TypeKind<PreparedEffects>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<TypeKind, TypeProjectionError<TypeConstraintError>> {
+    ) -> Result<TypeKind<PreparedEffects>, TypeProjectionError<TypeConstraintError>> {
         super::solution::map_term_with_control(
             ty,
             original.shape(),

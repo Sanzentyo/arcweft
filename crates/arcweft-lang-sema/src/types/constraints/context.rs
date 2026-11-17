@@ -3,6 +3,8 @@
 //! This module owns the persistent cancellation/work context. The transaction
 //! lives in the sibling `transaction` module and only borrows it per phase.
 
+use crate::types::PreparedEffects;
+
 use super::transaction::{
     ConstraintConstOperandView, ConstraintInferenceBranch, ConstraintOperand, ConstraintOperandView,
 };
@@ -1381,10 +1383,10 @@ where
     /// Actual operand values enter unchanged and do not use this boundary.
     pub(crate) fn open_template_type(
         &mut self,
-        ty: &TypeKind,
+        ty: &TypeKind<PreparedEffects>,
         path: &ConstraintPath<D>,
         application: ConstraintApplicationId,
-    ) -> Result<TypeKind, TypeConstraintError> {
+    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
         let application = path.applications.require_application(application)?;
         super::references::map_type(
             ty,
@@ -1483,9 +1485,9 @@ where
         &mut self,
         target: &ConstraintLexicalScope,
         source: &ConstraintLexicalScope,
-        value: &TypeKind,
+        value: &TypeKind<PreparedEffects>,
         parameter: super::ConstraintGenericParameterId,
-    ) -> Result<TypeKind, TypeConstraintError> {
+    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
         if target == source {
             return Ok(value.clone());
         }
@@ -1541,7 +1543,7 @@ where
         &mut self,
         path: ConstraintInferenceBranch<D, L>,
         parameter: GenericTypeReference,
-        value: &TypeKind,
+        value: &TypeKind<PreparedEffects>,
     ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError> {
         let value = self.fixture_operand(value.clone());
         self.add_binding(path, parameter, value.view())
@@ -2143,7 +2145,11 @@ where
 {
     type Error = TypeConstraintError;
 
-    fn enter(&mut self, _expected: &TypeKind, _actual: &TypeKind) -> Result<(), Self::Error> {
+    fn enter(
+        &mut self,
+        _expected: &TypeKind<PreparedEffects>,
+        _actual: &TypeKind<PreparedEffects>,
+    ) -> Result<(), Self::Error> {
         self.enter_node()
     }
 }

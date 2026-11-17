@@ -1,5 +1,7 @@
 //! Source trace transitions from probing to normalized materialization evidence.
 
+use crate::types::PreparedEffects;
+
 use std::sync::{Arc, OnceLock};
 
 use crate::types::TypeKind;
@@ -110,7 +112,7 @@ pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
     selection: ClosedSourceSelection<D>,
     prepared_source_projection: PreparedConstraintSourceProjection,
     actual: ConstraintOperand<D>,
-    source_projection: CheckedConstraintSourceProjection,
+    source_projection: CheckedConstraintSourceProjection<PreparedEffects>,
 }
 
 /// A completed component trace keeps the application selected by its result.
@@ -418,10 +420,10 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
     pub(in crate::types::constraints) fn branch(&self) -> &D::ProbeSemanticBranch {
         self.branch.branch()
     }
-    pub(crate) fn actual(&self) -> &TypeKind {
+    pub(crate) fn actual(&self) -> &TypeKind<PreparedEffects> {
         self.actual.value()
     }
-    pub(crate) fn final_expected(&self) -> Option<&TypeKind> {
+    pub(crate) fn final_expected(&self) -> Option<&TypeKind<PreparedEffects>> {
         match &self.selection {
             ClosedSourceSelection::Unchecked => None,
             ClosedSourceSelection::Checked { expected, .. } => Some(expected.value()),
@@ -433,7 +435,9 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
     pub(crate) const fn prepared_source_projection(&self) -> PreparedConstraintSourceProjection {
         self.prepared_source_projection
     }
-    pub(crate) const fn source_projection(&self) -> &CheckedConstraintSourceProjection {
+    pub(crate) const fn source_projection(
+        &self,
+    ) -> &CheckedConstraintSourceProjection<PreparedEffects> {
         &self.source_projection
     }
 

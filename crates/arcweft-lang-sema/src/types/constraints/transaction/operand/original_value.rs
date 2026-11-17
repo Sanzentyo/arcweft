@@ -1,5 +1,7 @@
 //! Original values are admitted by their source, never a candidate inventory.
 
+use crate::types::PreparedEffects;
+
 use std::sync::Arc;
 
 use super::{ConstraintOperand, ConstraintOperandOrigin};
@@ -90,7 +92,7 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
     }
 }
 
-impl OriginalOperandValue for TypeKind {
+impl OriginalOperandValue for TypeKind<PreparedEffects> {
     fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         target_scope: &ConstraintLexicalScope,

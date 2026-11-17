@@ -1,5 +1,7 @@
 //! Two statically distinct outputs of the same admission and projection fold.
 
+use crate::types::PreparedEffects;
+
 use super::*;
 use crate::types::constraints::transaction::{
     ConstraintConstOperandView, ConstraintOperand, ConstraintOperandChildren,
@@ -16,7 +18,7 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
     type ConstOutput;
     type Effects;
 
-    fn ty(input: &Self::TypeInput) -> &'ty TypeKind;
+    fn ty(input: &Self::TypeInput) -> &'ty TypeKind<PreparedEffects>;
     fn length(input: &Self::ConstInput) -> &'ty ArrayLength;
     fn admit_type_reference<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
@@ -73,11 +75,11 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
 pub(super) struct InspectValues;
 
 impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
-    type TypeInput = &'ty TypeKind;
+    type TypeInput = &'ty TypeKind<PreparedEffects>;
     type ConstInput = &'ty ArrayLength;
     type Children = TypeConstraintChildren<'ty>;
     type ShapeSeed = TypeConstraintShape<'ty>;
-    type TypeOutput = TypeKind;
+    type TypeOutput = TypeKind<PreparedEffects>;
     type ConstOutput = ArrayLength;
     type Effects = ConstraintOperandEffects<D>;
 
@@ -96,7 +98,7 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
         Ok(())
     }
 
-    fn ty(input: &Self::TypeInput) -> &'ty TypeKind {
+    fn ty(input: &Self::TypeInput) -> &'ty TypeKind<PreparedEffects> {
         input
     }
     fn length(input: &Self::ConstInput) -> &'ty ArrayLength {
@@ -128,7 +130,7 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
         let shape = input.constraint_shape();
         Ok((shape.children(), shape))
     }
-    fn type_leaf(input: &Self::TypeInput) -> TypeKind {
+    fn type_leaf(input: &Self::TypeInput) -> TypeKind<PreparedEffects> {
         (*input).clone()
     }
     fn const_leaf(input: &Self::ConstInput) -> ArrayLength {
@@ -136,11 +138,11 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
     }
     fn rebuild<A: TypeConstraintAccounting>(
         shape: Self::ShapeSeed,
-        children: Vec<TypeKind>,
+        children: Vec<TypeKind<PreparedEffects>>,
         length: Option<ArrayLength>,
         effects: &Self::Effects,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<TypeKind, TypeConstraintError> {
+    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
         let mut header = match (effects, shape) {
             (
                 ConstraintOperandEffects::Closed(owner),
@@ -164,12 +166,12 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
     fn substitute_type<A: TypeConstraintAccounting>(
         _: &Self::TypeInput,
         _: &'ty ConstraintOperand<D>,
-        value: TypeKind,
+        value: TypeKind<PreparedEffects>,
         enclosing: &ConstraintLexicalScope,
         owner: &ConstraintLexicalScope,
         parameter: &GenericTypeReference,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<TypeKind, TypeConstraintError> {
+    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
         if owner == enclosing {
             Ok(value)
         } else {
@@ -196,7 +198,7 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
     type ConstInput = ConstraintConstOperandView<'ty, D>;
     type Children = ConstraintOperandChildren<'ty, D>;
     type ShapeSeed = ConstraintOperandRebuild<'ty, D>;
-    type TypeOutput = ConstraintProjectedOperand<D, TypeKind>;
+    type TypeOutput = ConstraintProjectedOperand<D, TypeKind<PreparedEffects>>;
     type ConstOutput = ConstraintProjectedOperand<D, ArrayLength>;
     type Effects = ConstraintOperandEffects<D>;
 
@@ -215,7 +217,7 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
         input.admit_const_reference(reference, context)
     }
 
-    fn ty(input: &Self::TypeInput) -> &'ty TypeKind {
+    fn ty(input: &Self::TypeInput) -> &'ty TypeKind<PreparedEffects> {
         input.value()
     }
     fn length(input: &Self::ConstInput) -> &'ty ArrayLength {
