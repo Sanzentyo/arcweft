@@ -3,6 +3,9 @@
 //! This module owns the persistent cancellation/work context. The transaction
 //! lives in the sibling `transaction` module and only borrows it per phase.
 
+use crate::effect_row::prepared::{
+    PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
+};
 use crate::types::PreparedEffects;
 
 use super::transaction::{
@@ -178,12 +181,14 @@ pub(crate) enum TypeConstraintProjectionClosure {
 /// Declaration or scheme effect-parameter contract. It contains no application
 /// issuer; TypeConstraintParameterScope opens its slots alongside type and
 /// constant slots in the same OpenedGenericScope.
+/// Predicate references are admitted by the real graph while that application
+/// is constructed; an inventory alone cannot authenticate a live term issuer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TypeConstraintEffectScope {
     variables: Box<[EffectConstraintVariable]>,
     free_variables: Box<[EffectConstraintVariable]>,
     required_inherited: Box<[GenericEffectReference]>,
-    predicate: EffectPredicate,
+    predicate: PreparedEffectPredicate,
 }
 
 impl TypeConstraintEffectScope {
@@ -199,14 +204,14 @@ impl TypeConstraintEffectScope {
         Self::seal_call_scope_with_predicate(
             variables,
             required_inherited,
-            EffectPredicate::unconstrained(),
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
         )
     }
 
     pub(crate) fn seal_call_scope_with_predicate<V, R>(
         variables: V,
         required_inherited: R,
-        predicate: EffectPredicate,
+        predicate: PreparedEffectPredicate,
     ) -> Result<Self, TypeConstraintInvariant>
     where
         V: IntoIterator<Item = EffectConstraintVariable>,
@@ -250,18 +255,6 @@ impl TypeConstraintEffectScope {
                 return Err(effect_scope_invariant(
                     super::TypeConstraintEffectInvariantKind::RequiredInheritedNotBindable,
                     Some(variable.clone()),
-                ));
-            }
-        }
-        for reference in predicate.variables() {
-            if !free_variables
-                .iter()
-                .chain(&variables)
-                .any(|row| row.variable() == reference)
-            {
-                return Err(effect_scope_invariant(
-                    super::TypeConstraintEffectInvariantKind::ForeignVariable,
-                    Some(reference.clone()),
                 ));
             }
         }
@@ -727,7 +720,7 @@ impl TypeConstraintParameterScope {
     pub(super) fn matches_function_scheme(
         &self,
         binder: GenericBinder,
-        predicate: &EffectPredicate,
+        predicate: &PreparedEffectPredicate,
     ) -> bool {
         let types = self
             .contract
@@ -864,12 +857,14 @@ impl TypeConstraintParameterScope {
 
     fn opened_effect_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
+        graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<EffectPredicate, TypeConstraintError> {
-        self.contract
-            .effects
-            .predicate
-            .map_references(context, &mut |reference, _| {
+    ) -> Result<PreparedEffectPredicate, TypeConstraintError> {
+        let mut edit = graph.edit_terms();
+        let predicate = edit.map_predicate_parameters(
+            &self.contract.effects.predicate,
+            context,
+            &mut |reference, _| {
                 if self
                     .contract
                     .effects
@@ -877,16 +872,26 @@ impl TypeConstraintParameterScope {
                     .iter()
                     .any(|row| row.variable() == reference)
                 {
-                    Ok(reference.clone())
+                    Ok(None)
                 } else {
-                    self.effect_reference(reference).ok_or_else(|| {
-                        effect_invariant(
-                            super::TypeConstraintEffectInvariantKind::ForeignVariable,
-                            Some(reference.clone()),
-                        )
-                    })
+                    let reference = self
+                        .effect_reference(reference)
+                        .ok_or_else(|| {
+                            effect_invariant(
+                                super::TypeConstraintEffectInvariantKind::ForeignVariable,
+                                Some(reference.clone()),
+                            )
+                        })
+                        .map_err(crate::effect_row::prepared::PreparedEffectFailure::Control)?;
+                    Ok(Some(PreparedEffectRow::Canonical(EffectRow::open(
+                        crate::effects::EffectSet::new(),
+                        reference,
+                    ))))
                 }
-            })
+            },
+        )?;
+        edit.commit()?;
+        Ok(predicate)
     }
 
     pub(super) fn type_declaration(
@@ -987,6 +992,21 @@ impl TypeConstraintParameterScope {
 }
 
 impl CompletedParameterScope {
+    /// Operational template predicates remain with the restoration contract.
+    /// Completed value identity uses these declaration inventories; the sealed
+    /// solution compares its canonical predicate and values separately.
+    pub(super) fn same_inventory(&self, other: &Self) -> bool {
+        self.template_scope == other.template_scope
+            && self.type_parameters == other.type_parameters
+            && self.const_parameters == other.const_parameters
+            && self.effects.variables == other.effects.variables
+            && self.effects.free_variables == other.effects.free_variables
+            && self.effects.required_inherited == other.effects.required_inherited
+            && self.rigid_types == other.rigid_types
+            && self.rigid_consts == other.rigid_consts
+            && self.required_inherited == other.required_inherited
+    }
+
     pub(super) fn rigid_type_references(&self) -> &[GenericTypeReference] {
         &self.rigid_types
     }
@@ -1553,12 +1573,14 @@ where
                 )?;
                 functions.insert(variable.variable().clone(), binding);
             }
+            let predicate = parameters.opened_effect_predicate(graph, context)?;
             Ok(ConstraintApplicationScope::new(
                 application,
                 parameters,
                 introduction,
                 original,
                 functions,
+                predicate,
             ))
         })
     }
@@ -1831,8 +1853,12 @@ where
             variables.sort_by(|left, right| left.variable().cmp(right.variable()));
             variables.dedup();
         }
-        let predicate = application.parameters().opened_effect_predicate(self)?;
-        let effects = EffectConstraintEnvironment::new_prepared(&variables, &predicate, self)?;
+        let effects = EffectConstraintEnvironment::new_prepared(
+            &variables,
+            application.opened_effect_predicate(),
+            graph,
+            self,
+        )?;
         let frame_count = self.lexical_scope().binders().len();
         for _ in 0..frame_count {
             self.enter_node()?;
@@ -1883,13 +1909,10 @@ where
         path.effects
             .admit_variables(&application.parameters().opened_effect_variables())
             .map_err(TypeConstraintError::from)?;
-        if !application.effects().predicate.is_unconstrained() {
-            let predicate = application.parameters().opened_effect_predicate(self)?;
-            path.effects.restore_predicate(
-                &crate::effect_row::prepared::PreparedEffectPredicate::Canonical(predicate),
-                graph,
-                self,
-            )?;
+        if !matches!(application.opened_effect_predicate(), PreparedEffectPredicate::Canonical(predicate) if predicate.is_unconstrained())
+        {
+            path.effects
+                .restore_predicate(application.opened_effect_predicate(), graph, self)?;
         }
         std::sync::Arc::make_mut(&mut path.applications)
             .admit(application)

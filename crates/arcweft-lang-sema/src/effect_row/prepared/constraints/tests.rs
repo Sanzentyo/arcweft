@@ -33,7 +33,10 @@ fn row(labels: &[&str]) -> PreparedEffectRow {
     ))
 }
 
-fn environment(control: &mut Control) -> EffectConstraintEnvironment<PreparedEffects> {
+fn environment(
+    graph: PreparedEffectReadView<'_>,
+    control: &mut Control,
+) -> EffectConstraintEnvironment<PreparedEffects> {
     let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(91_817));
     let variables = [0, 1].map(|slot| {
         EffectConstraintVariable::new(
@@ -43,7 +46,8 @@ fn environment(control: &mut Control) -> EffectConstraintEnvironment<PreparedEff
     });
     EffectConstraintEnvironment::new_prepared(
         &variables,
-        &EffectPredicate::unconstrained(),
+        &PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        graph,
         control,
     )
     .unwrap()
@@ -54,7 +58,7 @@ fn original_relation_is_retained_before_the_body_and_rejects_a_later_conflict() 
     for conflict in [false, true] {
         let mut control = Control(1_000_000);
         let mut graph = PreparedEffectGraph::default();
-        let mut environment = environment(&mut control);
+        let mut environment = environment(graph.read(), &mut control);
         let formal = GenericScope::default()
             .with_binder(GenericBinder::new(0, 0, 1))
             .bound_effect(0, 0)
@@ -116,7 +120,7 @@ fn original_relation_is_retained_before_the_body_and_rejects_a_later_conflict() 
 fn every_failed_relation_edit_preserves_the_original_r_and_graph_but_spends_work() {
     let mut control = Control(1_000_000);
     let mut graph = PreparedEffectGraph::default();
-    let seed = environment(&mut control);
+    let seed = environment(graph.read(), &mut control);
     let reference = seed.original_variables().next().unwrap().clone();
     let actual = PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), reference));
     let mut checkpoint = graph.checkpoint(&mut control).unwrap();
@@ -169,7 +173,7 @@ fn every_failed_relation_edit_preserves_the_original_r_and_graph_but_spends_work
 fn inherited_rows_and_restored_predicates_keep_the_original_inventory_and_exact_equalities() {
     let mut control = Control(1_000_000);
     let mut graph = PreparedEffectGraph::default();
-    let mut environment = environment(&mut control);
+    let mut environment = environment(graph.read(), &mut control);
     let reference = environment.original_variables().next().unwrap().clone();
     environment
         .restore_completed_inherited(

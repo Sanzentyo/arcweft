@@ -24,7 +24,10 @@ impl PartialEq for CompletedGenericContext {
     fn eq(&self, other: &Self) -> bool {
         // Residual quantifiers are alpha-equivalent by their origins. Their
         // private traversal frames are derived, not ambient capture identity.
-        self.parameter_scope == other.parameter_scope
+        // The raw prepared predicate is an operational restoration contract.
+        // Its term ordinal is not completed value identity. TypeConstraintSolution
+        // compares the canonical predicate and bindings after this inventory.
+        self.parameter_scope.same_inventory(&other.parameter_scope)
             && self.ambient == other.ambient
             && self.residual == other.residual
     }

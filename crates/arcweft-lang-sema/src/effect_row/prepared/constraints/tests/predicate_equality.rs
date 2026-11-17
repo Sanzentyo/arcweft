@@ -9,7 +9,7 @@ fn agreement_waits_for_the_actual_body_and_keeps_the_existing_relation() {
     for conflict in [false, true] {
         let mut control = Control(1_000_000);
         let mut graph = PreparedEffectGraph::default();
-        let mut environment = environment(&mut control);
+        let mut environment = environment(graph.read(), &mut control);
         let declaration = graph
             .declare(vec![], EffectPredicate::unconstrained(), &mut control)
             .unwrap();
@@ -80,7 +80,7 @@ fn agreement_compares_whole_facts_including_different_nonempty_rows() {
         for right in &values {
             let mut control = Control(1_000_000);
             let mut graph = PreparedEffectGraph::default();
-            let mut environment = environment(&mut control);
+            let mut environment = environment(graph.read(), &mut control);
             let mut facts = Vec::new();
             for variable in [&first, &second] {
                 facts.push(
@@ -125,7 +125,7 @@ fn agreement_compares_whole_facts_including_different_nonempty_rows() {
 fn every_failed_agreement_edit_rolls_back_without_refunding_work() {
     let mut control = Control(1_000_000);
     let mut graph = PreparedEffectGraph::default();
-    let seed = environment(&mut control);
+    let seed = environment(graph.read(), &mut control);
     let variable = seed.original_variables().next().unwrap().clone();
     let actual = graph
         .relate(
@@ -194,7 +194,7 @@ fn foreign_stale_and_unadmitted_inputs_cannot_publish_agreement() {
         (&stale, Some(PreparedEffectInvariant::StaleReference)),
         (&unauthorized, None),
     ] {
-        let mut environment = environment(&mut control);
+        let mut environment = environment(graph.read(), &mut control);
         let before = environment.clone();
         let terms = graph.retained_terms();
         let state = graph.state;

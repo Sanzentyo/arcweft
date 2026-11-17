@@ -25,6 +25,8 @@ pub(super) use effects::{ConstraintEffectFunction, ConstraintEffectFunctionAppli
 
 #[cfg(test)]
 mod effect_functions_tests;
+#[cfg(test)]
+mod predicate_tests;
 
 /// Private owner contract retained by an imported scope lease. Only a real
 /// admitted application scope implements this trait.
@@ -290,6 +292,7 @@ pub(super) struct ConstraintApplicationScope<D: ConstraintDomain> {
     introduction: Arc<ConstraintLexicalScope>,
     original: super::OriginalProducerContext,
     effect_functions: BTreeMap<GenericEffectReference, ConstraintEffectFunction>,
+    opened_effect_predicate: crate::effect_row::prepared::PreparedEffectPredicate,
 }
 
 /// Share actual frame identity with the application while keeping the graph
@@ -347,6 +350,7 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
         introduction: Arc<ConstraintLexicalScope>,
         original: super::OriginalProducerContext,
         effect_functions: BTreeMap<GenericEffectReference, ConstraintEffectFunction>,
+        opened_effect_predicate: crate::effect_row::prepared::PreparedEffectPredicate,
     ) -> Self {
         Self {
             application,
@@ -354,6 +358,7 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
             introduction,
             original,
             effect_functions,
+            opened_effect_predicate,
         }
     }
 
@@ -395,11 +400,18 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
             .map(|binding| binding.in_scope(&self.introduction))
     }
 
+    pub(super) fn opened_effect_predicate(
+        &self,
+    ) -> &crate::effect_row::prepared::PreparedEffectPredicate {
+        &self.opened_effect_predicate
+    }
+
     pub(super) fn validate_effect_functions<A: super::context::TypeConstraintAccounting>(
         &self,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut super::context::TypeConstraintContext<'_, A, D>,
     ) -> Result<(), super::TypeConstraintError> {
+        graph.validate_retained_predicate(&self.opened_effect_predicate)?;
         for function in self.effect_functions.values() {
             context.enter_node()?;
             function.validate(graph)?;

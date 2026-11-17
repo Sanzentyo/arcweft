@@ -107,7 +107,9 @@ impl CheckedDeclarationDefault {
         let effects = TypeConstraintEffectScope::seal_call_scope_with_predicate(
             variables,
             [],
-            EffectPredicate::unconstrained(),
+            crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
+                EffectPredicate::unconstrained(),
+            ),
         )
         .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
         let parameters = TypeConstraintParameterScope::seal_call_scope(

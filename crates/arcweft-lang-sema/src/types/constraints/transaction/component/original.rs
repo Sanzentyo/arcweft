@@ -280,7 +280,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         }
         let effects = EffectConstraintEnvironment::new_prepared(
             &rows,
-            &crate::effect_row::EffectPredicate::unconstrained(),
+            &crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
+                crate::effect_row::EffectPredicate::unconstrained(),
+            ),
+            graph.read(),
             context,
         )?;
         let original_effects = self.prepare_original_effects(members, scope, graph, context)?;

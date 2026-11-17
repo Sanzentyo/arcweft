@@ -156,6 +156,7 @@ fn root_with_projection(
 fn branch(
     component: &Component,
     members: &Arc<[OriginalProductMember]>,
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     context: &mut Context<'_>,
 ) -> JointBranch<NoConstraintClient> {
     let mut applications = ConstraintApplicationInventory::empty();
@@ -177,7 +178,10 @@ fn branch(
                 input(),
                 EffectConstraintEligibility::Rigid,
             )],
-            &EffectPredicate::unconstrained(),
+            &crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
+                EffectPredicate::unconstrained(),
+            ),
+            graph,
             context,
         )
         .unwrap(),
@@ -214,7 +218,7 @@ fn contradictory_joint_premises_cannot_erase_an_individual_sources_failure() {
                 &mut context,
             )
             .unwrap();
-        let mut branch = branch(&component, &members, &mut context);
+        let mut branch = branch(&component, &members, graph.read(), &mut context);
         let impossible = graph.not(truth(), &mut context).unwrap();
         branch
             .effects
@@ -324,7 +328,7 @@ fn a_later_use_is_not_an_original_label_or_type_root() {
             &mut context,
         )
         .unwrap();
-    let branch = branch(&component, &members, &mut context);
+    let branch = branch(&component, &members, graph.read(), &mut context);
     let frozen = component
         .freeze_original_effects(
             &branch,
@@ -380,7 +384,7 @@ fn independent_bound_premises_remain_independent_in_the_joint_domain() {
     let original = component
         .prepare_original_effects(&members, &scope, &mut graph, &mut context)
         .unwrap();
-    let mut branch = branch(&component, &members, &mut context);
+    let mut branch = branch(&component, &members, graph.read(), &mut context);
     let impossible = graph.not(truth(), &mut context).unwrap();
     branch
         .effects

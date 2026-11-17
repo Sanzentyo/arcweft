@@ -77,7 +77,7 @@ impl<D: ConstraintDomain> ConstraintResultUseSource<D> {
         }
         if !parameters.matches_function_scheme(*binder, predicate)
             || !opened_binder.is_empty()
-            || !opened_predicate.is_unconstrained()
+            || !matches!(opened_predicate, crate::effect_row::prepared::PreparedEffectPredicate::Canonical(predicate) if predicate.is_unconstrained())
             || opened_params != params
             || opened_return != return_type
             || opened_effects != effects

@@ -91,30 +91,35 @@ impl EffectConstraintEnvironment<PreparedEffects> {
         Ok(result)
     }
 
-    /// Declaration inputs are already canonical formulas, not completed
-    /// candidate solutions. Admit them without projection or witness choice.
+    /// Retain the declaration or scheme predicate in its actual graph. Its
+    /// applications and unknown bodies remain unevaluated original premises.
     pub(crate) fn new_prepared<C: DecisionControl>(
         variables: &[EffectConstraintVariable],
-        predicate: &EffectPredicate,
+        predicate: &PreparedEffectPredicate,
+        graph: PreparedEffectReadView<'_>,
         control: &mut C,
-    ) -> Result<Self, C::Error>
+    ) -> Result<Self, PreparedEffectFailure<C::Error>>
     where
         C::Error: From<EffectConstraintEnvironmentError>,
     {
         for _ in variables {
-            control.charge(DecisionWork::Node)?;
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
         }
         let mut environment = Self {
             parameters: BTreeMap::new(),
             predicate: PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
         };
-        environment.admit_variables(variables)?;
-        for reference in predicate.variables() {
-            control.charge(DecisionWork::Visit)?;
-            environment.validate_reference(reference)?;
-        }
-        predicate.encode(&mut super::super::EffectEqualityControl(control))?;
-        environment.predicate = PreparedEffectPredicate::Canonical(predicate.clone());
+        environment
+            .admit_variables(variables)
+            .map_err(|error| PreparedEffectFailure::Control(error.into()))?;
+        graph.visit_predicate_parameters(predicate, control, &mut |reference, _| {
+            environment
+                .validate_reference(reference)
+                .map_err(Into::into)
+        })?;
+        environment.predicate = graph.retain_predicate(predicate, control)?;
         Ok(environment)
     }
 

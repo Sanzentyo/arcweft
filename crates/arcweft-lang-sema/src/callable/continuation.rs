@@ -2769,7 +2769,9 @@ fn issue_scope_initialization(
     let effect_scope = TypeConstraintEffectScope::seal_call_scope_with_predicate(
         effect_rows,
         required_effects,
-        schema.effect_predicate().clone(),
+        crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
+            schema.effect_predicate().clone(),
+        ),
     )
     .map_err(CallConstraintInvariant::Lower)?;
     let scope = TypeConstraintParameterScope::seal_call_scope(

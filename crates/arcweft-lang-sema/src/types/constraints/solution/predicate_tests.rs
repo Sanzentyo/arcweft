@@ -81,7 +81,7 @@ fn parameters(
         TypeConstraintEffectScope::seal_call_scope_with_predicate(
             [EffectConstraintVariable::new(reference, role)],
             [],
-            predicate,
+            crate::effect_row::prepared::PreparedEffectPredicate::Canonical(predicate),
         )
         .unwrap(),
         [],
