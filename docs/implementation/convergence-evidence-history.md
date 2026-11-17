@@ -18189,3 +18189,21 @@ Locked Sema／test target／全feature checkは2回とも終了101、どちら�
 Supersedes: 現状一覧の早すぎる確定経路から、移行したRef／導入型変数／別名を除き、残る複合型・最終callerを区別した。訂正理由は実装した共有header／provisional経路とnominal照合の仕様修復であり、未検証の移行を受入へ格上げしない。Generic Match等の既受入項目、以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
 
 原本 [task-reference-nominal-preparation-checkpoint.raw.zip](acceptance-evidence/task-reference-nominal-preparation-checkpoint.raw.zip) は19 entries、297,706 bytes、SHA-256 `876d1d590bb244e9d20613288ccc20d5cb94250df23d6a687094006bf7c3684a`。2回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Aligned relation preparation checkpoint
+
+2026-11-18。基点 `13ff2882576c30776dd49cbbba3772caa200343d`、移行Source `4c6de6d56888be8286015e05cf0ecde19d0a647e`。9 Rust path、619追加／81削除、物理538 LOC増。ユーザー指定の途中WIPとしてcommit・非force pushし、最終9入力と公開blobのbyte SHA-256を照合した。公開時tracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+整合した複合型の関係は、候補ごとのeager closureを行わず、構造と効果条件を元forestの最終ownerへ渡す。Constructor／kind・owner・tuple／parameter arity・binderの不一致を明示して拒否し、Neverの方向と関数入力の反変性を保持する。Dependent payloadは構造的なrelationで比較し、Refのpayload有無、Choiceの順序、関数効果を通常のsubtypingで広げない。Nominal引数の両方向照合も維持する。既存のByte collection／AgentValue root dispatchはcanonical／preparedで共有し、この二つだけに残った旧readerの引数を方向付きacceptanceへ絞り、使われないEqual／Structural経路を削除した。このcutをcross-shape全移行、Fn局所∀／guarded header、最終frontend switchの受入とは扱わない。
+
+全入力は各operandの実由来・frameで事前検査する。ConstraintProjectionView.admit_operandは共通foldのunit出力modeを使い、型・const・関数headerの各portで元の権限を確認する。意味値を再構築せず、active bindingもたどらず、effect solveやsource lineageの生成もしない。受け手全体が認めるFreeを、そのsourceの権限へ広げない。Validation以外との不正なphase pairingは拒否する。初期のbare値の検査を置換し、scope／sourceのprivate可視性を広げていない。原本review中の「sole type traversal」は共通grammar／foldの利用を指す表現へ限定する。事前検査と関係準備は別passであり、単一passや性能改善を実測した主張ではない。
+
+新規8 fixture、test分類pathの物理増分352 LOC。複合headerの不一致、両方向のbottom、dependent payload、違うheaderの内部にある未解決node、実original closureでの関数効果条件、関数入力の反変性、closureまで保持するnominal callbackの不変性、受け手のFree権限が広くても元sourceが拒否する条件を対象とする。Full-closure用の新helperだけに明示したwork枠を与え、同じ実graph／contextを両phaseで使う。旧scalar／Ref assertion・予算は維持する。全targetがコンパイル未完了のため、8 fixtureのcompile成立・実行成功を主張せず、PASSへ加算しない。
+
+Locked Sema／test target／全feature checkは4回とも終了101。Dev01はlibrary 509エラー・lib test 1,507エラー。Dev02はbare検査からのprivate scope呼出しと新fixtureのpoison constructorにより512／1,511。由来付き共通foldへ接続しconstructorを修正したdev03は509／1,507、使われない旧Equal reader経路を削除した最終dev04は508／1,506。警告は各回26／44。4回のowner fmt checkは終了0。最終の限定primary抽出に残った4件は、cross-shape readerの旧for_branch呼出しとprepared値へのcanonical専用accepts_withである。この抽出はreview aidであり、targetのcompile成功を証明しない。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。Commit前入力と公開blobを照合した再利用で、commit後のtest再実行ではない。Cargo cleanは繰り返していない。
+
+所有reviewは全9 pathのbase／現行LOC・bytes・分類・inline testを原本へ保持した。538 LOC増のowner reviewを行い、binding_plan 1,242 LOC／47,548 bytesは同じbranch・application・scope上の関係準備を維持する。100 LOC／3,754 bytesのadmission modeは出力／権限境界であり、既存の型走査へdelegationする。23 LOCのcross_shapeは既存二規則の共通dispatchを所有する。新resolver・catalog・並行するtyped authority、物理分割だけのpublic facadeを増やさず、Cargo依存・feature・layer・I/O・unsafe・codec／version・既定予算は不変。既存resolved graph／推移的reverse dependency証拠を再利用し、scannerは未実行。
+
+Supersedes: 現状一覧の「旧composite eager acceptance」を、移行した整合shapeと、具体的に旧APIエラーが残るByte collection／AgentValueへ分けた。訂正理由は条件付き関係準備と由来付きadmissionの実装であり、未検証の移行を完了へ格上げしない。Generic Match等の既受入項目、以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
+
+原本 [task-aligned-relation-preparation-checkpoint.raw.zip](acceptance-evidence/task-aligned-relation-preparation-checkpoint.raw.zip) は31 entries、585,935 bytes、SHA-256 `a297e34a81f8c140b843198250d7e17a0444a1a376dea54f41fee1582e889de5`。4回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
