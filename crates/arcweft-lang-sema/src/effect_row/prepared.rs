@@ -159,6 +159,8 @@ pub(crate) enum PreparedEffectInvariant {
     TermEditState,
     #[error("a future effect function still needs its actual row function")]
     UnresolvedFuture,
+    #[error("a named declaration input still needs its original source scheme")]
+    UnresolvedSchemeInput,
     #[error("a completed effect binding does not designate a future function")]
     FutureBinding,
     #[error("a future effect function is bound more than once")]

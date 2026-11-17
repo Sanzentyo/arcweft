@@ -56,7 +56,7 @@ pub(crate) enum EffectResidualPredicateView<'a> {
 /// finite or cofinite. Their exceptions belong to this support expression.
 pub(crate) struct ResidualSupport<'a> {
     pub(crate) retained: &'a BTreeSet<EffectId>,
-    pub(crate) future_exceptions: ResidualFunctions<'a>,
+    pub(crate) input_exceptions: ResidualFunctions<'a>,
 }
 
 /// A bound comprehension variable, deliberately distinct from EffectId.
@@ -75,6 +75,10 @@ pub(crate) enum ResidualFunctionRole<'a> {
         domain: &'a EffectPredicate,
         body: ResidualPreparedRow<'a>,
     },
+    SchemeInput {
+        declaration: &'a PreparedEffectDeclaration,
+        actual: Option<&'a EffectRow>,
+    },
     Bindable,
     Future {
         actual: Option<&'a EffectRow>,
@@ -89,13 +93,12 @@ pub(crate) enum ResidualFunctionRole<'a> {
 pub(crate) struct ResidualImportBindings<'a> {
     parent: &'a ScopedEffectCompletion,
     child: &'a ScopedEffectCompletion,
-    values: std::collections::btree_map::Iter<'a, u64, PreparedEffectUnknownRef>,
+    values: std::collections::btree_map::Iter<'a, u64, FunctionRef>,
 }
 impl<'a> Iterator for ResidualImportBindings<'a> {
     type Item = (ResidualFunction<'a>, ResidualFunction<'a>);
     fn next(&mut self) -> Option<Self::Item> {
         let (&future, actual) = self.values.next()?;
-        let actual = FunctionRef::Unknown(actual.clone());
         Some((
             ResidualFunction {
                 source: self.child,
@@ -127,6 +130,10 @@ impl<'a> ResidualFunction<'a> {
                     value: source_body(&self.source.graph, self.id)?,
                 },
             },
+            Function::SchemeInput(declaration) => ResidualFunctionRole::SchemeInput {
+                declaration,
+                actual: self.source.fixed.get(&self.id),
+            },
             Function::Unknown {
                 eligibility: PreparedEffectUnknownEligibility::Bindable,
                 ..
@@ -146,7 +153,7 @@ impl<'a> ResidualFunction<'a> {
                 bindings: ResidualImportBindings {
                     parent: self.source,
                     child: &imported.completion,
-                    values: imported.futures.iter(),
+                    values: imported.inputs.iter(),
                 },
             },
         })
@@ -178,7 +185,7 @@ impl<'a> Iterator for ResidualPredicates<'a> {
 
 enum FunctionFilter {
     Local,
-    Future,
+    Input,
 }
 pub(crate) struct ResidualFunctions<'a> {
     source: &'a ScopedEffectCompletion,
@@ -191,9 +198,9 @@ impl<'a> Iterator for ResidualFunctions<'a> {
         for (&id, function) in self.functions.by_ref() {
             let keep = match self.filter {
                 FunctionFilter::Local => {
-                    !function.is_future() && !matches!(function.as_ref(), Function::Imported(_))
+                    !function.is_input() && !matches!(function.as_ref(), Function::Imported(_))
                 }
-                FunctionFilter::Future => function.is_future(),
+                FunctionFilter::Input => function.is_input(),
             };
             if keep {
                 return Some(ResidualFunction {
@@ -282,10 +289,10 @@ impl<'a> EffectResidualPredicate<'a> {
                     },
                     support: ResidualSupport {
                         retained: &self.source.support,
-                        future_exceptions: ResidualFunctions {
+                        input_exceptions: ResidualFunctions {
                             source: self.source,
                             functions: self.source.graph.functions.iter(),
-                            filter: FunctionFilter::Future,
+                            filter: FunctionFilter::Input,
                         },
                     },
                     body: self.at(*body),

@@ -20,6 +20,13 @@ impl PartialEq for PreparedEffectDeclaration {
 impl Eq for PreparedEffectDeclaration {}
 
 impl PreparedEffectDeclaration {
+    pub(super) fn from_header(
+        reference: PreparedEffectSchemeRef,
+        header: Arc<SchemeHeader>,
+    ) -> Self {
+        Self { reference, header }
+    }
+
     pub(crate) fn parameters(&self) -> &[GenericEffectReference] {
         &self.header.parameters
     }

@@ -3,6 +3,9 @@
 use super::transaction::PreparedEffectDeltaData;
 use super::*;
 
+pub(super) mod dependencies;
+mod freeze;
+
 #[cfg(test)]
 mod tests;
 
@@ -163,7 +166,7 @@ impl<'a> PreparedEffectReadView<'a> {
             .map(Arc::as_ref)
             .ok_or(PreparedEffectInvariant::StaleReference)?;
         match (reference, value) {
-            (FunctionRef::Scheme(_), Function::Scheme(_))
+            (FunctionRef::Scheme(_), Function::Scheme(_) | Function::SchemeInput(_))
             | (FunctionRef::Unknown(_), Function::Unknown { .. })
             | (FunctionRef::Imported(_), Function::Imported(_)) => Ok(value),
             _ => Err(PreparedEffectInvariant::StaleReference),

@@ -360,7 +360,7 @@ pub(crate) struct PrincipalEffectClosure<'a> {
     coefficients: BTreeMap<Atom, Decision>,
     choices: BTreeSet<Atom>,
     witnesses: Decision,
-    future_bindings: BTreeMap<u64, EffectRow>,
+    input_bindings: BTreeMap<u64, EffectRow>,
 }
 
 impl PreparedEffectGraph {
@@ -419,6 +419,9 @@ impl PreparedEffectDefinitions {
                 continue;
             }
             work.charge(DecisionWork::Visit)?;
+            if matches!(function.as_ref(), Function::SchemeInput(_)) && !fixed.contains_key(&id) {
+                return Err(PreparedEffectInvariant::UnresolvedSchemeInput.into());
+            }
             if function.is_future() && !fixed.contains_key(&id) {
                 return Err(PreparedEffectInvariant::UnresolvedFuture.into());
             }
@@ -469,7 +472,7 @@ impl<'a> PrincipalEffectClosure<'a> {
         coefficients: BTreeMap<Atom, Decision>,
         choices: BTreeSet<Atom>,
         witnesses: Decision,
-        future_bindings: BTreeMap<u64, EffectRow>,
+        input_bindings: BTreeMap<u64, EffectRow>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let mut functions = BTreeMap::new();
@@ -521,7 +524,7 @@ impl<'a> PrincipalEffectClosure<'a> {
             coefficients,
             choices,
             witnesses,
-            future_bindings,
+            input_bindings,
         })
     }
 }

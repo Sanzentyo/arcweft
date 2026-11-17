@@ -419,14 +419,15 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             }
             (Function::Imported(left), Function::Imported(right)) => {
                 // A frozen child is a lexical relation owner, not a pointwise
-                // row. Compare its original issuer/selection and actual fixed
-                // inputs; distinct partial-specialization wrappers may share it.
-                if !Arc::ptr_eq(
-                    &left.completion.graph.issuer,
-                    &right.completion.graph.issuer,
-                ) || left.selected.reference() != right.selected.reference()
+                // row. Compare its entire original relation and actual fixed
+                // inputs; independent freezes can share original definitions.
+                if !left
+                    .completion
+                    .graph
+                    .same_original(&right.completion.graph, self.control)?
+                    || left.selected.reference() != right.selected.reference()
                     || left.completion.fixed.len() != right.completion.fixed.len()
-                    || left.futures.len() != right.futures.len()
+                    || left.inputs.len() != right.inputs.len()
                 {
                     return Ok(Some(PreparedEffectReplayMismatch::ImportOrigin));
                 }
@@ -443,7 +444,7 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
                     }
                 }
                 for ((left_input, left), (right_input, right)) in
-                    left.futures.iter().zip(&right.futures)
+                    left.inputs.iter().zip(&right.inputs)
                 {
                     self.visit()?;
                     if left_input != right_input {

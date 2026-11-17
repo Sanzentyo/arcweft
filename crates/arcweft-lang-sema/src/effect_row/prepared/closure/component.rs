@@ -218,7 +218,7 @@ impl CompiledComponent {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());
             };
             work.charge(DecisionWork::Visit)?;
-            if !graph.functions[scheme].is_future() {
+            if !graph.functions[scheme].is_input() {
                 minimized.insert(cell.clone());
             }
         }
@@ -288,7 +288,7 @@ impl CompiledComponent {
             let class = index + 1;
             let mut admitted = Decision::constant(false);
             for (&id, function) in &graph.functions {
-                if !function.is_future() {
+                if !function.is_input() {
                     continue;
                 }
                 for mask in 0..self.layout.tables[&id] {

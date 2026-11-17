@@ -54,7 +54,7 @@ pub(in crate::effect_row::prepared) struct PreparedEffectDeltaData {
     pub(in crate::effect_row::prepared) ordinal: u64,
     pub(in crate::effect_row::prepared) inputs: Option<Arc<[u64]>>,
     pub(in crate::effect_row::prepared) functions: BTreeMap<u64, Arc<Function>>,
-    obligations: Vec<Arc<ScopedObligation>>,
+    pub(in crate::effect_row::prepared) obligations: Vec<Arc<ScopedObligation>>,
     pub(in crate::effect_row::prepared) rows: BTreeMap<u64, Arc<RowTerm>>,
     pub(in crate::effect_row::prepared) predicates: BTreeMap<u64, Arc<PredicateTerm>>,
     pub(in crate::effect_row::prepared) choices: BTreeSet<u64>,

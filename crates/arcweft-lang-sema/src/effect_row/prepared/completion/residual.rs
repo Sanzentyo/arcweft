@@ -295,7 +295,7 @@ impl EffectResidualProgram {
             if !inventory.contains(id) {
                 continue;
             }
-            if function.is_future() || matches!(function.as_ref(), Function::Imported(_)) {
+            if function.is_input() || matches!(function.as_ref(), Function::Imported(_)) {
                 continue;
             }
             let member = program.node(ResidualNode::OutputMembership { function: id }, work)?;

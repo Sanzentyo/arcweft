@@ -79,9 +79,11 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
     fn function(&mut self, id: u64) -> Result<Row, ReductionFailure<C::Error>> {
         let function = &self.source.graph.functions[&id];
         let admitted = match function.as_ref() {
-            Function::Scheme(scheme) => {
+            Function::Scheme(_) | Function::SchemeInput(_) => {
                 let domain = self.canonical_predicate(
-                    &scheme.header.domain,
+                    function
+                        .domain()
+                        .ok_or(PreparedEffectInvariant::SchemeState)?,
                     &BTreeMap::new(),
                     ResidualRowScope::Scheme(id),
                 )?;

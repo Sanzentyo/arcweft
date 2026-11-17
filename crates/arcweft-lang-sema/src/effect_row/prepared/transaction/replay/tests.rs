@@ -519,6 +519,86 @@ fn imported_relations_keep_the_original_lexical_owner_and_actual_fixed_inputs() 
 }
 
 #[test]
+fn imported_open_relations_distinguish_new_constraints_on_the_original_issuer() {
+    let mut work = budget();
+    let mut source = PreparedEffectGraph::default();
+    let output = source
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut work,
+        )
+        .unwrap();
+    let row = source
+        .unknown_application(&output, vec![], &mut work)
+        .unwrap();
+    let before = source
+        .read()
+        .freeze_scoped(&[&row], &[], &mut work)
+        .unwrap();
+    let repeated = source
+        .read()
+        .freeze_scoped(&[&row], &[], &mut work)
+        .unwrap();
+    let guard = source
+        .relate(
+            PreparedEffectRelation::AdmittedSubset,
+            row.clone(),
+            literal(&[]),
+            &mut work,
+        )
+        .unwrap();
+    source
+        .add_scoped_obligation(
+            vec![],
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            guard,
+            &mut work,
+        )
+        .unwrap();
+    let changed = source
+        .read()
+        .freeze_scoped(&[&row], &[], &mut work)
+        .unwrap();
+    let mut graph = PreparedEffectGraph::default();
+    let mut import = |completion: &Arc<crate::effect_row::prepared::ScopedEffectCompletion>| {
+        let mut checkpoint = graph.checkpoint(&mut work).unwrap();
+        let reference = graph
+            .import_guarded_function(&completion.unknown(&output).unwrap(), &[], &mut work)
+            .unwrap();
+        (
+            graph.extract_delta(&mut checkpoint, &mut work).unwrap(),
+            reference,
+        )
+    };
+    let (left, a) = import(&before);
+    let (right, b) = import(&repeated);
+    let (new_constraint, c) = import(&changed);
+    assert_eq!(
+        graph
+            .replay_delta_mismatch(
+                &left,
+                &right,
+                [PreparedEffectReplayRoot::Imported(&a, &b)],
+                &mut work
+            )
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        graph
+            .replay_delta_mismatch(
+                &left,
+                &new_constraint,
+                [PreparedEffectReplayRoot::Imported(&a, &c)],
+                &mut work
+            )
+            .unwrap(),
+        Some(PreparedEffectReplayMismatch::ImportOrigin)
+    );
+}
+
+#[test]
 fn substitution_and_boolean_predicates_retain_all_prepared_ports() {
     use crate::effect_row::EffectFormula;
     use crate::types::{GenericBinder, GenericScope};

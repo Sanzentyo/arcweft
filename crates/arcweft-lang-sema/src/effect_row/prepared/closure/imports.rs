@@ -110,8 +110,8 @@ fn assemble_selected<C: DecisionControl>(
             let child = cached(cache, &imported.completion, work)?
                 .ok_or(PreparedEffectInvariant::UnclosedCell)?;
             let mut bindings = BTreeMap::new();
-            for (&future, actual) in &imported.futures {
-                let actual = FunctionRef::Unknown(actual.clone());
+            for (&future, actual) in &imported.inputs {
+                let actual = actual.clone();
                 graph.function(&actual)?;
                 for class in 0..child.layout.view().classes() {
                     for mask in 0..child.layout.tables[&future] {
@@ -146,7 +146,7 @@ fn assemble_selected<C: DecisionControl>(
                     };
                     let value = if let Some(value) = child.coefficients.get(&cell) {
                         compilation::copy(value, work)?
-                    } else if imported.definition().is_future() {
+                    } else if imported.definition().is_input() {
                         Decision::variable(cell, work)?
                     } else {
                         return Err(PreparedEffectInvariant::UnclosedCell.into());
@@ -204,8 +204,8 @@ impl ImportedFunctionTable {
             );
         }
         let mut coefficients = BTreeMap::new();
-        for (&future, actual) in &imported.futures {
-            let actual = FunctionRef::Unknown(actual.clone());
+        for (&future, actual) in &imported.inputs {
+            let actual = actual.clone();
             let actual_definition = parent.graph.function(&actual)?;
             let parameters = graph.functions[&future].parameters();
             let row = parent.functions[&actual.reference().ordinal].known()?;

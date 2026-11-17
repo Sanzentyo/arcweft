@@ -283,7 +283,7 @@ fn minimize_pointwise<C: DecisionControl>(
     let mut free = Vec::new();
     for (&id, function) in &source.graph.functions {
         work.charge(DecisionWork::Node)?;
-        if function.is_future() {
+        if function.is_input() {
             if !source.fixed.contains_key(&id) {
                 free.push(Variable::Function(id));
             }
@@ -384,7 +384,7 @@ fn has_local<C: DecisionControl>(
     for variable in variables {
         work.charge(DecisionWork::Visit)?;
         match variable {
-            Variable::Function(id) => local |= !source.graph.functions[&id].is_future(),
+            Variable::Function(id) => local |= !source.graph.functions[&id].is_input(),
             Variable::Substitution(_) => return Err(PreparedEffectInvariant::UnclosedCell.into()),
         }
     }
@@ -563,7 +563,7 @@ fn normalize<C: DecisionControl>(
     };
     let mut rows = completed.lower;
     for (&id, function) in &source.graph.functions {
-        if function.is_future() {
+        if function.is_input() {
             let value = if let Some(row) = source.fixed.get(&id) {
                 row.known()?.map_references(work, &mut |reference, _| {
                     Err(PreparedEffectInvariant::UndeclaredParameter(reference.clone()).into())
@@ -580,7 +580,7 @@ fn normalize<C: DecisionControl>(
             let Variable::Function(id) = variable else {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());
             };
-            if !source.graph.functions[id].is_future() || source.fixed.contains_key(id) {
+            if !source.graph.functions[id].is_input() || source.fixed.contains_key(id) {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());
             }
             Ok(ResidualFunctionVariable(source.graph.reference(*id)))
@@ -736,7 +736,7 @@ fn resolve_function<'a>(
         .functions
         .get(&id)
         .ok_or(PreparedEffectInvariant::StaleReference)?;
-    if !function.is_future() {
+    if !function.is_input() {
         return Err(PreparedEffectInvariant::FutureBinding);
     }
     Ok(ResidualFunction::at(source, id))

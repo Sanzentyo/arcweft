@@ -111,9 +111,9 @@ impl PrincipalEffectClosure<'_> {
             };
             if let Function::Scheme(scheme) = function.as_ref() {
                 canonical::CanonicalReplay::new(self, scope).confirm(id, scheme, work)?;
-            } else if function.is_future() {
+            } else if function.is_input() {
                 let row = self
-                    .future_bindings
+                    .input_bindings
                     .get(&id)
                     .ok_or(PreparedEffectInvariant::UnresolvedFuture)?;
                 canonical::CanonicalReplay::new(self, scope).confirm_fixed(id, row, work)?;

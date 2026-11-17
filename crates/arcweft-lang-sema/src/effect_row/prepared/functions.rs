@@ -37,6 +37,9 @@ impl FunctionRef {
 #[derive(Debug)]
 pub(super) enum Function {
     Scheme(Scheme),
+    /// The original named declaration is free in a frozen source relation.
+    /// Its body state never becomes a local minimization variable.
+    SchemeInput(PreparedEffectDeclaration),
     Imported(completion::ImportedEffectFunction),
     /// Exactly the dependencies available when this unknown was introduced.
     Unknown {
@@ -49,6 +52,7 @@ impl Function {
     pub(super) fn parameters(&self) -> &[GenericEffectReference] {
         match self {
             Self::Scheme(scheme) => &scheme.header.parameters,
+            Self::SchemeInput(declaration) => declaration.parameters(),
             Self::Imported(imported) => imported.definition().parameters(),
             Self::Unknown { parameters, .. } => parameters,
         }
@@ -57,6 +61,7 @@ impl Function {
     pub(super) fn domain(&self) -> Option<&EffectPredicate> {
         match self {
             Self::Scheme(scheme) => Some(&scheme.header.domain),
+            Self::SchemeInput(declaration) => Some(declaration.domain()),
             Self::Imported(imported) => imported.definition().domain(),
             Self::Unknown { .. } => None,
         }
@@ -70,6 +75,10 @@ impl Function {
                 ..
             }
         )
+    }
+
+    pub(super) fn is_input(&self) -> bool {
+        self.is_future() || matches!(self, Self::SchemeInput(_))
     }
 }
 

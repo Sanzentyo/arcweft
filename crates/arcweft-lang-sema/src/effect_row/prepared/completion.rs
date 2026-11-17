@@ -31,7 +31,7 @@ pub(super) struct ImportedEffectFunction {
     pub(super) completion: Arc<ScopedEffectCompletion>,
     pub(super) selected: FunctionRef,
     /// Each reference belongs to the receiving graph, not the frozen child.
-    pub(super) futures: BTreeMap<u64, PreparedEffectUnknownRef>,
+    pub(super) inputs: BTreeMap<u64, FunctionRef>,
 }
 
 impl ImportedEffectFunction {
@@ -51,8 +51,17 @@ impl PreparedEffectGraph {
         if !self.checkpoints.is_empty() {
             return Err(PreparedEffectInvariant::CheckpointOrder.into());
         }
+        self.relation.complete_scoped(control)
+    }
+}
+
+impl PreparedEffectDefinitions {
+    pub(in crate::effect_row::prepared) fn complete_scoped<C: DecisionControl>(
+        self,
+        control: &mut C,
+    ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        for function in self.relation.functions.values() {
+        for function in self.functions.values() {
             work.charge(DecisionWork::Visit)?;
             if matches!(
                 function.as_ref(),
@@ -65,21 +74,23 @@ impl PreparedEffectGraph {
             }
         }
         let support = self.label_support(&mut work)?;
-        let program = EffectResidualProgram::new(&self.relation, &mut work)?;
+        let program = EffectResidualProgram::new(&self, &mut work)?;
         work.charge(DecisionWork::Node)?;
         work.charge(DecisionWork::Node)?;
         work.charge(DecisionWork::Node)?;
         Ok(Arc::new(ScopedEffectCompletion {
-            graph: Arc::new(self.relation),
+            graph: Arc::new(self),
             support,
             fixed: BTreeMap::new(),
             program: Arc::new(program),
         }))
     }
+}
 
+impl PreparedEffectGraph {
     /// Bind a child's Future inputs to actual total inference functions in this
     /// graph. Their ordered dependency signatures must agree. The imported
-    /// function remains guarded; it is not another minimizable unknown.
+    /// Named inputs reattach only to their original issuer and immutable header.
     pub(crate) fn import_guarded_function<C: DecisionControl>(
         &mut self,
         function: &GuardedEffectFunction,
@@ -87,7 +98,7 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<PreparedEffectImportedRef, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        let mut futures = BTreeMap::new();
+        let mut inputs = BTreeMap::new();
         for (future, actual) in bindings {
             work.charge(DecisionWork::Visit)?;
             let future = FunctionRef::Unknown((*future).clone());
@@ -107,8 +118,8 @@ impl PreparedEffectGraph {
                 return Err(PreparedEffectInvariant::ApplicationArity.into());
             }
             work.charge(DecisionWork::Node)?;
-            if futures
-                .insert(future.reference().ordinal, (*actual).clone())
+            if inputs
+                .insert(future.reference().ordinal, actual_ref)
                 .is_some()
             {
                 return Err(PreparedEffectInvariant::DuplicateFutureBinding.into());
@@ -116,9 +127,14 @@ impl PreparedEffectGraph {
         }
         for (&id, declaration) in &function.completion.graph.functions {
             work.charge(DecisionWork::Visit)?;
+            if let Function::SchemeInput(declaration) = declaration.as_ref() {
+                declaration.validate(self)?;
+                work.charge(DecisionWork::Node)?;
+                inputs.insert(id, FunctionRef::Scheme(declaration.scheme().clone()));
+            }
             if declaration.is_future()
                 && !function.completion.fixed.contains_key(&id)
-                && !futures.contains_key(&id)
+                && !inputs.contains_key(&id)
             {
                 return Err(PreparedEffectInvariant::UnresolvedFuture.into());
             }
@@ -127,7 +143,7 @@ impl PreparedEffectGraph {
             Function::Imported(ImportedEffectFunction {
                 completion: Arc::clone(&function.completion),
                 selected: function.selected.clone(),
-                futures,
+                inputs: inputs,
             }),
             &mut work,
         )?;

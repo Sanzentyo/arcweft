@@ -1,159 +1,7 @@
-//! A projection closes its real dependency component and every original C.
-//! Other source declarations remain original declarations, never pure bodies.
+//! Close the actual dependency component and every original C.
 
+use super::super::read::dependencies::{Dependency, Reachable, SchemeDependencies};
 use super::*;
-
-enum Dependency<'a> {
-    Function(u64),
-    Row(&'a PreparedEffectRow),
-    Predicate(&'a PreparedEffectPredicate),
-}
-
-struct Reachable<'a> {
-    graph: &'a PreparedEffectDefinitions,
-    functions: BTreeSet<u64>,
-    rows: BTreeSet<u64>,
-    predicates: BTreeSet<u64>,
-    pending: Vec<Dependency<'a>>,
-}
-
-impl<'a> Reachable<'a> {
-    fn push<C: DecisionControl>(
-        &mut self,
-        value: Dependency<'a>,
-        control: &mut C,
-    ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        control
-            .charge(DecisionWork::Node)
-            .map_err(PreparedEffectFailure::Control)?;
-        self.pending.push(value);
-        Ok(())
-    }
-
-    fn collect<C: DecisionControl>(
-        mut self,
-        control: &mut C,
-    ) -> Result<BTreeSet<u64>, PreparedEffectFailure<C::Error>> {
-        while let Some(value) = self.pending.pop() {
-            control
-                .charge(DecisionWork::Visit)
-                .map_err(PreparedEffectFailure::Control)?;
-            match value {
-                Dependency::Function(id) => {
-                    if self.functions.contains(&id) {
-                        continue;
-                    }
-                    control
-                        .charge(DecisionWork::Node)
-                        .map_err(PreparedEffectFailure::Control)?;
-                    self.functions.insert(id);
-                    let function = self
-                        .graph
-                        .functions
-                        .get(&id)
-                        .ok_or(PreparedEffectInvariant::StaleReference)?;
-                    match function.as_ref() {
-                        Function::Scheme(scheme) => {
-                            let SchemeState::BodyPrepared { body, obligations } = &scheme.state
-                            else {
-                                return Err(PreparedEffectInvariant::SchemeState.into());
-                            };
-                            self.push(Dependency::Row(body), control)?;
-                            for predicate in obligations {
-                                self.push(Dependency::Predicate(predicate), control)?;
-                            }
-                        }
-                        Function::Imported(imported) => {
-                            for future in imported.futures.values() {
-                                self.push(
-                                    Dependency::Function(self.graph.validate(future.reference())?),
-                                    control,
-                                )?;
-                            }
-                        }
-                        Function::Unknown { .. } => {}
-                    }
-                }
-                Dependency::Row(PreparedEffectRow::Canonical(_))
-                | Dependency::Predicate(PreparedEffectPredicate::Canonical(_)) => {}
-                Dependency::Row(PreparedEffectRow::Term(reference)) => {
-                    let id = self.graph.validate(&reference.0)?;
-                    if self.rows.contains(&id) {
-                        continue;
-                    }
-                    control
-                        .charge(DecisionWork::Node)
-                        .map_err(PreparedEffectFailure::Control)?;
-                    self.rows.insert(id);
-                    match self.graph.row(reference)? {
-                        RowTerm::Application {
-                            function,
-                            arguments,
-                        } => {
-                            self.push(
-                                Dependency::Function(self.graph.validate(function.reference())?),
-                                control,
-                            )?;
-                            for row in arguments {
-                                self.push(Dependency::Row(row), control)?;
-                            }
-                        }
-                        RowTerm::Substitution { arguments, .. } => {
-                            for row in arguments.values() {
-                                self.push(Dependency::Row(row), control)?;
-                            }
-                        }
-                        RowTerm::Union(rows) => {
-                            for row in rows {
-                                self.push(Dependency::Row(row), control)?;
-                            }
-                        }
-                        RowTerm::Select { yes, no, .. } => {
-                            self.push(Dependency::Row(yes), control)?;
-                            self.push(Dependency::Row(no), control)?;
-                        }
-                    }
-                }
-                Dependency::Predicate(PreparedEffectPredicate::Term(reference)) => {
-                    let id = self.graph.validate(&reference.0)?;
-                    if self.predicates.contains(&id) {
-                        continue;
-                    }
-                    control
-                        .charge(DecisionWork::Node)
-                        .map_err(PreparedEffectFailure::Control)?;
-                    self.predicates.insert(id);
-                    match self.graph.predicate(reference)? {
-                        PredicateTerm::Substitution { arguments, .. } => {
-                            for row in arguments.values() {
-                                self.push(Dependency::Row(row), control)?;
-                            }
-                        }
-                        PredicateTerm::Relation {
-                            actual, permitted, ..
-                        } => {
-                            self.push(Dependency::Row(actual), control)?;
-                            self.push(Dependency::Row(permitted), control)?;
-                        }
-                        PredicateTerm::And(values) | PredicateTerm::Or(values) => {
-                            for predicate in values {
-                                self.push(Dependency::Predicate(predicate), control)?;
-                            }
-                        }
-                        PredicateTerm::Not(value) => {
-                            self.push(Dependency::Predicate(value), control)?
-                        }
-                        PredicateTerm::Select { yes, no, .. } => {
-                            self.push(Dependency::Predicate(yes), control)?;
-                            self.push(Dependency::Predicate(no), control)?;
-                        }
-                    }
-                }
-            }
-        }
-        Ok(self.functions)
-    }
-}
 
 impl PreparedEffectGraph {
     /// A canonical projection is allowed only for this closed dependency
@@ -167,13 +15,7 @@ impl PreparedEffectGraph {
         if self.active_scope.is_some() {
             return Err(PreparedEffectInvariant::ReadScopeActive.into());
         }
-        let mut reachable = Reachable {
-            graph: &self.relation,
-            functions: BTreeSet::new(),
-            rows: BTreeSet::new(),
-            predicates: BTreeSet::new(),
-            pending: Vec::new(),
-        };
+        let mut reachable = Reachable::new(self.read(), SchemeDependencies::Bodies);
         for root in roots {
             self.scheme(root)?;
             reachable.push(Dependency::Function(self.validate(&root.0)?), control)?;
@@ -182,7 +24,7 @@ impl PreparedEffectGraph {
             reachable.push(Dependency::Predicate(&obligation.domain), control)?;
             reachable.push(Dependency::Predicate(&obligation.predicate), control)?;
         }
-        let functions = reachable.collect(control)?;
+        let functions = reachable.collect(control)?.functions;
         self.solve_inventory(
             BTreeMap::new(),
             FunctionInventory::Selected(&functions),

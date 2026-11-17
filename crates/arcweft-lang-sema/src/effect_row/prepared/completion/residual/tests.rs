@@ -86,7 +86,7 @@ fn quantified_residual_exposes_original_scopes_dependencies_and_uniform_choices(
             .iter()
             .any(|function| function.is_unknown(&x).unwrap())
     );
-    let futures: Vec<_> = support.future_exceptions.collect();
+    let futures: Vec<_> = support.input_exceptions.collect();
     assert_eq!(futures.len(), 1);
     assert!(futures[0].is_unknown(&f).unwrap());
     assert_eq!(futures[0].parameters(), &[e.clone()]);
@@ -269,7 +269,7 @@ fn partial_future_bindings_share_the_original_program_and_keep_remaining_inputs_
     };
     let mut fixed = 0;
     let mut free = 0;
-    for function in support.future_exceptions {
+    for function in support.input_exceptions {
         match function.role().unwrap() {
             ResidualFunctionRole::Future {
                 actual: Some(value),

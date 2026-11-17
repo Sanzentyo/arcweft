@@ -14,6 +14,69 @@ pub(in crate::effect_row::prepared) struct PreparedEffectDefinitions {
 }
 
 impl PreparedEffectDefinitions {
+    /// Original relation identity, rather than logical equivalence. Separate
+    /// freezes can share the same source definitions; an issuer alone cannot
+    /// identify them after more local constraints have been prepared.
+    pub(super) fn same_original<C: DecisionControl>(
+        &self,
+        other: &Self,
+        control: &mut C,
+    ) -> Result<bool, PreparedEffectFailure<C::Error>> {
+        let mut work = Work(control);
+        work.charge(DecisionWork::Visit)?;
+        if !Arc::ptr_eq(&self.issuer, &other.issuer)
+            || self.functions.len() != other.functions.len()
+            || self.obligations.len() != other.obligations.len()
+            || self.choices.len() != other.choices.len()
+        {
+            return Ok(false);
+        }
+        for ((left_id, left), (right_id, right)) in self.functions.iter().zip(&other.functions) {
+            work.charge(DecisionWork::Visit)?;
+            if left_id != right_id {
+                return Ok(false);
+            }
+            let same = match (left.as_ref(), right.as_ref()) {
+                (Function::SchemeInput(left), Function::SchemeInput(right)) => left == right,
+                _ => Arc::ptr_eq(left, right),
+            };
+            if !same {
+                return Ok(false);
+            }
+        }
+        for (left, right) in self.obligations.iter().zip(&other.obligations) {
+            work.charge(DecisionWork::Visit)?;
+            if !Arc::ptr_eq(left, right) {
+                return Ok(false);
+            }
+        }
+        for (left, right) in self.choices.iter().zip(&other.choices) {
+            work.charge(DecisionWork::Visit)?;
+            if left != right {
+                return Ok(false);
+            }
+        }
+        Ok(Self::same_terms(&self.rows, &other.rows, &mut work)?
+            && Self::same_terms(&self.predicates, &other.predicates, &mut work)?)
+    }
+
+    fn same_terms<T, C: DecisionControl>(
+        left: &BTreeMap<u64, Arc<T>>,
+        right: &BTreeMap<u64, Arc<T>>,
+        work: &mut Work<'_, C>,
+    ) -> Result<bool, PreparedEffectFailure<C::Error>> {
+        if left.len() != right.len() {
+            return Ok(false);
+        }
+        for ((left_id, left), (right_id, right)) in left.iter().zip(right) {
+            work.charge(DecisionWork::Visit)?;
+            if left_id != right_id || !Arc::ptr_eq(left, right) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     pub(super) fn reference(&self, ordinal: u64) -> PreparedEffectReference {
         PreparedEffectReference {
             issuer: Arc::clone(&self.issuer),

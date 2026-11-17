@@ -1,0 +1,199 @@
+//! One dependency grammar for canonical closure and open source relations.
+
+use super::*;
+
+pub(in crate::effect_row::prepared) enum SchemeDependencies {
+    Bodies,
+    Headers,
+}
+
+pub(in crate::effect_row::prepared) enum Dependency<'a> {
+    Function(u64),
+    Row(&'a PreparedEffectRow),
+    Predicate(&'a PreparedEffectPredicate),
+}
+
+pub(in crate::effect_row::prepared) struct Reachable<'a> {
+    view: PreparedEffectReadView<'a>,
+    schemes: SchemeDependencies,
+    pub(in crate::effect_row::prepared) functions: BTreeSet<u64>,
+    pub(in crate::effect_row::prepared) rows: BTreeSet<u64>,
+    pub(in crate::effect_row::prepared) predicates: BTreeSet<u64>,
+    pub(in crate::effect_row::prepared) choices: BTreeSet<u64>,
+    pending: Vec<Dependency<'a>>,
+}
+
+impl<'a> Reachable<'a> {
+    pub(in crate::effect_row::prepared) fn new(
+        view: PreparedEffectReadView<'a>,
+        schemes: SchemeDependencies,
+    ) -> Self {
+        Self {
+            view,
+            schemes,
+            functions: BTreeSet::new(),
+            rows: BTreeSet::new(),
+            predicates: BTreeSet::new(),
+            choices: BTreeSet::new(),
+            pending: Vec::new(),
+        }
+    }
+
+    fn choice<C: DecisionControl>(
+        &mut self,
+        choice: &PreparedEffectChoice,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        self.view.validate_choice(choice)?;
+        control
+            .charge(DecisionWork::Node)
+            .map_err(PreparedEffectFailure::Control)?;
+        self.choices.insert(choice.0.ordinal);
+        Ok(())
+    }
+
+    pub(in crate::effect_row::prepared) fn push<C: DecisionControl>(
+        &mut self,
+        value: Dependency<'a>,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        control
+            .charge(DecisionWork::Node)
+            .map_err(PreparedEffectFailure::Control)?;
+        self.pending.push(value);
+        Ok(())
+    }
+
+    pub(in crate::effect_row::prepared) fn collect<C: DecisionControl>(
+        mut self,
+        control: &mut C,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        while let Some(value) = self.pending.pop() {
+            control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?;
+            match value {
+                Dependency::Function(id) => {
+                    if self.functions.contains(&id) {
+                        continue;
+                    }
+                    control
+                        .charge(DecisionWork::Node)
+                        .map_err(PreparedEffectFailure::Control)?;
+                    self.functions.insert(id);
+                    let function = self
+                        .view
+                        .function_definition(id)
+                        .ok_or(PreparedEffectInvariant::StaleReference)?;
+                    match function.as_ref() {
+                        Function::Scheme(scheme)
+                            if matches!(self.schemes, SchemeDependencies::Bodies) =>
+                        {
+                            let SchemeState::BodyPrepared { body, obligations } = &scheme.state
+                            else {
+                                return Err(PreparedEffectInvariant::SchemeState.into());
+                            };
+                            self.push(Dependency::Row(body), control)?;
+                            for predicate in obligations {
+                                self.push(Dependency::Predicate(predicate), control)?;
+                            }
+                        }
+                        Function::Imported(imported) => {
+                            for input in imported.inputs.values() {
+                                self.push(
+                                    Dependency::Function(
+                                        self.view.relation.validate(input.reference())?,
+                                    ),
+                                    control,
+                                )?;
+                            }
+                        }
+                        Function::Scheme(_)
+                        | Function::SchemeInput(_)
+                        | Function::Unknown { .. } => {}
+                    }
+                }
+                Dependency::Row(PreparedEffectRow::Canonical(_))
+                | Dependency::Predicate(PreparedEffectPredicate::Canonical(_)) => {}
+                Dependency::Row(PreparedEffectRow::Term(reference)) => {
+                    let id = self.view.relation.validate(&reference.0)?;
+                    if self.rows.contains(&id) {
+                        continue;
+                    }
+                    control
+                        .charge(DecisionWork::Node)
+                        .map_err(PreparedEffectFailure::Control)?;
+                    self.rows.insert(id);
+                    match self.view.row(reference)? {
+                        RowTerm::Application {
+                            function,
+                            arguments,
+                        } => {
+                            self.push(
+                                Dependency::Function(
+                                    self.view.relation.validate(function.reference())?,
+                                ),
+                                control,
+                            )?;
+                            for row in arguments {
+                                self.push(Dependency::Row(row), control)?;
+                            }
+                        }
+                        RowTerm::Substitution { arguments, .. } => {
+                            for row in arguments.values() {
+                                self.push(Dependency::Row(row), control)?;
+                            }
+                        }
+                        RowTerm::Union(rows) => {
+                            for row in rows {
+                                self.push(Dependency::Row(row), control)?;
+                            }
+                        }
+                        RowTerm::Select { choice, yes, no } => {
+                            self.choice(choice, control)?;
+                            self.push(Dependency::Row(yes), control)?;
+                            self.push(Dependency::Row(no), control)?;
+                        }
+                    }
+                }
+                Dependency::Predicate(PreparedEffectPredicate::Term(reference)) => {
+                    let id = self.view.relation.validate(&reference.0)?;
+                    if self.predicates.contains(&id) {
+                        continue;
+                    }
+                    control
+                        .charge(DecisionWork::Node)
+                        .map_err(PreparedEffectFailure::Control)?;
+                    self.predicates.insert(id);
+                    match self.view.predicate(reference)? {
+                        PredicateTerm::Substitution { arguments, .. } => {
+                            for row in arguments.values() {
+                                self.push(Dependency::Row(row), control)?;
+                            }
+                        }
+                        PredicateTerm::Relation {
+                            actual, permitted, ..
+                        } => {
+                            self.push(Dependency::Row(actual), control)?;
+                            self.push(Dependency::Row(permitted), control)?;
+                        }
+                        PredicateTerm::And(values) | PredicateTerm::Or(values) => {
+                            for predicate in values {
+                                self.push(Dependency::Predicate(predicate), control)?;
+                            }
+                        }
+                        PredicateTerm::Not(value) => {
+                            self.push(Dependency::Predicate(value), control)?
+                        }
+                        PredicateTerm::Select { choice, yes, no } => {
+                            self.choice(choice, control)?;
+                            self.push(Dependency::Predicate(yes), control)?;
+                            self.push(Dependency::Predicate(no), control)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(self)
+    }
+}
