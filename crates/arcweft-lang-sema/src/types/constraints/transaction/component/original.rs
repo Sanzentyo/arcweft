@@ -352,6 +352,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 graph,
                 context,
             )?;
+            let effects = graph
+                .bind_original_scoped(&effects, context)?
+                .freeze(graph.read(), context)?;
             self.validate_original_bindings(&branch, members, scope, &effects, graph, context)?;
             context
                 .validate_type_and_const_completion(&branch)

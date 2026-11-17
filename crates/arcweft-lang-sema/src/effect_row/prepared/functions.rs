@@ -111,6 +111,20 @@ impl Function {
     }
 }
 
+impl PreparedEffectDefinitions {
+    /// Recover a retained unknown's operational handle from this exact frozen
+    /// inventory. This validates the role without issuing a new identity.
+    pub(super) fn unknown_reference(
+        &self,
+        id: u64,
+    ) -> Result<PreparedEffectUnknownRef, PreparedEffectInvariant> {
+        match self.functions.get(&id).map(Arc::as_ref) {
+            Some(Function::Unknown { .. }) => Ok(PreparedEffectUnknownRef(self.reference(id))),
+            _ => Err(PreparedEffectInvariant::StaleReference),
+        }
+    }
+}
+
 impl PreparedEffectGraph {
     pub(super) fn validate_parameters<'p, C: DecisionControl>(
         parameters: &'p [GenericEffectReference],

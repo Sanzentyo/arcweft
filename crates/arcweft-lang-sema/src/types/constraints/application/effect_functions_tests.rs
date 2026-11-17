@@ -16,6 +16,90 @@ use std::sync::atomic::AtomicBool;
 
 type Context<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
 
+#[test]
+fn conditional_output_agreement_uses_the_declared_captured_function_signature() {
+    use crate::effect_row::prepared::EffectResidualPredicateView;
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    context
+        .with_binder(GenericBinder::new(0, 0, 1), |context| {
+            let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+            let parent_variable = parameters.opened_effect_variables()[0].variable().clone();
+            let original = context.fixture_original_context(None)?;
+            let parent = context.application_scope((), parameters, original.clone(), &mut graph)?;
+            let path = context.start_path_with_imported(parent, None, original, graph.read())?;
+            let lease = path
+                .applications
+                .import_parameters(&[parent_variable.clone().into()])?;
+            let original = context.fixture_original_context(Some(&lease))?;
+            let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+            let child_variable = parameters.opened_effect_variables()[0].variable().clone();
+            let child = context.application_scope((), parameters, original, &mut graph)?;
+            let dependencies = graph
+                .read()
+                .unknown_dependencies(child.effect_function(&child_variable).unwrap())?
+                .to_vec();
+            assert!(dependencies.contains(&parent_variable));
+            assert!(matches!(
+                parent_variable,
+                GenericEffectReference::Inference(_)
+            ));
+            let original = graph.read().freeze_scoped(&[], &[], &[], context)?;
+            let bound = graph
+                .bind_original_scoped(&original, context)?
+                .freeze(graph.read(), context)?;
+            let mut pending = vec![bound.satisfiable()];
+            let mut found = false;
+            while let Some(predicate) = pending.pop() {
+                match predicate.view()? {
+                    EffectResidualPredicateView::ForAllFiniteRows {
+                        parameters, body, ..
+                    } => {
+                        found |= parameters == dependencies;
+                        pending.push(body);
+                    }
+                    EffectResidualPredicateView::And(children) => pending.extend(children),
+                    EffectResidualPredicateView::Not(body)
+                    | EffectResidualPredicateView::ExistsLocalFunctions { body, .. }
+                    | EffectResidualPredicateView::ExistsUniformChoices { body, .. }
+                    | EffectResidualPredicateView::SubstituteLower { body, .. } => {
+                        pending.push(body)
+                    }
+                    EffectResidualPredicateView::Implies {
+                        domain,
+                        consequence,
+                    } => pending.extend([domain, consequence]),
+                    _ => {}
+                }
+            }
+            assert!(
+                found,
+                "agreement quantifies the whole declared function signature"
+            );
+            // The same inference key remains illegal as an ambient source Γ row.
+            assert!(matches!(
+                graph.read().scoped_constraint(
+                    &dependencies,
+                    &crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
+                        crate::effect_row::EffectPredicate::unconstrained()
+                    ),
+                    &crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
+                        crate::effect_row::EffectPredicate::unconstrained()
+                    ),
+                    context
+                ),
+                Err(
+                    crate::effect_row::prepared::PreparedEffectFailure::Invariant(
+                        PreparedEffectInvariant::ParameterContract
+                    )
+                )
+            ));
+            Ok::<_, TypeConstraintError>(())
+        })
+        .unwrap();
+}
+
 fn context(cancellation: &AtomicBool) -> Context<'_> {
     Context::with_accounting(LocalConstraintAccounting::new(
         TypeConstraintLimits::new(65_536, 32_768, 1024, 1024),

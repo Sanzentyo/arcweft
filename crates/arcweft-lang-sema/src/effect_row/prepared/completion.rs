@@ -6,6 +6,9 @@ use crate::effects::EffectId;
 pub(super) mod residual;
 use residual::EffectResidualProgram;
 
+mod binding;
+pub(crate) use binding::PreparedEffectScopedBinding;
+
 /// The immutable original relation, including dependency signatures, lexical
 /// quantifiers, declaration domains, alternatives and Future input identities.
 /// Freezing does not assert that its satisfiable or principal domain is total.

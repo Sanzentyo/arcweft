@@ -39,7 +39,7 @@ pub(crate) use completion::residual::{
 };
 pub(crate) use completion::{
     GuardedEffectFunction, PreparedEffectImportedRef, PreparedEffectImportedRelation,
-    ScopedEffectCompletion,
+    PreparedEffectScopedBinding, ScopedEffectCompletion,
 };
 pub(crate) use functions::{
     PreparedEffectParameterScope, PreparedEffectUnknownEligibility, PreparedEffectUnknownRef,
