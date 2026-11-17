@@ -18155,3 +18155,19 @@ Locked Sema／test target／全feature checkは3回とも終了101。Dev01はlib
 Supersedes: 現状一覧の「最終validator／closed headerへの接続」を、今回の接続済みownerと、まだ旧確定APIを呼ぶ最終caller・public switchへ整理した。訂正理由は実装されたphaseと同じprincipalを使う経路の変更であり、未受入の移行を完了へ格上げしない。Generic Match等の既受入項目、過去のfull SHA・実測は保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
 
 原本 [task-closed-original-owner-checkpoint.raw.zip](acceptance-evidence/task-closed-original-owner-checkpoint.raw.zip) は25 entries、447,973 bytes、SHA-256 `5e302bde3d374be94478a6414bdd3d705544727bcfafd740dff57f0d863a0109`。3回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Scalar preparation checkpoint
+
+2026-11-18。基点 `7da8e84b631fcce67ed30b7bdef3023a432b604d`、移行Source `18b085543a9a08d17690469ef2f960cab6dd593e`。8 Rust path、297追加／150削除、物理147 LOC増。ユーザー指定の途中WIPとしてcommit・非force pushし、最終8入力と公開blobのbyte SHA-256を照合した。公開時tracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+TypeLeafの単一のscalar互換性をcanonical判定とprepared関係準備で共有し、旧canonicalの重複arm／AgentValue scalar一覧を削除した。Actorのerasure方向、character identity、compile-time Enum／Fx、ActionName等の既存規則を保持する。直接のscalar関係は不一致を先に落とし、無関係な未準備Namedを閉じずにprovisional pathを保持する。元bindingのEqualは厳密な型の一致であり、directional wideningへ置き換えない。未解決名のRecoveryは既存strict forbidden検査後だけscalarとして判定し、prepared source admissionへ流用しない。Type／const portだけを読むheader参照検査は既存effect domainをgenericに受け、occurs grammarは実際のprepared bindingと同じshapeへ揃えた。効果の解決・canonical成功shim・別grammarは追加しない。Compositeの旧eager acceptance、最終callerと全frontendのpublic switchは未完了である。
+
+新規4 fixtureは、無関係な本体が未準備のままでのscalar不一致／一致、ActionNameの方向と元Equal、actor handleの期待identity、Recovery名とstrict拒否の区別を対象とする。既存の局所binder／cycle／scope復元fixtureは実graphとauthored headerのprepared化へ移し、元assertion・予算を保持した。新fixture・既存移行fixtureの実行は未確認で、PASSへ加算しない。
+
+Locked Sema／test target／全feature checkは3回とも終了101。Dev01はlibrary 515エラー・26警告、lib test 1,516エラー・44警告。Header／occursのdomain整合を修正したdev02と、Recovery名の既存規則を確認してfixtureを追加した最終dev03はlibrary 509エラー・26警告、lib test 1,507エラー・44警告。3回のowner fmt checkは終了0。限定primary location抽出はreview aidであり、compile成功を証明しない。旧composite for_branchのprivate／missing actual input、canonical-only consumer等の具体的な失敗を原本へ保持した。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。Commit前入力と公開blobを照合した再利用で、commit後のtest再実行ではない。Cargo cleanは繰り返していない。
+
+所有reviewは全8 pathのbase／現行LOC・bytes・分類・inline testを原本へ保持した。Compatibilityは旧2,004 LOCから1,899 LOC、うちinline testは736 LOC。93 LOCのleafはeffectに依存しないscalar規則、binding_planはprovisional関係、context／normalizationは既存scope／occursを所有する。TypeLeafの内部可視性は実際の二つのconsumerに必要な型を共有するためであり、物理分割だけのfacadeは増やさない。Cargo依存・feature・layer・I/O・unsafe・codec／version・既定予算は不変。既存resolved graph／推移的reverse dependency証拠を再利用し、scannerは未実行。
+
+Supersedes: 現状一覧に残していたeager acceptance全体を未達とする記述のうち、直接scalarの早すぎる確定を除き、composite・最終callerの未移行を残した。訂正理由は共有scalar規則と実prepared scope検査の実装であり、機能の最終受入へ格上げしない。Generic Match等の既受入項目、以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
+
+原本 [task-scalar-preparation-checkpoint.raw.zip](acceptance-evidence/task-scalar-preparation-checkpoint.raw.zip) は25 entries、440,875 bytes、SHA-256 `c70151746ace8bff525f38d1927e92e3c72eac0f815bb8390908e4824dd6dcf4`。3回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
