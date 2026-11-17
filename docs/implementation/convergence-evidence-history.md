@@ -17887,3 +17887,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - 所有レビューでは、prepared nominal rootをそのphaseの所有型、投影／保持を一時的な借用context、term閲覧を元graph／edit、typed error変換を既存error ownerへ置いた。成長172 LOCにはfixture拡張9 LOCを含む。公開facade・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更、別のtype walker・scope fallback・graph／work残量の複製はない。Supersedes: 前checkpointのfield利用側未接続は今回の入力準備の範囲で更新し、最終completion／sealの未達と区別した。過去の失敗・full SHA・実測・原本とGeneric Match等の既受入を保持し、現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-prepared-field-nominal-checkpoint.raw.zip](acceptance-evidence/task-prepared-field-nominal-checkpoint.raw.zip) は14 entries、ZIP 119624 bytes、SHA-256 `3d69f51ec8aae69931c1ee368e46a9ec84006dc46ffebd00b22cfabdd8667d66`。2回の入力・失敗ログ・fmtと公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+## Prepared record pattern migration checkpoint
+
+2026-11-17。基点 `32761abc1e70c689e32e67bf693874cd2aa927ee`、移行Source `db7ea60457a250a2da1080584663360554784f29`。9 Rust path、325追加／197削除を既存mainへ途中commit・非force pushし、全9検証入力のSHA-256と公開blobのbyte hashを照合した。動作未受入のcheckpoint。既存の未追跡 `%SystemDrive%/` を保持した。
+
+- project record patternの宣言全fieldを、既存SourceNominalProjectionの一つのeditでprepared型へ適用する。metadataは確保前に元workへ課金し、選択したfieldの保持コピーも実source ownerのscopeと元graphで行う。準備後はnominal rootを消費してPreparedRecordPatternOwnerへ移し、root／nominal owner／variant payloadの無課金cloneを当該経路から削除した。variant payloadもPreparedEffectsのまま保持する。
+- SemanticFactStateが健康状態と元call graphを確認し、mutableなeffect declarationsとimmutableなPatternTypeObservationsを短く貸す。local／pattern型表は元fact stateだけが所有し、graphを借りている間も参照先の存在を確認する。既存のpattern contextの重複factoryを削除し、全seeding利用側をこの同じ入口へ揃えた。
+- record pattern準備から、prepared型へのsemantic digest発行と早期の型同値判定を除いた。準備constructorはfield数とrestのinventory shapeを検査する。root・field・pattern／local参照先・restの型一致は最終nominal sealの義務として残す。nominal_schema.rsの全blobは基点と公開Sourceで一致し、その比較条件を削除していないことを原本へ記録した。これはソースの連続性の確認であり、joint completion／canonical投影や実行の検証ではない。最終consumerはprepared ownerのsemantic_typeをまだ要求しており、コンパイル未達の境界である。
+- canonicalなnominal_substitutions helperの最後の利用側を移行し、旧helper・re-export・不要importを削除した。既存の型引数indexと共通foldを用い、別のtype walker・推測scope・早期canonical identityを加えない。Environment recordのregistry lookupには旧canonical要求が残り、record pattern全体の受入とはしない。
+- 1 fixture、95 LOCを追加した。明示した仮のschema入力で、元bodyが未準備のlive callbackを持つrecord patternを保持し、field省略にはrestが必要であること、同じoperational term IDのretain、元body一回準備後のfs.read closureとpayload sealを対象にする。このfixtureは登録world・source Γ・最終pattern sealの受入を証明するものではない。test targetのcompile・実行は未確認で、成功数へ加算しない。
+- locked Sema library／全feature checkはdev01・dev02とも終了101・525エラー・26警告。最終dev02は新fixtureのhashも入力として保持するが、library checkでそのtest targetをcompileしたとはしない。最終9入力と公開blobの一致に基づく証拠再利用で、commit後の再実行ではない。両owner fmt checkは終了0。nextest・test target・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- 所有レビューでは、宣言field schemaとprepared nominalを既存のsource／phase owner、観測を元fact stateからの借用、型一致の義務を完了後の最終sealへ置いた。成長128 LOCにはfixture95 LOCを含む。公開facade・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更、graph／work残量・型表の複製はない。Supersedes: 前checkpointのproject record pattern入力側の未移行を更新し、最終completion／sealやregistry lookupの未達と区別した。過去の失敗・full SHA・実測・原本とGeneric Match等の既受入を保持し、現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-prepared-record-pattern-checkpoint.raw.zip](acceptance-evidence/task-prepared-record-pattern-checkpoint.raw.zip) は15 entries、ZIP 119842 bytes、SHA-256 `2a019954485606068fc4cde3a1c844f42538cb83bded0e8b26c66ae9303f30d0`。2回の入力・失敗ログ・fmt、公開照合、最終sealのblob連続性を保持し、全データentryの長さ・SHA-256をreadback照合した。
