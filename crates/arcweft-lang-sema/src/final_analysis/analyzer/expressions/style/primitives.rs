@@ -1,9 +1,9 @@
 //! Native numeric ranges and closed enum grammars for specified Style values.
 
 use super::{
-    Analyzer, AnalyzerExpressionContext, AnalyzerExpressionError, CheckedExpression,
-    CheckedExpressionResolution, CheckedStyleOperand, CompileTimeStyleType, ExprId, HirExpr,
-    HirExprKind, HirLiteral, HirModule, ViewSpecifiedValue, ViewStyleValueKind,
+    Analyzer, AnalyzerExpressionContext, AnalyzerExpressionError, CheckedExpressionResolution,
+    CheckedStyleOperand, CompileTimeStyleType, ExprId, HirExpr, HirExprKind, HirLiteral, HirModule,
+    PreparedResolvedExpression, ViewSpecifiedValue, ViewStyleValueKind,
 };
 use crate::final_analysis::analyzer::style::grammar::StyleSourceGrammar;
 use crate::{
@@ -19,7 +19,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expected: CompileTimeStyleType,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         if let CompileTimeStyleType::NumericLiteral(kind) = expected {
             let HirExprKind::Literal(literal) = expression.kind() else {
                 return Err(AnalyzerExpressionError::rejected(owner));

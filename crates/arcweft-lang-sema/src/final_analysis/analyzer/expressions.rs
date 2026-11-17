@@ -19,8 +19,8 @@ use super::{
     Analyzer, ArrayLength, BTreeSet, BorrowKind, CandidateSemanticProjection, CheckedAwait,
     CheckedAwaitPendingObserver, CheckedChoice, CheckedChoiceGoto, CheckedChoicePlan,
     CheckedChoicePlanItem, CheckedChoicePlanKey, CheckedClosure, CheckedDialogueEffectSiteOrdinal,
-    CheckedDialogueEffectTrigger, CheckedExpression, CheckedExpressionResolution,
-    CheckedProjectItem, CheckedStageLook, CheckedTrigger, CheckedTryCarrier, CheckedTypeSelection,
+    CheckedDialogueEffectTrigger, CheckedExpressionResolution, CheckedProjectItem,
+    CheckedStageLook, CheckedTrigger, CheckedTryCarrier, CheckedTypeSelection,
     CheckedValueResolution, CheckedViewCall, EffectId, EffectSet, EntityKind, ExprId,
     FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
     HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument, HirChoiceCompactAction,
@@ -31,9 +31,9 @@ use super::{
     LocalLookup, PostfixBracketResolution, PreparedDialogueApplication, PreparedDialogueEffectPlan,
     PreparedDialogueEffectSite, PreparedExpressionFact, PreparedExpressionShell,
     PreparedImplicitCallableBody, PreparedOwnerBoundExpression, PreparedOwnerBoundResolution,
-    PreparedTryBoundary, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
-    ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId, ScopeId, SourceSpan,
-    TypeKind, TypeParameterSubstitutions,
+    PreparedResolvedExpression, PreparedTryBoundary, ProjectNominalBody, ProjectNominalDeclaration,
+    ProjectNominalType, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId, ScopeId,
+    SourceSpan, TypeKind, TypeParameterSubstitutions,
     calls::{checked_character_dialogue_target, checked_project_nominal, nominal_substitutions},
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
@@ -506,7 +506,7 @@ impl Analyzer<'_, '_, '_> {
         fact: &PreparedExpressionFact,
     ) -> Result<bool, super::CandidateFactTransactionViolation> {
         if !matches!(fact, PreparedExpressionFact::Resolved(value)
-            if matches!(value.result(), crate::final_analysis::CheckedExpressionResult::Unavailable)
+            if matches!(value.result(), crate::final_analysis::prepared::PreparedExpressionResult::Unavailable)
                 && matches!(value.resolution(), CheckedExpressionResolution::Call))
         {
             return Ok(false);
@@ -1112,7 +1112,7 @@ impl Analyzer<'_, '_, '_> {
                         | PreparedExpressionFact::ProjectRecord(_)),
                     ) => body,
                     Some(other) => {
-                        PreparedExpressionFact::from(other.into_complete().map_err(|_| {
+                        PreparedExpressionFact::from(other.into_resolved().map_err(|_| {
                             AnalyzerExpressionError::fatal(
                                 FinalSemanticAnalysisError::WrongPayloadFamily,
                             )
@@ -1786,7 +1786,7 @@ impl Analyzer<'_, '_, '_> {
         expression: &HirExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
-    ) -> Result<CheckedExpression, E>
+    ) -> Result<PreparedResolvedExpression, E>
     where
         E: From<AnalyzerExpressionError> + From<CandidateFactOperationFailure>,
     {
@@ -1842,7 +1842,7 @@ impl Analyzer<'_, '_, '_> {
         expression: &HirExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
-    ) -> Result<CheckedExpression, E>
+    ) -> Result<PreparedResolvedExpression, E>
     where
         E: From<AnalyzerExpressionError> + From<CandidateFactOperationFailure>,
     {
@@ -1998,7 +1998,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expected: Option<&TypeKind<crate::types::PreparedEffects>>,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         match expression.kind() {
             HirExprKind::Unit => Ok(structural_expression(
                 TypeKind::Unit,
@@ -2080,7 +2080,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         let expected = expectation.contextual_shape();
         match expression.kind() {
             HirExprKind::Tuple(tuple) => {
@@ -2264,7 +2264,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expected: Option<&TypeKind<crate::types::PreparedEffects>>,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         match expression.kind() {
             HirExprKind::Binary(binary) => {
                 let left = self.evaluate_expression(context, binary.left(), None)?;
@@ -2316,7 +2316,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         match expression.kind() {
             HirExprKind::Unary(unary) => {
                 let operand = self.evaluate_expression_with_expectation(
@@ -2562,7 +2562,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         block: &arcweft_lang_hir::expr::HirBlockExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         self.evaluate_block_statement_uses(context, module, block.statements())?;
         let returns = !self
             .block_statements_completion(module, block.statements(), None)?
@@ -2610,7 +2610,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         block: &arcweft_lang_hir::expr::HirComputationBlockExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let expected = expectation.contextual_shape();
         self.evaluate_block_statement_uses(context, module, block.statements())?;
         let statements = block
@@ -2698,7 +2698,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         block: &arcweft_lang_hir::expr::HirNamedBlockExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         self.evaluate_block_statement_uses(context, module, block.statements())?;
         let returns = !self
             .block_statements_completion(module, block.statements(), None)?
@@ -2751,7 +2751,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         loop_expression: &arcweft_lang_hir::expr::HirLoopExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         self.evaluate_block_statement_uses(context, module, loop_expression.statements())?;
         self.evaluate_expression(context, loop_expression.tail(), None)?;
         let mut exits = Vec::new();
@@ -2810,7 +2810,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         conditional: &arcweft_lang_hir::expr::HirIfExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         self.evaluate_expression(context, conditional.condition(), Some(&TypeKind::Bool))?;
         self.check_control_branch_pair(
             context,
@@ -2828,7 +2828,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         conditional: &arcweft_lang_hir::expr::HirIfLetExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let scrutinee = self.evaluate_expression(context, conditional.scrutinee(), None)?;
         let scrutinee_type = scrutinee.value_type().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
@@ -2856,7 +2856,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         match_expr: &arcweft_lang_hir::expr::HirMatchExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let scrutinee = self.evaluate_expression(context, match_expr.scrutinee(), None)?;
         let scrutinee_type = scrutinee.value_type().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
@@ -3321,7 +3321,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         let expected = expectation.contextual_shape();
         match expression.kind() {
             HirExprKind::Closure(closure) => {
@@ -3575,7 +3575,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         match expression.kind() {
             HirExprKind::ForSynthetic(synthetic) => {
                 let input = self.evaluate_expression_with_expectation(
@@ -3733,7 +3733,7 @@ impl Analyzer<'_, '_, '_> {
         expression: &HirExpr,
         choice: &arcweft_lang_hir::expr::HirChoiceExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let public_id = choice
             .id()
             .map(|id| {
@@ -4142,7 +4142,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         match expression.kind() {
             HirExprKind::ViewBodyApplication(application) => {
                 self.check_view_container_body(context, module, owner, expression, application)
@@ -4616,7 +4616,7 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
         expression: &HirExpr,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let name = match expression.kind() {
             HirExprKind::Path(HirPathValue::Resolved(path)) => {
                 if path.root() != HirPathRoot::ImplicitCrate
@@ -4676,7 +4676,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         call: &arcweft_lang_hir::expr::HirCallInvocation,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         let Some(item) =
             enclosing_item(module, expression.scope()).map_err(AnalyzerExpressionError::fatal)?
         else {
@@ -4848,7 +4848,7 @@ impl Analyzer<'_, '_, '_> {
             if let Some(role) = role {
                 if role == arcweft_view::ViewElementArgumentRole::Value {
                     let place = checked
-                        .complete()
+                        .resolved()
                         .and_then(|checked| checked.mutable_place())
                         .filter(|place| place.fields().is_empty())
                         .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?;
@@ -4905,7 +4905,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         application: &arcweft_lang_hir::expr::HirViewBodyApplication,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let item = enclosing_item(module, expression.scope())
             .map_err(AnalyzerExpressionError::fatal)?
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
@@ -4945,7 +4945,7 @@ impl Analyzer<'_, '_, '_> {
             checked
         } else {
             self.evaluate_expression(context, header, None)?
-                .complete()
+                .resolved()
                 .cloned()
                 .ok_or_else(|| AnalyzerExpressionError::rejected(header))?
         };
@@ -5178,7 +5178,7 @@ impl Analyzer<'_, '_, '_> {
         expression: &HirExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
-    ) -> Result<Option<CheckedExpression>, E>
+    ) -> Result<Option<PreparedResolvedExpression>, E>
     where
         E: From<AnalyzerExpressionError> + From<CandidateFactOperationFailure>,
     {
@@ -5485,7 +5485,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         reference: &HirIdRef,
         expected: Option<&TypeKind<crate::types::PreparedEffects>>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let family = arcweft_id::ProjectEntityReferenceFamily::DialogueLine;
         let public_id = reference.project_entity_public_id(family).ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
@@ -5551,7 +5551,7 @@ impl Analyzer<'_, '_, '_> {
         postfix: &HirPostfixBracket,
         expectation: &AnalyzerExpressionExpectation<'_>,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
-    ) -> Result<CheckedExpression, CandidateFactOperationFailure> {
+    ) -> Result<PreparedResolvedExpression, CandidateFactOperationFailure> {
         let HirPostfixBracketCandidates::Ambiguous { index, dialogue } = postfix.candidates()
         else {
             return Err(AnalyzerExpressionError::unresolved_postfix(owner).into());
@@ -5959,7 +5959,7 @@ fn environment_binding_for_path(
 fn structural_expression(
     ty: TypeKind<crate::types::PreparedEffects>,
     selection: CheckedTypeSelection,
-) -> CheckedExpression {
+) -> PreparedResolvedExpression {
     crate::final_analysis::prepared::PreparedResolvedExpression::value(
         ty,
         selection,
@@ -5975,7 +5975,7 @@ fn checked_bracket_sequence_expression(
     item: TypeKind<crate::types::PreparedEffects>,
     element_count: usize,
     selection: CheckedTypeSelection,
-) -> Result<CheckedExpression, AnalyzerExpressionError> {
+) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
     let ty = if matches!(contextual_shape, Some(TypeKind::Array { .. })) {
         TypeKind::Array {
             item: Box::new(item),

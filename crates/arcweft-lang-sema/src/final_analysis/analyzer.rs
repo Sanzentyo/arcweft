@@ -3,6 +3,7 @@
 //! This pass consumes the exact, accepted arena inventories.  It never opens
 //! source text, constructs a detached HIR, or publishes a partial report.
 
+use super::prepared::PreparedResolvedExpression;
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet},

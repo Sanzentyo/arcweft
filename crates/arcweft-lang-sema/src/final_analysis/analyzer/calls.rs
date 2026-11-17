@@ -41,14 +41,14 @@ use super::{
     CharacterDialoguePatchContext, CharacterOwnerSource, CheckedCallArgumentSlotSource,
     CheckedCharacterDialogueFactory, CheckedCharacterDialoguePatch,
     CheckedCharacterDialoguePatchField, CheckedCharacterDialogueReconfigure,
-    CheckedCharacterDialogueTarget, CheckedExpression, CheckedExpressionResolution,
-    CheckedPatchOperation, CheckedTypeSelection, CheckedValueResolution, EffectRow, EffectSet,
-    ExprId, FinalCallCalleeFacts, FinalSemanticAnalysisError, HirAssociatedSeparator,
-    HirCallArgument, HirCallArgumentSourcePart, HirCallCallee, HirCallInvocation, HirExprKind,
-    HirExprSourceRole, HirModule, HirSelectedMember, HirSourcePresence, HirSourceQuery,
-    HirSourceSite, PreparedResolvedCallable, RegisteredSemanticValueId, ResolveCallOutcome,
-    ResolvedCallTarget, ResolvedCharacterOwner, ResolverWork, ScopeId, TypeKind,
-    map_call_arguments, prepare_final_call_callee, prepare_language_free_dot_path,
+    CheckedCharacterDialogueTarget, CheckedExpressionResolution, CheckedPatchOperation,
+    CheckedTypeSelection, CheckedValueResolution, EffectRow, EffectSet, ExprId,
+    FinalCallCalleeFacts, FinalSemanticAnalysisError, HirAssociatedSeparator, HirCallArgument,
+    HirCallArgumentSourcePart, HirCallCallee, HirCallInvocation, HirExprKind, HirExprSourceRole,
+    HirModule, HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite,
+    PreparedResolvedCallable, PreparedResolvedExpression, RegisteredSemanticValueId,
+    ResolveCallOutcome, ResolvedCallTarget, ResolvedCharacterOwner, ResolverWork, ScopeId,
+    TypeKind, map_call_arguments, prepare_final_call_callee, prepare_language_free_dot_path,
     resolve_call_target,
 };
 use crate::callable::{
@@ -837,7 +837,7 @@ impl Analyzer<'_, '_, '_> {
         dialogue_application_metadata: Option<
             &crate::callable::PreparedDialogueApplicationMetadataInventory,
         >,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         self.check_call_expression_in_context_at_site(
             context,
             module,
@@ -856,7 +856,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         call: &HirCallInvocation,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         self.check_call_expression_in_context_at_site(
             context,
             module,
@@ -882,7 +882,7 @@ impl Analyzer<'_, '_, '_> {
             &crate::callable::PreparedDialogueApplicationMetadataInventory,
         >,
         site: crate::callable::CheckedCallSite,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let frame = match context.enter_call(owner) {
             Ok(frame) => frame,
             Err(CallFrameEnterFailure::Abort(error)) => {
@@ -935,7 +935,7 @@ impl Analyzer<'_, '_, '_> {
         >,
         site: crate::callable::CheckedCallSite,
         attempt: &PhysicalCallAttemptId,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let source = CallSource {
             module,
             owner,
@@ -2131,7 +2131,7 @@ impl Analyzer<'_, '_, '_> {
         source: CallSource<'_>,
         recovery: AssociatedReceiverRecovery,
         mut work: ResolverWork,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
             source_context.work(),
             |this, expression_authority, transaction_authority| {
@@ -2426,7 +2426,7 @@ impl Analyzer<'_, '_, '_> {
         resolution: ResolvedCallQuery,
         batch: PreparedCandidateBatch,
         selected_index: usize,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let singleton = resolution.considered.len() == 1;
         let consumer = context.consumer();
         let outcome = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
@@ -2631,7 +2631,7 @@ impl Analyzer<'_, '_, '_> {
             PreparedProjectNominalTypeValueExpression,
             crate::callable::CallableParameterCoordinate,
         ),
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let frame = match context.enter_call(owner) {
             Ok(frame) => frame,
             Err(CallFrameEnterFailure::Abort(error)) => {
@@ -2775,7 +2775,7 @@ impl Analyzer<'_, '_, '_> {
             crate::callable::CallableParameterCoordinate,
         ),
         attempt: &PhysicalCallAttemptId,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let schema = definition
             .callable_schema(self.catalogs.world().environment().compile_time_scalars())
             .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
@@ -2984,7 +2984,7 @@ impl Analyzer<'_, '_, '_> {
         singleton: bool,
         consumer: super::expression_error::AnalyzerExpressionConsumer,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
-    ) -> Result<CheckedExpression, CandidateFactOperationFailure> {
+    ) -> Result<PreparedResolvedExpression, CandidateFactOperationFailure> {
         let (selected_transaction, selected_rank) = batch
             .probes
             .remove(selected_index)
@@ -3818,7 +3818,7 @@ impl Analyzer<'_, '_, '_> {
         batch: PreparedCandidateBatch,
         primary: usize,
         tied: Vec<usize>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let ResolvedCallQuery {
             callee,
             callee_inputs,
@@ -3879,7 +3879,7 @@ impl Analyzer<'_, '_, '_> {
         resolution: ResolvedCallQuery,
         batch: PreparedCandidateBatch,
         primary: usize,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let retained = 0..batch.probes.len();
         let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
             context.work(),
@@ -4063,7 +4063,7 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         recovery: RecoveryCall<'_>,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
-    ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
+    ) -> Result<PreparedResolvedExpression, FinalSemanticAnalysisError> {
         let RecoveryCall {
             source,
             callee,

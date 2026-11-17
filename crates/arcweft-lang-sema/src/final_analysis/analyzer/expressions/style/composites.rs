@@ -1,10 +1,10 @@
 //! Typed construction grammar for native composite Style values.
 
 use super::{
-    Analyzer, AnalyzerExpressionContext, AnalyzerExpressionError, CheckedExpression,
-    CheckedExpressionResolution, CheckedStyleOperand, CompileTimeStyleType, ExprId, HirExpr,
-    HirExprKind, HirLiteral, HirModule, HirStringLiteral, StyleCallableId, TypeKind,
-    ViewSpecifiedValue, ViewStyleValueKind,
+    Analyzer, AnalyzerExpressionContext, AnalyzerExpressionError, CheckedExpressionResolution,
+    CheckedStyleOperand, CompileTimeStyleType, ExprId, HirExpr, HirExprKind, HirLiteral, HirModule,
+    HirStringLiteral, PreparedResolvedExpression, StyleCallableId, TypeKind, ViewSpecifiedValue,
+    ViewStyleValueKind,
 };
 use crate::final_analysis::CheckedStyleDuration;
 use crate::final_analysis::analyzer::style::grammar::{
@@ -24,7 +24,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expected: CompileTimeStyleType,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         if let Some(operand) = Self::style_composite_leaf(owner, expression, expected)? {
             return Ok(Some(Self::checked_style_operand(operand)));
         }
@@ -197,7 +197,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         callable: StyleCallableId,
         arguments: &[CheckedExpressionResolution],
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         use CheckedExpressionResolution::{StyleOperand as Operand, StyleValue as Value};
         use CheckedStyleOperand::{Duration, Property, ResourceId};
         use ViewSpecifiedValue::{BorderRadii, Color, Length, Ratio, Resource, Scalar};

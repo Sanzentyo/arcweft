@@ -2,9 +2,9 @@
 
 use super::{
     Analyzer, AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionExpectation,
-    CheckedCompileTimeCallee, CheckedExpression, CheckedExpressionResolution, CheckedTypeSelection,
-    EffectSet, ExprId, FinalSemanticAnalysisError, HirExpr, HirExprKind, HirIntegerLiteral,
-    HirLiteral, HirModule, HirStringLiteral, TypeKind,
+    CheckedCompileTimeCallee, CheckedExpressionResolution, CheckedTypeSelection, EffectSet, ExprId,
+    FinalSemanticAnalysisError, HirExpr, HirExprKind, HirIntegerLiteral, HirLiteral, HirModule,
+    HirStringLiteral, PreparedResolvedExpression, TypeKind,
 };
 use crate::final_analysis::analyzer::style::grammar::{StyleFactorySignature, StyleSourceGrammar};
 use crate::{
@@ -31,7 +31,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         if let Some(environment) = self.styles.environment(owner) {
             return Ok(Some(Self::checked_style_operand(
                 CheckedStyleOperand::Environment(environment.clone()),
@@ -130,7 +130,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expected: CompileTimeStyleType,
-    ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
         let operand = match (expected, expression.kind()) {
             (CompileTimeStyleType::Token(kind), HirExprKind::Path(_) | HirExprKind::Select(_)) => {
                 let token = self.style_token_reference(module, owner)?;
@@ -389,7 +389,7 @@ impl Analyzer<'_, '_, '_> {
         result
     }
 
-    fn checked_style_operand(operand: CheckedStyleOperand) -> CheckedExpression {
+    fn checked_style_operand(operand: CheckedStyleOperand) -> PreparedResolvedExpression {
         crate::final_analysis::prepared::PreparedResolvedExpression::value(
             TypeKind::CompileTimeStyle(operand.style_type()),
             CheckedTypeSelection::Expected,
@@ -398,7 +398,7 @@ impl Analyzer<'_, '_, '_> {
         )
     }
 
-    fn checked_style_value(value: ViewSpecifiedValue) -> CheckedExpression {
+    fn checked_style_value(value: ViewSpecifiedValue) -> PreparedResolvedExpression {
         crate::final_analysis::prepared::PreparedResolvedExpression::value(
             TypeKind::CompileTimeStyle(CompileTimeStyleType::Value(value.kind())),
             CheckedTypeSelection::Expected,

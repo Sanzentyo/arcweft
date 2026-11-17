@@ -3,8 +3,11 @@
 use arcweft_lang_hir::leaf::{HirBigUint, HirIntegerSuffix};
 
 use super::TypeKind;
+use crate::types::TypeEffectDomain;
 
-pub(super) fn integer_suffix_type(suffix: Option<HirIntegerSuffix>) -> Option<TypeKind> {
+pub(super) fn integer_suffix_type<E: TypeEffectDomain>(
+    suffix: Option<HirIntegerSuffix>,
+) -> Option<TypeKind<E>> {
     Some(match suffix? {
         HirIntegerSuffix::I8 => TypeKind::I8,
         HirIntegerSuffix::I16 => TypeKind::I16,
@@ -21,7 +24,7 @@ pub(super) fn integer_suffix_type(suffix: Option<HirIntegerSuffix>) -> Option<Ty
     })
 }
 
-pub(super) fn is_integer(ty: &TypeKind) -> bool {
+pub(super) fn is_integer<E: TypeEffectDomain>(ty: &TypeKind<E>) -> bool {
     matches!(
         ty,
         TypeKind::I8
@@ -42,7 +45,10 @@ pub(super) fn is_integer(ty: &TypeKind) -> bool {
 /// Admission of a non-negative compact-sequence element to its selected
 /// integer primitive. Unary negation is not an element of this compact form,
 /// so signed minima do not need their extra positive magnitude here.
-pub(super) fn nonnegative_integer_magnitude_fits(magnitude: &HirBigUint, ty: &TypeKind) -> bool {
+pub(super) fn nonnegative_integer_magnitude_fits<E: TypeEffectDomain>(
+    magnitude: &HirBigUint,
+    ty: &TypeKind<E>,
+) -> bool {
     let maximum = match ty {
         TypeKind::I8 => i8::MAX as u128,
         TypeKind::I16 => i16::MAX as u128,
@@ -76,10 +82,10 @@ pub(super) fn nonnegative_integer_magnitude_fits(magnitude: &HirBigUint, ty: &Ty
 /// Selects the semantic type of one physically-addressed compact numeric
 /// element. The sequence's authored common suffix wins, followed by an exact
 /// integer expectation, then the deterministic `I64` fallback.
-pub(super) fn compact_numeric_element_type(
+pub(super) fn compact_numeric_element_type<E: TypeEffectDomain>(
     common_suffix: Option<HirIntegerSuffix>,
-    expected: Option<&TypeKind>,
-) -> TypeKind {
+    expected: Option<&TypeKind<E>>,
+) -> TypeKind<E> {
     integer_suffix_type(common_suffix)
         .or_else(|| expected.filter(|ty| is_integer(ty)).cloned())
         .unwrap_or(TypeKind::I64)

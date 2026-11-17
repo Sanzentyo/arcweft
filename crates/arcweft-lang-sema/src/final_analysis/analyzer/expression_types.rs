@@ -6,12 +6,12 @@ use super::{
     TypeKind,
 };
 use crate::final_analysis::type_rules::{integer_suffix_type, is_integer};
-use crate::types::CompileTimeScalarKind;
+use crate::types::{CompileTimeScalarKind, TypeEffectDomain};
 use arcweft_lang_hir::leaf::{HirUnitNumberLiteral, HirUnitNumberUnit};
 
-pub(super) fn unit_scalar_kind(
+pub(super) fn unit_scalar_kind<E: TypeEffectDomain>(
     unit: HirUnitNumberUnit,
-    expected: Option<&TypeKind<crate::types::PreparedEffects>>,
+    expected: Option<&TypeKind<E>>,
 ) -> Option<CompileTimeScalarKind> {
     let length_expected = expected.is_some_and(|ty| match ty {
         TypeKind::CompileTimeScalar(scalar) => scalar.kind() == CompileTimeScalarKind::Length,
@@ -40,13 +40,10 @@ pub(super) fn unit_scalar_kind(
     }
 }
 
-pub(super) fn literal_type(
+pub(super) fn literal_type<E: TypeEffectDomain>(
     literal: &HirLiteral,
-    expected: Option<&TypeKind<crate::types::PreparedEffects>>,
-) -> Option<(
-    TypeKind<crate::types::PreparedEffects>,
-    CheckedTypeSelection,
-)> {
+    expected: Option<&TypeKind<E>>,
+) -> Option<(TypeKind<E>, CheckedTypeSelection)> {
     let inferred = match literal {
         HirLiteral::String(_) => (TypeKind::String, CheckedTypeSelection::Inferred),
         HirLiteral::Character(_) => (TypeKind::Char, CheckedTypeSelection::Inferred),
@@ -72,7 +69,7 @@ pub(super) fn literal_type(
         },
         HirLiteral::UnitNumber(HirUnitNumberLiteral::Value { unit, .. }) => {
             if let Some(kind) = unit_scalar_kind(*unit, expected) {
-                let accepts = |ty: &&TypeKind<crate::types::PreparedEffects>| matches!(ty, TypeKind::CompileTimeScalar(scalar) if scalar.kind() == kind);
+                let accepts = |ty: &&TypeKind<E>| matches!(ty, TypeKind::CompileTimeScalar(scalar) if scalar.kind() == kind);
                 let ty = match expected? {
                     TypeKind::Choice(items) => items.iter().find(accepts)?,
                     ty if accepts(&ty) => ty,
@@ -184,7 +181,7 @@ pub(super) fn builtin_iteration(
 pub(super) fn value_resolution_type(
     world: &RegisteredSemanticWorld,
     resolution: &CheckedValueResolution,
-) -> Option<TypeKind<crate::types::PreparedEffects>> {
+) -> Option<TypeKind> {
     match resolution {
         CheckedValueResolution::Local(_) | CheckedValueResolution::RegistryRead(_) => None,
         CheckedValueResolution::LineContext => Some(TypeKind::LineContext),

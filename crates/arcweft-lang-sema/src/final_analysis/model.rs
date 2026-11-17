@@ -2998,22 +2998,24 @@ impl PreparedResolvedExpression {
         self.data.effects()
     }
 
-    pub(crate) fn with_completed_effects(mut self, effects: EffectSet) -> Self {
+    pub(crate) fn with_completed_effects(self, effects: EffectSet) -> Self {
         Self {
-            data: Box::new((*self.data).with_completed_effects()),
+            data: Box::new((*self.data).with_completed_effects(effects)),
         }
     }
 
     pub(super) fn with_completed_thread_body_effects(
-        mut self,
+        self,
         effects: EffectSet,
     ) -> Result<Self, super::FinalSemanticAnalysisError> {
-        self.data.with_completed_thread_body_effects()
+        Ok(Self {
+            data: Box::new((*self.data).with_completed_thread_body_effects(effects)?),
+        })
     }
 
-    pub(crate) fn with_resolution(mut self, resolution: CheckedExpressionResolution) -> Self {
+    pub(crate) fn with_resolution(self, resolution: CheckedExpressionResolution) -> Self {
         Self {
-            data: Box::new((*self.data).with_resolution()),
+            data: Box::new((*self.data).with_resolution(resolution)),
         }
     }
 
@@ -3033,7 +3035,7 @@ impl PreparedResolvedExpression {
         &self,
         source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
     ) -> Option<LocalId> {
-        self.data.inspection_root()
+        self.data.inspection_root(source)
     }
 
     pub(crate) fn local_place_source(&self) -> Option<CheckedFieldReceiver> {
@@ -3044,7 +3046,7 @@ impl PreparedResolvedExpression {
         &self,
         source: impl Fn(ExprId) -> Option<CheckedFieldReceiver>,
     ) -> Option<LocalId> {
-        self.data.field_root()
+        self.data.field_root(source)
     }
 
     pub const fn execution_plan(&self) -> Option<&CheckedExpressionExecutionPlan> {
@@ -3056,11 +3058,11 @@ impl PreparedResolvedExpression {
     }
 
     pub(super) fn with_execution_plan(
-        mut self,
+        self,
         execution: Option<CheckedExpressionExecutionPlan>,
     ) -> Self {
         Self {
-            data: Box::new((*self.data).with_execution_plan()),
+            data: Box::new((*self.data).with_execution_plan(execution)),
         }
     }
 
@@ -3072,9 +3074,9 @@ impl PreparedResolvedExpression {
         self.data.selected_postfix_candidate()
     }
 
-    pub(crate) fn with_match_fact(mut self, fact: CheckedMatchFact) -> Self {
+    pub(crate) fn with_match_fact(self, fact: CheckedMatchFact) -> Self {
         Self {
-            data: Box::new((*self.data).with_match_fact()),
+            data: Box::new((*self.data).with_match_fact(fact)),
         }
     }
 
@@ -3082,9 +3084,9 @@ impl PreparedResolvedExpression {
         self.data.match_fact()
     }
 
-    pub(crate) fn with_carrier_block(mut self, carrier: CheckedCarrierBlock) -> Self {
+    pub(crate) fn with_carrier_block(self, carrier: CheckedCarrierBlock) -> Self {
         Self {
-            data: Box::new((*self.data).with_carrier_block()),
+            data: Box::new((*self.data).with_carrier_block(carrier)),
         }
     }
 
@@ -3099,11 +3101,11 @@ impl PreparedResolvedExpression {
     }
 
     pub(crate) fn with_nested_path_evidence(
-        mut self,
+        self,
         evidence: Result<NestedPathEvidence, super::CheckedChildEdgeError>,
     ) -> Self {
         Self {
-            data: Box::new((*self.data).with_nested_path_evidence()),
+            data: Box::new((*self.data).with_nested_path_evidence(evidence)),
         }
     }
 }

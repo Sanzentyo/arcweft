@@ -16,7 +16,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expectation: &AnalyzerExpressionExpectation<'_>,
         branches: impl IntoIterator<Item = ExprId>,
-    ) -> Result<Option<TypeKind>, AnalyzerExpressionError> {
+    ) -> Result<Option<TypeKind<crate::types::PreparedEffects>>, AnalyzerExpressionError> {
         if expectation.contextual_shape().is_some() {
             return Ok(None);
         }
@@ -93,7 +93,7 @@ impl Analyzer<'_, '_, '_> {
         then_branch: ExprId,
         else_branch: ExprId,
         expectation: &AnalyzerExpressionExpectation<'_>,
-    ) -> Result<super::CheckedExpression, AnalyzerExpressionError> {
+    ) -> Result<super::PreparedResolvedExpression, AnalyzerExpressionError> {
         let inferred = self.infer_control_branch_type(
             context,
             owner,
@@ -117,8 +117,8 @@ impl Analyzer<'_, '_, '_> {
         then_branch: ExprId,
         else_branch: ExprId,
         expectation: &AnalyzerExpressionExpectation<'_>,
-        inferred: Option<&TypeKind>,
-    ) -> Result<super::CheckedExpression, AnalyzerExpressionError> {
+        inferred: Option<&TypeKind<crate::types::PreparedEffects>>,
+    ) -> Result<super::PreparedResolvedExpression, AnalyzerExpressionError> {
         let branch_expectation = if let Some(inferred) = inferred {
             expectation.project_checked(owner, Some(inferred))?
         } else {
