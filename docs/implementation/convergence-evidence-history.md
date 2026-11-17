@@ -18297,3 +18297,20 @@ Supersedes: 前checkpointのprepared lexical transport未移行という現状�
 差分は23 Rust path、1,005追加／249削除、物理756 LOC増。prepared transportとprojection phaseは正当な所有境界に置き、LOCだけによる分割はしない。新テスト・既存cfg(test) helperの役割をraw ownership reviewへ記録した。繰返し投影は既存controlへ課金するが、全allocation／copyの構築前検査・single-pass／性能・Fn局所∀／guarded headerの受入は主張しない。Cargo依存／feature・公開facade・layer・I/O・unsafe・codec／version・既定予算は不変。既存のresolved graph／逆依存資料を再利用し、scannerの再実行とはしない。
 
 [検証原本・入力hash・公開照合・全staged diff・所有レビュー](acceptance-evidence/task-prepared-lexical-phase-checkpoint.raw.zip) は31 entry、616,992 bytes、SHA256 `bc8f5e98cd7c71a2069678669a2bd29039d0902520ad6d888e335935e05456f0`。各entryの長さ／SHA256をZIP再読取で照合した。既存履歴の2,808,971 bytes（SHA256 `611eac2eb49552a456c3b769a0d929f479a63bbc93150151be5a9a446416022a`）をprefixとして保持する。既に実施した全体cargo cleanを繰り返さず、キャッシュ以外の削除も行っていない。
+
+<a id="prepared-projection-ports-checkpoint"></a>
+## 2026-11-18 — principalを閉じる前の投影operand登録
+
+確認した基点 `main`／`origin/main` は `8d30de9388e7fb7d5ed225ae703bac9bcefc5adb`。Source `c826b7f2a07bd02b9bcd30507387fb0b9c288ecc` を既存mainへ通常commit／非forced pushし、公開main・最終9入力のraw Git blob／作業ファイルSHA256一致を確認した。検証はcommit前の同一bytesの再利用で、commit後の再実行ではない。公開直後のtracked差分0、既存未追跡 `%SystemDrive%/` を保持した。
+
+Supersedes: 直前Sourceのfinal projection readerでtemplateを再び開く経路を置き換えた。元original forestからtransactionのmaterializationへの接続が完了したとはしない。現状は[current-status](current-status.md)の既存行のみを更新し、旧実測・SHA・原本を保持する。Generic Matchの受入・公開と保護行bytesは不変。
+
+`ProjectionRequest` はraw templateの代わりに、準備時に実application／graphで開いたoperandと実occurrence scopeを保持する。通常要求は全対象pathの結果をstagingしてから公開し、途中のopening失敗では新query termと要求をrollbackする。変換したresult／function schemeも同じoperand ownerのopening APIを使う。callable driverは実clientのgraph loanを使い、取得失敗をtyped failureとして記録する。result解決は同scopeなら登録値を読み、別scopeなら実prepared lexical transportを使い、templateを再解釈しない。final projection readerからgraphの編集権を除き、保持したoperandを同じclosed-effects ownerで投影する。元forestのfreezeには、既存binding／選択original valueに加え、sourceのactual／expected、projectionの値／入力、元equationのpattern／actualのquery portを保持する。queryを保持することは後続useの制約を元Cへ足すことではない。
+
+新規2 fixtureを追加した。前者は未準備Named本体とFutureを含む投影を登録し、同scopeのresult参照を2回読んでもterm数が増えないこと、同じ元forestを実Named本体と明示した非空Future値で閉じること、最終canonical headerとterm数不変を検査する。後者は関数headerの後に不正なscope参照が来る登録を失敗させ、既存frontier・要求数・term数を保持する。既存共同branch fixtureは保持した元operandを使い、joint scopeでtemplateを再構築しない。すべて未実行。
+
+必須 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は3回とも終了101。dev01はlibrary478エラー／25警告・lib test1,549エラー／45警告。不要なfixture importを除いたdev02は478／1,550・25／44警告で、新fixtureのprivate field参照1件を検出した。既存の狭いprojection APIを使うよう修復し、private可視性を拡張しない最終dev03は **library478エラー／25警告・lib test1,549エラー／44警告**。3回ともowner fmt apply／checkは終了0、CARGO_INCREMENTAL=0、jobs／profile上書きなし。最終9変更pathの一次診断17件は旧callable fixture 14件、旧transaction completion 1件、未移行function-scheme predicate契約2件。新しい登録／operand／query freeze／最終reader／新fixtureの一次診断は0であるが、コンパイル成功やテスト実行の証拠ではない。追加graph引数を必要とする既存fixture呼出側も残る。nextest／Clippy／doctest／推移的逆依存／workspace・Native／AWBC・Native/Web最終受入は未実行。
+
+差分9 Rust path、364追加／55削除、物理309 LOC増。投影要求・operand・元query freezeの既存ownerに帰属し、fixtureを子moduleへ置く。raw reviewにLOC／bytes／path分類・inline testを保持する。後続のmaterialization接続、frontend public switch、Fn局所∀／guarded header、body一回準備の最終受入は未完了。copy／allocationの全構築前検査・性能受入は主張しない。Cargo依存／feature・公開facade・layer・I/O・unsafe・codec／version・既定予算は不変。既存resolved graph／逆依存証拠を再利用し、scannerの再実行とはしない。
+
+[検証原本・入力hash・公開照合・全staged diff・所有レビュー](acceptance-evidence/task-prepared-projection-ports-checkpoint.raw.zip) は25 entry、455,540 bytes、SHA256 `8c155043a7add0e13e6661e6452a00f087fd1d5f7b244585164871c8da449e5a`。各entryの長さ／SHA256をZIP再読取で照合した。既存履歴の2,813,958 bytes（SHA256 `97a25b3c2e91c7e29b2d78ca7a36d5680f49f7d6807dd87b97333846fc2e7264`）をprefixとして保持する。
