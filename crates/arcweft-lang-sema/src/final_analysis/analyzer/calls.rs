@@ -3223,6 +3223,7 @@ impl Analyzer<'_, '_, '_> {
                     .source_callable_effects(&selected, Some(&outer_projection))
                     .map_err(AnalyzerExpressionError::fatal)?;
                 self.stage_resolved_callee_expression(
+                    context.work(),
                     source.owner,
                     source.site,
                     source.module,
@@ -3610,6 +3611,7 @@ impl Analyzer<'_, '_, '_> {
                         ))
                     })?;
                 self.stage_resolved_callee_expression(
+                    preparation_work.clone(),
                     owner,
                     recipe.site,
                     module,
@@ -3850,6 +3852,7 @@ impl Analyzer<'_, '_, '_> {
                     });
                 }
                 this.publish_recovery_call(
+                    context.work(),
                     RecoveryCall {
                         source,
                         callee,
@@ -3906,6 +3909,7 @@ impl Analyzer<'_, '_, '_> {
                 }
                 let considered = resolution.considered;
                 this.publish_recovery_call(
+                    context.work(),
                     RecoveryCall {
                         source,
                         callee: resolution.callee,
@@ -4061,6 +4065,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn publish_recovery_call(
         &mut self,
+        preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
         recovery: RecoveryCall<'_>,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
     ) -> Result<PreparedResolvedExpression, FinalSemanticAnalysisError> {
@@ -4092,6 +4097,7 @@ impl Analyzer<'_, '_, '_> {
             CallableResultSchema::Value(value) => {
                 let callable_effects = self.source_callable_effects(primary, None)?;
                 self.stage_resolved_callee_expression(
+                    preparation_work.clone(),
                     source.owner,
                     source.site,
                     source.module,
@@ -5475,6 +5481,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn stage_resolved_callee_expression(
         &mut self,
+        preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
         owner: ExprId,
         site: crate::callable::CheckedCallSite,
         module: &HirModule,
@@ -5670,7 +5677,13 @@ impl Analyzer<'_, '_, '_> {
                 .value_type()
                 .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?;
             let prepared = self
-                .prepare_variant_expression_kind(value, expression, Some(template), true)
+                .prepare_variant_expression_kind(
+                    preparation_work,
+                    value,
+                    expression,
+                    Some(template),
+                    true,
+                )
                 .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?
                 .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?;
             if self.facts.expressions().contains_key(&value) {

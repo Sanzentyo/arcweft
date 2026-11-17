@@ -74,6 +74,15 @@ impl CheckedConstraintSourceOwner {
         control: &mut C,
     ) -> Result<TypeKind<crate::types::PreparedEffects>, crate::types::TypeProjectionError<C::Error>>
     {
+        let formals = self.declaration_formals_with_control(control)?;
+        ty.prepare_effects(formals.template_scope(), control)
+    }
+
+    pub(crate) fn declaration_formals_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<crate::types::GenericDeclarationBinder, crate::types::TypeProjectionError<C::Error>>
+    {
         control
             .check()
             .map_err(crate::types::TypeProjectionError::Control)?;
@@ -95,8 +104,7 @@ impl CheckedConstraintSourceOwner {
                 }
             }
         }
-        let formals = self.declaration_formals()?;
-        ty.prepare_effects(formals.template_scope(), control)
+        self.declaration_formals().map_err(Into::into)
     }
 
     pub(crate) fn domain(&self) -> std::borrow::Cow<'_, crate::effect_row::EffectPredicate> {

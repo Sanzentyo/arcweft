@@ -14,7 +14,8 @@ mod tests;
 
 mod prepared;
 pub(crate) use prepared::{
-    PreparedEffects, PreparedTypeEffectProjectionFailure, PreparedTypeRetentionFailure,
+    PreparedEffects, PreparedTypeArguments, PreparedTypeEffectProjectionFailure,
+    PreparedTypeRetentionFailure,
 };
 
 mod sealed {

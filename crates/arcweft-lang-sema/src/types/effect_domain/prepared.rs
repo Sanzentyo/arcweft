@@ -13,6 +13,8 @@ mod validation;
 pub(crate) use validation::PreparedTypeRetentionFailure;
 mod canonical;
 mod lifting;
+mod type_arguments;
+pub(crate) use type_arguments::PreparedTypeArguments;
 
 /// Prepared identity is operational. This domain cannot issue a checked type
 /// digest, specialization, runtime projection or completed constraint solution.

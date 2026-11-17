@@ -42,7 +42,8 @@ pub use constraints::{CheckedConstraintContainerConstructor, CheckedConstraintSo
 pub use digest::SemanticTypeDigest;
 pub use effect_domain::{CanonicalEffects, TypeEffectDomain};
 pub(crate) use effect_domain::{
-    PreparedEffects, PreparedTypeEffectProjectionFailure, PreparedTypeRetentionFailure,
+    PreparedEffects, PreparedTypeArguments, PreparedTypeEffectProjectionFailure,
+    PreparedTypeRetentionFailure,
 };
 pub(crate) use generic_use::TypeGenericUseCollector;
 pub use generic_use::TypeGenericUseError;

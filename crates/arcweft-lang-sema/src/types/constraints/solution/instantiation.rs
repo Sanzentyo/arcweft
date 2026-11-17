@@ -29,6 +29,14 @@ mod specialization;
 /// Failure to specialize a semantic type in a closed declaration environment.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum TypeInstantiationError {
+    #[error("nominal application does not belong to the supplied declaration")]
+    NominalDeclarationMismatch,
+    #[error(
+        "declaration has {expected} type parameters, but application supplies {actual} type arguments"
+    )]
+    TypeArgumentCount { expected: usize, actual: usize },
+    #[error("declaration repeats a type argument parameter: {parameter:?}")]
+    DuplicateTypeArgumentParameter { parameter: GenericTypeReference },
     #[error(transparent)]
     Scope(#[from] GenericScopeError),
     #[error(transparent)]

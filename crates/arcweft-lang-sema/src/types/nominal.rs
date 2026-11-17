@@ -342,6 +342,56 @@ fn generic_source_label(
 }
 
 impl<E: TypeEffectDomain> ProjectNominalType<E> {
+    /// Project nominal definitions bind declaration-owned free type identities.
+    /// Their template root has no callable ambient frames. The caller's actual
+    /// value scope is supplied separately when applying retained arguments.
+    pub(crate) fn declaration_formals_with_control<C: super::TypeProjectionControl>(
+        &self,
+        declaration: &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclaration,
+        control: &mut C,
+    ) -> Result<super::GenericDeclarationBinder, super::TypeProjectionError<C::Error>> {
+        use super::{
+            GenericDeclarationBinder, GenericScope, GenericTypeReference, TypeInstantiationError,
+            TypeProjectionError,
+        };
+        control.check().map_err(TypeProjectionError::Control)?;
+        if self.declaration() != declaration.id() {
+            return Err(TypeInstantiationError::NominalDeclarationMismatch.into());
+        }
+        if self.arguments().len() != declaration.type_parameters().len() {
+            return Err(TypeInstantiationError::TypeArgumentCount {
+                expected: declaration.type_parameters().len(),
+                actual: self.arguments().len(),
+            }
+            .into());
+        }
+        control
+            .visit_binding()
+            .map_err(TypeProjectionError::Control)?;
+        for _ in declaration.type_parameters() {
+            control
+                .visit_binding()
+                .map_err(TypeProjectionError::Control)?;
+        }
+        let parameters = declaration
+            .type_parameters()
+            .iter()
+            .map(|parameter| {
+                GenericTypeReference::from(GenericTypeParameterId::new(
+                    GenericParameterOwnerId::Nominal(declaration.id().clone()),
+                    parameter.ordinal(),
+                ))
+            })
+            .collect();
+        GenericDeclarationBinder::new(
+            GenericScope::default(),
+            parameters,
+            Box::new([]),
+            Box::new([]),
+        )
+        .map_err(Into::into)
+    }
+
     /// Creates a checked instantiation of a project nominal declaration.
     pub(crate) fn new(
         declaration: ProjectNominalDeclarationId,

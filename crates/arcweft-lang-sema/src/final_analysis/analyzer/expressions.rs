@@ -1510,6 +1510,7 @@ impl Analyzer<'_, '_, '_> {
                     .map(Some)
             }
             HirExprKind::ShortVariant(_) => self.prepare_variant_expression_kind(
+                context.work(),
                 owner,
                 expression,
                 expected,
@@ -1737,9 +1738,10 @@ impl Analyzer<'_, '_, '_> {
     }
 
     fn prepare_project_variant_owner(
-        &self,
+        &mut self,
+        work: super::preparation_work::AnalyzerPreparationWork<'_>,
         owner: ExprId,
-        expected_nominal: &crate::types::ProjectNominalType,
+        expected_nominal: &crate::types::ProjectNominalType<crate::types::PreparedEffects>,
     ) -> Result<
         super::PreparedVariantOwnerSeed<crate::types::PreparedEffects>,
         AnalyzerExpressionError,
@@ -1751,34 +1753,77 @@ impl Analyzer<'_, '_, '_> {
         let ProjectNominalBody::Enum { variants } = declaration.body() else {
             return Err(AnalyzerExpressionError::rejected(owner));
         };
-        let substitutions = nominal_substitutions(declaration, expected_nominal)
-            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-        let mut cases = Vec::with_capacity(variants.len());
-        for (ordinal, variant) in variants.iter().enumerate() {
-            let ordinal = u32::try_from(ordinal).map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::AccountingOverflow)
-            })?;
-            cases.push(super::PreparedVariantCaseSeed::from_project(
-                ordinal,
-                variant,
-                |payload| {
-                    self.types
-                        .get(&payload)
-                        .map(|payload| substitutions.apply(payload))
-                        .ok_or_else(|| {
-                            AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::TypeResolutionFailed { owner: payload },
-                            )
-                        })
+        let source = super::expression_types::SourceTypePreparation::new(
+            &self.types,
+            &self
+                .staged_callables
+                .as_ref()
+                .ok_or_else(|| {
+                    AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::CheckedCallableCatalog,
+                    )
+                })?
+                .builder,
+            &self.topology,
+            work.clone(),
+        );
+        let mut metadata_work = work.clone();
+        let (graph, _) = self
+            .facts
+            .prepared_calls_mut()
+            .map_err(|error| AnalyzerExpressionError::fatal(error.into()))?
+            .effect_declarations_mut()
+            .map_err(|error| AnalyzerExpressionError::Call {
+                owner,
+                failure: super::calls::CallAnalysisFailure::Invariant(
+                    super::calls::CallAnalysisInvariant::Constraint(error),
+                ),
+            })?
+            .relation();
+        source
+            .with_nominal_type_arguments(
+                owner,
+                declaration,
+                expected_nominal,
+                graph,
+                |nominal, project| {
+                    use crate::types::TypeProjectionControl;
+                    use arcweft_lang_hir::symbol::nominal::ProjectNominalVariantPayload;
+                    // Admit every owned case/field record before its allocation.
+                    for variant in variants {
+                        metadata_work.visit_binding()?;
+                        if let ProjectNominalVariantPayload::Record(fields) = variant.payload() {
+                            for _ in fields {
+                                metadata_work.visit_binding()?;
+                            }
+                        }
+                    }
+                    let mut cases = Vec::with_capacity(variants.len());
+                    for (ordinal, variant) in variants.iter().enumerate() {
+                        let ordinal = u32::try_from(ordinal)
+                            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                        cases.push(super::PreparedVariantCaseSeed::from_project(
+                            ordinal,
+                            variant,
+                            &mut *project,
+                            |_| FinalSemanticAnalysisError::InvalidNominalOwner,
+                        )?);
+                    }
+                    super::PreparedVariantOwnerSeed::try_project(nominal, cases)
+                        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)
                 },
-                |_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidNominalOwner),
-            )?);
-        }
-        let seed = super::PreparedVariantOwnerSeed::try_project(expected_nominal.clone(), cases)
-            .ok_or_else(|| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidNominalOwner)
-            })?;
-        Ok(seed)
+            )
+            .map_err(|error| match error {
+                FinalSemanticAnalysisError::SourceTypeRetention {
+                    error:
+                        crate::final_analysis::SourceTypeRetentionFailure::Type(
+                            crate::types::TypeInstantiationError::TypeArgumentCount { .. }
+                            | crate::types::TypeInstantiationError::NominalDeclarationMismatch,
+                        ),
+                    ..
+                } => AnalyzerExpressionError::rejected(owner),
+                error => AnalyzerExpressionError::fatal(error),
+            })
     }
 
     fn check_expression_kind<E>(
@@ -1961,7 +2006,8 @@ impl Analyzer<'_, '_, '_> {
                     .into(),
                 );
             }
-            let (seed, ordinal) = self.resolve_short_variant(owner, expected, name, false)?;
+            let (seed, ordinal) =
+                self.resolve_short_variant(context.work(), owner, expected, name, false)?;
             (
                 expected.clone(),
                 seed,
@@ -4513,7 +4559,7 @@ impl Analyzer<'_, '_, '_> {
     }
 
     fn prepare_qualified_variant_select(
-        &self,
+        &mut self,
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
@@ -4575,7 +4621,7 @@ impl Analyzer<'_, '_, '_> {
                     _ => return Err(AnalyzerExpressionError::rejected(owner)),
                 };
                 let ty = TypeKind::ProjectNominal(nominal.clone());
-                let seed = self.prepare_project_variant_owner(owner, &nominal)?;
+                let seed = self.prepare_project_variant_owner(context.work(), owner, &nominal)?;
                 let ordinal = u32::try_from(ordinal).map_err(|_| {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::AccountingOverflow)
                 })?;
@@ -5084,7 +5130,8 @@ impl Analyzer<'_, '_, '_> {
         }))
     }
     pub(super) fn prepare_variant_expression_kind(
-        &self,
+        &mut self,
+        work: super::preparation_work::AnalyzerPreparationWork<'_>,
         owner: ExprId,
         expression: &HirExpr,
         expected: Option<&TypeKind<crate::types::PreparedEffects>>,
@@ -5137,7 +5184,7 @@ impl Analyzer<'_, '_, '_> {
                     ));
                 }
                 let (variant_owner, ordinal) =
-                    self.resolve_short_variant(owner, expected, name, constructor_head)?;
+                    self.resolve_short_variant(work, owner, expected, name, constructor_head)?;
                 super::PreparedVariantExpression::try_new(
                     super::PreparedExpressionShell::value(
                         expected.clone(),
@@ -5158,7 +5205,8 @@ impl Analyzer<'_, '_, '_> {
     }
 
     fn resolve_short_variant(
-        &self,
+        &mut self,
+        work: super::preparation_work::AnalyzerPreparationWork<'_>,
         owner: ExprId,
         expected: &TypeKind<crate::types::PreparedEffects>,
         name: &arcweft_lang_hir::leaf::HirName,
@@ -5172,7 +5220,7 @@ impl Analyzer<'_, '_, '_> {
     > {
         let seed = match expected {
             TypeKind::ProjectNominal(nominal) => {
-                self.prepare_project_variant_owner(owner, nominal)?
+                self.prepare_project_variant_owner(work, owner, nominal)?
             }
             TypeKind::CharacterNominal(nominal) => {
                 let variants = self

@@ -86,6 +86,91 @@ impl<'a> SourceTypePreparation<'a> {
         self.retain(owner, self.declared_type(annotation)?)
     }
 
+    /// One actual nominal application owns the argument index and one graph
+    /// edit for every declaration payload selected by the containing operation.
+    pub(super) fn with_nominal_type_arguments<T>(
+        &self,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
+        declaration: &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclaration,
+        nominal: &crate::types::ProjectNominalType<crate::types::PreparedEffects>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        operation: impl FnOnce(
+            crate::types::ProjectNominalType<crate::types::PreparedEffects>,
+            &mut dyn FnMut(
+                super::TypeId,
+            ) -> Result<
+                TypeKind<crate::types::PreparedEffects>,
+                super::FinalSemanticAnalysisError,
+            >,
+        ) -> Result<T, super::FinalSemanticAnalysisError>,
+    ) -> Result<T, super::FinalSemanticAnalysisError> {
+        use crate::final_analysis::FinalSemanticAnalysisError;
+        use crate::types::{
+            PreparedTypeArguments, PreparedTypeRetentionFailure, TypeProjectionControl,
+            TypeProjectionError,
+        };
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let source = self.owner(owner, &mut work)?;
+        let caller_formals = source
+            .declaration_formals_with_control(&mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        let formals = nominal
+            .declaration_formals_with_control(declaration, &mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        let scope = caller_formals.template_scope();
+        let arguments = PreparedTypeArguments::new(&formals, nominal.arguments(), scope, &mut work)
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_type_effect_projection(owner, error)
+            })?;
+        // Retain the owner's copy without remapping its operational term IDs.
+        work.visit_binding()?;
+        let mut retained = Vec::new();
+        for argument in nominal.arguments() {
+            work.visit_binding()?;
+            retained.push(
+                argument
+                    .retain_effects(scope, graph.read(), &mut work)
+                    .map_err(|error| match error {
+                        TypeProjectionError::Instantiation(error) => {
+                            FinalSemanticAnalysisError::source_type_projection(
+                                owner,
+                                TypeProjectionError::Instantiation(error),
+                            )
+                        }
+                        TypeProjectionError::Control(PreparedTypeRetentionFailure::Control(
+                            error,
+                        )) => error,
+                        TypeProjectionError::Control(PreparedTypeRetentionFailure::Effect(
+                            error,
+                        )) => FinalSemanticAnalysisError::from(
+                            crate::effect_row::prepared::PreparedEffectFailure::<
+                                FinalSemanticAnalysisError,
+                            >::Invariant(error),
+                        ),
+                    })?,
+            );
+        }
+        let retained = crate::types::ProjectNominalType::new(declaration.id().clone(), retained);
+        let mut edit = graph.edit_terms();
+        let result = operation(retained, &mut |annotation| {
+            let template = self
+                .declared_type(annotation)
+                .inspect_err(|_| edit.invalidate())?;
+            arguments
+                .project_in(template, &mut edit, &mut work)
+                .map_err(|error| {
+                    FinalSemanticAnalysisError::source_type_effect_projection(owner, error)
+                })
+        })?;
+        edit.commit().map_err(|error| {
+            FinalSemanticAnalysisError::from(crate::effect_row::prepared::PreparedEffectFailure::<
+                FinalSemanticAnalysisError,
+            >::Invariant(error))
+        })?;
+        Ok(result)
+    }
+
     pub(super) fn environment_variant(
         &self,
         owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,

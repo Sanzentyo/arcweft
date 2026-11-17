@@ -193,6 +193,21 @@ pub(crate) enum PreparedEffectFailure<E> {
     NonPointwiseObservation,
 }
 
+impl<E> PreparedEffectFailure<E> {
+    pub(crate) fn map_control<T>(self, map: impl FnOnce(E) -> T) -> PreparedEffectFailure<T> {
+        match self {
+            Self::Control(error) => PreparedEffectFailure::Control(map(error)),
+            Self::Invariant(error) => PreparedEffectFailure::Invariant(error),
+            Self::Row(error) => PreparedEffectFailure::Row(error),
+            Self::Declaration(error) => PreparedEffectFailure::Declaration(error),
+            Self::Unsatisfiable => PreparedEffectFailure::Unsatisfiable,
+            Self::NonPrincipal => PreparedEffectFailure::NonPrincipal,
+            Self::ObservationNotTotal => PreparedEffectFailure::ObservationNotTotal,
+            Self::NonPointwiseObservation => PreparedEffectFailure::NonPointwiseObservation,
+        }
+    }
+}
+
 struct Work<'a, C>(&'a mut C);
 impl<C: DecisionControl> DecisionControl for Work<'_, C> {
     type Error = PreparedEffectFailure<C::Error>;
