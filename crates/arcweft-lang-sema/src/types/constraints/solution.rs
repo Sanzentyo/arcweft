@@ -18,7 +18,7 @@ use super::super::{
 use super::super::{GenericConstParameterId, GenericTypeParameterId};
 use super::context::{CompletedParameterScope, TypeConstraintAccounting, TypeConstraintContext};
 use super::normalization::{
-    ConstraintClosedEffects, project_closed_operand, project_const_operand, project_type,
+    ConstraintClosedEffects, project_closed_operand, project_const_operand,
     validate_selected_call_self,
 };
 use super::{
@@ -271,6 +271,8 @@ impl TypeConstraintSolution {
         path: &ConstraintPath<D>,
         application: super::application::ConstraintApplicationId,
         closure: ConstraintClosurePolicy,
+        effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<super::KeyedConstraintProjection<D::Application, P>, TypeConstraintError> {
         let application =
@@ -287,11 +289,14 @@ impl TypeConstraintSolution {
             application,
             (closure == ConstraintClosurePolicy::ProjectionFuture)
                 .then_some(&self.effect_predicate),
+            effects,
+            graph,
             context,
         )?;
         if closure == ConstraintClosurePolicy::ProjectionFuture {
-            self.context
-                .validate_reified_future_type(value.value(), path, context)?;
+            self.context.validate_reified_future_type(&value, context)?;
+        } else {
+            validate_selected_call_self(value.value(), context)?;
         }
         Ok(super::KeyedConstraintProjection::new(
             key,
@@ -306,10 +311,14 @@ impl TypeConstraintSolution {
         ty: &ConstraintOperand<D>,
         path: &ConstraintPath<D>,
         application: super::application::ConstraintApplicationId,
+        effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedConstraintType, TypeConstraintError> {
         let owner = path.applications.require_application(application)?;
-        let value = self.context.reify_type(ty, path, owner, None, context)?;
+        let value = self
+            .context
+            .reify_type(ty, path, owner, None, effects, graph, context)?;
         Ok(CompletedConstraintType::new(
             value,
             Arc::clone(&self.context),
@@ -320,14 +329,15 @@ impl TypeConstraintSolution {
     pub(super) fn complete_application<A, D>(
         path: &ConstraintPath<D>,
         application: super::application::ConstraintApplicationId,
+        effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
     {
-        let effects = ConstraintClosedEffects::for_path(path, context)?;
-        Self::complete_application_with_effects(path, application, &effects, context)
+        Self::complete_application_with_effects(path, application, effects, graph, context)
     }
 
     /// Seal one application from the immutable effect completion shared by
@@ -336,6 +346,7 @@ impl TypeConstraintSolution {
         path: &ConstraintPath<D>,
         application: super::application::ConstraintApplicationId,
         effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
     where
@@ -354,6 +365,7 @@ impl TypeConstraintSolution {
             path,
             application,
             effects,
+            graph,
             CompletedSolutionInput::ActivePath,
             context,
         )
@@ -363,6 +375,12 @@ impl TypeConstraintSolution {
     pub(crate) fn test_seal_completed<A, D, B>(
         bindings: B,
         path: &mut ConstraintPath<D>,
+        original: &crate::effect_row::prepared::BoundScopedEffectCompletion,
+        inputs: &[(
+            &crate::effect_row::prepared::PreparedEffectUnknownRef,
+            &EffectRow,
+        )],
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
     where
@@ -370,7 +388,15 @@ impl TypeConstraintSolution {
         D: ConstraintDomain,
         B: IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
     {
-        Self::test_seal_completed_with_consts(bindings, std::iter::empty(), path, context)
+        Self::test_seal_completed_with_consts(
+            bindings,
+            std::iter::empty(),
+            path,
+            original,
+            inputs,
+            graph,
+            context,
+        )
     }
 
     #[cfg(test)]
@@ -378,6 +404,12 @@ impl TypeConstraintSolution {
         bindings: B,
         const_bindings: C,
         path: &mut ConstraintPath<D>,
+        original: &crate::effect_row::prepared::BoundScopedEffectCompletion,
+        inputs: &[(
+            &crate::effect_row::prepared::PreparedEffectUnknownRef,
+            &EffectRow,
+        )],
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
     where
@@ -390,6 +422,7 @@ impl TypeConstraintSolution {
         let application = applications
             .require_application(path.root_id())
             .expect("the fixture path retains its actual root");
+        let operand_scope = Arc::new(context.capture_lexical_scope()?);
         let bindings = bindings
             .into_iter()
             .map(|(parameter, value)| {
@@ -397,8 +430,16 @@ impl TypeConstraintSolution {
                     .parameters()
                     .type_reference(&parameter.clone().into())
                     .unwrap_or(GenericTypeReference::Free(parameter));
+                let prepared = value
+                    .prepare_effects(operand_scope.shape(), context)
+                    .map_err(|error| match error {
+                        crate::types::TypeProjectionError::Control(error) => error,
+                        crate::types::TypeProjectionError::Instantiation(error) => {
+                            TypeConstraintInvariant::Instantiation(error).into()
+                        }
+                    })?;
                 let value = context
-                    .open_template_type(&value, path, application.id())
+                    .open_template_type(&prepared, path, application.id(), graph)
                     .map_err(|error| {
                         map_completed_self_error(
                             error,
@@ -439,7 +480,6 @@ impl TypeConstraintSolution {
         }
         // Claimed-completed seeds are templates of this explicitly supplied
         // application contract, rather than values of a ground source Γ.
-        let operand_scope = Arc::new(context.capture_lexical_scope()?);
         let owner = applications.require_application_owner(application.id())?;
         path.bindings = bindings
             .into_iter()
@@ -459,11 +499,12 @@ impl TypeConstraintSolution {
                 )
             })
             .collect();
-        let effects = ConstraintClosedEffects::for_path(path, context)?;
+        let effects = ConstraintClosedEffects::for_path(path, original, inputs, graph, context)?;
         Self::seal_application(
             path,
             application,
             &effects,
+            graph.read(),
             CompletedSolutionInput::ClaimedCompleted,
             context,
         )
@@ -473,6 +514,7 @@ impl TypeConstraintSolution {
         path: &ConstraintPath<D>,
         application: &super::application::ConstraintApplicationScope<D>,
         effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         input: CompletedSolutionInput,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
@@ -563,6 +605,7 @@ impl TypeConstraintSolution {
                     path,
                     ConstraintClosurePolicy::SolutionCompletion,
                     effects,
+                    graph,
                     context,
                 )
                 .map_err(|error| {
@@ -574,10 +617,19 @@ impl TypeConstraintSolution {
                         Some(parameter.clone().into()),
                     ));
                 }
-                validate_selected_call_self(projected.value(), context).map_err(|error| {
+                let reified = generic_context.reify_type(
+                    &projected,
+                    path,
+                    application,
+                    None,
+                    effects,
+                    graph,
+                    context,
+                )?;
+                validate_selected_call_self(reified.value(), context).map_err(|error| {
                     map_completed_self_error(error, parameter.clone().into(), input)
                 })?;
-                generic_context.reify_type(&projected, path, application, None, context)
+                Ok(reified)
             })?;
             bindings.push((declaration, reified));
         }
@@ -830,6 +882,14 @@ impl TypeConstraintSolution {
             let value = self
                 .context
                 .reopen_type(&row.value, &path, application, context)?;
+            let value = value
+                .prepare_effects(operand_scope.shape(), context)
+                .map_err(|error| match error {
+                    crate::types::TypeProjectionError::Control(error) => error,
+                    crate::types::TypeProjectionError::Instantiation(error) => {
+                        TypeConstraintInvariant::Instantiation(error).into()
+                    }
+                })?;
             context.restore_completed_binding(
                 &mut path,
                 application.id(),
@@ -1220,6 +1280,7 @@ mod malformed_completed_tests {
             .collect::<Vec<_>>();
         let scope = TypeConstraintParameterScope::new(parameters).expect("unique test scope");
         let cancellation = AtomicBool::new(false);
+        let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
         let (mut context, mut path) = super::super::test_support::ConstraintTestSetup::<
             LocalConstraintAccounting<'_>,
             NoConstraintClient,
@@ -1228,8 +1289,24 @@ mod malformed_completed_tests {
             &cancellation,
             scope,
         )
-        .into_path();
-        TypeConstraintSolution::test_seal_completed(rows, &mut path, &mut context)
+        .into_path(&mut graph);
+        let receipt = path.prepare_effect_constraint(&mut graph, &mut context)?;
+        // This malformed-row fixture supplies only scalar values and has no
+        // effect queries or Future inputs. Preserve its actual original C.
+        let frozen = graph
+            .read()
+            .freeze_scoped(&[], &[], &[&receipt], &mut context)?;
+        let original = graph
+            .bind_original_scoped(&frozen, &mut context)?
+            .freeze(graph.read(), &mut context)?;
+        TypeConstraintSolution::test_seal_completed(
+            rows,
+            &mut path,
+            &original,
+            &[],
+            &mut graph,
+            &mut context,
+        )
     }
 
     #[test]

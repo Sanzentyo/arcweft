@@ -18,7 +18,6 @@ use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::hints::SourceProbeTerm;
 use super::normalization::{
     ConstraintClosedEffects, project_closed_operand, project_closed_type, project_type,
-    validate_selected_call_self,
 };
 use super::{
     CheckedConstraintSourceProjection, ClosedMaterializationSubmission, ConstraintAcceptance,
@@ -2607,6 +2606,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 path,
                 application,
                 &effects,
+                graph.read(),
                 context,
             )?);
             let projections =
@@ -2684,9 +2684,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             let value =
                 project_closed_operand(opened.view(), path, policy, effects, graph.read(), context)
                     .map_err(projection_error)?;
-            if policy != ConstraintClosurePolicy::ProjectionFuture {
-                validate_selected_call_self(value.value(), context).map_err(projection_error)?;
-            }
             let input = request
                 .input
                 .as_ref()
@@ -2701,7 +2698,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     )
                     .map_err(projection_error)?;
                     solution
-                        .reify_projection_input(&projected, path, application, context)
+                        .reify_projection_input(
+                            &projected,
+                            path,
+                            application,
+                            effects,
+                            graph.read(),
+                            context,
+                        )
                         .map_err(projection_error)
                 })
                 .transpose()?;
@@ -2713,6 +2717,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         path,
                         application,
                         policy,
+                        effects,
+                        graph.read(),
                         context,
                     )
                     .map_err(projection_error)?

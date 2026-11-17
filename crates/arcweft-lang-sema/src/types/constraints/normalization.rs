@@ -504,7 +504,7 @@ impl<D: ConstraintDomain> fmt::Debug for super::MaterializationImmediateFailure<
 }
 
 pub(super) fn validate_selected_call_self<A, D>(
-    value: &TypeKind<PreparedEffects>,
+    value: &TypeKind,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<(), TypeConstraintError>
 where

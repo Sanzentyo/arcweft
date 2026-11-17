@@ -11,6 +11,9 @@ use crate::{
 };
 use std::{cell::RefCell, collections::BTreeSet};
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Copy)]
 enum Direction<'a> {
     Reify,
@@ -72,11 +75,20 @@ impl CompletedGenericContext {
         path: &ConstraintPath<D>,
         application: &ConstraintApplicationScope<D>,
         retained_predicate: Option<&CompletedValue<EffectPredicate>>,
+        effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<TypeKind>, TypeConstraintError> {
+        effects.require_path(path)?;
+        path.projection_view()
+            .admit_operand(ty.view(), graph, context)?;
         context.with_original_scope(ty.scope().clone(), |context| {
+            // Reification moves references, so it consumes the algebra value
+            // produced by this exact original completion, never a prepared
+            // term interpreted as an already canonical function contract.
+            let canonical = effects.canonicalize(ty.value(), ty.scope().shape(), context)?;
             let mapping = self.reference_map(application, context, Direction::Reify)?;
-            let mut value = mapping.map_type(ty.value(), path, application, context)?;
+            let mut value = mapping.map_type(&canonical, path, application, context)?;
             mapping.retain_result_predicate(&mut value, retained_predicate, context)?;
             Ok(mapping.finish(value))
         })
@@ -221,22 +233,98 @@ impl CompletedGenericContext {
         D: ConstraintDomain,
     >(
         &self,
-        ty: &TypeKind,
-        path: &ConstraintPath<D>,
+        ty: &CompletedValue<TypeKind>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        context.with_original_scope(self.value_lexical_scope().clone(), |context| {
-            let projected = project_type(
-                ty,
-                path.projection_view(),
-                ConstraintClosurePolicy::ProjectionFuture,
-                context,
-            )?;
-            if projected.value != *ty || !projected.remaining.is_empty() {
+        // These references already inhabit the completed value's scope. They
+        // must not be looked up or substituted in the active inference path.
+        context.enter_node()?;
+        let mut pending = vec![ty.value()];
+        while let Some(value) = pending.pop() {
+            context.enter_node()?;
+            let shape = value.constraint_shape();
+            if matches!(shape, TypeConstraintShape::Unresolved(_)) {
                 return Err(TypeConstraintRejection::UnresolvedType.into());
             }
-            Ok(())
-        })
+            for child in shape.children() {
+                context.enter_node()?;
+                pending.push(child);
+            }
+        }
+        let projected = super::super::map_term_with_control(
+            ty.value(),
+            self.value_scope(),
+            self.value_scope(),
+            1,
+            context,
+            &|reference, source, _, _, _| {
+                ty.admit_parameter(&reference.clone().into(), source)
+                    .map_err(TypeProjectionError::Control)?;
+                Ok(TypeKind::GenericParam(reference.clone()))
+            },
+            &|length, source, _, _, _| {
+                match length {
+                    ArrayLength::Generic(reference) => {
+                        ty.admit_parameter(&reference.clone().into(), source)
+                            .map_err(TypeProjectionError::Control)?;
+                    }
+                    ArrayLength::Const(_) => {}
+                    ArrayLength::Error(_) | ArrayLength::Inferred => {
+                        return Err(TypeProjectionError::Control(
+                            TypeConstraintRejection::UnresolvedType.into(),
+                        ));
+                    }
+                }
+                Ok(length.clone())
+            },
+            &|row, source, _, depth, context| {
+                super::super::map_effects_with_control(row, depth, context, &|reference, _| {
+                    ty.admit_parameter(&reference.clone().into(), source)
+                        .map_err(TypeProjectionError::Control)?;
+                    Ok(EffectRow::open(EffectSet::new(), reference.clone()))
+                })
+            },
+        )
+        .map_err(fold_error)?;
+        if projected != *ty.value() {
+            return Err(TypeConstraintRejection::UnresolvedType.into());
+        }
+        Ok(())
+    }
+}
+
+impl<T> CompletedValue<T> {
+    /// Bound ports belong to this exact occurrence; Free ports need this
+    /// value's retained capture. No completed value may retain an inference id.
+    fn admit_parameter(
+        &self,
+        parameter: &ConstraintGenericParameterId,
+        scope: &GenericScope,
+    ) -> Result<(), TypeConstraintError> {
+        match parameter {
+            ConstraintGenericParameterId::Type(reference) => match reference {
+                GenericTypeReference::Bound(bound) => {
+                    scope.bound_type(bound.depth(), bound.slot())?;
+                }
+                GenericTypeReference::Free(_) if self.captures().contains(parameter) => {}
+                _ => return Err(references::type_out_of_scope(reference)),
+            },
+            ConstraintGenericParameterId::Const(reference) => match reference {
+                GenericConstReference::Bound(bound) => {
+                    scope.bound_const(bound.depth(), bound.slot())?;
+                }
+                GenericConstReference::Free(_) if self.captures().contains(parameter) => {}
+                _ => return Err(references::const_out_of_scope(reference)),
+            },
+            ConstraintGenericParameterId::Effect(reference) => match reference {
+                GenericEffectReference::Bound(bound) => {
+                    scope.bound_effect(bound.depth(), bound.slot())?;
+                }
+                GenericEffectReference::Free(_) if self.captures().contains(parameter) => {}
+                _ => return Err(references::effect_out_of_scope(reference)),
+            },
+        }
+        Ok(())
     }
 }
 
