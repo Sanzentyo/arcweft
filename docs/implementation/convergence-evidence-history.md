@@ -18045,3 +18045,17 @@ Read viewは、callerが認可した完全なΓとD／Rを元issuerに結ぶimmu
 Supersedes: 現状一覧で累積していたopening・Γ admission・実適用の細部説明を、現在のownerと成立範囲へまとめ直した。旧記述を別の現状一覧として残さず、この履歴と各原本のfull SHA・失敗・実測を保持する。下位freezeの実装と、未達のfrontend joint completionを区別し、function-scheme contractの具体的な未移行も明示した。これは既存compile診断に基づく移行範囲の明確化であり、完了機能を再開する変更ではない。Generic Match等の受入・公開済み状態を維持し、現状一覧は[current-status.md](current-status.md)だけとする。
 
 原本 [task-prepared-scoped-constraints-checkpoint.raw.zip](acceptance-evidence/task-prepared-scoped-constraints-checkpoint.raw.zip) は17 entries、ZIP 288863 bytes、SHA-256 `16bd2eaa9780d90683c17cf63695eee8b3eb542952684bdb9e6646cf30b7cb06`。2回の入力・失敗ログ・fmt・公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Source scoped effects checkpoint
+
+2026-11-18。基点 `8bf7c4de6f905ad26ff1130689aaeeb959396cb0`、移行Source `c8809612d5cde1f5c380a8108757a6f54f198bd5`。3 Rust path、333追加／0削除、物理333 LOC増。既存mainへWIP commit・非force pushし、最終3入力と公開blobのbyte SHA-256を照合した。公開時のtracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+ConstraintPathの新しいprepared操作は、lineageが保持する実frameの全effect slotと、prepared環境の全Free rigid入力をΓへ入れる。未使用のframe／captureも維持し、Rのobserved supportからΓを再構成しない。DはOriginalProducerContextの宣言domainだけを借り、候補Rやcandidate contractをsourceの前提にしない。R中のinference参照は実application ownerが保持する関数適用へ移し、inference keyを全称row入力へ昇格しない。元graphのmetadata transactionと元workの中でdomainのbounded copy・scope admissionまで行い、元branchを書き換えない。Domainの課金は既存type projection visitorを使い、下位のprivate encoderやfieldを公開しない。返却値は下位freezeに渡す元の数学的なconstraintであり、canonical解・checked identity・公開permitではない。Root／forestの最終completionとclosed-header consumerはまだ切り替わっていない。
+
+新規fixtureは3本、268物理LOC。実source domainがRの成立条件を決めること、全ambient slotと未使用rigid入力の保持、inference変数が実Γ依存関数となり全称入力へ混入しないこと、準備時のcurrent frameが同形の別frameでもretained frameを使うこと、取消し時のbranch／graph／frame不変性を対象にする。Library／test targetはコンパイル失敗し、新fixtureのcompile成立・実行成功は主張せず、PASSへ加算しない。Dev01のlocked Sema test target／全feature checkは終了101、library 532エラー・26警告、lib test 1,507エラー・45警告。Private encoderへの参照と新fixtureの配列型推論を修正した最終dev02は終了101、library 531エラー・26警告、lib test 1,505エラー・45警告。2回のowner fmt checkは終了0。最終新fixture pathへのdiagnostic mentionは0件だが、targetのcompile成立を示さない。Terminal summaryを件数のauthorityとする。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。公開blobとの照合によるcommit前証拠の再利用で、commit後の再実行ではない。
+
+所有レビューは3 pathのbase／現行LOC・bytes・分類・inline test LOCをJSONへ保持した。63 LOCのscoped childは既存path／source／application／workを調停し、第二の型grammarやsolverを持たない。親effects.rsはmodule宣言だけを加え、fixtureは同責務のchildへ置いた。Cargo依存・public facade・layer方向・I/O・unsafe・codec・version・budget上限は不変。既存dependency graph証拠を再利用し、全体scannerは未実行。
+
+Supersedes: 現状一覧の「下位freezeがΓ／D／Rを保持する」を、今回加えた実source path側のΓ／D／R準備と、既存freezeの保持に分けて更新した。Root／forest最終経路への接続、局所∀やcanonical最終化まで解消したとは扱わない。現状一覧は[current-status.md](current-status.md)だけとし、過去の失敗・実測・full SHA・原本とGeneric Match等の受入・公開済み状態を保持する。
+
+原本 [task-source-scoped-effects-checkpoint.raw.zip](acceptance-evidence/task-source-scoped-effects-checkpoint.raw.zip) は17 entries、ZIP 289216 bytes、SHA-256 `73c4f41093a7d461c556e97c1a4140bcfe609dd0453dbf4a2acaed661dc4d99c`。2回の入力・失敗ログ・fmt・公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
