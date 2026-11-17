@@ -18207,3 +18207,21 @@ Locked Sema／test target／全feature checkは4回とも終了101。Dev01はlib
 Supersedes: 現状一覧の「旧composite eager acceptance」を、移行した整合shapeと、具体的に旧APIエラーが残るByte collection／AgentValueへ分けた。訂正理由は条件付き関係準備と由来付きadmissionの実装であり、未検証の移行を完了へ格上げしない。Generic Match等の既受入項目、以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
 
 原本 [task-aligned-relation-preparation-checkpoint.raw.zip](acceptance-evidence/task-aligned-relation-preparation-checkpoint.raw.zip) は31 entries、585,935 bytes、SHA-256 `a297e34a81f8c140b843198250d7e17a0444a1a376dea54f41fee1582e889de5`。4回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Cross shape preparation checkpoint
+
+2026-11-18。基点 `2f0abd78cd2db84bc50c7c0577d3c13011855021`、移行Source `28995dd29d3b54e596e31b9b2ee7c289d3a4b5f0`。12 Rust path、629追加／91削除、物理538 LOC増。ユーザー指定の途中WIPとしてcommit・非force pushし、最終12入力と公開blobのbyte SHA-256を照合した。公開時tracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+Byte collection／AgentValueに残っていたeager seal・旧for_branch・prepared値へのcanonical専用accepts_withを削除した。Byte collectionは実要素portと閉じたU8期待値の同値条件を準備する。AgentValueはcanonicalと同じmembership algebraを使い、実child・alias・template bindingをたどる。Map keyのString比較とChoiceは逆方向も元equation・方向・sideを保持する。通常のNever subtypingとnested membershipの拒否を区別し、固定template変数は具体化しない。Deferred cycleの後にあるsource errorの機会と最終cycle pruningを保持する。
+
+ClosedScalarはgeneric portを持たない既存grammar leafのoperand由来で、構築前に課金し実occurrence frameを保持する。Source context・receipt・Free権限・偽のΓは作らず、child／length投影も拒否する。TypeLeaf.rebuildを唯一のscalar形状constructorとして利用する。Test専用source-context helperもこのsourceを持たない役割を拒否する。Minimum solving・本体の再準備・canonical成功shimは加えていない。
+
+新規7 fixture、test分類pathの物理増分366 LOC。Byteの厳密要素と対象family、AgentValueのcontainer／除外、実templateの要素推論、両方向のChoice equation key、逆向きMap keyのChoice由来、nested bottom／固定template拒否、source Free権限なしでのscalar frame保持を対象とする。旧scalar／Ref assertionと予算を維持する。コンパイル未完了のためfixtureのcompile成立・実行成功を主張せず、PASSへ加算しない。
+
+Dev01は新fixtureの括弧誤りでfmt apply／checkが終了1、Cargo開始前に停止した。入力manifest・Cargo結果を生成した回とは数えない。修正後のlocked Sema／test target／全feature checkはdev02／dev03とも終了101。Dev02はlibrary 504エラー・26警告、lib test 1,502エラー・45警告。未使用importの除去とfixtureのchecked index変換後の最終dev03はlibrary 504エラー・25警告、lib test 1,502エラー・44警告。修正後2回のowner fmt checkは終了0。変更production pathと新fixture範囲へのprimary diagnostic位置は0件だが、この限定reviewは全targetのcompile・動作成功を証明しない。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。Commit前入力との公開blob照合による再利用で、commit後のtest再実行ではない。全体cargo cleanは02:09実施済みで繰り返していない。
+
+全12 pathのbase／現行LOC・bytes・分類・inline testを原本へ記録し、538 LOC増をowner内でレビューした。Value membershipは166 LOC／6,570 bytesで既存言語規則と候補状態を所有し、binding_planは1,193 LOC／45,663 bytes。Scalarの構築・由来権限はoperand側に保持する。Compatibilityの736 LOCのinline testをproductionだけの増分とは扱わない。新resolver／catalogや並行authority、Cargo依存・feature・layer・I/O・unsafe・codec／version・既定予算の変更はない。既存resolved graph／推移的reverse dependency証拠を再利用し、scannerは未実行。
+
+Supersedes: 現状一覧から「Byte collection／AgentValueの旧確定reader」を削除した。訂正理由は上記readerの実削除と実portによる条件付き準備への置換であり、Fn局所∀／guarded header、最終transaction・solution caller、frontend public switchやbody一回準備の受入まで達成したとは扱わない。Generic Match等の既受入項目と以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
+
+原本 [task-cross-shape-preparation-checkpoint.raw.zip](acceptance-evidence/task-cross-shape-preparation-checkpoint.raw.zip) は23 entries、305,693 bytes、SHA-256 `8001bf3bc556020a9b5ce32fdd1d46295529d7d742c7e49e95fd1878dc969250`。Fmtのみの停止とCargoを実行した2回の入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
