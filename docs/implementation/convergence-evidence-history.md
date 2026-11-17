@@ -18101,3 +18101,23 @@ Supersedes: 現状一覧の効果代数の「検証済み」は旧Sourceの実�
 ## Workspace clean 2026-11-18
 
 2026-11-18 02:09:42–02:09:43 JST、Source `76d9f9d451c6c5cc5d32114d3bd9d24885d13014`。ユーザーの回答「cargo clean で全体を削除する」に従い、既存mainのworkspace rootで全体の `cargo clean` を実行し、終了0、2,123 files／424.0 MiBを削除した。Cargo metadataで実targetが `D:\git\arcweft\target` と一致し、Cargo／rustcが停止していることを実行前に確認した。実行後のtarget不存在、HEAD・tracked差分・未追跡inventoryの不変を確認した。既存の未追跡 `%SystemDrive%/` は保持した。過去のclean実測とは別の今回の実施記録であり、以前のSHA・削除量・検証結果を書き換えない。この操作後のbuild／testは未実行。既受入機能の状態は変更しない。
+
+## Original scoped binding checkpoint
+
+2026-11-18。基点 `f820ae9183455a262218bab105eb5b0d9e43d3cf`、移行Source `64881509ec1c073810f818d158dfe212b5ad6bb1`。7 Rust path、686追加／1削除、物理685 LOC増。既存mainへWIP commit・非force pushし、最終7入力と公開blobのbyte SHA-256を照合した。公開時のtracked差分0件、既存の未追跡 `%SystemDrive%/` を保持した。
+
+PreparedEffectScopedBindingは元のScopedEffectCompletionを同じlive推論関数へ結び、principal条件と全local関数のextensionalな一致条件を一つ保持する。元の未制約関数を後続consumerの要求に合わせて大きい解へ選び直すことは許さない。一致条件は出現した引数だけでなく、元の宣言済み全dependency signature上で全称化する。Captured inference keyも関数のformal引数として保持するが、source Γのraw inference rowとしては引き続き拒否する。仮のΓ／function／source lineageを作らず、scalar principalに出力関数を要求しない。
+
+Futureは同じlive関数identityへ再接続し、Namedは元issuer／immutable headerを使う。別issuer、消えたunknown、元immutable definitionと違うsnapshot、部分specializeされたsourceをoriginal identityとして扱わない。Arc identityはこのimmutable provenanceの認証に使い、semantic equalityの証明には使わない。原本relationの条件付きsolver／support／dependency／import lowering・独立replayを再利用する。準備は元workを使うcheckpointで包み、失敗時は部分term／functionをrollbackし、消費workを戻さない。
+
+Bindingはmove-onlyで、全receiptを一括freezeするときに消費する。元snapshotが保持したquery portを、同じissued term identityで保持し、sourceの再走査・再準備や後続useからの入力追加をしない。Live graphへcandidateのobligationを直接追加しない。Original forestは元Γ／D／Rのfreeze後にこのbindingを作成・freezeしてから既存final validatorへ渡す。既存final validatorはまだConstraintClosedEffects専用で、型不整合が具体的に残る。その条件やscope・equationの確認を削除／迂回しない。このcutを最終validator、closed header、canonical型投影／nominal sealやfrontend本体一回準備の受入とは扱わない。
+
+新規fixtureは9本、451物理LOC（core 367、実application owner 84）。出力なしの成立／不成立、元最小解と単なる成立解の区別、未使用を含む全引数の全称化、同じFutureへの後発actual row／label、foreign・stale・specialized source拒否、実測した全work枯渇prefixでのrollback、元query portとsibling分離、一括freezeのforeign／stale拒否と全枯渇prefix、および実際に発行したcaptured inference引数のscopeを対象にする。Library／test targetはコンパイル未完了で、新fixtureのcompile成立・実行成功は主張せず、PASSへ加算しない。Assertion・coverage・production budgetを弱めていない。
+
+Locked Sema test target／全feature checkは2回を実行し、どちらも終了101。Dev01はlibrary 532エラー・26警告、lib test 1,511エラー・45警告。新fixtureの存在しないpure constructorとretained_termsのtuple比較を修正した最終dev02はlibrary 532エラー・26警告、lib test 1,509エラー・45警告。2回のowner fmt checkは終了0。最終の新bindingと追加application fixture行へのprimary diagnostic mentionは0件だが、全targetのcompile成立・test実行を証明しない。件数は原本のterminal summaryをauthorityとする。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。公開blobとの照合によるcommit前証拠の再利用で、commit後の再実行ではない。今回のcheckは2026-11-18 02:09の全体cargo clean後で、cleanは繰り返していない。
+
+所有reviewは7 pathのbase／現行LOC・bytes・分類・inline test LOCを原本JSONへ保持した。214 LOCのcompletion/bindingは元関数への条件付きattachmentと一括freeze、functionsは実unknown handleのrole付き復元、original forestは候補の所有を担う。新しい型grammar、別resolver、canonical成功shim、広いpublic facadeを増やさない。Cargo依存・layer方向・I/O・unsafe・codec・versionは不変で、既存のresolved Cargo graph／推移的reverse dependency証拠を再利用する。全体scannerは未実行。
+
+Supersedes: 現状一覧の関数・条件別の実装経緯を、元sourceから同じ推論identityへ結ぶ現在の条件付きownerと、まだ型不整合の最終validator／headerへ整理した。訂正理由は、principal importだけでなくextensionalな元identityとの接続が実装されたためである。最終受入へ格上げせず、Generic Match等の既受入項目・過去の実測・full SHAを未完了へ戻さない。現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-original-scoped-binding-checkpoint.raw.zip](acceptance-evidence/task-original-scoped-binding-checkpoint.raw.zip) は19 entries、ZIP 297522 bytes、SHA-256 `019d5dfcfd1b7f02a541305ef98240f864d5e76b880f3569c39ca9de9b92d327`。2回のCargo入力・失敗ログ・fmt、runner／archive script、公開照合・stage／所有review・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
