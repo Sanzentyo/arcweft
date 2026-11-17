@@ -17796,3 +17796,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: source pattern／variantの完成型依存を上記の保持へ移した。現状行に積み上がったcheckpoint順の説明と未完了の重複表現は、現在の型保持と未接続境界へ整理した。訂正前のfull SHA・実測・原本は保持し、Generic Match等の既受入を戻さない。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-prepared-pattern-variants-checkpoint.raw.zip](acceptance-evidence/task-prepared-pattern-variants-checkpoint.raw.zip) は7 entries、ZIP 68214 bytes、SHA-256 `070da5726e39792a204f821b5df29c9b005494531a39a20e686888afa9738528`。入力・実行ログ・fmt・公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+## Source type retention migration checkpoint
+
+2026-11-17。基点 `d82656817f72fcee95876df29dbb6eadc5f78829`、移行Source `39cfca1643fd86b565d6f5762536c4f24ca0ad67`。12 Rust path、446追加／96削除を既存mainへ途中commit・非force pushし、全12検証入力のSHA-256と公開blobのbyte hashを照合した。途中commitの正常動作を必須としないユーザー指示による未受入checkpointで、未追跡 `%SystemDrive%/` を保持した。
+
+- path値・callのreceiver／contextual引数・closure annotationを、認証済みsource ownerの実template scopeと既存work loanによるcanonical→prepared保持へ接続した。欠落annotation ownerは型解決失敗として返す。保持は既存の共通type foldで行い、Unknown行をpureへ変換せず、候補へのadmission・body準備・効果解決・digest発行を行わない。
+- qualified環境variantのownerと全payloadを同じcontrolで保持するfactoryを接続した。ownerの二つの所有copy、case／field metadata、field型、宣言binderの構築を元workへ課金する。record payload構築の既存grammarもdomainを共有し、stable identityのsealはcanonical側に限る。source owner認証の5種の失敗は専用の公開errorで保持し、元のbudget／cancellation abortを差し替えない。これは公開error APIの追加で、逆依存compileは未実行である。
+- callerのFree T、入れ子関数のBound行、未注釈Unknown行、元work上限／cancelの保持を確認するfixtureを1件追加した。test targetのcompile・実行は未確認で、成功数へ加算しない。型保持はΓのadmissionではなく、escaped参照の受理やprepared型の意味的同一性を保証しない。
+- locked Sema library／全feature checkはdev01が終了101・592エラー・28警告。新規errorの内部型参照とrecord payloadのdomain制約を修正したdev02も終了101・586エラー・28警告。最終12入力と公開blobの照合に基づく実行証拠の再利用で、commit後の再実行ではない。owner fmt checkは終了0。nextest・doctest・test target・Clippy・逆依存・workspace／構造gateは未実行。件数差を品質や受入の指標にしない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- 所有レビューでは、sourceの認証とスコープを既存source owner、workを既存loan、環境caseの構築を既存variant seed、完成identityをcanonical sealへ置いた。成長350 LOCには新fixtureと公開errorが含まれる。新しいtype walker・graph／予約の複製・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更はない。静的レビューを実行成功として扱わない。
+- Supersedes: source annotation／環境値を直接prepared consumerへ渡していた箇所を、上記の制御付き保持へ移した。現状行の前checkpoint説明は今回の接続範囲へ置換し、未接続のΓ／relation／joint sealを完了扱いにしない。過去の失敗・full SHA・実測・原本とGeneric Match等の既受入は保持する。現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-source-type-retention-checkpoint.raw.zip](acceptance-evidence/task-source-type-retention-checkpoint.raw.zip) は10 entries、ZIP 130652 bytes、SHA-256 `9072b687a5184ef984d47dc76356ecc99a634d02f1c780fc7098c7411bd19cac`。途中・最終入力とログ・fmt・公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
