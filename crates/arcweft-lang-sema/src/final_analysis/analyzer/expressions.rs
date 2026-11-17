@@ -3371,7 +3371,8 @@ impl Analyzer<'_, '_, '_> {
                         (Some(annotated), _) => annotated,
                         (None, Some(contextual)) => contextual.clone(),
                         (None, None) => self
-                            .pattern_type_hint(module, parameter.pattern())
+                            .pattern_type_hint(context, module, parameter.pattern())
+                            .map_err(AnalyzerExpressionError::fatal)?
                             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?,
                     };
                     self.seed_contextual_pattern_locals(module, parameter.pattern(), &parameter_ty)
@@ -5728,9 +5729,9 @@ impl Analyzer<'_, '_, '_> {
                         }
                         error => AnalyzerExpressionError::fatal(error),
                     })?;
-                this.seed_local_types(Some(candidate))
-                    .map_err(AnalyzerExpressionError::fatal)?;
                 let child_context = context.child_candidate(authority);
+                this.seed_local_types(&child_context, Some(candidate))
+                    .map_err(AnalyzerExpressionError::fatal)?;
                 let result = this.evaluate_expression_with_expectation(
                     &child_context,
                     candidate,

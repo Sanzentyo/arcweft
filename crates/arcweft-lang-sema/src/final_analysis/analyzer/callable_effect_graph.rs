@@ -962,7 +962,6 @@ mod tests {
         )
         .unwrap();
         analyzer.resolve_region_types(None).unwrap();
-        analyzer.seed_local_types(None).unwrap();
         let staged = analyzer.stage_checked_callables().unwrap();
         let graph = analyzer.facts.take_prepared_calls().unwrap();
         (staged, graph)

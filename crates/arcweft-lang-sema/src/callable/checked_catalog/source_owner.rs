@@ -144,7 +144,7 @@ impl CheckedConstraintSourceOwner {
     fn admit(
         authority: CheckedCallableAuthorityLease,
         topology: &Arc<HirProjectEvaluationTopology>,
-        expression: ExprId,
+        owner: HirSemanticPathOwnerId,
         declaration_record: impl FnOnce(
             &CallableDeclarationKey,
         ) -> Result<
@@ -156,7 +156,7 @@ impl CheckedConstraintSourceOwner {
             return Err(CheckedConstraintSourceOwnerError::GenerationMismatch);
         }
         let location = topology
-            .semantic_path(HirSemanticPathOwnerId::Expression(expression))
+            .semantic_path(owner)
             .map_err(|_| CheckedConstraintSourceOwnerError::SourceIdentityMismatch)?
             .ok_or(CheckedConstraintSourceOwnerError::SourceIdentityMismatch)?;
         let contract = match location.root() {
@@ -192,7 +192,7 @@ impl CheckedCallableCatalogBuilder {
     pub(crate) fn constraint_source_owner(
         &self,
         topology: &Arc<HirProjectEvaluationTopology>,
-        expression: ExprId,
+        owner: impl Into<HirSemanticPathOwnerId>,
     ) -> Result<CheckedConstraintSourceOwner, CheckedConstraintSourceOwnerError> {
         CheckedConstraintSourceOwner::admit(
             CheckedCallableAuthorityLease {
@@ -200,7 +200,7 @@ impl CheckedCallableCatalogBuilder {
                 registered: self.registered.clone(),
             },
             topology,
-            expression,
+            owner.into(),
             |declaration| {
                 let pending = self
                     .pending_by_candidate(&CallableCandidateId::Project(declaration.clone()))
@@ -215,12 +215,12 @@ impl CheckedCallableCatalog {
     pub(crate) fn constraint_source_owner(
         &self,
         topology: &Arc<HirProjectEvaluationTopology>,
-        expression: ExprId,
+        owner: impl Into<HirSemanticPathOwnerId>,
     ) -> Result<CheckedConstraintSourceOwner, CheckedConstraintSourceOwnerError> {
         CheckedConstraintSourceOwner::admit(
             self.authority_lease(),
             topology,
-            expression,
+            owner.into(),
             |declaration| {
                 let facts = self
                     .project_callable(declaration)
@@ -301,6 +301,44 @@ mod tests {
         let source = builder
             .constraint_source_owner(analysis.hir_topology(), expression(&analysis, "caller"))
             .unwrap();
+        let HirSemanticPathRoot::Declaration(declaration) = &source.root else {
+            panic!("caller declaration root")
+        };
+        let module = world
+            .project
+            .analysis_view()
+            .unwrap()
+            .modules()
+            .find(|(_, module)| module.module_id() == expression(&analysis, "caller").module())
+            .unwrap()
+            .1;
+        let paths = analysis
+            .hir_topology()
+            .declaration_semantic_paths(declaration)
+            .unwrap();
+        let (pattern, local) = paths
+            .pattern_owners()
+            .find_map(|pattern| {
+                use arcweft_lang_hir::pattern::{HirPatternBinding, HirPatternKind};
+                match module.resolve_pattern(pattern).unwrap().kind() {
+                    HirPatternKind::Binding(HirPatternBinding::Bound { local, .. }) => {
+                        Some((pattern, *local))
+                    }
+                    _ => None,
+                }
+            })
+            .expect("actual caller parameter binding");
+        for owner in [
+            HirSemanticPathOwnerId::Pattern(pattern),
+            HirSemanticPathOwnerId::Local(local),
+        ] {
+            assert_eq!(
+                source,
+                builder
+                    .constraint_source_owner(analysis.hir_topology(), owner)
+                    .unwrap()
+            );
+        }
         let parameter = TypeKind::GenericParam(
             source.signature().unwrap().generic_inventory().types()[0]
                 .parameter()

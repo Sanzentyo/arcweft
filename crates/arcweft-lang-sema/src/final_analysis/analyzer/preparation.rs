@@ -448,6 +448,7 @@ impl Analyzer<'_, '_, '_> {
 
     pub(super) fn seed_local_types(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         region: Option<ExprId>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         for module in self.modules.values() {
@@ -472,6 +473,7 @@ impl Analyzer<'_, '_, '_> {
                         .canonical_accepted_type(self.types.get(&annotation).cloned().ok_or(
                             FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation },
                         )?);
+                    let ty = self.retain_source_value_type(context, owner, &ty)?;
                     self.facts
                         .set_local_type(owner, ty)
                         .map_err(FinalSemanticAnalysisError::from)?;
@@ -522,6 +524,8 @@ impl Analyzer<'_, '_, '_> {
                                 .canonical_accepted_type(self.types.get(&ty).cloned().ok_or(
                                     FinalSemanticAnalysisError::TypeResolutionFailed { owner: ty },
                                 )?);
+                            let semantic =
+                                self.retain_source_value_type(context, owner, &semantic)?;
                             let mut locals = BTreeMap::new();
                             let mut patterns = BTreeMap::new();
                             seed_pattern_locals(
@@ -619,6 +623,8 @@ impl Analyzer<'_, '_, '_> {
                             | HirTrigger::Expression(_)
                             | HirTrigger::Recovered(_) => continue,
                         };
+                        let expected =
+                            self.retain_source_value_type(context, pattern, &expected)?;
                         let mut locals = BTreeMap::new();
                         let mut patterns = BTreeMap::new();
                         seed_pattern_locals(
@@ -643,8 +649,8 @@ impl Analyzer<'_, '_, '_> {
 
     fn publish_seeded_pattern_facts(
         facts: &mut SemanticFactState,
-        locals: BTreeMap<LocalId, TypeKind>,
-        patterns: BTreeMap<PatternId, TypeKind>,
+        locals: BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
+        patterns: BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         for (owner, ty) in locals {
             facts
@@ -1136,6 +1142,7 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let context = self.published_expression_context();
         for module in self.modules.values().copied() {
             for (owner, local) in module.locals() {
                 if !selected.contains_owner(SyntheticOwner::Local(owner)) {
@@ -1152,7 +1159,9 @@ impl Analyzer<'_, '_, '_> {
                 }
                 let inferred = local
                     .pattern()
-                    .and_then(|pattern| self.pattern_type_hint(module, pattern))
+                    .map(|pattern| self.pattern_type_hint(&context, module, pattern))
+                    .transpose()?
+                    .flatten()
                     .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner })?;
                 self.facts
                     .set_local_type(owner, inferred)
@@ -1164,18 +1173,23 @@ impl Analyzer<'_, '_, '_> {
 
     pub(super) fn pattern_type_hint(
         &self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: PatternId,
-    ) -> Option<TypeKind> {
+    ) -> Result<Option<TypeKind<crate::types::PreparedEffects>>, FinalSemanticAnalysisError> {
         if let Some(ty) = self.facts.patterns().get(&owner) {
-            return Some(ty.clone());
+            return Ok(Some(ty.clone()));
         }
-        let pattern = module.resolve_pattern(owner).ok()?;
-        match pattern.kind() {
-            HirPatternKind::TypedBinding { ty, .. } => self.types.get(ty).cloned(),
+        let pattern = module
+            .resolve_pattern(owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        Ok(match pattern.kind() {
+            HirPatternKind::TypedBinding { ty, .. } => {
+                Some(self.retain_source_annotation_type(context, owner, *ty)?)
+            }
             HirPatternKind::Literal(literal) => literal_type(literal, None).map(|(ty, _)| ty),
             _ => None,
-        }
+        })
     }
 }
 

@@ -304,7 +304,6 @@ fn candidate_call_keeps_nested_ordinary_call_on_candidate_context() {
     )
     .expect("analyzer");
     analyzer.resolve_region_types(None).expect("types");
-    analyzer.seed_local_types(None).expect("locals");
     let staged = analyzer
         .stage_checked_callables()
         .expect("checked callables");
@@ -315,6 +314,9 @@ fn candidate_call_keeps_nested_ordinary_call_on_candidate_context() {
             .expect("effect expression");
     }
     analyzer.staged_callables = Some(staged);
+    analyzer
+        .seed_local_types(&analyzer.published_expression_context(), None)
+        .expect("locals");
     analyzer.infer_statement_bindings().expect("bindings");
 
     analyzer
@@ -818,8 +820,10 @@ fn block_local_inference_rolls_back_with_its_candidate_expression() {
     )
     .expect("analyzer");
     analyzer.resolve_region_types(None).expect("types");
-    analyzer.seed_local_types(None).expect("declaration locals");
     analyzer.staged_callables = Some(analyzer.stage_checked_callables().expect("callables"));
+    analyzer
+        .seed_local_types(&analyzer.published_expression_context(), None)
+        .expect("declaration locals");
     assert!(!analyzer.facts.locals().contains_key(&local));
     let expressions_before = analyzer.facts.expressions().clone();
     let patterns_before = analyzer.facts.patterns().clone();
@@ -878,7 +882,6 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
     )
     .expect("analyzer");
     analyzer.resolve_region_types(None).expect("types");
-    analyzer.seed_local_types(None).expect("locals");
     let staged = analyzer.stage_checked_callables().expect("callables");
     for (owner, fact) in &staged.effect_expressions {
         analyzer
@@ -887,6 +890,9 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
             .expect("effect expression");
     }
     analyzer.staged_callables = Some(staged);
+    analyzer
+        .seed_local_types(&analyzer.published_expression_context(), None)
+        .expect("locals");
     analyzer.infer_statement_bindings().expect("bindings");
 
     let captured = Rc::new(RefCell::new(None));
@@ -1512,7 +1518,6 @@ fn evaluator_records_implicit_and_explicit_capture_modes_on_terminal_facts() {
     )
     .expect("analyzer");
     analyzer.resolve_region_types(None).expect("resolved types");
-    analyzer.seed_local_types(None).expect("seeded locals");
     let staged = analyzer
         .stage_checked_callables()
         .expect("staged checked callables");
@@ -1523,6 +1528,9 @@ fn evaluator_records_implicit_and_explicit_capture_modes_on_terminal_facts() {
             .expect("published effect expression");
     }
     analyzer.staged_callables = Some(staged);
+    analyzer
+        .seed_local_types(&analyzer.published_expression_context(), None)
+        .expect("seeded locals");
     analyzer
         .infer_statement_bindings()
         .expect("inferred statement bindings");
@@ -1651,7 +1659,6 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
         )
         .expect("analyzer");
         analyzer.resolve_region_types(None).expect("resolved types");
-        analyzer.seed_local_types(None).expect("seeded locals");
         let staged = analyzer
             .stage_checked_callables()
             .expect("staged checked callables");
@@ -1662,6 +1669,9 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
                 .expect("published effect expression");
         }
         analyzer.staged_callables = Some(staged);
+        analyzer
+            .seed_local_types(&analyzer.published_expression_context(), None)
+            .expect("seeded locals");
         analyzer
             .infer_statement_bindings()
             .expect("inferred statement bindings");

@@ -328,7 +328,7 @@ pub enum SourceTypeRetentionFailure {
 
 impl FinalSemanticAnalysisError {
     pub(crate) fn source_type_projection(
-        owner: ExprId,
+        owner: arcweft_lang_hir::project::HirSemanticPathOwnerId,
         error: crate::types::TypeProjectionError<Self>,
     ) -> Self {
         match error {
@@ -346,7 +346,7 @@ impl FinalSemanticAnalysisError {
 pub enum FinalSemanticAnalysisError {
     #[error("source type at {owner:?} could not be retained: {error}")]
     SourceTypeRetention {
-        owner: ExprId,
+        owner: arcweft_lang_hir::project::HirSemanticPathOwnerId,
         #[source]
         error: SourceTypeRetentionFailure,
     },

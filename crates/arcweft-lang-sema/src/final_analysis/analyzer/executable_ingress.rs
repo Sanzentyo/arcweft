@@ -491,6 +491,7 @@ impl Analyzer<'_, '_, '_> {
         declaration: &PreparedExecutableDeclaration,
         selected: &arcweft_lang_hir::project::HirSelectedDeclarationExpressionGraph,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let context = self.published_expression_context();
         let module = self.module(declaration.module)?;
         let view = self
             .topology
@@ -529,7 +530,9 @@ impl Analyzer<'_, '_, '_> {
             }
             let inferred = local
                 .pattern()
-                .and_then(|pattern| self.pattern_type_hint(module, pattern))
+                .map(|pattern| self.pattern_type_hint(&context, module, pattern))
+                .transpose()?
+                .flatten()
                 .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner })?;
             self.facts
                 .set_local_type(owner, inferred)

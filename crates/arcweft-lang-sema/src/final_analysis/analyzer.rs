@@ -626,7 +626,6 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         self.resolve_region_types(None)?;
         self.styles.complete_annotations(&self.type_reports)?;
         self.styles.infer_tokens(&self.modules)?;
-        self.seed_local_types(None)?;
         let entry_roots =
             crate::entry::prepare_entry_root_seeds(self.executable, self.symbols, &self.types)
                 .map_err(|diagnostics| {
@@ -639,6 +638,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
         }
         self.staged_callables = Some(staged_callables);
+        self.seed_local_types(&self.published_expression_context(), None)?;
         self.prepare_text_proxy_catalog()?;
         self.analyze_fx_definition_bodies()?;
         let ingress_seal = self.complete_contextual_declarations(entry_roots)?;
