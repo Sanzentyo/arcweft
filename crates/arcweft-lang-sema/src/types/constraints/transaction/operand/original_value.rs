@@ -302,7 +302,7 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain>
                         .map_err(PreparedEffectFailure::Control)
                 },
             )
-            .map_err(prepared_projection_error)
+            .map_err(TypeProjectionError::from)
     }
 
     fn project_predicate(
@@ -333,7 +333,7 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain>
                         .map_err(PreparedEffectFailure::Control)
                 },
             )
-            .map_err(prepared_projection_error)
+            .map_err(TypeProjectionError::from)
     }
 }
 
@@ -346,26 +346,6 @@ fn original_projection_error(
             crate::types::constraints::TypeConstraintInvariant::Instantiation(error).into()
         }
     }
-}
-
-fn prepared_projection_error(
-    error: PreparedEffectFailure<TypeProjectionError<TypeConstraintError>>,
-) -> TypeProjectionError<TypeConstraintError> {
-    let failure = match error {
-        PreparedEffectFailure::Control(error) => return error,
-        PreparedEffectFailure::Invariant(error) => PreparedEffectFailure::Invariant(error),
-        PreparedEffectFailure::Row(error) => PreparedEffectFailure::Row(error),
-        PreparedEffectFailure::Declaration(error) => PreparedEffectFailure::Declaration(error),
-        PreparedEffectFailure::Unsatisfiable => PreparedEffectFailure::Unsatisfiable,
-        PreparedEffectFailure::NonPrincipal => PreparedEffectFailure::NonPrincipal,
-        PreparedEffectFailure::ObservationNotTotal => PreparedEffectFailure::ObservationNotTotal,
-        PreparedEffectFailure::NonPointwiseObservation => {
-            PreparedEffectFailure::NonPointwiseObservation
-        }
-    };
-    TypeProjectionError::Control(
-        crate::types::constraints::TypeConstraintInvariant::PreparedEffect(failure).into(),
-    )
 }
 
 impl ArrayLength {

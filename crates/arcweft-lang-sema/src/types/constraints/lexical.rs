@@ -2,6 +2,9 @@
 
 use crate::types::PreparedEffects;
 
+#[cfg(test)]
+mod tests;
+
 use std::sync::Arc;
 
 use super::{
@@ -46,6 +49,61 @@ impl std::fmt::Debug for ConstraintLexicalScope {
 }
 
 impl ConstraintLexicalScope {
+    /// Transport the original R using actual frame identities. The prepared
+    /// graph performs its own capture-free fold; declaration bodies stay put.
+    pub(super) fn transport_prepared_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        original: &Self,
+        predicate: &crate::effect_row::prepared::PreparedEffectPredicate,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<
+        crate::effect_row::prepared::PreparedEffectPredicate,
+        TypeProjectionError<TypeConstraintError>,
+    > {
+        use crate::effect_row::prepared::{PreparedEffectFailure, PreparedEffectRow};
+        let mut edit = graph.edit_terms();
+        let predicate = edit
+            .map_predicate_parameters(
+                predicate,
+                &mut crate::types::projection_control::EffectProjectionControl {
+                    control: context,
+                    depth: 1,
+                },
+                &mut |reference, control| {
+                    let target = self
+                        .effect_reference(
+                            original,
+                            original.shape(),
+                            self.shape(),
+                            reference,
+                            control.control,
+                        )
+                        .map_err(PreparedEffectFailure::Control)?;
+                    Ok(if &target == reference {
+                        None
+                    } else {
+                        Some(PreparedEffectRow::Canonical(
+                            crate::effect_row::EffectRow::open(
+                                crate::effects::EffectSet::new(),
+                                target,
+                            ),
+                        ))
+                    })
+                },
+            )
+            .map_err(TypeProjectionError::from)?;
+        edit.commit().map_err(|error| {
+            TypeProjectionError::Control(
+                super::TypeConstraintInvariant::PreparedEffect(
+                    crate::effect_row::prepared::PreparedEffectFailure::Invariant(error),
+                )
+                .into(),
+            )
+        })?;
+        Ok(predicate)
+    }
+
     pub(super) fn transport_row<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         original: &Self,

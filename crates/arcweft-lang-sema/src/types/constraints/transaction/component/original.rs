@@ -80,15 +80,42 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(crate) fn infer_original_products<A: TypeConstraintAccounting>(
         self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        graph: PreparedEffectReadView<'_>,
+        graph: &mut PreparedEffectGraph,
     ) -> Result<OriginalConstraintForest<D, P>, PreparedValueFailure> {
         context.check_cancelled()?;
         graph
+            .read()
             .validate_owner(&self.effect_owner)
             .map_err(|error| PreparedValueFailure::Effect(error.into()))?;
         if self.has_live_uses() {
             return Err(PreparedValueFailure::UseState);
         }
+        let mut checkpoint = graph.checkpoint(context)?;
+        let result = self.infer_original_products_in(context, graph);
+        match result {
+            Ok(forest) => match graph.commit(&checkpoint) {
+                Ok(()) => Ok(forest),
+                Err(error) => {
+                    graph
+                        .rollback(&mut checkpoint)
+                        .map_err(|rollback| PreparedValueFailure::Effect(rollback.into()))?;
+                    Err(PreparedValueFailure::Effect(error.into()))
+                }
+            },
+            Err(error) => {
+                graph
+                    .rollback(&mut checkpoint)
+                    .map_err(|rollback| PreparedValueFailure::Effect(rollback.into()))?;
+                Err(error)
+            }
+        }
+    }
+
+    fn infer_original_products_in<A: TypeConstraintAccounting>(
+        self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut PreparedEffectGraph,
+    ) -> Result<OriginalConstraintForest<D, P>, PreparedValueFailure> {
         let mut axes = Vec::new();
         for (producer, value) in &self.values {
             context.enter_node()?;
@@ -136,9 +163,20 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 for _ in scope.shape().binders() {
                     context.enter_node()?;
                 }
-                let result = match context.with_original_scope(scope.clone(), |context| {
+                let mut checkpoint = graph.checkpoint(context)?;
+                let inferred = context.with_original_scope(scope.clone(), |context| {
                     self.infer_original_product(&members, &scope, graph, context)
-                }) {
+                });
+                if inferred.is_ok() {
+                    graph
+                        .commit(&checkpoint)
+                        .map_err(|error| PreparedValueFailure::Effect(error.into()))?;
+                } else {
+                    graph
+                        .rollback(&mut checkpoint)
+                        .map_err(|error| PreparedValueFailure::Effect(error.into()))?;
+                }
+                let result = match inferred {
                     Ok(solutions) => Ok(solutions),
                     Err(OriginalInferenceFailure::Rejected(rejection)) => Err(rejection),
                     Err(OriginalInferenceFailure::Constraint(error)) => return Err(error.into()),
@@ -190,7 +228,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         &self,
         members: &Arc<[OriginalProductMember]>,
         scope: &ConstraintLexicalScope,
-        graph: PreparedEffectReadView<'_>,
+        graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Box<[OriginalProductSolution<D>]>, OriginalInferenceFailure> {
         let mut applications = ConstraintApplicationInventory::empty();
@@ -210,20 +248,26 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             context.enter_node()?;
             rows.push(EffectConstraintVariable::new(variable, eligibility));
         }
-        let mut effects =
-            EffectConstraintEnvironment::new(&rows).map_err(TypeConstraintError::from)?;
+        let mut effects = EffectConstraintEnvironment::new_prepared(
+            &rows,
+            &crate::effect_row::EffectPredicate::unconstrained(),
+            context,
+        )?;
         for member in members.iter() {
             let path = self.original_path(*member)?;
             let predicate = scope
-                .transport_predicate(
+                .transport_prepared_predicate(
                     &path.lineage.scope,
                     path.effects.original_predicate(),
+                    graph,
                     context,
                 )
                 .map_err(projection_failure)?;
             effects
-                .restore_predicate(&predicate, context)
-                .map_err(|error| reject(OriginalProductCheck::EffectRelation(*member), error))?;
+                .restore_predicate(&predicate, graph, context)
+                .map_err(|error| {
+                    reject(OriginalProductCheck::EffectRelation(*member), error.into())
+                })?;
         }
         context.enter_node()?;
         let seed = ConstraintInferenceBranch {
@@ -321,7 +365,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         let mut solutions = Vec::new();
         for branch in branches {
             let cyclic = branch.deferred_cycles.parameters.iter().next().cloned();
-            let branch = seal_path(branch, graph, context)
+            let branch = seal_path(branch, graph.read(), context)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
             if let Some(parameter) = cyclic {
                 return Err(reject(
@@ -347,7 +391,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         members: &[OriginalProductMember],
         scope: &ConstraintLexicalScope,
         effects: &Arc<ConstraintClosedEffects<D>>,
-        graph: PreparedEffectReadView<'_>,
+        graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), OriginalInferenceFailure> {
         let project = |ty: &TypeKind<PreparedEffects>,
@@ -357,7 +401,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 branch,
                 crate::types::constraints::ConstraintClosurePolicy::Hint,
                 effects,
-                graph,
+                graph.read(),
                 context,
             )
         };
@@ -398,7 +442,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                         crate::types::constraints::validate_type(
                             &value,
                             original.projection_view(),
-                            graph,
+                            graph.read(),
                             context,
                         )
                     })
@@ -464,7 +508,11 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     })?;
                 original
                     .effects
-                    .validate_row(&value)
+                    .validate_row(
+                        &crate::effect_row::prepared::PreparedEffectRow::Canonical(value),
+                        graph.read(),
+                        context,
+                    )
                     .map_err(TypeConstraintError::from)
                     .map_err(|error| scope_constraint_failure(check, kind, error))?;
             }

@@ -195,6 +195,21 @@ pub(crate) enum PreparedEffectFailure<E> {
 }
 
 impl<E> PreparedEffectFailure<E> {
+    pub(crate) fn split_control(
+        self,
+    ) -> Result<E, PreparedEffectFailure<std::convert::Infallible>> {
+        Err(match self {
+            Self::Control(error) => return Ok(error),
+            Self::Invariant(error) => PreparedEffectFailure::Invariant(error),
+            Self::Row(error) => PreparedEffectFailure::Row(error),
+            Self::Declaration(error) => PreparedEffectFailure::Declaration(error),
+            Self::Unsatisfiable => PreparedEffectFailure::Unsatisfiable,
+            Self::NonPrincipal => PreparedEffectFailure::NonPrincipal,
+            Self::ObservationNotTotal => PreparedEffectFailure::ObservationNotTotal,
+            Self::NonPointwiseObservation => PreparedEffectFailure::NonPointwiseObservation,
+        })
+    }
+
     pub(crate) fn map_control<T>(self, map: impl FnOnce(E) -> T) -> PreparedEffectFailure<T> {
         match self {
             Self::Control(error) => PreparedEffectFailure::Control(map(error)),
