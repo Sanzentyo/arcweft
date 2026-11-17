@@ -248,9 +248,9 @@ impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'pr
         application: D::Application,
         site: crate::callable::CheckedCallSite,
         candidate: &crate::callable::PreparedResolvedCallable,
-        client: C,
+        mut client: C,
         drive: impl for<'driver> FnOnce(CandidateConstraintDriver<'driver, 'control, D, C>) -> R,
-    ) -> Result<R, CandidateConstraintDriverStartFailure>
+    ) -> Result<R, CandidateConstraintDriverStartFailure<D>>
     where
         C: TypeConstraintClient<D>,
     {
@@ -286,15 +286,30 @@ impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'pr
                 TypeConstraintInitializationFailure::original_context(error),
             )
         })?;
-        let lower = TypeConstraintTransaction::initialize_from_nested_path(
-            self.context,
-            original,
-            application,
-            parameters,
-            inherited,
-            nested,
-        )
-        .map_err(CandidateConstraintDriverStartFailure::Lower)?;
+        let lower =
+            client
+                .with_effect_relation(
+                    CandidateConstraintEffectAccess {
+                        authority: &authority,
+                    },
+                    |graph| {
+                        TypeConstraintTransaction::initialize_from_nested_path(
+                            self.context,
+                            graph,
+                            original,
+                            application,
+                            parameters,
+                            inherited,
+                            nested,
+                        )
+                    },
+                )
+                .map_err(|failure| {
+                    CandidateConstraintDriverStartFailure::EffectRelation(
+                        CandidateConstraintDriver::<D, C>::checkpoint_failure(failure),
+                    )
+                })?
+                .map_err(CandidateConstraintDriverStartFailure::Lower)?;
         let driver = CandidateConstraintDriver {
             context: self.context,
             authority,
@@ -474,10 +489,23 @@ struct SuspendedCandidateConstraint<'driver, 'control, D: ConstraintDomain> {
         &'driver mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
 }
 
-#[derive(Debug)]
-pub(crate) enum CandidateConstraintDriverStartFailure {
+pub(crate) enum CandidateConstraintDriverStartFailure<D: ConstraintDomain> {
     Prepared(CallConstraintInvariant),
     Lower(TypeConstraintInitializationFailure),
+    EffectRelation(TypeConstraintFailure<D>),
+}
+
+impl<D: ConstraintDomain> std::fmt::Debug for CandidateConstraintDriverStartFailure<D> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Prepared(error) => formatter.debug_tuple("Prepared").field(error).finish(),
+            Self::Lower(error) => formatter.debug_tuple("Lower").field(error).finish(),
+            Self::EffectRelation(error) => formatter
+                .debug_tuple("EffectRelation")
+                .field(error)
+                .finish(),
+        }
+    }
 }
 
 impl<'a> CandidateConstraintWorkSession<'a> {
@@ -491,7 +519,7 @@ impl<'a> CandidateConstraintWorkSession<'a> {
         initialization: PreparedConstraintInitialization,
         client: C,
         drive: impl for<'driver> FnOnce(CandidateConstraintDriver<'driver, 'a, D, C>) -> R,
-    ) -> Result<R, CandidateConstraintDriverStartFailure>
+    ) -> Result<R, CandidateConstraintDriverStartFailure<D>>
     where
         D: ConstraintDomain,
         C: TypeConstraintClient<D>,
@@ -514,7 +542,7 @@ impl<'a> CandidateConstraintWorkSession<'a> {
         initialization: PreparedConstraintInitialization,
         client: C,
         drive: impl for<'driver> FnOnce(CandidateConstraintDriver<'driver, 'a, D, C>) -> R,
-    ) -> Result<R, CandidateConstraintDriverStartFailure>
+    ) -> Result<R, CandidateConstraintDriverStartFailure<D>>
     where
         D: ConstraintDomain,
         C: TypeConstraintClient<D>,
@@ -542,9 +570,9 @@ impl<'a> CandidateConstraintWorkSession<'a> {
         original: crate::types::constraints::OriginalProducerContext,
         application: D::Application,
         initialization: PreparedConstraintInitialization,
-        client: C,
+        mut client: C,
         drive: impl for<'driver> FnOnce(CandidateConstraintDriver<'driver, 'a, D, C>) -> R,
-    ) -> Result<R, CandidateConstraintDriverStartFailure>
+    ) -> Result<R, CandidateConstraintDriverStartFailure<D>>
     where
         D: ConstraintDomain,
         C: TypeConstraintClient<D>,
@@ -559,15 +587,30 @@ impl<'a> CandidateConstraintWorkSession<'a> {
                 ),
             ));
         }
-        let lower = TypeConstraintTransaction::initialize_with_imported(
-            context,
-            original,
-            application,
-            parameter_scope,
-            inherited,
-            imported_scope,
-        )
-        .map_err(CandidateConstraintDriverStartFailure::Lower)?;
+        let lower =
+            client
+                .with_effect_relation(
+                    CandidateConstraintEffectAccess {
+                        authority: &authority,
+                    },
+                    |graph| {
+                        TypeConstraintTransaction::initialize_with_imported(
+                            context,
+                            graph,
+                            original,
+                            application,
+                            parameter_scope,
+                            inherited,
+                            imported_scope,
+                        )
+                    },
+                )
+                .map_err(|failure| {
+                    CandidateConstraintDriverStartFailure::EffectRelation(
+                        CandidateConstraintDriver::<D, C>::checkpoint_failure(failure),
+                    )
+                })?
+                .map_err(CandidateConstraintDriverStartFailure::Lower)?;
         let driver = CandidateConstraintDriver {
             context,
             authority,

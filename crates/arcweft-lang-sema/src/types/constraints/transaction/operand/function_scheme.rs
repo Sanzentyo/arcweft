@@ -97,8 +97,22 @@ impl<D: ConstraintDomain> PreparedConstraintFunctionScheme<D> {
     pub(in crate::types::constraints::transaction) fn instantiate<A: TypeConstraintAccounting>(
         self,
         expected_source: &Arc<ConstraintOperand<D>>,
+        path: ConstraintPath<D>,
+        key: Arc<D::Projection>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(ConstraintPath<D>, ConstraintOperand<D>), TypeConstraintError> {
+        context.with_effect_transaction(graph, |context, graph| {
+            self.instantiate_in(expected_source, path, key, graph, context)
+        })
+    }
+
+    fn instantiate_in<A: TypeConstraintAccounting>(
+        self,
+        expected_source: &Arc<ConstraintOperand<D>>,
         mut path: ConstraintPath<D>,
         key: Arc<D::Projection>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(ConstraintPath<D>, ConstraintOperand<D>), TypeConstraintError> {
         if !Arc::ptr_eq(&self.source, expected_source) {
@@ -117,8 +131,14 @@ impl<D: ConstraintDomain> PreparedConstraintFunctionScheme<D> {
                 .clone(),
         )?;
         let application = scope.id();
-        path = context.admit_application(path, scope)?;
-        path = TypeConstraintTransaction::prepare_application(context, application, path, None)?;
+        path = context.admit_application(path, scope, graph)?;
+        path = TypeConstraintTransaction::prepare_application(
+            context,
+            graph,
+            application,
+            path,
+            None,
+        )?;
         path.lineage.projections.push(Arc::new(ProjectionRequest {
             application,
             key: Arc::clone(&key),

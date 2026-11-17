@@ -24,6 +24,7 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
     pub(crate) fn into_results<A: TypeConstraintAccounting>(
         self,
         receipt: &ConstraintSourceReceipt<D>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Vec<PendingResultConstraint<D>>, TypeConstraintError> {
         if !self.receipt.matches(receipt) {
@@ -46,6 +47,7 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
                     source.view(),
                     alternative.path.projection_view(),
                     &mut std::collections::BTreeSet::new(),
+                    graph,
                     context,
                 )?);
                 Ok(PendingResultConstraint {
@@ -76,6 +78,7 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
     pub(crate) fn transform<A: TypeConstraintAccounting>(
         self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         application: D::Application,
         parameters: super::super::TypeConstraintParameterScope,
         template: &TypeKind<PreparedEffects>,
@@ -95,6 +98,7 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
             .clone();
         let mut transaction = TypeConstraintTransaction::initialize_from_nested_path(
             context,
+            graph,
             original,
             application,
             parameters,
@@ -188,8 +192,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             let use_source = ConstraintResultUseSource::for_result(Arc::clone(&source))?;
             let pattern = match prepare(&use_source, context)? {
                 Some(prepared) => {
-                    let (next, operand) =
-                        prepared.instantiate(&source, path, Arc::new(key.clone()), context)?;
+                    let (next, operand) = prepared.instantiate(
+                        &source,
+                        path,
+                        Arc::new(key.clone()),
+                        effects,
+                        context,
+                    )?;
                     path = next;
                     operand
                 }

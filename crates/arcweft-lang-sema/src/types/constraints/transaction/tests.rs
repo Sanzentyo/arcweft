@@ -19,6 +19,7 @@ use crate::types::constraints::{
 };
 use crate::types::{DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId};
 
+mod effect_initialization;
 mod source_value_scope;
 
 pub(super) struct ApplicationSourceDomain;

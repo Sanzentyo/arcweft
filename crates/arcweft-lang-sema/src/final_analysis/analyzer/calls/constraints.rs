@@ -6051,6 +6051,7 @@ pub(crate) fn run_prepared_candidate(
             },
         )
         .map_err(|failure| match failure {
+            crate::callable::CandidateConstraintDriverStartFailure::EffectRelation(error) => error,
             crate::callable::CandidateConstraintDriverStartFailure::Prepared(error) => {
                 TypeConstraintFailure::client_invariant(AnalyzerCallClientInvariant::constraint(
                     AnalyzerCallConstraintSource::BaseInstantiation,
@@ -6928,6 +6929,7 @@ pub(crate) fn run_prepared_child_candidate(
             },
         )
         .map_err(|failure| match failure {
+            crate::callable::CandidateConstraintDriverStartFailure::EffectRelation(error) => error,
             crate::callable::CandidateConstraintDriverStartFailure::Prepared(error) => {
                 TypeConstraintFailure::client_invariant(AnalyzerCallClientInvariant::constraint(
                     AnalyzerCallConstraintSource::BaseInstantiation,

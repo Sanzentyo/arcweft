@@ -82,12 +82,18 @@ impl<'c, A: TypeConstraintAccounting, D: ConstraintDomain> ConstraintTestSetup<'
         (self.context, self.parameters)
     }
 
-    pub(crate) fn into_path(self) -> (TypeConstraintContext<'c, A, D>, ConstraintPath<D>)
+    pub(crate) fn into_path(mut self) -> (TypeConstraintContext<'c, A, D>, ConstraintPath<D>)
     where
         D::Application: Default,
     {
-        let effects = crate::effect_row::EffectConstraintEnvironment::new(
+        let predicate = self
+            .parameters
+            .opened_effect_predicate(&mut self.context)
+            .expect("fixture predicate belongs to its actual opening");
+        let effects = crate::effect_row::EffectConstraintEnvironment::new_prepared(
             &self.parameters.opened_effect_variables(),
+            &predicate,
+            &mut self.context,
         )
         .expect("fixture effect inventory is canonical");
         let application =

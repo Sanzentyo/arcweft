@@ -15,7 +15,7 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
     /// closes both the producing call and the specialization together.
     pub(crate) fn specialize_pending_function_value<P, U>(
         &mut self,
-        graph: &PreparedCallGraph<P, U>,
+        graph: &mut PreparedCallGraph<P, U>,
         application: D::Application,
         pending: PendingChildConstraint<D>,
         enclosing: &EnclosingGenericParameterScope,
@@ -29,9 +29,14 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
             .validate_constraint_authority(self.authority)
             .map_err(FunctionSpecializationFailure::Prepared)?;
         let receipt = self.ticket.receipt();
-        let alternatives = pending
-            .into_results(&receipt, self.context)
-            .map_err(|error| FunctionSpecializationFailure::Constraint(error.into()))?;
+        let alternatives = {
+            let (effects, _) = graph
+                .effect_declarations_mut()
+                .map_err(FunctionSpecializationFailure::Prepared)?
+                .relation();
+            pending.into_results(&receipt, effects.read(), self.context)
+        }
+        .map_err(|error| FunctionSpecializationFailure::Constraint(error.into()))?;
         let mut transformed: Option<PendingChildConstraint<D>> = None;
         for alternative in alternatives {
             let source = alternative.source_type();
@@ -71,15 +76,21 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
             let (application, parameters, template) = initialization
                 .into_lower_parts(self.authority, &receipt)
                 .map_err(FunctionSpecializationFailure::Prepared)?;
-            let next = alternative
-                .transform(
+            let next = {
+                let (effects, _) = graph
+                    .effect_declarations_mut()
+                    .map_err(FunctionSpecializationFailure::Prepared)?
+                    .relation();
+                alternative.transform(
                     self.context,
+                    effects,
                     application,
                     parameters,
                     &template,
                     result.clone(),
                 )
-                .map_err(FunctionSpecializationFailure::Constraint)?;
+            }
+            .map_err(FunctionSpecializationFailure::Constraint)?;
             match &mut transformed {
                 Some(transformed) => transformed
                     .append(next)
@@ -140,8 +151,13 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
             .ticket
             .fork_for_child(self.context)
             .map_err(|error| FunctionSpecializationFailure::Constraint(error.into()))?;
+        let (effects, _) = graph
+            .effect_declarations_mut()
+            .map_err(FunctionSpecializationFailure::Prepared)?
+            .relation();
         let mut lower = TypeConstraintTransaction::initialize_from_nested_path(
             self.context,
+            effects,
             nested
                 .original_context()
                 .map_err(|error| FunctionSpecializationFailure::Constraint(error.into()))?
@@ -163,10 +179,6 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
                 }
             })
         })?;
-        let (effects, _) = graph
-            .effect_declarations_mut()
-            .map_err(FunctionSpecializationFailure::Prepared)?
-            .relation();
         lower.request_value_use_projection(
             self.context,
             effects,
@@ -225,8 +237,13 @@ impl CandidateConstraintWorkSession<'_> {
         let original = authority
             .original_context(&mut context)
             .map_err(|error| FunctionSpecializationFailure::Constraint(error.into()))?;
+        let (effects, _) = graph
+            .effect_declarations_mut()
+            .map_err(FunctionSpecializationFailure::Prepared)?
+            .relation();
         let mut lower = TypeConstraintTransaction::<D>::initialize_with_imported(
             &mut context,
+            effects,
             original,
             application,
             parameters,
@@ -245,10 +262,6 @@ impl CandidateConstraintWorkSession<'_> {
                 }
             })
         })?;
-        let (effects, _) = graph
-            .effect_declarations_mut()
-            .map_err(FunctionSpecializationFailure::Prepared)?
-            .relation();
         lower.request_value_use_projection(
             &mut context,
             effects,

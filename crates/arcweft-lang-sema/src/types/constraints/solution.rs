@@ -704,6 +704,7 @@ impl TypeConstraintSolution {
         self: &Arc<Self>,
         application: super::application::ConstraintApplicationId,
         mut path: ConstraintPath<D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError>
     where
@@ -818,7 +819,11 @@ impl TypeConstraintSolution {
             application,
             context,
         )?;
-        path.effects.restore_predicate(&predicate, context)?;
+        path.effects.restore_predicate(
+            &crate::effect_row::prepared::PreparedEffectPredicate::Canonical(predicate),
+            graph,
+            context,
+        )?;
 
         let operand_scope = Arc::new(context.capture_lexical_scope()?);
         for row in &self.bindings {
@@ -862,8 +867,12 @@ impl TypeConstraintSolution {
             let value = self
                 .context
                 .reopen_effect_row(&row.value, &path, application, context)?;
-            path.effects
-                .restore_completed_inherited(reference, &value, context)?;
+            path.effects.restore_completed_inherited(
+                reference,
+                &crate::effect_row::prepared::PreparedEffectRow::Canonical(value),
+                graph,
+                context,
+            )?;
         }
         Ok(path)
     }

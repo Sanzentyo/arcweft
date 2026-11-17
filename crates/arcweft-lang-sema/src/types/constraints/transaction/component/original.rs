@@ -90,25 +90,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         if self.has_live_uses() {
             return Err(PreparedValueFailure::UseState);
         }
-        let mut checkpoint = graph.checkpoint(context)?;
-        let result = self.infer_original_products_in(context, graph);
-        match result {
-            Ok(forest) => match graph.commit(&checkpoint) {
-                Ok(()) => Ok(forest),
-                Err(error) => {
-                    graph
-                        .rollback(&mut checkpoint)
-                        .map_err(|rollback| PreparedValueFailure::Effect(rollback.into()))?;
-                    Err(PreparedValueFailure::Effect(error.into()))
-                }
-            },
-            Err(error) => {
-                graph
-                    .rollback(&mut checkpoint)
-                    .map_err(|rollback| PreparedValueFailure::Effect(rollback.into()))?;
-                Err(error)
-            }
-        }
+        context.with_effect_transaction(graph, |context, graph| {
+            self.infer_original_products_in(context, graph)
+        })
     }
 
     fn infer_original_products_in<A: TypeConstraintAccounting>(
@@ -163,24 +147,17 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 for _ in scope.shape().binders() {
                     context.enter_node()?;
                 }
-                let mut checkpoint = graph.checkpoint(context)?;
                 let inferred = context.with_original_scope(scope.clone(), |context| {
-                    self.infer_original_product(&members, &scope, graph, context)
+                    context.with_effect_transaction(graph, |context, graph| {
+                        self.infer_original_product(&members, &scope, graph, context)
+                    })
                 });
-                if inferred.is_ok() {
-                    graph
-                        .commit(&checkpoint)
-                        .map_err(|error| PreparedValueFailure::Effect(error.into()))?;
-                } else {
-                    graph
-                        .rollback(&mut checkpoint)
-                        .map_err(|error| PreparedValueFailure::Effect(error.into()))?;
-                }
                 let result = match inferred {
                     Ok(solutions) => Ok(solutions),
                     Err(OriginalInferenceFailure::Rejected(rejection)) => Err(rejection),
                     Err(OriginalInferenceFailure::Constraint(error)) => return Err(error.into()),
                     Err(OriginalInferenceFailure::Instantiation(error)) => return Err(error.into()),
+                    Err(OriginalInferenceFailure::Effect(error)) => return Err(error.into()),
                 };
                 context.enter_node()?;
                 products.push(OriginalProductInference {
@@ -580,6 +557,13 @@ enum OriginalInferenceFailure {
     Rejected(OriginalProductRejection),
     Constraint(TypeConstraintError),
     Instantiation(TypeInstantiationError),
+    Effect(PreparedEffectFailure<TypeConstraintError>),
+}
+
+impl From<PreparedEffectFailure<TypeConstraintError>> for OriginalInferenceFailure {
+    fn from(error: PreparedEffectFailure<TypeConstraintError>) -> Self {
+        Self::Effect(error)
+    }
 }
 
 impl From<TypeConstraintError> for OriginalInferenceFailure {

@@ -1041,16 +1041,25 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     #[cfg(test)]
     pub(crate) fn initialize_fixture<A: TypeConstraintAccounting>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         application: D::Application,
         parameters: super::TypeConstraintParameterScope,
         inherited: Option<Arc<TypeConstraintSolution>>,
     ) -> Result<Self, super::TypeConstraintInitializationFailure> {
-        Self::initialize_with_imported_fixture(context, application, parameters, inherited, None)
+        Self::initialize_with_imported_fixture(
+            context,
+            graph,
+            application,
+            parameters,
+            inherited,
+            None,
+        )
     }
 
     #[cfg(test)]
     pub(crate) fn initialize_with_imported_fixture<A: TypeConstraintAccounting>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         application: D::Application,
         parameters: super::TypeConstraintParameterScope,
         inherited: Option<Arc<TypeConstraintSolution>>,
@@ -1061,6 +1070,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             .map_err(super::TypeConstraintInitializationFailure::original_context)?;
         Self::initialize_with_imported(
             context,
+            graph,
             original,
             application,
             parameters,
@@ -1083,21 +1093,23 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     /// of the path's root.
     pub(super) fn from_path<A: TypeConstraintAccounting>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         application: ConstraintApplicationId,
         path: ConstraintPath<D>,
         inherited: Option<&Arc<TypeConstraintSolution>>,
     ) -> Result<Self, TypeConstraintError> {
-        Self::from_path_with_parent(context, application, path, inherited, None)
+        Self::from_path_with_parent(context, graph, application, path, inherited, None)
     }
 
     fn from_path_with_parent<A: TypeConstraintAccounting>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         application: ConstraintApplicationId,
         path: ConstraintPath<D>,
         inherited: Option<&Arc<TypeConstraintSolution>>,
         parent_receipt: Option<ConstraintSourceReceipt<D>>,
     ) -> Result<Self, TypeConstraintError> {
-        let path = Self::prepare_application(context, application, path, inherited)?;
+        let path = Self::prepare_application(context, graph, application, path, inherited)?;
         let original = path
             .applications
             .require_application(application)?
@@ -1127,6 +1139,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     pub(crate) fn initialize_from_nested_path<A>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         original: super::OriginalProducerContext,
         application: D::Application,
         parameters: super::TypeConstraintParameterScope,
@@ -1136,23 +1149,23 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        let result = original
-            .validate_imported_in(&nested.path.applications, context)
-            .and_then(|()| context.application_scope(application, parameters, original))
-            .and_then(|scope| {
-                let application = scope.id();
-                context
-                    .admit_application(nested.path, scope)
-                    .and_then(|path| {
-                        Self::from_path_with_parent(
-                            context,
-                            application,
-                            path,
-                            inherited.as_ref(),
-                            Some(nested.receipt),
-                        )
-                    })
-            });
+        let result = context.with_effect_transaction(graph, |context, graph| {
+            original.validate_imported_in(&nested.path.applications, context)?;
+            let scope = context.application_scope(application, parameters, original)?;
+            let application = scope.id();
+            context
+                .admit_application(nested.path, scope, graph)
+                .and_then(|path| {
+                    Self::from_path_with_parent(
+                        context,
+                        graph,
+                        application,
+                        path,
+                        inherited.as_ref(),
+                        Some(nested.receipt),
+                    )
+                })
+        });
         result.map_err(|error| match error {
             TypeConstraintError::Abort(error) => {
                 super::TypeConstraintInitializationFailure::Abort(error)
@@ -1175,6 +1188,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     pub(crate) fn initialize<A>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         original: super::OriginalProducerContext,
         application: D::Application,
         parameters: super::TypeConstraintParameterScope,
@@ -1183,11 +1197,20 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        Self::initialize_with_imported(context, original, application, parameters, inherited, None)
+        Self::initialize_with_imported(
+            context,
+            graph,
+            original,
+            application,
+            parameters,
+            inherited,
+            None,
+        )
     }
 
     pub(crate) fn initialize_with_imported<A>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         original: super::OriginalProducerContext,
         application: D::Application,
         parameters: super::TypeConstraintParameterScope,
@@ -1197,16 +1220,15 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        match context
-            .application_scope(application, parameters, original.clone())
-            .and_then(|scope| {
-                let application = scope.id();
-                context
-                    .start_path_with_imported(scope, imported, original)
-                    .and_then(|path| {
-                        Self::from_path(context, application, path, inherited.as_ref())
-                    })
-            }) {
+        match context.with_effect_transaction(graph, |context, graph| {
+            let scope = context.application_scope(application, parameters, original.clone())?;
+            let application = scope.id();
+            context
+                .start_path_with_imported(scope, imported, original)
+                .and_then(|path| {
+                    Self::from_path(context, graph, application, path, inherited.as_ref())
+                })
+        }) {
             Ok(transaction) => Ok(transaction),
             Err(error) => Err(match error {
                 TypeConstraintError::Abort(error) => {
@@ -2663,6 +2685,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     fn prepare_application<A>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         application: ConstraintApplicationId,
         path: ConstraintPath<D>,
         inherited: Option<&Arc<TypeConstraintSolution>>,
@@ -2698,7 +2721,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             }
             return Ok(path);
         };
-        inherited.restore_inherited_path(application, path, context)
+        inherited.restore_inherited_path(application, path, graph, context)
     }
 }
 

@@ -2132,6 +2132,43 @@ where
     pub(crate) fn accounting_mut(&mut self) -> &mut A {
         &mut self.accounting
     }
+
+    /// Coordinate one graph operation with this exact accounting context.
+    /// Failure rolls back graph metadata, never the work already consumed.
+    pub(in crate::types::constraints) fn with_effect_transaction<T, E>(
+        &mut self,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        operation: impl FnOnce(
+            &mut Self,
+            &mut crate::effect_row::prepared::PreparedEffectGraph,
+        ) -> Result<T, E>,
+    ) -> Result<T, E>
+    where
+        E: From<crate::effect_row::prepared::PreparedEffectFailure<TypeConstraintError>>,
+    {
+        let mut checkpoint = graph.checkpoint(self)?;
+        match operation(self, graph) {
+            Ok(value) => match graph.commit(&checkpoint) {
+                Ok(()) => Ok(value),
+                Err(error) => {
+                    graph.rollback(&mut checkpoint).map_err(|rollback| {
+                        E::from(
+                            crate::effect_row::prepared::PreparedEffectFailure::Invariant(rollback),
+                        )
+                    })?;
+                    Err(E::from(
+                        crate::effect_row::prepared::PreparedEffectFailure::Invariant(error),
+                    ))
+                }
+            },
+            Err(error) => {
+                graph.rollback(&mut checkpoint).map_err(|rollback| {
+                    E::from(crate::effect_row::prepared::PreparedEffectFailure::Invariant(rollback))
+                })?;
+                Err(error)
+            }
+        }
+    }
 }
 
 impl<A: TypeConstraintAccounting, D: ConstraintDomain> Drop for TypeConstraintContext<'_, A, D> {
