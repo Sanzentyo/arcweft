@@ -306,7 +306,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     context,
                 )?;
                 let value = value
-                    .transport(&operand_scope, context)
+                    .transport(&operand_scope, graph, context)
                     .map_err(projection_failure)?;
                 let check = OriginalProductCheck::TypeBinding {
                     member: *member,
@@ -370,7 +370,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         let mut solutions = Vec::new();
         for branch in branches {
             let cyclic = branch.deferred_cycles.parameters.iter().next().cloned();
-            let branch = seal_path(branch, graph.read(), context)
+            let branch = seal_path(branch, graph, context)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
             if let Some(parameter) = cyclic {
                 return Err(reject(
@@ -442,8 +442,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     unreachable!("type key")
                 };
                 let value = project(&TypeKind::GenericParam(reference.clone()), context)?;
+                let value = effects.canonicalize(&value, scope.shape(), context)?;
                 let value = owner
-                    .transport_type(scope, &value, context)
+                    .transport_canonical_type(scope, &value, context)
                     .map_err(|error| {
                         scope_projection_failure(check.clone(), parameter.clone(), error)
                     })?;
@@ -451,9 +452,18 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     context.enter_node()?;
                 }
                 context
-                    .with_original_scope(owner, |context| {
+                    .with_original_scope(owner.clone(), |context| {
+                        let prepared =
+                            value
+                                .prepare_effects(owner.shape(), context)
+                                .map_err(|error| match error {
+                                    crate::types::TypeProjectionError::Control(error) => error,
+                                    crate::types::TypeProjectionError::Instantiation(error) => {
+                                        TypeConstraintInvariant::Instantiation(error).into()
+                                    }
+                                })?;
                         crate::types::constraints::validate_type(
-                            &value,
+                            &prepared,
                             original.projection_view(),
                             graph.read(),
                             context,
@@ -536,13 +546,27 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     parameter: parameter.clone(),
                 };
                 let owner = context.binding_scope(original, &parameter.clone().into())?;
-                let value = scope
-                    .transport_type(&owner, value.value(), context)
-                    .map_err(projection_failure)?;
                 let left = project(&TypeKind::GenericParam(parameter.clone()), context)?;
-                let right = project(&value, context)?;
                 let left = effects.canonicalize(&left, scope.shape(), context)?;
-                let right = effects.canonicalize(&right, scope.shape(), context)?;
+                let right = context.with_original_scope(owner, |context| {
+                    let projected =
+                        crate::types::constraints::normalization::project_closed_operand(
+                            value.view(),
+                            branch,
+                            crate::types::constraints::ConstraintClosurePolicy::Hint,
+                            effects,
+                            graph.read(),
+                            context,
+                        )?;
+                    let canonical = effects.canonicalize(
+                        projected.value(),
+                        projected.scope().shape(),
+                        context,
+                    )?;
+                    scope
+                        .transport_canonical_type(projected.scope(), &canonical, context)
+                        .map_err(projection_failure)
+                })?;
                 if !crate::types::constraints::completed_types_equal(&left, &right, context)? {
                     return Err(reject(check, TypeConstraintRejection::Mismatch.into()));
                 }
@@ -579,9 +603,6 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     member: *member,
                     equation: equation.ordinal,
                 };
-                let equation = equation
-                    .transport(scope, context)
-                    .map_err(projection_failure)?;
                 equation
                     .validate_completed(branch, effects, graph.read(), context)
                     .map_err(|error| reject(check, error))?;

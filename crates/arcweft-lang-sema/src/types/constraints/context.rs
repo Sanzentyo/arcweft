@@ -1592,21 +1592,6 @@ where
             })
     }
 
-    pub(super) fn transport_binding_type(
-        &mut self,
-        target: &ConstraintLexicalScope,
-        source: &ConstraintLexicalScope,
-        value: &TypeKind<PreparedEffects>,
-        parameter: super::ConstraintGenericParameterId,
-    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
-        if target == source {
-            return Ok(value.clone());
-        }
-        target
-            .transport_type(source, value, self)
-            .map_err(|error| Self::binding_transport_error(error, parameter))
-    }
-
     pub(super) fn transport_binding_length(
         &mut self,
         target: &ConstraintLexicalScope,
@@ -1655,9 +1640,10 @@ where
         path: ConstraintInferenceBranch<D, L>,
         parameter: GenericTypeReference,
         value: &TypeKind<PreparedEffects>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError> {
         let value = self.fixture_operand(value.clone());
-        self.add_binding(path, parameter, value.view())
+        self.add_binding(path, parameter, value.view(), graph)
     }
 
     #[cfg(test)]
@@ -1676,6 +1662,7 @@ where
         path: &ConstraintInferenceBranch<D, L>,
         parameter: &GenericTypeReference,
         value: ConstraintOperandView<'_, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<ConstraintOperand<D>, TypeConstraintError> {
         let parameter = parameter.clone().into();
         let owner = std::sync::Arc::new(self.binding_scope(path, &parameter)?);
@@ -1683,7 +1670,7 @@ where
             return Ok(value.retained());
         }
         value
-            .transport(&owner, self)
+            .transport(&owner, graph, self)
             .map_err(|error| Self::binding_transport_error(error, parameter))
     }
 
@@ -1919,6 +1906,7 @@ where
         path: ConstraintInferenceBranch<D, L>,
         parameter: GenericTypeReference,
         value: ConstraintOperandView<'_, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<Option<ConstraintInferenceBranch<D, L>>, TypeConstraintError> {
         self.check_cancelled()?;
         if path.bindings.contains_key(&parameter) {
@@ -1967,7 +1955,7 @@ where
                 .parameters
                 .insert(parameter.clone().into());
         }
-        let rooted = self.root_binding_type(&path, &parameter, value)?;
+        let rooted = self.root_binding_type(&path, &parameter, value, graph)?;
         path.bindings.insert(parameter, rooted);
         Ok(Some(path))
     }
@@ -2035,6 +2023,7 @@ where
         path: &mut ConstraintInferenceBranch<D, L>,
         parameter: GenericTypeReference,
         value: ConstraintOperand<D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<(), TypeConstraintError> {
         self.check_cancelled()?;
         let binding_count = path
@@ -2053,7 +2042,7 @@ where
                 .parameters
                 .insert(parameter.clone().into());
         }
-        let rooted = self.root_binding_type(path, &parameter, value.view())?;
+        let rooted = self.root_binding_type(path, &parameter, value.view(), graph)?;
         path.bindings.insert(parameter, rooted);
         Ok(())
     }
@@ -2099,6 +2088,7 @@ where
         application: ConstraintApplicationId,
         parameter: GenericTypeReference,
         value: ConstraintOperand<D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<(), TypeConstraintError> {
         let reference = path
             .applications
@@ -2122,7 +2112,7 @@ where
                 TypeConstraintAbort::ArithmeticOverflow,
             ))?;
         self.charge_binding(binding_count)?;
-        let rooted = self.root_binding_type(path, &reference, value.view())?;
+        let rooted = self.root_binding_type(path, &reference, value.view(), graph)?;
         assert!(
             path.bindings.insert(reference, rooted).is_none(),
             "completed solution rows are uniquely sealed before restoration"

@@ -18,8 +18,8 @@ pub(in crate::types) use projection::{
     ConstraintConstOperandView, ConstraintFunctionHeaderView, ConstraintOperandView,
 };
 pub(in crate::types::constraints) use projection::{
-    ConstraintEffectField, ConstraintEffectHeaderDerivation, ConstraintOperandEffects,
-    ConstraintOperandRebuild, ConstraintProjectedOperand,
+    ConstraintEffectField, ConstraintEffectHeaderDerivation, ConstraintOperandRebuild,
+    ConstraintProjectedOperand,
 };
 
 pub(super) enum ResolvedConstraintSource<D: ConstraintDomain> {
@@ -404,10 +404,11 @@ impl<D: ConstraintDomain> ConstraintOperand<D> {
     pub(in crate::types::constraints) fn transport<A: TypeConstraintAccounting>(
         &self,
         target: &Arc<ConstraintLexicalScope>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, crate::types::TypeProjectionError<TypeConstraintError>> {
         Ok(Self {
-            value: Arc::new(target.transport_type(&self.scope, &self.value, context)?),
+            value: Arc::new(target.transport_type(&self.scope, &self.value, graph, context)?),
             scope: Arc::clone(target),
             origin: Arc::clone(&self.origin),
         })

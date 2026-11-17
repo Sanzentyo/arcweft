@@ -457,7 +457,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                             &opened,
                             path.projection_view(),
                             ConstraintClosurePolicy::Hint,
-                            graph.read(),
+                            graph,
                             context,
                         )
                     });
@@ -465,13 +465,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     Ok(projection) => {
                         let value = original
                             .gamma()
-                            .transport_type(&path.lineage.scope, &projection.value, context)
-                            .map_err(Self::projection_failure)?;
-                        let ty = value
-                            .prepare_effects(original.scope(), context)
+                            .transport_type(&path.lineage.scope, &projection.value, graph, context)
                             .map_err(Self::projection_failure)?;
                         context.enter_node()?;
-                        ValueContent::Available { ty }
+                        ValueContent::Available { ty: value }
                     }
                     Err(TypeConstraintError::Rejected(reason)) => {
                         ValueContent::UnresolvedProjection(reason)

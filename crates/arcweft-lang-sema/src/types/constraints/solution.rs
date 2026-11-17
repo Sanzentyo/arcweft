@@ -901,6 +901,7 @@ impl TypeConstraintSolution {
                     Arc::clone(self),
                     row.parameter.clone().into(),
                 ),
+                graph,
             )?;
         }
         for row in &self.const_bindings {

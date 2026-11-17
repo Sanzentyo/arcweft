@@ -161,6 +161,7 @@ pub(in crate::types) use alias::{
 };
 
 mod projection;
+pub(in crate::types::constraints) use projection::ConstraintProjectionPhase;
 pub(in crate::types::constraints) use projection::project_const_operand;
 pub(in crate::types::constraints) use projection::{close_type_operand, seal_type_operand};
 mod effects;
@@ -533,14 +534,7 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    project_type(
-        ty,
-        view,
-        ConstraintClosurePolicy::Validation,
-        graph,
-        context,
-    )
-    .map(|_| ())
+    projection::validate_type_structure(ty, view, graph, context)
 }
 
 pub(crate) fn occurs_in_shape<A, D>(
@@ -628,7 +622,7 @@ where
 
 pub(crate) fn seal_path<A, D, L>(
     path: ConstraintInferenceBranch<D, L>,
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstraintInferenceBranch<D, L>, TypeConstraintError>
 where
@@ -669,7 +663,7 @@ where
                 graph,
                 context,
             )?;
-            context.add_sealed_binding(&mut sealed, parameter.clone(), projected)
+            context.add_sealed_binding(&mut sealed, parameter.clone(), projected, graph)
         })?;
     }
     for (parameter, value) in &const_source {
@@ -706,7 +700,7 @@ pub(crate) fn seal_type<A, D>(
     ty: &TypeKind<PreparedEffects>,
     view: ConstraintProjectionView<'_, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,
-    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError>
 where

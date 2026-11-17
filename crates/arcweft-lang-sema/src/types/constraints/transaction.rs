@@ -41,7 +41,7 @@ pub(in crate::types) use operand::{
 };
 pub(in crate::types::constraints) use operand::{
     ConstraintEffectField, ConstraintEffectHeaderDerivation, ConstraintOperandChildren,
-    ConstraintOperandEffects, ConstraintOperandRebuild, ConstraintProjectedOperand,
+    ConstraintOperandRebuild, ConstraintProjectedOperand,
 };
 use operand::{ResolvedConstraintResult, ResolvedConstraintSource};
 
@@ -94,6 +94,7 @@ impl<D: ConstraintDomain> PendingEquation<D> {
     pub(super) fn transport<A: TypeConstraintAccounting>(
         &self,
         target: &super::lexical::ConstraintLexicalScope,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, crate::types::TypeProjectionError<TypeConstraintError>> {
         let target = Arc::new(target.clone());
@@ -102,8 +103,8 @@ impl<D: ConstraintDomain> PendingEquation<D> {
             direction: self.direction,
             source_ordinal: self.source_ordinal,
             timing: self.timing,
-            pattern: self.pattern.view().transport(&target, context)?,
-            actual: self.actual.view().transport(&target, context)?,
+            pattern: self.pattern.view().transport(&target, graph, context)?,
+            actual: self.actual.view().transport(&target, graph, context)?,
             closed_relation: self
                 .closed_relation
                 .as_ref()
@@ -154,8 +155,9 @@ impl<D: ConstraintDomain> PendingEquation<D> {
                 return Err(TypeConstraintInvariant::OriginalProducer.into());
             }
             return self.compare_completed(
-                relation.expected.value(),
-                relation.actual.value(),
+                (relation.expected.value(), relation.expected.scope()),
+                (relation.actual.value(), relation.actual.scope()),
+                effects,
                 context,
             );
         }
@@ -186,8 +188,18 @@ impl<D: ConstraintDomain> PendingEquation<D> {
                 )?;
                 let scope = context.lexical_scope().clone();
                 let annotation = effects.canonicalize(&annotation, &scope, context)?;
+                let expected = self
+                    .actual
+                    .scope()
+                    .transport_canonical_type(self.pattern.scope(), &pattern, context)
+                    .map_err(|error| match error {
+                        crate::types::TypeProjectionError::Control(error) => error,
+                        crate::types::TypeProjectionError::Instantiation(error) => {
+                            TypeConstraintInvariant::Instantiation(error).into()
+                        }
+                    })?;
                 let completed = annotation
-                    .binding_type_with_inferred_effects(&pattern)
+                    .binding_type_with_inferred_effects(&expected)
                     .ok_or(TypeConstraintRejection::Mismatch)?;
                 Ok(completed)
             } else {
@@ -196,31 +208,68 @@ impl<D: ConstraintDomain> PendingEquation<D> {
                 effects.canonicalize(&value, &scope, context)
             }
         })?;
-        self.compare_completed(&pattern, &actual, context)
+        self.compare_completed(
+            (&pattern, self.pattern.scope()),
+            (&actual, self.actual.scope()),
+            effects,
+            context,
+        )
     }
 
     fn compare_completed<A: TypeConstraintAccounting>(
         &self,
-        pattern: &TypeKind,
-        actual: &TypeKind,
+        pattern: (&TypeKind, &super::lexical::ConstraintLexicalScope),
+        actual: (&TypeKind, &super::lexical::ConstraintLexicalScope),
+        effects: &ConstraintClosedEffects<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        let (expected, actual) = match self.direction {
-            ConstraintAcceptance::PatternAcceptsActual => (pattern, actual),
-            ConstraintAcceptance::ActualAcceptsPattern => (actual, pattern),
+        use std::borrow::Cow;
+        let target = effects.calculation_scope();
+        let failure = |error| match error {
+            crate::types::TypeProjectionError::Control(error) => error,
+            crate::types::TypeProjectionError::Instantiation(error) => {
+                TypeConstraintInvariant::Instantiation(error).into()
+            }
         };
-        if !expected
-            .accepts_with(
-                actual,
-                super::super::compatibility::TypeCompatibilityPolicy::SelectedCall,
-                context,
+        let pattern = if pattern.1 == target {
+            Cow::Borrowed(pattern.0)
+        } else {
+            Cow::Owned(
+                target
+                    .transport_canonical_type(pattern.1, pattern.0, context)
+                    .map_err(failure)?,
             )
-            .map_err(super::super::compatibility::binding_plan::map_compatibility_error)?
-        {
-            return Err(TypeConstraintRejection::Mismatch.into());
+        };
+        let actual = if actual.1 == target {
+            Cow::Borrowed(actual.0)
+        } else {
+            Cow::Owned(
+                target
+                    .transport_canonical_type(actual.1, actual.0, context)
+                    .map_err(failure)?,
+            )
+        };
+        for _ in target.shape().binders() {
+            context.enter_node()?;
         }
+        context.with_original_scope(target.clone(), |context| {
+            let (expected, actual) = match self.direction {
+                ConstraintAcceptance::PatternAcceptsActual => (pattern.as_ref(), actual.as_ref()),
+                ConstraintAcceptance::ActualAcceptsPattern => (actual.as_ref(), pattern.as_ref()),
+            };
+            if !expected
+                .accepts_with(
+                    actual,
+                    super::super::compatibility::TypeCompatibilityPolicy::SelectedCall,
+                    context,
+                )
+                .map_err(super::super::compatibility::binding_plan::map_compatibility_error)?
+            {
+                return Err(TypeConstraintRejection::Mismatch.into());
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 
@@ -1452,7 +1501,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         &pattern,
                         path.projection_view(),
                         ConstraintClosurePolicy::Hint,
-                        effects.read(),
+                        effects,
                         context,
                     )?;
                     let actual_hint = project_type(
@@ -1463,7 +1512,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             .value(),
                         path.projection_view(),
                         ConstraintClosurePolicy::Hint,
-                        effects.read(),
+                        effects,
                         context,
                     )?;
                     if pattern_hint.remaining.is_empty() && actual_hint.remaining.is_empty() {
@@ -1884,7 +1933,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 &expected,
                 path.projection_view(),
                 ConstraintClosurePolicy::Hint,
-                graph.read(),
+                graph,
                 context,
             )?;
             let unbound = projected
@@ -2389,7 +2438,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let mut acyclic = Vec::new();
         let mut completion_rejection = None;
         for path in frontier {
-            match self.normalize_path(path, graph.read(), context) {
+            match self.normalize_path(path, graph, context) {
                 Ok(NormalizedPath::Acyclic(path)) => acyclic.push(path),
                 Ok(NormalizedPath::Cyclic(parameter)) => {
                     if self.first_cycle.is_none() {
@@ -2477,7 +2526,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     fn normalize_path<A>(
         &mut self,
         path: ConstraintPath<D>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<NormalizedPath<D>, TypeConstraintError>
     where

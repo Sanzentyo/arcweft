@@ -3,15 +3,8 @@
 use crate::types::PreparedEffects;
 
 use super::*;
-use crate::types::constraints::normalization::{
-    ConstraintClosedEffects, ConstraintProjectedEffectHeader,
-};
+use crate::types::constraints::normalization::ConstraintProjectionPhase;
 use std::marker::PhantomData;
-
-pub(in crate::types::constraints) enum ConstraintOperandEffects<D: ConstraintDomain> {
-    Original,
-    Closed(Arc<ConstraintClosedEffects<D>>),
-}
 
 pub(in crate::types::constraints) struct ConstraintOperandDerivation<D: ConstraintDomain, T> {
     pub(in crate::types::constraints::transaction::operand) origin: Arc<ConstraintOperandOrigin<D>>,
@@ -137,8 +130,7 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
         self,
         children: Vec<ConstraintProjectedOperand<D, TypeKind<PreparedEffects>>>,
         length: Option<ConstraintProjectedOperand<D, ArrayLength>>,
-        effects: &ConstraintOperandEffects<D>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ConstraintProjectedOperand<D, TypeKind<PreparedEffects>>, TypeConstraintError> {
         let mut values = Vec::with_capacity(children.len());
@@ -162,18 +154,7 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
             None => (None, None),
         };
         let input_header = self.source.function_header_in_scope(&self.contents_scope)?;
-        let header = match effects {
-            ConstraintOperandEffects::Closed(owner) => match input_header {
-                Some(header) => owner.project_header(&header, graph, context)?,
-                None => ConstraintProjectedEffectHeader::Original,
-            },
-            ConstraintOperandEffects::Original => {
-                if let Some(header) = input_header {
-                    header.admit(graph, context)?;
-                }
-                ConstraintProjectedEffectHeader::Original
-            }
-        };
+        let header = phase.project_header(input_header, context)?;
         let mut fields = (length_value, header);
         let value = self.source.value().constraint_shape().rebuild_with(
             values,
@@ -228,17 +209,19 @@ impl<D: ConstraintDomain> ConstraintProjectedOperand<D, TypeKind<PreparedEffects
         enclosing: &ConstraintLexicalScope,
         owner: &ConstraintLexicalScope,
         parameter: &GenericTypeReference,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError> {
         if occurrence.lexical_scope().as_ref() != enclosing || self.scope.as_ref() != owner {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
         if owner != enclosing {
-            self.value = context.transport_binding_type(
+            self.value = phase.transport(
                 enclosing,
                 owner,
                 &self.value,
                 parameter.clone().into(),
+                context,
             )?;
         }
         self.scope = Arc::clone(occurrence.lexical_scope());

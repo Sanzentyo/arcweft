@@ -63,7 +63,7 @@ where
     {
         return Ok(vec![path]);
     }
-    match resolve_type_alias(supplied.clone(), &path, context)? {
+    match resolve_type_alias(supplied.clone(), &path, graph, context)? {
         ConstraintAliasResolution::Value(value) => {
             path.projection_view()
                 .admit_operand(value.view(), graph.read(), context)?;
@@ -82,7 +82,7 @@ where
     }
     if let TypeConstraintShape::Generic(parameter) = supplied.value().constraint_shape() {
         let expected = supplied.scalar_expectation(TypeLeaf::AgentValue, context)?;
-        return bind_type_parameter(parameter, &expected.view(), path, context);
+        return bind_type_parameter(graph, parameter, &expected.view(), path, context);
     }
     match supplied.value().agent_value_shape() {
         AgentValueShape::Accept => Ok(vec![path]),

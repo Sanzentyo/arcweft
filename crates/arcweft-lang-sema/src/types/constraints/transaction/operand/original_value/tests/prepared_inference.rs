@@ -1,6 +1,8 @@
 use super::*;
 use crate::types::constraints::{ConstraintPath, TypeConstraintParameterScope};
 
+mod completed_transport;
+
 type Context<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
 
 fn parent(

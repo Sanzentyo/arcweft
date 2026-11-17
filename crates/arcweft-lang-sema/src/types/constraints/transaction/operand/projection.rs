@@ -15,8 +15,7 @@ pub(in crate::types::constraints) use header::{
     ConstraintEffectField, ConstraintEffectHeaderDerivation,
 };
 pub(in crate::types::constraints) use rebuild::{
-    ConstraintOperandDerivation, ConstraintOperandEffects, ConstraintOperandRebuild,
-    ConstraintProjectedOperand,
+    ConstraintOperandDerivation, ConstraintOperandRebuild, ConstraintProjectedOperand,
 };
 
 #[cfg(test)]
@@ -280,9 +279,10 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
     pub(in crate::types::constraints) fn transport<A: TypeConstraintAccounting>(
         &self,
         target: &Arc<ConstraintLexicalScope>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ConstraintOperand<D>, crate::types::TypeProjectionError<TypeConstraintError>> {
-        let value = target.transport_type(&self.scope, self.value, context)?;
+        let value = target.transport_type(&self.scope, self.value, graph, context)?;
         let origin = match &self.address {
             Some(address) => {
                 self.projected_origin(Arc::clone(address), Arc::clone(&self.value_origin))

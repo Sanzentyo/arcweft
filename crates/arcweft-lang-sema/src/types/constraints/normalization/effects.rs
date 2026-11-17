@@ -377,6 +377,10 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         &self.predicate
     }
 
+    pub(in crate::types::constraints) fn calculation_scope(&self) -> &ConstraintLexicalScope {
+        &self.context.scope
+    }
+
     pub(in crate::types::constraints) fn row(
         &self,
         key: &GenericEffectReference,

@@ -496,6 +496,7 @@ where
 }
 
 fn bind_type_parameter<A, D, L>(
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     parameter: &GenericTypeReference,
     value: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
@@ -513,7 +514,7 @@ where
         return Ok(Vec::new());
     }
     context
-        .add_binding(path, parameter.clone(), value.clone())
+        .add_binding(path, parameter.clone(), value.clone(), graph)
         .map(|path| path.into_iter().collect())
 }
 
@@ -542,8 +543,8 @@ where
     context.validate_type_header(pattern_shape, path.projection_view())?;
     context.validate_type_header(actual_shape, path.projection_view())?;
 
-    let pattern_alias = resolve_type_alias(pattern.clone(), &path, context)?;
-    let actual_alias = resolve_type_alias(actual.clone(), &path, context)?;
+    let pattern_alias = resolve_type_alias(pattern.clone(), &path, graph, context)?;
+    let actual_alias = resolve_type_alias(actual.clone(), &path, graph, context)?;
     let mut cycle = match (&pattern_alias, &actual_alias) {
         (ConstraintAliasResolution::Cycle(left), ConstraintAliasResolution::Cycle(right)) => {
             left.iter().chain(right.iter()).cloned().collect::<Vec<_>>()
@@ -640,19 +641,19 @@ where
                 _ if actual_active => (actual_parameter, pattern),
                 _ => return Ok(Vec::new()),
             };
-            return bind_type_parameter(parameter, value, path, context);
+            return bind_type_parameter(graph, parameter, value, path, context);
         }
         (TypeConstraintShape::Generic(parameter), _)
             if type_parameter_eligibility(parameter, &path, context)?
                 != TypeConstraintParameterEligibility::Rigid =>
         {
-            return bind_type_parameter(parameter, actual, path, context);
+            return bind_type_parameter(graph, parameter, actual, path, context);
         }
         (_, TypeConstraintShape::Generic(parameter)) => {
             if type_parameter_eligibility(parameter, &path, context)?
                 != TypeConstraintParameterEligibility::Rigid
             {
-                return bind_type_parameter(parameter, pattern, path, context);
+                return bind_type_parameter(graph, parameter, pattern, path, context);
             }
             return Ok(Vec::new());
         }

@@ -8,8 +8,7 @@ pub(super) use admission::AdmitOrigins;
 use super::*;
 use crate::types::constraints::transaction::{
     ConstraintConstOperandView, ConstraintOperand, ConstraintOperandChildren,
-    ConstraintOperandEffects, ConstraintOperandRebuild, ConstraintOperandView,
-    ConstraintProjectedOperand,
+    ConstraintOperandRebuild, ConstraintOperandView, ConstraintProjectedOperand,
 };
 
 pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
@@ -19,7 +18,6 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
     type ShapeSeed;
     type TypeOutput;
     type ConstOutput;
-    type Effects;
 
     fn ty(input: &Self::TypeInput) -> &'ty TypeKind<PreparedEffects>;
     fn length(input: &Self::ConstInput) -> &'ty ArrayLength;
@@ -51,8 +49,7 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
         seed: Self::ShapeSeed,
         children: Vec<Self::TypeOutput>,
         length: Option<Self::ConstOutput>,
-        effects: &Self::Effects,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError>;
     fn substitute_type<A: TypeConstraintAccounting>(
@@ -62,6 +59,7 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
         enclosing: &ConstraintLexicalScope,
         owner: &ConstraintLexicalScope,
         parameter: &GenericTypeReference,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError>;
     fn substitute_const<A: TypeConstraintAccounting>(
@@ -85,7 +83,6 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
     type ShapeSeed = TypeConstraintShape<'ty, PreparedEffects>;
     type TypeOutput = TypeKind<PreparedEffects>;
     type ConstOutput = ArrayLength;
-    type Effects = ConstraintOperandEffects<D>;
 
     fn admit_type_reference<A: TypeConstraintAccounting>(
         _: &Self::TypeInput,
@@ -144,22 +141,10 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
         shape: Self::ShapeSeed,
         children: Vec<TypeKind<PreparedEffects>>,
         length: Option<ArrayLength>,
-        effects: &Self::Effects,
-        _graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
-        let mut header = match (effects, shape) {
-            (
-                ConstraintOperandEffects::Closed(owner),
-                TypeConstraintShape::Function {
-                    effects, predicate, ..
-                },
-            ) => {
-                let scope = std::sync::Arc::new(context.capture_lexical_scope()?);
-                owner.project_inspected_header(&scope, effects, predicate, context)?
-            }
-            _ => super::super::ConstraintProjectedEffectHeader::Original,
-        };
+        let mut header = phase.inspected_header(shape, context)?;
         shape.rebuild_with(
             children,
             &mut header,
@@ -175,12 +160,13 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
         enclosing: &ConstraintLexicalScope,
         owner: &ConstraintLexicalScope,
         parameter: &GenericTypeReference,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
         if owner == enclosing {
             Ok(value)
         } else {
-            context.transport_binding_type(enclosing, owner, &value, parameter.clone().into())
+            phase.transport(enclosing, owner, &value, parameter.clone().into(), context)
         }
     }
     fn substitute_const<A: TypeConstraintAccounting>(
@@ -205,7 +191,6 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
     type ShapeSeed = ConstraintOperandRebuild<'ty, D>;
     type TypeOutput = ConstraintProjectedOperand<D, TypeKind<PreparedEffects>>;
     type ConstOutput = ConstraintProjectedOperand<D, ArrayLength>;
-    type Effects = ConstraintOperandEffects<D>;
 
     fn admit_type_reference<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
@@ -262,11 +247,10 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
         seed: Self::ShapeSeed,
         children: Vec<Self::TypeOutput>,
         length: Option<Self::ConstOutput>,
-        effects: &Self::Effects,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError> {
-        seed.rebuild(children, length, effects, graph, context)
+        seed.rebuild(children, length, phase, context)
     }
     fn substitute_type<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
@@ -275,9 +259,10 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
         enclosing: &ConstraintLexicalScope,
         owner: &ConstraintLexicalScope,
         parameter: &GenericTypeReference,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError> {
-        value.substitute(input, binding, enclosing, owner, parameter, context)
+        value.substitute(input, binding, enclosing, owner, parameter, phase, context)
     }
     fn substitute_const<A: TypeConstraintAccounting>(
         input: &Self::ConstInput,

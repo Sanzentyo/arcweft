@@ -14,6 +14,7 @@ pub(in crate::types) enum ConstraintAliasResolution<T, P> {
 pub(in crate::types) fn resolve_type_alias<A, D, L>(
     input: ConstraintOperandView<'_, D>,
     path: &ConstraintInferenceBranch<D, L>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<
     ConstraintAliasResolution<ConstraintOperand<D>, GenericTypeReference>,
@@ -81,7 +82,7 @@ where
             let target = step.occurrence.shared_scope();
             context.replace_lexical_scope(target.as_ref().clone());
             if value.scope() != target.as_ref() {
-                value = value.transport(&target, context).map_err(|error| {
+                value = value.transport(&target, graph, context).map_err(|error| {
                     TypeConstraintContext::<A, D>::binding_transport_error(
                         error,
                         parameter.clone().into(),

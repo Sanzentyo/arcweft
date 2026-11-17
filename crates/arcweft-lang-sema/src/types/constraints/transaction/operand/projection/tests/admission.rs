@@ -45,10 +45,11 @@ fn parameters(
     .unwrap()
 }
 
-fn fixture(
-    cancellation: &AtomicBool,
+fn fixture<'a>(
+    cancellation: &'a AtomicBool,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
 ) -> (
-    Context<'_>,
+    Context<'a>,
     ConstraintPath<NoConstraintClient>,
     [ConstraintOperand<NoConstraintClient>; 2],
     [ConstraintOperand<NoConstraintClient, ArrayLength>; 2],
@@ -61,7 +62,7 @@ fn fixture(
         cancellation,
         parameters(&types, &consts, false),
     )
-    .into_path();
+    .into_path(graph);
     let originals = [0, 1].map(|index| {
         context
             .fixture_original_context_with_rigid(OriginalRigidScope {
@@ -73,12 +74,14 @@ fn fixture(
             .unwrap()
     });
     let values = [0, 1].map(|index| {
-        context
-            .fixture_operand_in(
-                &originals[index],
-                &TypeKind::GenericParam(types[index].clone()),
-            )
-            .unwrap()
+        ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
+            &TypeKind::GenericParam(types[index].clone()),
+            Arc::new(originals[index].gamma().clone()),
+            originals[index].clone(),
+            &mut crate::types::constraints::transaction::operand::ConstraintEffectPhase::new(graph),
+            &mut context,
+        )
+        .unwrap()
     });
     let lengths = [0, 1].map(|index| {
         context
@@ -91,10 +94,31 @@ fn fixture(
     (context, path, values, lengths)
 }
 
+fn complete_effects(
+    path: &ConstraintPath<NoConstraintClient>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+    context: &mut Context<'_>,
+) -> Arc<ConstraintClosedEffects<NoConstraintClient>> {
+    // These fixtures have only type/const parameters and no function headers.
+    // Their actual original effect input is the path's own C receipt.
+    let receipt = path.prepare_effect_constraint(graph, context).unwrap();
+    let frozen = graph
+        .read()
+        .freeze_scoped(&[], &[], &[&receipt], context)
+        .unwrap();
+    let original = graph
+        .bind_original_scoped(&frozen, context)
+        .unwrap()
+        .freeze(graph.read(), context)
+        .unwrap();
+    ConstraintClosedEffects::for_path(path, &original, &[], graph, context).unwrap()
+}
+
 #[test]
 fn completed_binding_admission_cannot_use_a_siblings_retained_capture() {
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path, values, _) = fixture(&cancellation);
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let (mut context, mut path, values, _) = fixture(&cancellation, &mut graph);
     let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(90_704));
     let declarations: [GenericTypeReference; 2] =
         [0, 1].map(|slot| GenericTypeParameterId::new(owner.clone(), slot).into());
@@ -107,23 +131,33 @@ fn completed_binding_admission_cannot_use_a_siblings_retained_capture() {
             .unwrap();
         path.bindings.insert(key, value.clone());
     }
+    let effects = complete_effects(&path, &mut graph, &mut context);
     let solution = Arc::new(
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context).unwrap(),
+        TypeConstraintSolution::complete_application(
+            &path,
+            path.root_id(),
+            &effects,
+            graph.read(),
+            &mut context,
+        )
+        .unwrap(),
     );
     let application = context
-        .fixture_application_scope((), parameters(&declarations, &consts, true))
+        .fixture_application_scope((), parameters(&declarations, &consts, true), &mut graph)
         .unwrap();
-    let next = context.start_path(application).unwrap();
+    let next = context.start_path(application, &mut graph).unwrap();
     let next = solution
-        .restore_inherited_path(next.root_id(), next, &mut context)
+        .restore_inherited_path(next.root_id(), next, &mut graph, &mut context)
         .unwrap();
     let keys = declarations
         .each_ref()
         .map(|key| next.root_scope().parameters().type_reference(key).unwrap());
-    let effects = ConstraintClosedEffects::for_path(&next, &mut context).unwrap();
+    let effects = complete_effects(&next, &mut graph, &mut context);
     for index in 0..2 {
         let genuine = &next.bindings[&keys[index]];
-        assert!(close_type_operand(genuine.view(), &next, &effects, &mut context).is_ok());
+        assert!(
+            close_type_operand(genuine.view(), &next, &effects, graph.read(), &mut context).is_ok()
+        );
         let mut forged = genuine.clone();
         forged.value = Arc::clone(&next.bindings[&keys[1 - index]].value);
         let TypeKind::GenericParam(reference) = forged.value() else {
@@ -134,7 +168,7 @@ fn completed_binding_admission_cannot_use_a_siblings_retained_capture() {
             Some(TypeConstraintParameterEligibility::Rigid)
         );
         assert_eq!(
-            close_type_operand(forged.view(), &next, &effects, &mut context).err(),
+            close_type_operand(forged.view(), &next, &effects, graph.read(), &mut context).err(),
             Some(references::type_out_of_scope(reference))
         );
     }
@@ -143,8 +177,9 @@ fn completed_binding_admission_cannot_use_a_siblings_retained_capture() {
 #[test]
 fn visible_free_keys_cannot_borrow_a_different_originals_permission() {
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, values, lengths) = fixture(&cancellation);
-    let effects = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let (mut context, path, values, lengths) = fixture(&cancellation, &mut graph);
+    let effects = complete_effects(&path, &mut graph, &mut context);
     for index in 0..2 {
         let mut forged = values[index].clone();
         forged.origin = Arc::clone(&values[1 - index].origin);
@@ -156,7 +191,7 @@ fn visible_free_keys_cannot_borrow_a_different_originals_permission() {
             Some(TypeConstraintParameterEligibility::Rigid)
         );
         assert_eq!(
-            close_type_operand(forged.view(), &path, &effects, &mut context).err(),
+            close_type_operand(forged.view(), &path, &effects, graph.read(), &mut context).err(),
             Some(references::type_out_of_scope(reference))
         );
 
@@ -174,7 +209,7 @@ fn visible_free_keys_cannot_borrow_a_different_originals_permission() {
             Some(TypeConstraintConstEligibility::Rigid)
         );
         assert_eq!(
-            close_type_operand(forged.view(), &path, &effects, &mut context).err(),
+            close_type_operand(forged.view(), &path, &effects, graph.read(), &mut context).err(),
             Some(references::const_out_of_scope(reference))
         );
     }
@@ -183,7 +218,8 @@ fn visible_free_keys_cannot_borrow_a_different_originals_permission() {
 #[test]
 fn mixed_source_ports_keep_independent_type_and_length_admission() {
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, values, lengths) = fixture(&cancellation);
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let (mut context, path, values, lengths) = fixture(&cancellation, &mut graph);
     let root = context.fixture_operand(TypeKind::Array {
         item: Box::new(TypeKind::Unit),
         len: ArrayLength::Const(0),
@@ -193,13 +229,16 @@ fn mixed_source_ports_keep_independent_type_and_length_admission() {
         .rebuild(
             vec![values[0].view().projected_leaf()],
             Some(lengths[1].view().projected_leaf()),
-            &ConstraintOperandEffects::Original,
+            &mut crate::types::constraints::normalization::ConstraintProjectionPhase::Preparation(
+                &mut graph,
+            ),
             &mut context,
         )
         .unwrap()
         .into_operand();
-    let effects = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
-    let closed = close_type_operand(value.view(), &path, &effects, &mut context).unwrap();
+    let effects = complete_effects(&path, &mut graph, &mut context);
+    let closed =
+        close_type_operand(value.view(), &path, &effects, graph.read(), &mut context).unwrap();
     assert_eq!(
         closed.value(),
         &TypeKind::Array {

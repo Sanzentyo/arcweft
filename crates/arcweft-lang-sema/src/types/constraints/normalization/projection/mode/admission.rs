@@ -12,7 +12,6 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for AdmitOrigins {
     type ShapeSeed = Option<ConstraintFunctionHeaderView<'ty, D>>;
     type TypeOutput = ();
     type ConstOutput = ();
-    type Effects = ();
 
     fn ty(input: &Self::TypeInput) -> &'ty TypeKind<PreparedEffects> {
         input.value()
@@ -64,12 +63,11 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for AdmitOrigins {
         header: Self::ShapeSeed,
         _: Vec<()>,
         _: Option<()>,
-        _: &(),
-        graph: PreparedEffectReadView<'_>,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         if let Some(header) = header {
-            header.admit(graph, context)?;
+            header.admit(phase.read(), context)?;
         }
         Ok(())
     }
@@ -80,6 +78,7 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for AdmitOrigins {
         _: &ConstraintLexicalScope,
         _: &ConstraintLexicalScope,
         _: &GenericTypeReference,
+        _: &mut ConstraintProjectionPhase<'_, D>,
         _: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         // This mode is issued only with Validation, which does not follow
