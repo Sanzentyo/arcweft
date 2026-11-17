@@ -17809,3 +17809,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: source annotation／環境値を直接prepared consumerへ渡していた箇所を、上記の制御付き保持へ移した。現状行の前checkpoint説明は今回の接続範囲へ置換し、未接続のΓ／relation／joint sealを完了扱いにしない。過去の失敗・full SHA・実測・原本とGeneric Match等の既受入は保持する。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-source-type-retention-checkpoint.raw.zip](acceptance-evidence/task-source-type-retention-checkpoint.raw.zip) は10 entries、ZIP 130652 bytes、SHA-256 `9072b687a5184ef984d47dc76356ecc99a634d02f1c780fc7098c7411bd19cac`。途中・最終入力とログ・fmt・公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+## Source binding retention migration checkpoint
+
+2026-11-17。基点 `05fcdd2fdf2c1086c1403f60fd186e6d4915ff84`、移行Source `2a197025b062116cbb6327204414d1a916e706aa`。9 Rust path、106追加／40削除を既存mainへ途中commit・非force pushし、全9検証入力のSHA-256と公開blobのbyte hashを照合した。動作未受入のcheckpointで、未追跡 `%SystemDrive%/` を保持した。
+
+- source ownerの認証入口と型保持失敗のownerを、ExprId限定から既存のHirSemanticPathOwnerIdへ揃えた。local／patternでも同じ受理済みHIR pathと登録recordを使い、近くの式を探してscopeを代用しない。元の認証・世代・record allocation検査を保持した。
+- 初期local型登録を、宣言shell／効果schemeの事前登録より後へ移した。stage処理がlocal型やbodyの型付けを必要としないことをsource上で確認した判断で、実行受入ではない。local annotation・closure parameter・Choice cancelの登録型をprepared保持へ移し、候補内の登録にはchild contextの元work loanを渡す。pattern／local factsの一括登録入口もprepared型へ揃えた。
+- pattern hintはprepared型のResultを返し、annotation owner欠落やbudget／cancelをNoneへ捨てない。closure parameterと宣言／残余localの利用側を同じ契約へ移した。source owner fixtureに同じ宣言のpattern／local認証を追加し、既存5 fixtureの初期登録順序を変更した。header-only scheme fixtureの不要なlocal登録を除去し、headerがbody型付けに先行する条件を維持した。test targetのcompile・実行は未確認で、成功数へ加算しない。
+- `cargo check --locked -p arcweft-lang-sema --lib --all-features` は終了101・573エラー・27警告。最終9入力と公開blobの照合に基づく証拠再利用で、commit後の再実行ではない。owner fmt checkは終了0。nextest・doctest・test target・Clippy・逆依存・workspace／構造gateは未実行。PatternSeedContextの型pool境界等が引き続きcompileエラーで、既存canonical名正規化のcopy制御も今回完了していない。件数差を品質や受入の指標にしない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- 所有レビューでは、新しいowner語彙や型grammarを作らず既存HIR path ownerを使い、元scopeを既存source owner、候補のworkをchild contextへ置いた。成長66 LOCには既存fixtureの拡張を含む。公開errorのowner型を変更したが、受入／逆依存確認は未了。新しいtype walker・graph／予約の複製・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更はない。
+- Supersedes: 前checkpointの式だけのsource認証と、宣言登録より前のlocal型登録を上記へ置換した。現状説明は今回の接続範囲と未接続境界へ更新し、過去の失敗・full SHA・実測・原本とGeneric Match等の既受入は保持する。現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-source-binding-retention-checkpoint.raw.zip](acceptance-evidence/task-source-binding-retention-checkpoint.raw.zip) は7 entries、ZIP 63912 bytes、SHA-256 `b63e4165cdb6c5339e095af8f41c8015b3931c3e155fef70e3ec03ec18829cd3`。入力・ログ・fmt・公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
