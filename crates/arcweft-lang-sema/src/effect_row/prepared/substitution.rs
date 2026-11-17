@@ -447,6 +447,34 @@ impl PreparedEffectTermEdit<'_> {
         result
     }
 
+    /// Equivalence of whole finite-row facts. Keep the Boolean operations
+    /// outside each predicate's membership formula; pointwise equivalence
+    /// would reject two different nonempty rows whose emptiness facts agree.
+    pub(crate) fn equivalent_predicates<C: DecisionControl>(
+        &mut self,
+        left: &PreparedEffectPredicate,
+        right: &PreparedEffectPredicate,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
+        if !matches!(self.state, TermEditState::Open) {
+            return Err(PreparedEffectInvariant::TermEditState.into());
+        }
+        let result = (|| {
+            let left = self.read().retain_predicate(left, control)?;
+            let right = self.read().retain_predicate(right, control)?;
+            let left_copy = self.read().retain_predicate(&left, control)?;
+            let right_copy = self.read().retain_predicate(&right, control)?;
+            let both = self.graph.and(vec![left_copy, right_copy], control)?;
+            let either = self.graph.or(vec![left, right], control)?;
+            let neither = self.graph.not(either, control)?;
+            self.graph.or(vec![both, neither], control)
+        })();
+        if result.is_err() {
+            self.invalidate();
+        }
+        result
+    }
+
     pub(crate) fn read(&self) -> super::PreparedEffectReadView<'_> {
         self.graph.read()
     }

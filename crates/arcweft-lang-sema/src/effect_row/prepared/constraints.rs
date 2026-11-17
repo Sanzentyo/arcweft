@@ -202,6 +202,36 @@ impl EffectConstraintEnvironment<PreparedEffects> {
         Ok(())
     }
 
+    /// Predicate agreement is a fact of the same original relation, not an
+    /// early semantic comparison of unfinished applications or their bodies.
+    pub(crate) fn constrain_predicate_equality<C: DecisionControl>(
+        &mut self,
+        graph: &mut PreparedEffectGraph,
+        left: &PreparedEffectPredicate,
+        right: &PreparedEffectPredicate,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>>
+    where
+        C::Error: From<EffectConstraintEnvironmentError>,
+    {
+        for predicate in [left, right] {
+            graph
+                .read()
+                .visit_predicate_parameters(predicate, control, &mut |reference, _| {
+                    self.validate_reference(reference).map_err(Into::into)
+                })?;
+        }
+        let mut edit = graph.edit_terms();
+        let added = edit.equivalent_predicates(left, right, control)?;
+        let predicate = self.conjoin(&mut edit, added, control)?;
+        control
+            .charge(DecisionWork::Visit)
+            .map_err(PreparedEffectFailure::Control)?;
+        edit.commit()?;
+        self.predicate = predicate;
+        Ok(())
+    }
+
     pub(crate) fn restore_completed_inherited<C: DecisionControl>(
         &mut self,
         variable: GenericEffectReference,

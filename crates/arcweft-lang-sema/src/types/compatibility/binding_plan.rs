@@ -862,12 +862,15 @@ where
                 let found_header = found_children.function_header()?.expect("function header");
                 expected_header.admit(graph.read(), context)?;
                 found_header.admit(graph.read(), context)?;
-                if !expected_header
-                    .predicate()
-                    .equal_with(found_header.predicate(), context)?
-                {
-                    return Ok(Vec::new());
-                }
+                let mut path = path;
+                path.effects
+                    .constrain_predicate_equality(
+                        graph,
+                        expected_header.predicate(),
+                        found_header.predicate(),
+                        context,
+                    )
+                    .map_err(TypeConstraintError::from)?;
                 let expected_params = expected_children
                     .by_ref()
                     .take(expected_params.len())

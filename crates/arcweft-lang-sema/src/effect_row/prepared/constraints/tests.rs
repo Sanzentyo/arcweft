@@ -1,4 +1,6 @@
 use super::*;
+
+mod predicate_equality;
 use crate::{
     effect_row::EffectConstraintEligibility,
     effects::EffectSet,
