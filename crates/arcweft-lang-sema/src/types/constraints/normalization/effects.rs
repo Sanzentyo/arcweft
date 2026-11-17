@@ -15,6 +15,8 @@ use crate::effect_row::{
 };
 use crate::types::GenericEffectReference;
 
+mod scoped;
+
 pub(in crate::types) struct ConstraintClosedEffects<D: ConstraintDomain> {
     substitution: BTreeMap<GenericEffectReference, ConstraintOperand<D, EffectRow>>,
     predicate: ConstraintOperand<D, EffectPredicate>,
