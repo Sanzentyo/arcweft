@@ -126,31 +126,66 @@ impl ConstraintEffectFunctionApplication<'_> {
         edit: &mut PreparedEffectTermEdit<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<PreparedEffectRow, TypeConstraintError> {
+        self.transport_into(target, target.shape(), edit, context)
+    }
+
+    /// A type-owned local binder extends the actual ambient Γ. Captured
+    /// applications keep their original Γ dependencies beneath that binder.
+    pub(in crate::types::constraints) fn transport_into<
+        A: TypeConstraintAccounting,
+        D: ConstraintDomain,
+    >(
+        self,
+        target: &ConstraintLexicalScope,
+        occurrence: &crate::types::GenericScope,
+        edit: &mut PreparedEffectTermEdit<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<PreparedEffectRow, TypeConstraintError> {
         let result = (|| {
             self.binding.validate(edit.read())?;
-            if self.scope == target {
+            for _ in target.shape().binders() {
+                context.enter_node()?;
+            }
+            let inner = usize::try_from(occurrence.extension_depth(target.shape())?)
+                .map_err(|_| super::super::TypeConstraintAbort::ArithmeticOverflow)?;
+            if self.scope == target && inner == 0 {
                 return Ok(edit.read().retain_row(&self.binding.application, context)?);
             }
             edit.map_row_parameters(
                 &self.binding.application,
                 context,
                 &mut |reference, context| {
-                    let mapped = target
-                        .effect_reference(
-                            self.scope,
-                            self.scope.shape(),
-                            target.shape(),
-                            reference,
-                            context,
-                        )
-                        .map_err(|error| {
-                            crate::effect_row::prepared::PreparedEffectFailure::Control(
-                                TypeConstraintContext::<A, D>::binding_transport_error(
-                                    error,
-                                    reference.clone().into(),
-                                ),
-                            )
-                        })?;
+                    let mapped = match reference {
+                        GenericEffectReference::Bound(bound) => {
+                            self.scope
+                                .shape()
+                                .bound_effect(bound.depth(), bound.slot())
+                                .map_err(TypeConstraintError::from)
+                                .map_err(
+                                    crate::effect_row::prepared::PreparedEffectFailure::Control,
+                                )?;
+                            let depth = target
+                                .ambient_depth(self.scope, bound.depth(), 0, inner, context)
+                                .map_err(|error| {
+                                    crate::effect_row::prepared::PreparedEffectFailure::Control(
+                                        TypeConstraintContext::<A, D>::binding_transport_error(
+                                            error,
+                                            reference.clone().into(),
+                                        ),
+                                    )
+                                })?;
+                            occurrence
+                                .bound_effect(depth, bound.slot())
+                                .map_err(TypeConstraintError::from)
+                                .map_err(
+                                    crate::effect_row::prepared::PreparedEffectFailure::Control,
+                                )?
+                        }
+                        GenericEffectReference::Free(_) => reference.clone(),
+                        GenericEffectReference::Inference(_) => {
+                            return Err(PreparedEffectInvariant::ParameterContract.into());
+                        }
+                    };
                     Ok((&mapped != reference).then(|| {
                         PreparedEffectRow::Canonical(EffectRow::open(
                             crate::effects::EffectSet::new(),
@@ -169,6 +204,22 @@ impl ConstraintEffectFunctionApplication<'_> {
 }
 
 impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
+    pub(in crate::types::constraints) fn admit_captured_rigids<A: TypeConstraintAccounting>(
+        &self,
+        effects: &mut EffectConstraintEnvironment<PreparedEffects>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        let mut variables = Vec::new();
+        for reference in self.captured_rigid_effects(context)? {
+            context.enter_node()?;
+            variables.push(crate::effect_row::EffectConstraintVariable::new(
+                reference,
+                EffectConstraintEligibility::Rigid,
+            ));
+        }
+        effects.admit_variables(&variables).map_err(Into::into)
+    }
+
     /// Prepare the original R, keeping function identities, captures and the
     /// original work context. This transition does not select a solution.
     pub(in crate::types::constraints) fn prepare_effects<A: TypeConstraintAccounting>(

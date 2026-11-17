@@ -60,6 +60,7 @@ pub(crate) struct ProjectedConstraintType {
 /// path and its consuming normalization operation construct this view.
 pub(crate) struct ConstraintProjectionView<'a, D: ConstraintDomain> {
     applications: &'a ConstraintApplicationInventory<D>,
+    effects: &'a crate::effect_row::EffectConstraintEnvironment<PreparedEffects>,
     bindings: &'a BTreeMap<GenericTypeReference, ConstraintOperand<D>>,
     const_bindings: &'a BTreeMap<GenericConstReference, ConstraintOperand<D, ArrayLength>>,
 }
@@ -92,6 +93,12 @@ impl<D: ConstraintDomain> Clone for ConstraintProjectionView<'_, D> {
 impl<'a, D: ConstraintDomain> ConstraintProjectionView<'a, D> {
     pub(super) const fn applications(self) -> &'a ConstraintApplicationInventory<D> {
         self.applications
+    }
+
+    pub(super) const fn effects(
+        self,
+    ) -> &'a crate::effect_row::EffectConstraintEnvironment<PreparedEffects> {
+        self.effects
     }
 
     pub(super) fn binding(
@@ -141,6 +148,7 @@ impl<D: ConstraintDomain, L> ConstraintInferenceBranch<D, L> {
     pub(crate) fn projection_view(&self) -> ConstraintProjectionView<'_, D> {
         ConstraintProjectionView {
             applications: &self.applications,
+            effects: &self.effects,
             bindings: &self.bindings,
             const_bindings: &self.const_bindings,
         }
@@ -638,6 +646,7 @@ where
     let const_source = std::mem::take(&mut sealed.const_bindings);
     let source_view = ConstraintProjectionView {
         applications: &source_applications,
+        effects: &sealed.effects,
         bindings: &source,
         const_bindings: &const_source,
     };

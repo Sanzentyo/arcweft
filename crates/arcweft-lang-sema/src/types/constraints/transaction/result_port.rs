@@ -24,7 +24,7 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
     pub(crate) fn into_results<A: TypeConstraintAccounting>(
         self,
         receipt: &ConstraintSourceReceipt<D>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Vec<PendingResultConstraint<D>>, TypeConstraintError> {
         if !self.receipt.matches(receipt) {
@@ -40,6 +40,7 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
                 let (opened, result) = super::ResolvedConstraintResult::resolve(
                     alternative.result.clone(),
                     &alternative.path,
+                    graph,
                     context,
                 )?;
                 let source = super::ConstraintOperand::result(opened, scope, result);
@@ -47,7 +48,7 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
                     source.view(),
                     alternative.path.projection_view(),
                     &mut std::collections::BTreeSet::new(),
-                    graph,
+                    graph.read(),
                     context,
                 )?);
                 Ok(PendingResultConstraint {
@@ -179,7 +180,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             context.enter_node()?;
             let scope = Arc::new(context.capture_lexical_scope()?);
             let (opened, resolved) =
-                super::ResolvedConstraintResult::resolve(origin.clone(), &path, context)?;
+                super::ResolvedConstraintResult::resolve(origin.clone(), &path, effects, context)?;
             let original_source =
                 super::ConstraintOperand::result(opened, Arc::clone(&scope), resolved);
             let source = Arc::new(seal_type_operand(

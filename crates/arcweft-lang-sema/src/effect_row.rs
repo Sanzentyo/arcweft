@@ -663,6 +663,15 @@ impl<E: crate::types::TypeEffectDomain> EffectConstraintEnvironment<E> {
         self.parameters.keys()
     }
 
+    pub(crate) fn eligibility(
+        &self,
+        variable: &GenericEffectReference,
+    ) -> Option<EffectConstraintEligibility> {
+        self.parameters
+            .get(variable)
+            .map(|parameter| parameter.eligibility)
+    }
+
     pub(crate) fn original_predicate(&self) -> &E::Predicate {
         &self.predicate
     }

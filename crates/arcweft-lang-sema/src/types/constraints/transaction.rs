@@ -1352,7 +1352,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let frontier = core::mem::take(&mut self.frontier);
         let mut advanced = Vec::new();
         for mut path in frontier {
-            let pattern = context.open_template_type(pattern, &path, self.application)?;
+            let pattern = context.open_template_type(pattern, &path, self.application, effects)?;
             let scope = Arc::new(context.capture_lexical_scope()?);
             let pattern_operand = ConstraintOperand::template(
                 pattern.clone(),
@@ -1463,8 +1463,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             actual,
             acceptance,
             ConstraintEquationTiming::Immediate,
-            |path, scope, _, context| {
-                let value = context.open_template_type(actual, path, application)?;
+            |path, scope, graph, context| {
+                let value = context.open_template_type(actual, path, application, graph)?;
                 Ok(ConstraintOperand::template(
                     value,
                     scope,
@@ -1761,7 +1761,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn next_probe<A>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<Option<ProbeTicket<D>>, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
@@ -1814,12 +1814,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 alternative.value_expected(),
                 &path,
                 self.application,
+                graph,
             )?;
             let projected = project_type(
                 &expected,
                 path.projection_view(),
                 ConstraintClosurePolicy::Hint,
-                graph,
+                graph.read(),
                 context,
             )?;
             let unbound = projected
@@ -1902,6 +1903,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         ConstraintSourceReceipt {
                             input: Arc::clone(&input),
                         },
+                        graph,
                         context,
                     )?;
                     let actual = actual_operand.value().clone();
@@ -1977,6 +1979,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                                     &value_expected,
                                     &path,
                                     self.application,
+                                    graph,
                                 )?;
                                 let pattern = source_projection.compose_expected(&value_expected);
                                 (
@@ -2090,12 +2093,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn next_materialization_ticket<A>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<Option<MaterializationTicket<D>>, MaterializationImmediateFailure<D>>
     where
         A: TypeConstraintAccounting,
     {
         if !self.closed {
-            match self.close(context) {
+            match self.close(context, graph) {
                 Ok(()) => {}
                 // An incomplete or inconsistent component has no facts to
                 // materialize. `close` retains the typed rejection for finish.
@@ -2225,6 +2229,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     pub(crate) fn finish<A>(
         self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         compare: impl FnMut(
             &D::SealedBranchValue,
             &D::SealedBranchValue,
@@ -2234,10 +2239,32 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        self.finish_alternatives(context, compare)?.into_unique()
+        self.finish_alternatives(context, graph, compare)?
+            .into_unique()
     }
 
     pub(crate) fn finish_alternatives<A>(
+        mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        compare: impl FnMut(
+            &D::SealedBranchValue,
+            &D::SealedBranchValue,
+            &mut A,
+        ) -> Result<bool, TypeConstraintFailure<D>>,
+    ) -> Result<super::CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>>
+    where
+        A: TypeConstraintAccounting,
+    {
+        match self.close(context, graph) {
+            Ok(()) => self.finish_closed_alternatives(context, compare),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Metadata preparation borrows the graph; sealed comparison runs after
+    /// that loan ends, so the source client is never borrowed twice.
+    pub(crate) fn finish_closed_alternatives<A>(
         mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
         mut compare: impl FnMut(
@@ -2249,19 +2276,25 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        match self.close(context) {
-            Ok(()) => self.finish_candidate_alternatives(context, &mut compare),
-            Err(error) => Err(error.into()),
-        }
+        self.finish_candidate_alternatives(context, &mut compare)
     }
 
-    fn close<A>(
+    pub(crate) fn close<A>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<(), TypeConstraintError>
     where
         A: TypeConstraintAccounting,
     {
+        context.with_effect_transaction(graph, |context, graph| self.close_in(context, graph))
+    }
+
+    fn close_in<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+    ) -> Result<(), TypeConstraintError> {
         if self.closed {
             return Ok(());
         }
@@ -2274,7 +2307,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         if self.first_failure.is_some() {
             return Ok(());
         }
-        let result = self.close_frontier(context);
+        let result = self.close_frontier(context, graph);
         if let Err(error) = &result {
             self.record_failure(error.clone().into());
             self.materialization.clear();
@@ -2286,12 +2319,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     fn close_frontier<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<(), TypeConstraintError> {
         let frontier = core::mem::take(&mut self.frontier);
         let mut acyclic = Vec::new();
         let mut completion_rejection = None;
         for path in frontier {
-            match self.normalize_path(path, context) {
+            match self.normalize_path(path, graph.read(), context) {
                 Ok(NormalizedPath::Acyclic(path)) => acyclic.push(path),
                 Ok(NormalizedPath::Cyclic(parameter)) => {
                     if self.first_cycle.is_none() {
@@ -2312,14 +2346,15 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
         let mut groups: Vec<Vec<super::CompletedConstraintComponent<D>>> = Vec::new();
         for mut path in acyclic {
-            let component = match Self::complete_component(&mut path, self.application, context) {
-                Ok(component) => component,
-                Err(TypeConstraintError::Rejected(rejection)) => {
-                    completion_rejection.get_or_insert(rejection);
-                    continue;
-                }
-                Err(error) => return Err(error),
-            };
+            let component =
+                match Self::complete_component(&mut path, self.application, graph, context) {
+                    Ok(component) => component,
+                    Err(TypeConstraintError::Rejected(rejection)) => {
+                        completion_rejection.get_or_insert(rejection);
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
             let mut group_index = None;
             for (index, group) in groups.iter().enumerate() {
                 if let Some(first) = group.first()
@@ -2378,13 +2413,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     fn normalize_path<A>(
         &mut self,
         path: ConstraintPath<D>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<NormalizedPath<D>, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
     {
         let cyclic = path.deferred_cycles.parameters.iter().next().cloned();
-        let path = seal_path(path, context)?;
+        let path = seal_path(path, graph, context)?;
         if let Some(parameter) = cyclic {
             if self.first_cycle.is_none() {
                 self.first_cycle = Some(parameter.clone());
@@ -2408,6 +2444,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     {
         if let Some(error) = self.first_failure.take() {
             return Err(error);
+        }
+        if !self.closed {
+            return Err(protocol_error(TypeConstraintSourceProtocolInvariant::Outcome).into());
         }
         if self.active_materialization.is_some() {
             return Err(protocol_error(TypeConstraintSourceProtocolInvariant::Outcome).into());
@@ -2521,6 +2560,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     fn complete_component<A>(
         path: &mut ConstraintPath<D>,
         selected: ConstraintApplicationId,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<super::CompletedConstraintComponent<D>, TypeConstraintError>
     where
@@ -2553,7 +2593,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 context,
             )?);
             let projections =
-                Self::finish_projections(path, application, &solution, &effects, context)?;
+                Self::finish_projections(path, application, &solution, &effects, graph, context)?;
             completed.insert(
                 domain,
                 super::CompletedConstraintApplication::new(solution, projections),
@@ -2591,6 +2631,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         application: ConstraintApplicationId,
         solution: &TypeConstraintSolution,
         effects: &Arc<ConstraintClosedEffects<D>>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<
         Box<[super::KeyedConstraintProjection<D::Application, D::Projection>]>,
@@ -2615,15 +2656,16 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 }
             };
             let opened = context
-                .open_template_type(&request.value, path, application)
+                .open_template_type(&request.value, path, application, graph)
                 .map_err(projection_error)?;
             let opened = ConstraintOperand::template(
                 opened,
                 Arc::new(context.capture_lexical_scope()?),
                 path.applications.require_application_owner(application)?,
             );
-            let value = project_closed_operand(opened.view(), path, policy, effects, context)
-                .map_err(projection_error)?;
+            let value =
+                project_closed_operand(opened.view(), path, policy, effects, graph.read(), context)
+                    .map_err(projection_error)?;
             if policy != ConstraintClosurePolicy::ProjectionFuture {
                 validate_selected_call_self(value.value(), context).map_err(projection_error)?;
             }
@@ -2636,6 +2678,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         path,
                         ConstraintClosurePolicy::ProjectionClosed,
                         effects,
+                        graph.read(),
                         context,
                     )
                     .map_err(projection_error)?;
@@ -2761,6 +2804,7 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
     target: &Arc<super::lexical::ConstraintLexicalScope>,
     original: &super::OriginalProducerContext,
     receipt: ConstraintSourceReceipt<D>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstraintOperand<D>, TypeConstraintError> {
     match term {
@@ -2783,7 +2827,7 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
             ResolvedConstraintSource::Fixture,
         )),
         SourceProbeTerm::Result(result) => {
-            let (actual, result) = ResolvedConstraintResult::resolve(result, path, context)?;
+            let (actual, result) = ResolvedConstraintResult::resolve(result, path, graph, context)?;
             Ok(ConstraintOperand::source(
                 actual,
                 Arc::clone(target),

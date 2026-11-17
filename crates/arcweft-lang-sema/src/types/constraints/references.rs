@@ -1,7 +1,5 @@
 //! Scope-aware reference mapping over the shared semantic type shape.
 
-use crate::types::PreparedEffects;
-
 use super::super::{
     ArrayLength, GenericConstReference, GenericEffectReference, GenericScope, GenericTypeReference,
     TypeKind,
@@ -14,7 +12,12 @@ use super::{
 };
 
 #[cfg(test)]
+mod prepared_opening_tests;
+#[cfg(test)]
 mod tests;
+
+mod opening;
+pub(super) use opening::map_type;
 
 pub(super) trait ConstraintReferenceMap {
     fn type_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
@@ -43,60 +46,6 @@ pub(super) trait ConstraintReferenceMap {
         path: &ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<GenericEffectReference, TypeConstraintError>;
-}
-
-pub(super) fn map_type<A, D>(
-    ty: &TypeKind<PreparedEffects>,
-    mapping: &impl ConstraintReferenceMap,
-    application: &ConstraintApplicationScope<D>,
-    path: &ConstraintPath<D>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<TypeKind<PreparedEffects>, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    let scope = application
-        .parameters()
-        .completed_contract()
-        .template_scope();
-    super::solution::map_term_with_control(
-        ty,
-        scope,
-        scope,
-        1,
-        context,
-        &|reference, scope, _, _, context| {
-            mapping
-                .type_reference(reference, scope, application, path, context)
-                .map(TypeKind::GenericParam)
-                .map_err(crate::types::TypeProjectionError::Control)
-        },
-        &|length, scope, _, _, context| match length {
-            ArrayLength::Generic(reference) => mapping
-                .const_reference(reference, scope, application, path, context)
-                .map(ArrayLength::Generic)
-                .map_err(crate::types::TypeProjectionError::Control),
-            _ => Ok(length.clone()),
-        },
-        &|row, scope, _, depth, context| {
-            crate::types::projection_control::visit_effect_row(context, row, depth)?;
-            map_effect_row(row, mapping, scope, application, path, context)
-                .map_err(crate::types::TypeProjectionError::Control)
-        },
-    )
-    .map_err(|error| match error {
-        crate::types::TypeProjectionError::Control(error) => error,
-        crate::types::TypeProjectionError::Instantiation(
-            crate::types::TypeInstantiationError::Scope(error),
-        ) => error.into(),
-        crate::types::TypeProjectionError::Instantiation(
-            crate::types::TypeInstantiationError::Effect(error),
-        ) => error.into(),
-        crate::types::TypeProjectionError::Instantiation(_) => {
-            super::TypeConstraintRejection::UnresolvedType.into()
-        }
-    })
 }
 
 #[cfg(test)]
@@ -131,19 +80,6 @@ where
 }
 
 pub(super) struct OpenTemplateReferences;
-
-pub(super) fn map_effect_row<A: TypeConstraintAccounting, D: ConstraintDomain>(
-    row: &crate::effect_row::EffectRow,
-    mapping: &impl ConstraintReferenceMap,
-    scope: &GenericScope,
-    application: &ConstraintApplicationScope<D>,
-    path: &ConstraintPath<D>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<crate::effect_row::EffectRow, TypeConstraintError> {
-    row.try_map_variables(context, &mut |reference, context| {
-        mapping.effect_reference(reference, scope, application, path, context)
-    })
-}
 
 impl ConstraintReferenceMap for OpenTemplateReferences {
     fn effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(

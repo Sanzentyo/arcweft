@@ -1176,9 +1176,7 @@ where
         }
         loop {
             let ticket = self
-                .with_effect_relation(|lower, context, effects| {
-                    lower.next_probe(context, effects.read())
-                })?
+                .with_effect_relation(|lower, context, effects| lower.next_probe(context, effects))?
                 .map_err(TypeConstraintFailure::from)?;
             let Some(lower_ticket) = ticket else {
                 break;
@@ -1250,8 +1248,9 @@ where
     fn materialize_all(&mut self) -> Result<(), TypeConstraintFailure<D>> {
         loop {
             let ticket = self
-                .lower
-                .next_materialization_ticket(self.context)
+                .with_effect_relation(|lower, context, graph| {
+                    lower.next_materialization_ticket(context, graph)
+                })?
                 .map_err(TypeConstraintFailure::from)?;
             let Some(mut lower_ticket) = ticket else {
                 break;
@@ -1307,8 +1306,13 @@ where
         if let Err(failure) = self.client.finish() {
             self.lower.record_failure(Self::checkpoint_failure(failure));
         }
+        match self.with_effect_relation(|lower, context, graph| lower.close(context, graph)) {
+            Ok(Ok(())) => {}
+            Ok(Err(failure)) => self.lower.record_failure(failure.into()),
+            Err(failure) => self.lower.record_failure(failure),
+        }
         self.lower
-            .finish_alternatives(self.context, |left, right, work| {
+            .finish_closed_alternatives(self.context, |left, right, work| {
                 self.client
                     .sealed_branches_equal(left, right, work)
                     .map_err(|failure| match failure {

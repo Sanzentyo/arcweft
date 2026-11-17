@@ -333,6 +333,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(crate) fn admit_fixture_roots<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         roots: Vec<SuspendedConstraintFrontier<D>>,
         preparation: P,
     ) -> Result<PreparedValueRef<D>, PreparedValueFailure> {
@@ -341,7 +342,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             .ok_or(PreparedValueFailure::ProducerContext)?
             .original_context()
             .clone();
-        self.admit_roots(context, original, roots, preparation)
+        self.admit_roots(context, graph, original, roots, preparation)
     }
     pub(crate) fn new<A: TypeConstraintAccounting>(
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -403,6 +404,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     pub(crate) fn admit_roots<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         original: super::super::OriginalProducerContext,
         roots: Vec<SuspendedConstraintFrontier<D>>,
         preparation: P,
@@ -446,12 +448,14 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                         let (opened, _) = super::ResolvedConstraintResult::resolve(
                             root.result.clone(),
                             path,
+                            graph,
                             context,
                         )?;
                         project_type(
                             &opened,
                             path.projection_view(),
                             ConstraintClosurePolicy::Hint,
+                            graph.read(),
                             context,
                         )
                     });

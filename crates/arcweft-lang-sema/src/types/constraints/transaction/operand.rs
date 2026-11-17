@@ -98,6 +98,7 @@ impl<D: ConstraintDomain> ResolvedConstraintResult<D> {
     pub(super) fn resolve<A: TypeConstraintAccounting>(
         result: ConstraintResultProjection<D>,
         path: &ConstraintPath<D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(TypeKind<PreparedEffects>, Self), TypeConstraintError> {
         let owner = path
@@ -114,7 +115,7 @@ impl<D: ConstraintDomain> ResolvedConstraintResult<D> {
                 TypeConstraintSourceProtocolInvariant::Outcome,
             ));
         }
-        let value = context.open_template_type(&request.value, path, result.application)?;
+        let value = context.open_template_type(&request.value, path, result.application, graph)?;
         Ok((
             value,
             Self {

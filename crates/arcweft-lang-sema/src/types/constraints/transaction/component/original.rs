@@ -214,9 +214,17 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         }
         let mut variables = BTreeMap::new();
         for member in members.iter() {
-            for variable in self.original_path(*member)?.effects.original_variables() {
+            let original_effects = &self.original_path(*member)?.effects;
+            for variable in original_effects.original_variables() {
                 context.enter_node()?;
-                let eligibility = applications.effect_eligibility(variable).ok_or_else(|| crate::types::constraints::effect_invariant(crate::types::constraints::TypeConstraintEffectInvariantKind::ForeignVariable, Some(variable.clone())))?;
+                // Captured rigid Γ is owned by the original environment. Its
+                // inputs need not be declaration parameters of an application.
+                // Inference still follows the merged real application owners.
+                let eligibility = if matches!(variable, crate::types::GenericEffectReference::Free(_)) {
+                    original_effects.eligibility(variable).filter(|role| *role == crate::effect_row::EffectConstraintEligibility::Rigid)
+                } else {
+                    applications.effect_eligibility(variable)
+                }.ok_or_else(|| crate::types::constraints::effect_invariant(crate::types::constraints::TypeConstraintEffectInvariantKind::ForeignVariable, Some(variable.clone())))?;
                 variables.insert(variable.clone(), eligibility);
             }
         }

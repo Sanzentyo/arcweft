@@ -151,6 +151,7 @@ impl<D: ConstraintDomain> PreparedConstraintFunctionScheme<D> {
         let (value, instance) = ResolvedConstraintResult::resolve(
             ConstraintResultProjection { application, key },
             &path,
+            graph,
             context,
         )?;
         let operand = ConstraintOperand {

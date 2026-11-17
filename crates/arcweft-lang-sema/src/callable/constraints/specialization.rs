@@ -34,7 +34,7 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
                 .effect_declarations_mut()
                 .map_err(FunctionSpecializationFailure::Prepared)?
                 .relation();
-            pending.into_results(&receipt, effects.read(), self.context)
+            pending.into_results(&receipt, effects, self.context)
         }
         .map_err(|error| FunctionSpecializationFailure::Constraint(error.into()))?;
         let mut transformed: Option<PendingChildConstraint<D>> = None;
@@ -279,7 +279,7 @@ impl CandidateConstraintWorkSession<'_> {
         let completed = lower
             // This source-free application never opens callback materialization.
             // Every branch value is the domain's actual empty sealed branch.
-            .finish(&mut context, |_, _, _| Ok(true))
+            .finish(&mut context, effects, |_, _, _| Ok(true))
             .map_err(FunctionSpecializationFailure::Constraint)?;
         let result = completed.component.projection(application, &result).ok_or(
             FunctionSpecializationFailure::Prepared(

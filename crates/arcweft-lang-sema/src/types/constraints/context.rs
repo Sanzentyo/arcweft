@@ -1386,13 +1386,17 @@ where
         ty: &TypeKind<PreparedEffects>,
         path: &ConstraintPath<D>,
         application: ConstraintApplicationId,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
         let application = path.applications.require_application(application)?;
+        let target = self.capture_lexical_scope()?;
         super::references::map_type(
             ty,
             &super::references::OpenTemplateReferences,
             application,
             path,
+            &target,
+            graph,
             self,
         )
     }
@@ -1721,7 +1725,7 @@ where
                 .bound_effect(parameter.depth(), parameter.slot())
                 .ok()
                 .map(|_| EffectConstraintEligibility::Rigid),
-            _ => view.applications().effect_eligibility(variable),
+            _ => view.effects().eligibility(variable),
         }
     }
 
@@ -1847,13 +1851,11 @@ where
             self.enter_node()?;
         }
         let scope = self.lexical_scope.clone();
-        Ok(ConstraintPath::empty_with_imported(
-            application,
-            effects,
-            imported,
-            scope,
-            original,
-        ))
+        let mut path =
+            ConstraintPath::empty_with_imported(application, effects, imported, scope, original);
+        path.applications
+            .admit_captured_rigids(&mut path.effects, self)?;
+        Ok(path)
     }
 
     pub(crate) fn fork_path<L: Clone>(
@@ -1907,6 +1909,8 @@ where
             .map_err(|error| {
                 TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(error))
             })?;
+        path.applications
+            .admit_captured_rigids(&mut path.effects, self)?;
         Ok(path)
     }
 

@@ -1327,6 +1327,25 @@ impl EntityType {
     }
 }
 
+impl<E: TypeEffectDomain> TypeKind<E> {
+    /// Rebuild the shared function grammar using evidence from one phase.
+    pub(crate) fn function_with_contract(
+        binder: GenericBinder,
+        predicate: E::Predicate,
+        params: impl IntoIterator<Item = TypeKind<E>>,
+        return_type: TypeKind<E>,
+        effects: E::Row,
+    ) -> Self {
+        Self::Function {
+            binder,
+            predicate,
+            params: params.into_iter().collect(),
+            return_type: Box::new(return_type),
+            effects,
+        }
+    }
+}
+
 impl TypeKind {
     pub fn presentation_address_reference(
         kind: arcweft_interaction_model::presentation::PresentationAddressIdentityKind,
@@ -1650,22 +1669,6 @@ impl TypeKind {
             return_type,
             effects,
         )
-    }
-
-    pub(crate) fn function_with_contract(
-        binder: GenericBinder,
-        predicate: EffectPredicate,
-        params: impl IntoIterator<Item = TypeKind>,
-        return_type: TypeKind,
-        effects: EffectRow,
-    ) -> Self {
-        Self::Function {
-            binder,
-            predicate,
-            params: params.into_iter().collect(),
-            return_type: Box::new(return_type),
-            effects,
-        }
     }
 
     #[must_use]
