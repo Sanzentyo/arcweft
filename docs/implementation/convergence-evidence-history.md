@@ -17822,3 +17822,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 前checkpointの式だけのsource認証と、宣言登録より前のlocal型登録を上記へ置換した。現状説明は今回の接続範囲と未接続境界へ更新し、過去の失敗・full SHA・実測・原本とGeneric Match等の既受入は保持する。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-source-binding-retention-checkpoint.raw.zip](acceptance-evidence/task-source-binding-retention-checkpoint.raw.zip) は7 entries、ZIP 63912 bytes、SHA-256 `b63e4165cdb6c5339e095af8f41c8015b3931c3e155fef70e3ec03ec18829cd3`。入力・ログ・fmt・公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+## Pattern source context migration checkpoint
+
+2026-11-17。基点 `e9a782d5d979cc61f5c7b31f3830bcde6fd2c93f`、移行Source `71dcd556e7236bd185b5f216cb2ffd1b74e7f2ea`。10 Rust path、407追加／215削除を既存mainへ途中commit・非force pushし、全10検証入力のSHA-256と公開blobのbyte hashを照合した。動作未受入のcheckpointで、未追跡 `%SystemDrive%/` を保持した。
+
+- 式向けの保持処理をSourceTypePreparationへ集約し、既存canonical annotation pool・登録catalog・受理済みtopologyを借り、元のwork loanだけを保持するcontextにした。PatternSeedContextの誤ったprepared型pool参照を除去し、annotation／環境fieldは実際のpattern ownerを使って同じtype foldで保持する。context cloneは型・graph・budgetを複製しない。owner metadataの複製にも元controlのcheck／課金を先行させる。追加料金の受入は未確認である。
+- 宣言parameterは元の登録signatureを読み、parameter patternへ取り込む。Actionの固定annotation、method receiver、attached contentのlocalも同じ保持を使う。registered scrutineeはcanonical契約を保持してから共通のprepared seederへ渡し、dynamicな既存prepared payloadはそのまま同じseederへ渡す。環境enumの値pathもvariantの共通factoryを使う。型の再構成やpure行による代用を追加していない。
+- source contextとworkをblock／match／closure／Choice／statementのcandidate経路へ渡し、通常の宣言・Fx・capture queryは既存generationの宣言workを借りる。借用contextは後続のmutable評価に入る前に破棄する。typed bindingのrelationやnominal型の置換・registry lookup／早期identity発行は未移行で、旧canonical正規化・置換のcopy制御も完了していない。保持をΓ admissionや完成sealとして扱わない。
+- 実HIRのgeneric parameter annotationをpattern／localの両ownerから保持し、context cloneの反復で元work上限に到達し、元cancelを返すfixtureを1件追加した。料金の厳密な回数に依存させず、少なくとも一度の保持成功と共有上限の拒否を要求する。test targetのcompile・実行は未確認で、成功数へ加算しない。
+- locked Sema library／全feature checkは、dev01が終了101・548エラー・28警告、source contextの引数・借用期間・変数shadowingを修正したdev02が終了101・536エラー・28警告。未使用引数の除去とfixture追加後のdev03、owner metadataの事前課金後のdev04はともに終了101・536エラー・27警告。最終10入力と公開blobの照合に基づく証拠再利用で、commit後の再実行ではない。owner fmt checkは終了0。nextest・doctest・test target・Clippy・逆依存・workspace／構造gateは未実行。件数差を品質や受入の指標にしない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- 所有レビューでは、pool・認証・元workを一つのsource準備contextへ置き、既存PatternSeederの重複fieldを削除した。成長192 LOCには新fixture82 LOCを含む。公開API・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更、新しいtype walker、graph／予約の複製はない。Supersedes: annotation poolをprepared型poolと見なす入口と、各利用側の個別保持を上記へ置換した。過去の失敗・full SHA・実測・原本とGeneric Match等の既受入は保持し、現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-pattern-source-context-checkpoint.raw.zip](acceptance-evidence/task-pattern-source-context-checkpoint.raw.zip) は16 entries、ZIP 244274 bytes、SHA-256 `3313ece50754dfb70d4a0eee4acc6eff5f20b09ae4617d24f2427488ca13d436`。途中4回の入力・ログ、fmt、公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
