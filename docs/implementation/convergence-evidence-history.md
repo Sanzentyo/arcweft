@@ -18077,3 +18077,21 @@ Locked Sema test target／全feature checkはdev01／dev02／dev04の3回を実�
 Supersedes: 現状一覧の「root／forestへの接続はまだ」を、今回接続したsource別／jointのfreeze入力と、まだ型不整合として残る最終validator／closed header・canonical投影へ分けた。旧R relocationの説明を現行手順として残さず、この履歴と原本の元SHA・失敗・実測を保持する。新しい型付き境界で現れたエラー件数を、Generic Match等の既受入機能の新たな不具合や再開の証拠とは扱わない。受入・公開済み状態と過去の成功実測は元Sourceのまま維持する。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-forest-scoped-effects-checkpoint.raw.zip](acceptance-evidence/task-forest-scoped-effects-checkpoint.raw.zip) は30 entries、ZIP 440143 bytes、SHA-256 `7d52a27641a1457c139ad0a633d96e12c18a1dd77b21ada2bb47806b30c50efa`。3回のCargo入力・失敗ログ、4回のfmt、Cargo開始前中断、runner／照合script、公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+## Relation principal import checkpoint
+
+2026-11-18。基点 `bf552174a543b9139188320948bc87b28a4c3d6d`、移行Source `628181d47da1fc3bf5f57d9c6007078e2ce1e4a1`。16 Rust path、785追加／160削除、物理625 LOC増。既存mainへWIP commit・非force pushし、最終16入力と公開blobのbyte SHA-256を照合した。公開時のtracked差分0件、既存未追跡 `%SystemDrive%/` を保持した。
+
+ImportedEffectRelationが元のScopedEffectCompletionと実入力function bindingを一つ所有し、関数出力とImportedPrincipalのscalar条件が同じownerを共有する。出力関数がないrelationにもprincipal条件を保持でき、条件を格納するための仮function／row parameter／Γ／source lineageを作らない。Actual入力のliveness／arity、named入力の元issuer／immutable header、出力のfixed snapshot一致を検査する。条件はsatisfiableと同一視せず、jointな最小tupleが存在する領域を表す。Future入力・元C・全称scope・uniform choiceを元の条件付きsolverへ渡し、実入力のlabel supportが揃ってからlowerする。
+
+実attachmentの計算tableを関数とscalarで共有し、元relation／受け手のlabel basisごとのconditional completionを再利用する。確認時も同じattachmentの元programを一度だけ独立replayする。Arc identityはcache共有だけに使い、semantic equalityの証明とはしない。従来のimport_guarded_functionもこのownerへ委譲し、別readerや旧成功経路を残さない。Primitiveをdependency／support、read admission、同一graphのsubstitution、compile、observation、residual cursor、bounded replayへ接続した。閉じた元quantifierやwhole-function依存をambient row portとして再走査しない。簡約できない場合は元の式全体を保持し、true／pureやpointwise式へ置き換えない。最終frontend validator／header・canonical型投影への接続は未完了で、この段階を受入やchecked identityとは扱わない。
+
+新規fixtureは8本、358物理LOC。出力functionがない成立／不成立、satisfiableだがjoint least tupleがない条件、後から与えるFuture値と新label、出力とscalarの同一attachment／table、foreign・stale・fixed origin違いの拒否、実測workの全枯渇prefixでの不変性、閉じたfunction依存をrow portとして露出・再代入しない条件、named入力の元issuerと実body準備を待つ条件を対象にする。既存のcached-child改変fixtureは、共有Arcの重複参照を一時detachし、同じtableを改変してlookupへ戻してから独立確認する形へ移した。元の不正を拒否するassertionは維持した。Library／test targetはコンパイル失敗し、新fixtureのcompile成立・実行成功は主張せず、PASSへ加算しない。
+
+Locked Sema test target／全feature checkはdev01～dev04の4回、各終了101。Dev01はlibrary 537エラー・27警告、lib test 1,515エラー・46警告。新しいresidual binding型名、row matchへ入ったpredicate arm、共有tableの旧access等を修正したdev02／dev03／最終dev04はlibrary 532エラー・26警告、lib test 1,509エラー・45警告。4回のowner fmt checkは終了0。最終ログのprepared層へのprimary error mentionと新fixture path mentionは0件だったが、全targetのcompile成立を示さない。限定path抽出はreview aidとして記録し、件数は原本のterminal summaryをauthorityとする。Nextest・doctest・Clippy・逆依存・workspace／構造gateは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。公開blobとの照合によるcommit前証拠の再利用で、commit後の再実行ではない。
+
+所有レビューは16 pathのbase／現行LOC・bytes・分類・inline test LOCをJSONへ保持した。Completionはattachmentとimmutable binding、importsは派生tableと共有計算、reificationは独立確認、既存read／grammarは同じscalar algebraの訪問を所有する。大きい既存prepared／substitution／transaction ownerは代数・protocolの責務を維持し、無関係なstate群や物理分割だけのfacadeを増やさない。Named bodyをimport時に準備・再実行せず、別graph／work残量、I/O、unsafe、Cargo依存、layer、codec、version marker、production budget、jobs／profileを変更していない。既存dependency graph証拠を再利用し、全体scannerは未実行。
+
+Supersedes: 現状一覧の効果代数の「検証済み」は旧Sourceの実測を保持する意味へ明確に限定し、今回のprincipal importを未受入の移行進捗へ記録した。既受入機能を未完了へ戻した変更ではない。旧Sourceの実測とfull SHA、各回の失敗・原本、およびGeneric Match等の受入・公開済み状態を保持する。Frontendのcanonical-only consumerを未達のまま成功扱いせず、現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-relation-principal-import-checkpoint.raw.zip](acceptance-evidence/task-relation-principal-import-checkpoint.raw.zip) は29 entries、ZIP 582641 bytes、SHA-256 `91b3c3476ac2e6514693ab8a1c0ddcb2ade240871ff821f3d9f500bfb1dab064`。4回のCargo入力・失敗ログ・fmt、公開照合・stage／所有レビュー・限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
