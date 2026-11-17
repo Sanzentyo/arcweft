@@ -17835,3 +17835,16 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - 所有レビューでは、pool・認証・元workを一つのsource準備contextへ置き、既存PatternSeederの重複fieldを削除した。成長192 LOCには新fixture82 LOCを含む。公開API・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更、新しいtype walker、graph／予約の複製はない。Supersedes: annotation poolをprepared型poolと見なす入口と、各利用側の個別保持を上記へ置換した。過去の失敗・full SHA・実測・原本とGeneric Match等の既受入は保持し、現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-pattern-source-context-checkpoint.raw.zip](acceptance-evidence/task-pattern-source-context-checkpoint.raw.zip) は16 entries、ZIP 244274 bytes、SHA-256 `3313ece50754dfb70d4a0eee4acc6eff5f20b09ae4617d24f2427488ca13d436`。途中4回の入力・ログ、fmt、公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+## Prepared scope lifting migration checkpoint
+
+2026-11-17。基点 `86487420d81043892e89378ee2dfbac4a18e3fdc`、移行Source `1f928cbf50f1fa0f75411560cfb45a040d51f6bf`。7 Rust path、662追加／109削除を既存mainへ途中commit・非force pushし、全7検証入力のSHA-256と公開blobのbyte hashを照合した。動作未受入のcheckpointで、未追跡 `%SystemDrive%/` を保持した。
+
+- type／const／effect参照の持ち上げを既存GenericScope／各referenceの規則へ集約した。元prefixを保つ拡張と、値自身の内側frameを検査し、caller側の参照だけ追加frame分を持ち上げる。長さだけを比べていたcanonical投影・const長・incoming predicateも同じ規則へ移し、旧lift_effectのdepth計算を削除した。scope形状は実Γの認証ではなく、phaseのsource authorityを代用しない。
+- TypeKind<PreparedEffects>のscope投影を既存の共通structural foldで実装した。row／predicateのlive項は元PreparedEffectGraphのterm editでparameterを移し、body準備・効果解決・canonical identityを要求しない。Unknown行をpureへ変えない。外側の置換が全replacementを一つのeditに保持できる借用入口も用意し、scalarの後発失敗でもeditをFailedにしてcommitを拒否する。row／predicate自身の失敗も同じ所有型のinvalidateへ集約した。
+- 6 fixtureを追加した。3 namespaceの内側／外側frame、foreign prefix／変更された内側frame／escaped slot、元schemeのbody未準備でのlive arrow移送と後続closure、Unknown行と非定数predicate、初期／途中／終端直前のwork拒否とcancel、foreign term issuer、後発scalar失敗で先行項もrollbackされstaleとなる条件を対象にする。test targetのcompile・実行は未確認で、成功数へ加算しない。
+- locked Sema library／全feature checkはdev01・dev02・dev03とも終了101・536エラー・27警告。dev02は借用editによる複合置換の入口、dev03は後発scalar失敗のedit無効化を含む。最終7入力と公開blobの照合に基づく証拠再利用で、commit後の再実行ではない。owner fmt checkは終了0。nextest・doctest・test target・Clippy・逆依存・workspace／構造gateは未実行。件数一致を品質や受入の根拠にしない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。
+- nominalの宣言テンプレートへprepared引数を適用する処理と利用側のgraph loanは未接続で、今回の基盤をnominal移行の完了として扱わない。元R／Γ・joint completion／canonical seal・body一回準備の統合も引き続き未達である。追加したScopePrefixMismatchは公開errorの新しい種別で、逆依存の確認は未実行。既受入機能の具体的な新規不具合の受入証拠はなく、Generic Match等を残作業へ戻さない。
+- 所有レビューでは、frame規則をGenericScope、共通grammarの投影を既存type fold、live項と失敗原子性を元graphのaffine editへ置いた。成長553 LOCにはfixture333 LOCを含む。別のtype walker・scope fallback・graph／workの複製・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更はない。Supersedes: 旧canonical liftの独立depth計算を共通規則へ置換し、前checkpointのsource保持にscope移送の基盤を加えた。過去の失敗・full SHA・実測・原本を保持し、現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-prepared-scope-lifting-checkpoint.raw.zip](acceptance-evidence/task-prepared-scope-lifting-checkpoint.raw.zip) は13 entries、ZIP 182314 bytes、SHA-256 `144f3add3d71f3ce5465d167e06a3d5e9cfab784d9893a4dbf7727e0d7b42a96`。途中3回の入力・ログ、fmt、公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
