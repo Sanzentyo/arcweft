@@ -17679,3 +17679,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: mutable graph全体をcompletionが保持する構造と、同じissuerなら同じ元関係という前提を置換した。当該代数の保持・比較を検証済みへ更新する。実Analyzerの宣言事前登録・同一graph closure、Generic Match、caller-bound recursion、共有prefix、Free許可／reify等の既受入は維持する。prepared型を含む式・制約・local／pattern／pipe／結果portとΓの統合、body一回準備・一括seal、eager経路の置換は未完了であり、この代数だけでfrontendの再帰本体6件を完了にしない。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-open-source-effect-relations.raw.zip](acceptance-evidence/task-open-source-effect-relations.raw.zip) は43 entries、raw 34,128,924 bytes、ZIP 2,977,035 bytes、SHA-256 `ac13a302af73517a544163738f64a41b1a4f5914a1d62c7922ce395b81262e45`。全データentryの長さ・SHA-256をreadback検証した。過去の履歴prefix・全SHA・実測・失敗・既存原本を保持する。
+
+
+## Prepared constraint value ports migration checkpoint
+
+2026-11-17。基点 `af262af2080efa57b2d3f7c9d30e18bb93715bfd`、移行途中Source `e5bc4d0181ed31805786afad056a4da6ead73238`。既存mainの19 Rust pathを途中commit・非force pushし、公開HEADを照合した。これは受入済みSourceではなく、現在のSemaはコンパイルできない。dirty蓄積時の途中commitに正常動作確認を必須としないというユーザー指示に従い、失敗を隠さず記録した。未追跡 `%SystemDrive%/` は保持した。
+
+- source value、期待型、operand、contextの束縛、result port、内部projectionの型保持を `TypeKind<PreparedEffects>` へ切り替えた。`ConstraintSourceValueOwner` もprepared型を返す契約にした。公開・完成後の `TypeConstraintSolution` と完成evidence callbackはcanonical境界に残し、未確定の型へdigestを発行する迂回は追加しない。
+- container projectionは同じgeneric grammarを両effect domainで使う。公開の既定domainはCanonicalEffectsのままで、内部のsource projectionはPreparedEffectsを保持する。TypeKindの新variant、第二の型walker、互換readerは追加しない。
+- 実行した `cargo check --locked -p arcweft-lang-sema --lib --all-features` は終了101。最初は106エラー、container projectionのdomainと完成evidence境界、重複importを修正したSourceは99エラー。fmtは終了0。Clippy、nextest、doctest、逆依存・全workspace検証は未実行であり、前回の成功をこのSourceの成功へ読み替えない。
+- 残る具体的な移行先はAnalyzerObservedSourceValueとPreparedExpressionShell／Resultの型保持、function headerと効果projection、Canonicalを要求するrelation accounting、specializationのdigestと完成solutionの発行時点。compile errorはその未接続境界を示す。既存のprepared graph、scope／deltaと元Γを使い、clientから短いeffect phaseを借りてcallback前に返す。準備中のcompletionは元関係を保持し、joint seal後だけcanonical solutionとspecializationを発行する。named valueでbodyを要求するeager経路と全式／local／pattern／pipe／result portを同じ移行で置換する。
+- 次の作業はこのconsumer移行の継続であり、新たな設計依頼や外部承認を待つ状態ではない。既存のshared scoped foldとeffect term editを使い、unknownをpureへ置換したり、途中でcanonical化するfallbackは作らない。変更後のowner・逆依存・品質検証が終わるまで受入を主張しない。
+- Supersedes: 内部portがcanonical型のみを保持していた状態を「prepared型への移行途中」へ更新した。Source `71e6b6fdede2ce8e5d33cb9ec30e3c03e63747c0` の代数・関連174件PASSと過去の全実測は、そのSourceの履歴として維持する。Generic Match等の既受入を未完了へ戻さず、現在の移行checkpointのコンパイル失敗と区別する。現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-prepared-constraint-ports-checkpoint.raw.zip](acceptance-evidence/task-prepared-constraint-ports-checkpoint.raw.zip) は6 entries、ZIP 49064 bytes、SHA-256 `819b927b96e4acc4ac24696081fb2786b3990d531e63c644f003a9fb882c8349`。全データentryの長さ・SHA-256をreadback検証した。
