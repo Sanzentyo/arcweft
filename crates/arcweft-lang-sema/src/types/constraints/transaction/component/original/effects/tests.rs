@@ -627,7 +627,7 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
     for completed in joint.completed.into_vec() {
         let solved = completed
             .materialization
-            .finish(&mut context, None, |_, _, _| Ok(true))
+            .finish(&mut context, |_, _, _| Ok(true))
             .unwrap()
             .into_unique()
             .unwrap();

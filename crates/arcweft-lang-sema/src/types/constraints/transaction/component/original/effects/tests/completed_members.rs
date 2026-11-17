@@ -68,7 +68,7 @@ fn materialize(
         owner.submit_closed_materialization(ticket, closed).unwrap();
     }
     owner
-        .finish(context, None, |_, _, _| Ok(true))
+        .finish(context, |_, _, _| Ok(true))
         .unwrap()
         .into_unique()
         .unwrap()

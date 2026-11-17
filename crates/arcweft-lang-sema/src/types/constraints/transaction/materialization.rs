@@ -11,6 +11,7 @@ pub(crate) struct ConstraintMaterialization<D: ConstraintDomain> {
     materialization: VecDeque<MaterializationTicket<D>>,
     materialized: Vec<MaterializedRecord<D>>,
     first_failure: Option<TypeConstraintFailure<D>>,
+    first_cycle: Option<super::super::ConstraintGenericParameterId>,
 }
 
 impl<D: ConstraintDomain> ConstraintMaterialization<D> {
@@ -28,6 +29,7 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
             materialization: VecDeque::new(),
             materialized: Vec::new(),
             first_failure: None,
+            first_cycle: None,
         })
     }
 
@@ -100,11 +102,21 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
         }
     }
 
+    pub(in crate::types::constraints::transaction) fn retain_cycle(
+        &mut self,
+        cycle: Option<super::super::ConstraintGenericParameterId>,
+    ) {
+        if self.first_cycle.is_none() {
+            self.first_cycle = cycle;
+        }
+    }
+
     pub(in crate::types::constraints::transaction) fn is_pristine(&self) -> bool {
         self.active_materialization.is_none()
             && self.materialization.is_empty()
             && self.materialized.is_empty()
             && self.first_failure.is_none()
+            && self.first_cycle.is_none()
     }
 
     pub(in crate::types::constraints::transaction) fn discard_pending(&mut self) {
@@ -273,7 +285,6 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
     pub(crate) fn finish<A>(
         mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        first_cycle: Option<super::super::ConstraintGenericParameterId>,
         mut compare: impl FnMut(
             &D::SealedBranchValue,
             &D::SealedBranchValue,
@@ -352,7 +363,7 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
             }
         }
         if candidates.is_empty() {
-            if let Some(parameter) = first_cycle {
+            if let Some(parameter) = self.first_cycle.take() {
                 return Err(TypeConstraintError::Rejected(
                     TypeConstraintRejection::CyclicInstantiation { parameter },
                 )

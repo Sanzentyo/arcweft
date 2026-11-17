@@ -2263,7 +2263,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     /// Metadata preparation borrows the graph; sealed comparison runs after
     /// that loan ends, so the source client is never borrowed twice.
     pub(crate) fn finish_closed_alternatives<A>(
-        mut self,
+        self,
         context: &mut TypeConstraintContext<'_, A, D>,
         compare: impl FnMut(
             &D::SealedBranchValue,
@@ -2274,14 +2274,28 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        if let Some(error) = self.first_failure.take() {
-            return Err(error);
-        }
+        self.into_materialization()?.finish(context, compare)
+    }
+
+    pub(crate) fn into_materialization(
+        mut self,
+    ) -> Result<ConstraintMaterialization<D>, TypeConstraintFailure<D>> {
         if !self.closed {
+            if let Some(error) = self.first_failure.take() {
+                return Err(error);
+            }
             return Err(protocol_error(TypeConstraintSourceProtocolInvariant::Outcome).into());
         }
-        self.materialization
-            .finish(context, self.first_cycle.take(), compare)
+        if let Some(error) = self.first_failure.take() {
+            self.materialization.record_failure(error);
+        }
+        self.materialization.retain_cycle(self.first_cycle.take());
+        Ok(self.materialization)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn materialization_owner(&self) -> &ConstraintMaterialization<D> {
+        &self.materialization
     }
 
     pub(crate) fn close<A>(

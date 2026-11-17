@@ -317,10 +317,10 @@ where
         limits: &CallableLimits,
         invariant: impl Fn(CallConstraintInvariant) -> D::ClientInvariant,
     ) -> Result<(), TypeConstraintFailure<D>> {
-        let authority = &self.authority;
+        let authority = &self.callbacks.authority;
         let access = CandidateConstraintEffectAccess { authority };
-        self.client.with_effect_relation(access, |effects| {
-            self.lower.constrain_result_use(self.context, effects, result, expected, |source, context| {
+        self.callbacks.client.with_effect_relation(access, |effects| {
+            self.lower.constrain_result_use(self.callbacks.context, effects, result, expected, |source, context| {
                 if !matches!(source.source_type(), TypeKind::Function { binder, .. } if !binder.is_empty()) {
                     return Ok(None);
                 }
@@ -349,7 +349,7 @@ where
                 }
                 Ok(Some(source.prepare_function_scheme(application, parameters, template, context)?))
             })
-        }).map_err(Self::checkpoint_failure)?
+        }).map_err(CandidateConstraintCallbacks::<D, C>::checkpoint_failure)?
     }
 }
 

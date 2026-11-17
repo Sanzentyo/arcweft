@@ -65,7 +65,7 @@ fn finish(
     context: &mut Context<'_>,
 ) -> SolvedCandidate<NoConstraintClient> {
     owner
-        .finish(context, None, |_, _, _| Ok(true))
+        .finish(context, |_, _, _| Ok(true))
         .unwrap()
         .into_unique()
         .unwrap()
@@ -210,7 +210,7 @@ fn an_ignored_invalid_submission_cannot_publish_an_earlier_sealed_candidate() {
             .is_none()
     );
     let comparisons = Cell::new(0);
-    let result = owner.finish(&mut context, None, |_, _, _| {
+    let result = owner.finish(&mut context, |_, _, _| {
         comparisons.set(comparisons.get() + 1);
         Ok(true)
     });

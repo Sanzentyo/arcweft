@@ -11,8 +11,9 @@ use super::continuation::{
 pub(crate) use super::limits::{CandidateConstraintWorkLoan, CandidateConstraintWorkSession};
 use crate::types::constraints::context::TypeConstraintContext;
 use crate::types::constraints::transaction::{
-    ClosedMaterialization, MaterializationCallbackBinding, MaterializationTicket, ProbeStart,
-    ProbeSubmission, ProbeTicket, SuspendedConstraintFrontier, TypeConstraintTransaction,
+    ClosedMaterialization, ConstraintMaterialization, MaterializationCallbackBinding,
+    MaterializationTicket, ProbeStart, ProbeSubmission, ProbeTicket, SuspendedConstraintFrontier,
+    TypeConstraintTransaction,
 };
 use crate::types::constraints::{
     ClosedMaterializationSubmission, CompletedCandidateAlternatives, ConstraintDomain,
@@ -26,6 +27,7 @@ use crate::types::constraints::{
 use crate::types::{ConstraintAcceptance, PreparedEffects, TypeKind};
 use std::sync::Arc;
 
+mod callbacks;
 mod specialization;
 pub(crate) use specialization::FunctionSpecializationFailure;
 
@@ -286,39 +288,36 @@ impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'pr
                 TypeConstraintInitializationFailure::original_context(error),
             )
         })?;
-        let lower =
-            client
-                .with_effect_relation(
-                    CandidateConstraintEffectAccess {
-                        authority: &authority,
-                    },
-                    |graph| {
-                        TypeConstraintTransaction::initialize_from_nested_path(
-                            self.context,
-                            graph,
-                            original,
-                            application,
-                            parameters,
-                            inherited,
-                            nested,
-                        )
-                    },
-                )
-                .map_err(|failure| {
-                    CandidateConstraintDriverStartFailure::EffectRelation(
-                        CandidateConstraintDriver::<D, C>::checkpoint_failure(failure),
+        let lower = client
+            .with_effect_relation(
+                CandidateConstraintEffectAccess {
+                    authority: &authority,
+                },
+                |graph| {
+                    TypeConstraintTransaction::initialize_from_nested_path(
+                        self.context,
+                        graph,
+                        original,
+                        application,
+                        parameters,
+                        inherited,
+                        nested,
                     )
-                })?
-                .map_err(CandidateConstraintDriverStartFailure::Lower)?;
-        let driver = CandidateConstraintDriver {
-            context: self.context,
-            authority,
-            lower,
-            client,
-            ticket_issuer: Arc::new(SourceCallbackTicketIssuer),
-            next_ticket_ordinal: 0,
-            active_ticket: None,
-        };
+                },
+            )
+            .map_err(|failure| {
+                CandidateConstraintDriverStartFailure::EffectRelation(
+                    CandidateConstraintCallbacks::<D, C>::checkpoint_failure(failure),
+                )
+            })?
+            .map_err(CandidateConstraintDriverStartFailure::Lower)?;
+        let callbacks = CandidateConstraintCallbacks::new(self.context, authority, client)
+            .map_err(|error| {
+                CandidateConstraintDriverStartFailure::Lower(
+                    TypeConstraintInitializationFailure::original_context(error),
+                )
+            })?;
+        let driver = CandidateConstraintDriver { lower, callbacks };
         let result = drive(driver);
         Ok(result)
     }
@@ -471,10 +470,21 @@ pub(crate) struct CandidateConstraintDriver<
     D: ConstraintDomain,
     C: TypeConstraintClient<D>,
 > {
+    lower: TypeConstraintTransaction<D>,
+    callbacks: CandidateConstraintCallbacks<'driver, 'control, D, C>,
+}
+
+/// The callback owner has no inference frontier. Its context, graph authority,
+/// client and affine checkpoint identities remain together in either phase.
+struct CandidateConstraintCallbacks<
+    'driver,
+    'control,
+    D: ConstraintDomain,
+    C: TypeConstraintClient<D>,
+> {
     context:
         &'driver mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
     authority: PreparedConstraintAuthority,
-    lower: TypeConstraintTransaction<D>,
     client: C,
     ticket_issuer: Arc<SourceCallbackTicketIssuer>,
     next_ticket_ordinal: u64,
@@ -587,39 +597,36 @@ impl<'a> CandidateConstraintWorkSession<'a> {
                 ),
             ));
         }
-        let lower =
-            client
-                .with_effect_relation(
-                    CandidateConstraintEffectAccess {
-                        authority: &authority,
-                    },
-                    |graph| {
-                        TypeConstraintTransaction::initialize_with_imported(
-                            context,
-                            graph,
-                            original,
-                            application,
-                            parameter_scope,
-                            inherited,
-                            imported_scope,
-                        )
-                    },
-                )
-                .map_err(|failure| {
-                    CandidateConstraintDriverStartFailure::EffectRelation(
-                        CandidateConstraintDriver::<D, C>::checkpoint_failure(failure),
+        let lower = client
+            .with_effect_relation(
+                CandidateConstraintEffectAccess {
+                    authority: &authority,
+                },
+                |graph| {
+                    TypeConstraintTransaction::initialize_with_imported(
+                        context,
+                        graph,
+                        original,
+                        application,
+                        parameter_scope,
+                        inherited,
+                        imported_scope,
                     )
-                })?
-                .map_err(CandidateConstraintDriverStartFailure::Lower)?;
-        let driver = CandidateConstraintDriver {
-            context,
-            authority,
-            lower,
-            client,
-            ticket_issuer: Arc::new(SourceCallbackTicketIssuer),
-            next_ticket_ordinal: 0,
-            active_ticket: None,
-        };
+                },
+            )
+            .map_err(|failure| {
+                CandidateConstraintDriverStartFailure::EffectRelation(
+                    CandidateConstraintCallbacks::<D, C>::checkpoint_failure(failure),
+                )
+            })?
+            .map_err(CandidateConstraintDriverStartFailure::Lower)?;
+        let callbacks =
+            CandidateConstraintCallbacks::new(context, authority, client).map_err(|error| {
+                CandidateConstraintDriverStartFailure::Lower(
+                    TypeConstraintInitializationFailure::original_context(error),
+                )
+            })?;
+        let driver = CandidateConstraintDriver { lower, callbacks };
         Ok(drive(driver))
     }
 }
@@ -651,479 +658,14 @@ where
         ) -> R,
     ) -> Result<R, TypeConstraintFailure<D>> {
         let access = CandidateConstraintEffectAccess {
-            authority: &self.authority,
+            authority: &self.callbacks.authority,
         };
-        self.client
+        self.callbacks
+            .client
             .with_effect_relation(access, |effects| {
-                operation(&mut self.lower, self.context, effects)
+                operation(&mut self.lower, self.callbacks.context, effects)
             })
-            .map_err(Self::checkpoint_failure)
-    }
-
-    fn with_callback<R>(
-        &mut self,
-        operation: impl FnOnce(&mut C, &mut CandidateConstraintWorkSession<'_>) -> R,
-    ) -> R {
-        let session = self.context.accounting_mut();
-        operation(&mut self.client, session)
-    }
-
-    fn protocol_failure(kind: TypeConstraintSourceProtocolInvariant) -> TypeConstraintFailure<D> {
-        TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
-            TypeConstraintInvariant::SourceProtocol(kind),
-        ))
-    }
-
-    fn checkpoint_failure(failure: SourceCheckpointFailure<D>) -> TypeConstraintFailure<D> {
-        match failure {
-            SourceCheckpointFailure::Constraint(error) => error.into(),
-            SourceCheckpointFailure::Protocol(kind) => Self::protocol_failure(kind),
-            SourceCheckpointFailure::Client(invariant) => {
-                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Client(invariant))
-            }
-        }
-    }
-
-    fn materialization_protocol_failure(
-        kind: TypeConstraintSourceProtocolInvariant,
-    ) -> MaterializationImmediateFailure<D> {
-        MaterializationImmediateFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
-            TypeConstraintInvariant::SourceProtocol(kind),
-        ))
-    }
-
-    fn materialization_checkpoint_failure(
-        failure: SourceCheckpointFailure<D>,
-    ) -> MaterializationImmediateFailure<D> {
-        match failure {
-            SourceCheckpointFailure::Constraint(error) => match error {
-                crate::types::constraints::TypeConstraintError::Abort(error) => {
-                    MaterializationImmediateFailure::Abort(error)
-                }
-                crate::types::constraints::TypeConstraintError::Invariant(error) => {
-                    MaterializationImmediateFailure::Invariant(
-                        TypeConstraintFailureInvariant::Constraint(error),
-                    )
-                }
-                crate::types::constraints::TypeConstraintError::Rejected(_) => {
-                    Self::materialization_protocol_failure(
-                        TypeConstraintSourceProtocolInvariant::Outcome,
-                    )
-                }
-            },
-            SourceCheckpointFailure::Protocol(kind) => Self::materialization_protocol_failure(kind),
-            SourceCheckpointFailure::Client(invariant) => {
-                MaterializationImmediateFailure::Invariant(TypeConstraintFailureInvariant::Client(
-                    invariant,
-                ))
-            }
-        }
-    }
-
-    fn mint_ticket(
-        &mut self,
-        authority: SourceCallbackAuthority<D>,
-        charge: impl FnOnce(
-            &mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
-        ) -> Result<(), crate::types::constraints::TypeConstraintError>,
-    ) -> Result<SourceCallbackTicket<D>, TypeConstraintFailure<D>> {
-        let ordinal = self.reserve_ticket_ordinal(charge)?;
-        Ok(self.ticket_from_ordinal(ordinal, authority))
-    }
-
-    fn reserve_ticket_ordinal(
-        &mut self,
-        charge: impl FnOnce(
-            &mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
-        ) -> Result<(), crate::types::constraints::TypeConstraintError>,
-    ) -> Result<u64, TypeConstraintFailure<D>> {
-        let ordinal = self.next_ticket_ordinal;
-        let next_ordinal = ordinal.checked_add(1).ok_or(TypeConstraintFailure::Abort(
-            TypeConstraintAbort::ArithmeticOverflow,
-        ))?;
-        charge(self.context).map_err(TypeConstraintFailure::from)?;
-        self.next_ticket_ordinal = next_ordinal;
-        Ok(ordinal)
-    }
-
-    fn ticket_from_ordinal(
-        &self,
-        ordinal: u64,
-        authority: SourceCallbackAuthority<D>,
-    ) -> SourceCallbackTicket<D> {
-        SourceCallbackTicket {
-            identity: SourceCallbackTicketIdentity {
-                issuer: Arc::clone(&self.ticket_issuer),
-                ordinal,
-            },
-            authority,
-        }
-    }
-
-    fn identity_matches(
-        left: &SourceCallbackTicketIdentity,
-        right: &SourceCallbackTicketIdentity,
-    ) -> bool {
-        Arc::ptr_eq(&left.issuer, &right.issuer) && left.ordinal == right.ordinal
-    }
-
-    fn close_probe_checkpoint_once(
-        &mut self,
-        checkpoint: C::ProbeCheckpoint,
-        disposition: ProbeCheckpointDisposition,
-    ) -> Result<Option<D::ProbePreparation>, SourceCheckpointFailure<D>> {
-        let result = self.with_callback(|client, work| {
-            client.close_probe_checkpoint(work, checkpoint, disposition)
-        });
-        self.active_ticket = None;
-        result
-    }
-
-    fn close_materialization_checkpoint_once(
-        &mut self,
-        checkpoint: C::MaterializationCheckpoint,
-        sealed: Option<C::PreparedSealedBranchValue>,
-    ) -> Result<Option<D::SealedBranchValue>, SourceCheckpointFailure<D>> {
-        let result = self.with_callback(|client, work| {
-            client.close_materialization_checkpoint(work, checkpoint, sealed)
-        });
-        self.active_ticket = None;
-        result
-    }
-
-    fn finish_materialization_close(
-        authority_failure: Option<TypeConstraintSourceProtocolInvariant>,
-        invalid: Option<TypeConstraintSourceProtocolInvariant>,
-        close: Result<Option<D::SealedBranchValue>, SourceCheckpointFailure<D>>,
-    ) -> Result<Option<D::SealedBranchValue>, MaterializationImmediateFailure<D>> {
-        if let Some(failure) = authority_failure {
-            return Err(Self::materialization_protocol_failure(failure));
-        }
-        if let Some(failure) = invalid {
-            return Err(Self::materialization_protocol_failure(failure));
-        }
-        close.map_err(Self::materialization_checkpoint_failure)
-    }
-
-    fn begin_probe_callback(
-        &mut self,
-        source: ConstraintSourceId<D::Source>,
-    ) -> Result<
-        (
-            SourceCallbackTicket<D>,
-            BoundSourceCheckpoint<C::ProbeCheckpoint>,
-        ),
-        TypeConstraintFailure<D>,
-    > {
-        if self.active_ticket.is_some() {
-            return Err(Self::protocol_failure(
-                TypeConstraintSourceProtocolInvariant::Ticket,
-            ));
-        }
-        let ticket = self.mint_ticket(SourceCallbackAuthority::Probe { source }, |context| {
-            context.charge_source_probe()
-        })?;
-        let checkpoint = self
-            .with_callback(|client, work| client.open_probe_checkpoint(work, source))
-            .map_err(Self::checkpoint_failure)?;
-        let identity = ticket.identity.clone();
-        self.active_ticket = Some(ticket.identity.clone());
-        Ok((
-            ticket,
-            BoundSourceCheckpoint {
-                identity,
-                checkpoint,
-            },
-        ))
-    }
-
-    fn close_probe_callback(
-        &mut self,
-        ticket: SourceCallbackTicket<D>,
-        checkpoint: BoundSourceCheckpoint<C::ProbeCheckpoint>,
-        attempt: Result<SourceProbeOutcome<D>, SourceCallbackFailure<D>>,
-    ) -> Result<ProbeSubmission<D>, TypeConstraintFailure<D>> {
-        let authority_source = match &ticket.authority {
-            SourceCallbackAuthority::Probe { source } => Some(*source),
-            SourceCallbackAuthority::Materialize { .. } => None,
-        };
-        let authority_failure = if authority_source.is_none() {
-            Some(TypeConstraintSourceProtocolInvariant::Ticket)
-        } else if !self
-            .active_ticket
-            .as_ref()
-            .is_some_and(|identity| Self::identity_matches(identity, &ticket.identity))
-        {
-            Some(TypeConstraintSourceProtocolInvariant::Ticket)
-        } else if !Self::identity_matches(&ticket.identity, &checkpoint.identity) {
-            Some(TypeConstraintSourceProtocolInvariant::Checkpoint)
-        } else {
-            None
-        };
-        let invalid = match (authority_source, &attempt) {
-            (Some(source), Err(SourceCallbackFailure::Fatal(error))) => {
-                if error.phase() != SourcePhase::Probe {
-                    Some(TypeConstraintSourceProtocolInvariant::WrongPhase)
-                } else if error.source() != &source {
-                    Some(TypeConstraintSourceProtocolInvariant::WrongSource)
-                } else {
-                    None
-                }
-            }
-            (Some(source), Err(SourceCallbackFailure::Invariant(invariant))) => {
-                if D::client_invariant_source(invariant) != source.local() {
-                    Some(TypeConstraintSourceProtocolInvariant::WrongSource)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
-        let disposition = if authority_failure.is_none()
-            && invalid.is_none()
-            && matches!(&attempt, Ok(SourceProbeOutcome::Accepted(_)))
-        {
-            ProbeCheckpointDisposition::Retain
-        } else {
-            ProbeCheckpointDisposition::Discard
-        };
-        let close = self.close_probe_checkpoint_once(checkpoint.checkpoint, disposition);
-        if let Some(failure) = authority_failure {
-            return Err(Self::protocol_failure(failure));
-        }
-        if let Some(invalid) = invalid {
-            return Err(Self::protocol_failure(invalid));
-        }
-        let preparation = close.map_err(Self::checkpoint_failure)?;
-        if preparation.is_some() != (disposition == ProbeCheckpointDisposition::Retain) {
-            return Err(Self::protocol_failure(
-                TypeConstraintSourceProtocolInvariant::Outcome,
-            ));
-        }
-        match attempt {
-            Ok(SourceProbeOutcome::Accepted(contribution)) => {
-                let preparation = preparation.ok_or_else(|| {
-                    Self::protocol_failure(TypeConstraintSourceProtocolInvariant::Outcome)
-                })?;
-                Ok(ProbeSubmission::Accepted(
-                    contribution.close_preparation(preparation),
-                ))
-            }
-            Ok(SourceProbeOutcome::Rejected(cause)) => Ok(ProbeSubmission::Rejected(cause)),
-            Err(SourceCallbackFailure::Constraint(error)) => Err(error.into()),
-            Err(SourceCallbackFailure::Fatal(error)) => {
-                Err(TypeConstraintFailure::FatalSource(error))
-            }
-            Err(SourceCallbackFailure::Abort(error)) => Err(TypeConstraintFailure::Abort(error)),
-            Err(SourceCallbackFailure::Invariant(invariant)) => Err(
-                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Client(invariant)),
-            ),
-        }
-    }
-
-    fn begin_materialization_callback(
-        &mut self,
-        materialization: &mut MaterializationTicket<D>,
-    ) -> Result<
-        (
-            SourceCallbackTicket<D>,
-            BoundSourceCheckpoint<C::MaterializationCheckpoint>,
-        ),
-        MaterializationImmediateFailure<D>,
-    > {
-        if self.active_ticket.is_some() {
-            return Err(Self::materialization_protocol_failure(
-                TypeConstraintSourceProtocolInvariant::Ticket,
-            ));
-        }
-        self.lower
-            .validate_materialization_callback_begin(materialization)
-            .map_err(Self::materialization_protocol_failure)?;
-        let ordinal = self
-            .reserve_ticket_ordinal(|context| context.charge_materialization())
-            .map_err(materialization_immediate_from_failure)?;
-        let binding = materialization
-            .bind_callback()
-            .map_err(Self::materialization_protocol_failure)?;
-        let checkpoint = self
-            .with_callback(|client, work| {
-                client.open_materialization_checkpoint(work, binding.sources())
-            })
-            .map_err(Self::materialization_checkpoint_failure)?;
-        let ticket =
-            self.ticket_from_ordinal(ordinal, SourceCallbackAuthority::Materialize { binding });
-        let identity = ticket.identity.clone();
-        self.active_ticket = Some(ticket.identity.clone());
-        Ok((
-            ticket,
-            BoundSourceCheckpoint {
-                identity,
-                checkpoint,
-            },
-        ))
-    }
-
-    fn close_materialization_callback(
-        &mut self,
-        materialization: &mut MaterializationTicket<D>,
-        ticket: SourceCallbackTicket<D>,
-        checkpoint: BoundSourceCheckpoint<C::MaterializationCheckpoint>,
-        attempt: Result<
-            MaterializationOutcome<
-                ConstraintSourceId<D::Source>,
-                C::PreparedSealedBranchValue,
-                D::SourceErrorCause,
-            >,
-            SourceCallbackFailure<D>,
-        >,
-    ) -> Result<ClosedMaterialization<D>, MaterializationImmediateFailure<D>> {
-        let authority_binding = match &ticket.authority {
-            SourceCallbackAuthority::Materialize { binding } => Some(binding),
-            SourceCallbackAuthority::Probe { .. } => None,
-        };
-        let authority_failure = if authority_binding.is_none() {
-            Some(TypeConstraintSourceProtocolInvariant::Ticket)
-        } else if !self
-            .active_ticket
-            .as_ref()
-            .is_some_and(|identity| Self::identity_matches(identity, &ticket.identity))
-        {
-            Some(TypeConstraintSourceProtocolInvariant::Ticket)
-        } else if !Self::identity_matches(&ticket.identity, &checkpoint.identity) {
-            Some(TypeConstraintSourceProtocolInvariant::Checkpoint)
-        } else {
-            authority_binding
-                .and_then(|binding| materialization.validate_callback_binding(binding).err())
-        };
-        let invalid = match (authority_binding, &attempt) {
-            (Some(binding), Ok(MaterializationOutcome::Rejected { source, .. })) => (!binding
-                .authorizes(source))
-            .then_some(TypeConstraintSourceProtocolInvariant::WrongSource),
-            (Some(binding), Err(SourceCallbackFailure::Fatal(error))) => {
-                if error.phase() != SourcePhase::Materialize {
-                    Some(TypeConstraintSourceProtocolInvariant::WrongPhase)
-                } else if !binding.authorizes(error.source()) {
-                    Some(TypeConstraintSourceProtocolInvariant::WrongSource)
-                } else {
-                    None
-                }
-            }
-            (Some(binding), Err(SourceCallbackFailure::Invariant(invariant))) => (!binding
-                .sources()
-                .iter()
-                .any(|source| source.local() == D::client_invariant_source(invariant)))
-            .then_some(TypeConstraintSourceProtocolInvariant::WrongSource),
-            _ => None,
-        };
-        let may_extract = authority_failure.is_none() && invalid.is_none();
-        match attempt {
-            Ok(MaterializationOutcome::Sealed(value)) => {
-                let sealed = Self::finish_materialization_close(
-                    authority_failure,
-                    invalid,
-                    self.close_materialization_checkpoint_once(
-                        checkpoint.checkpoint,
-                        may_extract.then_some(value),
-                    ),
-                )?;
-                let Some(sealed) = sealed else {
-                    return Err(Self::materialization_protocol_failure(
-                        TypeConstraintSourceProtocolInvariant::Outcome,
-                    ));
-                };
-                materialization
-                    .bind_closed_submission(ClosedMaterializationSubmission::Sealed(sealed))
-                    .map_err(Self::materialization_protocol_failure)
-            }
-            Ok(MaterializationOutcome::Rejected { source, cause }) => {
-                let sealed = Self::finish_materialization_close(
-                    authority_failure,
-                    invalid,
-                    self.close_materialization_checkpoint_once(checkpoint.checkpoint, None),
-                )?;
-                if sealed.is_some() {
-                    return Err(Self::materialization_protocol_failure(
-                        TypeConstraintSourceProtocolInvariant::Outcome,
-                    ));
-                }
-                materialization
-                    .bind_closed_submission(ClosedMaterializationSubmission::Rejected {
-                        source,
-                        cause,
-                    })
-                    .map_err(Self::materialization_protocol_failure)
-            }
-            Err(SourceCallbackFailure::Constraint(error)) => {
-                let sealed = Self::finish_materialization_close(
-                    authority_failure,
-                    invalid,
-                    self.close_materialization_checkpoint_once(checkpoint.checkpoint, None),
-                )?;
-                if sealed.is_some() {
-                    return Err(Self::materialization_protocol_failure(
-                        TypeConstraintSourceProtocolInvariant::Outcome,
-                    ));
-                }
-                Err(match error {
-                    crate::types::constraints::TypeConstraintError::Abort(error) => {
-                        MaterializationImmediateFailure::Abort(error)
-                    }
-                    crate::types::constraints::TypeConstraintError::Invariant(error) => {
-                        MaterializationImmediateFailure::Invariant(
-                            TypeConstraintFailureInvariant::Constraint(error),
-                        )
-                    }
-                    crate::types::constraints::TypeConstraintError::Rejected(_) => {
-                        Self::materialization_protocol_failure(
-                            TypeConstraintSourceProtocolInvariant::Outcome,
-                        )
-                    }
-                })
-            }
-            Err(SourceCallbackFailure::Fatal(error)) => {
-                let sealed = Self::finish_materialization_close(
-                    authority_failure,
-                    invalid,
-                    self.close_materialization_checkpoint_once(checkpoint.checkpoint, None),
-                )?;
-                if sealed.is_some() {
-                    return Err(Self::materialization_protocol_failure(
-                        TypeConstraintSourceProtocolInvariant::Outcome,
-                    ));
-                }
-                materialization
-                    .bind_closed_submission(ClosedMaterializationSubmission::Fatal(*error))
-                    .map_err(Self::materialization_protocol_failure)
-            }
-            Err(SourceCallbackFailure::Abort(error)) => {
-                let sealed = Self::finish_materialization_close(
-                    authority_failure,
-                    invalid,
-                    self.close_materialization_checkpoint_once(checkpoint.checkpoint, None),
-                )?;
-                if sealed.is_some() {
-                    return Err(Self::materialization_protocol_failure(
-                        TypeConstraintSourceProtocolInvariant::Outcome,
-                    ));
-                }
-                Err(MaterializationImmediateFailure::Abort(error))
-            }
-            Err(SourceCallbackFailure::Invariant(invariant)) => {
-                let sealed = Self::finish_materialization_close(
-                    authority_failure,
-                    invalid,
-                    self.close_materialization_checkpoint_once(checkpoint.checkpoint, None),
-                )?;
-                if sealed.is_some() {
-                    return Err(Self::materialization_protocol_failure(
-                        TypeConstraintSourceProtocolInvariant::Outcome,
-                    ));
-                }
-                Err(MaterializationImmediateFailure::Invariant(
-                    TypeConstraintFailureInvariant::Client(invariant),
-                ))
-            }
-        }
+            .map_err(CandidateConstraintCallbacks::<D, C>::checkpoint_failure)
     }
 
     pub(crate) fn constrain(
@@ -1172,7 +714,7 @@ where
     ) -> Result<(), TypeConstraintFailure<D>> {
         let started = self
             .lower
-            .begin_prepared_probe(self.context, prepared, acceptance)
+            .begin_prepared_probe(self.callbacks.context, prepared, acceptance)
             .map_err(TypeConstraintFailure::from)?;
         if matches!(started, ProbeStart::Skipped) {
             return Ok(());
@@ -1185,30 +727,36 @@ where
                 break;
             };
             let source = lower_ticket.source();
-            let (callback_ticket, mut checkpoint) = match self.begin_probe_callback(source) {
-                Ok(callback) => callback,
-                Err(error) => {
-                    self.lower.record_failure(error);
-                    break;
-                }
-            };
+            let (callback_ticket, mut checkpoint) =
+                match self.callbacks.begin_probe_callback(source) {
+                    Ok(callback) => callback,
+                    Err(error) => {
+                        self.lower.record_failure(error);
+                        break;
+                    }
+                };
             let mut source_context = CandidateConstraintSourceContext {
                 ticket: lower_ticket,
-                authority: &self.authority,
-                context: self.context,
+                authority: &self.callbacks.authority,
+                context: self.callbacks.context,
             };
             let attempt = self
+                .callbacks
                 .client
                 .probe_source(&mut checkpoint.checkpoint, &mut source_context);
             let lower_ticket = source_context.ticket;
             let input = lower_ticket.input();
-            let submission = match self.close_probe_callback(callback_ticket, checkpoint, attempt) {
-                Ok(submission) => submission,
-                Err(error) => {
-                    self.lower.record_failure(error);
-                    break;
-                }
-            };
+            let submission =
+                match self
+                    .callbacks
+                    .close_probe_callback(callback_ticket, checkpoint, attempt)
+                {
+                    Ok(submission) => submission,
+                    Err(error) => {
+                        self.lower.record_failure(error);
+                        break;
+                    }
+                };
             if let Err(error) = self.with_effect_relation(|lower, context, effects| {
                 lower.submit_probe(context, effects, input, submission)
             })? {
@@ -1248,54 +796,6 @@ where
         Ok(())
     }
 
-    fn materialize_all(&mut self) -> Result<(), TypeConstraintFailure<D>> {
-        loop {
-            let ticket = self
-                .with_effect_relation(|lower, context, graph| {
-                    lower.next_materialization_ticket(context, graph)
-                })?
-                .map_err(TypeConstraintFailure::from)?;
-            let Some(mut lower_ticket) = ticket else {
-                break;
-            };
-            let (callback_ticket, mut checkpoint) =
-                match self.begin_materialization_callback(&mut lower_ticket) {
-                    Ok(callback) => callback,
-                    Err(error) => {
-                        self.lower.record_failure(error.into());
-                        break;
-                    }
-                };
-            let attempt = self.with_callback(|client, work| {
-                client.materialize_sources(
-                    lower_ticket.requests(),
-                    &mut checkpoint.checkpoint,
-                    work,
-                )
-            });
-            let closed = match self.close_materialization_callback(
-                &mut lower_ticket,
-                callback_ticket,
-                checkpoint,
-                attempt,
-            ) {
-                Ok(closed) => closed,
-                Err(error) => {
-                    self.lower.record_failure(error.into());
-                    break;
-                }
-            };
-            if let Err(error) = self
-                .lower
-                .submit_closed_materialization(lower_ticket, closed)
-            {
-                self.lower.record_failure(error.into());
-                break;
-            }
-        }
-        Ok(())
-    }
-
     pub(crate) fn finish(self) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>> {
         self.finish_alternatives()?.into_unique()
     }
@@ -1303,30 +803,19 @@ where
     pub(crate) fn finish_alternatives(
         mut self,
     ) -> Result<CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>> {
-        if let Err(failure) = self.materialize_all() {
-            self.lower.record_failure(failure);
-        }
-        if let Err(failure) = self.client.finish() {
-            self.lower.record_failure(Self::checkpoint_failure(failure));
-        }
         match self.with_effect_relation(|lower, context, graph| lower.close(context, graph)) {
             Ok(Ok(())) => {}
             Ok(Err(failure)) => self.lower.record_failure(failure.into()),
             Err(failure) => self.lower.record_failure(failure),
         }
-        self.lower
-            .finish_closed_alternatives(self.context, |left, right, work| {
-                self.client
-                    .sealed_branches_equal(left, right, work)
-                    .map_err(|failure| match failure {
-                        SealedBranchComparisonFailure::Constraint(error) => error.into(),
-                        SealedBranchComparisonFailure::Client(error) => {
-                            TypeConstraintFailure::Invariant(
-                                TypeConstraintFailureInvariant::Client(error),
-                            )
-                        }
-                    })
-            })
+        match self.lower.into_materialization() {
+            Ok(owner) => self.callbacks.finish_materialization(owner),
+            Err(failure) => {
+                // Finish the real client even when preparation could not close.
+                let _ = self.callbacks.finish_callbacks();
+                Err(failure)
+            }
+        }
     }
 
     pub(crate) fn defer_child_result(
@@ -1350,19 +839,32 @@ where
         mut self,
         key: D::Projection,
     ) -> Result<SuspendedCandidateConstraint<'driver, 'control, D>, TypeConstraintFailure<D>> {
-        if self.active_ticket.is_some() {
-            self.lower.record_failure(Self::protocol_failure(
-                TypeConstraintSourceProtocolInvariant::Ticket,
-            ));
+        if let Err(failure) = self.callbacks.finish_callbacks() {
+            self.lower.record_failure(failure);
         }
-        if let Err(failure) = self.client.finish() {
-            self.lower.record_failure(Self::checkpoint_failure(failure));
-        }
-        let frontier = self.lower.suspend_result(self.context, key)?;
+        let frontier = self.lower.suspend_result(self.callbacks.context, key)?;
         Ok(SuspendedCandidateConstraint {
             frontier,
-            context: self.context,
+            context: self.callbacks.context,
         })
+    }
+}
+
+impl PreparedConstraintAuthority {
+    /// Consume an already canonical component without constructing an inference
+    /// transaction or preparing its sources again. The actual client graph is
+    /// checked against both this callable authority and the component lease.
+    pub(super) fn materialize_component<'control, D, C>(
+        self,
+        owner: ConstraintMaterialization<D>,
+        context: &mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
+        client: C,
+    ) -> Result<CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>>
+    where
+        D: ConstraintDomain,
+        C: TypeConstraintClient<D>,
+    {
+        CandidateConstraintCallbacks::new(context, self, client)?.finish_materialization(owner)
     }
 }
 
@@ -2307,11 +1809,11 @@ pub(crate) mod tests {
                 },
                 |mut driver| {
                     assert_eq!(
-                        graph.validate_constraint_authority(&driver.authority),
+                        graph.validate_constraint_authority(&driver.callbacks.authority),
                         Ok(())
                     );
                     assert_eq!(
-                        foreign.validate_constraint_authority(&driver.authority),
+                        foreign.validate_constraint_authority(&driver.callbacks.authority),
                         Err(CallConstraintInvariant::ForeignPreparedIssuer)
                     );
                     driver.probe_prepared_source(
@@ -2319,7 +1821,7 @@ pub(crate) mod tests {
                         ConstraintAcceptance::PatternAcceptsActual,
                     )?;
                     assert_eq!(
-                        graph.validate_constraint_authority(&driver.authority),
+                        graph.validate_constraint_authority(&driver.callbacks.authority),
                         Ok(())
                     );
                     driver.finish()
@@ -2801,13 +2303,16 @@ pub(crate) mod tests {
                         .expect("prepared source probe");
                     let mut lower_ticket = driver
                         .lower
-                        .next_materialization_ticket(driver.context)
+                        .next_materialization_ticket(driver.callbacks.context)
                         .expect("lower materialization ticket")
                         .expect("one materialization ticket");
 
                     cancellation.store(true, std::sync::atomic::Ordering::Release);
                     assert!(matches!(
-                        driver.begin_materialization_callback(&mut lower_ticket),
+                        driver.callbacks.begin_materialization_callback(
+                            driver.lower.materialization_owner(),
+                            &mut lower_ticket
+                        ),
                         Err(MaterializationImmediateFailure::Abort(
                             TypeConstraintAbort::Cancelled
                         ))
@@ -2818,9 +2323,13 @@ pub(crate) mod tests {
 
                     cancellation.store(false, std::sync::atomic::Ordering::Release);
                     let (callback_ticket, mut checkpoint) = driver
-                        .begin_materialization_callback(&mut lower_ticket)
+                        .callbacks
+                        .begin_materialization_callback(
+                            driver.lower.materialization_owner(),
+                            &mut lower_ticket,
+                        )
                         .expect("the cancelled ticket remains ready");
-                    let attempt = driver.with_callback(|client, work| {
+                    let attempt = driver.callbacks.with_callback(|client, work| {
                         client.materialize_sources(
                             lower_ticket.requests(),
                             &mut checkpoint.checkpoint,
@@ -2828,6 +2337,7 @@ pub(crate) mod tests {
                         )
                     });
                     let closed = driver
+                        .callbacks
                         .close_materialization_callback(
                             &mut lower_ticket,
                             callback_ticket,
@@ -3189,6 +2699,7 @@ pub(crate) mod tests {
                 },
                 |mut driver| {
                     let (ticket, checkpoint) = driver
+                        .callbacks
                         .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("driver mints a probe ticket");
                     let foreign_ticket = SourceCallbackTicket {
@@ -3201,7 +2712,7 @@ pub(crate) mod tests {
                         },
                     };
                     assert!(matches!(
-                        driver.close_probe_callback(
+                        driver.callbacks.close_probe_callback(
                             foreign_ticket,
                             checkpoint,
                             Ok(SourceProbeOutcome::Rejected("protocol")),
@@ -3217,9 +2728,11 @@ pub(crate) mod tests {
                     assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
 
                     let (valid_ticket, valid_checkpoint) = driver
+                        .callbacks
                         .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("foreign close clears the active ticket");
                     driver
+                        .callbacks
                         .close_probe_callback(
                             valid_ticket,
                             valid_checkpoint,
@@ -3248,11 +2761,12 @@ pub(crate) mod tests {
                 },
                 |mut driver| {
                     let (ticket, mut checkpoint) = driver
+                        .callbacks
                         .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("driver can mint the next generation");
                     checkpoint.identity.issuer = Arc::new(SourceCallbackTicketIssuer);
                     assert!(matches!(
-                        driver.close_probe_callback(
+                        driver.callbacks.close_probe_callback(
                             ticket,
                             checkpoint,
                             Ok(SourceProbeOutcome::Rejected("protocol")),
@@ -3268,9 +2782,11 @@ pub(crate) mod tests {
                     assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
 
                     let (valid_ticket, valid_checkpoint) = driver
+                        .callbacks
                         .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("foreign checkpoint close clears the active ticket");
                     driver
+                        .callbacks
                         .close_probe_callback(
                             valid_ticket,
                             valid_checkpoint,
@@ -3308,11 +2824,15 @@ pub(crate) mod tests {
                         .expect("prepared source probe");
                     let mut materialization = driver
                         .lower
-                        .next_materialization_ticket(driver.context)
+                        .next_materialization_ticket(driver.callbacks.context)
                         .expect("lower materialization ticket")
                         .expect("one materialization ticket");
                     let (_valid_ticket, checkpoint) = driver
-                        .begin_materialization_callback(&mut materialization)
+                        .callbacks
+                        .begin_materialization_callback(
+                            driver.lower.materialization_owner(),
+                            &mut materialization,
+                        )
                         .expect("driver mints a materialization ticket");
                     let foreign_ticket = SourceCallbackTicket {
                         identity: SourceCallbackTicketIdentity {
@@ -3324,7 +2844,7 @@ pub(crate) mod tests {
                         },
                     };
                     assert!(matches!(
-                        driver.close_materialization_callback(
+                        driver.callbacks.close_materialization_callback(
                             &mut materialization,
                             foreign_ticket,
                             checkpoint,
@@ -3340,9 +2860,11 @@ pub(crate) mod tests {
                     ));
                     assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
                     let (probe_ticket, probe_checkpoint) = driver
+                        .callbacks
                         .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("foreign close clears the active callback ticket");
                     driver
+                        .callbacks
                         .close_probe_callback(
                             probe_ticket,
                             probe_checkpoint,
@@ -3377,15 +2899,19 @@ pub(crate) mod tests {
                         .expect("second prepared source probe");
                     let mut materialization = driver
                         .lower
-                        .next_materialization_ticket(driver.context)
+                        .next_materialization_ticket(driver.callbacks.context)
                         .expect("second lower materialization ticket")
                         .expect("one second materialization ticket");
                     let (ticket, mut checkpoint) = driver
-                        .begin_materialization_callback(&mut materialization)
+                        .callbacks
+                        .begin_materialization_callback(
+                            driver.lower.materialization_owner(),
+                            &mut materialization,
+                        )
                         .expect("driver mints the next generation");
                     checkpoint.identity.issuer = Arc::new(SourceCallbackTicketIssuer);
                     assert!(matches!(
-                        driver.close_materialization_callback(
+                        driver.callbacks.close_materialization_callback(
                             &mut materialization,
                             ticket,
                             checkpoint,
@@ -3401,9 +2927,11 @@ pub(crate) mod tests {
                     ));
                     assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
                     let (probe_ticket, probe_checkpoint) = driver
+                        .callbacks
                         .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("foreign checkpoint close clears the active callback ticket");
                     driver
+                        .callbacks
                         .close_probe_callback(
                             probe_ticket,
                             probe_checkpoint,
