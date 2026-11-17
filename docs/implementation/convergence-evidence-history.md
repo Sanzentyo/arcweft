@@ -17768,3 +17768,17 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 前checkpointに残っていた3つのoriginal型入口を、上記のprepared admissionへ置換した。実行結果・過去のfull SHA・原本とGeneric Match等の既受入は保持する。現状一覧は[current-status.md](current-status.md)だけに置く。ユーザー指定の全体clean後に今回のcheckがtargetを再構築した事実も、cleanの成功と区別する。
 
 原本 [task-prepared-original-entrances-checkpoint.raw.zip](acceptance-evidence/task-prepared-original-entrances-checkpoint.raw.zip) は13 entries、ZIP 151550 bytes、SHA-256 `3cb120ca1f1cd5794a304b6b9252637d9dcab9d93218ae19a8d419604938e321`。途中・最終入力と実行ログ、最終fmt、公開照合、先行cleanのreceiptを保持し、全データentryの長さ・SHA-256をreadback照合した。
+
+
+## Prepared expression producers migration checkpoint
+
+2026-11-17。基点 `68ae695ea787404208f306fc4975355ea880a21f`、移行Source `03ea4dc777bdb07acaba6392ea22640cbcf0964f`。10 Rust path、114追加／108削除を既存mainへ途中commit・非force pushし、全10検証入力hashと公開blobの一致を確認した。途中commitの正常動作を必須としないユーザー指示による未受入checkpointで、既存の未追跡 `%SystemDrive%/` 4 pathを保持した。
+
+- 式family、通常callの生成・回復、制御分岐、Style primitive／compositeのsource helperをPreparedResolvedExpressionの戻り値へ移行した。保持済みfactの閲覧・消費もresolved／into_resolvedへ接続し、生成途中にCheckedExpressionを要求する旧入口を置換した。公開checked型へFrom変換を追加せず、shared ExpressionDataのmetadata grammarを保つ。
+- PreparedResolvedExpressionからshared metadataへの転送で抜けていたeffects・resolution・source lookup・execution plan・match・carrier・nested path evidenceの引数を渡し、失敗可能なthread-body更新は元エラーを伝播してprepared wrapperを返すようにした。行termのcanonical化や、specialization witnessの早期発行は加えない。
+- integerのsuffix・分類・値域・compact要素型とliteral／unit scalar選択は、効果に依存しない同じ規則をeffect domainに対して共有した。世界・登録済み値からの型取得は元catalogのcanonical型を返す所有境界へ揃えた。その値を実Γでpreparedへadmitする利用側、prepared relation／元Rとsource forest、joint completion／最終sealは未接続のままであり、型エラーを残している。
+- `cargo check --locked -p arcweft-lang-sema --lib --all-features` は終了101・602エラー・28警告。全10入力hashと公開blobが同じことを確認した実行証拠の再利用で、commit後の再実行ではない。Sema owner fmt checkは終了0。Clippy・nextest・doctest・test target・逆依存・全workspace／構造gateはlibraryの移行がコンパイル未完了のため未実行。テストを削除・弱体化せず、以前の成功を今回へ合算しない。エラー数の差は受入・品質の指標にしない。
+- 所有レビューでは、sourceの戻り値と完成型、shared metadata、domainに依存しないscalar規則を区別した。物理成長6 LOC。新しいtype walker・graph／予約の複製・Cargo依存・I/O・unsafe・codec・contract version・数値上限の変更はない。CARGO_INCREMENTAL=0、jobs／profile上書きなし。これは静的レビューであり、実行成功ではない。
+- Supersedes: 前checkpointのsource helperに残った完成型の戻り値を、上記のprepared契約へ移した。実際のcheck失敗、過去のfull SHA・実測・原本、Generic Match等の既受入は保持する。現状一覧は[current-status.md](current-status.md)だけに置く。
+
+原本 [task-prepared-expression-producers-checkpoint.raw.zip](acceptance-evidence/task-prepared-expression-producers-checkpoint.raw.zip) は7 entries、ZIP 68049 bytes、SHA-256 `cd04c9f44878e8e3c2e727e1950e1549b5dd30f20a759f1b79de48c9fa30fcce`。入力・実行ログ・fmt・公開照合を保持し、全データentryの長さ・SHA-256をreadback照合した。
