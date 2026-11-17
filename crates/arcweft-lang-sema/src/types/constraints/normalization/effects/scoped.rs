@@ -18,8 +18,34 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<PreparedEffectScopedConstraint, TypeConstraintError> {
+        let domain = self.lineage.original.domain();
+        crate::types::projection_control::visit_effect_predicate(context, &domain, 1).map_err(
+            |error| match error {
+                crate::types::TypeProjectionError::Control(error) => error,
+                crate::types::TypeProjectionError::Instantiation(error) => {
+                    TypeConstraintInvariant::Instantiation(error).into()
+                }
+            },
+        )?;
+        let domain = PreparedEffectPredicate::Canonical(domain.into_owned());
+        self.prepare_effect_constraint_in(&self.lineage.scope, &domain, graph, context)
+    }
+}
+
+impl<D: ConstraintDomain, L> ConstraintInferenceBranch<D, L> {
+    /// A joint original product supplies its real merged scope and original
+    /// source premises. It keeps the same Γ admission and application fold as
+    /// an individual source, without manufacturing a source lineage.
+    pub(in crate::types::constraints) fn prepare_effect_constraint_in<
+        A: TypeConstraintAccounting,
+    >(
+        &self,
+        scope: &ConstraintLexicalScope,
+        domain: &PreparedEffectPredicate,
+        graph: &mut PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<PreparedEffectScopedConstraint, TypeConstraintError> {
         context.with_effect_transaction(graph, |context, graph| {
-            let scope = &self.lineage.scope;
             let effects =
                 self.applications
                     .prepare_effects(&self.effects, scope, graph, context)?;
@@ -44,19 +70,9 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
                     parameters.push(reference.clone());
                 }
             }
-            let domain = self.lineage.original.domain();
-            crate::types::projection_control::visit_effect_predicate(context, &domain, 1).map_err(
-                |error| match error {
-                    crate::types::TypeProjectionError::Control(error) => error,
-                    crate::types::TypeProjectionError::Instantiation(error) => {
-                        TypeConstraintInvariant::Instantiation(error).into()
-                    }
-                },
-            )?;
-            let domain = PreparedEffectPredicate::Canonical(domain.into_owned());
             graph
                 .read()
-                .scoped_constraint(&parameters, &domain, effects.original_predicate(), context)
+                .scoped_constraint(&parameters, domain, effects.original_predicate(), context)
                 .map_err(Into::into)
         })
     }

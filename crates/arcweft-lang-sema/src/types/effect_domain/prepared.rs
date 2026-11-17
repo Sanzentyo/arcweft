@@ -15,6 +15,8 @@ mod canonical;
 mod lifting;
 mod type_arguments;
 pub(crate) use type_arguments::PreparedTypeArguments;
+mod roots;
+pub(in crate::types) use roots::PreparedTypeEffectRoots;
 
 /// Prepared identity is operational. This domain cannot issue a checked type
 /// digest, specialization, runtime projection or completed constraint solution.

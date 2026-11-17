@@ -2,6 +2,7 @@
 
 use crate::types::PreparedEffects;
 
+mod effects;
 #[cfg(test)]
 mod tests;
 
@@ -57,7 +58,7 @@ type JointBranch<D> = ConstraintInferenceBranch<D, Arc<[OriginalProductMember]>>
 
 pub(super) struct OriginalProductSolution<D: ConstraintDomain> {
     pub(super) branch: JointBranch<D>,
-    pub(super) effects: Arc<ConstraintClosedEffects<D>>,
+    pub(super) effects: Arc<crate::effect_row::prepared::ScopedEffectCompletion>,
 }
 
 pub(super) struct OriginalProductInference<D: ConstraintDomain> {
@@ -233,27 +234,12 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             context.enter_node()?;
             rows.push(EffectConstraintVariable::new(variable, eligibility));
         }
-        let mut effects = EffectConstraintEnvironment::new_prepared(
+        let effects = EffectConstraintEnvironment::new_prepared(
             &rows,
             &crate::effect_row::EffectPredicate::unconstrained(),
             context,
         )?;
-        for member in members.iter() {
-            let path = self.original_path(*member)?;
-            let predicate = scope
-                .transport_prepared_predicate(
-                    &path.lineage.scope,
-                    path.effects.original_predicate(),
-                    graph,
-                    context,
-                )
-                .map_err(projection_failure)?;
-            effects
-                .restore_predicate(&predicate, graph, context)
-                .map_err(|error| {
-                    reject(OriginalProductCheck::EffectRelation(*member), error.into())
-                })?;
-        }
+        let original_effects = self.prepare_original_effects(members, graph, context)?;
         context.enter_node()?;
         let seed = ConstraintInferenceBranch {
             lineage: Arc::clone(members),
@@ -348,11 +334,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
         }
         let mut solutions = Vec::new();
-        for mut branch in branches {
-            branch.effects = branch
-                .applications
-                .prepare_effects(&branch.effects, scope, graph, context)
-                .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
+        for branch in branches {
             let cyclic = branch.deferred_cycles.parameters.iter().next().cloned();
             let branch = seal_path(branch, graph.read(), context)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
@@ -362,8 +344,14 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     TypeConstraintRejection::CyclicInstantiation { parameter }.into(),
                 ));
             }
-            let effects = ConstraintClosedEffects::for_branch(&branch, context)
-                .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
+            let effects = self.freeze_original_effects(
+                &branch,
+                members,
+                scope,
+                &original_effects,
+                graph,
+                context,
+            )?;
             self.validate_original_bindings(&branch, members, scope, &effects, graph, context)?;
             context
                 .validate_type_and_const_completion(&branch)
@@ -565,6 +553,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     }
 }
 
+#[derive(Debug)]
 enum OriginalInferenceFailure {
     Rejected(OriginalProductRejection),
     Constraint(TypeConstraintError),
