@@ -596,13 +596,7 @@ impl ScopedTypeView<'_> {
                     map_predicate_with_control(incoming_predicate, 1, control, &|reference, _| {
                         Ok(EffectRow::open(
                             crate::effects::EffectSet::new(),
-                            lift_effect(
-                                reference,
-                                ambient,
-                                &source,
-                                ambient_count,
-                                depth_difference(&source, ambient)?,
-                            )?,
+                            reference.lift_into(ambient, ambient, &source)?,
                         ))
                     })?;
                 *predicate =
@@ -746,13 +740,7 @@ impl ScopedTypeView<'_> {
             map_predicate_with_control(incoming_predicate, 1, control, &|reference, _| {
                 Ok(EffectRow::open(
                     crate::effects::EffectSet::new(),
-                    lift_effect(
-                        reference,
-                        self.scope(),
-                        &source,
-                        self.scope().binders().len(),
-                        depth_difference(&source, self.scope())?,
-                    )?,
+                    reference.lift_into(self.scope(), self.scope(), &source)?,
                 ))
             })?;
         let predicate = project_predicate(predicate, control)?.and(
@@ -828,12 +816,7 @@ fn depth_difference(
     target: &GenericScope,
     source: &GenericScope,
 ) -> Result<u32, TypeInstantiationError> {
-    target
-        .binders()
-        .len()
-        .checked_sub(source.binders().len())
-        .and_then(|depth| u32::try_from(depth).ok())
-        .ok_or_else(|| GenericScopeError::UnknownDepth { depth: u32::MAX }.into())
+    target.extension_depth(source).map_err(Into::into)
 }
 
 fn lift_value<C: TypeProjectionControl>(
@@ -842,8 +825,7 @@ fn lift_value<C: TypeProjectionControl>(
     depth: u64,
     control: &mut C,
 ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
-    let inserted = depth_difference(target, value.scope())?;
-    let root_depth = value.scope().binders().len();
+    target.extension_depth(value.scope())?;
     map_term_with_control(
         value.value(),
         value.scope(),
@@ -851,55 +833,25 @@ fn lift_value<C: TypeProjectionControl>(
         depth,
         control,
         &|reference, source, target, _, _| {
-            let GenericTypeReference::Bound(parameter) = reference else {
-                return keep_type(reference, source).map_err(Into::into);
-            };
-            source.bound_type(parameter.depth(), parameter.slot())?;
-            let local = source.binders().len() - root_depth;
-            let depth = if (parameter.depth() as usize) < local {
-                parameter.depth()
-            } else {
-                parameter
-                    .depth()
-                    .checked_add(inserted)
-                    .ok_or(GenericScopeError::UnknownDepth {
-                        depth: parameter.depth(),
-                    })?
-            };
-            Ok(TypeKind::GenericParam(
-                target.bound_type(depth, parameter.slot())?,
-            ))
+            reference
+                .lift_into(value.scope(), source, target)
+                .map(TypeKind::GenericParam)
+                .map_err(Into::into)
         },
-        &|length, source, target, _, _| {
-            let ArrayLength::Generic(reference) = length else {
-                return match length {
-                    ArrayLength::Const(_) => Ok(length.clone()),
-                    _ => Err(TypeInstantiationError::UnresolvedType.into()),
-                };
-            };
-            let GenericConstReference::Bound(parameter) = reference else {
-                return keep_const(reference, source).map_err(Into::into);
-            };
-            source.bound_const(parameter.depth(), parameter.slot())?;
-            let local = source.binders().len() - root_depth;
-            let depth = if (parameter.depth() as usize) < local {
-                parameter.depth()
-            } else {
-                parameter
-                    .depth()
-                    .checked_add(inserted)
-                    .ok_or(GenericScopeError::UnknownDepth {
-                        depth: parameter.depth(),
-                    })?
-            };
-            Ok(ArrayLength::Generic(
-                target.bound_const(depth, parameter.slot())?,
-            ))
+        &|length, source, target, _, _| match length {
+            ArrayLength::Generic(reference) => reference
+                .lift_into(value.scope(), source, target)
+                .map(ArrayLength::Generic)
+                .map_err(Into::into),
+            ArrayLength::Const(_) => Ok(length.clone()),
+            _ => Err(TypeInstantiationError::UnresolvedType.into()),
         },
         &|row, source, target, depth, control| {
             map_effects_with_control(row, depth, control, &|reference, _| {
-                let reference = lift_effect(reference, source, target, root_depth, inserted)?;
-                Ok(EffectRow::open(crate::effects::EffectSet::new(), reference))
+                Ok(EffectRow::open(
+                    crate::effects::EffectSet::new(),
+                    reference.lift_into(value.scope(), source, target)?,
+                ))
             })
         },
     )
@@ -911,19 +863,9 @@ fn lift_length(
     target: &GenericScope,
 ) -> Result<ArrayLength, TypeInstantiationError> {
     match length {
-        ArrayLength::Generic(GenericConstReference::Bound(parameter)) => {
-            source.bound_const(parameter.depth(), parameter.slot())?;
-            let depth = parameter
-                .depth()
-                .checked_add(depth_difference(target, source)?)
-                .ok_or(GenericScopeError::UnknownDepth {
-                    depth: parameter.depth(),
-                })?;
-            Ok(ArrayLength::Generic(
-                target.bound_const(depth, parameter.slot())?,
-            ))
-        }
-        ArrayLength::Generic(reference) => keep_const(reference, source),
+        ArrayLength::Generic(reference) => Ok(ArrayLength::Generic(
+            reference.lift_into(source, source, target)?,
+        )),
         ArrayLength::Const(_) => Ok(length.clone()),
         ArrayLength::Error(_) | ArrayLength::Inferred => {
             Err(TypeInstantiationError::UnresolvedType)
@@ -979,31 +921,6 @@ pub(super) fn keep_effect(
     }
 }
 
-fn lift_effect(
-    reference: &GenericEffectReference,
-    source: &GenericScope,
-    target: &GenericScope,
-    root_depth: usize,
-    inserted: u32,
-) -> Result<GenericEffectReference, TypeInstantiationError> {
-    let GenericEffectReference::Bound(parameter) = reference else {
-        return keep_effect(reference, source);
-    };
-    source.bound_effect(parameter.depth(), parameter.slot())?;
-    let local = source.binders().len() - root_depth;
-    let depth = if (parameter.depth() as usize) < local {
-        parameter.depth()
-    } else {
-        parameter
-            .depth()
-            .checked_add(inserted)
-            .ok_or(GenericScopeError::UnknownDepth {
-                depth: parameter.depth(),
-            })?
-    };
-    Ok(target.bound_effect(depth, parameter.slot())?)
-}
-
 fn lift_effects<C: TypeProjectionControl>(
     row: &EffectRow,
     source: &GenericScope,
@@ -1011,11 +928,11 @@ fn lift_effects<C: TypeProjectionControl>(
     depth: u64,
     control: &mut C,
 ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
-    let inserted = depth_difference(target, source)?;
+    target.extension_depth(source)?;
     map_effects_with_control(row, depth, control, &|reference, _| {
         Ok(EffectRow::open(
             crate::effects::EffectSet::new(),
-            lift_effect(reference, source, target, source.binders().len(), inserted)?,
+            reference.lift_into(source, source, target)?,
         ))
     })
 }

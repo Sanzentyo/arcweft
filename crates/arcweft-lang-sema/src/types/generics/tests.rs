@@ -1,6 +1,70 @@
 use super::*;
 
 #[test]
+fn lifting_preserves_inner_frames_in_all_three_namespaces() {
+    let root = GenericScope::default().with_binder(GenericBinder::new(1, 1, 1));
+    let inner = GenericBinder::new(1, 1, 1);
+    let occurrence = root.with_binder(inner);
+    let target = root
+        .with_binder(GenericBinder::new(2, 2, 2))
+        .with_binder(inner);
+    assert_eq!(target.extension_depth(&root), Ok(2));
+    for (from, to) in [(0, 0), (1, 2)] {
+        assert_eq!(
+            occurrence
+                .bound_type(from, 0)
+                .unwrap()
+                .lift_into(&root, &occurrence, &target),
+            target.bound_type(to, 0)
+        );
+        assert_eq!(
+            occurrence
+                .bound_const(from, 0)
+                .unwrap()
+                .lift_into(&root, &occurrence, &target),
+            target.bound_const(to, 0)
+        );
+        assert_eq!(
+            occurrence
+                .bound_effect(from, 0)
+                .unwrap()
+                .lift_into(&root, &occurrence, &target),
+            target.bound_effect(to, 0)
+        );
+    }
+}
+
+#[test]
+fn lifting_rejects_foreign_prefixes_changed_inner_frames_and_escaped_slots() {
+    let root = GenericScope::default().with_binder(GenericBinder::new(1, 1, 1));
+    let occurrence = root.with_binder(GenericBinder::new(2, 2, 2));
+    let foreign = GenericScope::default().with_binder(GenericBinder::new(3, 3, 3));
+    assert_eq!(
+        foreign.extension_depth(&root),
+        Err(GenericScopeError::ScopePrefixMismatch)
+    );
+    let outer = occurrence.bound_effect(1, 0).unwrap();
+    assert_eq!(
+        outer.lift_into(&root, &occurrence, &foreign),
+        Err(GenericScopeError::ScopePrefixMismatch)
+    );
+    let changed_inner = root.with_binder(GenericBinder::new(3, 3, 3));
+    assert_eq!(
+        outer.lift_into(&root, &occurrence, &changed_inner),
+        Err(GenericScopeError::ScopePrefixMismatch)
+    );
+    let escaped = occurrence.bound_const(0, 1).unwrap();
+    let narrow = root.with_binder(GenericBinder::new(1, 1, 1));
+    assert!(matches!(
+        escaped.lift_into(&root, &narrow, &narrow),
+        Err(GenericScopeError::UnknownSlot {
+            kind: GenericParameterKind::Const,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn effect_template_keys_preserve_nested_and_empty_binder_ownership() {
     let incoming = GenericScope::default().with_binder(GenericBinder::new(0, 0, 2));
     let nested = incoming.with_binder(GenericBinder::new(1, 0, 1));

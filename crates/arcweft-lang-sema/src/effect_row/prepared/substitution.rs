@@ -382,6 +382,12 @@ impl Drop for PreparedEffectTermEdit<'_> {
 }
 
 impl PreparedEffectTermEdit<'_> {
+    /// A whole-type projection may fail outside a row/predicate callback.
+    /// Preserve its original failure while preventing a later partial commit.
+    pub(crate) fn invalidate(&mut self) {
+        self.state = TermEditState::Failed;
+    }
+
     pub(crate) fn commit(mut self) -> Result<(), PreparedEffectInvariant> {
         if !matches!(self.state, TermEditState::Open) {
             return Err(PreparedEffectInvariant::TermEditState);
@@ -418,7 +424,7 @@ impl PreparedEffectTermEdit<'_> {
         }
         .row(row);
         if result.is_err() {
-            self.state = TermEditState::Failed;
+            self.invalidate();
         }
         result
     }
@@ -449,7 +455,7 @@ impl PreparedEffectTermEdit<'_> {
         }
         .predicate(predicate);
         if result.is_err() {
-            self.state = TermEditState::Failed;
+            self.invalidate();
         }
         result
     }

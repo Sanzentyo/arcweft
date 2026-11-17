@@ -360,6 +360,29 @@ impl From<GenericEffectParameterId> for GenericEffectReference {
 }
 
 impl GenericTypeReference {
+    /// Lift an occurrence from its original value scope under added frames.
+    /// References bound inside the value keep their own depth and slot.
+    pub(crate) fn lift_into(
+        &self,
+        original: &GenericScope,
+        occurrence: &GenericScope,
+        target: &GenericScope,
+    ) -> Result<Self, GenericScopeError> {
+        match self {
+            Self::Free(_) => Ok(self.clone()),
+            Self::Inference(_) => Err(GenericScopeError::EscapedInference {
+                kind: GenericParameterKind::Type,
+            }),
+            Self::Bound(parameter) => {
+                occurrence.bound_type(parameter.depth(), parameter.slot())?;
+                target.bound_type(
+                    occurrence.lifted_depth(original, target, parameter.depth())?,
+                    parameter.slot(),
+                )
+            }
+        }
+    }
+
     pub const fn free_parameter(&self) -> Option<&GenericTypeParameterId> {
         match self {
             Self::Free(parameter) => Some(parameter),
@@ -379,6 +402,27 @@ impl GenericTypeReference {
 }
 
 impl GenericConstReference {
+    pub(crate) fn lift_into(
+        &self,
+        original: &GenericScope,
+        occurrence: &GenericScope,
+        target: &GenericScope,
+    ) -> Result<Self, GenericScopeError> {
+        match self {
+            Self::Free(_) => Ok(self.clone()),
+            Self::Inference(_) => Err(GenericScopeError::EscapedInference {
+                kind: GenericParameterKind::Const,
+            }),
+            Self::Bound(parameter) => {
+                occurrence.bound_const(parameter.depth(), parameter.slot())?;
+                target.bound_const(
+                    occurrence.lifted_depth(original, target, parameter.depth())?,
+                    parameter.slot(),
+                )
+            }
+        }
+    }
+
     pub const fn free_parameter(&self) -> Option<&GenericConstParameterId> {
         match self {
             Self::Free(parameter) => Some(parameter),
@@ -409,6 +453,8 @@ static ROOT_GENERIC_SCOPE: GenericScope = GenericScope {
 
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 pub enum GenericScopeError {
+    #[error("generic scope is not an extension of the original binder prefix")]
+    ScopePrefixMismatch,
     #[error("generic application issuer space is exhausted")]
     IssuerExhausted,
     #[error("generic binder depth {depth} is outside the lexical scope")]
@@ -436,6 +482,42 @@ pub enum GenericParameterKind {
 }
 
 impl GenericScope {
+    /// Counts added frames only after retaining the original lexical prefix.
+    /// This compares binder shapes; the phase still owns the actual source Γ.
+    pub(crate) fn extension_depth(&self, original: &Self) -> Result<u32, GenericScopeError> {
+        if !self.binders.starts_with(&original.binders) {
+            return Err(GenericScopeError::ScopePrefixMismatch);
+        }
+        u32::try_from(self.binders.len() - original.binders.len())
+            .map_err(|_| GenericScopeError::UnknownDepth { depth: u32::MAX })
+    }
+
+    fn lifted_depth(
+        &self,
+        original: &Self,
+        target: &Self,
+        depth: u32,
+    ) -> Result<u32, GenericScopeError> {
+        let local = self.extension_depth(original)?;
+        let target_local = target.extension_depth(original)?;
+        let inserted = target_local
+            .checked_sub(local)
+            .ok_or(GenericScopeError::ScopePrefixMismatch)?;
+        // The argument's own nested frames remain the innermost frames.
+        if !target
+            .binders
+            .ends_with(&self.binders[original.binders.len()..])
+        {
+            return Err(GenericScopeError::ScopePrefixMismatch);
+        }
+        if depth < local {
+            return Ok(depth);
+        }
+        depth
+            .checked_add(inserted)
+            .ok_or(GenericScopeError::UnknownDepth { depth })
+    }
+
     pub(crate) fn without_inner(&self, count: usize) -> Result<Self, GenericScopeError> {
         let length =
             self.binders
@@ -592,6 +674,27 @@ impl GenericConstReference {
 }
 
 impl GenericEffectReference {
+    pub(crate) fn lift_into(
+        &self,
+        original: &GenericScope,
+        occurrence: &GenericScope,
+        target: &GenericScope,
+    ) -> Result<Self, GenericScopeError> {
+        match self {
+            Self::Free(_) => Ok(self.clone()),
+            Self::Inference(_) => Err(GenericScopeError::EscapedInference {
+                kind: GenericParameterKind::Effect,
+            }),
+            Self::Bound(parameter) => {
+                occurrence.bound_effect(parameter.depth(), parameter.slot())?;
+                target.bound_effect(
+                    occurrence.lifted_depth(original, target, parameter.depth())?,
+                    parameter.slot(),
+                )
+            }
+        }
+    }
+
     pub(crate) fn source_label(&self) -> String {
         match self {
             Self::Free(parameter) => parameter.source_label(),

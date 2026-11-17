@@ -12,6 +12,7 @@ use crate::types::projection_control::{
 mod validation;
 pub(crate) use validation::PreparedTypeRetentionFailure;
 mod canonical;
+mod lifting;
 
 /// Prepared identity is operational. This domain cannot issue a checked type
 /// digest, specialization, runtime projection or completed constraint solution.
