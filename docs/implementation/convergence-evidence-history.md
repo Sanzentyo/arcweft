@@ -18279,3 +18279,21 @@ Locked Sema／test target／全feature checkは3回とも終了101。Dev01はlib
 Supersedes: 現状一覧のclosed readerを、今回接続したcanonical source traceと、残る最終materialization bridge／prepared transport等へ分けた。元Cを閉じたsource型で置き換える手順は削除した実装に基づき現行扱いを終える。Fn局所∀／guarded header、全fixture／frontend移行やbody一回準備の受入は未達のままである。Generic Match等の既受入項目と以前のfull SHA・実測を保持し、現状一覧は[current-status.md](current-status.md)一か所とする。
 
 原本 [task-canonical-source-trace-checkpoint.raw.zip](acceptance-evidence/task-canonical-source-trace-checkpoint.raw.zip) は25 entries、457,455 bytes、SHA-256 `b25301ff49a207c6d170b6ee22ec2631132cdd3616d94e7842d955f6360de921`。3回のcheck入力・失敗・fmt、runner／archive script、公開照合・stage／所有review・最終の限定diagnostic reviewを保持し、全データentryの長さとSHA-256をreadback照合した。
+
+<a id="prepared-lexical-phase-checkpoint"></a>
+## 2026-11-18 — prepared lexical transportと完了phaseのgraph所有
+
+確認した基点 `main`／`origin/main` は `0d01daecd52cb26d7875b514a1628794df03532a`。Source `737bf1bf002952c930364271efbb8197c1212c6d` を既存mainから通常commit／非forced pushし、公開mainと検証23入力のraw Git blob／作業ファイルSHA256を照合した。検証はcommit前の同一bytesを再利用し、commit後の再実行ではない。公開直後のtracked差分0、既存未追跡 `%SystemDrive%/` を保持した。4回とも `CARGO_INCREMENTAL=0`、jobs／profile上書きなし。
+
+Supersedes: 前checkpointのprepared lexical transport未移行という現状は、同ownerと実graphを持つ呼出側について置き換える。今回の現状は唯一の[current-status](current-status.md)へ反映し、旧実測・SHA・raw ZIPは保持する。後続の最終transaction／frontendと既存fixture全体の移行、公開受入の完了とはしない。Generic Matchの受入・公開状態と保護行bytesは変更しない。
+
+- `ConstraintProjectionPhase` がAdmissionのgraph読取、Preparationの実graph編集、Completionのgraph読取＋正確なclosed-effects ownerを保持する。旧 `ConstraintOperandEffects` と、prepared型をcanonical mapperへ渡していた旧移送実装を削除した。permission-onlyの共通foldは引き続き型値を発行しない。raw検証は同じfoldの読取phaseを使う。
+- lexical ownerのprepared transportは共有scoped type grammarと実frame identityでtype／const／effectの各portを移す。Named本体準備・Future値・最小解計算を要求しない。一つのterm editが型全体を覆い、途中失敗・取消で新termをrollbackする。binding／alias／seal／solution復元／producer projectionは各自の実graphを渡す。
+- completed bindingは既に同ownerでheader投影済みの値を同principalでcanonical化し、canonical型を実scopeへ移送してprepared表現へ包む。immutable principal作成後にquery termを追加する経路を避ける。元bindingの最終検証とequation比較も実owner／calculation scopeのcanonical型で照合し、元prepared Cを上書きしない。
+- 新規3 fixtureは、Named／Future関数の実frame並替と局所type／const／effect binder、後半のscope失敗・取消rollbackと同形の別frame拒否、実Named本体を使うcompleted bindingの別scope移送とgraph term数不変を対象とする。変更したadmission fixtureの3本も、元path自身のC receiptをfreeze／bindしたclosureへ移行した。これらはeffect unknown／function headerを持たない条件で、空query／入力は不足Futureへの代用品ではない。いずれも未実行。
+
+実行した必須checkは `cargo check --locked -p arcweft-lang-sema --tests --all-features`、全4回とも終了101。dev01はlibrary482エラー／25警告・lib test1,551エラー／44警告。追加ownerのerror変換／型引数指定を修復し、dev02は480／1,551、新fixtureのOption／投影error型を修復したdev03は480／1,549。変更したadmission fixtureの12件を明示graph／closure APIへ移した最終dev04は **library480エラー／25警告・lib test1,537エラー／44警告**。各回のowner fmt apply／checkは終了0。最終23変更pathにある一次診断は旧transaction `for_path` 呼出の1件で、新移送／phase／完了移送fixture／変更admission fixtureの一次診断は0。ただしこれは一度の診断所在確認であり、型検査全体成功・テストPASSの証明ではない。nextest／Clippy／doctest／推移的逆依存／workspace・Native／AWBC・Native/Web最終受入は未実行。
+
+差分は23 Rust path、1,005追加／249削除、物理756 LOC増。prepared transportとprojection phaseは正当な所有境界に置き、LOCだけによる分割はしない。新テスト・既存cfg(test) helperの役割をraw ownership reviewへ記録した。繰返し投影は既存controlへ課金するが、全allocation／copyの構築前検査・single-pass／性能・Fn局所∀／guarded headerの受入は主張しない。Cargo依存／feature・公開facade・layer・I/O・unsafe・codec／version・既定予算は不変。既存のresolved graph／逆依存資料を再利用し、scannerの再実行とはしない。
+
+[検証原本・入力hash・公開照合・全staged diff・所有レビュー](acceptance-evidence/task-prepared-lexical-phase-checkpoint.raw.zip) は31 entry、616,992 bytes、SHA256 `bc8f5e98cd7c71a2069678669a2bd29039d0902520ad6d888e335935e05456f0`。各entryの長さ／SHA256をZIP再読取で照合した。既存履歴の2,808,971 bytes（SHA256 `611eac2eb49552a456c3b769a0d929f479a63bbc93150151be5a9a446416022a`）をprefixとして保持する。既に実施した全体cargo cleanを繰り返さず、キャッシュ以外の削除も行っていない。
