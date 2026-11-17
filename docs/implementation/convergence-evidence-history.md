@@ -17709,3 +17709,18 @@ locked owner全target／全feature check／Clippyとowner fmt checkは終了0。
 - Supersedes: 内部portのみのcheckpointを、named producerとsource expression／patternの保持へ接続中という状態へ更新した。Source `71e6b6fdede2ce8e5d33cb9ec30e3c03e63747c0` の174件PASS等、各Sourceの実測・失敗・full SHA・既存原本は保持する。Generic Match等の既受入は維持し、移行中Sourceのコンパイル失敗と区別する。現状一覧は[current-status.md](current-status.md)だけに置く。
 
 原本 [task-prepared-value-producers-checkpoint.raw.zip](acceptance-evidence/task-prepared-value-producers-checkpoint.raw.zip) は13 entries、ZIP 431469 bytes、SHA-256 `2de1fa0b1d5aeb447bf09a91d53ab6effa27b61cecf5e00130548b6d463daea5`。全データentryの長さ・SHA-256をreadback検証した。
+
+## Prepared source admission migration checkpoint
+
+2026-11-17。基点 `0dba07b9d16557603e4b0107280482fc594e8a03`。意味変更Source `457125374aaee9295bc702648ba0ce5c4fe6b923`（tree `01fa0a5b1d462cbe9ff73f5f46d9309c9c13e8a6`）を既存mainで途中commit・非force pushした。10 Rust path、514追加／96削除。後続 `2ff018628e391cb9c89206fe25820a2071489589` はcallback型のfmt修正のみ。両公開headと10 source blobを照合し、既存の未追跡 `%SystemDrive%/` 4 pathを保持した。途中commitに正常動作を要求しないユーザー指示に従う未受入checkpointである。
+
+- source admissionを実Analyzerの2つの値観測callbackへ接続した。元のdeclaration registryに属する実際のgraphを短く借り、元producer Γと同じTypeConstraintContext／workを使う。型・定数・行・predicateの4 scalar portは既存ScopedTypeProjectionの構造foldを通る。行とpredicateは1つのaffine term editで投影し、途中の失敗で先行発行termも取り消す。元Γの参照検査はcanonical primitiveの既存入口と同じ所有者の規則を使い、prepared値をcanonicalへ変換しない。
+- 観測済み値は既存ConstraintOperandに元source owner・exact receipt・実際のlexical frameを保持する。probe close後はそのoperandを受け取り、元receiptとframeを照合する。退避後にrawな値を初めて取り込む旧順序は拒否する。登録済みresultの利用は既存ResolvedConstraintResultへ直接接続した。新たなTypeKind grammar、別walker、graph Clone、型digest・specializationの早期発行は追加していない。
+- shared fold下のambient／localな型・定数・効果・predicateの移送と、本体未準備のnamed applicationの保持・元Γ拒否・実本体準備後の行確認を対象に2 fixtureを追加した。実行・test targetのcompileは未確認であり、成功件数へ加算しない。
+- 意味変更Source `457125374aaee9295bc702648ba0ce5c4fe6b923` の `cargo check --locked -p arcweft-lang-sema --lib --all-features` は終了101・665エラー・22警告。直前の未commit開発入力のcheckも665エラーで失敗したが、公開Sourceの検証と区別して保持する。`CARGO_INCREMENTAL=0`、jobs／profile上書きなし。preparedの型関係・source helper・completion・最終consumer等の移行がコンパイルを通っておらず、Clippy・nextest・doctest・逆依存・全workspaceの実行は行っていない。
+- 意味変更Sourceのfmt checkはcallback型の参照表記修正に伴う折返し1か所で終了1となった。後続Source `2ff018628e391cb9c89206fe25820a2071489589` にfmt修正をcommit・pushし、`cargo fmt --all -- --check` は終了0。型の意味は変更しておらず、library checkを再実行したとはしない。
+- このSourceでは、数学graphのcheckpoint／deltaをfact transactionと統合すること、他のoriginal型入口へのphase貸出し、prepared relationとjoint completion／canonical sealへの接続がまだ完了していない。これらが未接続のまま動作可能・受入済みとは判定しない。所有レビューではshared grammar・元scope／work・affine editの責任を確認したが、実行による検証の代用とはしない。Generic Matchと過去Sourceの受入・実測はそのまま維持する。
+- ユーザー指定のworkspace全体 `cargo clean` を13:25:43–13:25:45 JSTに実行し、終了0、4,672 file／3.9 GiBを削除した。Cargo metadataの実targetが `D:\git\arcweft\target` と一致し、Cargo／rustcが停止していることを先に確認した。target消失、Git HEAD・tracked差分・未追跡inventoryがclean前後で変わらないことを確認した。この後のbuild／testは行っていない。
+- Supersedes: 元のprepared値の取り込みがcallback close後だった順序を、liveな元graphのloan内で取り込んだoperandを保持する順序へ訂正した。前checkpointの663エラーと今回の665エラーは各入力段階の記録であり、件数を品質の改善指標や受入判定へ読み替えない。現状は[current-status.md](current-status.md)の該当行だけに集約する。
+
+原本 [task-prepared-source-admission-checkpoint.raw.zip](acceptance-evidence/task-prepared-source-admission-checkpoint.raw.zip) は14 entries、ZIP 149382 bytes、SHA-256 `20338526f7d81e26185e66603240dbba8e227c29c687cc06e69b561b2a8ba2d7`。入力・公開照合・途中と最終の失敗・fmt修正・clean receiptを保持し、全データentryの長さ・SHA-256をreadback照合した。
