@@ -18355,3 +18355,22 @@ Supersedes: 直前の「canonical componentからcallback materializationへの�
 差分は11 Rust path、783追加／330削除、物理453 LOC増。増加triggerについて、queueとticket lifecycle／結果集約をその状態の一つのownerへ移し、旧実装を残していないことをレビューした。新owner401 LOC、新fixture227 LOC。既存transactionはopen inferenceを保持し、canonical ownerは閉じた結果だけを扱う。fixtureも同じ境界に置く。依存graphとfan-in12／fan-out19は不変、既存resolved graph／逆依存証拠を再利用しscanner再実行とはしない。Cargo依存／feature・公開facade・layer・I/O・unsafe・codec／version・既定予算は不変。Fn局所∀／guarded契約、旧eager consumer削除とpublic switchなどの未達は現状一覧へ保持する。全体cargo cleanは02:09実施済みで繰り返していない。
 
 [検証原本・全入力hash・公開照合・全staged diff・所有レビュー](acceptance-evidence/task-canonical-materialization-owner-checkpoint.raw.zip) は37 entry、751,734 bytes、SHA256 `81fc6bca8a874fea6eed7fe5568204ceaa75a16489069a1bc9989a67ae8b73e5`。各entryの長さ／SHA256をZIP再読取で照合した。旧履歴の2,824,817 bytes（SHA256 `3fb0d8729c1d16d666efd86187c6c14ca5ab8653462bb87c54220fd3f507fb48`）をprefixとして保持する。
+
+<a id="callable-callback-owner-checkpoint"></a>
+## 2026-11-18 — callableの共通callback ownerとcanonical消費entry
+
+確認した基点 `main`／`origin/main` は `6e771e92df957537783a57d592aa4f65766a4bd3`。Source `ed228d4ea6b09fae225d6f44a91417cef7dd47e4` を既存mainへ通常commit／非forced pushし、公開mainと最終8入力のraw Git blob／作業ファイルSHA256一致を確認した。検証はcommit前の同じbytesを再利用し、commit後の再実行ではない。公開直後のtracked差分0、既存未追跡 `%SystemDrive%/` を保持した。
+
+Supersedes: 「callable側の共通callback ownerとcanonical consumerがない」という現状を、この内部ownerとentryの実装範囲で置き換える。実original productからそのentryへのdispatchとfrontendへの切替えは未完了で、body一回準備や公開受入は成立したとしない。[唯一の現状一覧](current-status.md)は既存4行を更新した。同じ移行の工程説明は簡潔に整理し、詳細と旧実測・full SHA・原本を履歴へ残す。Generic Matchの受入・公開と保護行bytesは不変。
+
+- `CandidateConstraintCallbacks` は実accounting contextのloan、準備済みcallable authority、client、callback issuer／ordinal／active checkpoint identityを一緒に所有する。旧driverにあった状態とprobe／materializationのbegin・close実装、source／fatal確認、opaque比較を一つのownerへ移し、旧実装を削除した。Open driverは推論transactionとこのownerを保持する。
+- 既存driverのfinishは実graph loan内でlowerを閉じ、`into_materialization` で消費して共通callback処理へ渡す。消費後に推論transactionを再構築しない。`PreparedConstraintAuthority::materialize_component` も、すでにcanonicalなownerを消費する入口として同じ実装を使う。各next ticketの前に実client graphとcallable authority／canonical leaseを照合し、そのloanを終えてからcallbackを呼ぶ。callbackがgraphを置き換えた場合も後続ticketの前に再照合する。
+- client finishは準備失敗やcallback protocol不正の後にも実行を試み、先行失敗の優先順位を保持する。元open pathの実cycle診断を最終materialization ownerへ消費移管し、closed memberのfixtureから別の `None` 引数を除いた。最終ownerが保持する診断と結果を一度だけ取り出す。包括allocation／copy事前検査・single-pass／性能・workspace成功は主張しない。
+
+新規test IDは追加していない。既存のprotocol／取消し／foreign ticketとcheckpoint／正確なclose回数／source identityのfixtureは同じcallback ownerを参照し、assertionを維持する。実original memberのNamed／Future／元C保持・後member失敗再試行・共同branch fixtureも、診断を所有するfinal finishへ揃えた。いずれも未実行。
+
+必須 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は3回とも終了101。dev01はlibrary493エラー／25警告・lib test1,547エラー／44警告で、切出し時に `CandidateConstraintSourceContext` まで誤ってowner fieldを変更した15件を検出した。適用範囲を実driverに限定したdev02と、各ticket前のgraph再照合を加えた最終dev03は **library478エラー／25警告・lib test1,532エラー／44警告**。3回のowner fmt apply／checkは終了0。CARGO_INCREMENTAL=0、jobs／profile上書きなし。最終8変更pathの一次診断24件は旧callable fixture14件、specializationのprepared contract移行9件、旧eager transactionのoriginal／Future入力1件。新callback owner、production driverの消費移管／canonical entry、新materialization finishと既存original member fixtureへの一次診断は0。ただしこの所在確認は全体compile・test成功の証明ではない。nextest／Clippy／doctest／推移的逆依存／workspace・Native／AWBC・Native/Web最終受入は未実行。
+
+差分は8 Rust path、779追加／661削除、物理118 LOC増。新callback owner565 LOCは同じclientとaffine checkpoint状態の一つの責務であり、旧driverから同じ処理を削除した。root内の既存test moduleは `pub(crate)` も認識して別計測する。original inferenceとcanonical result ownerは異なるphaseであり、consume後に並列authorityを残さない。Cargo依存graph・fan-in12／fan-out19は不変、既存resolved graph／逆依存証拠を再利用しscanner再実行とはしない。Cargo依存／feature・公開facade・layer・I/O・unsafe・codec／version・既定予算は不変。実original-product dispatch、old eager consumer削除、Fn局所∀／guarded契約とpublic switchなどの未達は現状一覧へ保持する。全体cargo cleanは02:09実施済みで繰り返していない。
+
+[検証原本・全入力hash・公開照合・全staged diff・所有レビュー](acceptance-evidence/task-callable-callback-owner-checkpoint.raw.zip) は25 entry、457,980 bytes、SHA256 `a8e889054be9648a921a638cf6c4b530a3ca6e4230f87523b0ec67637b0ff008`。各entryの長さ／SHA256をZIP再読取で照合した。旧履歴の2,830,483 bytes（SHA256 `ed2823cf2c92b1fda755d59563afc8b8e405bf497e0339e12facb2e6ab7f3909`）をprefixとして保持する。
