@@ -2,9 +2,9 @@
 
 use super::{
     Analyzer, ArrayLength, BTreeMap, BTreeSet, BuiltinTypeConstructor, CheckedPattern,
-    CheckedPatternResolution, CheckedTypedBinding, EnumVariantPayload, EnvironmentEnumSchema,
-    ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisInput, HirItem, HirItemKind,
-    HirModule, HirPathRoot, HirPathSegment, HirPatternBinding, HirPatternField, HirPatternKind,
+    CheckedPatternResolution, EnumVariantPayload, EnvironmentEnumSchema, ExprId,
+    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, HirItem, HirItemKind, HirModule,
+    HirPathRoot, HirPathSegment, HirPatternBinding, HirPatternField, HirPatternKind,
     HirPatternRecordPath, HirPatternSequenceRest, HirVariantPattern, HirVariantPatternHead,
     HirVariantPatternHeadValue, HirVariantPatternName, HirVariantPatternPayload, LocalId,
     PatternId, ProjectNominalBody, ProjectNominalType, ProjectSymbolTable, ProjectTypeTarget,
@@ -110,13 +110,19 @@ impl Analyzer<'_, '_, '_> {
                         item.into_pattern()
                     }
                     HirPatternKind::TypedBinding { ty: annotation, .. } => {
-                        let annotation = self.types.get(annotation).cloned().ok_or(
+                        self.types.get(annotation).ok_or(
                             FinalSemanticAnalysisError::TypeResolutionFailed { owner: *annotation },
                         )?;
-                        CheckedPatternResolution::TypedBinding(
-                            CheckedTypedBinding::try_new(annotation, &ty)
-                                .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?,
-                        )
+                        input.push_prepared_pattern(
+                            owner,
+                            super::PreparedPatternFact::TypedBinding(
+                                crate::final_analysis::prepared::PreparedTypedBindingPattern::new(
+                                    *annotation,
+                                    ty,
+                                ),
+                            ),
+                        );
+                        continue;
                     }
                     _ => CheckedPatternResolution::Structural,
                 };
@@ -1013,7 +1019,7 @@ pub(super) fn resolve_closed_variant_path(
 ) -> Result<
     Option<(
         TypeKind<crate::types::PreparedEffects>,
-        super::PreparedVariantOwnerSeed,
+        super::PreparedVariantOwnerSeed<crate::types::PreparedEffects>,
         u32,
     )>,
     FinalSemanticAnalysisError,
@@ -1052,7 +1058,7 @@ pub(super) fn resolve_closed_variant_path(
 }
 
 struct ResolvedVariantPattern {
-    owner: super::PreparedVariantOwnerSeed,
+    owner: super::PreparedVariantOwnerSeed<crate::types::PreparedEffects>,
     ordinal: u32,
     payload: Option<TypeKind<crate::types::PreparedEffects>>,
 }

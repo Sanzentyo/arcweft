@@ -7,11 +7,11 @@ use super::CheckedExpression;
 use super::match_edges::{
     CheckedSelectedExpressionGraph, CheckedStructuralEdgeDraft, PreparedCallableJoins,
 };
+use super::model::PreparedResolvedPattern;
 use super::{
-    CallTargetFacts, CaptureId, CheckedBinding, CheckedItem, CheckedPattern, ExprId, ItemId,
-    LocalId, PatternId, PhysicalCandidateArgumentEvaluation, PreparedExecutableIngressSeal,
-    PreparedExpressionFact, PreparedPatternFact, PreparedStatementPayload, StmtId, TypeId,
-    TypeKind,
+    CallTargetFacts, CaptureId, CheckedBinding, CheckedItem, ExprId, ItemId, LocalId, PatternId,
+    PhysicalCandidateArgumentEvaluation, PreparedExecutableIngressSeal, PreparedExpressionFact,
+    PreparedPatternFact, PreparedStatementPayload, StmtId, TypeId, TypeKind,
 };
 
 /// Mutable staging owner for the independent semantic passes.
@@ -68,7 +68,7 @@ impl FinalSemanticAnalysisInput {
         self.expressions.push((owner, expression));
     }
 
-    pub(crate) fn push_pattern(&mut self, owner: PatternId, pattern: CheckedPattern) {
+    pub(crate) fn push_pattern(&mut self, owner: PatternId, pattern: PreparedResolvedPattern) {
         self.push_prepared_pattern(owner, pattern.into());
     }
 

@@ -1,6 +1,6 @@
 //! Recursive open-type classification used by overload selection.
 
-use super::{TypeKind, VariantPayloadType};
+use super::{TypeEffectDomain, TypeKind, VariantPayloadType};
 
 macro_rules! atomic_type_kind_pattern {
     ($($extra:pat_param)?) => {
@@ -76,7 +76,7 @@ macro_rules! atomic_type_kind_pattern {
     };
 }
 
-impl TypeKind {
+impl<D: TypeEffectDomain> TypeKind<D> {
     /// Reports whether this type contains the non-escaping line-execution
     /// operation. A `DialogueLine<R>` may be consumed by line lowering, but it
     /// cannot become a runtime value through a container, binding, capture,
@@ -217,19 +217,19 @@ impl TypeKind {
     }
 }
 
-fn arguments_contain_nominal_poison(arguments: &[TypeKind]) -> bool {
+fn arguments_contain_nominal_poison<D: TypeEffectDomain>(arguments: &[TypeKind<D>]) -> bool {
     arguments.iter().any(TypeKind::contains_nominal_poison)
 }
 
-fn arguments_contain_dialogue_line(arguments: &[TypeKind]) -> bool {
+fn arguments_contain_dialogue_line<D: TypeEffectDomain>(arguments: &[TypeKind<D>]) -> bool {
     arguments
         .iter()
         .any(TypeKind::contains_dialogue_line_operation)
 }
 
-fn variant_payload_contains(
-    payload: &VariantPayloadType,
-    predicate: impl Fn(&TypeKind) -> bool,
+fn variant_payload_contains<D: TypeEffectDomain>(
+    payload: &VariantPayloadType<D>,
+    predicate: impl Fn(&TypeKind<D>) -> bool,
 ) -> bool {
     payload
         .visit_types(&mut |ty| if predicate(ty) { Err(()) } else { Ok(()) })

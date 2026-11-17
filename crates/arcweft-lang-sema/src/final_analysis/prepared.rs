@@ -1,6 +1,7 @@
 //! Private, consumable semantic facts that require the project-wide C2 seal.
 
 pub(crate) use super::model::PreparedResolvedExpression;
+mod typed_binding;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
     identity::{ExprId, ItemId, LocalId, PatternId},
@@ -8,6 +9,7 @@ use arcweft_lang_hir::{
     symbol::CallableDeclarationKey,
 };
 use std::{borrow::Cow, sync::Arc};
+pub(crate) use typed_binding::PreparedTypedBindingPattern;
 
 use crate::{
     callable::ContentCallableIdentity,
@@ -676,7 +678,7 @@ impl PreparedEntryExpression {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedVariantExpression {
     shell: PreparedExpressionShell,
-    owner: PreparedVariantOwnerSeed,
+    owner: PreparedVariantOwnerSeed<PreparedEffects>,
     selected_ordinal: u32,
 }
 
@@ -702,7 +704,7 @@ impl PreparedVariantExpression {
 
     pub(crate) fn try_new(
         shell: PreparedExpressionShell,
-        owner: PreparedVariantOwnerSeed,
+        owner: PreparedVariantOwnerSeed<PreparedEffects>,
         selected_ordinal: u32,
     ) -> Option<Self> {
         if shell.value_type() != Some(&owner.ty()) {
@@ -723,7 +725,7 @@ impl PreparedVariantExpression {
         &self.shell
     }
 
-    pub(crate) const fn owner(&self) -> &PreparedVariantOwnerSeed {
+    pub(crate) const fn owner(&self) -> &PreparedVariantOwnerSeed<PreparedEffects> {
         &self.owner
     }
 
@@ -731,7 +733,13 @@ impl PreparedVariantExpression {
         self.selected_ordinal
     }
 
-    pub(crate) fn into_parts(self) -> (PreparedExpressionShell, PreparedVariantOwnerSeed, u32) {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        PreparedExpressionShell,
+        PreparedVariantOwnerSeed<PreparedEffects>,
+        u32,
+    ) {
         (self.shell, self.owner, self.selected_ordinal)
     }
 }
@@ -1654,14 +1662,14 @@ impl PreparedExpressionFact {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedVariantPattern {
     ty: TypeKind<PreparedEffects>,
-    owner: PreparedVariantOwnerSeed,
+    owner: PreparedVariantOwnerSeed<PreparedEffects>,
     selected_ordinal: u32,
 }
 
 impl PreparedVariantPattern {
     pub(crate) fn try_new(
         ty: TypeKind<PreparedEffects>,
-        owner: PreparedVariantOwnerSeed,
+        owner: PreparedVariantOwnerSeed<PreparedEffects>,
         selected_ordinal: u32,
     ) -> Option<Self> {
         if ty != owner.ty() {
@@ -1680,10 +1688,16 @@ impl PreparedVariantPattern {
     pub(crate) const fn ty(&self) -> &TypeKind<PreparedEffects> {
         &self.ty
     }
-    pub(crate) const fn owner(&self) -> &PreparedVariantOwnerSeed {
+    pub(crate) const fn owner(&self) -> &PreparedVariantOwnerSeed<PreparedEffects> {
         &self.owner
     }
-    pub(crate) fn into_parts(self) -> (TypeKind<PreparedEffects>, PreparedVariantOwnerSeed, u32) {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        TypeKind<PreparedEffects>,
+        PreparedVariantOwnerSeed<PreparedEffects>,
+        u32,
+    ) {
         (self.ty, self.owner, self.selected_ordinal)
     }
 }
@@ -1889,6 +1903,7 @@ impl PreparedRecordPattern {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedPatternFact {
     Resolved(super::model::PreparedResolvedPattern),
+    TypedBinding(PreparedTypedBindingPattern),
     Variant(PreparedVariantPattern),
     Record(PreparedRecordPattern),
 }
@@ -1903,6 +1918,7 @@ impl PreparedPatternFact {
     pub(crate) const fn ty(&self) -> &TypeKind<PreparedEffects> {
         match self {
             Self::Resolved(value) => value.ty(),
+            Self::TypedBinding(value) => value.ty(),
             Self::Variant(value) => value.ty(),
             Self::Record(value) => value.ty(),
         }
@@ -1921,6 +1937,7 @@ impl PreparedPatternFact {
     ) -> Result<(), E> {
         match self {
             Self::Resolved(value) => value.visit_types(visitor),
+            Self::TypedBinding(value) => visitor(value.ty()),
             Self::Variant(value) => {
                 visitor(value.ty())?;
                 value.owner().visit_types(visitor)

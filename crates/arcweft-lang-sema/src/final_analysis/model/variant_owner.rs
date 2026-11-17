@@ -4,9 +4,9 @@ use super::CheckedProjectNominal;
 use crate::env::EnvironmentEnumSchema;
 use crate::env::identity::EnvironmentBindingId;
 use crate::types::{
-    AcceptedVariantCaseSemanticId, CharacterNominalType, GenericScopeError, SemanticTypeDigest,
-    TypeKind, VariantPayloadOwnerFamily, VariantPayloadSealError, VariantPayloadShape,
-    VariantPayloadType,
+    AcceptedVariantCaseSemanticId, CanonicalEffects, CharacterNominalType, GenericScopeError,
+    SemanticTypeDigest, TypeEffectDomain, TypeKind, VariantPayloadOwnerFamily,
+    VariantPayloadSealError, VariantPayloadShape, VariantPayloadType,
 };
 use arcweft_core::pattern::RuntimeBuiltinVariantIdentity;
 use thiserror::Error;
@@ -95,7 +95,7 @@ impl CheckedVariantCase {
 
 /// Typed origin of a checked variant owner. This descriptor does not mint an owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum VariantOwnerKind<N> {
+pub enum VariantOwnerKind<N, D: TypeEffectDomain = CanonicalEffects> {
     Project {
         nominal: N,
     },
@@ -104,25 +104,25 @@ pub enum VariantOwnerKind<N> {
     },
     BuiltinClosed {
         nominal: EnvironmentBindingId,
-        ty: TypeKind,
+        ty: TypeKind<D>,
     },
     RuntimeBuiltin {
         owner: RuntimeBuiltinVariantIdentity,
-        ty: TypeKind,
+        ty: TypeKind<D>,
     },
     Option {
-        item: TypeKind,
+        item: TypeKind<D>,
     },
     Result {
-        ok: TypeKind,
-        error: TypeKind,
+        ok: TypeKind<D>,
+        error: TypeKind<D>,
     },
 }
 
 /// Descriptor whose project nominal has completed semantic sealing.
 pub type CheckedVariantOwnerKind = VariantOwnerKind<CheckedProjectNominal>;
 
-impl<N> VariantOwnerKind<N> {
+impl<N, D: TypeEffectDomain> VariantOwnerKind<N, D> {
     pub(crate) const fn payload_owner_family(&self) -> VariantPayloadOwnerFamily {
         match self {
             Self::Project { .. } => VariantPayloadOwnerFamily::Project,
@@ -134,7 +134,7 @@ impl<N> VariantOwnerKind<N> {
         }
     }
 
-    fn ty_with(&self, project: impl FnOnce(&N) -> TypeKind) -> TypeKind {
+    fn ty_with(&self, project: impl FnOnce(&N) -> TypeKind<D>) -> TypeKind<D> {
         match self {
             Self::Project { nominal } => project(nominal),
             Self::CharacterNominal { nominal } => TypeKind::CharacterNominal(nominal.clone()),
@@ -150,7 +150,7 @@ impl<N> VariantOwnerKind<N> {
     fn try_map_project<M, E>(
         self,
         project: impl FnOnce(N) -> Result<M, E>,
-    ) -> Result<VariantOwnerKind<M>, E> {
+    ) -> Result<VariantOwnerKind<M, D>, E> {
         Ok(match self {
             Self::Project { nominal } => VariantOwnerKind::Project {
                 nominal: project(nominal)?,

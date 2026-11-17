@@ -1740,7 +1740,10 @@ impl Analyzer<'_, '_, '_> {
         &self,
         owner: ExprId,
         expected_nominal: &crate::types::ProjectNominalType,
-    ) -> Result<super::PreparedVariantOwnerSeed, AnalyzerExpressionError> {
+    ) -> Result<
+        super::PreparedVariantOwnerSeed<crate::types::PreparedEffects>,
+        AnalyzerExpressionError,
+    > {
         let declaration = self
             .symbols
             .nominal(expected_nominal.declaration())
@@ -5127,7 +5130,13 @@ impl Analyzer<'_, '_, '_> {
         expected: &TypeKind<crate::types::PreparedEffects>,
         name: &arcweft_lang_hir::leaf::HirName,
         constructor_head: bool,
-    ) -> Result<(super::PreparedVariantOwnerSeed, u32), AnalyzerExpressionError> {
+    ) -> Result<
+        (
+            super::PreparedVariantOwnerSeed<crate::types::PreparedEffects>,
+            u32,
+        ),
+        AnalyzerExpressionError,
+    > {
         let seed = match expected {
             TypeKind::ProjectNominal(nominal) => {
                 self.prepare_project_variant_owner(owner, nominal)?
