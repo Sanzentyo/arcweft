@@ -886,6 +886,7 @@ impl Analyzer<'_, '_, '_> {
             .map_err(AnalyzerExpressionError::fatal)?;
         let call_target = target.clone();
         let ty = self.publish_dialogue_content_application_call(
+            context,
             module,
             owner,
             &call_target,
@@ -1296,6 +1297,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn publish_dialogue_content_application_call(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         target: &super::super::CheckedCharacterDialogueTarget,
@@ -1398,6 +1400,7 @@ impl Analyzer<'_, '_, '_> {
             ));
         }
         self.publish_resolved_dialogue_application(
+            context,
             module,
             owner,
             expected,

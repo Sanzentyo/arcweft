@@ -38,6 +38,7 @@ impl Analyzer<'_, '_, '_> {
     /// without claiming that the expression invoked the declaration.
     pub(super) fn prepare_named_callable_value_type(
         &mut self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
         callable: &crate::final_analysis::CheckedProjectCallable,
     ) -> Result<crate::types::TypeKind<crate::types::PreparedEffects>, AnalyzerExpressionError>
     {
@@ -71,10 +72,7 @@ impl Analyzer<'_, '_, '_> {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
         })?;
         use crate::effect_row::{DecisionControl, DecisionWork};
-        let mut work = super::callable_effect_graph::CallableEffectClosureWork::new(
-            self.catalogs.callable_limits.max_catalog_build_work(),
-            self.control,
-        );
+        let mut work = context.work();
         match self
             .source_callable_terminal_effects(&candidate)
             .map_err(AnalyzerExpressionError::fatal)?

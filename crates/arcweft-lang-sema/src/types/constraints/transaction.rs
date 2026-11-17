@@ -598,6 +598,16 @@ struct OwnedAlternativeHint<D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> ProbeTicket<D> {
+    pub(crate) fn application(&self) -> Result<D::Application, TypeConstraintError> {
+        Ok(self
+            .path
+            .as_ref()
+            .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::WrongPhase))?
+            .applications
+            .require_application(self.input.source.application())?
+            .application())
+    }
+
     pub(crate) fn original_context(
         &self,
     ) -> Result<&super::OriginalProducerContext, TypeConstraintError> {

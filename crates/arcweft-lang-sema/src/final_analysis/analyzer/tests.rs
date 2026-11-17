@@ -38,7 +38,7 @@ fn public_id_reference_family_checks_precede_cached_string_reuse() {
         FinalSemanticAnalysisControl::new(&cancellation),
     )
     .expect("analyzer");
-    let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+    let context = analyzer.published_expression_context();
     let expected = TypeKind::String;
     let accepted = analyzer
         .evaluate_expression_with_expectation(
@@ -1543,7 +1543,7 @@ fn evaluator_records_implicit_and_explicit_capture_modes_on_terminal_facts() {
             matches!(expression.kind(), HirExprKind::ComputationBlock(_)).then_some(owner)
         })
         .expect("implicit reassign producer");
-    let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+    let context = analyzer.published_expression_context();
     analyzer
         .evaluate_expression(
             &context,
@@ -1848,7 +1848,7 @@ fn failed_implicit_branch_synthesis_restores_scope_before_contextual_recheck() {
         FinalSemanticAnalysisControl::new(&cancellation),
     )
     .unwrap();
-    let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+    let context = analyzer.published_expression_context();
     assert!(matches!(
         analyzer.evaluate_expression(&context, owner, None),
         Err(AnalyzerExpressionError::Rejected(_))

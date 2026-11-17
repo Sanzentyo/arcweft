@@ -327,6 +327,19 @@ impl<E> CandidateProjectionApplyFailure<E> {
     }
 }
 
+impl CandidateProjectionApplyFailure<crate::final_analysis::FinalSemanticAnalysisError> {
+    pub(super) fn into_expression_error(self) -> super::expression_error::AnalyzerExpressionError {
+        match self.violation {
+            CandidateFactMutationFailure::Control(error) => {
+                super::expression_error::AnalyzerExpressionError::fatal(error)
+            }
+            CandidateFactMutationFailure::Invariant(error) => {
+                super::expression_error::AnalyzerExpressionError::fact(error)
+            }
+        }
+    }
+}
+
 /// Sole mutable owner for candidate-sensitive semantic facts.
 ///
 /// Every write flows through this owner so candidate probes cannot bypass the
@@ -519,17 +532,7 @@ impl CandidateFactOperationFailure {
     fn into_expression_error(self) -> super::expression_error::AnalyzerExpressionError {
         match self {
             Self::Expression(error) => error,
-            Self::Projection(failure) => {
-                let (violation, _projection) = failure.into_parts();
-                match violation {
-                    CandidateFactMutationFailure::Control(error) => {
-                        super::expression_error::AnalyzerExpressionError::fatal(error)
-                    }
-                    CandidateFactMutationFailure::Invariant(error) => {
-                        super::expression_error::AnalyzerExpressionError::fact(error)
-                    }
-                }
-            }
+            Self::Projection(failure) => failure.into_expression_error(),
         }
     }
 }
@@ -2680,27 +2683,23 @@ impl<'project, 'catalog, 'control> super::Analyzer<'project, 'catalog, 'control>
     /// Sole owner of candidate checkpoint lifecycle.  Raw state operations stay
     /// private to this module so a callback cannot close a checkpoint without
     /// the trusted abort/recovery path.
-    pub(super) fn run_candidate_fact_transaction<C, T, E>(
+    pub(super) fn run_candidate_fact_transaction<T, E>(
         &mut self,
-        control: &mut C,
+        mut control: super::preparation_work::AnalyzerPreparationWork<'_>,
         operation: impl for<'a> FnOnce(
             &'a mut Self,
             CandidateExpressionFactAuthority<'a>,
             CandidateFactTransactionAuthority<'a>,
-            &mut C,
         ) -> Result<CandidateFactTransactionAction<T>, E>,
     ) -> Result<CandidateFactTransactionOutcome<T>, super::expression_error::AnalyzerExpressionError>
     where
         E: Into<CandidateFactOperationFailure>,
-        C: crate::effect_row::DecisionControl<
-                Error = crate::final_analysis::FinalSemanticAnalysisError,
-            >,
     {
         use super::expression_error::AnalyzerExpressionError;
 
         let checkpoint = self
             .facts
-            .begin_candidate_transaction(control)
+            .begin_candidate_transaction(&mut control)
             .map_err(|failure| match failure {
                 CandidateFactMutationFailure::Control(error) => {
                     AnalyzerExpressionError::fatal(error)
@@ -2717,8 +2716,8 @@ impl<'project, 'catalog, 'control> super::Analyzer<'project, 'catalog, 'control>
             Ok(authority) => authority,
             Err(error) => return Err(self.rollback_candidate_authority_error(checkpoint, error)),
         };
-        let result = operation(self, expression_authority, transaction_authority, control);
-        self.finish_candidate_fact_transaction(checkpoint, result, control)
+        let result = operation(self, expression_authority, transaction_authority);
+        self.finish_candidate_fact_transaction(checkpoint, result, &mut control)
     }
 
     fn rollback_candidate_authority_error(

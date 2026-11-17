@@ -1336,7 +1336,7 @@ impl<'a, 'project, 'catalog, 'control>
                 })?;
         }
         work.charge_callback_expression(1)
-            .map_err(crate::callable::SourceCallbackFailure::Abort)?;
+            .map_err(crate::callable::SourceCallbackFailure::Constraint)?;
         work.check_cancelled()
             .map_err(crate::callable::SourceCallbackFailure::Abort)?;
         Ok(())
@@ -1438,6 +1438,7 @@ impl<'a, 'project, 'catalog, 'control>
         source_admission: Option<&AnalyzerCallSourceAdmission>,
         application_context: Option<&super::PreparedCorrelatedCallRecipe>,
         phase: SourcePhase,
+        preparation_work: super::super::preparation_work::AnalyzerPreparationWork<'_>,
         mut parent_probe: Option<
             &mut crate::callable::CandidateConstraintSourceContext<
                 '_,
@@ -1533,7 +1534,10 @@ impl<'a, 'project, 'catalog, 'control>
                     source, violation,
                 ))
             })?;
-        let child_context = self.context.child_candidate(authority);
+        let child_context = self
+            .context
+            .child_candidate(authority)
+            .with_work(preparation_work);
         let selected_candidate = application_context
             .map(|recipe| &recipe.candidate)
             .or(self.candidate.as_ref());
@@ -2053,6 +2057,14 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
     > {
         let source_id = probe.source();
         let source = source_id.local();
+        let work_owner = probe
+            .application()
+            .map_err(crate::callable::SourceCallbackFailure::Constraint)?
+            .expression();
+        let source_work = super::super::preparation_work::AnalyzerPreparationWork::candidate(
+            probe.work_loan(),
+            work_owner,
+        );
         probe.with_hint(|hint, probe| {
         self.probe_checkpoint_check(source_id, checkpoint)?;
         let graph = self.analyzer.facts.prepared_calls().map_err(|violation| {
@@ -2108,6 +2120,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 None,
                 None,
                 SourcePhase::Probe,
+                source_work.clone(),
                 None,
             ) {
                 Ok(checked) => {
@@ -2143,6 +2156,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     None,
                     None,
                     SourcePhase::Probe,
+                    source_work.clone(),
                     Some(&mut *probe),
                 ) {
                     Ok(checked) => {
@@ -2232,6 +2246,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         alternative.evidence().source_admission.as_ref(),
                         None,
                         SourcePhase::Probe,
+                        source_work.clone(),
                         Some(&mut *probe),
                     ) {
                         Ok(checked) => {
@@ -2624,6 +2639,10 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             None,
                             application_context,
                             SourcePhase::Materialize,
+                            super::super::preparation_work::AnalyzerPreparationWork::candidate(
+                                work.loan(),
+                                request.application_id().expression(),
+                            ),
                             None,
                         )
                         .map_err(|error| match error {
@@ -2717,6 +2736,10 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     source_admission.as_ref(),
                     application_context,
                     SourcePhase::Materialize,
+                    super::super::preparation_work::AnalyzerPreparationWork::candidate(
+                        work.loan(),
+                        request.application_id().expression(),
+                    ),
                     None,
                 ) {
                     Ok(checked) => checked,
@@ -7134,7 +7157,7 @@ mod tests {
             crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
         )
         .expect("analyzer");
-        let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+        let context = analyzer.published_expression_context();
         let mut prepared_child_calls = Vec::new();
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
@@ -7261,7 +7284,7 @@ mod tests {
             crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
         )
         .unwrap();
-        let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+        let context = analyzer.published_expression_context();
         let mut children = Vec::new();
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
@@ -7294,6 +7317,7 @@ mod tests {
                     None,
                     None,
                     SourcePhase::Probe,
+                    client.context.work(),
                     None,
                 )
                 .unwrap_or_else(|_| panic!("evaluate the real source expression"));
@@ -7344,7 +7368,7 @@ mod tests {
             crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
         )
         .expect("analyzer");
-        let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+        let context = analyzer.published_expression_context();
         let mut prepared_child_calls = Vec::new();
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
@@ -7406,7 +7430,7 @@ mod tests {
             crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
         )
         .expect("analyzer");
-        let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+        let context = analyzer.published_expression_context();
         let mut prepared_child_calls = Vec::new();
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,

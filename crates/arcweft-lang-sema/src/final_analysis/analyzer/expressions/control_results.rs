@@ -26,6 +26,7 @@ impl Analyzer<'_, '_, '_> {
         for branch in branches {
             saw_branch = true;
             let probe = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+                context.work(),
                 |this, authority, _| {
                     let probe_context = context.child_candidate(authority);
                     let result = this.evaluate_expression_with_expectation(

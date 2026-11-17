@@ -8,7 +8,7 @@ use super::continuation::{
     CallConstraintInvariant, PreparedChildConstraintInitialization, PreparedConstraintAuthority,
     PreparedConstraintInitialization,
 };
-pub(crate) use super::limits::CandidateConstraintWorkSession;
+pub(crate) use super::limits::{CandidateConstraintWorkLoan, CandidateConstraintWorkSession};
 use crate::types::constraints::context::TypeConstraintContext;
 use crate::types::constraints::transaction::{
     ClosedMaterialization, MaterializationCallbackBinding, MaterializationTicket, ProbeStart,
@@ -168,6 +168,16 @@ impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'pr
 
     pub(crate) fn work(&mut self) -> &mut CandidateConstraintWorkSession<'control> {
         self.context.accounting_mut()
+    }
+
+    pub(crate) fn work_loan(&mut self) -> CandidateConstraintWorkLoan<'control> {
+        self.context.accounting_mut().loan()
+    }
+
+    pub(crate) fn application(
+        &self,
+    ) -> Result<D::Application, crate::types::constraints::TypeConstraintError> {
+        self.ticket.application()
     }
 
     pub(crate) fn with_hint<R>(

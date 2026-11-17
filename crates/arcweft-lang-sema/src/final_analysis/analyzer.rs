@@ -294,6 +294,7 @@ struct Analyzer<'project, 'catalog, 'control> {
     symbols: &'catalog ProjectSymbolTable,
     catalogs: FinalSemanticCatalogs<'catalog>,
     control: FinalSemanticAnalysisControl<'control>,
+    preparation_work: preparation_work::AnalyzerPreparationWork<'control>,
     topology: Arc<HirProjectEvaluationTopology>,
     modules: BTreeMap<HirModuleId, &'project HirModule>,
     styles: style::StyleAnalysisContext,
@@ -580,6 +581,10 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             catalogs,
             control,
             topology,
+            preparation_work: preparation_work::AnalyzerPreparationWork::root(
+                catalogs.callable_limits.max_catalog_build_work(),
+                control,
+            ),
             modules,
             styles,
             types: BTreeMap::new(),
@@ -602,6 +607,15 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
 
     fn analyze(mut self) -> Result<FinalSemanticAnalysis, super::FinalSemanticProjectError> {
         self.analyze_staged(NoPreparedStatementMutation)
+    }
+
+    fn published_expression_context(
+        &self,
+    ) -> expression_error::AnalyzerExpressionContext<'control> {
+        expression_error::AnalyzerExpressionContext::published(
+            Rc::clone(&self.call_frames),
+            self.preparation_work.clone(),
+        )
     }
 
     fn analyze_staged<M: FinalAnalysisMutation>(
@@ -1075,6 +1089,8 @@ mod expressions;
 mod function_value_use;
 #[path = "analyzer/fx_definition.rs"]
 mod fx_definition;
+#[path = "analyzer/preparation_work.rs"]
+mod preparation_work;
 #[path = "analyzer/style.rs"]
 mod style;
 #[path = "analyzer/view_fx.rs"]

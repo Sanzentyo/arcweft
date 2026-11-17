@@ -530,7 +530,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expected: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<super::PreparedExpressionFact, FinalSemanticAnalysisError> {
-        let context = AnalyzerExpressionContext::published(Rc::clone(&self.call_frames));
+        let context = self.published_expression_context();
         self.evaluate_expression(&context, owner, expected)
             .map_err(|error| error.into_public(owner))
     }
@@ -573,7 +573,7 @@ impl Analyzer<'_, '_, '_> {
             }
         }
         match self.cached_expression_fact(context, owner)? {
-            Some(checked) => self.evaluate_cached_expression(owner, expectation, checked),
+            Some(checked) => self.evaluate_cached_expression(context, owner, expectation, checked),
             None => self.evaluate_uncached_expression(context, owner, expectation),
         }
     }
@@ -646,6 +646,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn evaluate_cached_expression(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
         expectation: AnalyzerExpressionExpectation<'_>,
         checked: PreparedExpressionFact,
@@ -653,8 +654,9 @@ impl Analyzer<'_, '_, '_> {
         let previous = checked.clone();
         let checked = self.specialize_checked_function_value(owner, checked, &expectation)?;
         if checked != previous {
-            let outcome =
-                self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(|this, _, _| {
+            let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+                context.work(),
+                |this, _, _| {
                     this.facts
                         .replace_contextual_expression(owner, checked.clone())
                         .map_err(|_| {
@@ -663,7 +665,8 @@ impl Analyzer<'_, '_, '_> {
                             )
                         })?;
                     Ok(CandidateFactTransactionAction::Commit(()))
-                })?;
+                },
+            )?;
             outcome
                 .into_committed()
                 .map_err(AnalyzerExpressionError::fact)?;
@@ -692,6 +695,7 @@ impl Analyzer<'_, '_, '_> {
                 CheckedExpressionResolution::Literal(literal.clone()),
             );
             let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+                context.work(),
                 |this, _authority, _transaction| {
                     this.facts
                         .replace_contextual_expression(owner, contextual.clone())
@@ -719,6 +723,7 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         self.with_expression_guard(owner, |this| {
             let outcome = this.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+                context.work(),
                 |this, _authority, transaction_authority| {
                     let checked = this.check_fresh_expression(
                         context,
@@ -785,6 +790,7 @@ impl Analyzer<'_, '_, '_> {
                 // declared parameter requires a function.
                 let outcome = self
                     .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+                        context.work(),
                         |this, authority, transaction| {
                             let candidate_context = context.child_candidate(authority);
                             match this.check_implicit_callable_expression(
@@ -1510,7 +1516,7 @@ impl Analyzer<'_, '_, '_> {
                 expectation.is_enum_constructor_head(),
             ),
             HirExprKind::Path(path) => self
-                .prepare_path_expression(module, owner, expression, path, expected)
+                .prepare_path_expression(context, module, owner, expression, path, expected)
                 .map(Some),
             HirExprKind::Record(record) => {
                 let declaration = match self
@@ -1561,7 +1567,7 @@ impl Analyzer<'_, '_, '_> {
                     return Ok(Some(variant));
                 }
                 if let Some(callable) =
-                    self.prepare_declared_callable_value(module, owner, expected)?
+                    self.prepare_declared_callable_value(context, module, owner, expected)?
                 {
                     return Ok(Some(callable));
                 }
@@ -1893,6 +1899,7 @@ impl Analyzer<'_, '_, '_> {
     }
     fn prepare_path_expression(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         expression: &HirExpr,
@@ -1909,7 +1916,7 @@ impl Analyzer<'_, '_, '_> {
             let ty = match &resolution {
                 CheckedValueResolution::Local(local) => self.facts.locals().get(local).cloned(),
                 CheckedValueResolution::ProjectCallable(callable) => {
-                    Some(self.prepare_named_callable_value_type(callable)?)
+                    Some(self.prepare_named_callable_value_type(context, callable)?)
                 }
                 _ => value_resolution_type(self.catalogs.world, &resolution),
             }
@@ -1924,7 +1931,9 @@ impl Analyzer<'_, '_, '_> {
                 .into(),
             );
         }
-        if let Some(callable) = self.prepare_declared_callable_value(module, owner, expected)? {
+        if let Some(callable) =
+            self.prepare_declared_callable_value(context, module, owner, expected)?
+        {
             return Ok(callable);
         }
         let (ty, variant_owner, ordinal, selection) = if let (
@@ -5612,7 +5621,7 @@ impl Analyzer<'_, '_, '_> {
             (Ok(_), Err(index_error)) => return Err(index_error.into()),
         };
         self.facts
-            .apply_candidate_projection(transaction_authority, projection)
+            .apply_candidate_projection(transaction_authority, projection, &mut context.work())
             .map_err(|failure| CandidateFactOperationFailure::Projection(Box::new(failure)))?;
         let checked_type = checked.value_type().cloned().ok_or_else(|| {
             CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(
@@ -5681,30 +5690,35 @@ impl Analyzer<'_, '_, '_> {
                 }
             }
         }
-        let outcome = self.run_candidate_fact_transaction(|this, authority, _transaction| {
-            this.resolve_region_types(Some(candidate))
-                .map_err(|error| match error {
-                    FinalSemanticAnalysisError::TypeResolutionFailed { owner }
-                        if module
-                            .candidate_provenance()
-                            .owner_region(arcweft_lang_hir::identity::SyntheticOwner::Type(owner))
-                            .is_some_and(|region| region.root() == candidate) =>
-                    {
-                        AnalyzerExpressionError::rejected_type(owner)
-                    }
-                    error => AnalyzerExpressionError::fatal(error),
-                })?;
-            this.seed_local_types(Some(candidate))
-                .map_err(AnalyzerExpressionError::fatal)?;
-            let child_context = context.child_candidate(authority);
-            let result = this.evaluate_expression_with_expectation(
-                &child_context,
-                candidate,
-                expectation.clone(),
-            );
-            drop(child_context);
-            result.map(CandidateFactTransactionAction::Extract)
-        })?;
+        let outcome = self.run_candidate_fact_transaction(
+            context.work(),
+            |this, authority, _transaction| {
+                this.resolve_region_types(Some(candidate))
+                    .map_err(|error| match error {
+                        FinalSemanticAnalysisError::TypeResolutionFailed { owner }
+                            if module
+                                .candidate_provenance()
+                                .owner_region(arcweft_lang_hir::identity::SyntheticOwner::Type(
+                                    owner,
+                                ))
+                                .is_some_and(|region| region.root() == candidate) =>
+                        {
+                            AnalyzerExpressionError::rejected_type(owner)
+                        }
+                        error => AnalyzerExpressionError::fatal(error),
+                    })?;
+                this.seed_local_types(Some(candidate))
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                let child_context = context.child_candidate(authority);
+                let result = this.evaluate_expression_with_expectation(
+                    &child_context,
+                    candidate,
+                    expectation.clone(),
+                );
+                drop(child_context);
+                result.map(CandidateFactTransactionAction::Extract)
+            },
+        )?;
         outcome
             .into_extracted()
             .map_err(AnalyzerExpressionError::fact)

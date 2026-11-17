@@ -48,11 +48,11 @@ impl Analyzer<'_, '_, '_> {
         body: &HirFunctionBody,
         result: TypeKind,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let context = self.published_expression_context();
         let HirFunctionBody::Block { tail, .. } = body else {
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         };
         if !matches!(result, TypeKind::Stream { .. }) {
-            let context = AnalyzerExpressionContext::published(Rc::clone(&self.call_frames));
             let yields = self
                 .check_function_body_type(&context, module, body, &result)
                 .map_err(|error| error.into_public(*tail))?;
@@ -66,11 +66,18 @@ impl Analyzer<'_, '_, '_> {
         ];
         let outcome = self
             .run_candidate_fact_transaction(
+                context.work(),
                 |this, _, transaction| -> Result<_, CandidateFactOperationFailure> {
                     let mut selected = None;
                     let mut rejection = None;
                     for interpretation in interpretations {
-                        match this.probe_function_body(module, body, &result, interpretation) {
+                        match this.probe_function_body(
+                            &context,
+                            module,
+                            body,
+                            &result,
+                            interpretation,
+                        ) {
                             Ok(Some(projection)) => {
                                 if selected.replace(projection).is_some() {
                                     return Err(AnalyzerExpressionError::fatal(
@@ -96,7 +103,7 @@ impl Analyzer<'_, '_, '_> {
                         })
                     })?;
                     this.facts
-                        .apply_candidate_projection(&transaction, projection)
+                        .apply_candidate_projection(&transaction, projection, &mut context.work())
                         .map_err(|failure| {
                             CandidateFactOperationFailure::Projection(Box::new(failure))
                         })?;
@@ -111,15 +118,16 @@ impl Analyzer<'_, '_, '_> {
 
     fn probe_function_body(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         body: &HirFunctionBody,
         result: &TypeKind,
         interpretation: FunctionBodyInterpretation,
     ) -> Result<Option<CandidateSemanticProjection>, AnalyzerExpressionError> {
         let outcome = self.run_candidate_fact_transaction(
+            context.work(),
             |this, authority, _| -> Result<_, AnalyzerExpressionError> {
-                let context =
-                    AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames));
+                let context = context.child_candidate(authority);
                 let yields = this.check_function_body_type(
                     &context,
                     module,

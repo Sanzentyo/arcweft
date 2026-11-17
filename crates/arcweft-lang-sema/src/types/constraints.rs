@@ -290,6 +290,10 @@ pub(crate) enum TypeConstraintProjectionInvariant {
 pub(crate) enum TypeConstraintInvariant {
     #[error("original producer source is invalid")]
     OriginalProducer,
+    #[error("candidate work reservation is already borrowed")]
+    WorkSessionBorrowed,
+    #[error("candidate work reservation has already closed")]
+    WorkSessionClosed,
     #[error(transparent)]
     Instantiation(TypeInstantiationError),
     #[error(transparent)]

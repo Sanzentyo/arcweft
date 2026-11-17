@@ -1021,7 +1021,7 @@ impl Analyzer<'_, '_, '_> {
             _ => return Err(FinalSemanticAnalysisError::InvalidCallableOwner),
         }
         for (owner, expected) in expectations {
-            let context = AnalyzerExpressionContext::published(Rc::clone(&self.call_frames));
+            let context = self.published_expression_context();
             let mut expectation = AnalyzerExpressionExpectation::from_complete(Some(&expected));
             if let Some((_, coordinate)) = default_patterns.get(&owner) {
                 let signature = self

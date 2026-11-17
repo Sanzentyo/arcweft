@@ -104,10 +104,11 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         catalog: &mut PreparedCheckedTextProxyCatalog,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let context = self.published_expression_context();
         let mut diagnostics = Vec::new();
         let mut last_expression = None;
         let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
-            |this, _outer_expression_authority, _outer_transaction_authority| {
+            context.work(), |this, _outer_expression_authority, _outer_transaction_authority| {
                 for declaration in catalog.definition_ids() {
                     let Some(mut definition) = catalog.remove(&declaration) else {
                         return Err(AnalyzerExpressionError::fatal(
@@ -238,11 +239,10 @@ impl Analyzer<'_, '_, '_> {
                                 )
                             })?;
                         let attempt = this.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
-                            |this, authority, _transaction_authority| {
+                            context.work(), |this, authority, _transaction_authority| {
                                 let context = AnalyzerExpressionContext::candidate(
                                     authority,
-                                    Rc::clone(&this.call_frames),
-                                );
+                                    Rc::clone(&this.call_frames), context.work());
                                 let result = this.evaluate_compile_time_scalar_source(
                                     &context,
                                     expression,

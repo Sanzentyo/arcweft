@@ -39,6 +39,7 @@ impl TypeCompatibilityControl for ReferenceTypeControl<'_> {
 impl Analyzer<'_, '_, '_> {
     pub(super) fn prepare_declared_callable_value(
         &mut self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         expected: Option<&TypeKind<crate::types::PreparedEffects>>,
@@ -84,7 +85,7 @@ impl Analyzer<'_, '_, '_> {
         {
             let ty = match &resolution {
                 CheckedValueResolution::ProjectCallable(callable) => {
-                    self.prepare_named_callable_value_type(callable)?
+                    self.prepare_named_callable_value_type(context, callable)?
                 }
                 _ => {
                     super::expression_types::value_resolution_type(self.catalogs.world, &resolution)

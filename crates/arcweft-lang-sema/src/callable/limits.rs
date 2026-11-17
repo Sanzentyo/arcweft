@@ -1,5 +1,6 @@
 //! Inclusive callable catalog and query limits.
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::{cell::RefCell, rc::Rc};
 
 use super::{
     CallableBuildLimitError, CallableQueryLimitError, SignatureLimitExceeded, SignatureLimitKind,
@@ -375,6 +376,165 @@ pub(crate) enum CandidateConstraintSessionStartFailure {
 /// context commits the checked proposal; dropping an unentered session also
 /// commits it, with exactly one publication on success or early return.
 pub(crate) struct CandidateConstraintWorkSession<'a> {
+    state: Rc<RefCell<CandidateConstraintWorkState<'a>>>,
+}
+
+impl<'a> CandidateConstraintWorkSession<'a> {
+    pub(crate) fn new(
+        work: &'a mut ResolverWork,
+        limits: CallableLimits,
+        cancellation: &'a AtomicBool,
+    ) -> Result<Self, CandidateConstraintSessionStartFailure> {
+        Ok(Self {
+            state: Rc::new(RefCell::new(CandidateConstraintWorkState::new(
+                work,
+                limits,
+                cancellation,
+            )?)),
+        })
+    }
+
+    /// A capability for the original reservation, never a new work session.
+    /// Every charge borrows it only for that operation, before any callback.
+    pub(crate) fn loan(&self) -> CandidateConstraintWorkLoan<'a> {
+        CandidateConstraintWorkLoan {
+            account: self.state.clone(),
+        }
+    }
+
+    pub(crate) fn charge_callback_expression(
+        &mut self,
+        units: u64,
+    ) -> Result<(), TypeConstraintError> {
+        let mut state = self.state.borrow_mut();
+        state.ensure_open()?;
+        state
+            .charge_callback_expression(units)
+            .map_err(TypeConstraintError::Abort)
+    }
+
+    pub(crate) fn check_cancelled(&self) -> Result<(), TypeConstraintAbort> {
+        self.state.borrow().check_cancelled()
+    }
+}
+
+impl Drop for CandidateConstraintWorkSession<'_> {
+    fn drop(&mut self) {
+        // No API exposes this RefMut and accounting invokes no caller code.
+        // All loans release it before a callback or the owning session closes.
+        self.state.borrow_mut().commit();
+    }
+}
+
+trait CandidateConstraintWorkAccount {
+    fn charge(&self, work: crate::effect_row::DecisionWork) -> Result<(), TypeConstraintError>;
+    fn check(&self) -> Result<(), TypeConstraintError>;
+}
+
+/// Cloning this loan shares the original counters. Closing its affine owner
+/// publishes them once and revokes every outstanding loan.
+#[derive(Clone)]
+pub(crate) struct CandidateConstraintWorkLoan<'a> {
+    account: Rc<dyn CandidateConstraintWorkAccount + 'a>,
+}
+
+impl crate::effect_row::DecisionControl for CandidateConstraintWorkLoan<'_> {
+    type Error = TypeConstraintError;
+
+    fn charge(&mut self, work: crate::effect_row::DecisionWork) -> Result<(), Self::Error> {
+        self.account.charge(work)
+    }
+}
+
+impl crate::types::TypeProjectionControl for CandidateConstraintWorkLoan<'_> {
+    type Error = TypeConstraintError;
+
+    fn check(&mut self) -> Result<(), Self::Error> {
+        self.account.check()
+    }
+
+    fn visit_node(
+        &mut self,
+        _: crate::types::TypeProjectionNodeKind,
+        _: u64,
+    ) -> Result<(), Self::Error> {
+        self.account.charge(crate::effect_row::DecisionWork::Visit)
+    }
+
+    fn visit_binding(&mut self) -> Result<(), Self::Error> {
+        self.account.charge(crate::effect_row::DecisionWork::Node)
+    }
+}
+
+impl CandidateConstraintWorkAccount for RefCell<CandidateConstraintWorkState<'_>> {
+    fn charge(&self, work: crate::effect_row::DecisionWork) -> Result<(), TypeConstraintError> {
+        let mut state = self.try_borrow_mut().map_err(|_| {
+            TypeConstraintError::Invariant(
+                crate::types::constraints::TypeConstraintInvariant::WorkSessionBorrowed,
+            )
+        })?;
+        crate::effect_row::DecisionControl::charge(&mut *state, work)
+    }
+
+    fn check(&self) -> Result<(), TypeConstraintError> {
+        let state = self.try_borrow().map_err(|_| {
+            TypeConstraintError::Invariant(
+                crate::types::constraints::TypeConstraintInvariant::WorkSessionBorrowed,
+            )
+        })?;
+        state.ensure_open()?;
+        state.check_cancelled().map_err(TypeConstraintError::Abort)
+    }
+}
+
+impl crate::effect_row::DecisionControl for CandidateConstraintWorkSession<'_> {
+    type Error = TypeConstraintError;
+    fn charge(&mut self, work: crate::effect_row::DecisionWork) -> Result<(), Self::Error> {
+        self.state.charge(work)
+    }
+}
+
+impl crate::types::TypeProjectionControl for CandidateConstraintWorkSession<'_> {
+    type Error = TypeConstraintError;
+    fn check(&mut self) -> Result<(), Self::Error> {
+        self.state.check()
+    }
+    fn visit_node(
+        &mut self,
+        kind: crate::types::TypeProjectionNodeKind,
+        depth: u64,
+    ) -> Result<(), Self::Error> {
+        crate::types::TypeProjectionControl::visit_node(&mut *self.state.borrow_mut(), kind, depth)
+    }
+    fn visit_binding(&mut self) -> Result<(), Self::Error> {
+        crate::types::TypeProjectionControl::visit_binding(&mut *self.state.borrow_mut())
+    }
+}
+
+impl TypeConstraintAccounting for CandidateConstraintWorkSession<'_> {
+    fn charge_constraint(
+        &mut self,
+        delta: &TypeConstraintWorkReport,
+        limits: TypeConstraintLimits,
+    ) -> Result<(), TypeConstraintError> {
+        self.state.borrow_mut().charge_constraint(delta, limits)
+    }
+
+    fn commit(&mut self) {
+        self.state.borrow_mut().commit();
+    }
+}
+
+impl<'a> TypeConstraintContextIssuer<'a> for CandidateConstraintWorkSession<'a> {
+    fn context_limits(&self) -> TypeConstraintLimits {
+        self.state.borrow().limits
+    }
+    fn context_cancellation(&self) -> &'a AtomicBool {
+        self.state.borrow().cancellation
+    }
+}
+
+struct CandidateConstraintWorkState<'a> {
     work: Option<&'a mut ResolverWork>,
     cancellation: &'a AtomicBool,
     limits: TypeConstraintLimits,
@@ -385,8 +545,15 @@ pub(crate) struct CandidateConstraintWorkSession<'a> {
     committed: bool,
 }
 
-impl<'a> CandidateConstraintWorkSession<'a> {
-    pub(crate) fn new(
+impl<'a> CandidateConstraintWorkState<'a> {
+    fn ensure_open(&self) -> Result<(), TypeConstraintError> {
+        if self.committed {
+            Err(crate::types::constraints::TypeConstraintInvariant::WorkSessionClosed.into())
+        } else {
+            Ok(())
+        }
+    }
+    fn new(
         work: &'a mut ResolverWork,
         limits: CallableLimits,
         cancellation: &'a AtomicBool,
@@ -471,7 +638,7 @@ impl<'a> CandidateConstraintWorkSession<'a> {
     /// resolver work report.  This deliberately does not synthesize lower
     /// source-probe/materialization counters; those remain minted by the
     /// callable driver.
-    pub(crate) fn charge_callback_expression(
+    fn charge_callback_expression(
         &mut self,
         units: u64,
     ) -> Result<(), crate::types::constraints::TypeConstraintAbort> {
@@ -498,9 +665,7 @@ impl<'a> CandidateConstraintWorkSession<'a> {
         Ok(())
     }
 
-    pub(crate) fn check_cancelled(
-        &self,
-    ) -> Result<(), crate::types::constraints::TypeConstraintAbort> {
+    fn check_cancelled(&self) -> Result<(), crate::types::constraints::TypeConstraintAbort> {
         if self.cancellation.load(Ordering::Acquire) {
             Err(crate::types::constraints::TypeConstraintAbort::Cancelled)
         } else {
@@ -509,13 +674,7 @@ impl<'a> CandidateConstraintWorkSession<'a> {
     }
 }
 
-impl Drop for CandidateConstraintWorkSession<'_> {
-    fn drop(&mut self) {
-        self.commit();
-    }
-}
-
-impl crate::effect_row::DecisionControl for CandidateConstraintWorkSession<'_> {
+impl crate::effect_row::DecisionControl for CandidateConstraintWorkState<'_> {
     type Error = TypeConstraintError;
 
     fn charge(&mut self, _: crate::effect_row::DecisionWork) -> Result<(), Self::Error> {
@@ -529,7 +688,7 @@ impl crate::effect_row::DecisionControl for CandidateConstraintWorkSession<'_> {
     }
 }
 
-impl crate::types::TypeProjectionControl for CandidateConstraintWorkSession<'_> {
+impl crate::types::TypeProjectionControl for CandidateConstraintWorkState<'_> {
     type Error = TypeConstraintError;
 
     fn check(&mut self) -> Result<(), Self::Error> {
@@ -556,12 +715,13 @@ impl crate::types::TypeProjectionControl for CandidateConstraintWorkSession<'_> 
     }
 }
 
-impl TypeConstraintAccounting for CandidateConstraintWorkSession<'_> {
+impl TypeConstraintAccounting for CandidateConstraintWorkState<'_> {
     fn charge_constraint(
         &mut self,
         delta: &TypeConstraintWorkReport,
         _limits: TypeConstraintLimits,
     ) -> Result<(), TypeConstraintError> {
+        self.ensure_open()?;
         if self.cancellation.load(Ordering::Acquire) {
             return Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled));
         }
@@ -640,17 +800,7 @@ impl TypeConstraintAccounting for CandidateConstraintWorkSession<'_> {
     }
 
     fn commit(&mut self) {
-        CandidateConstraintWorkSession::commit(self);
-    }
-}
-
-impl<'a> TypeConstraintContextIssuer<'a> for CandidateConstraintWorkSession<'a> {
-    fn context_limits(&self) -> TypeConstraintLimits {
-        self.limits
-    }
-
-    fn context_cancellation(&self) -> &'a AtomicBool {
-        self.cancellation
+        CandidateConstraintWorkState::commit(self);
     }
 }
 
@@ -1367,6 +1517,87 @@ impl SignatureQueryWorkMeter {
 #[cfg(test)]
 mod final_call_accounting_tests {
     use super::*;
+
+    #[test]
+    fn work_loans_share_the_reservation_and_close_with_its_single_publication() {
+        use crate::effect_row::{DecisionControl, DecisionWork};
+        use crate::types::TypeProjectionControl;
+        use crate::types::constraints::TypeConstraintInvariant;
+
+        let cancellation = AtomicBool::new(false);
+        let mut resolver = ResolverWork::new(2);
+        let mut owner = resolver
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .unwrap();
+        let mut first = owner.loan();
+        let mut second = first.clone();
+        first.charge(DecisionWork::Node).unwrap();
+        second.charge(DecisionWork::Visit).unwrap();
+        assert!(matches!(
+            first.charge(DecisionWork::Node),
+            Err(TypeConstraintError::Abort(_))
+        ));
+        TypeConstraintAccounting::commit(&mut owner);
+        assert_eq!(
+            first.check(),
+            Err(TypeConstraintInvariant::WorkSessionClosed.into())
+        );
+        assert_eq!(
+            second.charge(DecisionWork::Node),
+            Err(TypeConstraintInvariant::WorkSessionClosed.into())
+        );
+        assert_eq!(
+            owner.charge_callback_expression(1),
+            Err(TypeConstraintInvariant::WorkSessionClosed.into())
+        );
+        drop(owner);
+        drop(first);
+        drop(second);
+        assert_eq!(resolver.remaining_budget().unwrap(), 0);
+        assert_eq!(resolver.type_constraint_report.work(), 2);
+        assert_eq!(resolver.type_constraint_report.nodes(), 2);
+        assert_eq!(resolver.type_constraint_report.source_probes(), 0);
+        assert_eq!(resolver.type_constraint_report.materializations(), 0);
+    }
+
+    #[test]
+    fn a_work_loan_releases_each_borrow_and_observes_the_original_cancellation() {
+        use crate::effect_row::{DecisionControl, DecisionWork};
+        use crate::types::TypeProjectionControl;
+        use crate::types::constraints::TypeConstraintInvariant;
+
+        let cancellation = AtomicBool::new(false);
+        let mut resolver = ResolverWork::new(16);
+        let mut owner = resolver
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .unwrap();
+        let mut loan = owner.loan();
+        let borrow = owner.state.borrow_mut();
+        assert_eq!(
+            loan.charge(DecisionWork::Node),
+            Err(TypeConstraintInvariant::WorkSessionBorrowed.into())
+        );
+        drop(borrow);
+        loan.charge(DecisionWork::Node).unwrap();
+        cancellation.store(true, Ordering::Release);
+        assert_eq!(
+            loan.check(),
+            Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
+        );
+        assert_eq!(
+            owner.charge(DecisionWork::Node),
+            Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
+        );
+        drop(owner);
+        assert_eq!(
+            loan.check(),
+            Err(TypeConstraintInvariant::WorkSessionClosed.into())
+        );
+        drop(loan);
+        assert_eq!(resolver.remaining_budget().unwrap(), 15);
+        assert_eq!(resolver.type_constraint_report.work(), 1);
+        assert_eq!(resolver.type_constraint_report.nodes(), 1);
+    }
 
     #[test]
     fn final_call_counters_remain_separate_and_reset_together() {

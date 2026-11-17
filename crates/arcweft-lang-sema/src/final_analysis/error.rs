@@ -102,6 +102,13 @@ impl FinalCallConstraintFailure {
     pub const fn owner(&self) -> ExprId {
         self.owner
     }
+
+    pub(crate) fn abort(&self) -> Option<&crate::types::constraints::TypeConstraintAbort> {
+        match self.failure.as_ref() {
+            CallAnalysisFailure::Abort(error) => Some(error),
+            CallAnalysisFailure::FatalSource(_) | CallAnalysisFailure::Invariant(_) => None,
+        }
+    }
 }
 
 impl std::fmt::Display for FinalCallConstraintFailure {

@@ -118,6 +118,7 @@ pub(crate) struct AnalyzerExpressionContext<'a> {
     authority: AnalyzerExpressionFactAuthority<'a>,
     frames: Rc<CallFrameStack>,
     consumer: AnalyzerExpressionConsumer,
+    work: super::preparation_work::AnalyzerPreparationWork<'a>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -128,27 +129,45 @@ pub(super) enum AnalyzerExpressionConsumer {
 }
 
 impl<'a> AnalyzerExpressionContext<'a> {
-    pub(super) fn published(frames: Rc<CallFrameStack>) -> Self {
+    pub(super) fn published(
+        frames: Rc<CallFrameStack>,
+        work: super::preparation_work::AnalyzerPreparationWork<'a>,
+    ) -> Self {
         Self {
             authority: AnalyzerExpressionFactAuthority::Published,
             frames,
             consumer: AnalyzerExpressionConsumer::Ordinary,
+            work,
         }
     }
 
     pub(super) fn candidate(
         authority: CandidateExpressionFactAuthority<'a>,
         frames: Rc<CallFrameStack>,
+        work: super::preparation_work::AnalyzerPreparationWork<'a>,
     ) -> Self {
         Self {
             authority: AnalyzerExpressionFactAuthority::Candidate(authority),
             frames,
             consumer: AnalyzerExpressionConsumer::Ordinary,
+            work,
         }
     }
 
     pub(super) fn authority(&self) -> &AnalyzerExpressionFactAuthority<'a> {
         &self.authority
+    }
+
+    pub(super) fn work(&self) -> super::preparation_work::AnalyzerPreparationWork<'a> {
+        self.work.clone()
+    }
+
+    pub(super) fn with_work(
+        mut self,
+        work: super::preparation_work::AnalyzerPreparationWork<'a>,
+    ) -> Self {
+        self.work = work;
+        self
     }
 
     pub(super) fn is_candidate(&self) -> bool {
@@ -173,6 +192,7 @@ impl<'a> AnalyzerExpressionContext<'a> {
             authority: AnalyzerExpressionFactAuthority::Candidate(authority),
             frames: Rc::clone(&self.frames),
             consumer: self.consumer,
+            work: self.work.clone(),
         }
     }
 
@@ -200,6 +220,7 @@ impl<'a> AnalyzerExpressionContext<'a> {
             },
             frames: Rc::clone(&self.frames),
             consumer,
+            work: self.work.clone(),
         }
     }
 
@@ -790,6 +811,11 @@ impl From<crate::final_analysis::CheckedVariantOwnerError> for AnalyzerExpressio
 
 impl AnalyzerExpressionError {
     pub(super) fn fatal(error: FinalSemanticAnalysisError) -> Self {
+        if let FinalSemanticAnalysisError::CallConstraintFailure(failure) = &error
+            && let Some(abort) = failure.abort()
+        {
+            return Self::Abort(abort.clone());
+        }
         Self::Fatal(Box::new(error))
     }
 

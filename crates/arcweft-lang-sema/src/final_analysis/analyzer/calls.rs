@@ -1007,10 +1007,10 @@ impl Analyzer<'_, '_, '_> {
                 self.publish_selected_call(context, source, resolution, probes, selected)
             }
             CandidateSelection::Ambiguous { primary, tied } => {
-                self.publish_ambiguous_call(source, resolution, probes, primary, tied)
+                self.publish_ambiguous_call(context, source, resolution, probes, primary, tied)
             }
             CandidateSelection::Rejected { primary } => {
-                self.publish_rejected_call(source, resolution, probes, primary)
+                self.publish_rejected_call(context, source, resolution, probes, primary)
             }
         }
     }
@@ -1105,10 +1105,12 @@ impl Analyzer<'_, '_, '_> {
         AnalyzerExpressionError,
     > {
         let outcome = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+            context.work(),
             |this, expression_authority, _transaction_authority| {
                 let candidate_context = AnalyzerExpressionContext::candidate(
                     expression_authority,
                     Rc::clone(&this.call_frames),
+                    context.work(),
                 )
                 .with_consumer(context.consumer());
                 let prepared = this
@@ -1308,10 +1310,12 @@ impl Analyzer<'_, '_, '_> {
                 .map_err(AnalyzerExpressionError::fatal)?;
             let prepared = self
                 .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+                    source_context.work(),
                     |this, authority, _transaction_authority| {
                         let candidate_context = AnalyzerExpressionContext::candidate(
                             authority,
                             Rc::clone(&this.call_frames),
+                            source_context.work(),
                         )
                         .with_consumer(source_context.consumer());
                         let result = this.prepare_child_candidate(
@@ -2129,6 +2133,7 @@ impl Analyzer<'_, '_, '_> {
         mut work: ResolverWork,
     ) -> Result<CheckedExpression, AnalyzerExpressionError> {
         self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+            source_context.work(),
             |this, expression_authority, transaction_authority| {
                 let context = source_context.child_candidate(expression_authority);
                 let arguments =
@@ -2191,6 +2196,7 @@ impl Analyzer<'_, '_, '_> {
         let non_callable_source = target.source().clone();
         let non_callable_type = target.ty().clone();
         let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+            source_context.work(),
             |this, expression_authority, transaction_authority| {
                 let context = source_context.child_candidate(expression_authority);
                 let arguments =
@@ -2326,10 +2332,12 @@ impl Analyzer<'_, '_, '_> {
                 candidate.call_group()
             };
             let probe = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+                source_context.work(),
                 |this, authority, _transaction_authority| {
                     let context = AnalyzerExpressionContext::candidate(
                         authority,
                         Rc::clone(&this.call_frames),
+                        source_context.work(),
                     )
                     .with_consumer(source_context.consumer());
                     let probe = this.prepare_candidate(
@@ -2422,8 +2430,10 @@ impl Analyzer<'_, '_, '_> {
         let singleton = resolution.considered.len() == 1;
         let consumer = context.consumer();
         let outcome = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+            context.work(),
             |this, _expression_authority, transaction_authority| {
                 this.publish_selected_call_in_transaction(
+                    context,
                     source,
                     resolution,
                     batch,
@@ -2446,6 +2456,7 @@ impl Analyzer<'_, '_, '_> {
     /// there is no provisional public call fact or empty-solution shortcut.
     pub(super) fn publish_resolved_dialogue_application(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         expected: Option<&TypeKind>,
@@ -2488,9 +2499,9 @@ impl Analyzer<'_, '_, '_> {
             })?;
         let original = self.admit_original_context(module, owner, None, &mut work)?;
         let probe = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
-            |this, authority, _transaction_authority| {
+            context.work(), |this, authority, _transaction_authority| {
                 let candidate_context =
-                    AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames));
+                    AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames), context.work());
                 let outcome = this.prepare_candidate(
                     PreparedCandidateRequest {
                         original: &original,
@@ -2573,8 +2584,10 @@ impl Analyzer<'_, '_, '_> {
             work.call_accounting(),
         );
         self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+            context.work(),
             |this, _authority, transaction_authority| {
                 let result = this.apply_sealed_candidate(
+                    context.work(),
                     transaction,
                     outer_projection,
                     metadata,
@@ -2749,7 +2762,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn publish_text_proxy_object_application_inner(
         &mut self,
-        _context: &AnalyzerExpressionContext<'_>,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         invocation: &HirCallInvocation,
@@ -2817,11 +2830,10 @@ impl Analyzer<'_, '_, '_> {
             })?;
         let candidate_probe = self
             .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
-                |this, authority, _transaction_authority| {
+                context.work(), |this, authority, _transaction_authority| {
                     let candidate_context = AnalyzerExpressionContext::candidate(
                         authority,
-                        Rc::clone(&this.call_frames),
-                    );
+                        Rc::clone(&this.call_frames), context.work());
                     this.facts
                         .publish_new_expression(
                             type_expression,
@@ -2913,8 +2925,9 @@ impl Analyzer<'_, '_, '_> {
         );
         let result = self
             .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
-                |this, _authority, transaction_authority| {
+                context.work(), |this, _authority, transaction_authority| {
                     let result = this.apply_sealed_candidate(
+                        context.work(),
                         transaction,
                         outer_projection,
                         metadata,
@@ -2963,6 +2976,7 @@ impl Analyzer<'_, '_, '_> {
     )]
     fn publish_selected_call_in_transaction(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         source: CallSource<'_>,
         mut resolution: ResolvedCallQuery,
         mut batch: PreparedCandidateBatch,
@@ -3014,10 +3028,12 @@ impl Analyzer<'_, '_, '_> {
                 .into());
             }
             let replay = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+                context.work(),
                 |this, authority, _transaction_authority| {
                     let context = AnalyzerExpressionContext::candidate(
                         authority,
                         Rc::clone(&this.call_frames),
+                        context.work(),
                     )
                     .with_consumer(consumer);
                     let replay = this.prepare_candidate(
@@ -3279,6 +3295,7 @@ impl Analyzer<'_, '_, '_> {
             resolution.work.call_accounting(),
         );
         let result = self.apply_sealed_candidate(
+            context.work(),
             selected_transaction,
             outer_projection,
             metadata,
@@ -3331,6 +3348,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn apply_sealed_candidate(
         &mut self,
+        mut preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
         transaction: PreparedCallApplicationTransaction,
         outer_projection: super::state::CandidateSemanticProjection,
         metadata: AnalyzerPreparedCandidateMetadata,
@@ -3377,10 +3395,11 @@ impl Analyzer<'_, '_, '_> {
             } => (Some(projection), nested_calls.into_vec()),
         };
         let shared_component = component.shared_component();
-        if let Err(failure) = self
-            .facts
-            .apply_candidate_projection(transaction_authority, outer_projection)
-        {
+        if let Err(failure) = self.facts.apply_candidate_projection(
+            transaction_authority,
+            outer_projection,
+            &mut preparation_work,
+        ) {
             self.discard_nested_call_callee_prerequisites(
                 owner,
                 std::mem::take(&mut nested_calls).into_boxed_slice(),
@@ -3389,10 +3408,11 @@ impl Analyzer<'_, '_, '_> {
             return Err(CandidateFactOperationFailure::Projection(Box::new(failure)));
         }
         if let Some(projection) = materialized_projection {
-            if let Err(failure) = self
-                .facts
-                .apply_candidate_projection(transaction_authority, projection)
-            {
+            if let Err(failure) = self.facts.apply_candidate_projection(
+                transaction_authority,
+                projection,
+                &mut preparation_work,
+            ) {
                 self.discard_nested_call_callee_prerequisites(
                     owner,
                     std::mem::take(&mut nested_calls).into_boxed_slice(),
@@ -3404,6 +3424,7 @@ impl Analyzer<'_, '_, '_> {
         let mut nested_calls = nested_calls.into_iter();
         while let Some(nested) = nested_calls.next() {
             if let Err(failure) = self.stage_completed_nested_call(
+                preparation_work.clone(),
                 nested,
                 Arc::clone(&shared_component),
                 transaction_authority,
@@ -3460,6 +3481,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn stage_completed_nested_call(
         &mut self,
+        mut preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
         selected: PreparedSelectedNestedCall,
         component: Arc<
             crate::types::constraints::CompletedConstraintComponent<
@@ -3492,7 +3514,11 @@ impl Analyzer<'_, '_, '_> {
             })
         })?;
         self.facts
-            .apply_candidate_projection(transaction_authority, callee_prerequisites)
+            .apply_candidate_projection(
+                transaction_authority,
+                callee_prerequisites,
+                &mut preparation_work,
+            )
             .map_err(|failure| CandidateFactOperationFailure::Projection(Box::new(failure)))?;
         let module = self.module(owner.module()).map_err(|error| {
             CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
@@ -3786,6 +3812,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn publish_ambiguous_call(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         source: CallSource<'_>,
         resolution: ResolvedCallQuery,
         batch: PreparedCandidateBatch,
@@ -3800,9 +3827,11 @@ impl Analyzer<'_, '_, '_> {
             ..
         } = resolution;
         let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+            context.work(),
             |this, _expression_authority, transaction_authority| {
                 let recovery = batch.into_recovery(source.owner, primary, tied)?;
                 this.apply_primary_recovery_projection(
+                    context.work(),
                     &transaction_authority,
                     source.owner,
                     recovery.primary_projection,
@@ -3845,6 +3874,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn publish_rejected_call(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         source: CallSource<'_>,
         resolution: ResolvedCallQuery,
         batch: PreparedCandidateBatch,
@@ -3852,9 +3882,11 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<CheckedExpression, AnalyzerExpressionError> {
         let retained = 0..batch.probes.len();
         let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+            context.work(),
             |this, _expression_authority, transaction_authority| {
                 let recovery = batch.into_recovery(source.owner, primary, retained)?;
                 this.apply_primary_recovery_projection(
+                    context.work(),
                     &transaction_authority,
                     source.owner,
                     recovery.primary_projection,
@@ -3898,6 +3930,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn apply_primary_recovery_projection(
         &mut self,
+        mut preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
         owner: ExprId,
         primary: PreparedCandidateSemanticProjection,
@@ -3918,18 +3951,16 @@ impl Analyzer<'_, '_, '_> {
             }
         };
         self.facts
-            .apply_candidate_projection(transaction_authority, outer)
-            .map_err(|failure| {
-                let (violation, _projection) = failure.into_parts();
-                AnalyzerExpressionError::fact(violation)
-            })?;
+            .apply_candidate_projection(transaction_authority, outer, &mut preparation_work)
+            .map_err(|failure| failure.into_expression_error())?;
         if let Some(projection) = branch_projection {
             self.facts
-                .apply_candidate_projection(transaction_authority, projection)
-                .map_err(|failure| {
-                    let (violation, _projection) = failure.into_parts();
-                    AnalyzerExpressionError::fact(violation)
-                })?;
+                .apply_candidate_projection(
+                    transaction_authority,
+                    projection,
+                    &mut preparation_work,
+                )
+                .map_err(|failure| failure.into_expression_error())?;
         }
         Ok(())
     }

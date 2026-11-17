@@ -26,7 +26,7 @@ impl Analyzer<'_, '_, '_> {
             HirStmtKind::LifetimeSet { value, .. } => *value,
             _ => return Ok(()),
         };
-        let context = AnalyzerExpressionContext::published(Rc::clone(&self.call_frames));
+        let context = self.published_expression_context();
         self.evaluate_statement_bindings(&context, owner, statement)
             .map_err(|error| error.into_public(input))
     }
@@ -60,7 +60,7 @@ impl Analyzer<'_, '_, '_> {
                 } else {
                     let target = *target;
                     self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
-                        |this, _, _| {
+                        context.work(), |this, _, _| {
                             this.facts
                                 .publish_new_expression(
                                     target,
