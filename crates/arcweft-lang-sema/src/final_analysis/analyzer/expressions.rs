@@ -4064,7 +4064,7 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<(), AnalyzerExpressionError> {
         let mut locals = std::collections::BTreeMap::new();
         let mut patterns = std::collections::BTreeMap::new();
-        self.with_pattern_seed_context(module, context.work(), |seed_context, graph| {
+        self.with_pattern_seed_context(module, context.work(), |seed_context, graph, _observed| {
             super::patterns::seed_pattern_locals(
                 seed_context,
                 graph,

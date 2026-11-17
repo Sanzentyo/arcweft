@@ -3,10 +3,9 @@
 use super::super::{
     AcceptedCandidateRank, Analyzer, CallableAuthorityRank, CallableGroupIndex, CandidateSelection,
     CheckedCallArgumentSlotSource, CheckedCallableCatalog, CheckedProjectNominal, EffectRow,
-    EffectSet, FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
-    HirCallArgument, HirCallValue, MappedCallArgumentSlot, Ordering,
-    PhysicalArgumentEvaluationKind, PreparedResolvedCallable, ProjectNominalDeclaration,
-    ProjectNominalType, SpreadArgumentPolicy, TypeKind, TypeParameterSubstitutions,
+    EffectSet, FinalSemanticAnalysisError, HirCallArgument, HirCallValue, MappedCallArgumentSlot,
+    Ordering, PhysicalArgumentEvaluationKind, PreparedResolvedCallable, ProjectNominalDeclaration,
+    SpreadArgumentPolicy, TypeKind,
 };
 use super::{PreparedCallApplicationTransaction, PreparedCandidateOutcome};
 use crate::callable::ResolvedCallable;
@@ -346,30 +345,4 @@ pub(in super::super) fn checked_project_nominal(
         ty.semantic_identity_digest()?,
         nominal.arguments().to_vec(),
     ))
-}
-
-pub(in super::super) fn nominal_substitutions(
-    declaration: &ProjectNominalDeclaration,
-    nominal: &ProjectNominalType,
-) -> Option<TypeParameterSubstitutions> {
-    if nominal.declaration() != declaration.id()
-        || nominal.arguments().len() != declaration.type_parameters().len()
-    {
-        return None;
-    }
-    let mut substitutions = TypeParameterSubstitutions::default();
-    for (parameter, argument) in declaration
-        .type_parameters()
-        .iter()
-        .zip(nominal.arguments())
-    {
-        let parameter = TypeKind::generic_parameter(GenericTypeParameterId::new(
-            GenericParameterOwnerId::Nominal(declaration.id().clone()),
-            parameter.ordinal(),
-        ));
-        if !substitutions.observe(&parameter, argument) {
-            return None;
-        }
-    }
-    Some(substitutions)
 }

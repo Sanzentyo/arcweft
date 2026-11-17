@@ -11,6 +11,10 @@ use arcweft_lang_hir::{
 use std::{borrow::Cow, sync::Arc};
 pub(crate) use typed_binding::PreparedTypedBindingPattern;
 
+#[cfg(test)]
+#[path = "prepared/record_pattern_tests.rs"]
+mod record_pattern_tests;
+
 use crate::{
     callable::ContentCallableIdentity,
     checked_text_proxy::CheckedCompileTimeScalar,
@@ -1823,41 +1827,18 @@ impl PreparedRecordPatternField {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedRecordPatternOwner {
-    Project(CheckedProjectNominal),
+    Project(PreparedProjectNominal),
     Environment {
         record: AcceptedEnvironmentRecord,
     },
     VariantPayload {
-        payload: crate::types::VariantPayloadType,
+        payload: crate::types::VariantPayloadType<PreparedEffects>,
         field_count: u32,
     },
 }
 
 impl PreparedRecordPatternOwner {
-    pub(crate) fn semantic_type(
-        &self,
-    ) -> Result<SemanticTypeDigest, crate::types::GenericScopeError> {
-        match self {
-            Self::Project(nominal) => Ok(nominal.identity()),
-            Self::Environment { record } => Ok(record.semantic_type()),
-            Self::VariantPayload { payload, .. } => {
-                TypeKind::VariantPayload(Box::new(payload.clone())).semantic_identity_digest()
-            }
-        }
-    }
-
-    fn matches_type(&self, ty: &TypeKind<PreparedEffects>) -> bool {
-        match self {
-            Self::Project(nominal) => ty == &nominal.ty(),
-            Self::Environment { record } => ty
-                .semantic_identity_digest()
-                .is_ok_and(|digest| digest == record.semantic_type()),
-            Self::VariantPayload { payload, .. } => matches!(ty,
-                TypeKind::VariantPayload(actual) if actual.as_ref() == payload),
-        }
-    }
-
-    pub(crate) const fn project_nominal(&self) -> Option<&CheckedProjectNominal> {
+    pub(crate) const fn project_nominal(&self) -> Option<&PreparedProjectNominal> {
         match self {
             Self::Project(nominal) => Some(nominal),
             Self::Environment { .. } | Self::VariantPayload { .. } => None,
@@ -1872,7 +1853,9 @@ impl PreparedRecordPatternOwner {
         }
     }
 
-    pub(crate) fn variant_payload(payload: crate::types::VariantPayloadType) -> Option<Self> {
+    pub(crate) fn variant_payload(
+        payload: crate::types::VariantPayloadType<PreparedEffects>,
+    ) -> Option<Self> {
         let fields = payload.shape().record_fields()?;
         let field_count = u32::try_from(fields.len()).ok()?;
         Some(Self::VariantPayload {
@@ -1897,15 +1880,15 @@ impl PreparedRecordPattern {
         fields: Box<[PreparedRecordPatternField]>,
         rest: PreparedRecordPatternRest,
     ) -> Option<Self> {
-        if !owner.matches_type(&ty)
-            || owner.field_count().is_some_and(|field_count| {
-                usize::try_from(field_count).ok().is_none_or(|field_count| {
-                    fields.len() > field_count
-                        || (matches!(rest, PreparedRecordPatternRest::Absent)
-                            && fields.len() != field_count)
-                })
+        // Preparation validates inventory shape. Root, field, source, and rest
+        // type agreement remains an obligation of joint completion and C2 seal.
+        if owner.field_count().is_some_and(|field_count| {
+            usize::try_from(field_count).ok().is_none_or(|field_count| {
+                fields.len() > field_count
+                    || (matches!(rest, PreparedRecordPatternRest::Absent)
+                        && fields.len() != field_count)
             })
-        {
+        }) {
             return None;
         }
         Some(Self {

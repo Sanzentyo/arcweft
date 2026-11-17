@@ -493,17 +493,21 @@ impl Analyzer<'_, '_, '_> {
                 let mut locals = BTreeMap::new();
                 let mut patterns = BTreeMap::new();
                 let catalog = self.catalogs.world.environment().callable_catalog();
-                self.with_pattern_seed_context(module, context.work(), |seed_context, graph| {
-                    seed_item_parameter_types(
-                        owner,
-                        item,
-                        seed_context,
-                        graph,
-                        catalog,
-                        &mut locals,
-                        &mut patterns,
-                    )
-                })?;
+                self.with_pattern_seed_context(
+                    module,
+                    context.work(),
+                    |seed_context, graph, _observed| {
+                        seed_item_parameter_types(
+                            owner,
+                            item,
+                            seed_context,
+                            graph,
+                            catalog,
+                            &mut locals,
+                            &mut patterns,
+                        )
+                    },
+                )?;
                 Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
             }
             for (owner, expression) in module.expressions() {
@@ -537,7 +541,7 @@ impl Analyzer<'_, '_, '_> {
                             self.with_pattern_seed_context(
                                 module,
                                 context.work(),
-                                |seed_context, graph| {
+                                |seed_context, graph, _observed| {
                                     seed_pattern_locals(
                                         seed_context,
                                         graph,
@@ -566,7 +570,7 @@ impl Analyzer<'_, '_, '_> {
                             self.with_pattern_seed_context(
                                 module,
                                 context.work(),
-                                |seed_context, graph| {
+                                |seed_context, graph, _observed| {
                                     seed_pattern_locals(
                                         seed_context,
                                         graph,
@@ -600,7 +604,7 @@ impl Analyzer<'_, '_, '_> {
                     self.with_pattern_seed_context(
                         module,
                         context.work(),
-                        |seed_context, graph| {
+                        |seed_context, graph, _observed| {
                             seed_pattern_locals(
                                 seed_context,
                                 graph,
@@ -642,7 +646,7 @@ impl Analyzer<'_, '_, '_> {
                         self.with_pattern_seed_context(
                             module,
                             context.work(),
-                            |seed_context, graph| {
+                            |seed_context, graph, _observed| {
                                 seed_pattern_locals(
                                     seed_context,
                                     graph,

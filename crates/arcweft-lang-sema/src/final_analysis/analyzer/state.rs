@@ -368,6 +368,25 @@ pub(super) struct SemanticFactState {
     epoch: u64,
 }
 
+/// Borrowed observations while the original effect graph is being prepared.
+/// These tables remain the sole owners of local and pattern result types.
+pub(super) struct PatternTypeObservations<'a> {
+    locals: &'a BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
+    patterns: &'a BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
+}
+
+impl PatternTypeObservations<'_> {
+    pub(super) fn local(&self, owner: LocalId) -> Option<&TypeKind<crate::types::PreparedEffects>> {
+        self.locals.get(&owner)
+    }
+    pub(super) fn pattern(
+        &self,
+        owner: PatternId,
+    ) -> Option<&TypeKind<crate::types::PreparedEffects>> {
+        self.patterns.get(&owner)
+    }
+}
+
 #[derive(Debug)]
 struct CandidateProjectionAuthority {
     issuer: Arc<CandidateFactIssuer>,
@@ -986,6 +1005,33 @@ impl SemanticFactState {
         self.prepared_calls_mut()?
             .effect_declarations_mut()
             .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
+    }
+
+    pub(super) fn pattern_preparation_parts(
+        &mut self,
+    ) -> Result<
+        (
+            &mut crate::callable::PreparedCallableEffectDeclarations,
+            PatternTypeObservations<'_>,
+        ),
+        CandidateFactTransactionViolation,
+    > {
+        self.ensure_healthy()?;
+        let calls = self.prepared_calls.as_mut().ok_or_else(|| {
+            CandidateFactTransactionViolation::PreparedCallGraph(
+                crate::callable::CallConstraintInvariant::PreparedGraphConsumed.into(),
+            )
+        })?;
+        let declarations = calls
+            .effect_declarations_mut()
+            .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))?;
+        Ok((
+            declarations,
+            PatternTypeObservations {
+                locals: &self.locals,
+                patterns: &self.patterns,
+            },
+        ))
     }
 
     pub(super) fn effect_declarations(

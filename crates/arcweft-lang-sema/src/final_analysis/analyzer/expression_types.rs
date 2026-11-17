@@ -20,6 +20,11 @@ pub(super) struct SourceTypePreparation<'a> {
 }
 
 impl<'a> SourceTypePreparation<'a> {
+    pub(super) fn visit_binding(&self) -> Result<(), super::FinalSemanticAnalysisError> {
+        use crate::types::TypeProjectionControl;
+        self.work.clone().visit_binding()
+    }
+
     pub(super) fn new(
         types: &'a super::BTreeMap<super::TypeId, TypeKind>,
         callables: &'a crate::callable::CheckedCallableCatalogBuilder,
