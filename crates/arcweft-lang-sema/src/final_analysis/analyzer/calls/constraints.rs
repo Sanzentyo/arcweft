@@ -2128,7 +2128,11 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         match (checked.actual, checked.pending_child) {
                         (Some(actual), None) => {
                             self.retain_physical_observed_type(source_id, actual.actual())?;
-                            probe.observe(SourceProbeResult::unchecked_value(
+                            let declarations = self.analyzer.facts.effect_declarations_mut()
+                                .map_err(|violation| crate::callable::SourceCallbackFailure::invariant(
+                                    AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                                ))?;
+                            probe.observe(declarations, SourceProbeResult::unchecked_value(
                                 actual,
                                 AnalyzerCallProbeSemanticBranch {
                                     source,
@@ -2214,7 +2218,11 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                                 return match (checked.actual, checked.pending_child) {
                                     (Some(actual), None) => {
                                         self.retain_physical_observed_type(source_id, actual.actual())?;
-                                        probe.observe(SourceProbeResult::checked_value(
+                                        let declarations = self.analyzer.facts.effect_declarations_mut()
+                                            .map_err(|violation| crate::callable::SourceCallbackFailure::invariant(
+                                                AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                                            ))?;
+                                        probe.observe(declarations, SourceProbeResult::checked_value(
                                             actual,
                                             AnalyzerCallProbeSemanticBranch {
                                                 source,

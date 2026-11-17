@@ -75,6 +75,114 @@ fn context(
 }
 
 #[test]
+fn prepared_original_admission_transports_all_scalar_ports_under_the_same_nested_binder() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let source = Source::new(9030);
+    let enclosing = context.enter_binder_scope(GenericBinder::new(1, 1, 1));
+    let original = context.original_producer_context(&source).unwrap();
+    let target = original.gamma().with_binder(GenericBinder::new(1, 1, 1));
+    let local = GenericBinder::new(1, 1, 1);
+    let make = |scope: &GenericScope,
+                ambient,
+                context: &mut TypeConstraintContext<
+        '_,
+        LocalConstraintAccounting<'_>,
+        NoConstraintClient,
+    >| {
+        let nested = scope.with_binder(local);
+        let outer = crate::effect_row::EffectFormula::variable(
+            nested.bound_effect(ambient, 0).unwrap(),
+            context,
+        )
+        .unwrap();
+        let inner =
+            crate::effect_row::EffectFormula::variable(nested.bound_effect(0, 0).unwrap(), context)
+                .unwrap();
+        TypeKind::function_with_contract(
+            local,
+            outer.subset(&inner, context).unwrap(),
+            [TypeKind::Array {
+                item: Box::new(TypeKind::Tuple(vec![
+                    TypeKind::GenericParam(nested.bound_type(ambient, 0).unwrap()),
+                    TypeKind::GenericParam(nested.bound_type(0, 0).unwrap()),
+                ])),
+                len: ArrayLength::Generic(nested.bound_const(ambient, 0).unwrap()),
+            }],
+            TypeKind::GenericParam(source.types[0].clone()),
+            EffectRow::open(EffectSet::new(), nested.bound_effect(ambient, 0).unwrap()),
+        )
+        .prepare_effects(scope, context)
+        .unwrap()
+    };
+    let value = make(original.scope(), 1, &mut context);
+    let expected = make(target.shape(), 2, &mut context);
+    let mut graph = PreparedEffectGraph::default();
+    let admitted = ConstraintEffectPhase::new(&mut graph)
+        .admit_type(&value, &target, &original, &mut context)
+        .unwrap();
+    assert_eq!(admitted, expected);
+    context.restore_binder_scope(enclosing);
+}
+
+#[test]
+fn prepared_original_admission_retains_a_named_application_before_its_body_exists() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let source = Source::new(9031);
+    let original = context.original_producer_context(&source).unwrap();
+    let target = context.capture_lexical_scope().unwrap();
+    let mut graph = PreparedEffectGraph::default();
+    let declaration = graph
+        .declare(
+            vec![source.effects[0].clone()],
+            EffectPredicate::unconstrained(),
+            &mut context,
+        )
+        .unwrap();
+    let row = EffectRow::open(EffectSet::new(), source.effects[0].clone());
+    let input = graph
+        .application(
+            &declaration,
+            vec![PreparedEffectRow::Canonical(row.clone())],
+            &mut context,
+        )
+        .unwrap();
+    let value = TypeKind::<PreparedEffects>::Function {
+        binder: GenericBinder::EMPTY,
+        predicate: PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        params: vec![TypeKind::GenericParam(source.types[0].clone())],
+        return_type: Box::new(TypeKind::I64),
+        effects: input.clone(),
+    };
+    let admitted = ConstraintEffectPhase::new(&mut graph)
+        .admit_type(&value, &target, &original, &mut context)
+        .unwrap();
+    let TypeKind::Function { effects, .. } = admitted else {
+        panic!("prepared arrow")
+    };
+    assert!(matches!(effects, PreparedEffectRow::Term(_)));
+    let ground = context.fixture_original_context(None).unwrap();
+    assert_eq!(
+        ConstraintEffectPhase::new(&mut graph)
+            .admit_type(&value, &target, &ground, &mut context)
+            .err(),
+        Some(references::type_out_of_scope(&source.types[0])),
+    );
+    graph
+        .prepare_body(
+            &declaration,
+            PreparedEffectRow::Canonical(row.clone()),
+            vec![],
+            &mut context,
+        )
+        .unwrap();
+    let completed = graph.solve_principal(&mut context).unwrap();
+    assert_eq!(completed.resolve_row(&input, &mut context).unwrap(), row);
+    assert_eq!(completed.resolve_row(&effects, &mut context).unwrap(), row);
+}
+
+#[test]
 fn original_values_admit_only_their_actual_sources_free_type_const_and_effect() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);

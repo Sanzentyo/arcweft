@@ -604,6 +604,7 @@ pub(crate) trait ConstraintSourceValueOwner<D: ConstraintDomain>: 'static {
 
 pub(crate) enum SourceProbeTerm<D: ConstraintDomain> {
     Value(Arc<dyn ConstraintSourceValueOwner<D>>),
+    AdmittedValue(super::transaction::ConstraintOperand<D>),
     #[cfg(test)]
     Type(TypeKind<PreparedEffects>),
     Result(super::transaction::ConstraintResultProjection<D>),
@@ -641,6 +642,9 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
         &self,
         receipt: &super::ConstraintSourceReceipt<D>,
     ) -> Result<(), TypeConstraintError> {
+        if let SourceProbeTerm::AdmittedValue(actual) = &self.actual {
+            return actual.require_source_receipt(receipt);
+        }
         if let SourceProbeTerm::Value(owner) = &self.actual
             && (owner.source() != receipt.source()
                 || !owner
@@ -653,6 +657,28 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
             .into());
         }
         Ok(())
+    }
+
+    pub(super) fn admit_value(
+        mut self,
+        admit: impl FnOnce(
+            Arc<dyn ConstraintSourceValueOwner<D>>,
+        ) -> Result<
+            super::transaction::ConstraintOperand<D>,
+            TypeConstraintError,
+        >,
+    ) -> Result<Self, TypeConstraintError> {
+        self.actual = match self.actual {
+            SourceProbeTerm::Value(owner) => SourceProbeTerm::AdmittedValue(admit(owner)?),
+            SourceProbeTerm::AdmittedValue(_) => {
+                return Err(TypeConstraintInvariant::SourceProtocol(
+                    super::TypeConstraintSourceProtocolInvariant::Outcome,
+                )
+                .into());
+            }
+            term => term,
+        };
+        Ok(self)
     }
 
     #[cfg(test)]

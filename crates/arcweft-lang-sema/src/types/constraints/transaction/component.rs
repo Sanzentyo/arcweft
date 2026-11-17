@@ -4,9 +4,9 @@ use std::{collections::BTreeMap, marker::PhantomData, rc::Rc, sync::Arc};
 
 use super::super::{OriginalProducerContext, TypeConstraintParameterScope};
 use super::{
-    ConstraintClosurePolicy, ConstraintDomain, ConstraintPath, SourceProbeTerm,
-    SuspendedConstraintFrontier, TypeConstraintAccounting, TypeConstraintContext,
-    TypeConstraintError, TypeConstraintRejection, project_type, resolve_probe_term,
+    ConstraintClosurePolicy, ConstraintDomain, ConstraintPath, SuspendedConstraintFrontier,
+    TypeConstraintAccounting, TypeConstraintContext, TypeConstraintError, TypeConstraintRejection,
+    project_type,
 };
 use crate::{
     effect_row::{
@@ -443,10 +443,9 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 }
                 let projection =
                     context.with_original_scope(path.lineage.scope.clone(), |context| {
-                        let (opened, _) = resolve_probe_term(
-                            SourceProbeTerm::Result(root.result.clone()),
+                        let (opened, _) = super::ResolvedConstraintResult::resolve(
+                            root.result.clone(),
                             path,
-                            &path.lineage.scope,
                             context,
                         )?;
                         project_type(

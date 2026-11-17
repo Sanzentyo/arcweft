@@ -656,6 +656,38 @@ impl<D: ConstraintDomain> ProbeTicket<D> {
         })
     }
 
+    /// Admit while the callback's actual relation is still live. Closing the
+    /// callback may extract its terms, so admission cannot be postponed until
+    /// `submit_probe`.
+    pub(crate) fn observe_prepared<A: TypeConstraintAccounting>(
+        &mut self,
+        result: SourceProbeResult<D>,
+        effects: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<SourceProbeContribution<D>, TypeConstraintError> {
+        if self.path.is_none() {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Ticket,
+            ));
+        }
+        let receipt = self.receipt();
+        result.validate_source(&receipt)?;
+        let scope = Arc::new(context.capture_lexical_scope()?);
+        let result = result.admit_value(|owner| {
+            let original = owner.original_context().clone();
+            let (value, owner) = ResolvedConstraintSource::value(
+                owner,
+                &scope,
+                &mut operand::ConstraintEffectPhase::new(effects),
+                context,
+            )?;
+            Ok(ConstraintOperand::source(
+                value, scope, original, receipt, owner,
+            ))
+        })?;
+        self.observe(result)
+    }
+
     pub(crate) fn observe(
         &mut self,
         result: SourceProbeResult<D>,
@@ -1782,8 +1814,17 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 for ObservedProbeAlternative { mut path, result } in contribution.alternatives {
                     let (actual_term, branch, callback_selection) = result.into_parts();
                     let scope = Arc::new(context.capture_lexical_scope()?);
-                    let (actual, result_origin) =
-                        resolve_probe_term(actual_term, &path, &scope, context)?;
+                    let actual_operand = resolve_probe_term(
+                        actual_term,
+                        &path,
+                        &scope,
+                        &self.original,
+                        ConstraintSourceReceipt {
+                            input: Arc::clone(&input),
+                        },
+                        context,
+                    )?;
+                    let actual = actual_operand.value().clone();
                     let callback_selection = match callback_selection {
                         SourceProbeSelection::Unchecked => SourceProbeSelection::Unchecked,
                         SourceProbeSelection::Checked {
@@ -1870,15 +1911,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             }
                         };
 
-                    let actual_operand = ConstraintOperand::source(
-                        actual.clone(),
-                        Arc::clone(&scope),
-                        self.original.clone(),
-                        ConstraintSourceReceipt {
-                            input: Arc::clone(&input),
-                        },
-                        result_origin,
-                    );
                     let value_expected = value_expected
                         .map(|value| {
                             Ok::<_, TypeConstraintError>(ConstraintOperand::template(
@@ -2643,16 +2675,39 @@ fn projection_error(error: TypeConstraintError) -> TypeConstraintError {
 fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
     term: SourceProbeTerm<D>,
     path: &ConstraintPath<D>,
-    target: &super::lexical::ConstraintLexicalScope,
+    target: &Arc<super::lexical::ConstraintLexicalScope>,
+    original: &super::OriginalProducerContext,
+    receipt: ConstraintSourceReceipt<D>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<(TypeKind<PreparedEffects>, ResolvedConstraintSource<D>), TypeConstraintError> {
+) -> Result<ConstraintOperand<D>, TypeConstraintError> {
     match term {
-        SourceProbeTerm::Value(owner) => ResolvedConstraintSource::value(owner, target, context),
+        SourceProbeTerm::Value(_) => Err(protocol_error(
+            TypeConstraintSourceProtocolInvariant::Outcome,
+        )),
+        SourceProbeTerm::AdmittedValue(actual) => {
+            actual.require_source_receipt(&receipt)?;
+            if actual.scope() != target.as_ref() {
+                return Err(TypeConstraintInvariant::OriginalProducer.into());
+            }
+            Ok(actual)
+        }
         #[cfg(test)]
-        SourceProbeTerm::Type(value) => Ok((value, ResolvedConstraintSource::Fixture)),
+        SourceProbeTerm::Type(value) => Ok(ConstraintOperand::source(
+            value,
+            Arc::clone(target),
+            original.clone(),
+            receipt,
+            ResolvedConstraintSource::Fixture,
+        )),
         SourceProbeTerm::Result(result) => {
             let (actual, result) = ResolvedConstraintResult::resolve(result, path, context)?;
-            Ok((actual, ResolvedConstraintSource::Result(result)))
+            Ok(ConstraintOperand::source(
+                actual,
+                Arc::clone(target),
+                original.clone(),
+                receipt,
+                ResolvedConstraintSource::Result(result),
+            ))
         }
     }
 }

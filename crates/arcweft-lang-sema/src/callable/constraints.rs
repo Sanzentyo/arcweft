@@ -177,10 +177,12 @@ impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'pr
     /// Attach the source's observed term to this branch exactly once.
     pub(crate) fn observe(
         &mut self,
+        declarations: &mut super::PreparedCallableEffectDeclarations,
         result: crate::types::constraints::SourceProbeResult<D>,
     ) -> Result<SourceProbeOutcome<D>, SourceCallbackFailure<D>> {
+        let (effects, _) = declarations.relation();
         self.ticket
-            .observe(result)
+            .observe_prepared(result, effects, self.context)
             .map(SourceProbeOutcome::Accepted)
             .map_err(SourceCallbackFailure::Constraint)
     }

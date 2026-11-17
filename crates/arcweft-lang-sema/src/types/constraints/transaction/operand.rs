@@ -7,6 +7,7 @@ use crate::types::constraints::{OriginalProducerContext, lexical::ConstraintLexi
 
 mod function_scheme;
 mod original_value;
+pub(super) use original_value::ConstraintEffectPhase;
 mod parameter;
 mod projection;
 pub(crate) use function_scheme::{ConstraintResultUseSource, PreparedConstraintFunctionScheme};
@@ -43,10 +44,9 @@ impl<D: ConstraintDomain> ResolvedConstraintSource<D> {
     pub(super) fn value<A: TypeConstraintAccounting>(
         owner: Arc<dyn super::super::ConstraintSourceValueOwner<D>>,
         target: &ConstraintLexicalScope,
+        phase: &mut ConstraintEffectPhase<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(TypeKind<PreparedEffects>, Self), TypeConstraintError> {
-        use original_value::OriginalOperandValue;
-
         context.check_cancelled()?;
         let original = owner.original_context();
         let value = match owner.value_type().constraint_shape() {
@@ -55,7 +55,7 @@ impl<D: ConstraintDomain> ResolvedConstraintSource<D> {
             // its root; no Γ traversal or recursive copy is needed here.
             super::super::TypeConstraintShape::Leaf(_)
             | super::super::TypeConstraintShape::Never => owner.value_type().clone(),
-            _ => owner.value_type().admit(target, original, context)?,
+            _ => phase.admit_type(owner.value_type(), target, original, context)?,
         };
         Ok((value, Self::Value(owner)))
     }
@@ -304,6 +304,33 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
 }
 
 impl<D: ConstraintDomain> ConstraintOperand<D> {
+    pub(in crate::types::constraints) fn require_source_receipt(
+        &self,
+        expected: &ConstraintSourceReceipt<D>,
+    ) -> Result<(), TypeConstraintError> {
+        let ConstraintOperandOrigin::Source { receipt, value, .. } = self.origin.as_ref() else {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::WrongSource,
+            ));
+        };
+        let ResolvedConstraintSource::Value(owner) = value else {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::WrongSource,
+            ));
+        };
+        if !receipt.matches(expected)
+            || owner.source() != expected.source()
+            || !owner
+                .probe_receipt()
+                .is_some_and(|receipt| receipt.matches(expected))
+        {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::WrongSource,
+            ));
+        }
+        Ok(())
+    }
+
     pub(in crate::types::constraints) fn aliased(
         mut self,
         steps: Box<[ConstraintAliasStep<D, TypeKind<PreparedEffects>>]>,

@@ -300,6 +300,8 @@ pub(crate) enum TypeConstraintInvariant {
     ParameterScope(TypeConstraintParameterScopeInvariant),
     #[error("effect scope or binding is invalid: {0}")]
     Effect(TypeConstraintEffectInvariant),
+    #[error("prepared effect source admission failed: {0}")]
+    PreparedEffect(crate::effect_row::prepared::PreparedEffectFailure<std::convert::Infallible>),
     #[error("prepared source is invalid: {0}")]
     PreparedSource(PreparedSourceConstraintInvariant),
     #[error("source callback protocol is invalid: {0}")]

@@ -1,6 +1,13 @@
 //! Original values are admitted by their source, never a candidate inventory.
 
+use crate::effect_row::prepared::{
+    PreparedEffectFailure, PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
+    PreparedEffectTermEdit,
+};
 use crate::types::PreparedEffects;
+use crate::types::projection_control::EffectProjectionControl;
+use crate::types::structural_projection::ScopedTypeProjection;
+use crate::types::{GenericScope, TypeProjectionControl, TypeProjectionNodeKind};
 
 use std::sync::Arc;
 
@@ -92,7 +99,7 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
     }
 }
 
-impl OriginalOperandValue for TypeKind<PreparedEffects> {
+impl OriginalOperandValue for TypeKind {
     fn admit<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         target_scope: &ConstraintLexicalScope,
@@ -106,53 +113,22 @@ impl OriginalOperandValue for TypeKind<PreparedEffects> {
             1,
             context,
             &|reference, source, target, _, context| {
-                if let GenericTypeReference::Bound(bound) = reference {
-                    source.bound_type(bound.depth(), bound.slot())?;
-                }
-                if !matches!(reference, GenericTypeReference::Bound(_))
-                    && !original.admits_parameter(&reference.clone().into())
-                {
-                    return Err(TypeProjectionError::Control(references::type_out_of_scope(
-                        reference,
-                    )));
-                }
-                let mapped = target_scope
-                    .type_reference(original.gamma(), source, target, reference, context)
-                    .map_err(|error| {
-                        TypeProjectionError::Control(
-                            TypeConstraintContext::<A, D>::binding_transport_error(
-                                error,
-                                reference.clone().into(),
-                            ),
-                        )
-                    })?;
-                Ok(TypeKind::GenericParam(mapped))
+                original
+                    .admit_type_reference(target_scope, reference, source, target, context)
+                    .map(TypeKind::GenericParam)
             },
             &|length, source, target, _, context| {
                 length.admit_in_scopes(source, target, target_scope, original, context)
             },
             &|row, source, target, depth, context| {
                 map_effects_with_control(row, depth, context, &|reference, context| {
-                    if let crate::types::GenericEffectReference::Bound(bound) = reference {
-                        source.bound_effect(bound.depth(), bound.slot())?;
-                    }
-                    if !matches!(reference, crate::types::GenericEffectReference::Bound(_))
-                        && !original.admits_parameter(&reference.clone().into())
-                    {
-                        return Err(TypeProjectionError::Control(
-                            references::effect_out_of_scope(reference),
-                        ));
-                    }
-                    let mapped = target_scope
-                        .effect_reference(original.gamma(), source, target, reference, context)
-                        .map_err(|error| {
-                            TypeProjectionError::Control(
-                                TypeConstraintContext::<A, D>::binding_transport_error(
-                                    error,
-                                    reference.clone().into(),
-                                ),
-                            )
-                        })?;
+                    let mapped = original.admit_effect_reference(
+                        target_scope,
+                        reference,
+                        source,
+                        target,
+                        context,
+                    )?;
                     Ok(crate::effect_row::EffectRow::open(
                         crate::effects::EffectSet::new(),
                         mapped,
@@ -168,6 +144,194 @@ impl OriginalOperandValue for TypeKind<PreparedEffects> {
             TypeProjectionError::Instantiation(_) => TypeConstraintRejection::UnresolvedType.into(),
         })
     }
+}
+
+/// A short loan of the actual effect relation. It cannot outlive the source
+/// callback or replace the component's original accounting context.
+pub(in crate::types::constraints::transaction) struct ConstraintEffectPhase<'graph> {
+    graph: &'graph mut PreparedEffectGraph,
+}
+
+impl<'graph> ConstraintEffectPhase<'graph> {
+    pub(in crate::types::constraints::transaction) fn new(
+        graph: &'graph mut PreparedEffectGraph,
+    ) -> Self {
+        Self { graph }
+    }
+
+    pub(in crate::types::constraints::transaction) fn admit_type<
+        A: TypeConstraintAccounting,
+        D: ConstraintDomain,
+    >(
+        &mut self,
+        value: &TypeKind<PreparedEffects>,
+        target: &ConstraintLexicalScope,
+        original: &OriginalProducerContext,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
+        let mut projection = PreparedOriginalValueProjection {
+            edit: self.graph.edit_terms(),
+            target,
+            original,
+            context,
+        };
+        let value = value
+            .project_structure(original.scope(), target.shape(), 1, &mut projection)
+            .map_err(original_projection_error)?;
+        projection.edit.commit().map_err(|error| {
+            TypeConstraintError::Invariant(
+                crate::types::constraints::TypeConstraintInvariant::PreparedEffect(
+                    PreparedEffectFailure::Invariant(error),
+                ),
+            )
+        })?;
+        Ok(value)
+    }
+}
+
+struct PreparedOriginalValueProjection<'phase, 'graph, 'control, A, D: ConstraintDomain> {
+    edit: PreparedEffectTermEdit<'graph>,
+    target: &'phase ConstraintLexicalScope,
+    original: &'phase OriginalProducerContext,
+    context: &'phase mut TypeConstraintContext<'control, A, D>,
+}
+
+impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeProjectionControl
+    for PreparedOriginalValueProjection<'_, '_, '_, A, D>
+{
+    type Error = TypeConstraintError;
+
+    fn check(&mut self) -> Result<(), Self::Error> {
+        self.context.check_cancelled()
+    }
+
+    fn visit_node(&mut self, _: TypeProjectionNodeKind, _: u64) -> Result<(), Self::Error> {
+        self.context.enter_node()
+    }
+
+    fn visit_binding(&mut self) -> Result<(), Self::Error> {
+        self.context.enter_node()
+    }
+}
+
+impl<A: TypeConstraintAccounting, D: ConstraintDomain>
+    ScopedTypeProjection<PreparedEffects, PreparedEffects>
+    for PreparedOriginalValueProjection<'_, '_, '_, A, D>
+{
+    fn project_type_reference(
+        &mut self,
+        reference: &GenericTypeReference,
+        source: &GenericScope,
+        target: &GenericScope,
+        _: u64,
+    ) -> Result<TypeKind<PreparedEffects>, TypeProjectionError<Self::Error>> {
+        self.original
+            .admit_type_reference(self.target, reference, source, target, self.context)
+            .map(TypeKind::GenericParam)
+    }
+
+    fn project_length(
+        &mut self,
+        length: &ArrayLength,
+        source: &GenericScope,
+        target: &GenericScope,
+        _: u64,
+    ) -> Result<ArrayLength, TypeProjectionError<Self::Error>> {
+        length.admit_in_scopes(source, target, self.target, self.original, self.context)
+    }
+
+    fn project_row(
+        &mut self,
+        row: &PreparedEffectRow,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<PreparedEffectRow, TypeProjectionError<Self::Error>> {
+        let original = self.original;
+        let lexical = self.target;
+        self.edit
+            .map_row_parameters(
+                row,
+                &mut EffectProjectionControl {
+                    control: self.context,
+                    depth,
+                },
+                &mut |reference, control| {
+                    original
+                        .admit_effect_reference(lexical, reference, source, target, control.control)
+                        .map(|reference| {
+                            Some(PreparedEffectRow::Canonical(EffectRow::open(
+                                crate::effects::EffectSet::new(),
+                                reference,
+                            )))
+                        })
+                        .map_err(PreparedEffectFailure::Control)
+                },
+            )
+            .map_err(prepared_projection_error)
+    }
+
+    fn project_predicate(
+        &mut self,
+        predicate: &PreparedEffectPredicate,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<PreparedEffectPredicate, TypeProjectionError<Self::Error>> {
+        let original = self.original;
+        let lexical = self.target;
+        self.edit
+            .map_predicate_parameters(
+                predicate,
+                &mut EffectProjectionControl {
+                    control: self.context,
+                    depth,
+                },
+                &mut |reference, control| {
+                    original
+                        .admit_effect_reference(lexical, reference, source, target, control.control)
+                        .map(|reference| {
+                            Some(PreparedEffectRow::Canonical(EffectRow::open(
+                                crate::effects::EffectSet::new(),
+                                reference,
+                            )))
+                        })
+                        .map_err(PreparedEffectFailure::Control)
+                },
+            )
+            .map_err(prepared_projection_error)
+    }
+}
+
+fn original_projection_error(
+    error: TypeProjectionError<TypeConstraintError>,
+) -> TypeConstraintError {
+    match error {
+        TypeProjectionError::Control(error) => error,
+        TypeProjectionError::Instantiation(error) => {
+            crate::types::constraints::TypeConstraintInvariant::Instantiation(error).into()
+        }
+    }
+}
+
+fn prepared_projection_error(
+    error: PreparedEffectFailure<TypeProjectionError<TypeConstraintError>>,
+) -> TypeProjectionError<TypeConstraintError> {
+    let failure = match error {
+        PreparedEffectFailure::Control(error) => return error,
+        PreparedEffectFailure::Invariant(error) => PreparedEffectFailure::Invariant(error),
+        PreparedEffectFailure::Row(error) => PreparedEffectFailure::Row(error),
+        PreparedEffectFailure::Declaration(error) => PreparedEffectFailure::Declaration(error),
+        PreparedEffectFailure::Unsatisfiable => PreparedEffectFailure::Unsatisfiable,
+        PreparedEffectFailure::NonPrincipal => PreparedEffectFailure::NonPrincipal,
+        PreparedEffectFailure::ObservationNotTotal => PreparedEffectFailure::ObservationNotTotal,
+        PreparedEffectFailure::NonPointwiseObservation => {
+            PreparedEffectFailure::NonPointwiseObservation
+        }
+    };
+    TypeProjectionError::Control(
+        crate::types::constraints::TypeConstraintInvariant::PreparedEffect(failure).into(),
+    )
 }
 
 impl ArrayLength {
@@ -231,27 +395,23 @@ impl OriginalOperandValue for ArrayLength {
 }
 
 impl OriginalProducerContext {
-    fn admit_primitive_effect<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn admit_type_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
-        target: &ConstraintLexicalScope,
-        reference: &GenericEffectReference,
+        target_scope: &ConstraintLexicalScope,
+        reference: &GenericTypeReference,
+        source: &GenericScope,
+        target: &GenericScope,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<EffectRow, TypeProjectionError<TypeConstraintError>> {
-        if let GenericEffectReference::Bound(bound) = reference {
-            self.scope().bound_effect(bound.depth(), bound.slot())?;
+    ) -> Result<GenericTypeReference, TypeProjectionError<TypeConstraintError>> {
+        if let GenericTypeReference::Bound(bound) = reference {
+            source.bound_type(bound.depth(), bound.slot())?;
         } else if !self.admits_parameter(&reference.clone().into()) {
-            return Err(TypeProjectionError::Control(
-                references::effect_out_of_scope(reference),
-            ));
-        }
-        let mapped = target
-            .effect_reference(
-                self.gamma(),
-                self.scope(),
-                target.shape(),
+            return Err(TypeProjectionError::Control(references::type_out_of_scope(
                 reference,
-                context,
-            )
+            )));
+        }
+        target_scope
+            .type_reference(self.gamma(), source, target, reference, context)
             .map_err(|error| {
                 TypeProjectionError::Control(
                     TypeConstraintContext::<A, D>::binding_transport_error(
@@ -259,7 +419,44 @@ impl OriginalProducerContext {
                         reference.clone().into(),
                     ),
                 )
-            })?;
+            })
+    }
+
+    fn admit_effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        target_scope: &ConstraintLexicalScope,
+        reference: &GenericEffectReference,
+        source: &GenericScope,
+        target: &GenericScope,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<GenericEffectReference, TypeProjectionError<TypeConstraintError>> {
+        if let GenericEffectReference::Bound(bound) = reference {
+            source.bound_effect(bound.depth(), bound.slot())?;
+        } else if !self.admits_parameter(&reference.clone().into()) {
+            return Err(TypeProjectionError::Control(
+                references::effect_out_of_scope(reference),
+            ));
+        }
+        target_scope
+            .effect_reference(self.gamma(), source, target, reference, context)
+            .map_err(|error| {
+                TypeProjectionError::Control(
+                    TypeConstraintContext::<A, D>::binding_transport_error(
+                        error,
+                        reference.clone().into(),
+                    ),
+                )
+            })
+    }
+
+    fn admit_primitive_effect<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        target: &ConstraintLexicalScope,
+        reference: &GenericEffectReference,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<EffectRow, TypeProjectionError<TypeConstraintError>> {
+        let mapped =
+            self.admit_effect_reference(target, reference, self.scope(), target.shape(), context)?;
         Ok(EffectRow::open(crate::effects::EffectSet::new(), mapped))
     }
 }
