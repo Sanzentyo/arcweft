@@ -19038,3 +19038,17 @@ Source `f57f04e556c21db4a3fb84ac40a3729927a67932`。変更の基点は `f997cb19
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。全試行の終了は101、libraryは25警告、lib testは37警告。dev01はlibrary 133エラー、lib test 1,008エラー。dev02はlibrary 133エラー、lib test 1,008エラー。dev03はlibrary 133エラー、lib test 1,008エラー。一次診断は1,020件から1,015件に減った。5件を解消し、新規は0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、変更範囲の実行テスト、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,417,538 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-retained-function-callee.raw.zip) は32 entry、327496 bytes、SHA256 `0ec6ac8a92d959fd85151bd7e9f0a57520ccfa7a1f5488ef9a7ccf21dd8e00b7`。各entryの長さとSHA256を再照合した。更新前の履歴2963156 bytesのSHA256 `67f171aa3f4444556098305df202ca338e17e0b9289cafe9510fea087bce8cc1`をprefixとして保持した。
+
+
+<a id="retained-declaration-refs"></a>
+## 2026-11-18 — 関数宣言の値と部分適用の型投影を揃える
+
+Source `2bf8b4358a0b3d2723862b53def8f87923bba1f5`。変更の基点は `5be2d7e31cb5554d38d66fc0a5a6cffa8310af5c`。比較元は `f57f04e556c21db4a3fb84ac40a3729927a67932` の `retained-function-callee.dev03-check.log`。公開したmainと7件のRust入力のblobを照合した。
+
+プロジェクト宣言値と部分適用は、準備済みの呼出しグラフから同じ関数型投影を使う。作用推論のある宣言では、作用行がキャッシュ済みの場合も元の宣言の作用項を使い、キャッシュにある推論済みの戻り型は保持する。環境の宣言値は実行側の適用投影と同じ量化済み宣言型を取得する。複数候補の比較に限り、期待型を参照元のスコープと作用関係から観測する。選ばれた宣言型を準備済みの値に格納する。作用が未確定の状態から候補が必要になる場合の依存解決は実装を継続する。特殊化を含む実行は未検証。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。全試行の終了は101、libraryは24警告、lib testは36警告。dev01はlibrary 130エラー、lib test 1,005エラー。dev02はlibrary 130エラー、lib test 1,005エラー。dev03はlibrary 130エラー、lib test 1,005エラー。一次診断は1,015件から1,012件に減った。3件を解消し、新規は0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。
+
+部分適用の既存回帰に、宣言値の外側グループが純粋であり、キャッシュの前後とも終端グループが宣言の作用項を持ち、解が公開済みの作用行と一致する検査を追加した。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,396,350 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-retained-declaration-refs.raw.zip) は30 entry、318706 bytes、SHA256 `457689d853d0445dc93eaf82c89816d3652e6f5ef9ece93ef94af122bd5c5948`。各entryの長さとSHA256を再照合した。更新前の履歴2965433 bytesのSHA256 `7e6388b24c698fe659975eeb755f37ce1ab3a586c3ca9e7bc52c746114d830b8`をprefixとして保持した。
