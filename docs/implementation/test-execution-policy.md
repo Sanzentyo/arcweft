@@ -94,6 +94,10 @@ Committing the tested bytes or resuming after compaction does not invalidate the
 Rerun after relevant changes, integration with newer `main`, flakiness, or missing
 evidence. A failed, blocked, or not-run check is not a pass.
 
+During sustained local builds, check the size of the workspace `target`
+directory periodically. Use `cargo clean` for routine cleanup when it reaches
+roughly 300 GB.
+
 Diagnose a failure rather than asking whether to fix a regression from this task.
 Do not lower assertions, bypass a gate, or restore obsolete behavior merely to
 make tests pass. Identify pre-existing failures with actual baseline evidence
