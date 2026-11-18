@@ -1,17 +1,20 @@
 //! Canonical algebra projection without a selected-call or checked-type seal.
 
 use super::*;
-use crate::effect_row::prepared::{PreparedEffectInvariant, PrincipalEffectClosure};
 use crate::effect_row::prepared::{
-    PreparedEffectReadView, PreparedEffectUnknownRef, ScopedEffectCompletion,
+    PreparedEffectInvariant, PreparedEffectReadView, PrincipalEffectClosure,
 };
+#[cfg(test)]
+use crate::effect_row::prepared::{PreparedEffectUnknownRef, ScopedEffectCompletion};
 use crate::effect_row::{DecisionControl, DecisionWork};
 use crate::types::TypeInstantiationError;
+#[cfg(test)]
 use std::sync::Arc;
 
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
 impl OriginalTypeEffectProjection {
     pub(crate) fn value(&self) -> &TypeKind {
         &self.value
@@ -225,6 +228,7 @@ impl TypeKind<PreparedEffects> {
     /// Close the immutable original C against actual inputs, then project each
     /// complete field through the common scoped type fold. Query fields extend
     /// reachability only; they never constrain inference to make a use succeed.
+    #[cfg(test)]
     pub(crate) fn close_original_effects<C: TypeProjectionControl>(
         &self,
         scope: &GenericScope,

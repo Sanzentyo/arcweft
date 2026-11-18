@@ -26,6 +26,7 @@ impl ScopedEffectCompletion {
     /// A final mathematical closure requires every actual Future row and the
     /// actual original Named bodies. It neither prepares a body nor chooses a
     /// convenient replacement for an unavailable input. No live facts change.
+    #[cfg(test)]
     pub(crate) fn close_original<C: DecisionControl>(
         &self,
         receiving: PreparedEffectReadView<'_>,
@@ -51,6 +52,7 @@ impl ScopedEffectCompletion {
             .solve_with_actual_inputs(inputs, control)
     }
 
+    #[cfg(test)]
     fn final_definitions<C: DecisionControl>(
         &self,
         receiving: PreparedEffectReadView<'_>,
@@ -63,8 +65,13 @@ impl ScopedEffectCompletion {
         if !self.fixed.is_empty() {
             return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
         }
-        self.graph
-            .final_definitions(receiving, query_rows, query_predicates, control)
+        receiving.snapshot(
+            query_rows,
+            query_predicates,
+            &[],
+            SnapshotSource::Final(&self.graph),
+            control,
+        )
     }
 }
 
@@ -77,8 +84,7 @@ impl BoundScopedEffectCompletion {
         inputs: &PreparedEffectActualInputs<'_>,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
-        self.graph
-            .final_definitions(receiving, query_rows, query_predicates, control)?
+        self.final_definitions(receiving, query_rows, query_predicates, control)?
             .solve_with_actual_inputs(inputs, control)
     }
 
@@ -91,25 +97,22 @@ impl BoundScopedEffectCompletion {
         bindings: &[(&PreparedEffectUnknownRef, &EffectRow)],
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
-        self.graph
-            .final_definitions(receiving, query_rows, query_predicates, control)?
+        self.final_definitions(receiving, query_rows, query_predicates, control)?
             .specialize_principal(bindings, control)
     }
-}
 
-impl PreparedEffectDefinitions {
     fn final_definitions<C: DecisionControl>(
         &self,
         receiving: PreparedEffectReadView<'_>,
         query_rows: &[&PreparedEffectRow],
         query_predicates: &[&PreparedEffectPredicate],
         control: &mut C,
-    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PreparedEffectDefinitions, PreparedEffectFailure<C::Error>> {
         receiving.snapshot(
             query_rows,
             query_predicates,
             &[],
-            SnapshotSource::Final(self),
+            SnapshotSource::FinalBound(self),
             control,
         )
     }

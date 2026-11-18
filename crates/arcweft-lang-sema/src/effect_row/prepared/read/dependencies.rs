@@ -81,6 +81,57 @@ impl<'a> Reachable<'a> {
         }
     }
 
+    /// The bound snapshot has already followed every immutable term edge.
+    /// Keep its closure only if the receiving view still exposes each exact
+    /// definition. Named bodies enter through the normal function traversal.
+    pub(super) fn retain_bound_terms<C: DecisionControl>(
+        &mut self,
+        bound: &BoundScopedEffectCompletion,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        fn retain<'view, T: 'view, C: DecisionControl>(
+            definitions: &BTreeMap<u64, Arc<T>>,
+            live: impl Fn(u64) -> Option<&'view Arc<T>>,
+            ids: &mut BTreeSet<u64>,
+            work: &mut Work<'_, C>,
+        ) -> Result<(), PreparedEffectFailure<C::Error>> {
+            for (&id, definition) in definitions {
+                work.charge(DecisionWork::Visit)?;
+                let current = live(id).ok_or(PreparedEffectInvariant::StaleReference)?;
+                if !Arc::ptr_eq(current, definition) {
+                    return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
+                }
+                work.charge(DecisionWork::Node)?;
+                ids.insert(id);
+            }
+            Ok(())
+        }
+
+        let original = bound.definitions();
+        let mut work = Work(control);
+        retain(
+            &original.rows,
+            |id| self.view.row_definition(id),
+            &mut self.rows,
+            &mut work,
+        )?;
+        retain(
+            &original.predicates,
+            |id| self.view.predicate_definition(id),
+            &mut self.predicates,
+            &mut work,
+        )?;
+        for &id in &original.choices {
+            work.charge(DecisionWork::Visit)?;
+            if !self.view.contains_choice(id) {
+                return Err(PreparedEffectInvariant::StaleReference.into());
+            }
+            work.charge(DecisionWork::Node)?;
+            self.choices.insert(id);
+        }
+        Ok(())
+    }
+
     fn choice<C: DecisionControl>(
         &mut self,
         choice: &PreparedEffectChoice,

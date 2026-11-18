@@ -42,6 +42,7 @@ pub struct CanonicalEffects;
 /// An algebra projection retains the exact verified original relation beside
 /// its value. This is not producer selection, scope admission or checked type
 /// identity; the final constraint owner must still perform those checks.
+#[cfg(test)]
 pub(crate) struct OriginalTypeEffectProjection {
     value: TypeKind,
     principal: std::sync::Arc<crate::effect_row::prepared::PrincipalEffectClosure>,

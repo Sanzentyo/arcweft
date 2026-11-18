@@ -22,6 +22,10 @@ pub(crate) struct BoundScopedEffectCompletion {
 }
 
 impl BoundScopedEffectCompletion {
+    pub(in crate::effect_row::prepared) fn definitions(&self) -> &PreparedEffectDefinitions {
+        &self.graph
+    }
+
     pub(crate) fn require_unknown(
         &self,
         reference: &PreparedEffectUnknownRef,

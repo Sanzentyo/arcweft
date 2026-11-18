@@ -12,7 +12,9 @@ pub(in crate::effect_row::prepared) enum SnapshotSource<'a> {
     AllUnknowns,
     Product(&'a [&'a PreparedEffectUnknownRef]),
     Bound(&'a PreparedEffectDefinitions),
+    #[cfg(test)]
     Final(&'a PreparedEffectDefinitions),
+    FinalBound(&'a BoundScopedEffectCompletion),
     Observation(&'a [&'a PreparedEffectSchemeRef]),
 }
 
@@ -70,18 +72,25 @@ impl PreparedEffectReadView<'_> {
     ) -> Result<PreparedEffectDefinitions, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
         let schemes = match source {
+            #[cfg(test)]
             SnapshotSource::Final(_) => SchemeDependencies::Bodies,
+            SnapshotSource::FinalBound(_) => SchemeDependencies::Bodies,
             SnapshotSource::Observation(_) => SchemeDependencies::Observation,
             _ => SchemeDependencies::Headers,
         };
         let original = match source {
-            SnapshotSource::Bound(original) | SnapshotSource::Final(original) => Some(original),
+            SnapshotSource::Bound(original) => Some(original),
+            #[cfg(test)]
+            SnapshotSource::Final(original) => Some(original),
+            SnapshotSource::FinalBound(bound) => Some(bound.definitions()),
             _ => None,
         };
+        let mut reachable = Reachable::new(self, schemes);
         let mut retained_rows = Vec::new();
         let mut retained_predicates = Vec::new();
         let mut obligations = Vec::new();
         let mut inventory = BTreeSet::new();
+        let mut first_new_obligation = 0;
         if let Some(original) = original {
             self.validate_owner(&PreparedEffectGraphOwner(Arc::clone(&original.issuer)))?;
             for (&id, definition) in &original.functions {
@@ -97,19 +106,33 @@ impl PreparedEffectReadView<'_> {
                     }
                 }
                 work.charge(DecisionWork::Node)?;
-                inventory.insert(id);
+                if matches!(source, SnapshotSource::FinalBound(_))
+                    && !matches!(
+                        definition.as_ref(),
+                        Function::SchemeInput(_) | Function::Scheme(_)
+                    )
+                {
+                    reachable.functions.insert(id);
+                } else {
+                    inventory.insert(id);
+                }
             }
-            for &id in original.rows.keys() {
-                work.charge(DecisionWork::Node)?;
-                retained_rows.push(PreparedEffectRow::Term(PreparedEffectRowRef(
-                    original.reference(id),
-                )));
-            }
-            for &id in original.predicates.keys() {
-                work.charge(DecisionWork::Node)?;
-                retained_predicates.push(PreparedEffectPredicate::Term(
-                    PreparedEffectPredicateRef(original.reference(id)),
-                ));
+            if let SnapshotSource::FinalBound(bound) = source {
+                reachable.retain_bound_terms(bound, work.0)?;
+                first_new_obligation = original.obligations.len();
+            } else {
+                for &id in original.rows.keys() {
+                    work.charge(DecisionWork::Node)?;
+                    retained_rows.push(PreparedEffectRow::Term(PreparedEffectRowRef(
+                        original.reference(id),
+                    )));
+                }
+                for &id in original.predicates.keys() {
+                    work.charge(DecisionWork::Node)?;
+                    retained_predicates.push(PreparedEffectPredicate::Term(
+                        PreparedEffectPredicateRef(original.reference(id)),
+                    ));
+                }
             }
             for obligation in &original.obligations {
                 work.charge(DecisionWork::Node)?;
@@ -153,7 +176,6 @@ impl PreparedEffectReadView<'_> {
             work.charge(DecisionWork::Node)?;
             obligations.push(Arc::clone(&constraint.obligation));
         }
-        let mut reachable = Reachable::new(self, schemes);
         for id in inventory {
             reachable.push(Dependency::Function(id), work.0)?;
         }
@@ -163,7 +185,7 @@ impl PreparedEffectReadView<'_> {
         for predicate in predicates.iter().copied().chain(&retained_predicates) {
             reachable.push(Dependency::Predicate(predicate), work.0)?;
         }
-        for obligation in &obligations {
+        for obligation in &obligations[first_new_obligation..] {
             reachable.push(Dependency::Predicate(&obligation.domain), work.0)?;
             reachable.push(Dependency::Predicate(&obligation.predicate), work.0)?;
         }

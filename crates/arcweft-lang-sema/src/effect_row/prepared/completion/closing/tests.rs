@@ -299,8 +299,23 @@ fn final_closure_preserves_the_bound_original_identity_with_late_named_values() 
         .unwrap()
         .freeze(graph.read(), &mut budget())
         .unwrap();
+    // The bound header only knows `named`. Final closure must also visit the
+    // declaration its actual body reaches, even with no query roots.
+    let child = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut budget())
+        .unwrap();
+    let body = graph.application(&child, vec![], &mut budget()).unwrap();
     graph
-        .prepare_body(&named, literal(&["late.named"]), vec![], &mut budget())
+        .prepare_body(&named, body, vec![], &mut budget())
+        .unwrap();
+    assert!(matches!(
+        source.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::SchemeState
+        ))
+    ));
+    graph
+        .prepare_body(&child, literal(&["late.named"]), vec![], &mut budget())
         .unwrap();
     let principal = source
         .close_original(graph.read(), &[], &[], &[], &mut budget())
