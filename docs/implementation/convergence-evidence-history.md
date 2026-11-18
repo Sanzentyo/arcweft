@@ -19586,3 +19586,16 @@ Source `48b3bbea3e666f78baf54ab25a51f049522409e1` は、同じ入力と元の作
 全featureのSema checkではライブラリを生成し、単体テスト対象は終了101・817エラー・33警告だった。前回とエラーのコード・ファイル別内訳が一致した。追加した単体テストも未実行。SemaライブラリのClippyは終了0・1,688警告。fmt・差分検査・構造ゲートは終了0、構造阻害0件。Cargoの全feature逆依存は起点込み22 package。全逆依存のテスト、workspace全targetのcheck／Clippy、Native／Web最終受入は未実行。公開されたRust 3 blobを照合した。`target` は `10598918180` bytes。
 
 [計測パッチ・CompilerとSemaの検証原本・公開照合](acceptance-evidence/task-reuse-input-effect-relation.raw.zip) は 40 entry、977748 bytes、SHA256 `72d457c46c423851eecfbc66a44f97fb7096e9a2edcf2748120a1d84e1dcecbf`。各原本の長さとハッシュを照合した。
+
+<a id="direct-universal-quantifier"></a>
+## 2026-11-19 — 作用決定図の全称量化を直接評価
+
+基点 `e5ee3a08b0c063c9d1d0f0a94f8d13ae76184e2f` では、空の量化を省いた後もMap等に候補全体の作業上限へ達する経路が残っていた。Source `e586d2dfe9fc4313b9c4f85f090bb02218aabea1` は、既存の決定図の構築器内で、量化対象の上下分岐を全称ではAND、存在ではORで結合する。変数を持つ決定図で量化対象が空なら、既存の計上付きコピーを使う。補集合を前後で組み立てていた全称量化と同じ正準決定図を返し、上限値は変更しなかった。
+
+初回の変更では定数の決定図に1回の計上が追加され、厳密な作業予算を求めるCoreの保存復元・admission関連14件が失敗した。定数の量化を既存どおり計上0回として扱い、空の量化と空でない量化の両方を予算0で確認する回帰テストを追加した。再実行では、その14件を含むCore全featureの単体2,362件がすべて成功した。3変数の256個の全真理値表と全8量化マスクで全称量化を総当たりの評価値と照合した。別の回帰テストでは、従来式の計上をすべて賄えない予算で同じ正準決定図を返した。公開 `effect_decision` の統合2件と `EffectDecision` のcompile-fail doctest 1件も成功した。
+
+Compilerの全548 IDを基点と照合し、529成功・19失敗。差分は `standard_map_program::retained_map_prefix_can_reuse_a_copy_mapping` の成功1件。Copy可能なコールバックを保持したMapを2回使用し、NativeとAWBCの両方で戻り値18・入力のログ順を確認した。Native側で純粋呼出し6回を確認し、AWBCは正準エンコード後にデコードして実行した。新規失敗0件で、後段の作用が未確定の `UnresolvedFuture` 6件は残る。結果を投影する前に候補の終端検証が実際の後段作用を要求して停止する。
+
+Coreの全feature・全target Clippy、fmt、差分検査と構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存は起点込み 52 のworkspace package。全逆依存のテストとworkspace全targetのcheck／Clippyは未実行。公開されたRust 2 blobを照合した。`target` は `11373249918` bytes。
+
+[CoreとCompilerの検証原本・公開照合](acceptance-evidence/task-direct-universal-quantifier.raw.zip) は 24 entry、592699 bytes、SHA256 `dbc89ea02c513dfa529e15c9ea2500d5a94f2b24f827e33cafe4ca16865fce11`。各原本の長さとハッシュを照合した。
