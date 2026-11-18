@@ -19222,3 +19222,17 @@ receiverと捕捉元の格納判定は準備済み型を参照する。格納に
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` でdev01からdev03まで実行。jobs／profileの上書きはなし。dev01のlibraryは9エラー、dev02は7エラー。dev02で明示された、捕捉解析からレコードの完全な型準備を呼べない問題は、dev03の読取り専用座標照会で解消した。公開したdev03は終了101。libraryは6エラー・20警告、lib testは871エラー・32警告。正規化した一次診断は871件で前回比11件減、新規0件。7件のRust入力のSHA256を公開blobと照合した。 捕捉・レコードパターン実装の一次診断は0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。捕捉・特殊化・部分適用の実行テスト、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 773,997,379 bytesで、約300 GBを目安とする `cargo clean` の条件には達していなかった。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-capture-storage.raw.zip) は 30 entry、283730 bytes、SHA256 `43483be083ef5897303a9677e631701de30d3328cabf26305514865ecf64750e`。各entryの長さとSHA256を再照合した。更新前の履歴3000524 bytesのSHA256 `b4b2c685ed94ca5eb9d2429c44c0b7e5da649db8fe80f5deb0b228dd2d795f6e`をprefixとして保持した。
+
+
+<a id="prepared-call-source-rejections"></a>
+## 2026-11-19 — 準備済み型で呼出し候補を照合し、棄却診断の型を保持
+
+Source `755e1f016a50c99bf0408558826cb3b7ed15c0fd`。変更の基点は `29efb5cd9950daa10ce26e166d65d6b384229a60`。比較元は `063caf7208dbe6dc7f9b48f8e1bbf0e06d5a7d9a` の `prepared-capture-storage.dev03-check.log`。公開したmainと10件のRust入力のblobを照合した。
+
+variantの候補判定は準備済み所有型・case番号・ペイロードの有無を照合する。最終証拠は選ばれた実引数の確定型から発行する。Dialogueのカスタムフィールドに型不一致がある場合、候補の作用情報が有効な間に、元の式と関係が持つ型を読取り専用で観測する。関係の棄却証拠は選択された引数・代替・方向を保持する。候補の破棄後に残す型診断には、破棄される作用項を含めない。制御エラーは引き継ぎ、観測が一意に表現できない時は観測できた型として記録しない。
+
+`cargo check --locked -p arcweft-lang-sema --lib --all-features` は終了0、222警告。`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101で、ライブラリのエラー0件、lib testは863エラー・33警告。正規化した一次診断は871件から863件に減り、新規0件。変更したRustファイルの一次診断は0件。fmtと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Cargoの全featureの逆依存グラフ（normal/build/dev）はSemaを含む22 packageだった。
+
+`cargo nextest run --locked -p arcweft-compiler --test evaluated_effects --test generic_continuation_snapshot` を実行。初回は既定の早期停止で実行20件すべてが失敗し、132件が未実行。--no-fail-fastで全152件を実行し、1成功・151失敗。原本の `Summary [   2.456s] 152 tests run: 1 passed, 151 failed, 0 skipped`。136件は `CheckedCallableCatalog` が原因欄に現れた。成功は `inhabited_empty_statement_match_cannot_publish_a_native_plan` だった。 Rustの検証は `CARGO_INCREMENTAL=0`、jobs／profileの上書きなし。残りの推移的逆依存テスト、Semaユニットテスト、Clippy、workspace、Native／Webは未実行。targetは 7,203,148,638 bytesで、約300 GBを目安とする `cargo clean` の条件には達していなかった。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-call-source-rejections.raw.zip) は 26 entry、236553 bytes、SHA256 `51f4fa0de5d4ff8952a622c39267dcacef37e881f62aa2c326e91a4dd271c47b`。各entryの長さとSHA256を再照合した。更新前の履歴3003132 bytesのSHA256 `36cc2129050d512d718b3a195507100a82322e18729d5245bd952fa7691cf763`をprefixとして保持した。
