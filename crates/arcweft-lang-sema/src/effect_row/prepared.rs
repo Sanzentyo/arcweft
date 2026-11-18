@@ -534,7 +534,7 @@ impl PreparedEffectGraph {
     fn apply_formula<C: DecisionControl>(
         &mut self,
         formula: EffectFormula<GenericEffectReference>,
-        arguments: BTreeMap<GenericEffectReference, PreparedEffectRow>,
+        mut arguments: BTreeMap<GenericEffectReference, PreparedEffectRow>,
         control: &mut C,
     ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
         for row in arguments.values() {
@@ -542,6 +542,14 @@ impl PreparedEffectGraph {
                 .charge(DecisionWork::Visit)
                 .map_err(PreparedEffectFailure::Control)?;
             self.validate_row(row)?;
+        }
+        // A bare row variable denotes its actual at every effect label.
+        if arguments.len() == 1
+            && formula.membership().overrides().len() == 0
+            && let Some(parameter) = formula.single_reference()
+            && let Some(actual) = arguments.remove(parameter)
+        {
+            return Ok(actual);
         }
         self.insert_row(RowTerm::Substitution { formula, arguments }, control)
     }

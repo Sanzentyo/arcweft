@@ -13,6 +13,42 @@ fn parameters() -> [GenericEffectReference; 2] {
 }
 
 #[test]
+fn substituting_a_bare_parameter_reuses_the_existing_row() {
+    let [input, _] = parameters();
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let actual = graph
+        .union(vec![literal(&["log.write"])], &mut control)
+        .unwrap();
+    let arguments = BTreeMap::from([(input.clone(), actual.clone())]);
+    let base = graph.state;
+
+    assert_eq!(
+        graph
+            .substitute(&open(&input), &arguments, &mut control)
+            .unwrap(),
+        actual
+    );
+    assert_eq!(graph.state, base);
+
+    let labeled = PreparedEffectRow::Canonical(EffectRow::open(
+        crate::effects::EffectSet::from_labels(["fs.read"]).unwrap(),
+        input,
+    ));
+    let result = graph
+        .substitute(&labeled, &arguments, &mut control)
+        .unwrap();
+    assert_ne!(result, actual);
+    let closed = graph.solve_principal(&mut control).unwrap();
+    assert_eq!(
+        closed.resolve_row(&result, &mut control).unwrap(),
+        EffectRow::closed(
+            crate::effects::EffectSet::from_labels(["fs.read", "log.write"]).unwrap()
+        )
+    );
+}
+
+#[test]
 fn actual_replacements_are_prepared_once_and_are_not_projected_again() {
     let [input, _] = parameters();
     let mut graph = PreparedEffectGraph::default();

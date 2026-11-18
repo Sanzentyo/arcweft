@@ -612,10 +612,14 @@ fn substitution_and_boolean_predicates_retain_all_prepared_ports() {
         let formal = scope.bound_effect(0, 0).unwrap();
         let formula = EffectFormula::variable(formal.clone(), &mut work).unwrap();
         let predicate = formula.subset(&EffectFormula::empty(), &mut work).unwrap();
+        let row_formula = EffectFormula::literal(
+            crate::effects::EffectSet::from_labels(["log.write"]).unwrap(),
+            Some(formal.clone()),
+        );
         let actual = literal(&["log.write"]);
         let arguments = BTreeMap::from([(formal, actual)]);
         let row = graph
-            .apply_formula(formula, arguments.clone(), &mut work)
+            .apply_formula(row_formula, arguments.clone(), &mut work)
             .unwrap();
         let a = graph
             .apply_predicate(predicate, arguments, &mut work)
