@@ -6,10 +6,17 @@ use super::*;
 #[cfg(test)]
 mod tests;
 
+#[derive(Clone, Copy)]
+pub(in crate::effect_row::prepared) enum SnapshotSource<'a> {
+    Open,
+    Bound(&'a PreparedEffectDefinitions),
+    Final(&'a PreparedEffectDefinitions),
+}
+
 impl PreparedEffectReadView<'_> {
     /// Named declarations are inputs even when their bodies are already known.
-    /// The local relation keeps every original C and inference function, while
-    /// only terms reachable from those constraints or the actual roots survive.
+    /// Keep original C and the declared inference unknowns. Named and imported
+    /// functions enter the relation through the actual roots and constraints.
     pub(crate) fn freeze_scoped<C: DecisionControl>(
         self,
         rows: &[&PreparedEffectRow],
@@ -17,80 +24,80 @@ impl PreparedEffectReadView<'_> {
         constraints: &[&PreparedEffectScopedConstraint],
         control: &mut C,
     ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
-        self.snapshot(
-            rows,
-            predicates,
-            constraints,
-            SchemeDependencies::Headers,
-            control,
-        )?
-        .complete_scoped(control)
+        self.snapshot(rows, predicates, constraints, SnapshotSource::Open, control)?
+            .complete_scoped(control)
     }
 
-    /// One snapshot grammar serves open source relations and final closure.
-    /// Only the real final phase may request prepared Named bodies.
+    /// Binding adds candidate receipts to original C. Final validation also
+    /// includes the published obligations and follows actual Named bodies.
     pub(in crate::effect_row::prepared) fn snapshot<C: DecisionControl>(
         self,
         rows: &[&PreparedEffectRow],
         predicates: &[&PreparedEffectPredicate],
         constraints: &[&PreparedEffectScopedConstraint],
-        schemes: SchemeDependencies,
+        source: SnapshotSource<'_>,
         control: &mut C,
     ) -> Result<PreparedEffectDefinitions, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        let mut layers = BTreeMap::new();
-        for scope in self
-            .scope
-            .map(|scope| &scope.input)
-            .into_iter()
-            .chain(self.dependencies)
-        {
-            for (&id, layer) in &scope.data.layers {
+        let schemes = match source {
+            SnapshotSource::Final(_) => SchemeDependencies::Bodies,
+            _ => SchemeDependencies::Headers,
+        };
+        let original = match source {
+            SnapshotSource::Open => None,
+            SnapshotSource::Bound(original) | SnapshotSource::Final(original) => Some(original),
+        };
+        let mut retained_rows = Vec::new();
+        let mut retained_predicates = Vec::new();
+        let mut obligations = Vec::new();
+        let mut inventory = BTreeSet::new();
+        if let Some(original) = original {
+            self.validate_owner(&PreparedEffectGraphOwner(Arc::clone(&original.issuer)))?;
+            for (&id, definition) in &original.functions {
                 work.charge(DecisionWork::Visit)?;
-                if let Some(previous) = layers.get(&id) {
-                    if !Arc::ptr_eq(previous, layer) {
-                        return Err(PreparedEffectInvariant::ReadScopeConflict.into());
-                    }
+                if let Function::SchemeInput(declaration) = definition.as_ref() {
+                    declaration.validate_read(self)?;
                 } else {
+                    let actual = self
+                        .function_definition(id)
+                        .ok_or(PreparedEffectInvariant::StaleReference)?;
+                    if !Arc::ptr_eq(definition, actual) {
+                        return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
+                    }
+                }
+                work.charge(DecisionWork::Node)?;
+                inventory.insert(id);
+            }
+            for &id in original.rows.keys() {
+                work.charge(DecisionWork::Node)?;
+                retained_rows.push(PreparedEffectRow::Term(PreparedEffectRowRef(
+                    original.reference(id),
+                )));
+            }
+            for &id in original.predicates.keys() {
+                work.charge(DecisionWork::Node)?;
+                retained_predicates.push(PreparedEffectPredicate::Term(
+                    PreparedEffectPredicateRef(original.reference(id)),
+                ));
+            }
+            for obligation in &original.obligations {
+                work.charge(DecisionWork::Node)?;
+                obligations.push(Arc::clone(obligation));
+            }
+        } else {
+            for id in self.visible_function_ids() {
+                work.charge(DecisionWork::Visit)?;
+                if matches!(
+                    self.function_definition(id).map(Arc::as_ref),
+                    Some(Function::Unknown { .. })
+                ) {
                     work.charge(DecisionWork::Node)?;
-                    layers.insert(id, Arc::clone(layer));
+                    inventory.insert(id);
                 }
             }
         }
-        let mut inventory = BTreeSet::new();
-        for id in self
-            .relation
-            .functions
-            .keys()
-            .chain(
-                self.scope
-                    .into_iter()
-                    .flat_map(|scope| scope.functions.keys()),
-            )
-            .chain(layers.values().flat_map(|layer| layer.functions.keys()))
-            .chain(
-                self.extracted
-                    .into_iter()
-                    .flat_map(|delta| delta.functions.keys()),
-            )
-        {
-            work.charge(DecisionWork::Node)?;
-            inventory.insert(*id);
-        }
-        let mut obligations = Vec::new();
-        for obligation in self
-            .relation
-            .obligations
-            .iter()
-            .chain(layers.values().flat_map(|layer| layer.obligations.iter()))
-            .chain(
-                self.extracted
-                    .into_iter()
-                    .flat_map(|delta| delta.obligations.iter()),
-            )
-        {
-            work.charge(DecisionWork::Node)?;
-            obligations.push(Arc::clone(obligation));
+        if !matches!(source, SnapshotSource::Bound(_)) {
+            self.retain_published_obligations(&mut obligations, &mut work)?;
         }
         for constraint in constraints {
             work.charge(DecisionWork::Visit)?;
@@ -104,10 +111,10 @@ impl PreparedEffectReadView<'_> {
         for id in inventory {
             reachable.push(Dependency::Function(id), work.0)?;
         }
-        for row in rows {
+        for row in rows.iter().copied().chain(&retained_rows) {
             reachable.push(Dependency::Row(row), work.0)?;
         }
-        for predicate in predicates {
+        for predicate in predicates.iter().copied().chain(&retained_predicates) {
             reachable.push(Dependency::Predicate(predicate), work.0)?;
         }
         for obligation in &obligations {
@@ -166,5 +173,46 @@ impl PreparedEffectReadView<'_> {
             rows,
             predicates,
         })
+    }
+
+    fn retain_published_obligations<C: DecisionControl>(
+        self,
+        obligations: &mut Vec<Arc<ScopedObligation>>,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        let mut layers = BTreeMap::new();
+        for scope in self
+            .scope
+            .map(|scope| &scope.input)
+            .into_iter()
+            .chain(self.dependencies)
+        {
+            for (&id, layer) in &scope.data.layers {
+                work.charge(DecisionWork::Visit)?;
+                if let Some(previous) = layers.get(&id) {
+                    if !Arc::ptr_eq(previous, layer) {
+                        return Err(PreparedEffectInvariant::ReadScopeConflict.into());
+                    }
+                } else {
+                    work.charge(DecisionWork::Node)?;
+                    layers.insert(id, Arc::clone(layer));
+                }
+            }
+        }
+        for obligation in self
+            .relation
+            .obligations
+            .iter()
+            .chain(layers.values().flat_map(|layer| layer.obligations.iter()))
+            .chain(
+                self.extracted
+                    .into_iter()
+                    .flat_map(|delta| delta.obligations.iter()),
+            )
+        {
+            work.charge(DecisionWork::Node)?;
+            obligations.push(Arc::clone(obligation));
+        }
+        Ok(())
     }
 }

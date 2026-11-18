@@ -119,6 +119,92 @@ fn final_closure_waits_for_the_original_named_body_and_never_prepares_it() {
 }
 
 #[test]
+fn final_closure_follows_the_actual_body_with_unrelated_declarations_still_open() {
+    let mut graph = PreparedEffectGraph::default();
+    let unrelated = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut budget())
+        .unwrap();
+    let named = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut budget())
+        .unwrap();
+    let row = graph.application(&named, vec![], &mut budget()).unwrap();
+    let source = freeze(&graph, &[&row]);
+
+    let callee = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut budget())
+        .unwrap();
+    let body = graph.application(&callee, vec![], &mut budget()).unwrap();
+    graph
+        .prepare_body(&named, body, vec![], &mut budget())
+        .unwrap();
+    assert!(matches!(
+        source.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::SchemeState
+        ))
+    ));
+    graph
+        .prepare_body(&callee, literal(&["actual.callee"]), vec![], &mut budget())
+        .unwrap();
+    let principal = source
+        .close_original(graph.read(), &[], &[], &[], &mut budget())
+        .unwrap();
+    let expected = literal_row(&["actual.callee"]);
+    assert_eq!(
+        principal.resolve_row(&row, &mut budget()).unwrap(),
+        expected
+    );
+    assert_eq!(principal.scheme(&callee).unwrap(), &expected);
+    assert_eq!(
+        principal.scheme(&unrelated),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+}
+
+#[test]
+fn a_future_added_after_freeze_is_required_if_a_final_query_reaches_it() {
+    let mut graph = PreparedEffectGraph::default();
+    let source = freeze(&graph, &[]);
+    let future = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Future,
+            &mut budget(),
+        )
+        .unwrap();
+    let query = graph
+        .unknown_application(&future, vec![], &mut budget())
+        .unwrap();
+    let principal = source
+        .close_original(graph.read(), &[], &[], &[], &mut budget())
+        .unwrap();
+    assert_eq!(
+        principal.unknown(&future),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+    assert!(matches!(
+        source.close_original(graph.read(), &[&query], &[], &[], &mut budget()),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::UnresolvedFuture
+        ))
+    ));
+    let actual = literal_row(&["actual.future"]);
+    let principal = source
+        .close_original(
+            graph.read(),
+            &[&query],
+            &[],
+            &[(&future, &actual)],
+            &mut budget(),
+        )
+        .unwrap();
+    assert_eq!(
+        principal.resolve_row(&query, &mut budget()).unwrap(),
+        actual
+    );
+}
+
+#[test]
 fn final_closure_preserves_the_bound_original_identity_with_late_named_values() {
     let mut graph = PreparedEffectGraph::default();
     let named = graph

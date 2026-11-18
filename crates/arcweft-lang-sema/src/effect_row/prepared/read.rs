@@ -8,6 +8,8 @@ mod parameters;
 pub(super) mod dependencies;
 mod freeze;
 
+pub(super) use freeze::SnapshotSource;
+
 #[cfg(test)]
 mod tests;
 

@@ -283,6 +283,8 @@ fn bound_freeze_preserves_original_query_ports_and_keeps_its_facts_out_of_siblin
     let binding = graph
         .bind_original_scoped(&original, &mut budget())
         .unwrap();
+    let later_future = unknown(&mut graph, true, vec![]);
+    equation(&mut graph, value, literal(&["later.consumer"]), vec![]);
     let bound = binding.freeze(graph.read(), &mut budget()).unwrap();
     let closed = bound
         .graph
@@ -295,10 +297,23 @@ fn bound_freeze_preserves_original_query_ports_and_keeps_its_facts_out_of_siblin
             _ => unreachable!(),
         }
     );
-    assert!(graph.relation.obligations.is_empty());
-    equation(&mut graph, value, literal(&["later.consumer"]), vec![]);
+    assert_eq!(graph.relation.obligations.len(), 1);
+    assert_eq!(
+        closed.unknown(&later_future),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
     // This sibling never received the selected candidate's receipts.
-    assert!(graph.solve_principal(&mut budget()).is_ok());
+    assert!(
+        graph
+            .specialize_principal(
+                &[(
+                    &later_future,
+                    &EffectRow::closed(crate::effects::EffectSet::new())
+                )],
+                &mut budget()
+            )
+            .is_ok()
+    );
     assert_eq!(
         closed.unknown(&x).unwrap(),
         &EffectRow::closed(crate::effects::EffectSet::new())

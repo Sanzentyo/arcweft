@@ -1,6 +1,7 @@
 //! Reattach a source's conditional least tuple to its real inference identities.
 
 use super::*;
+use crate::effect_row::prepared::read::SnapshotSource;
 
 #[cfg(test)]
 mod tests;
@@ -44,38 +45,6 @@ impl PreparedEffectScopedBinding {
         graph.validate_owner(&self.relation.owner)?;
         self.relation.relation.validate(graph, control)?;
         let original = &self.relation.relation.completion;
-        let mut rows = Vec::new();
-        for &id in original.graph.rows.keys() {
-            control
-                .charge(DecisionWork::Node)
-                .map_err(PreparedEffectFailure::Control)?;
-            rows.push(PreparedEffectRow::Term(PreparedEffectRowRef(
-                original.graph.reference(id),
-            )));
-        }
-        let mut predicates = Vec::new();
-        for &id in original.graph.predicates.keys() {
-            control
-                .charge(DecisionWork::Node)
-                .map_err(PreparedEffectFailure::Control)?;
-            predicates.push(PreparedEffectPredicate::Term(PreparedEffectPredicateRef(
-                original.graph.reference(id),
-            )));
-        }
-        let mut row_ports = Vec::new();
-        for row in &rows {
-            control
-                .charge(DecisionWork::Node)
-                .map_err(PreparedEffectFailure::Control)?;
-            row_ports.push(row);
-        }
-        let mut predicate_ports = Vec::new();
-        for predicate in &predicates {
-            control
-                .charge(DecisionWork::Node)
-                .map_err(PreparedEffectFailure::Control)?;
-            predicate_ports.push(predicate);
-        }
         let mut constraints = Vec::new();
         for constraint in &self.constraints {
             control
@@ -84,7 +53,14 @@ impl PreparedEffectScopedBinding {
             constraints.push(constraint);
         }
         graph
-            .freeze_scoped(&row_ports, &predicate_ports, &constraints, control)
+            .snapshot(
+                &[],
+                &[],
+                &constraints,
+                SnapshotSource::Bound(&original.graph),
+                control,
+            )?
+            .complete_scoped(control)
             .map(BoundScopedEffectCompletion)
     }
 }
