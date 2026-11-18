@@ -19508,3 +19508,14 @@ Source `f62720f0a6918c52cafc0be3941169e6fb9eeada` は、直接経路と結合さ
 locked Semaの全feature checkはlibrary成功、lib testは終了101・817エラー・33警告。前回と発生ファイル・コード別のエラーの内訳が一致した。Semaのfixture実行、全推移的逆依存テスト、workspace全target check、Native／Web最終受入は未実行。SemaライブラリClippy、fmt、差分検査、構造ゲートは終了0、構造阻害0件。Cargo全feature逆依存は起点込み22 package。公開した7 blobを検証入力と照合した。 `target` は10596519637 bytesだった。
 
 [Compilerの全ID比較、停止位置、途中と最終の検証、公開照合](acceptance-evidence/task-retain-bound-effect-reachability.raw.zip) は38 entry、1754745 bytes、SHA256 `d4a63603d7f90d8679f8325621534f5286f92001e40582ef9197ce64e5e585e7`。各原本の長さとハッシュを照合した。
+
+<a id="declaration-formal-effect-rows"></a>
+## 2026-11-19 — 宣言が自身の仮引数を使う作用行を保持
+
+基点 `4b01b89d55385c81aaba9a94605d937190921072`。Source `2126c00f9fc51b8d9de10a304f6948d43b1e707d` は、宣言が発行する作用schemeを自身の順序付き仮引数へ適用した行を、宣言の準備中に一度作る。関数値と部分適用の型を組み立てる際は、宣言のschemaと発行元を照合して同じ行を読み、現在の戻り値型を投影する。候補ごとのグラフ編集と一時checkpointを削除した。既存fixtureに、本体を準備する前の関数値・部分適用がグラフ差分を生成せず、準備状態が変わっても同じ宣言値型を保持する検査を加えた。
+
+Compilerの2 targetは同じ152 IDで151成功・1失敗・0スキップ。遅延コールバックが今回成功した。著作ソースの両executorが `true` で完了した。Nativeには1 step最大1 opを指定し、AWBCは `ContextCallbackInvoke` の継続が存在する時点で公開保存し、別セッションに取り込んで同じsnapshotを確認してから完了した。LLDB実行も終了0。元の値の移送と式の再評価は、両executor向けのコンパイル全体でそれぞれ2回観測した。唯一の失敗のretained Mapは `start_path_with_imported` の候補初期化で残り作業量の上限に達した。
+
+追加Compilerの3 targetは同じ396 IDで342成功・54失敗。 `callable_execution` は322成功・54失敗、`project_function_instances` は12/12成功、`scope_propagation` は8/8成功。locked Semaの全feature checkはlibrary成功、lib testは終了101・817エラー・33警告。前回とエラーの発生ファイル・コード別の内訳が一致した。Semaのfixture実行、全逆依存テスト、workspace全target check、Native／Web最終受入は未実行。SemaライブラリClippy、fmt、差分検査、構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存は起点込み22 package。公開4 blobを照合した。 `target` は10596535111 bytesだった。
+
+[Compilerの全ID比較、停止位置、途中と最終の検証、公開照合](acceptance-evidence/task-declaration-formal-effect-rows.raw.zip) は26 entry、905211 bytes、SHA256 `1e2c33483d381d58f8f2ca724c2dbe5683e4df33c9239bd89c01b6d987b5ffda`。各原本の長さとハッシュを照合した。
