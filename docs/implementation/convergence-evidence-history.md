@@ -19012,3 +19012,17 @@ Source `6967b0a8968b27c665a40c1ea4074879b2eadd32`。変更の基点は `c9588642
 TextProxyで同じ閉じたenumの異なるcaseを既定値と明示引数に使い、宣言・序数・case識別子を確認する回帰fixtureを追加した。Sema全体では値receiverや関数値の候補準備などのコンパイル診断が残る。fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-compile-time-scalar-source-types.raw.zip) は40 entry、441246 bytes、SHA256 `549c803841caba7e9a0fe29ddc583d23af70e603a8d3d036cfbaeb253eaca679`。各entryの長さとSHA256を再照合した。更新前の履歴2958023 bytesのSHA256 `bd158324d51d062ca7b3aa1c49ad47ce19411263d2518b0063f69ef814303852`をprefixとして保持した。
+
+
+<a id="retained-call-receiver"></a>
+## 2026-11-18 — 値receiverの作用項を候補制約まで保持する
+
+Source `b05c36455138e3ffeebe4b0d24aa6f77406ad2e8`。変更の基点は `daa881c71e5fe7adbc9ff7ccd870a14c9e129e83`。比較元は `6967b0a8968b27c665a40c1ea4074879b2eadd32` の `compile-time-scalar-source-types.dev04-check.log`。公開したmainと12件のRust入力のblobを照合した。
+
+値receiverは元の式と作用項を保持し、同じ所有スコープから候補探索用の観測型を得る。直接receiver、Actionの構築、拡張呼出しは元の準備済み型を制約へ渡す。パイプ左辺とその参照も準備済み型を保持する。呼出しを公開するときは確定した制約の型を、元の式の確定型と候補探索時の観測型に照合する。候補探索自体が観測可能な作用関係を必要とする制約は残る。未準備の宣言本体に依存するreceiverの探索順序と、関数値calleeの準備は継続課題とする。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。全試行の終了は101、libraryは25警告、lib testは37警告。dev01はlibrary 140エラー、lib test 1,015エラー。dev02はlibrary 140エラー、lib test 1,015エラー。dev03はlibrary 139エラー、lib test 1,014エラー。dev04はlibrary 138エラー、lib test 1,013エラー。receiver境界の診断を解消した後に表面化した、入れ子呼出しの元式IDの型推論エラーをdev03で修正し、特殊化証拠を反映する同じ経路の可変借用をdev04で修正した。一次診断は1,030件から1,020件に減った。10件削除、追加0件。Semaのfmt checkと `just structure-audit-gate` は終了0。
+
+receiverの入れ子の関数型に効果のグラフ項を持たせ、観測型が確定した後も元の項を保持する回帰fixtureを追加した。Sema全体のコンパイルが未完了で、fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-retained-call-receiver.raw.zip) は40 entry、440466 bytes、SHA256 `2dfe22bc3a37b0aaddb021a0e69216e12dbe50d084563d86ecc2455cce4bb7a8`。各entryの長さとSHA256を再照合した。更新前の履歴2960600 bytesのSHA256 `97ea8a190a6a4cfaf4c3a10f0e7e77f5aefe521a507641514825b558c54f448a`をprefixとして保持した。
