@@ -19236,3 +19236,15 @@ variantの候補判定は準備済み所有型・case番号・ペイロードの
 `cargo nextest run --locked -p arcweft-compiler --test evaluated_effects --test generic_continuation_snapshot` を実行。初回は既定の早期停止で実行20件すべてが失敗し、132件が未実行。--no-fail-fastで全152件を実行し、1成功・151失敗。原本の `Summary [   2.456s] 152 tests run: 1 passed, 151 failed, 0 skipped`。136件は `CheckedCallableCatalog` が原因欄に現れた。成功は `inhabited_empty_statement_match_cannot_publish_a_native_plan` だった。 Rustの検証は `CARGO_INCREMENTAL=0`、jobs／profileの上書きなし。残りの推移的逆依存テスト、Semaユニットテスト、Clippy、workspace、Native／Webは未実行。targetは 7,203,148,638 bytesで、約300 GBを目安とする `cargo clean` の条件には達していなかった。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-call-source-rejections.raw.zip) は 26 entry、236553 bytes、SHA256 `51f4fa0de5d4ff8952a622c39267dcacef37e881f62aa2c326e91a4dd271c47b`。各entryの長さとSHA256を再照合した。更新前の履歴3003132 bytesのSHA256 `36cc2129050d512d718b3a195507100a82322e18729d5245bd952fa7691cf763`をprefixとして保持した。
+
+
+<a id="nominal-publication-catalog-ownership"></a>
+## 2026-11-19 — 宣言インターフェースの確定前にnominal投影の共有参照を解放
+
+Source `2a63be5a39861dd4a7cd1e673a31a5a52ac3b036`。変更の基点は `74adb33afb7944900cc65d8bc1d8394118bb66a5`。比較元は `755e1f016a50c99bf0408558826cb3b7ed15c0fd` のCompiler nextest全件実行。公開されたRust入力1件と検証入力のblobを照合した。
+
+`raw_content_uses_the_checked_literal_without_interpreting_braces_or_page_marks` をLLDBで観測した。callable catalogの構築と呼出しの確定を通過した後、最終レポートが宣言インターフェースを確定する段階で `Arc::get_mut` が `None` を返し、`CheckedCallableCatalog` で停止した。nominal型投影のために保持していた第2の参照を、両方のnominal一覧とEntryの投影が終わった時点で解放する。同じcatalogの所有権を最終レポートへ渡し、宣言の既定値と付随コンテンツのインターフェースを確定する。
+
+`cargo nextest run --locked -p arcweft-compiler --test evaluated_effects --test generic_continuation_snapshot --no-fail-fast`、`CARGO_INCREMENTAL=0`、jobs／profileの上書きなし。前回と同じ152 IDを実行し、1成功・151失敗から148成功・4失敗に変わった。`CheckedCallableCatalog` は136件から0件。残る内訳はライフタイム付き関数値の部分適用（`DeltaBase`）、遅延コールバック（`SchemeState`）、保存復元を扱うMapの2件（`CallResolutionFailed`）。4件はいずれも型検査で停止した。fmtと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaユニットテスト対象の全feature checkは前のSourceに記録し、このSourceでの主な実測はCompilerの2統合テスト対象。残りの逆依存テスト、Clippy、workspace最終受入、Native／Webは未実行。targetは 7,204,705,821 bytesだった。
+
+[検証原本・LLDB・全テストID比較・公開照合](acceptance-evidence/task-nominal-publication-catalog-ownership.raw.zip) は 17 entry、58755 bytes、SHA256 `3702a1199bea92dfe22b74b085f337b015f8fbf6be3c386216e17c5ebaa0484e`。各entryの長さとSHA256を再照合した。更新前の履歴3006003 bytesのSHA256 `70f954b828be75f22dde710f7b02f7b881be45be9ed21ee2da4fa1c681d484df`をprefixとして保持した。
