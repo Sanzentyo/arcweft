@@ -339,7 +339,7 @@ impl<E, P> CandidateProjectionApplyFailure<E, P> {
     }
 }
 
-impl CandidateProjectionApplyFailure<crate::final_analysis::FinalSemanticAnalysisError> {
+impl<P> CandidateProjectionApplyFailure<crate::final_analysis::FinalSemanticAnalysisError, P> {
     pub(super) fn into_expression_error(self) -> super::expression_error::AnalyzerExpressionError {
         match self.violation {
             CandidateFactMutationFailure::Control(error) => {
@@ -471,10 +471,31 @@ impl CandidateSemanticProjection {
                 .physical_candidate_argument_evaluations
                 .rows
                 .is_empty()
-            && !self.data.graph_delta.has_writes()
+            && self.data.graph_delta.is_isolated_expression_delta()
             && fact.checked_call_site(owner).is_none()
             && resolved.result().is_plain_value())
         .then_some(fact)
+    }
+
+    fn complete_isolated_expression(
+        &mut self,
+        owner: ExprId,
+        completed: Option<crate::types::constraints::RetainedSourceType>,
+    ) -> Result<(), CandidateFactTransactionViolation> {
+        if self.isolated_resolved_value(owner).is_none() {
+            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+        }
+        let Some(Some(PreparedExpressionFact::Resolved(expression))) =
+            self.data.facts.expressions.get_mut(&owner)
+        else {
+            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+        };
+        if let Some(ty) = completed.and_then(|result| result.into_replacement())
+            && !expression.replace_plain_value_type(ty)
+        {
+            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+        }
+        Ok(())
     }
 
     pub(super) fn effect_view<'a>(
@@ -2247,39 +2268,44 @@ impl SemanticFactState {
         Ok(())
     }
 
-    /// Transfer an isolated expression out of its original affine projection.
-    /// The closed source witness is checked by the caller before selecting it.
-    pub(super) fn move_isolated_expression(
+    pub(super) fn discard_candidate_projections(
         &self,
-        target: &mut CandidateSemanticProjection,
-        mut source: CandidateSemanticProjection,
+        projections: Vec<CandidateSemanticProjection>,
+    ) -> Result<(), CandidateFactTransactionViolation> {
+        projections
+            .into_iter()
+            .try_for_each(|projection| self.discard_candidate_projection(projection))
+    }
+
+    /// Retain actual graph writes as a separate projection in the same
+    /// publication. A fact-only transfer needs no detached graph read permit.
+    pub(super) fn stage_original_expression(
+        &self,
+        materialized: &mut CandidateSemanticProjection,
+        mut original: CandidateSemanticProjection,
         owner: ExprId,
         completed: Option<crate::types::constraints::RetainedSourceType>,
-    ) -> Result<(), CandidateFactTransactionViolation> {
-        self.require_candidate_projection_owner(target)?;
-        self.require_candidate_projection_owner(&source)?;
+    ) -> Result<Option<CandidateSemanticProjection>, CandidateFactTransactionViolation> {
+        self.require_candidate_projection_owner(materialized)?;
+        self.require_candidate_projection_owner(&original)?;
         self.prepared_calls()?
-            .validate_delta(&source.data.graph_delta)
-            .map_err(|violation| {
-                CandidateFactTransactionViolation::PreparedCallGraph(violation.into())
-            })?;
-        if source.isolated_resolved_value(owner).is_none() {
-            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+            .validate_delta(&original.data.graph_delta)
+            .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))?;
+        original.complete_isolated_expression(owner, completed)?;
+        if original.data.graph_delta.has_writes() {
+            return Ok(Some(original));
         }
-        match target.data.facts.expressions.entry(owner) {
+        match materialized.data.facts.expressions.entry(owner) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                let Some(Some(PreparedExpressionFact::Resolved(mut expression))) =
-                    source.data.facts.expressions.remove(&owner)
-                else {
-                    return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
-                };
-                if let Some(ty) = completed.and_then(|result| result.into_replacement())
-                    && !expression.replace_plain_value_type(ty)
-                {
-                    return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
-                }
-                entry.insert(Some(expression.into()));
-                Ok(())
+                entry.insert(
+                    original
+                        .data
+                        .facts
+                        .expressions
+                        .remove(&owner)
+                        .expect("completed original expression"),
+                );
+                Ok(None)
             }
             std::collections::btree_map::Entry::Occupied(_) => {
                 Err(CandidateFactTransactionViolation::ProjectionWriteConflict)
@@ -3336,13 +3362,22 @@ mod tests {
     }
 
     #[test]
-    fn a_child_fact_projection_applies_with_its_original_parent() {
+    fn a_child_fact_projection_applies_with_the_retained_expression_and_its_effects() {
         use crate::effect_row::{
             EffectPredicate, EffectRow,
             prepared::{PreparedEffectInvariant, PreparedEffectRow},
         };
 
-        let (parent_local, child_local) = distinct_test_locals();
+        let fixture =
+            crate::final_analysis::tests::fixture("fn caller(value: i64) { value; }\n", None);
+        let module = fixture
+            .project
+            .analysis_view()
+            .unwrap()
+            .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+            .unwrap();
+        let parent_expression = module.expressions().next().unwrap().0;
+        let child_local = module.locals().next().unwrap().0;
         let mut state = SemanticFactState::new();
         let mut work = work();
         let declarations =
@@ -3357,7 +3392,17 @@ mod tests {
             let row = graph.application(&scheme, vec![], &mut work).unwrap();
             (scheme, row)
         };
-        state.set_local_type(parent_local, TypeKind::I64).unwrap();
+        state
+            .publish_new_expression(
+                parent_expression,
+                super::super::super::prepared::PreparedResolvedExpression::value(
+                    TypeKind::I64,
+                    super::super::super::CheckedTypeSelection::Inferred,
+                    crate::effects::EffectSet::new(),
+                    super::super::super::CheckedExpressionResolution::Structural,
+                ),
+            )
+            .unwrap();
         let child_checkpoint = state.begin_candidate_transaction(&mut work).unwrap();
         state
             .effect_declarations_mut()
@@ -3388,7 +3433,7 @@ mod tests {
 
         let target = state.begin_candidate_transaction(&mut work).unwrap();
         let authority = state.transaction_authority(&target).unwrap();
-        let (error, child) = state
+        let (error, mut child) = state
             .apply_candidate_projection(&authority, child, &mut work)
             .unwrap_err()
             .into_parts();
@@ -3399,6 +3444,7 @@ mod tests {
             )
         ));
         assert!(state.locals().is_empty());
+        assert!(state.expressions().is_empty());
         let row_status = |state: &SemanticFactState| {
             state
                 .prepared_calls()
@@ -3413,14 +3459,23 @@ mod tests {
             Err(PreparedEffectInvariant::StaleReference)
         );
 
+        let retained = state
+            .stage_original_expression(&mut child, parent, parent_expression, None)
+            .unwrap()
+            .expect("the effect writes keep their original projection");
+        assert!(child.expression_update(parent_expression).is_none());
         state
-            .apply_candidate_projections(&authority, vec![child, parent], &mut work)
+            .apply_candidate_projections(&authority, vec![child, retained], &mut work)
             .unwrap();
-        assert_eq!(state.locals().get(&parent_local), Some(&TypeKind::I64));
+        assert_eq!(
+            state.expressions()[&parent_expression].value_type(),
+            Some(&TypeKind::I64)
+        );
         assert_eq!(state.locals().get(&child_local), Some(&TypeKind::Unit));
         row_status(&state).unwrap();
         state.rollback_candidate_transaction(target).unwrap();
         assert!(state.locals().is_empty());
+        assert!(state.expressions().is_empty());
         assert_eq!(
             row_status(&state),
             Err(PreparedEffectInvariant::StaleReference)

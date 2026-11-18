@@ -56,6 +56,12 @@ pub(crate) struct PreparedEffectDelta {
 }
 
 impl PreparedEffectDelta {
+    /// A detached write permit can enter a publication without its probe
+    /// read scope only when no other detached permit supplied its inputs.
+    pub(crate) fn publishes_without_read_scope(&self) -> bool {
+        self.dependencies.is_none()
+    }
+
     pub(crate) fn has_writes(&self) -> bool {
         !self.data.functions.is_empty()
             || !self.data.obligations.is_empty()

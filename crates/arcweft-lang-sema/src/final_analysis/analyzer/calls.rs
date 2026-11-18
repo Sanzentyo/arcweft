@@ -60,7 +60,7 @@ use crate::callable::{
 use crate::final_analysis::CandidateFactTransactionViolation;
 use crate::final_analysis::PreparedProjectNominalTypeValueExpression;
 use crate::final_analysis::type_rules::compact_numeric_element_type as infer_compact_numeric_element_type;
-use crate::types::PreparedEffects;
+use crate::types::{PreparedEffects, TypeProjectionControl};
 
 #[derive(Clone, Copy)]
 struct CallSource<'a> {
@@ -3211,56 +3211,46 @@ impl Analyzer<'_, '_, '_> {
         };
         let (application, consumer, callee_inputs, inputs, sealed_branch, component) =
             transaction.into_parts();
-        let (materialized_projection, mut nested_calls) = match sealed_branch {
-            constraints::AnalyzerCallSealedBranch::Empty => (None, Vec::new()),
+        let mut projections = vec![outer_projection];
+        let mut nested_calls = match sealed_branch {
+            constraints::AnalyzerCallSealedBranch::Empty => Box::new([]),
             constraints::AnalyzerCallSealedBranch::Materialized {
-                projection,
+                projections: materialized,
                 nested_calls,
                 ..
-            } => (Some(projection), nested_calls.into_vec()),
-        };
-        let shared_component = component.shared_component();
-        if let Err(failure) = self.facts.apply_candidate_projection(
-            transaction_authority,
-            outer_projection,
-            &mut preparation_work,
-        ) {
-            self.discard_nested_call_callee_prerequisites(
-                owner,
-                std::mem::take(&mut nested_calls).into_boxed_slice(),
-            )
-            .map_err(CandidateFactOperationFailure::Expression)?;
-            return Err(CandidateFactOperationFailure::Projection(Box::new(failure)));
-        }
-        if let Some(projection) = materialized_projection {
-            if let Err(failure) = self.facts.apply_candidate_projection(
-                transaction_authority,
-                projection,
-                &mut preparation_work,
-            ) {
-                self.discard_nested_call_callee_prerequisites(
-                    owner,
-                    std::mem::take(&mut nested_calls).into_boxed_slice(),
-                )
-                .map_err(CandidateFactOperationFailure::Expression)?;
-                return Err(CandidateFactOperationFailure::Projection(Box::new(failure)));
+            } => {
+                projections.extend(materialized);
+                nested_calls
             }
+        };
+        for nested in &mut nested_calls {
+            preparation_work
+                .visit_binding()
+                .map_err(AnalyzerExpressionError::fatal)?;
+            let prerequisites = nested
+                .recipe
+                .callee_prerequisites
+                .take()
+                .and_then(Arc::into_inner)
+                .ok_or_else(|| AnalyzerExpressionError::Call {
+                    owner: nested.recipe.owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                    )),
+                })?;
+            projections.push(prerequisites);
         }
-        let mut nested_calls = nested_calls.into_iter();
-        while let Some(nested) = nested_calls.next() {
-            if let Err(failure) = self.stage_completed_nested_call(
+        self.facts
+            .apply_candidate_projections(transaction_authority, projections, &mut preparation_work)
+            .map_err(|failure| failure.into_expression_error())?;
+        let shared_component = component.shared_component();
+        for nested in nested_calls.into_vec() {
+            self.stage_completed_nested_call(
                 preparation_work.clone(),
                 nested,
                 Arc::clone(&shared_component),
                 transaction_authority,
-            ) {
-                self.discard_nested_call_callee_prerequisites(
-                    owner,
-                    nested_calls.collect::<Vec<_>>().into_boxed_slice(),
-                )
-                .map_err(CandidateFactOperationFailure::Expression)?;
-                return Err(failure);
-            }
+            )?;
         }
         let record = AnalyzerPreparedCandidateRecord::seal(
             metadata,
@@ -3306,7 +3296,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn stage_completed_nested_call(
         &mut self,
-        mut preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
+        preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
         selected: PreparedSelectedNestedCall,
         component: Arc<
             crate::types::constraints::CompletedConstraintComponent<
@@ -3316,35 +3306,12 @@ impl Analyzer<'_, '_, '_> {
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
     ) -> Result<(), CandidateFactOperationFailure> {
         let PreparedSelectedNestedCall {
-            mut recipe,
+            recipe,
             selection,
             specialization,
             ..
         } = selected;
         let owner = recipe.owner;
-        let callee_prerequisites = recipe.callee_prerequisites.take().ok_or_else(|| {
-            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                    crate::callable::CallConstraintInvariant::MalformedMapperSeal,
-                )),
-            })
-        })?;
-        let callee_prerequisites = Arc::try_unwrap(callee_prerequisites).map_err(|_| {
-            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                    crate::callable::CallConstraintInvariant::MalformedMapperSeal,
-                )),
-            })
-        })?;
-        self.facts
-            .apply_candidate_projection(
-                transaction_authority,
-                callee_prerequisites,
-                &mut preparation_work,
-            )
-            .map_err(|failure| CandidateFactOperationFailure::Projection(Box::new(failure)))?;
         let module = self.module(owner.module()).map_err(|error| {
             CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
         })?;
@@ -3776,30 +3743,19 @@ impl Analyzer<'_, '_, '_> {
             self.discard_candidate_semantic_projection(owner, projection)?;
         }
         let PreparedCandidateSemanticProjection { outer, branch } = primary;
-        let branch_projection = match branch {
-            constraints::AnalyzerCallSealedBranch::Empty => None,
-            constraints::AnalyzerCallSealedBranch::Materialized {
-                projection,
-                nested_calls,
-                ..
-            } => {
-                self.discard_nested_call_callee_prerequisites(owner, nested_calls)?;
-                Some(projection)
-            }
-        };
-        self.facts
-            .apply_candidate_projection(transaction_authority, outer, &mut preparation_work)
-            .map_err(|failure| failure.into_expression_error())?;
-        if let Some(projection) = branch_projection {
-            self.facts
-                .apply_candidate_projection(
-                    transaction_authority,
-                    projection,
-                    &mut preparation_work,
-                )
-                .map_err(|failure| failure.into_expression_error())?;
+        let mut projections = vec![outer];
+        if let constraints::AnalyzerCallSealedBranch::Materialized {
+            projections: materialized,
+            nested_calls,
+            ..
+        } = branch
+        {
+            self.discard_nested_call_callee_prerequisites(owner, nested_calls)?;
+            projections.extend(materialized);
         }
-        Ok(())
+        self.facts
+            .apply_candidate_projections(transaction_authority, projections, &mut preparation_work)
+            .map_err(|failure| failure.into_expression_error())
     }
 
     fn discard_candidate_semantic_projection(
@@ -3871,14 +3827,14 @@ impl Analyzer<'_, '_, '_> {
         branch: constraints::AnalyzerCallSealedBranch,
     ) -> Result<(), AnalyzerExpressionError> {
         if let constraints::AnalyzerCallSealedBranch::Materialized {
-            projection,
+            projections,
             nested_calls,
             ..
         } = branch
         {
             self.discard_nested_call_callee_prerequisites(owner, nested_calls)?;
             self.facts
-                .discard_candidate_projection(projection)
+                .discard_candidate_projections(projections)
                 .map_err(AnalyzerExpressionError::fact)?;
         }
         Ok(())

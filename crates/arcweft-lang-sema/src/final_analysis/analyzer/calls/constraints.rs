@@ -594,7 +594,7 @@ impl AnalyzerPreparedDialoguePatchAdmission {
 pub(in crate::final_analysis::analyzer) enum AnalyzerCallSealedBranch {
     Empty,
     Materialized {
-        projection: CandidateSemanticProjection,
+        projections: Vec<CandidateSemanticProjection>,
         nested_calls: Box<[super::PreparedSelectedNestedCall]>,
         original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedSourceType>,
     },
@@ -613,7 +613,7 @@ impl AnalyzerCallSealedBranch {
             TypeConstraintSourceProtocolInvariant, transaction::SourcePreparationTakeError,
         };
         let Self::Materialized {
-            projection,
+            projections,
             original_values,
             ..
         } = self
@@ -634,7 +634,7 @@ impl AnalyzerCallSealedBranch {
             )),
         };
         let owned = retained
-            .into_owned(work)
+            .into_owned_selected(original_values, work)
             .map_err(|failure| match failure.error {
                 SourcePreparationTakeError::Control(error) => work_failure(failure.source, error),
                 SourcePreparationTakeError::Shared => {
@@ -658,13 +658,21 @@ impl AnalyzerCallSealedBranch {
                 })?;
                 work.visit_binding()
                     .map_err(|error| work_failure(row.source, error))?;
-                facts
-                    .move_isolated_expression(projection, row.preparation, owner, Some(completed))
+                let projection = facts
+                    .stage_original_expression(
+                        projections
+                            .first_mut()
+                            .expect("materialized callback projection"),
+                        row.preparation,
+                        owner,
+                        Some(completed),
+                    )
                     .map_err(|error| {
                         TypeConstraintFailure::client_invariant(
                             AnalyzerCallClientInvariant::fact_transaction(source, error),
                         )
                     })?;
+                projections.extend(projection);
             }
         }
         if !pending.is_empty() {
@@ -687,17 +695,18 @@ impl AnalyzerCallSealedBranch {
             (Self::Empty, Self::Empty) => return None,
             (
                 Self::Materialized {
-                    projection: left,
+                    projections: left,
                     nested_calls: left_calls,
                     original_values: left_originals,
                 },
                 Self::Materialized {
-                    projection: right,
+                    projections: right,
                     nested_calls: right_calls,
                     original_values: right_originals,
                 },
             ) => {
                 if left_originals != right_originals
+                    || left.len() != right.len()
                     || left_calls.len() != right_calls.len()
                     || !left_calls
                         .iter()
@@ -706,7 +715,9 @@ impl AnalyzerCallSealedBranch {
                 {
                     return Some(CallConstraintInvariant::ReplaySealedBranchShapeMismatch);
                 }
-                facts.projection_replay_mismatch(left, right, mode)?
+                left.iter()
+                    .zip(right)
+                    .find_map(|(left, right)| facts.projection_replay_mismatch(left, right, mode))?
             }
             (Self::Empty, Self::Materialized { .. }) | (Self::Materialized { .. }, Self::Empty) => {
                 return Some(CallConstraintInvariant::ReplaySealedBranchShapeMismatch);
@@ -3251,7 +3262,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             return Ok(None);
         };
         Ok(Some(AnalyzerCallSealedBranch::Materialized {
-            projection,
+            projections: vec![projection],
             nested_calls: sealed.nested_calls.into_boxed_slice(),
             original_values: sealed.original_values,
         }))
@@ -6653,8 +6664,8 @@ pub(crate) fn run_prepared_candidate(
     let solved = alternatives
         .into_index_with(selected_index, |discarded| match discarded.sealed_branch {
             AnalyzerCallSealedBranch::Empty => Ok(()),
-            AnalyzerCallSealedBranch::Materialized { projection, .. } => {
-                analyzer.facts.discard_candidate_projection(projection)
+            AnalyzerCallSealedBranch::Materialized { projections, .. } => {
+                analyzer.facts.discard_candidate_projections(projections)
             }
         })
         .map_err(|violation| {
@@ -6779,8 +6790,8 @@ fn discard_completed_candidate_alternatives(
     let discarded = alternatives
         .into_index_with(usize::MAX, |candidate| match candidate.sealed_branch {
             AnalyzerCallSealedBranch::Empty => Ok(()),
-            AnalyzerCallSealedBranch::Materialized { projection, .. } => {
-                analyzer.facts.discard_candidate_projection(projection)
+            AnalyzerCallSealedBranch::Materialized { projections, .. } => {
+                analyzer.facts.discard_candidate_projections(projections)
             }
         })
         .map_err(|violation| {
@@ -8092,9 +8103,12 @@ mod tests {
                     let mut target = facts
                         .extract_callback_fact_scope(target, &mut work)
                         .unwrap();
-                    facts
-                        .move_isolated_expression(&mut target, preparation, owner, None)
-                        .unwrap();
+                    assert!(
+                        facts
+                            .stage_original_expression(&mut target, preparation, owner, None)
+                            .unwrap()
+                            .is_none()
+                    );
                     let transferred = target.expression_update(owner).unwrap().unwrap();
                     assert!(std::ptr::eq(
                         transferred.value_type().unwrap(),

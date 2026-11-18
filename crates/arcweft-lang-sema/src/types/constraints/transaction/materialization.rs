@@ -95,28 +95,48 @@ impl<D: ConstraintDomain> RetainedSourcePreparations<D> {
             })
     }
 
-    /// Take the selected callback allocations in source order. While losing
-    /// observations or an original forest also own a preparation, selection
-    /// cannot move it. A failed check returns the entire original batch.
+    #[cfg(test)]
     pub(crate) fn into_owned<C: crate::effect_row::DecisionControl>(
+        self,
+        control: &mut C,
+    ) -> Result<Box<[OwnedSourcePreparation<D>]>, SourcePreparationTakeFailure<D, C::Error>> {
+        self.into_owned_where(|_| true, control)
+    }
+
+    /// Take only the requested callback allocations in source order. A failed
+    /// uniqueness or accounting check returns the entire original batch.
+    pub(crate) fn into_owned_selected<V, C: crate::effect_row::DecisionControl>(
+        self,
+        selected: &BTreeMap<ConstraintSourceId<D::Source>, V>,
+        control: &mut C,
+    ) -> Result<Box<[OwnedSourcePreparation<D>]>, SourcePreparationTakeFailure<D, C::Error>> {
+        self.into_owned_where(|source| selected.contains_key(&source), control)
+    }
+
+    fn into_owned_where<C: crate::effect_row::DecisionControl>(
         mut self,
+        selected: impl Fn(ConstraintSourceId<D::Source>) -> bool,
         control: &mut C,
     ) -> Result<Box<[OwnedSourcePreparation<D>]>, SourcePreparationTakeFailure<D, C::Error>> {
         use crate::effect_row::DecisionWork;
         for row in &mut self.rows {
             let source = row.source;
-            let error = match control
-                .charge(DecisionWork::Visit)
-                .and_then(|()| control.charge(DecisionWork::Node))
-            {
+            let error = match control.charge(DecisionWork::Visit).and_then(|()| {
+                if selected(source) {
+                    control.charge(DecisionWork::Node).map(|()| true)
+                } else {
+                    Ok(false)
+                }
+            }) {
                 Err(error) => SourcePreparationTakeError::Control(error),
-                Ok(())
+                Ok(false) => continue,
+                Ok(true)
                     if Arc::get_mut(&mut row.observation)
                         .is_some_and(SourceProbeObservation::has_unique_preparation) =>
                 {
                     continue;
                 }
-                Ok(()) => SourcePreparationTakeError::Shared,
+                Ok(true) => SourcePreparationTakeError::Shared,
             };
             return Err(SourcePreparationTakeFailure {
                 source,
@@ -130,6 +150,7 @@ impl<D: ConstraintDomain> RetainedSourcePreparations<D> {
             .rows
             .into_vec()
             .into_iter()
+            .filter(|row| selected(row.source))
             .map(|row| {
                 let observation =
                     Arc::into_inner(row.observation).expect("checked sole observation owner");

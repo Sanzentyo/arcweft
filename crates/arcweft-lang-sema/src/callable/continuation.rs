@@ -655,6 +655,14 @@ impl<P, U> PreparedCallGraphDelta<P, U> {
                 .is_some_and(PreparedRelationDelta::has_writes)
     }
 
+    pub(crate) fn is_isolated_expression_delta(&self) -> bool {
+        self.nodes.is_empty()
+            && !self.effects.has_writes()
+            && self.relation.as_ref().is_none_or(|relation| {
+                !relation.has_writes() || relation.publishes_without_read_scope()
+            })
+    }
+
     /// Returns the exact site/payload-state inventory owned by this affine
     /// delta.  This is the graph owner's preflight projection; analyzer fact
     /// code never reconstructs node state from candidate records.
