@@ -349,49 +349,22 @@ impl PrincipalEffectClosure {
         ))
     }
 
-    fn project_cells<C: DecisionControl>(
-        &self,
-        decision: &Decision,
-        layout: ClassLayout<'_>,
-        work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let mut replacements = BTreeMap::new();
-        for atom in decision.variables() {
-            work.charge(DecisionWork::Visit)?;
-            if let Atom::Cell {
-                scheme,
-                class,
-                mask,
-            } = atom
-            {
-                let original = if *class == 0 {
-                    0
-                } else {
-                    let label = layout
-                        .labels
-                        .get(*class - 1)
-                        .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-                    self.layout
-                        .labels
-                        .binary_search(label)
-                        .map_or(0, |index| index + 1)
-                };
-                let value = self
-                    .coefficients
-                    .get(&Atom::Cell {
-                        scheme: *scheme,
-                        class: original,
-                        mask: *mask,
-                    })
-                    .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-                if !value.is_constant(true) && !value.is_constant(false) {
-                    return Err(PreparedEffectInvariant::UnclosedCell.into());
-                }
-                work.charge(DecisionWork::Node)?;
-                replacements.insert(atom.clone(), Decision::constant(value.is_constant(true)));
-            }
-        }
-        decision.substitute(&replacements, work)
+    fn observation_compilation<'a>(
+        &'a self,
+        labels: &'a [EffectId],
+        parameters: &'a [GenericEffectReference],
+    ) -> Compilation<'a> {
+        let basis = self.layout.view();
+        Compilation::new(
+            &self.graph,
+            ClassLayout { labels, ..basis },
+            FormalOwner::Observation,
+            parameters,
+            ApplicationCells::Solved {
+                basis,
+                coefficients: &self.coefficients,
+            },
+        )
     }
 
     fn require_whole<E>(decision: &Decision) -> Result<(), PreparedEffectFailure<E>> {
@@ -417,21 +390,11 @@ impl PrincipalEffectClosure {
         let mut work = Work(control);
         let (labels, parameters) =
             self.observation_support(&[Root::Predicate(context), Root::Row(row)], &mut work)?;
-        let layout = ClassLayout {
-            labels: &labels,
-            tables: &self.layout.tables,
-            imports: &self.layout.imports,
-        };
-        let mut compilation =
-            Compilation::new(&self.graph, layout, FormalOwner::Observation, &parameters);
-        let context = self.project_cells(
-            &compilation.predicate(context, &mut work)?,
-            layout,
-            &mut work,
-        )?;
+        let mut compilation = self.observation_compilation(&labels, &parameters);
+        let context = compilation.predicate(context, &mut work)?;
         Self::require_whole(&context)?;
         let compiled = compilation.row(row, &mut work)?;
-        let admitted = self.project_cells(&compiled.admitted, layout, &mut work)?;
+        let admitted = compiled.admitted;
         Self::require_whole(&admitted)?;
         let scoped = self.witnesses.and(&context, &mut work)?;
         let possible = scoped.exists(&self.choices, &mut work)?;
@@ -446,9 +409,8 @@ impl PrincipalEffectClosure {
         let mut negative = Vec::new();
         let mut ambiguous = Decision::constant(false);
         for (class, member) in compiled.membership.iter().enumerate() {
-            let member = self.project_cells(member, layout, &mut work)?;
             let on = accepted
-                .and(&member, &mut work)?
+                .and(member, &mut work)?
                 .exists(&self.choices, &mut work)?;
             let off = accepted
                 .and(&member.not(&mut work)?, &mut work)?
@@ -498,24 +460,10 @@ impl PrincipalEffectClosure {
             &[Root::Predicate(context), Root::Predicate(predicate)],
             &mut work,
         )?;
-        let layout = ClassLayout {
-            labels: &labels,
-            tables: &self.layout.tables,
-            imports: &self.layout.imports,
-        };
-        let mut compilation =
-            Compilation::new(&self.graph, layout, FormalOwner::Observation, &parameters);
-        let context = self.project_cells(
-            &compilation.predicate(context, &mut work)?,
-            layout,
-            &mut work,
-        )?;
+        let mut compilation = self.observation_compilation(&labels, &parameters);
+        let context = compilation.predicate(context, &mut work)?;
         Self::require_whole(&context)?;
-        let predicate = self.project_cells(
-            &compilation.predicate(predicate, &mut work)?,
-            layout,
-            &mut work,
-        )?;
+        let predicate = compilation.predicate(predicate, &mut work)?;
         Self::require_whole(&predicate)?;
         let scoped = self.witnesses.and(&context, &mut work)?;
         let possible = scoped.exists(&self.choices, &mut work)?;

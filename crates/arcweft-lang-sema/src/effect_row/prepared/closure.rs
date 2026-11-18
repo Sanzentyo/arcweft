@@ -348,6 +348,17 @@ impl LabelClasses<'_> {
         self.labels.len() + 1
     }
 
+    fn class_in(self, class: usize, basis: LabelClasses<'_>) -> usize {
+        if class == 0 || std::ptr::eq(self.labels, basis.labels) {
+            class
+        } else {
+            basis
+                .labels
+                .binary_search(&self.labels[class - 1])
+                .map_or(0, |index| index + 1)
+        }
+    }
+
     fn at<'a, V: Clone + Ord>(
         self,
         view: EffectMembershipView<'a, V>,
@@ -573,14 +584,13 @@ impl PrincipalEffectClosure {
                 layout.view(),
                 FormalOwner::Scheme(id),
                 function.parameters(),
+                ApplicationCells::Solved {
+                    basis: layout.view(),
+                    coefficients: &coefficients,
+                },
             );
             let parameters = compilation.parameters(work)?;
-            let membership = compilation.application(
-                id,
-                &parameters,
-                ApplicationCells::Solved(&coefficients),
-                work,
-            )?;
+            let membership = compilation.application(id, &parameters, work)?;
             let mut output = Vec::new();
             for decision in membership {
                 let mapped = decision.map_references(work, &mut |atom, _| match atom {

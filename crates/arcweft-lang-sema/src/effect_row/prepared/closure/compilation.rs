@@ -10,8 +10,36 @@ pub(super) struct CompiledRow {
 #[derive(Clone, Copy)]
 pub(super) enum ApplicationCells<'a> {
     Variables,
-    /// Reification applies the same table with its least cells already bound.
-    Solved(&'a BTreeMap<Atom, Decision>),
+    Solved {
+        basis: ClassLayout<'a>,
+        coefficients: &'a BTreeMap<Atom, Decision>,
+    },
+}
+
+impl<'a> ApplicationCells<'a> {
+    fn basis(self, receiving: ClassLayout<'a>) -> ClassLayout<'a> {
+        match self {
+            Self::Variables => receiving,
+            Self::Solved { basis, .. } => basis,
+        }
+    }
+
+    fn complete_import<C: DecisionControl>(
+        self,
+        decision: Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        match self {
+            Self::Variables => Ok(decision),
+            Self::Solved { coefficients, .. } => {
+                let value = decision.substitute(coefficients, work)?;
+                if !value.is_constant(false) && !value.is_constant(true) {
+                    return Err(PreparedEffectInvariant::UnclosedCell.into());
+                }
+                Ok(value)
+            }
+        }
+    }
 }
 
 pub(super) struct Compilation<'a> {
@@ -19,6 +47,7 @@ pub(super) struct Compilation<'a> {
     layout: ClassLayout<'a>,
     owner: FormalOwner,
     parameters: &'a [GenericEffectReference],
+    cells: ApplicationCells<'a>,
     rows: BTreeMap<u64, CompiledRow>,
     predicates: BTreeMap<u64, Decision>,
 }
@@ -29,12 +58,14 @@ impl<'a> Compilation<'a> {
         layout: ClassLayout<'a>,
         owner: FormalOwner,
         parameters: &'a [GenericEffectReference],
+        cells: ApplicationCells<'a>,
     ) -> Self {
         Self {
             graph,
             layout,
             owner,
             parameters,
+            cells,
             rows: BTreeMap::new(),
             predicates: BTreeMap::new(),
         }
@@ -176,7 +207,6 @@ impl<'a> Compilation<'a> {
         &self,
         scheme: u64,
         arguments: &[CompiledRow],
-        cells: ApplicationCells<'_>,
         work: &mut Work<'_, C>,
     ) -> Result<Vec<Decision>, PreparedEffectFailure<C::Error>> {
         let table = *self
@@ -198,28 +228,36 @@ impl<'a> Compilation<'a> {
             ),
             _ => None,
         };
+        let basis = self.cells.basis(self.layout);
         let mut result = Vec::new();
         for class in 0..self.layout.classes() {
+            let basis_class = self
+                .layout
+                .label_classes()
+                .class_in(class, basis.label_classes());
             let mut frontier = Vec::new();
             for mask in 0..table {
-                let cell = Atom::Cell {
-                    scheme,
-                    class,
-                    mask,
-                };
-                let coefficient = match (imported, cells) {
-                    (Some(imported), ApplicationCells::Variables) => {
-                        imported.coefficient(self.layout, class, mask, work)?
+                let coefficient = if let Some(imported) = imported {
+                    let value = imported.coefficient(basis, basis_class, mask, work)?;
+                    self.cells.complete_import(value, work)?
+                } else {
+                    let cell = Atom::Cell {
+                        scheme,
+                        class: basis_class,
+                        mask,
+                    };
+                    match self.cells {
+                        ApplicationCells::Variables => Decision::variable(cell, work)?,
+                        ApplicationCells::Solved { coefficients, .. } => {
+                            let value = coefficients
+                                .get(&cell)
+                                .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+                            if !value.is_constant(false) && !value.is_constant(true) {
+                                return Err(PreparedEffectInvariant::UnclosedCell.into());
+                            }
+                            work.copy_decision(value)?
+                        }
                     }
-                    (Some(imported), ApplicationCells::Solved(coefficients)) => imported
-                        .coefficient(self.layout, class, mask, work)?
-                        .substitute(coefficients, work)?,
-                    (None, ApplicationCells::Variables) => Decision::variable(cell, work)?,
-                    (None, ApplicationCells::Solved(coefficients)) => work.copy_decision(
-                        coefficients
-                            .get(&cell)
-                            .ok_or(PreparedEffectInvariant::UnclosedCell)?,
-                    )?,
                 };
                 frontier.push(coefficient);
             }
@@ -304,13 +342,13 @@ impl<'a> Compilation<'a> {
                             .functions
                             .get(&function.reference().ordinal)
                             .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-                        admitted = admitted.and(&imported.principal(self.layout, work)?, work)?;
+                        let guard = imported.principal(self.cells.basis(self.layout), work)?;
+                        admitted = admitted.and(&self.cells.complete_import(guard, work)?, work)?;
                     }
                     CompiledRow {
                         membership: self.application(
                             function.reference().ordinal,
                             &compiled,
-                            ApplicationCells::Variables,
                             work,
                         )?,
                         admitted,
@@ -540,11 +578,14 @@ impl<'a> Compilation<'a> {
         for id in reachable {
             let term = self.graph.predicates[&id].as_ref();
             let value = match term {
-                PredicateTerm::ImportedPrincipal(imported) => self
-                    .layout
-                    .imports
-                    .relation(imported, work)?
-                    .principal(self.layout, work)?,
+                PredicateTerm::ImportedPrincipal(imported) => {
+                    let guard = self
+                        .layout
+                        .imports
+                        .relation(imported, work)?
+                        .principal(self.cells.basis(self.layout), work)?;
+                    self.cells.complete_import(guard, work)?
+                }
                 PredicateTerm::Substitution {
                     predicate,
                     arguments,

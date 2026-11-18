@@ -48,7 +48,13 @@ fn relation_scope<'g, 's, C: DecisionControl>(
         };
         work.charge(DecisionWork::Node)?;
         entry.insert(RelationScope {
-            compiler: Compilation::new(graph, layout, owner, scope.parameters(graph)),
+            compiler: Compilation::new(
+                graph,
+                layout,
+                owner,
+                scope.parameters(graph),
+                ApplicationCells::Variables,
+            ),
             body: None,
         });
     }
@@ -119,12 +125,7 @@ fn compile_relation<C: DecisionControl>(
                     work.copy_decision(&body.admitted)?
                 } else {
                     let parameters = scoped.compiler.parameters(work)?;
-                    let own = scoped.compiler.application(
-                        *scheme,
-                        &parameters,
-                        ApplicationCells::Variables,
-                        work,
-                    )?;
+                    let own = scoped.compiler.application(*scheme, &parameters, work)?;
                     let mut members = Vec::new();
                     for (left, right) in own.iter().zip(&body.membership) {
                         work.charge(DecisionWork::Node)?;
