@@ -267,7 +267,7 @@ impl Analyzer<'_, '_, '_> {
             .ensure_healthy()
             .map_err(AnalyzerExpressionError::fact)?;
         self.facts
-            .prepared_calls_mut()
+            .prepared_calls()
             .map_err(AnalyzerExpressionError::fact)?
             .prepare_declaration_value(&staged.builder, &candidate, &mut context.work())
             .map_err(FinalSemanticAnalysisError::from)

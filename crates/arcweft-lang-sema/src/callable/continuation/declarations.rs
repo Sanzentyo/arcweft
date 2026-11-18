@@ -9,7 +9,7 @@ use crate::{
     },
     effect_row::prepared::{
         PreparedEffectDeclaration, PreparedEffectFailure, PreparedEffectGraph,
-        PreparedEffectInvariant,
+        PreparedEffectInvariant, PreparedEffectRow,
     },
     effect_row::{DecisionControl, DecisionWork},
 };
@@ -44,6 +44,9 @@ pub(crate) struct PreparedCallableEffectDeclarations {
 pub(crate) struct PreparedCallableEffectDeclaration {
     schema: CallableSignatureSchemaDigest,
     header: PreparedEffectDeclaration,
+    /// Application of this scheme to its own ordered formals. Value uses
+    /// share the live term while body preparation updates its meaning.
+    formal_application: PreparedEffectRow,
 }
 
 impl PreparedCallableEffectDeclaration {
@@ -124,7 +127,7 @@ impl PreparedCallableEffectDeclarations {
     }
 
     fn prepare_callable_arrow<C>(
-        &mut self,
+        &self,
         builder: &CheckedCallableCatalogBuilder,
         candidate: &PreparedResolvedCallable,
         position: CallableParameterCoordinate,
@@ -169,7 +172,7 @@ impl PreparedCallableEffectDeclarations {
     }
 
     fn prepare_declared_arrow<C>(
-        &mut self,
+        &self,
         owner: &CheckedCallableId,
         schema: &CallableSignatureSchema,
         position: CallableParameterCoordinate,
@@ -183,53 +186,24 @@ impl PreparedCallableEffectDeclarations {
         C: crate::types::TypeProjectionControl
             + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
     {
-        use crate::effect_row::prepared::PreparedEffectRow;
-        let header = self
+        let declaration = self
             .declarations
             .get(owner)
             .ok_or(PreparedEffectFailure::Invariant(
                 PreparedEffectInvariant::StaleReference,
-            ))?
+            ))?;
+        declaration
             .validate_schema(schema)
-            .map_err(PreparedEffectFailure::Invariant)?;
-        header
+            .map_err(PreparedEffectFailure::Invariant)?
             .validate(&self.graph)
             .map_err(PreparedEffectFailure::Invariant)?;
-        let mut checkpoint = self.graph.checkpoint(control)?;
-        let prepared = (|| {
-            let mut arguments = Vec::new();
-            for parameter in header.parameters() {
-                control
-                    .charge(DecisionWork::Node)
-                    .map_err(PreparedEffectFailure::Control)?;
-                arguments.push(PreparedEffectRow::Canonical(
-                    crate::effect_row::EffectRow::open(
-                        crate::effects::EffectSet::new(),
-                        parameter.clone(),
-                    ),
-                ));
-            }
-            let row = self
-                .graph
-                .application(header.scheme(), arguments, control)?;
-            Ok(schema.prepare_function_type_with_result_from_position(
-                position,
-                &row,
-                result,
-                &self.graph,
-                control,
-            )?)
-        })();
-        if prepared.is_ok() {
-            self.graph
-                .commit(&checkpoint)
-                .map_err(PreparedEffectFailure::Invariant)?;
-        } else {
-            self.graph
-                .rollback(&mut checkpoint)
-                .map_err(PreparedEffectFailure::Invariant)?;
-        }
-        prepared
+        Ok(schema.prepare_function_type_with_result_from_position(
+            position,
+            &declaration.formal_application,
+            result,
+            &self.graph,
+            control,
+        )?)
     }
 
     fn prepare_known_arrow<C>(
@@ -252,7 +226,7 @@ impl PreparedCallableEffectDeclarations {
             .map_err(PreparedEffectFailure::Control)?;
         Ok(schema.prepare_function_type_with_result_from_position(
             position,
-            &crate::effect_row::prepared::PreparedEffectRow::Canonical(row),
+            &PreparedEffectRow::Canonical(row),
             result,
             &self.graph,
             control,
@@ -283,6 +257,19 @@ impl PreparedCallableEffectDeclarations {
             let scheme =
                 graph.declare_borrowed_domain(parameters, schema.effect_predicate(), control)?;
             let header = graph.declaration(&scheme, control)?;
+            let mut arguments = Vec::new();
+            for parameter in header.parameters() {
+                control
+                    .charge(DecisionWork::Node)
+                    .map_err(PreparedEffectFailure::Control)?;
+                arguments.push(PreparedEffectRow::Canonical(
+                    crate::effect_row::EffectRow::open(
+                        crate::effects::EffectSet::new(),
+                        parameter.clone(),
+                    ),
+                ));
+            }
+            let formal_application = graph.application(header.scheme(), arguments, control)?;
             control
                 .charge(DecisionWork::Node)
                 .map_err(PreparedEffectFailure::Control)?;
@@ -291,6 +278,7 @@ impl PreparedCallableEffectDeclarations {
                 PreparedCallableEffectDeclaration {
                     schema: schema.semantic_digest(),
                     header,
+                    formal_application,
                 },
             );
         }
@@ -331,7 +319,7 @@ impl<P, U> PreparedCallGraph<P, U> {
     }
 
     pub(crate) fn prepare_declaration_value<C>(
-        &mut self,
+        &self,
         builder: &CheckedCallableCatalogBuilder,
         candidate: &PreparedResolvedCallable,
         control: &mut C,
@@ -352,7 +340,7 @@ impl<P, U> PreparedCallGraph<P, U> {
                 .map_err(PreparedEffectFailure::Control)?;
         }
         self.declarations
-            .as_mut()
+            .as_ref()
             .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)?
             .prepare_callable_arrow(
                 builder,
@@ -364,7 +352,7 @@ impl<P, U> PreparedCallGraph<P, U> {
     }
 
     pub(crate) fn prepare_application_result<C>(
-        &mut self,
+        &self,
         builder: &crate::callable::CheckedCallableCatalogBuilder,
         candidate: &super::super::PreparedResolvedCallable,
         mapping: &crate::callable::PreparedCallArgumentMapping,
@@ -406,7 +394,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         };
         let declarations = self
             .declarations
-            .as_mut()
+            .as_ref()
             .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)?;
         let value =
             declarations.prepare_callable_arrow(builder, candidate, next, terminal, control)?;

@@ -371,12 +371,15 @@ mod tests {
         let mut graph = PreparedCallGraph::<(), ()>::default();
         graph.initialize_effect_declarations(declarations).unwrap();
 
+        let probe = graph.begin_delta(&mut control).unwrap();
         let pending = graph
             .prepare_application_result(&builder, &candidate, &mapping, &mut control)
             .unwrap();
         let pending_value = graph
             .prepare_declaration_value(&builder, &candidate, &mut control)
             .unwrap();
+        let probe = graph.extract_delta(probe, &mut control).unwrap();
+        assert!(!probe.has_writes());
         let exposed = analysis
             .checked_callables()
             .callable(id)
@@ -399,6 +402,7 @@ mod tests {
         let cached_value = graph
             .prepare_declaration_value(&builder, &candidate, &mut control)
             .unwrap();
+        assert_eq!(pending_value, cached_value);
 
         let (effects_graph, headers) = graph.effect_declarations_mut().unwrap().relation();
         let header = headers.get(id).unwrap().validate_schema(schema).unwrap();

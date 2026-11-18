@@ -5116,7 +5116,7 @@ impl Analyzer<'_, '_, '_> {
         })?;
         let application_result = self
             .facts
-            .prepared_calls_mut()
+            .prepared_calls()
             .map_err(AnalyzerExpressionError::fact)?
             .prepare_application_result(
                 &staged.builder,
