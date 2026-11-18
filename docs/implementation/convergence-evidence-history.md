@@ -19318,3 +19318,13 @@ Source `fc9391728cdbeabfa262d7ea4d0e54e464cbe88d`。基点は `649750493c511846c
 Compilerの同じ2 target・152 IDは149成功・3失敗・0スキップ。遅延コールバックは正準式での元の制約の照合中、captured Mapは適用の述語準備中、retained Mapは準備済み型の正準化中に作業上限に達した。計測用差分を取り除いて検証した。fmtと構造ゲートは終了0。Semaのlocked全feature checkはライブラリのコンパイル成功、lib testは終了101・863エラー・33警告。過去の全feature checkと比較したエラーコードと発生ファイルの組は、マクロの呼出し元へ正規化した上で一致した。Semaユニットテスト、追加の逆依存テスト、Clippy、workspaceおよびNative／Webの最終受入は未実行。CARGO_INCREMENTAL=0。targetは7,981,944,323 bytes。
 
 [検証原本・候補別の計測・診断JSON・公開照合](acceptance-evidence/task-retain-original-constraint.raw.zip) は 31 entry、736635 bytes、SHA256 `27dd690c6bb61a78a9bac7dbf9ca8a5bfb6332fe170edae03d65f7772b5597cb`。各entryの長さとSHA256を再照合した。既存履歴 3020009 bytesのSHA256 `93f929a75ef53c1929c3004847e98ad1452f3c84955dc7a1ffd90a0817b16c8e` をprefixとして保持した。
+
+
+<a id="sema-fixture-graph"></a>
+## 2026-11-19 — 制約テストの作用グラフを移行
+
+Source `cc1843b84444daa2a7acacac64f9bc618ed28470`。基点は `3aed438f8129dbd6070ce805533cef0528be7856`。共通transaction fixtureはコンテキストと同じ作用グラフを使い、入力型を準備してから制約・結果・投影を処理する。定数解の検証はその経路の元の作用制約を照合し、継続先は独自のグラフで受け取る。既存の検査条件と制限値は維持した。テストのみ1ファイル、純増131行。構造ゲートの既存サイズレビュー対象で、同じ制約プロトコルを検証するテストの所有範囲に収まる。
+
+`CARGO_INCREMENTAL=0` で `cargo check --locked -p arcweft-lang-sema --tests --all-features --message-format=json` を実行した。通常ライブラリのコンパイル成果物を確認した。lib testは終了101、829エラー・33警告。比較元 `fc9391728cdbeabfa262d7ea4d0e54e464cbe88d` の863件から34件減った。エラーコードと発生ファイルの比較で変化したのは `types/constraints/tests.rs` のE0061のみで、161件から127件になった。残るエラーのためユニットテストは未実行。fmt、差分チェック、構造ゲートは終了0で、構造ゲートの阻害は0件。Compiler統合テストと全workspace受入は再実行していない。
+
+[検証原本・診断JSON・公開照合](acceptance-evidence/task-sema-fixture-graph.raw.zip) は9 entry、379167 bytes、SHA256 `8d8790e31ebd9ca57157b616684c7db37e0e958ea6af39538951453b6a4ffe55`。各原本をZIP内部のハッシュと照合し、公開済みRust blobを検証入力と照合した。既存履歴3,022,767 bytesをそのまま保持した。
