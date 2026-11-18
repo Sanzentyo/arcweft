@@ -5329,9 +5329,7 @@ impl AnalyzerPreparedCandidateRecord {
     }
 
     /// Actual value slots sealed by this application's selected type solution.
-    pub(crate) fn value_inputs(
-        &self,
-    ) -> impl Iterator<Item = (ExprId, &TypeKind<crate::types::PreparedEffects>)> {
+    pub(crate) fn value_inputs(&self) -> impl Iterator<Item = (ExprId, &TypeKind)> {
         self.component.sources().selected().filter_map(|probe| {
             let source = match probe.source().local() {
                 AnalyzerCallConstraintSource::Receiver { source }
@@ -5347,6 +5345,15 @@ impl AnalyzerPreparedCandidateRecord {
 
     pub(crate) fn function_value_origin(&self) -> Option<&PreparedFunctionValueOriginEvidence> {
         self.metadata.function_value_origin.as_ref()
+    }
+
+    pub(crate) fn function_value_callee(
+        &self,
+    ) -> Option<&crate::callable::PreparedCallValueOperand> {
+        let PreparedCallCalleeConstraintInputs::FunctionValue(operand) = &self.callee_inputs else {
+            return None;
+        };
+        Some(operand)
     }
 
     pub(crate) fn into_parts(self) -> AnalyzerPreparedCandidateRecordParts {

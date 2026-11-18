@@ -18,8 +18,8 @@ use crate::{
     final_analysis::{FinalSemanticAnalysisControl, FinalSemanticAnalysisError},
     nominal::NominalResolutionLimits,
     types::{
-        ArrayLength, GenericParameterOwnerId, TypeKind, TypeProjectionControl,
-        TypeProjectionNodeKind,
+        ArrayLength, GenericParameterOwnerId, GenericTypeReference, ScopedType, TypeEffectDomain,
+        TypeKind, TypeProjectionControl, TypeProjectionNodeKind,
     },
 };
 
@@ -56,6 +56,29 @@ impl StoredType {
 struct DeclarationStorage {
     stored: StoredType,
     dependents: BTreeSet<ProjectNominalDeclarationId>,
+}
+
+/// Only type parameters and array lengths can change a body's stored shape.
+/// Callable signatures are leaves here; their captured values have their own owners.
+pub(super) trait BodyStorageSubstitution {
+    fn project_reference(
+        &self,
+        reference: &GenericTypeReference,
+        query: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<Option<ScopedType>, FinalSemanticAnalysisError>;
+
+    fn is_empty_array(
+        &self,
+        length: &ArrayLength,
+        query: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<bool, FinalSemanticAnalysisError>;
+}
+
+#[derive(Clone, Copy)]
+enum StorageScope<'a> {
+    Value,
+    Declaration(&'a ProjectNominalDeclarationId),
+    Body(&'a dyn BodyStorageSubstitution),
 }
 
 pub(super) struct ReceiverBorrowQuery<'a> {
@@ -102,13 +125,15 @@ impl<'a> ReceiverBorrowQuery<'a> {
         }
     }
 
-    pub(super) fn storage(
+    pub(super) fn storage<D: TypeEffectDomain>(
         &mut self,
-        root: &TypeKind,
+        root: &TypeKind<D>,
         types: &BTreeMap<TypeId, TypeKind>,
+        substitution: Option<&dyn BodyStorageSubstitution>,
     ) -> Result<TypeStorage, FinalSemanticAnalysisError> {
+        let scope = substitution.map_or(StorageScope::Value, StorageScope::Body);
         loop {
-            let direct = self.inspect(root, None, 1)?.direct;
+            let direct = self.inspect(root, scope, 1)?.direct;
             if direct == TypeStorage::Borrowed || self.pending.is_empty() {
                 return Ok(direct);
             }
@@ -209,7 +234,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
             let ty = types
                 .get(&ty)
                 .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: ty })?;
-            stored.include(self.inspect(ty, Some(owner), 1)?);
+            stored.include(self.inspect(ty, StorageScope::Declaration(owner), 1)?);
         }
         Ok(())
     }
@@ -218,10 +243,10 @@ impl<'a> ReceiverBorrowQuery<'a> {
         clippy::too_many_lines,
         reason = "one exhaustive type storage projection"
     )]
-    fn inspect(
+    fn inspect<D: TypeEffectDomain>(
         &mut self,
-        ty: &TypeKind,
-        owner: Option<&ProjectNominalDeclarationId>,
+        ty: &TypeKind<D>,
+        scope: StorageScope<'_>,
         depth: u16,
     ) -> Result<StoredType, FinalSemanticAnalysisError> {
         self.charge(1)?;
@@ -235,13 +260,22 @@ impl<'a> ReceiverBorrowQuery<'a> {
                 stored.direct = TypeStorage::Borrowed
             }
             TypeKind::Function { .. } => stored.direct = TypeStorage::Callable,
-            TypeKind::GenericParam(reference) => {
-                if let Some(parameter) = reference.free_parameter()
-                    && matches!(parameter.owner(), GenericParameterOwnerId::Nominal(id) if Some(id) == owner)
-                {
-                    stored.parameters.insert(parameter.ordinal());
+            TypeKind::GenericParam(reference) => match scope {
+                StorageScope::Value => {}
+                StorageScope::Declaration(owner) => {
+                    if let Some(parameter) = reference.free_parameter()
+                        && matches!(parameter.owner(), GenericParameterOwnerId::Nominal(id) if id == owner)
+                    {
+                        stored.parameters.insert(parameter.ordinal());
+                    }
                 }
-            }
+                StorageScope::Body(substitution) => {
+                    if let Some(projected) = substitution.project_reference(reference, self)? {
+                        stored =
+                            self.inspect(projected.view().value(), StorageScope::Value, depth)?;
+                    }
+                }
+            },
             TypeKind::ProjectNominal(nominal) => {
                 let id = nominal.declaration();
                 let row = match self.declarations.entry(id.clone()) {
@@ -251,7 +285,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
                         entry.insert(DeclarationStorage::default())
                     }
                 };
-                if let Some(owner) = owner {
+                if let StorageScope::Declaration(owner) = scope {
                     row.dependents.insert(owner.clone());
                 }
                 stored.direct = row.stored.direct;
@@ -262,7 +296,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
                             .arguments()
                             .get(usize::from(ordinal))
                             .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-                        stored.include(self.inspect(argument, owner, child)?);
+                        stored.include(self.inspect(argument, scope, child)?);
                         if stored.direct == TypeStorage::Borrowed {
                             break;
                         }
@@ -270,17 +304,24 @@ impl<'a> ReceiverBorrowQuery<'a> {
                 }
             }
             TypeKind::Array { item, len } => {
-                if !matches!(len, ArrayLength::Const(0)) {
-                    stored = self.inspect(item, owner, child)?;
+                let empty = match (len, scope) {
+                    (ArrayLength::Const(0), _) => true,
+                    (ArrayLength::Generic(_), StorageScope::Body(substitution)) => {
+                        substitution.is_empty_array(len, self)?
+                    }
+                    _ => false,
+                };
+                if !empty {
+                    stored = self.inspect(item, scope, child)?;
                 }
             }
             TypeKind::Option(item)
             | TypeKind::Range(item)
             | TypeKind::Shared(item)
             | TypeKind::Traversal { source: item, .. }
-            | TypeKind::Vec(item) => stored = self.inspect(item, owner, child)?,
+            | TypeKind::Vec(item) => stored = self.inspect(item, scope, child)?,
             TypeKind::FixedVector(vector) => {
-                stored = self.inspect(vector.component(), owner, child)?;
+                stored = self.inspect(vector.component(), scope, child)?;
             }
             TypeKind::Map {
                 key: first,
@@ -291,14 +332,14 @@ impl<'a> ReceiverBorrowQuery<'a> {
                 ok: first,
                 error: second,
             } => {
-                stored = self.inspect(first, owner, child)?;
+                stored = self.inspect(first, scope, child)?;
                 if stored.direct != TypeStorage::Borrowed {
-                    stored.include(self.inspect(second, owner, child)?);
+                    stored.include(self.inspect(second, scope, child)?);
                 }
             }
             TypeKind::Choice(items) | TypeKind::Tuple(items) => {
                 for item in items {
-                    stored.include(self.inspect(item, owner, child)?);
+                    stored.include(self.inspect(item, scope, child)?);
                     if stored.direct == TypeStorage::Borrowed {
                         break;
                     }
@@ -306,7 +347,7 @@ impl<'a> ReceiverBorrowQuery<'a> {
             }
             TypeKind::VariantPayload(payload) => {
                 for field in payload.stored_fields() {
-                    stored.include(self.inspect(field, owner, child)?);
+                    stored.include(self.inspect(field, scope, child)?);
                     if stored.direct == TypeStorage::Borrowed {
                         break;
                     }

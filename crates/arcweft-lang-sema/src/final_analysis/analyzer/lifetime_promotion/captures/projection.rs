@@ -15,16 +15,46 @@ use crate::{
     effect_row::EffectRow,
     final_analysis::PreparedExpressionFact,
     types::{
-        ArrayLength, GenericScope, ScopedArrayLengthView, ScopedType, ScopedTypeView, TypeKind,
-        TypeProjectionError,
+        ArrayLength, GenericScope, GenericTypeReference, ScopedArrayLengthView, ScopedType,
+        ScopedTypeView, TypeEffectDomain, TypeKind, TypeProjectionError,
     },
 };
 
+use super::super::receiver::BodyStorageSubstitution;
 use super::{
     Analyzer, FinalSemanticAnalysisError, ReceiverBorrowQuery, TypeStorage, call_storage_error,
     storage_projection_error,
     worklist::{ApplicationStorage, BodyProjection},
 };
+
+struct LexicalStorageSubstitution<'a, 'project, 'catalog, 'control> {
+    analyzer: &'a Analyzer<'project, 'catalog, 'control>,
+    projections: &'a [BodyProjection],
+}
+
+impl BodyStorageSubstitution for LexicalStorageSubstitution<'_, '_, '_, '_> {
+    fn project_reference(
+        &self,
+        reference: &GenericTypeReference,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<Option<ScopedType>, FinalSemanticAnalysisError> {
+        self.analyzer.project_type_chain(
+            &TypeKind::GenericParam(reference.clone()),
+            &GenericScope::default(),
+            self.projections,
+            receiver,
+        )
+    }
+
+    fn is_empty_array(
+        &self,
+        length: &ArrayLength,
+        receiver: &mut ReceiverBorrowQuery<'_>,
+    ) -> Result<bool, FinalSemanticAnalysisError> {
+        self.analyzer
+            .project_zero_length(length, self.projections, receiver)
+    }
+}
 
 impl Analyzer<'_, '_, '_> {
     pub(super) fn value_specialization(
@@ -60,20 +90,24 @@ impl Analyzer<'_, '_, '_> {
                         .record()
                         .function_value_origin()
                         .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-                    let callee = origin.callee();
-                    let Some(source @ TypeKind::Function { binder, .. }) = self
-                        .facts
-                        .expressions()
-                        .get(&callee)
-                        .and_then(PreparedExpressionFact::value_type)
-                    else {
-                        return Ok(None);
+                    let callee = prefix
+                        .record()
+                        .function_value_callee()
+                        .filter(|callee| callee.source() == origin.callee())
+                        .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                    let source = callee.observed();
+                    let TypeKind::Function { binder, .. } = source else {
+                        return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
                     };
                     if binder.is_empty() {
                         return Ok(None);
                     }
                     application
-                        .function_input_specialization_with_control(callee, source, receiver)
+                        .function_input_specialization_with_control(
+                            callee.source(),
+                            source,
+                            receiver,
+                        )
                         .map(Some)
                         .map_err(|error| match error {
                             FunctionSpecializationSealFailure::Invariant(error) => {
@@ -210,24 +244,21 @@ impl Analyzer<'_, '_, '_> {
         })
     }
 
-    pub(super) fn inspect_value_storage(
+    pub(super) fn inspect_value_storage<D: TypeEffectDomain>(
         &self,
-        ty: &TypeKind,
+        ty: &TypeKind<D>,
         projections: &[BodyProjection],
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<TypeStorage, FinalSemanticAnalysisError> {
-        let projected = self.project_value_storage(ty, projections, receiver)?;
-        let ty = projected.as_ref().map_or(ty, |term| term.view().value());
-        receiver.storage(ty, &self.types)
-    }
-
-    pub(super) fn project_value_storage(
-        &self,
-        ty: &TypeKind,
-        projections: &[BodyProjection],
-        receiver: &mut ReceiverBorrowQuery<'_>,
-    ) -> Result<Option<ScopedType>, FinalSemanticAnalysisError> {
-        self.project_type_chain(ty, &GenericScope::default(), projections, receiver)
+        let substitution = LexicalStorageSubstitution {
+            analyzer: self,
+            projections,
+        };
+        receiver.storage(
+            ty,
+            &self.types,
+            (!projections.is_empty()).then_some(&substitution as &dyn BodyStorageSubstitution),
+        )
     }
 
     pub(super) fn project_type_chain(

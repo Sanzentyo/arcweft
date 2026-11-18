@@ -19,6 +19,7 @@ use arcweft_lang_hir::item::{
     HirAttachedContentPresence, HirCallableAttachedContentParameter, HirCapabilityMember,
     HirImplMember, HirTraitMember,
 };
+use arcweft_lang_hir::symbol::nominal::{ProjectNominalDeclaration, ProjectNominalField};
 
 use super::entities::EntityReferenceResolutionError;
 
@@ -255,6 +256,38 @@ impl Analyzer<'_, '_, '_> {
             )
             .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)
         })
+    }
+
+    pub(super) fn record_pattern_field_coordinate(
+        &self,
+        module: &HirModule,
+        owner: PatternId,
+        path: &HirPatternRecordPath,
+        ty: &TypeKind<crate::types::PreparedEffects>,
+        name: &super::HirName,
+        work: &mut impl crate::types::TypeProjectionControl<Error = FinalSemanticAnalysisError>,
+    ) -> Result<Option<PreparedRecordPatternFieldCoordinate>, FinalSemanticAnalysisError> {
+        let field = match ty {
+            TypeKind::ProjectNominal(nominal) => {
+                let (_, fields) =
+                    project_record_pattern_fields(self.symbols, module, owner, path, nominal)?;
+                for _ in fields {
+                    work.visit_binding()?;
+                }
+                project_record_pattern_field(fields.iter().map(|field| (field, ())), owner, name)?.0
+            }
+            TypeKind::VariantPayload(payload) => {
+                let fields = variant_record_pattern_fields(payload, owner, path)?;
+                for _ in fields {
+                    work.visit_binding()?;
+                }
+                PreparedRecordPatternFieldCoordinate::new(
+                    variant_record_pattern_field(fields, owner, name)?.ordinal(),
+                )
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(field))
     }
 
     pub(super) fn seed_contextual_pattern_locals(
@@ -646,15 +679,13 @@ impl ResolvedRecordPatternSchema<'_> {
     ) -> Result<ResolvedRecordPatternField, FinalSemanticAnalysisError> {
         match self {
             Self::Project { fields, .. } => {
-                let (declaration_ordinal, (_, ty)) = fields
-                    .iter()
-                    .enumerate()
-                    .find(|(_, (field, _))| field.name().as_str() == name.as_str())
-                    .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
-                let declaration_ordinal = u32::try_from(declaration_ordinal)
-                    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                let (identity, ty) = project_record_pattern_field(
+                    fields.iter().map(|(field, ty)| (*field, ty)),
+                    owner,
+                    name,
+                )?;
                 Ok(ResolvedRecordPatternField {
-                    identity: PreparedRecordPatternFieldCoordinate::new(declaration_ordinal),
+                    identity,
                     ty: context.source.retain_prepared(owner, ty, graph)?,
                 })
             }
@@ -668,10 +699,7 @@ impl ResolvedRecordPatternSchema<'_> {
                 })
             }
             Self::VariantPayload { fields, .. } => {
-                let field = fields
-                    .iter()
-                    .find(|field| field.diagnostic_name() == name.as_str())
-                    .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+                let field = variant_record_pattern_field(fields, owner, name)?;
                 Ok(ResolvedRecordPatternField {
                     identity: PreparedRecordPatternFieldCoordinate::new(field.ordinal()),
                     ty: context.source.retain_prepared(owner, field.ty(), graph)?,
@@ -679,6 +707,34 @@ impl ResolvedRecordPatternSchema<'_> {
             }
         }
     }
+}
+
+fn project_record_pattern_field<'a, T>(
+    fields: impl Iterator<Item = (&'a ProjectNominalField, T)>,
+    owner: PatternId,
+    name: &super::HirName,
+) -> Result<(PreparedRecordPatternFieldCoordinate, T), FinalSemanticAnalysisError> {
+    let (ordinal, (_, value)) = fields
+        .enumerate()
+        .find(|(_, (field, _))| field.name().as_str() == name.as_str())
+        .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+    let ordinal =
+        u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+    Ok((PreparedRecordPatternFieldCoordinate::new(ordinal), value))
+}
+
+fn variant_record_pattern_field<'a>(
+    fields: &'a [crate::types::VariantPayloadRecordTypeField<crate::types::PreparedEffects>],
+    owner: PatternId,
+    name: &super::HirName,
+) -> Result<
+    &'a crate::types::VariantPayloadRecordTypeField<crate::types::PreparedEffects>,
+    FinalSemanticAnalysisError,
+> {
+    fields
+        .iter()
+        .find(|field| field.diagnostic_name() == name.as_str())
+        .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })
 }
 
 pub(super) fn seed_pattern_locals(
@@ -996,6 +1052,54 @@ fn insert_local_type(
     Ok(())
 }
 
+fn project_record_pattern_fields<'a>(
+    symbols: &'a ProjectSymbolTable,
+    module: &HirModule,
+    owner: PatternId,
+    path: &HirPatternRecordPath,
+    nominal: &ProjectNominalType<crate::types::PreparedEffects>,
+) -> Result<(&'a ProjectNominalDeclaration, &'a [ProjectNominalField]), FinalSemanticAnalysisError>
+{
+    let declaration = match path {
+        HirPatternRecordPath::Absent => symbols.nominal(nominal.declaration()),
+        HirPatternRecordPath::Resolved(path) => match symbols
+            .resolve_hir_type_target(module.key().path(), path, pattern_span(module, owner)?)
+            .map_err(|_| FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?
+        {
+            ProjectTypeTarget::Nominal(declaration) => Some(declaration),
+            ProjectTypeTarget::External(_) => None,
+        },
+        HirPatternRecordPath::Recovered(_) => {
+            return Err(FinalSemanticAnalysisError::RecoveredOwner);
+        }
+    }
+    .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+    if declaration.id() != nominal.declaration() {
+        return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+    }
+    let ProjectNominalBody::Struct { fields } = declaration.body() else {
+        return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+    };
+    Ok((declaration, fields))
+}
+
+fn variant_record_pattern_fields<'a>(
+    payload: &'a crate::types::VariantPayloadType<crate::types::PreparedEffects>,
+    owner: PatternId,
+    path: &HirPatternRecordPath,
+) -> Result<
+    &'a [crate::types::VariantPayloadRecordTypeField<crate::types::PreparedEffects>],
+    FinalSemanticAnalysisError,
+> {
+    if !matches!(path, HirPatternRecordPath::Absent) {
+        return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+    }
+    payload
+        .shape()
+        .record_fields()
+        .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })
+}
+
 fn resolve_record_pattern_schema<'a>(
     context: PatternSeedContext<'a>,
     graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
@@ -1005,31 +1109,13 @@ fn resolve_record_pattern_schema<'a>(
 ) -> Result<ResolvedRecordPatternSchema<'a>, FinalSemanticAnalysisError> {
     match ty {
         TypeKind::ProjectNominal(nominal) => {
-            let declaration = match path {
-                HirPatternRecordPath::Absent => context.symbols.nominal(nominal.declaration()),
-                HirPatternRecordPath::Resolved(path) => match context
-                    .symbols
-                    .resolve_hir_type_target(
-                        context.module.key().path(),
-                        path,
-                        pattern_span(context.module, owner)?,
-                    )
-                    .map_err(|_| FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?
-                {
-                    ProjectTypeTarget::Nominal(declaration) => Some(declaration),
-                    ProjectTypeTarget::External(_) => None,
-                },
-                HirPatternRecordPath::Recovered(_) => {
-                    return Err(FinalSemanticAnalysisError::RecoveredOwner);
-                }
-            }
-            .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
-            if declaration.id() != nominal.declaration() {
-                return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
-            }
-            let ProjectNominalBody::Struct { fields } = declaration.body() else {
-                return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
-            };
+            let (declaration, fields) = project_record_pattern_fields(
+                context.symbols,
+                context.module,
+                owner,
+                path,
+                nominal,
+            )?;
             context.source.with_nominal_type_arguments(
                 owner,
                 declaration,
@@ -1053,13 +1139,7 @@ fn resolve_record_pattern_schema<'a>(
             )
         }
         TypeKind::VariantPayload(payload) => {
-            if !matches!(path, HirPatternRecordPath::Absent) {
-                return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
-            }
-            let fields = payload
-                .shape()
-                .record_fields()
-                .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+            let fields = variant_record_pattern_fields(payload, owner, path)?;
             Ok(ResolvedRecordPatternSchema::VariantPayload { ty, fields })
         }
         _ => {

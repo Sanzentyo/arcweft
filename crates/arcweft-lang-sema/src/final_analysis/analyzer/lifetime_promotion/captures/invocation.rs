@@ -124,7 +124,7 @@ impl Analyzer<'_, '_, '_> {
                 )
                 .map(Some);
         }
-        let Some(fact) = fact.complete() else {
+        let PreparedExpressionFact::Resolved(fact) = fact else {
             return Ok(None);
         };
         if let CheckedExpressionResolution::Closure(closure) = fact.resolution() {
@@ -174,7 +174,17 @@ impl Analyzer<'_, '_, '_> {
                     };
                     (call.caller, witness)
                 };
-                if fact.source_value_type() != Some(witness.source_type()) {
+                let source_type = fact.source_value_type().ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: producer },
+                )?;
+                let observed = self
+                    .source_type_preparation(context.work())?
+                    .observe_canonical(
+                        producer,
+                        source_type,
+                        self.facts.effect_declarations()?.read(),
+                    )?;
+                if &observed != witness.source_type() {
                     return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
                 }
                 source.parent = Some(parent);
@@ -644,8 +654,10 @@ impl Analyzer<'_, '_, '_> {
                         StorageProjection::Carrier(carrier)
                     } else {
                         StorageProjection::VariantPayload(StorageProjection::enum_payload_case(
+                            *child,
                             payload,
                             self.symbols,
+                            receiver,
                         )?)
                     };
                     selected.push(selection);
@@ -731,39 +743,38 @@ impl Analyzer<'_, '_, '_> {
             .patterns()
             .get(&pattern)
             .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
-        if !matches!(
-            ty,
-            TypeKind::ProjectNominal(_) | TypeKind::VariantPayload(_)
-        ) {
+        let (name, source) = match fields.get(source_ordinal as usize) {
+            Some(HirPatternField::Explicit { name, pattern }) => {
+                (name, PreparedRecordPatternSource::Pattern(*pattern))
+            }
+            Some(HirPatternField::Shorthand { name, local }) => {
+                (name, PreparedRecordPatternSource::Binding(*local))
+            }
+            _ => return Err(FinalSemanticAnalysisError::InvalidOwner),
+        };
+        let Some(coordinate) =
+            self.record_pattern_field_coordinate(module, pattern, path, ty, name, receiver)?
+        else {
             return Ok(None);
-        }
-        receiver.charge(fields.len() as u64)?;
-        let prepared = self.prepare_record_pattern(
-            &self.published_expression_context(),
-            module,
-            pattern,
-            path,
-            fields,
-            ty,
-        )?;
-        let field = prepared
-            .fields()
-            .iter()
-            .find(|field| field.source_ordinal() == source_ordinal)
-            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-        let ordinal = field.coordinate().declaration_ordinal();
+        };
+        let ordinal = coordinate.declaration_ordinal();
         let selection = match ty {
             TypeKind::ProjectNominal(nominal) => StorageProjection::Field {
                 nominal: nominal.declaration().clone(),
                 ordinal,
             },
             TypeKind::VariantPayload(payload) => StorageProjection::VariantField {
-                case: StorageProjection::enum_payload_case(payload, self.symbols)?,
+                case: StorageProjection::enum_payload_case(
+                    pattern,
+                    payload,
+                    self.symbols,
+                    receiver,
+                )?,
                 ordinal,
             },
             _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
         };
-        Ok(Some((selection, field.source())))
+        Ok(Some((selection, source)))
     }
 }
 

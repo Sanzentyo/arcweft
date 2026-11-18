@@ -6,7 +6,7 @@ use std::{
 };
 
 use arcweft_lang_hir::{
-    identity::{ExprId, ItemId},
+    identity::{ExprId, ItemId, PatternId},
     symbol::{ProjectSymbolTable, nominal::ProjectNominalDeclarationId},
 };
 
@@ -16,7 +16,10 @@ use crate::{
         EnumVariantSignatureId, SpecializedDeclarationProjection,
     },
     final_analysis::CheckedTryCarrier,
-    types::{TypeKind, TypeProjectionControl, TypeProjectionNodeKind, VariantPayloadType},
+    types::{
+        GenericScope, PreparedEffects, TypeEffectDomain, TypeKind, TypeProjectionControl,
+        TypeProjectionNodeKind, VariantPayloadType,
+    },
 };
 
 use super::{
@@ -106,14 +109,24 @@ pub(super) enum StorageProjection {
 
 impl StorageProjection {
     pub(super) fn enum_payload_case(
-        payload: &VariantPayloadType,
+        pattern: PatternId,
+        payload: &VariantPayloadType<PreparedEffects>,
         symbols: &ProjectSymbolTable,
+        query: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<EnumVariantSignatureId, FinalSemanticAnalysisError> {
         let (_, template) = CallableGenericParameterIssuer::for_enum_constructor_type(
             payload.owner_type(),
             symbols,
         )
         .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?;
+        // The case belongs to the constructor template, independent of the
+        // actual arguments and the effects in its payload fields.
+        let template = template
+            .project_effect_annotations(&GenericScope::default(), query)
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_type_effect_projection(pattern.into(), error)
+            })?
+            .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
         Ok(EnumVariantSignatureId::new(
             template.semantic_identity_digest()?,
             payload.case_ordinal(),
@@ -135,7 +148,10 @@ pub(super) enum CarrierStorage {
 }
 
 impl CarrierStorage {
-    pub(super) const fn for_case(ty: &TypeKind, ordinal: u32) -> Option<Self> {
+    pub(super) const fn for_case<D: TypeEffectDomain>(
+        ty: &TypeKind<D>,
+        ordinal: u32,
+    ) -> Option<Self> {
         match (ty, ordinal) {
             (TypeKind::Option(_), 0) => Some(Self::OptionItem),
             (TypeKind::Result { .. }, 0) => Some(Self::ResultOk),

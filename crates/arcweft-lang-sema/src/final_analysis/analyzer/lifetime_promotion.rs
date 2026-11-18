@@ -112,7 +112,7 @@ impl Analyzer<'_, '_, '_> {
         ) {
             let source_span = expression_span(module, source)?;
             let mut borrow = ReceiverBorrowQuery::new(self.symbols, self.control, &source_span);
-            let borrowed = match borrow.storage(receiver.observed(), &self.types)? {
+            let borrowed = match borrow.storage(receiver.original(), &self.types, None)? {
                 TypeStorage::Borrowed => true,
                 TypeStorage::Callable => {
                     self.value_has_borrowed_captures(context, source, &mut borrow)?
