@@ -183,7 +183,7 @@ fn resolve_dialogue_call(
     id: DialogueCallableId,
     callee: &DialogueCalleeIdentity,
     patch_context: super::CharacterDialoguePatchContext,
-    result: crate::callable::DialogueCallableResultContext<'_>,
+    result: crate::callable::DialogueCallableResultContext,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
     if !id.supports_callee(callee) {
         return Err(ResolveCallError::InvalidResolvedCallable);

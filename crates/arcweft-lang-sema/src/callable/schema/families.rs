@@ -152,14 +152,25 @@ pub(in crate::callable) fn dialogue_schema(
                     });
                 }
             };
-            let DialogueCallableResultContext::ContentApplication { line_result } = context.result
+            let DialogueCallableResultContext::ContentApplication { has_line_plan } =
+                context.result
             else {
                 return Err(CallableSchemaError::FamilyInvariant {
                     family: crate::callable::CallableFamily::Dialogue,
                     code: crate::callable::CallableFamilyInvariantCode::InvalidOwner,
                 });
             };
-            (
+            let owner = LanguageIntrinsicGenericOwner::DialogueLinePlan;
+            let (line_result, issuer) = if has_line_plan {
+                (
+                    generic(GenericParameterOwnerId::LanguageIntrinsic(owner), 0),
+                    CallableGenericParameterIssuer::language_intrinsic(owner, 1, 0)
+                        .expect("a line plan has one output type parameter"),
+                )
+            } else {
+                (TypeKind::Unit, CallableGenericParameterIssuer::empty())
+            };
+            return Ok(schema_with_issuer(
                 vec![
                     required_positional(0, "target", target),
                     required_positional(
@@ -170,14 +181,17 @@ pub(in crate::callable) fn dialogue_schema(
                     parameter(
                         2,
                         Some("line_plan"),
-                        CallableParameterAdmission::checked(TypeKind::Named("LinePlan".to_owned())),
+                        CallableParameterAdmission::checked(line_result.clone()),
                         CallableParameterPassing::PositionalOnly,
                         CallableParameterPresence::Optional,
                     ),
                 ],
-                TypeKind::DialogueLine(Box::new(line_result.clone())),
+                TypeKind::DialogueLine(Box::new(line_result)),
+                &[],
                 closed(),
-            )
+                CallableValidator::Dialogue(id),
+                issuer,
+            ));
         }
         (DialogueCallableId::ContentCall, DialogueCalleeIdentity::Content { .. }) => {
             (content_call_parameters(context), TypeKind::Unit, closed())

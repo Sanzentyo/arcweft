@@ -28,12 +28,13 @@ use crate::{
         DetachedPreparedResolvedCallable, EnclosingGenericParameterScope,
         ObservedSemanticValueEvidence, ParameterExpectedTypeProjection, PreparedApplicationResult,
         PreparedArgumentSourceProjection, PreparedCallCalleeConstraintInputs, PreparedCallGraph,
-        PreparedCallInputs, PreparedCallPrefixPayload, PreparedCallSemanticOperandOwner,
-        PreparedCallSemanticOperandRole, PreparedCallableApplication,
-        PreparedChildConstraintInitialization, PreparedConstraintInitialization,
-        PreparedDialogueApplicationMetadataArgument, PreparedFunctionValueOriginEvidence,
-        PreparedResolvedCallable, PreparedResolvedCallableDetachArena,
-        PreparedSourceConstraintGroup, TypeConstraintClient, VariantPayloadRequirement,
+        PreparedCallInputs, PreparedCallPrefixPayload, PreparedCallSemanticOperand,
+        PreparedCallSemanticOperandOwner, PreparedCallSemanticOperandRole,
+        PreparedCallableApplication, PreparedChildConstraintInitialization,
+        PreparedConstraintInitialization, PreparedDialogueApplicationMetadataArgument,
+        PreparedFunctionValueOriginEvidence, PreparedResolvedCallable,
+        PreparedResolvedCallableDetachArena, PreparedSourceConstraintGroup, TypeConstraintClient,
+        VariantPayloadRequirement,
     },
     effect_row::prepared::PreparedEffectReadScope,
     types::{
@@ -1143,7 +1144,7 @@ fn materialized_source_failure(
 enum AnalyzerPreparedSourceActual {
     ValueReceiver(Arc<TypeKind<PreparedEffects>>),
     DialogueApplicationMetadata(PreparedDialogueApplicationMetadataArgument),
-    DialogueApplicationOperand(TypeKind<crate::types::PreparedEffects>),
+    DialogueApplicationOperand(Arc<TypeKind<PreparedEffects>>),
     TextProxyObjectOperand(Arc<TypeKind<PreparedEffects>>),
 }
 
@@ -5819,11 +5820,24 @@ pub(super) fn validate_and_prepare_call_constraints(
                     role: operand.role(),
                     coordinate: operand.coordinate(),
                 };
+                let actual = match operand {
+                    PreparedCallSemanticOperand::DialogueLinePlan { output, .. } => {
+                        Arc::clone(output)
+                    }
+                    _ => {
+                        let actual = operand.canonical_actual().ok_or(
+                            CallConstraintPreparationFailure::Invariant(
+                                CallConstraintInvariant::MalformedMapperSeal,
+                            ),
+                        )?;
+                        Arc::new(preparation.source_type(operand.source(), actual)?)
+                    }
+                };
                 if actuals
                     .insert(
                         source,
                         Arc::new(AnalyzerPreparedSourceActual::DialogueApplicationOperand(
-                            preparation.source_type(operand.source(), operand.actual())?,
+                            actual,
                         )),
                     )
                     .is_some()
@@ -5864,8 +5878,12 @@ pub(super) fn validate_and_prepare_call_constraints(
                     CallConstraintInvariant::MalformedMapperSeal,
                 ));
             };
-            let actual_owner = discriminator
-                .actual()
+            let discriminator_actual = discriminator.canonical_actual().ok_or(
+                CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedMapperSeal,
+                ),
+            )?;
+            let actual_owner = discriminator_actual
                 .semantic_identity_digest()
                 .map_err(|error| CallConstraintPreparationFailure::Invariant(error.into()))?;
             if actual_owner != *owner {
@@ -5909,7 +5927,7 @@ pub(super) fn validate_and_prepare_call_constraints(
                 ));
             }
             let discriminator_type =
-                Arc::new(preparation.source_type(discriminator.source(), discriminator.actual())?);
+                Arc::new(preparation.source_type(discriminator.source(), discriminator_actual)?);
             if actuals
                 .insert(
                     discriminator_source,

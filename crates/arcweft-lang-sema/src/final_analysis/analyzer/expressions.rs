@@ -3304,7 +3304,9 @@ impl Analyzer<'_, '_, '_> {
                                 let actual = checked
                                     .value_type()
                                     .ok_or_else(|| AnalyzerExpressionError::rejected(*value))?;
-                                self.require_source_type(context, *value, expected, actual)?;
+                                self.check_prepared_contextual_type(
+                                    context, *value, expected, actual,
+                                )?;
                                 Some(*value)
                             } else {
                                 None

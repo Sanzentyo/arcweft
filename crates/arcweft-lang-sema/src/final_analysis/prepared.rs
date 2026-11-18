@@ -44,6 +44,7 @@ mod dialogue;
 pub(crate) use dialogue::{
     PreparedContentApplication, PreparedContentEmission, PreparedDialogueApplication,
     PreparedDialogueEffectOperation, PreparedDialogueEffectPlan, PreparedDialogueEffectSite,
+    PreparedDialogueLineOutput,
 };
 #[path = "prepared/statement.rs"]
 mod statement;

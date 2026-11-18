@@ -2511,13 +2511,13 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<PreparedEffects>>,
         target_expression: ExprId,
         target_actual: TypeKind,
-        has_line_plan: bool,
+        line_output: Option<Arc<TypeKind<PreparedEffects>>>,
         considered: Vec<Arc<PreparedResolvedCallable>>,
         mut work: ResolverWork,
-    ) -> Result<TypeKind, AnalyzerExpressionError> {
+    ) -> Result<(), AnalyzerExpressionError> {
         let candidate = considered.first().cloned().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
                 owner,
@@ -2536,7 +2536,7 @@ impl Analyzer<'_, '_, '_> {
             owner,
             target_expression,
             target_actual,
-            has_line_plan,
+            line_output,
         )
         .map_err(|error| AnalyzerExpressionError::Call {
             owner,
@@ -2550,10 +2550,6 @@ impl Analyzer<'_, '_, '_> {
                 })
             })?;
         let original = self.admit_original_context(module, owner, None, &mut work)?;
-        let expected = expected
-            .map(|ty| self.retain_source_value_type(context, owner, ty))
-            .transpose()
-            .map_err(AnalyzerExpressionError::fatal)?;
         let probe = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
             context.work(), |this, authority, _transaction_authority| {
                 let candidate_context =
@@ -2573,7 +2569,7 @@ impl Analyzer<'_, '_, '_> {
                         semantic_operands: structural_inputs.semantic_operands().to_vec().into_boxed_slice(),
                         candidate: Arc::clone(&candidate),
                         current_group: candidate.call_group(),
-                        expected_result: expected.as_ref(),
+                        expected_result: expected,
                         expected_application_callee: None,
                         expected_result_scope: None,
                         callee_inputs:
@@ -2653,14 +2649,17 @@ impl Analyzer<'_, '_, '_> {
                             crate::callable::CheckedAttachedContentApplicationFamily::DialogueLine,
                     },
                 )?;
-                let CallableResultSchema::Value(result) = result else {
+                if !matches!(
+                    result,
+                    CallableResultSchema::Value(TypeKind::DialogueLine(_))
+                ) {
                     return Err(CandidateFactOperationFailure::Expression(
                         AnalyzerExpressionError::fatal(
                             FinalSemanticAnalysisError::WrongPayloadFamily,
                         ),
                     ));
-                };
-                Ok(CandidateFactTransactionAction::Commit(result))
+                }
+                Ok(CandidateFactTransactionAction::Commit(()))
             },
         )?
         .into_committed()

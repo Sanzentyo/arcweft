@@ -811,10 +811,42 @@ impl Analyzer<'_, '_, '_> {
         checked_callables: &crate::callable::CheckedCallableCatalog,
         traversal: &mut ContentSealTraversal<'_, '_>,
     ) -> Result<PreparedExpressionFact, FinalSemanticAnalysisError> {
-        let (shell, target, application_patch, content, line_result, nested_path) =
+        let (shell, target, application_patch, content, output, nested_path) =
             prepared.into_parts();
         if checked_content.content_id() != content {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let (value, effects) = shell
+            .into_value_parts()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        if !matches!(value.source_type(), TypeKind::DialogueLine(result) if result.as_ref() == output.shared_type().as_ref())
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let line_result = traversal
+            .types
+            .source(content.owner())?
+            .canonical(output.shared_type())?;
+        for &(statement, expression) in output.sources() {
+            traversal.types.visit_binding()?;
+            if self.dialogue_out_value(content.owner(), statement)? != expression {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            let actual = self
+                .facts
+                .expressions()
+                .get(&expression)
+                .and_then(PreparedExpressionFact::value_type)
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                    owner: expression,
+                })?;
+            let mut types = traversal.types.source(expression)?;
+            let actual = types.canonical(actual)?;
+            if !types.accepts_canonical_type(&line_result, &actual)? {
+                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                    owner: expression,
+                });
+            }
         }
         let (rich_text, markers) = checked_content.into_parts();
         traversal.enter(content.owner())?;
@@ -831,17 +863,6 @@ impl Analyzer<'_, '_, '_> {
             traversal,
         )?;
         traversal.leave(content.owner());
-        let (value, effects) = shell
-            .into_value_parts()
-            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if !matches!(value.source_type(), TypeKind::DialogueLine(result) if result.as_ref() == &line_result)
-        {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
-        let line_result = traversal
-            .types
-            .source(content.owner())?
-            .canonical(&line_result)?;
         let resolution = CheckedExpressionResolution::DialogueApplication {
             target,
             application_patch,

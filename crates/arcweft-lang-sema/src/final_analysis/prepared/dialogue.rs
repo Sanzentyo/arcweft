@@ -1,4 +1,9 @@
-use arcweft_lang_hir::{dialogue_application::HirDialogueContentId, identity::ExprId};
+use std::sync::Arc;
+
+use arcweft_lang_hir::{
+    dialogue_application::HirDialogueContentId,
+    identity::{ExprId, StmtId},
+};
 
 use super::super::match_edges::{CheckedChildEdgeError, NestedPathEvidence};
 use super::super::{
@@ -8,6 +13,7 @@ use super::super::{
 use super::{PreparedEvaluatedEffect, PreparedExpressionShell, TypeKind};
 use crate::callable::{CheckedCallSite, ContentCallableIdentity};
 use crate::checked_text_proxy::PreparedCheckedTextProxyApplication;
+use crate::types::PreparedEffects;
 
 /// Closed producer disposition for one attached-content application.
 ///
@@ -234,6 +240,30 @@ impl PreparedDialogueEffectPlan {
     }
 }
 
+/// Inferred line result and the original `out` sources that must satisfy it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedDialogueLineOutput {
+    ty: Arc<TypeKind<PreparedEffects>>,
+    sources: Box<[(StmtId, ExprId)]>,
+}
+
+impl PreparedDialogueLineOutput {
+    pub(crate) fn new(ty: TypeKind<PreparedEffects>, sources: Vec<(StmtId, ExprId)>) -> Self {
+        Self {
+            ty: Arc::new(ty),
+            sources: sources.into_boxed_slice(),
+        }
+    }
+
+    pub(crate) const fn shared_type(&self) -> &Arc<TypeKind<PreparedEffects>> {
+        &self.ty
+    }
+
+    pub(crate) const fn sources(&self) -> &[(StmtId, ExprId)] {
+        &self.sources
+    }
+}
+
 /// Private expression carrier for one checked dialogue content application.
 /// Its shell preserves the type-selection/effect facts produced while the
 /// application call is prepared.  The line-plan effect sites are sealed only
@@ -244,7 +274,7 @@ pub(crate) struct PreparedDialogueApplication {
     target: CheckedCharacterDialogueTarget,
     application_patch: Option<CheckedCharacterDialoguePatch>,
     content: HirDialogueContentId,
-    line_result: TypeKind<crate::types::PreparedEffects>,
+    output: PreparedDialogueLineOutput,
     nested_path_evidence: Option<Result<NestedPathEvidence, CheckedChildEdgeError>>,
 }
 
@@ -254,11 +284,11 @@ impl PreparedDialogueApplication {
         target: CheckedCharacterDialogueTarget,
         application_patch: Option<CheckedCharacterDialoguePatch>,
         content: HirDialogueContentId,
-        line_result: TypeKind<crate::types::PreparedEffects>,
+        output: PreparedDialogueLineOutput,
         nested_path_evidence: Option<Result<NestedPathEvidence, CheckedChildEdgeError>>,
     ) -> Option<Self> {
-        let expected_shell_type = TypeKind::DialogueLine(Box::new(line_result.clone()));
-        if shell.value_type() != Some(&expected_shell_type) {
+        if !matches!(shell.value_type(), Some(TypeKind::DialogueLine(result)) if result.as_ref() == output.ty.as_ref())
+        {
             return None;
         }
         Some(Self {
@@ -266,7 +296,7 @@ impl PreparedDialogueApplication {
             target,
             application_patch,
             content,
-            line_result,
+            output,
             nested_path_evidence,
         })
     }
@@ -287,8 +317,12 @@ impl PreparedDialogueApplication {
         self.content
     }
 
-    pub(crate) const fn line_result(&self) -> &TypeKind<crate::types::PreparedEffects> {
-        &self.line_result
+    pub(crate) fn line_result(&self) -> &TypeKind<PreparedEffects> {
+        &self.output.ty
+    }
+
+    pub(crate) const fn output(&self) -> &PreparedDialogueLineOutput {
+        &self.output
     }
 
     pub(crate) const fn nested_path_evidence(
@@ -304,7 +338,7 @@ impl PreparedDialogueApplication {
         CheckedCharacterDialogueTarget,
         Option<CheckedCharacterDialoguePatch>,
         HirDialogueContentId,
-        TypeKind<crate::types::PreparedEffects>,
+        PreparedDialogueLineOutput,
         Option<Result<NestedPathEvidence, CheckedChildEdgeError>>,
     ) {
         (
@@ -312,7 +346,7 @@ impl PreparedDialogueApplication {
             self.target,
             self.application_patch,
             self.content,
-            self.line_result,
+            self.output,
             self.nested_path_evidence,
         )
     }

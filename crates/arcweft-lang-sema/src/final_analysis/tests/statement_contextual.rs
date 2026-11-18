@@ -335,6 +335,66 @@ flow row() -> Option<String> {
 }
 
 #[test]
+fn dialogue_line_plan_infers_and_checks_live_callback_output() {
+    use crate::callable::CheckedCallSemanticOperandSource;
+
+    let source = r#"
+pub character alice { display = "Alice" }
+fn read(value: i64) -> i64 effects { fs.read } { value }
+fn write(value: i64) -> i64 effects { fs.write } { value }
+fn completed(value: i64) -> i64 { read(value) }
+fn cancelled(value: i64) -> i64 { read(value) }
+flow row() -> i64 {
+    let reply = alice[Hello[p]] with {
+        cancel on input(.SkipLine) { out cancelled }
+        out completed
+    }
+    return reply(42i64)
+}
+"#;
+    let report = analyze(&fixture(source, None)).expect("both callback outputs share a solved row");
+    let (owner, line_result) = report
+        .expressions()
+        .find_map(|(owner, expression)| match expression.resolution() {
+            CheckedExpressionResolution::DialogueApplication { line_result, .. } => {
+                Some((owner, line_result))
+            }
+            _ => None,
+        })
+        .expect("line application");
+    let TypeKind::Function { effects, .. } = line_result else {
+        panic!("line output is a callback");
+    };
+    assert_eq!(effects.closed_value().unwrap().to_labels(), ["fs.read"]);
+
+    let application = report.call(owner).unwrap().selected_application().unwrap();
+    assert_eq!(
+        application.result().value_type(),
+        Some(&TypeKind::DialogueLine(Box::new(line_result.clone())))
+    );
+    let [_, _, plan] = application.core().execution().semantic_operands() else {
+        panic!("the explicit line plan contributes one typed operand");
+    };
+    assert!(matches!(
+        plan.source(),
+        CheckedCallSemanticOperandSource::DialogueLinePlan { .. }
+    ));
+    assert_eq!(plan.inferred(), line_result);
+    assert_eq!(plan.expected(), Some(line_result));
+
+    let wrong = source.replace(
+        "cancelled(value: i64) -> i64 { read(value) }",
+        "cancelled(value: i64) -> i64 { write(value) }",
+    );
+    let wrong = fixture(&wrong, None);
+    assert!(wrong.project.analysis_view().is_ok());
+    assert!(
+        analyze(&wrong).is_err(),
+        "cancellation cannot supply another effect row"
+    );
+}
+
+#[test]
 fn dialogue_mark_handler_outs_contribute_to_the_line_result_type() {
     for (handler_value, accepted) in [("\"Released\"", true), ("7", false)] {
         let source = format!(

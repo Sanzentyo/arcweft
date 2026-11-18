@@ -3079,6 +3079,13 @@ fn validate_dialogue_application_call_acceptance(
     let selected = core.candidates().selected();
     let execution = application_facts.core().execution();
     let semantic_operands = execution.semantic_operands();
+    let result_matches = match (application_facts.result().value_type(), semantic_operands) {
+        (Some(TypeKind::DialogueLine(result)), [_, _]) => matches!(result.as_ref(), TypeKind::Unit),
+        (Some(TypeKind::DialogueLine(result)), [_, _, plan]) => {
+            plan.inferred() == result.as_ref() && plan.expected() == Some(result.as_ref())
+        }
+        _ => false,
+    };
     let structural_sources_match = matches!(
         semantic_operands,
         [target, content]
@@ -3101,12 +3108,11 @@ fn validate_dialogue_application_call_acceptance(
         || !execution.arguments().is_empty()
         || !structural_sources_match
         || core.current_group() != crate::callable::CallableGroupIndex::ZERO
-        || !matches!(application_facts.result(), CheckedCallResult::Value(_))
+        || !result_matches
         || core.candidates().candidates().len() != 1
         || selected.id() != &CallableCandidateId::Dialogue(DialogueCallableId::ContentApplication)
         || selected.schema().validator()
             != &CallableValidator::Dialogue(DialogueCallableId::ContentApplication)
-        || selected.schema().value_type() != application_facts.result().value_type()
     {
         return Err(FinalSemanticAnalysisError::UnacceptedCall);
     }

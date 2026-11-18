@@ -7,7 +7,7 @@ use crate::{
     character_dialogue::{
         CharacterDialogueCustomFieldRegistry, CharacterDialogueRuntimeRoleRegistry,
     },
-    types::{CharacterDialogueCharacterType, TypeKind},
+    types::CharacterDialogueCharacterType,
 };
 
 /// Closed language-owned `CharacterDialogue` operation family.
@@ -48,16 +48,16 @@ pub struct DialogueSchemaContext<'a> {
     pub custom_fields: &'a CharacterDialogueCustomFieldRegistry,
     pub roles: &'a CharacterDialogueRuntimeRoleRegistry,
     pub patch_context: CharacterDialoguePatchContext,
-    pub result: DialogueCallableResultContext<'a>,
+    pub result: DialogueCallableResultContext,
 }
 
 /// Exact result authority supplied before a Dialogue callable schema is
-/// constructed. Content applications specialize their schema from the checked
-/// line-plan result; every other Dialogue callable uses its closed declaration.
+/// constructed. An explicit line plan supplies the result type through its
+/// semantic operand. An application without a plan has a Unit payload.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DialogueCallableResultContext<'a> {
+pub enum DialogueCallableResultContext {
     Declared,
-    ContentApplication { line_result: &'a TypeKind },
+    ContentApplication { has_line_plan: bool },
 }
 
 impl PartialEq for DialogueSchemaContext<'_> {

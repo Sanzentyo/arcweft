@@ -120,7 +120,7 @@ pub(crate) enum PreparedCallCallee<'a> {
         id: super::DialogueCallableId,
         callee: &'a super::DialogueCalleeIdentity,
         patch_context: CharacterDialoguePatchContext,
-        result: super::DialogueCallableResultContext<'a>,
+        result: super::DialogueCallableResultContext,
     },
     FunctionValue {
         value: &'a PreparedFunctionValueCallee,
@@ -321,7 +321,7 @@ pub(crate) enum PreparedCallSemanticOperand {
     DialogueLinePlan {
         source: ExprId,
         coordinate: CallableParameterCoordinate,
-        actual: TypeKind,
+        output: Arc<TypeKind<crate::types::PreparedEffects>>,
     },
     TextProxyNominalDiscriminator {
         argument: HirCallArgumentOrdinal,
@@ -397,12 +397,12 @@ impl PreparedCallSemanticOperand {
         }
     }
 
-    pub(crate) const fn actual(&self) -> &TypeKind {
+    pub(crate) const fn canonical_actual(&self) -> Option<&TypeKind> {
         match self {
             Self::DialogueTarget { actual, .. }
             | Self::DialogueContent { actual, .. }
-            | Self::DialogueLinePlan { actual, .. }
-            | Self::TextProxyNominalDiscriminator { actual, .. } => actual,
+            | Self::TextProxyNominalDiscriminator { actual, .. } => Some(actual),
+            Self::DialogueLinePlan { .. } => None,
         }
     }
 }
@@ -472,7 +472,7 @@ impl PreparedCallInputs {
         application: ExprId,
         target_expression: ExprId,
         target_actual: TypeKind,
-        has_line_plan: bool,
+        line_output: Option<Arc<TypeKind<crate::types::PreparedEffects>>>,
     ) -> Result<Self, CallConstraintInvariant> {
         if candidate.id()
             != &CallableCandidateId::Dialogue(super::DialogueCallableId::ContentApplication)
@@ -489,20 +489,29 @@ impl PreparedCallInputs {
         let [target, content, line_plan] = group.parameters() else {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         };
+        let has_line_plan = line_output.is_some();
+        let shape_matches = match (line_plan.declared_type(), candidate.schema().value_type()) {
+            (Some(parameter), Some(TypeKind::DialogueLine(result))) => {
+                parameter == result.as_ref()
+                    && if has_line_plan {
+                        matches!(parameter, TypeKind::GenericParam(_))
+                    } else {
+                        matches!(parameter, TypeKind::Unit)
+                    }
+            }
+            _ => false,
+        };
         if target.index().get() != 0
             || content.index().get() != 1
             || line_plan.index().get() != 2
             || target.presence() != CallableParameterPresence::Required
             || content.presence() != CallableParameterPresence::Required
             || line_plan.presence() != CallableParameterPresence::Optional
+            || !shape_matches
         {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
         let content_actual = content
-            .declared_type()
-            .cloned()
-            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
-        let line_plan_actual = line_plan
             .declared_type()
             .cloned()
             .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
@@ -518,11 +527,11 @@ impl PreparedCallInputs {
             coordinate: CallableParameterCoordinate::new(group_index, content.index()),
             actual: content_actual,
         });
-        if has_line_plan {
+        if let Some(output) = line_output {
             semantic_operands.push(PreparedCallSemanticOperand::DialogueLinePlan {
                 source: application,
                 coordinate: CallableParameterCoordinate::new(group_index, line_plan.index()),
-                actual: line_plan_actual,
+                output,
             });
         }
         Ok(Self::new(
@@ -1891,17 +1900,20 @@ impl<'a> CallResolverAuthority<'a> {
         else {
             return Err(ResolveCallError::InvalidResolvedCallable);
         };
-        let _ = (plan, coordinates);
+        let _ = coordinates;
         let PreparedCallCallee::Dialogue {
             id,
             callee,
-            result: super::DialogueCallableResultContext::ContentApplication { .. },
+            result: super::DialogueCallableResultContext::ContentApplication { has_line_plan },
             ..
         } = callee
         else {
             return Err(ResolveCallError::InvalidResolvedCallable);
         };
-        if *id != super::DialogueCallableId::ContentApplication || !id.supports_callee(callee) {
+        if *id != super::DialogueCallableId::ContentApplication
+            || !id.supports_callee(callee)
+            || *has_line_plan != plan.is_some()
+        {
             return Err(ResolveCallError::InvalidResolvedCallable);
         }
         Ok((

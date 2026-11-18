@@ -1109,21 +1109,46 @@ fn checked_execution_projection(
             }
             (
                 crate::callable::PreparedCallSemanticOperandOwner::DialogueApplication,
-                crate::callable::PreparedCallSemanticOperandRole::DialogueContent
-                | crate::callable::PreparedCallSemanticOperandRole::DialogueLinePlan,
+                crate::callable::PreparedCallSemanticOperandRole::DialogueLinePlan,
             ) => {
-                if operand.source() != site.raw().expression() {
+                let application = site.raw().expression();
+                let Some(PreparedExpressionFact::DialogueApplication(prepared)) =
+                    sources.expressions.get(&application)
+                else {
+                    return Err(final_call_seal_error(
+                        location,
+                        CallConstraintInvariant::MalformedMapperSeal,
+                    ));
+                };
+                if !matches!(
+                    operand,
+                    crate::callable::PreparedCallSemanticOperand::DialogueLinePlan { source, output, .. }
+                        if *source == application && Arc::ptr_eq(output, prepared.output().shared_type())
+                ) {
                     return Err(final_call_seal_error(
                         location,
                         CallConstraintInvariant::MalformedMapperSeal,
                     ));
                 }
-                operand.actual().clone()
+                sources
+                    .types
+                    .source(application)?
+                    .canonical(prepared.line_result())?
+            }
+            (
+                crate::callable::PreparedCallSemanticOperandOwner::DialogueApplication,
+                crate::callable::PreparedCallSemanticOperandRole::DialogueContent,
+            ) if operand.source() == site.raw().expression() => {
+                operand.canonical_actual().cloned().ok_or_else(|| {
+                    final_call_seal_error(location, CallConstraintInvariant::MalformedMapperSeal)
+                })?
             }
             (
                 crate::callable::PreparedCallSemanticOperandOwner::TextProxyObject,
                 crate::callable::PreparedCallSemanticOperandRole::TextProxyNominalDiscriminator,
-            ) => operand.actual().clone(),
+            ) => operand.canonical_actual().cloned().ok_or_else(|| {
+                final_call_seal_error(location, CallConstraintInvariant::MalformedMapperSeal)
+            })?,
             _ => {
                 return Err(final_call_seal_error(
                     location,

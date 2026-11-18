@@ -4,8 +4,10 @@ use crate::final_analysis::fx_application::{
     checked_builtin_fx_binding, checked_project_fx_argument,
 };
 use crate::final_analysis::prepared::{
-    PreparedDialogueEffectOperation, PreparedExpressionResult, PreparedNonValueExpressionResult,
+    PreparedDialogueEffectOperation, PreparedDialogueLineOutput, PreparedExpressionResult,
+    PreparedNonValueExpressionResult,
 };
+use crate::types::{PreparedEffects, TypeProjectionControl};
 use arcweft_primitives::{CheckedAngle, CheckedLength, LengthUnit, Milli, RatioMilli};
 
 use crate::checked_rich_text::{
@@ -751,7 +753,7 @@ impl Analyzer<'_, '_, '_> {
         }
         let target_owner = *target;
         let _ = coordinates;
-        let expected = expectation.contextual_shape();
+        let expected = expectation.complete_type();
         // Immediate id/text_key arguments are compile-time application
         // coordinates. Publish their accepted project identities before the
         // shared parenthesized-call resolver evaluates argument facts.
@@ -832,13 +834,23 @@ impl Analyzer<'_, '_, '_> {
                 },
             ));
         }
-        let expected_line_result = match expected {
-            Some(TypeKind::DialogueLine(result)) => Some(result.as_ref()),
+        let expected_line_result = match expectation.contextual_shape() {
+            Some(TypeKind::DialogueLine(result)) => self
+                .project_expression_expectation(context, owner, expectation, Some(result))?
+                .complete_type(),
             _ => None,
         };
-        let line_result = plan.as_ref().map_or(Ok(TypeKind::Unit), |plan| {
-            self.check_dialogue_line_plan_output(context, owner, plan.items(), expected_line_result)
-        })?;
+        let output = plan.as_ref().map_or_else(
+            || Ok(PreparedDialogueLineOutput::new(TypeKind::Unit, Vec::new())),
+            |plan| {
+                self.check_dialogue_line_plan_output(
+                    context,
+                    owner,
+                    plan.items(),
+                    expected_line_result,
+                )
+            },
+        )?;
         let application_children = module
             .resolve_expr(owner)
             .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
@@ -853,23 +865,29 @@ impl Analyzer<'_, '_, '_> {
         let rich_text_check = self
             .prepare_rich_text_effect_plan(module, rich_text_check)
             .map_err(AnalyzerExpressionError::fatal)?;
-        let call_target = target.clone();
-        let ty = self.publish_dialogue_content_application_call(
+        let effects = self
+            .facts
+            .effect_declarations()
+            .map_err(AnalyzerExpressionError::fact)?;
+        let result = self
+            .source_type_preparation(context.work())
+            .and_then(|source| source.retain_prepared(owner, output.shared_type(), effects.read()))
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let ty = TypeKind::DialogueLine(Box::new(result));
+        let selection = if let Some(expected) = expected {
+            self.check_prepared_contextual_type(context, owner, expected, &ty)?;
+            CheckedTypeSelection::Expected
+        } else {
+            CheckedTypeSelection::Inferred
+        };
+        self.publish_dialogue_content_application_call(
             context,
             module,
             owner,
-            &call_target,
+            &target,
             expected,
-            &line_result,
-            plan.is_some(),
+            plan.as_ref().map(|_| Arc::clone(output.shared_type())),
         )?;
-        let selection = match expected.map(|expected| expected.accepts(&ty)) {
-            Some(true) => CheckedTypeSelection::Expected,
-            None => CheckedTypeSelection::Inferred,
-            Some(false) => {
-                return Err(AnalyzerExpressionError::rejected(owner));
-            }
-        };
         let shell = PreparedExpressionShell::value(ty, selection, EffectSet::new());
         let content = rich_text_check.content_id();
         let prepared = PreparedDialogueApplication::try_new(
@@ -877,7 +895,7 @@ impl Analyzer<'_, '_, '_> {
             target,
             application_patch,
             content,
-            line_result,
+            output,
             None,
         )
         .ok_or_else(|| {
@@ -1276,10 +1294,9 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         owner: ExprId,
         target: &super::super::CheckedCharacterDialogueTarget,
-        expected: Option<&TypeKind>,
-        line_result: &TypeKind,
-        has_line_plan: bool,
-    ) -> Result<TypeKind, AnalyzerExpressionError> {
+        expected: Option<&TypeKind<PreparedEffects>>,
+        line_output: Option<Arc<TypeKind<PreparedEffects>>>,
+    ) -> Result<(), AnalyzerExpressionError> {
         let callee = match target {
             super::super::CheckedCharacterDialogueTarget::Character { character, .. } => {
                 DialogueCalleeIdentity::Character {
@@ -1297,7 +1314,7 @@ impl Analyzer<'_, '_, '_> {
             callee: &callee,
             patch_context: CharacterDialoguePatchContext::ImmediateContentApplication,
             result: crate::callable::DialogueCallableResultContext::ContentApplication {
-                line_result,
+                has_line_plan: line_output.is_some(),
             },
         };
         let authority = CallResolverAuthority::accepted(
@@ -1381,7 +1398,7 @@ impl Analyzer<'_, '_, '_> {
             expected,
             target.expression(),
             target.ty(),
-            has_line_plan,
+            line_output,
             considered,
             work,
         )
@@ -1392,10 +1409,11 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         application: ExprId,
         items: &[HirLinePlanItem],
-        expected_line_result: Option<&TypeKind>,
-    ) -> Result<TypeKind, AnalyzerExpressionError> {
-        let mut output: Option<TypeKind> = None;
+        expected_line_result: Option<&TypeKind<PreparedEffects>>,
+    ) -> Result<PreparedDialogueLineOutput, AnalyzerExpressionError> {
+        let mut output = None;
         let mut output_statements = BTreeSet::new();
+        let mut output_sources = Vec::new();
         let mut cancel_rules = Vec::new();
         let mut check_statement =
             |statement: StmtId, expected_scope: Option<arcweft_lang_hir::identity::ScopeId>| {
@@ -1445,96 +1463,95 @@ impl Analyzer<'_, '_, '_> {
                     Some((application, output.as_ref().or(expected_line_result))),
                 )?;
                 for out in outs {
-                    let out_payload = module.resolve_stmt(out).map_err(|_| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                    })?;
-                    let arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Value {
-                        kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Out,
-                        expression: Some(value),
-                        ..
-                    } = out_payload.kind().evaluation_plan()
-                    else {
-                        return Err(AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        ));
-                    };
-                    let transfer = self.topology.control_transfer_row(out).map_err(|_| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                    })?;
-                    let target = transfer.target().map_err(|error| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ControlTransfer(
-                            *error,
-                        ))
-                    })?;
-                    if transfer.kind() != arcweft_lang_hir::project::HirControlTransferKind::Out
-                        || target.output_application() != Some(application)
-                        || !output_statements.insert(out)
-                    {
+                    let value = self
+                        .dialogue_out_value(application, out)
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                    context
+                        .work()
+                        .visit_binding()
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                    if !output_statements.insert(out) {
                         return Err(AnalyzerExpressionError::fatal(
                             FinalSemanticAnalysisError::WrongPayloadFamily,
                         ));
                     }
-                    let checked = self.evaluate_expression(
-                        context,
-                        value,
-                        output.as_ref().or(expected_line_result),
-                    )?;
+                    output_sources.push((out, value));
+                    let expected = output.as_ref().or(expected_line_result);
+                    let checked = self.evaluate_expression(context, value, expected)?;
                     let checked_type = checked.value_type().ok_or_else(|| {
                         AnalyzerExpressionError::fatal(
                             FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value },
                         )
                     })?;
-                    match &output {
-                        Some(expected) if !expected.accepts(checked_type) => {
-                            return Err(AnalyzerExpressionError::rejected(value));
-                        }
-                        Some(_) => {}
-                        None => {
-                            output = Some(
-                                expected_line_result
-                                    .cloned()
-                                    .unwrap_or_else(|| checked_type.clone()),
-                            );
-                        }
+                    if let Some(expected) = expected {
+                        self.check_prepared_contextual_type(
+                            context,
+                            value,
+                            expected,
+                            checked_type,
+                        )?;
+                    }
+                    if output.is_none() {
+                        let effects = self
+                            .facts
+                            .effect_declarations()
+                            .map_err(AnalyzerExpressionError::fact)?;
+                        output = Some(
+                            self.source_type_preparation(context.work())
+                                .and_then(|source| {
+                                    source.retain_prepared(
+                                        application,
+                                        expected_line_result.unwrap_or(checked_type),
+                                        effects.read(),
+                                    )
+                                })
+                                .map_err(AnalyzerExpressionError::fatal)?,
+                        );
                     }
                 }
                 Ok(directly_exits_line.then_some(statement))
             };
-        let mut pending = vec![items];
+        let mut pending = vec![items.iter()];
         let mut exited_by = None;
-        while let Some(items) = pending.pop() {
-            for item in items {
-                if let Some(after) = exited_by {
-                    return Err(AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::LinePlanItemAfterOut { application, after },
-                    ));
-                }
-                match item {
-                    HirLinePlanItem::Init { scope, statements } => {
-                        for statement in statements {
-                            if let Some(after) = exited_by {
-                                return Err(AnalyzerExpressionError::fatal(
-                                    FinalSemanticAnalysisError::LinePlanItemAfterOut {
-                                        application,
-                                        after,
-                                    },
-                                ));
-                            }
-                            exited_by = check_statement(*statement, Some(*scope))?;
+        while let Some(items) = pending.last_mut() {
+            let Some(item) = items.next() else {
+                pending.pop();
+                continue;
+            };
+            context
+                .work()
+                .visit_binding()
+                .map_err(AnalyzerExpressionError::fatal)?;
+            if let Some(after) = exited_by {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::LinePlanItemAfterOut { application, after },
+                ));
+            }
+            match item {
+                HirLinePlanItem::Init { scope, statements } => {
+                    for statement in statements {
+                        if let Some(after) = exited_by {
+                            return Err(AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::LinePlanItemAfterOut {
+                                    application,
+                                    after,
+                                },
+                            ));
                         }
+                        exited_by = check_statement(*statement, Some(*scope))?;
                     }
-                    HirLinePlanItem::On(statement) => {
-                        exited_by = check_statement(*statement, None)?;
-                    }
-                    HirLinePlanItem::Thread(statement)
-                    | HirLinePlanItem::Statement(statement)
-                    | HirLinePlanItem::Error(statement) => {
-                        exited_by = check_statement(*statement, None)?;
-                    }
-                    HirLinePlanItem::CancelRule(statement) => cancel_rules.push(*statement),
-                    HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
-                        pending.push(items)
-                    }
+                }
+                HirLinePlanItem::On(statement) => {
+                    exited_by = check_statement(*statement, None)?;
+                }
+                HirLinePlanItem::Thread(statement)
+                | HirLinePlanItem::Statement(statement)
+                | HirLinePlanItem::Error(statement) => {
+                    exited_by = check_statement(*statement, None)?;
+                }
+                HirLinePlanItem::CancelRule(statement) => cancel_rules.push(*statement),
+                HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
+                    pending.push(items.iter())
                 }
             }
         }
@@ -1550,14 +1567,49 @@ impl Analyzer<'_, '_, '_> {
                 &[statement],
                 Some((application, Some(&result))),
             )? {
+                let value = self
+                    .dialogue_out_value(application, out)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                context
+                    .work()
+                    .visit_binding()
+                    .map_err(AnalyzerExpressionError::fatal)?;
                 if !output_statements.insert(out) {
                     return Err(AnalyzerExpressionError::fatal(
                         FinalSemanticAnalysisError::WrongPayloadFamily,
                     ));
                 }
+                output_sources.push((out, value));
             }
         }
-        Ok(result)
+        Ok(PreparedDialogueLineOutput::new(result, output_sources))
+    }
+
+    pub(in crate::final_analysis::analyzer) fn dialogue_out_value(
+        &self,
+        application: ExprId,
+        statement: StmtId,
+    ) -> Result<ExprId, FinalSemanticAnalysisError> {
+        let transfer = self
+            .topology
+            .control_transfer_row(statement)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let target = transfer
+            .target()
+            .map_err(|error| FinalSemanticAnalysisError::ControlTransfer(*error))?;
+        let statement = self
+            .module(statement.module())?
+            .resolve_stmt(statement)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let arcweft_lang_hir::stmt::HirStmtKind::Out { value, .. } = statement.kind() else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        if transfer.kind() != arcweft_lang_hir::project::HirControlTransferKind::Out
+            || target.output_application() != Some(application)
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        Ok(*value)
     }
 
     fn publish_dialogue_coordinates(

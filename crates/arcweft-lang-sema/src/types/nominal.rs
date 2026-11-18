@@ -49,10 +49,11 @@ pub enum LanguageIntrinsicGenericOwner {
     ViewHandlerResult,
     ActionEmit,
     ActionReceive,
+    DialogueLinePlan,
 }
 
 impl LanguageIntrinsicGenericOwner {
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 29] = [
         Self::OptionConstructor,
         Self::ResultConstructor,
         Self::StandardMap(StandardMapFamily::Vec),
@@ -81,6 +82,7 @@ impl LanguageIntrinsicGenericOwner {
         Self::ViewHandlerResult,
         Self::ActionEmit,
         Self::ActionReceive,
+        Self::DialogueLinePlan,
     ];
 
     /// Canonical version-1 semantic tag owned by this closed family.
@@ -106,6 +108,7 @@ impl LanguageIntrinsicGenericOwner {
             Self::ViewHandlerResult => 24,
             Self::ActionEmit => 26,
             Self::ActionReceive => 27,
+            Self::DialogueLinePlan => 28,
         }
     }
 
@@ -127,7 +130,8 @@ impl LanguageIntrinsicGenericOwner {
             | Self::DataDecode
             | Self::ViewHandlerResult
             | Self::ActionEmit
-            | Self::ActionReceive => (1, 0),
+            | Self::ActionReceive
+            | Self::DialogueLinePlan => (1, 0),
             Self::ResultConstructor | Self::CollectionTraverse => (2, 0),
             Self::StandardMap(family) => family.generic_arity(),
         }
@@ -162,6 +166,7 @@ impl LanguageIntrinsicGenericOwner {
             Self::ViewHandlerResult => "language.view-handler-result",
             Self::ActionEmit => "language.action-emit",
             Self::ActionReceive => "language.action-receive",
+            Self::DialogueLinePlan => "language.dialogue-line-plan",
         }
     }
 }
