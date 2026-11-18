@@ -204,7 +204,7 @@ fn assemble_selected<C: DecisionControl>(
                         mask,
                     };
                     let value = if let Some(value) = relation.child.coefficients.get(&cell) {
-                        compilation::copy(value, work)?
+                        work.copy_decision(value)?
                     } else if imported.definition().is_input() {
                         Decision::variable(cell, work)?
                     } else {
@@ -255,9 +255,7 @@ impl ImportedRelationTable {
         let graph = &imported.completion.graph;
         let mut fixed = BTreeMap::new();
         for (&future, row) in &imported.completion.fixed {
-            let formula = row
-                .known()?
-                .map_references(work, &mut |reference, _| Ok(reference.clone()))?;
+            let formula = work.copy_formula(row.known()?)?;
             work.charge(DecisionWork::Node)?;
             fixed.insert(
                 future,

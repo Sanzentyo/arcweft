@@ -23,17 +23,6 @@ pub(super) struct Compilation<'a> {
     predicates: BTreeMap<u64, Decision>,
 }
 
-pub(super) fn copy<C: DecisionControl>(
-    decision: &Decision,
-    work: &mut Work<'_, C>,
-) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-    work.charge(DecisionWork::Visit)?;
-    for _ in 0..decision.node_count() {
-        work.charge(DecisionWork::Node)?;
-    }
-    Ok(decision.clone())
-}
-
 impl<'a> Compilation<'a> {
     pub(super) fn new(
         graph: &'a PreparedEffectDefinitions,
@@ -114,7 +103,7 @@ impl<'a> Compilation<'a> {
                 continue;
             }
             let value = if let Some(argument) = argument(parameter) {
-                copy(&argument.membership[class], work)?
+                work.copy_decision(&argument.membership[class])?
             } else {
                 let slot = self
                     .parameters
@@ -173,11 +162,11 @@ impl<'a> Compilation<'a> {
                     .ok_or(PreparedEffectInvariant::StaleReference)?;
                 let mut membership = Vec::new();
                 for decision in &row.membership {
-                    membership.push(copy(decision, work)?);
+                    membership.push(work.copy_decision(decision)?);
                 }
                 Ok(CompiledRow {
                     membership,
-                    admitted: copy(&row.admitted, work)?,
+                    admitted: work.copy_decision(&row.admitted)?,
                 })
             }
         }
@@ -226,11 +215,10 @@ impl<'a> Compilation<'a> {
                         .coefficient(self.layout, class, mask, work)?
                         .substitute(coefficients, work)?,
                     (None, ApplicationCells::Variables) => Decision::variable(cell, work)?,
-                    (None, ApplicationCells::Solved(coefficients)) => copy(
+                    (None, ApplicationCells::Solved(coefficients)) => work.copy_decision(
                         coefficients
                             .get(&cell)
                             .ok_or(PreparedEffectInvariant::UnclosedCell)?,
-                        work,
                     )?,
                 };
                 frontier.push(coefficient);
@@ -502,11 +490,10 @@ impl<'a> Compilation<'a> {
             }
             PreparedEffectPredicate::Term(reference) => {
                 self.graph.predicate(reference)?;
-                copy(
+                work.copy_decision(
                     self.predicates
                         .get(&reference.0.ordinal)
                         .ok_or(PreparedEffectInvariant::StaleReference)?,
-                    work,
                 )
             }
         }

@@ -116,7 +116,7 @@ fn compile_relation<C: DecisionControl>(
                     .as_ref()
                     .expect("the original prepared body was compiled");
                 if matches!(node, ResidualNode::BodyAdmitted { .. }) {
-                    compilation::copy(&body.admitted, work)?
+                    work.copy_decision(&body.admitted)?
                 } else {
                     let parameters = scoped.compiler.parameters(work)?;
                     let own = scoped.compiler.application(
@@ -266,7 +266,7 @@ impl CompiledComponent {
         let mut coefficients = self.fixed;
         for (cell, decision) in completion.lower_envelope() {
             work.charge(DecisionWork::Node)?;
-            coefficients.insert(cell.clone(), compilation::copy(decision, work)?);
+            coefficients.insert(cell.clone(), work.copy_decision(decision)?);
         }
         Ok(ComponentCompletion {
             layout: Arc::new(self.layout),
@@ -385,9 +385,7 @@ impl PreparedEffectDefinitions {
         for (&id, input) in &inputs.rows {
             work.charge(DecisionWork::Visit)?;
             if self.functions.contains_key(&id) {
-                let formula = input
-                    .known()?
-                    .map_references(&mut work, &mut |reference, _| Ok(reference.clone()))?;
+                let formula = work.copy_formula(input.known()?)?;
                 work.charge(DecisionWork::Node)?;
                 fixed.insert(
                     id,

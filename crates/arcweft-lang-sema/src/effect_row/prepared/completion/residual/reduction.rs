@@ -246,13 +246,6 @@ struct PointwiseMinimum {
     unique: bool,
 }
 
-fn decision_copy<C: DecisionControl>(
-    value: &Decision,
-    work: &mut Work<'_, C>,
-) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-    value.map_references(work, &mut |reference, _| Ok(reference.clone()))
-}
-
 /// A universally interpreted predicate is the assertion that its finite row of
 /// counterexamples is empty. If its default fails at all-zero inputs, infinitely
 /// many labels violate it, so the whole predicate is false.
@@ -305,14 +298,11 @@ fn minimize_pointwise<C: DecisionControl>(
     let mut principal = Vec::new();
     let mut unique = true;
     for class in 0..=labels.len() {
-        let mut predicate = decision_copy(
-            if class == 0 {
-                relation.membership().default_decision()
-            } else {
-                relation.membership().at(&labels[class - 1])
-            },
-            work,
-        )?;
+        let mut predicate = work.copy_decision(if class == 0 {
+            relation.membership().default_decision()
+        } else {
+            relation.membership().at(&labels[class - 1])
+        })?;
         if class == 0 {
             let mut supported = Decision::constant(false);
             for future in &free {
@@ -342,16 +332,16 @@ fn minimize_pointwise<C: DecisionControl>(
             work.charge(DecisionWork::Node)?;
             rows.get_mut(local)
                 .expect("all local row functions were admitted")
-                .push(decision_copy(lower, work)?);
+                .push(work.copy_decision(lower)?);
         }
         unique &= predicate
             .and(&different, work)?
             .exists(&locals, work)?
             .is_constant(false);
         work.charge(DecisionWork::Node)?;
-        satisfiable.push(decision_copy(completed.satisfiable(), work)?);
+        satisfiable.push(work.copy_decision(completed.satisfiable())?);
         work.charge(DecisionWork::Node)?;
-        principal.push(decision_copy(completed.principal(), work)?);
+        principal.push(work.copy_decision(completed.principal())?);
     }
     let satisfiable = predicate_from_decisions(satisfiable, &labels, work)?;
     let principal = predicate_from_decisions(principal, &labels, work)?;

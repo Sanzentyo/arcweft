@@ -135,9 +135,7 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
             PreparedEffectRow::Term(reference) => {
                 let value = &self.rows[&(scope, reference.0.ordinal)];
                 Ok(Row {
-                    formula: value
-                        .formula
-                        .map_references(self.work, &mut |variable, _| Ok(variable.clone()))?,
+                    formula: self.work.copy_formula(&value.formula)?,
                     admitted: value.admitted,
                 })
             }

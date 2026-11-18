@@ -246,9 +246,7 @@ impl ScopedEffectCompletion {
         let mut work = Work(control);
         let mut fixed = BTreeMap::new();
         for (&id, row) in &self.fixed {
-            let formula = row
-                .known()?
-                .map_references(&mut work, &mut |reference, _| Ok(reference.clone()))?;
+            let formula = work.copy_formula(row.known()?)?;
             work.charge(DecisionWork::Node)?;
             fixed.insert(
                 id,
@@ -281,9 +279,7 @@ impl ScopedEffectCompletion {
                     );
                 }
             }
-            let formula = row
-                .known()?
-                .map_references(&mut work, &mut |reference, _| Ok(reference.clone()))?;
+            let formula = work.copy_formula(row.known()?)?;
             for (label, _) in formula.membership().overrides() {
                 work.charge(DecisionWork::Node)?;
                 support.insert(label.clone());

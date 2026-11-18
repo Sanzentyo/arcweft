@@ -142,12 +142,8 @@ impl<'a> CanonicalReplay<'a> {
                     .get(&reference.0.ordinal)
                     .ok_or(PreparedEffectInvariant::StaleReference)?;
                 Ok(Row {
-                    formula: row
-                        .formula
-                        .map_references(work, &mut |variable, _| Ok(variable.clone()))?,
-                    admitted: row
-                        .admitted
-                        .map_references(work, &mut |atom, _| Ok(atom.clone()))?,
+                    formula: work.copy_formula(&row.formula)?,
+                    admitted: work.copy_decision(&row.admitted)?,
                 })
             }
         }
@@ -411,10 +407,11 @@ impl<'a> CanonicalReplay<'a> {
             }
             PreparedEffectPredicate::Term(reference) => {
                 self.principal.graph.predicate(reference)?;
-                self.predicates
+                let predicate = self
+                    .predicates
                     .get(&reference.0.ordinal)
-                    .ok_or(PreparedEffectInvariant::StaleReference)?
-                    .map_references(work, &mut |atom, _| Ok(atom.clone()))
+                    .ok_or(PreparedEffectInvariant::StaleReference)?;
+                work.copy_decision(predicate)
             }
         }
     }
