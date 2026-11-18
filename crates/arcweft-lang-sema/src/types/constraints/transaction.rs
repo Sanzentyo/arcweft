@@ -42,13 +42,13 @@ pub(crate) use materialization::{
 use materialization::{MaterializationInput, SourcePreparation};
 mod operand;
 pub(in crate::types::constraints) use operand::ConstraintAliasStep;
+pub(in crate::types::constraints) use operand::{
+    AdmittedConstraintFunctionHeader, ConstraintEffectField, ConstraintEffectHeaderDerivation,
+    ConstraintOperandChildren, ConstraintOperandRebuild, ConstraintProjectedOperand,
+};
 pub(in crate::types) use operand::{
     ConstraintConstOperandView, ConstraintFunctionHeaderView, ConstraintOperand,
     ConstraintOperandView,
-};
-pub(in crate::types::constraints) use operand::{
-    ConstraintEffectField, ConstraintEffectHeaderDerivation, ConstraintOperandChildren,
-    ConstraintOperandRebuild, ConstraintProjectedOperand,
 };
 use operand::{ResolvedConstraintResult, ResolvedConstraintSource};
 

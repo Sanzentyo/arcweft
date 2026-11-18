@@ -5,8 +5,8 @@ use super::super::{
     application::ImportedGenericParameterScopeLease,
     lexical::ConstraintLexicalScope,
     transaction::{
-        ConstraintEffectField, ConstraintEffectHeaderDerivation, ConstraintFunctionHeaderView,
-        ConstraintInferenceBranch, ConstraintOperand, ConstraintPath,
+        AdmittedConstraintFunctionHeader, ConstraintEffectField, ConstraintEffectHeaderDerivation,
+        ConstraintFunctionHeaderView, ConstraintInferenceBranch, ConstraintOperand, ConstraintPath,
     },
 };
 use super::*;
@@ -454,14 +454,13 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
 
     pub(in crate::types::constraints) fn project_header<A: TypeConstraintAccounting>(
         self: &Arc<Self>,
-        header: &ConstraintFunctionHeaderView<'_, D>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        header: &AdmittedConstraintFunctionHeader<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<
         ConstraintProjectedEffectHeader<Option<ConstraintClosedEffectHeader<D>>, PreparedEffects>,
         TypeConstraintError,
     > {
-        header.admit(graph, context)?;
+        let header = header.view();
         let mut uses = HeaderReplacementUses::default();
         let (row, predicate) = self.project_header_values(
             header.lexical_scope(),

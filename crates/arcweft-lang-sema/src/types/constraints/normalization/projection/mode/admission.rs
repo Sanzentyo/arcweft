@@ -1,7 +1,6 @@
 //! Permission-only use of the common type fold; it emits no semantic value.
 
 use super::*;
-use crate::types::constraints::transaction::ConstraintFunctionHeaderView;
 
 pub(in crate::types::constraints::normalization::projection) struct AdmitOrigins;
 
@@ -9,7 +8,7 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for AdmitOrigins {
     type TypeInput = ConstraintOperandView<'ty, D>;
     type ConstInput = ConstraintConstOperandView<'ty, D>;
     type Children = ConstraintOperandChildren<'ty, D>;
-    type ShapeSeed = Option<ConstraintFunctionHeaderView<'ty, D>>;
+    type ShapeSeed = ();
     type TypeOutput = ();
     type ConstOutput = ();
 
@@ -52,23 +51,26 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for AdmitOrigins {
     fn children<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(Self::Children, Self::ShapeSeed), TypeConstraintError> {
+    ) -> Result<ProjectionChildren<'ty, D, Self::Children, Self::ShapeSeed>, TypeConstraintError>
+    {
         let children = input.children(context)?;
         let header = children.function_header()?;
-        Ok((children, header))
+        Ok(ProjectionChildren {
+            children,
+            seed: (),
+            header,
+        })
     }
     fn type_leaf(_: &Self::TypeInput) {}
     fn const_leaf(_: &Self::ConstInput) {}
     fn rebuild<A: TypeConstraintAccounting>(
-        header: Self::ShapeSeed,
+        _: (),
         _: Vec<()>,
         _: Option<()>,
-        phase: &mut ConstraintProjectionPhase<'_, D>,
-        context: &mut TypeConstraintContext<'_, A, D>,
+        _: Option<AdmittedConstraintFunctionHeader<'ty, D>>,
+        _: &mut ConstraintProjectionPhase<'_, D>,
+        _: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        if let Some(header) = header {
-            header.admit(phase.read(), context)?;
-        }
         Ok(())
     }
     fn substitute_type<A: TypeConstraintAccounting>(

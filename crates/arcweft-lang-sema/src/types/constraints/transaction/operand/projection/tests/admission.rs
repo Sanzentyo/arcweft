@@ -229,6 +229,7 @@ fn mixed_source_ports_keep_independent_type_and_length_admission() {
         .rebuild(
             vec![values[0].view().projected_leaf()],
             Some(lengths[1].view().projected_leaf()),
+            None,
             &mut crate::types::constraints::normalization::ConstraintProjectionPhase::Preparation(
                 &mut graph,
             ),

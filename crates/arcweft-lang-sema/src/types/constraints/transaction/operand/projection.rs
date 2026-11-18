@@ -10,6 +10,7 @@ mod authority;
 mod header;
 mod rebuild;
 mod source_expectation;
+pub(in crate::types::constraints) use admission::AdmittedConstraintFunctionHeader;
 pub(in crate::types) use header::ConstraintFunctionHeaderView;
 pub(in crate::types::constraints) use header::{
     ConstraintEffectField, ConstraintEffectHeaderDerivation,

@@ -1,7 +1,21 @@
 //! Free declarations are authorized by the corresponding value derivation.
 
 use super::*;
+use crate::effect_row::prepared::{
+    PreparedEffectPredicate, PreparedEffectReadView, PreparedEffectRow,
+};
+use crate::types::GenericEffectReference;
 use crate::types::constraints::{ConstraintGenericParameterId, references};
+
+pub(in crate::types::constraints) struct AdmittedConstraintFunctionHeader<'a, D: ConstraintDomain>(
+    ConstraintFunctionHeaderView<'a, D>,
+);
+
+impl<'a, D: ConstraintDomain> AdmittedConstraintFunctionHeader<'a, D> {
+    pub(in crate::types::constraints) fn view(&self) -> &ConstraintFunctionHeaderView<'a, D> {
+        &self.0
+    }
+}
 
 impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
     fn admits_parameter<A: TypeConstraintAccounting>(
@@ -144,7 +158,7 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
     }
 }
 
-impl<D: ConstraintDomain> ConstraintFunctionHeaderView<'_, D> {
+impl<'a, D: ConstraintDomain> ConstraintFunctionHeaderView<'a, D> {
     pub(in crate::types::constraints) fn admits_effect_parameter<A: TypeConstraintAccounting>(
         &self,
         field: ConstraintEffectField,
@@ -182,9 +196,49 @@ impl<D: ConstraintDomain> ConstraintFunctionHeaderView<'_, D> {
         Ok(())
     }
 
+    pub(in crate::types::constraints) fn admit_projection<A: TypeConstraintAccounting>(
+        header: Option<Self>,
+        row: &PreparedEffectRow,
+        predicate: &PreparedEffectPredicate,
+        effects: PreparedEffectReadView<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        mut check_reference: impl FnMut(
+            &GenericEffectReference,
+            &mut TypeConstraintContext<'_, A, D>,
+        ) -> Result<(), TypeConstraintError>,
+    ) -> Result<Option<AdmittedConstraintFunctionHeader<'a, D>>, TypeConstraintError> {
+        if let Some(header) = &header
+            && !(std::ptr::eq(header.row(), row) && std::ptr::eq(header.predicate(), predicate))
+        {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
+        }
+
+        // A visit charges the effect graph once, then checks the reference
+        // against both the active branch and the exact source field.
+        let mut admit = |field, reference: &GenericEffectReference, context: &mut _| {
+            check_reference(reference, context)?;
+            if let Some(header) = &header {
+                header.admit_effect_reference(field, reference, context)?;
+            }
+            Ok(())
+        };
+        effects.visit_predicate_parameters(predicate, context, &mut |reference, context| {
+            admit(ConstraintEffectField::Predicate, reference, context)
+        })?;
+        if let PreparedEffectPredicate::Canonical(predicate) = predicate
+            && predicate.is_impossible()
+        {
+            return Err(crate::types::constraints::TypeConstraintRejection::Mismatch.into());
+        }
+        effects.visit_row_parameters(row, context, &mut |reference, context| {
+            admit(ConstraintEffectField::Row, reference, context)
+        })?;
+        Ok(header.map(AdmittedConstraintFunctionHeader))
+    }
+
     pub(in crate::types) fn admit<A: TypeConstraintAccounting>(
         &self,
-        effects: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        effects: PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         effects.visit_row_parameters(self.row(), context, &mut |reference, context| {
@@ -198,5 +252,16 @@ impl<D: ConstraintDomain> ConstraintFunctionHeaderView<'_, D> {
             },
         )?;
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(in crate::types::constraints) fn admit_for_test<A: TypeConstraintAccounting>(
+        self,
+        effects: PreparedEffectReadView<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<AdmittedConstraintFunctionHeader<'a, D>, TypeConstraintError> {
+        let (row, predicate) = (self.row(), self.predicate());
+        Self::admit_projection(Some(self), row, predicate, effects, context, |_, _| Ok(()))?
+            .ok_or_else(|| TypeConstraintInvariant::OriginalProducer.into())
     }
 }

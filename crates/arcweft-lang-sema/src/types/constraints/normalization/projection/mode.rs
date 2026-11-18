@@ -43,13 +43,14 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
     fn children<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(Self::Children, Self::ShapeSeed), TypeConstraintError>;
+    ) -> Result<ProjectionChildren<'ty, D, Self::Children, Self::ShapeSeed>, TypeConstraintError>;
     fn type_leaf(input: &Self::TypeInput) -> Self::TypeOutput;
     fn const_leaf(input: &Self::ConstInput) -> Self::ConstOutput;
     fn rebuild<A: TypeConstraintAccounting>(
         seed: Self::ShapeSeed,
         children: Vec<Self::TypeOutput>,
         length: Option<Self::ConstOutput>,
+        header: Option<AdmittedConstraintFunctionHeader<'ty, D>>,
         phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError>;
@@ -72,6 +73,12 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
         parameter: &GenericConstReference,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::ConstOutput, TypeConstraintError>;
+}
+
+pub(super) struct ProjectionChildren<'ty, D: ConstraintDomain, C, S> {
+    pub(super) children: C,
+    pub(super) seed: S,
+    pub(super) header: Option<ConstraintFunctionHeaderView<'ty, D>>,
 }
 
 /// Read-only inspection cannot be persisted as a provenance-bearing operand.
@@ -147,9 +154,14 @@ impl<'ty, D: ConstraintDomain, E: InspectionEffects> ProjectionMode<'ty, D> for 
     fn children<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
         _: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(Self::Children, Self::ShapeSeed), TypeConstraintError> {
+    ) -> Result<ProjectionChildren<'ty, D, Self::Children, Self::ShapeSeed>, TypeConstraintError>
+    {
         let shape = input.constraint_shape();
-        Ok((shape.children(), shape))
+        Ok(ProjectionChildren {
+            children: shape.children(),
+            seed: shape,
+            header: None,
+        })
     }
     fn type_leaf(input: &Self::TypeInput) -> Self::TypeOutput {
         let TypeKind::GenericParam(reference) = input else {
@@ -164,6 +176,7 @@ impl<'ty, D: ConstraintDomain, E: InspectionEffects> ProjectionMode<'ty, D> for 
         shape: Self::ShapeSeed,
         children: Vec<Self::TypeOutput>,
         length: Option<ArrayLength>,
+        _: Option<AdmittedConstraintFunctionHeader<'ty, D>>,
         phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError> {
@@ -331,10 +344,16 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
     fn children<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(Self::Children, Self::ShapeSeed), TypeConstraintError> {
+    ) -> Result<ProjectionChildren<'ty, D, Self::Children, Self::ShapeSeed>, TypeConstraintError>
+    {
         let children = input.children(context)?;
+        let header = children.function_header()?;
         let seed = children.rebuild_seed();
-        Ok((children, seed))
+        Ok(ProjectionChildren {
+            children,
+            seed,
+            header,
+        })
     }
     fn type_leaf(input: &Self::TypeInput) -> Self::TypeOutput {
         input.projected_leaf()
@@ -346,10 +365,11 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for RetainOrigins {
         seed: Self::ShapeSeed,
         children: Vec<Self::TypeOutput>,
         length: Option<Self::ConstOutput>,
+        header: Option<AdmittedConstraintFunctionHeader<'ty, D>>,
         phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self::TypeOutput, TypeConstraintError> {
-        seed.rebuild(children, length, phase, context)
+        seed.rebuild(children, length, header, phase, context)
     }
     fn substitute_type<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,

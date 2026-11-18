@@ -182,9 +182,16 @@ fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_befo
         .unwrap()
         .unwrap();
     let effects = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    let graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let left_header = left_header
+        .admit_for_test(graph.read(), &mut context)
+        .unwrap();
+    let right_header = right_header
+        .admit_for_test(graph.read(), &mut context)
+        .unwrap();
     let mut incomplete = effects.project_header(&left_header, &mut context).unwrap();
     assert_eq!(
-        incomplete.take_row(left_header.row()),
+        incomplete.take_row(left_header.view().row()),
         EffectRow::closed(expected[0].clone())
     );
     assert!(matches!(
@@ -193,8 +200,9 @@ fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_befo
             TypeConstraintInvariant::OriginalProducer
         ))
     ));
-    for (index, header) in [left_header, right_header].iter().enumerate() {
-        let mut projected = effects.project_header(header, &mut context).unwrap();
+    for (index, admitted) in [left_header, right_header].iter().enumerate() {
+        let mut projected = effects.project_header(admitted, &mut context).unwrap();
+        let header = admitted.view();
         assert_eq!(
             projected.take_row(header.row()),
             EffectRow::closed(expected[index].clone())

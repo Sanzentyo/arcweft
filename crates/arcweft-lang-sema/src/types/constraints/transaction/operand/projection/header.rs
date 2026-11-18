@@ -60,6 +60,19 @@ impl<'a, D: ConstraintDomain> ConstraintOperandChildren<'a, D> {
 }
 
 impl<'a, D: ConstraintDomain> ConstraintFunctionHeaderView<'a, D> {
+    pub(super) fn belongs_to(
+        &self,
+        source: &ConstraintOperandView<'_, D>,
+        contents_scope: &Arc<ConstraintLexicalScope>,
+    ) -> bool {
+        std::ptr::eq(self.source.root, source.root)
+            && std::ptr::eq(self.source.value, source.value)
+            && self.source.address.as_ref().map(Arc::as_ptr)
+                == source.address.as_ref().map(Arc::as_ptr)
+            && Arc::ptr_eq(&self.source.value_origin, &source.value_origin)
+            && Arc::ptr_eq(&self.contents_scope, contents_scope)
+    }
+
     pub(in crate::types) fn row(&self) -> &'a PreparedEffectRow {
         self.row
     }

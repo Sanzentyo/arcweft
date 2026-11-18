@@ -130,6 +130,7 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
         self,
         children: Vec<ConstraintProjectedOperand<D, TypeKind<PreparedEffects>>>,
         length: Option<ConstraintProjectedOperand<D, ArrayLength>>,
+        header: Option<AdmittedConstraintFunctionHeader<'_, D>>,
         phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ConstraintProjectedOperand<D, TypeKind<PreparedEffects>>, TypeConstraintError> {
@@ -153,10 +154,18 @@ impl<D: ConstraintDomain> ConstraintOperandRebuild<'_, D> {
             }
             None => (None, None),
         };
-        let input_header = self.source.function_header_in_scope(&self.contents_scope)?;
-        let header = phase.project_header(input_header, context)?;
+        let shape = self.source.value().constraint_shape();
+        match (&shape, &header) {
+            (crate::types::constraints::TypeConstraintShape::Function { .. }, Some(header))
+                if header.view().belongs_to(&self.source, &self.contents_scope) => {}
+            (crate::types::constraints::TypeConstraintShape::Function { .. }, _) | (_, Some(_)) => {
+                return Err(TypeConstraintInvariant::OriginalProducer.into());
+            }
+            (_, None) => {}
+        }
+        let header = phase.project_header(header, context)?;
         let mut fields = (length_value, header);
-        let value = self.source.value().constraint_shape().rebuild_with(
+        let value = shape.rebuild_with(
             values,
             &mut fields,
             |(length, _), _| {

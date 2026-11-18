@@ -25,9 +25,10 @@ use super::{
 mod mode;
 mod phase;
 use crate::types::constraints::transaction::{
-    ConstraintConstOperandView, ConstraintOperand, ConstraintOperandView,
+    AdmittedConstraintFunctionHeader, ConstraintConstOperandView, ConstraintFunctionHeaderView,
+    ConstraintOperand, ConstraintOperandView,
 };
-use mode::{AdmitOrigins, InspectValues, ProjectionMode, RetainOrigins};
+use mode::{AdmitOrigins, InspectValues, ProjectionChildren, ProjectionMode, RetainOrigins};
 pub(in crate::types::constraints) use phase::ConstraintProjectionPhase;
 
 impl<'ty, D: ConstraintDomain> ConstraintProjectionView<'ty, D> {
@@ -115,6 +116,7 @@ enum ProjectionFrame<'ty, D: ConstraintDomain, M: ProjectionMode<'ty, D>> {
     },
     Shape {
         seed: M::ShapeSeed,
+        header: Option<AdmittedConstraintFunctionHeader<'ty, D>>,
         children: M::Children,
         projected: Vec<M::TypeOutput>,
         length: Option<M::ConstOutput>,
@@ -374,36 +376,22 @@ where
                     };
                     let enclosing = (!shape.binder().is_empty())
                         .then(|| context.enter_binder_scope(shape.binder()));
-                    if let TypeConstraintShape::Function {
+                    let ProjectionChildren {
+                        mut children,
+                        seed,
+                        header,
+                    } = M::children(&current, context)?;
+                    let header = if let TypeConstraintShape::Function {
                         effects, predicate, ..
                     } = shape
                     {
-                        phase.read().visit_predicate_parameters(
-                            predicate,
-                            context,
-                            &mut |variable, context| {
-                                context.validate_effect_reference(variable, view)?;
-                                if context.effect_eligibility(variable, view)
-                                    != Some(crate::effect_row::EffectConstraintEligibility::Rigid)
-                                {
-                                    remaining.insert(RemainingConstraintParameter(
-                                        variable.clone().into(),
-                                    ));
-                                }
-                                Ok(())
-                            },
-                        )?;
-                        if let crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
-                            predicate,
-                        ) = predicate
-                            && predicate.is_impossible()
-                        {
-                            return Err(TypeConstraintRejection::Mismatch.into());
-                        }
-                        phase.read().visit_row_parameters(
+                        let header = ConstraintFunctionHeaderView::admit_projection(
+                            header,
                             effects,
+                            predicate,
+                            phase.read(),
                             context,
-                            &mut |variable, context| {
+                            |variable, context| {
                                 context.validate_effect_reference(variable, view)?;
                                 if context.effect_eligibility(variable, view)
                                     != Some(crate::effect_row::EffectConstraintEligibility::Rigid)
@@ -429,11 +417,17 @@ where
                         {
                             context.validate_effect_row(row, view)?;
                         }
-                    }
-                    let (mut children, seed) = M::children(&current, context)?;
+                        header
+                    } else {
+                        if header.is_some() {
+                            return Err(TypeConstraintInvariant::OriginalProducer.into());
+                        }
+                        None
+                    };
                     if let Some(child) = M::next_child(&mut children)? {
                         frames.push(ProjectionFrame::Shape {
                             seed,
+                            header,
                             children,
                             projected: Vec::new(),
                             length,
@@ -442,7 +436,7 @@ where
                         current = child;
                         continue;
                     }
-                    rebuild::<A, D, M>(seed, Vec::new(), length, enclosing, phase, context)?
+                    rebuild::<A, D, M>(seed, header, Vec::new(), length, enclosing, phase, context)?
                 }
             };
             loop {
@@ -462,6 +456,7 @@ where
                     }
                     Some(ProjectionFrame::Shape {
                         seed,
+                        header,
                         mut children,
                         mut projected,
                         length,
@@ -471,6 +466,7 @@ where
                         if let Some(child) = M::next_child(&mut children)? {
                             frames.push(ProjectionFrame::Shape {
                                 seed,
+                                header,
                                 children,
                                 projected,
                                 length,
@@ -479,8 +475,9 @@ where
                             current = child;
                             break;
                         }
-                        value =
-                            rebuild::<A, D, M>(seed, projected, length, enclosing, phase, context)?;
+                        value = rebuild::<A, D, M>(
+                            seed, header, projected, length, enclosing, phase, context,
+                        )?;
                     }
                 }
             }
@@ -498,6 +495,7 @@ where
 
 fn rebuild<'ty, A, D, M>(
     seed: M::ShapeSeed,
+    header: Option<AdmittedConstraintFunctionHeader<'ty, D>>,
     children: Vec<M::TypeOutput>,
     length: Option<M::ConstOutput>,
     enclosing: Option<ConstraintLexicalScope>,
@@ -511,7 +509,7 @@ where
 {
     // Headers are expressed inside their actual local binder. Both output
     // modes rebuild there, and restore the enclosing scope even on failure.
-    let result = M::rebuild(seed, children, length, phase, context);
+    let result = M::rebuild(seed, children, length, header, phase, context);
     if let Some(enclosing) = enclosing {
         context.restore_binder_scope(enclosing);
     }

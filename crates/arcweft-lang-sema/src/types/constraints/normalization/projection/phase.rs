@@ -3,7 +3,7 @@
 use super::*;
 use crate::effect_row::prepared::PreparedEffectGraph;
 use crate::types::constraints::{
-    normalization::ConstraintProjectedEffectHeader, transaction::ConstraintFunctionHeaderView,
+    normalization::ConstraintProjectedEffectHeader, transaction::AdmittedConstraintFunctionHeader,
 };
 use std::sync::Arc;
 
@@ -26,7 +26,7 @@ impl<D: ConstraintDomain> ConstraintProjectionPhase<'_, D> {
 
     pub(in crate::types::constraints) fn project_header<A: TypeConstraintAccounting>(
         &mut self,
-        header: Option<ConstraintFunctionHeaderView<'_, D>>,
+        header: Option<AdmittedConstraintFunctionHeader<'_, D>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<
         ConstraintProjectedEffectHeader<
@@ -37,14 +37,9 @@ impl<D: ConstraintDomain> ConstraintProjectionPhase<'_, D> {
     > {
         match self {
             Self::Admission(_) => Err(TypeConstraintInvariant::OriginalProducer.into()),
-            Self::Preparation(graph) => {
-                if let Some(header) = header {
-                    header.admit(graph.read(), context)?;
-                }
-                Ok(ConstraintProjectedEffectHeader::Original)
-            }
-            Self::Completion { owner, graph } => match header {
-                Some(header) => owner.project_header(&header, *graph, context),
+            Self::Preparation(_) => Ok(ConstraintProjectedEffectHeader::Original),
+            Self::Completion { owner, .. } => match header {
+                Some(header) => owner.project_header(&header, context),
                 None => Ok(ConstraintProjectedEffectHeader::Original),
             },
         }
