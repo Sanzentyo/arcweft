@@ -18694,3 +18694,16 @@ Analyzerで閉じた値を投影する独立呼出しは、元のfrontierを引�
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。公開入力ではlibrary **416エラー・25警告**、lib test **1,332エラー・44警告**。変更pathを一次位置とする1件は `transaction.rs:2554` の既存の `ConstraintClosedEffects::for_path` 呼出しの引数不足。Semaのfmtと構造gateは終了0、blocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,087,832 bytesで、約300 GBを目安とするcleanは未実行。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-scoped-result-use-checkpoint.raw.zip) は22 entry、282,343 bytes、SHA256 `e3eed570db69c19f773c6143da2b9affe7be461a1a453b94ac750c48ec21951b`。各entryの長さとSHA256を再照合した。旧履歴2,898,675 bytesのSHA256 `1001c37ee42bb1e72cfa8c1643560743705ee55dbf966faca230c623d73a2dcb` をprefixとして保持した。
+
+<a id="scoped-probe-checkpoint"></a>
+## 2026-11-18 — 期待型の読取り範囲を引数解析へ渡す
+
+基点 `c361a7ec8360a1d6e2358f7c0807b04999f75f7c`。Source `46bb0961ceb344d0887da285e70f2063d850261f` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した11入力のblobを照合した。
+
+型制約の候補は保持する作用項の範囲で期待型を準備し、派生した作用項を同じ候補に紐付けたままAnalyzerの引数コールバックへ渡す。コールバックの事実チェックポイントが読取り範囲を所有し、閉じると親の範囲が復帰する。入れ子の差分を親へ適用するときは元の書込み権限と親の依存関係を検証し、今回の書込みだけを記録する。グラフ全体への公開には依存する元の差分が必要となる。選択した元のAnalyzer準備を最終公開で使う移行は継続する。
+
+新規回帰は、子の抽出失敗後の再試行と親の範囲の復帰、および差分の再適用時の依存関係の拒否と既存作用項の重複防止を検査する。既存のAnalyzer回帰には、コールバックを開く間の作用項の可視性、閉じた後の不可視性、保持した準備差分からの再読取りを追加した。回帰はコンパイル段階で停止し未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は3回とも終了101。初回は読取り範囲の合成にlifetimeエラーがあり修正した。公開入力はlibrary **416エラー・25警告**、lib test **1,314エラー・44警告**。前回Sourceとの一次診断の比較では、チェックポイントの作業セッション引数を揃えたAnalyzer fixtureのE0061が18件減った。型制約の旧 `ConstraintClosedEffects::for_path` 呼出しの引数不足は `transaction.rs:2568` に残る。Semaのfmtと構造gateは終了0、blocking違反0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,997,277 bytesで、約300 GBを目安とするcleanは未実行。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-scoped-probe-checkpoint.raw.zip) は29 entry、417,039 bytes、SHA256 `f379bd37dcc1b7470891ec1a26c1b5577281fd801d43f65d0450b4d31c2b0a17`。各entryの長さとSHA256を再照合した。旧履歴2,900,966 bytesのSHA256 `818304cc4d201b3720d27dad1774b37d34dd927c67fa41d141fcf7ee43c1dffc` をprefixとして保持した。
