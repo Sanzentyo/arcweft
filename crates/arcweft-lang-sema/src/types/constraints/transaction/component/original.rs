@@ -67,6 +67,7 @@ pub(super) struct PreparedOriginalProduct<D: ConstraintDomain> {
 pub(super) struct OriginalProductInference<S> {
     pub(super) members: Arc<[OriginalProductMember]>,
     pub(super) scope: ConstraintLexicalScope,
+    effect_reads: Option<crate::effect_row::prepared::PreparedEffectReadScope>,
     pub(super) result: Result<Box<[S]>, OriginalProductRejection>,
 }
 
@@ -191,6 +192,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 context.enter_node()?;
                 let members: Arc<[OriginalProductMember]> = members.into();
                 let mut scope = ConstraintLexicalScope::default();
+                let mut source_reads = Vec::new();
                 for member in members.iter() {
                     let path = self.original_path(*member)?;
                     scope.merge(&path.lineage.scope, context)?;
@@ -199,18 +201,22 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     for equation in &path.equations {
                         scope.merge(equation.scope(), context)?;
                     }
+                    for reads in path.lineage.probe_effect_reads() {
+                        context.enter_node()?;
+                        source_reads.push(reads);
+                    }
                 }
                 for _ in scope.shape().binders() {
                     context.enter_node()?;
                 }
                 let inferred = context.with_original_scope(scope.clone(), |context| {
-                    context.with_effect_transaction(graph, |context, graph| {
+                    context.with_effect_reads(graph, source_reads, |context, graph| {
                         self.infer_original_product(&members, &scope, graph, context)
                     })
                 });
-                let result = match inferred {
-                    Ok(solutions) => Ok(solutions),
-                    Err(OriginalInferenceFailure::Rejected(rejection)) => Err(rejection),
+                let (result, effect_reads) = match inferred {
+                    Ok((solutions, reads)) => (Ok(solutions), reads),
+                    Err(OriginalInferenceFailure::Rejected(rejection)) => (Err(rejection), None),
                     Err(OriginalInferenceFailure::Constraint(error)) => return Err(error.into()),
                     Err(OriginalInferenceFailure::Instantiation(error)) => return Err(error.into()),
                     Err(OriginalInferenceFailure::Effect(error)) => return Err(error.into()),
@@ -219,6 +225,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 products.push(OriginalProductInference {
                     members,
                     scope,
+                    effect_reads,
                     result,
                 });
                 let mut depth = positions.len();

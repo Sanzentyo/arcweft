@@ -2368,6 +2368,38 @@ where
             }
         }
     }
+
+    /// Run one projection or constraint calculation with its original read
+    /// scopes. A scoped calculation returns the detached terms it produced.
+    pub(in crate::types::constraints) fn with_effect_reads<'r, T, E>(
+        &mut self,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        scopes: impl IntoIterator<Item = &'r crate::effect_row::prepared::PreparedEffectReadScope>,
+        operation: impl FnOnce(
+            &mut Self,
+            &mut crate::effect_row::prepared::PreparedEffectGraph,
+        ) -> Result<T, E>,
+    ) -> Result<
+        (
+            T,
+            Option<crate::effect_row::prepared::PreparedEffectReadScope>,
+        ),
+        E,
+    >
+    where
+        E: From<crate::effect_row::prepared::PreparedEffectFailure<TypeConstraintError>>,
+    {
+        let mut scopes = scopes.into_iter().peekable();
+        if scopes.peek().is_none() {
+            return self
+                .with_effect_transaction(graph, operation)
+                .map(|value| (value, None));
+        }
+        let reads = graph.compose_read_scopes(scopes, self)?;
+        graph
+            .compute_in_read_scope(&reads, self, |graph, context| operation(context, graph))
+            .map(|(value, reads)| (value, Some(reads)))
+    }
 }
 
 impl<A: TypeConstraintAccounting, D: ConstraintDomain> Drop for TypeConstraintContext<'_, A, D> {

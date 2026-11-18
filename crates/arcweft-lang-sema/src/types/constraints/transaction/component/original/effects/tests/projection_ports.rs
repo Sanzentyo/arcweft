@@ -1,11 +1,129 @@
 use super::*;
 use crate::{
-    effect_row::prepared::{PreparedEffectPredicate, PreparedEffectUnknownEligibility},
+    effect_row::prepared::{
+        PreparedEffectInvariant, PreparedEffectPredicate, PreparedEffectUnknownEligibility,
+    },
     types::{
         GenericBinder,
         constraints::{ConstraintClosurePolicy, normalization::project_closed_operand},
     },
 };
+
+#[test]
+fn the_selected_projection_closes_over_detached_reads_and_returns_a_canonical_result() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let named = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+        .unwrap();
+    let mut checkpoint = graph.checkpoint(&mut context).unwrap();
+    let future = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Future,
+            &mut context,
+        )
+        .unwrap();
+    let future_row = graph
+        .unknown_application(&future, vec![], &mut context)
+        .unwrap();
+    let call_row = graph.application(&named, vec![], &mut context).unwrap();
+    let row = graph
+        .union(vec![future_row, call_row], &mut context)
+        .unwrap();
+    let delta = graph.extract_delta(&mut checkpoint, &mut context).unwrap();
+    let reads = graph.read_scope([&delta], &mut context).unwrap();
+    drop(delta);
+    let template = TypeKind::function_with_contract(
+        GenericBinder::EMPTY,
+        truth(),
+        [],
+        TypeKind::I64,
+        row.clone(),
+    );
+
+    let source = Arc::new(Source {
+        identity: Arc::new(()),
+        inputs: [input()],
+        domain: EffectPredicate::unconstrained(),
+    });
+    let original = context.original_producer_context(&source).unwrap();
+    let owner = context
+        .application_scope(
+            (),
+            TypeConstraintParameterScope::empty(),
+            original.clone(),
+            &mut graph,
+        )
+        .unwrap();
+    let mut path = context
+        .start_path_with_imported(owner, None, original, graph.read())
+        .unwrap();
+    path.lineage.effect_reads = Some(reads);
+    let application = path.root_id();
+    let mut transaction =
+        TypeConstraintTransaction::from_path(&mut context, &mut graph, application, path, None)
+            .unwrap();
+    transaction.request_projection_with_input(
+        &mut context,
+        &mut graph,
+        (),
+        &template,
+        TypeConstraintProjectionClosure::Closed,
+        Some(&template),
+    );
+    let frontier = transaction.suspend_result(&mut context, ()).unwrap();
+    let mut component = Component::new(&mut context, &graph).unwrap();
+    let producer = component
+        .admit_fixture_roots(&mut context, &mut graph, vec![frontier], ())
+        .unwrap();
+    let live_terms = graph.retained_terms();
+    let forest = component
+        .infer_original_products(&mut context, &mut graph)
+        .unwrap();
+    assert_eq!(graph.retained_terms(), live_terms);
+
+    let body = EffectRow::closed(EffectSet::from_labels(["named.body"]).unwrap());
+    graph
+        .prepare_body(
+            &named,
+            PreparedEffectRow::Canonical(body),
+            vec![],
+            &mut context,
+        )
+        .unwrap();
+    let actual = EffectRow::closed(EffectSet::from_labels(["future.actual"]).unwrap());
+    let solved = forest
+        .close(&[(&future, &actual)], &mut graph, &mut context)
+        .unwrap()
+        .into_candidate_materialization(&producer, &mut context)
+        .unwrap()
+        .finish(&mut context, |_, _, _| Ok(true))
+        .unwrap()
+        .into_unique()
+        .unwrap();
+    let [projection] = solved.component.selected().projections() else {
+        panic!("expected the selected result projection");
+    };
+    let TypeKind::Function { effects, .. } = projection.to_quantified_type().unwrap() else {
+        panic!("expected a canonical function type");
+    };
+    assert_eq!(
+        effects,
+        EffectRow::closed(EffectSet::from_labels(["named.body", "future.actual"]).unwrap())
+    );
+    assert!(projection.has_exact_input_match());
+    assert_eq!(
+        graph.read().validate_unknown(&future),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+    assert_eq!(
+        graph.read().validate_retained_row(&row),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+    assert_eq!(graph.retained_terms(), live_terms);
+}
 
 #[test]
 fn a_registered_projection_keeps_named_and_future_queries_before_final_closure() {

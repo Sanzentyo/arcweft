@@ -403,10 +403,40 @@ pub(crate) struct PreparedEffectActualInputs<'a> {
     rows: BTreeMap<u64, &'a EffectRow>,
 }
 
-impl PreparedEffectReadView<'_> {
+impl PreparedEffectGraph {
+    /// Check supplied Future identities against the live graph and each
+    /// candidate's own verified scope. The candidate relations stay separate.
+    pub(crate) fn actual_inputs_with_scopes<'a, C: DecisionControl>(
+        &self,
+        bindings: &[(&PreparedEffectUnknownRef, &'a EffectRow)],
+        scopes: &[PreparedEffectReadScope],
+        control: &mut C,
+    ) -> Result<PreparedEffectActualInputs<'a>, PreparedEffectFailure<C::Error>> {
+        let mut views = Vec::new();
+        let mut work = Work(control);
+        for scope in scopes {
+            let view = self.read_scoped(scope, work.0)?;
+            work.charge(DecisionWork::Node)?;
+            views.push(view);
+        }
+        self.read()
+            .actual_inputs_with_views(bindings, &views, work.0)
+    }
+}
+
+impl<'g> PreparedEffectReadView<'g> {
     pub(crate) fn actual_inputs<'a, C: DecisionControl>(
         self,
         bindings: &[(&PreparedEffectUnknownRef, &'a EffectRow)],
+        control: &mut C,
+    ) -> Result<PreparedEffectActualInputs<'a>, PreparedEffectFailure<C::Error>> {
+        self.actual_inputs_with_views(bindings, &[], control)
+    }
+
+    fn actual_inputs_with_views<'a, C: DecisionControl>(
+        self,
+        bindings: &[(&PreparedEffectUnknownRef, &'a EffectRow)],
+        scopes: &[PreparedEffectReadView<'g>],
         control: &mut C,
     ) -> Result<PreparedEffectActualInputs<'a>, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
@@ -414,7 +444,15 @@ impl PreparedEffectReadView<'_> {
         for (reference, row) in bindings {
             work.charge(DecisionWork::Visit)?;
             let reference = FunctionRef::Unknown((*reference).clone());
-            let function = self.function(&reference)?;
+            let mut function = self.function(&reference);
+            for scope in scopes {
+                if !matches!(function, Err(PreparedEffectInvariant::StaleReference)) {
+                    break;
+                }
+                work.charge(DecisionWork::Visit)?;
+                function = scope.function(&reference);
+            }
+            let function = function?;
             if !function.is_future() {
                 return Err(PreparedEffectInvariant::FutureBinding.into());
             }

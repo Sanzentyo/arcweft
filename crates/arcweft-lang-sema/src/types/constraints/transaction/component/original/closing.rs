@@ -33,7 +33,18 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                 .read()
                 .validate_owner(&self.original.effect_owner)
                 .map_err(TypeConstraintError::from)?;
-            let inputs = graph.read().actual_inputs(inputs, context)?;
+            let mut input_scopes = Vec::new();
+            if !inputs.is_empty() {
+                for reads in self
+                    .products
+                    .iter()
+                    .filter_map(|product| product.effect_reads.as_ref())
+                {
+                    context.enter_node()?;
+                    input_scopes.push(graph.compose_read_scopes([reads], context)?);
+                }
+            }
+            let inputs = graph.actual_inputs_with_scopes(inputs, &input_scopes, context)?;
             let mut staged = Vec::new();
             for product in &self.products {
                 context.enter_node()?;
@@ -63,54 +74,61 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                         )));
                     }
                     let closed = context.with_original_scope(product.scope.clone(), |context| {
-                        context.with_effect_transaction(graph, |context, graph| {
-                            let effects = ConstraintClosedEffects::for_branch(
-                                &prepared.branch,
-                                &product.scope,
-                                Arc::clone(&sources),
-                                &prepared.effects,
-                                &inputs,
-                                graph,
-                                context,
-                            )
-                            .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
-                            self.original.validate_original_bindings(
-                                &prepared.branch,
-                                &product.members,
-                                &product.scope,
-                                &effects,
-                                graph,
-                                context,
-                            )?;
-                            let mut completed = Vec::new();
-                            for member in product.members.iter() {
-                                context.enter_node()?;
-                                let source = self.original.original_path(*member)?;
-                                let input = MaterializationInput::from_closed_original(
-                                    source,
-                                    source.root_id(),
+                        context.with_effect_reads(
+                            graph,
+                            product.effect_reads.iter(),
+                            |context, graph| {
+                                let effects = ConstraintClosedEffects::for_branch(
                                     &prepared.branch,
-                                    &effects,
-                                    graph.read(),
+                                    &product.scope,
+                                    Arc::clone(&sources),
+                                    &prepared.effects,
+                                    &inputs,
+                                    graph,
                                     context,
                                 )
-                                .map_err(|error| {
-                                    reject(OriginalProductCheck::MemberCompletion(*member), error)
-                                })?;
-                                context.enter_node()?;
-                                completed.push(CompletedOriginalMember {
-                                    member: *member,
-                                    input,
-                                });
-                            }
-                            Ok::<_, OriginalInferenceFailure>((
-                                effects,
-                                completed.into_boxed_slice(),
-                            ))
-                        })
+                                .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
+                                self.original.validate_original_bindings(
+                                    &prepared.branch,
+                                    &product.members,
+                                    &product.scope,
+                                    &effects,
+                                    graph,
+                                    context,
+                                )?;
+                                let mut completed = Vec::new();
+                                for member in product.members.iter() {
+                                    context.enter_node()?;
+                                    let source = self.original.original_path(*member)?;
+                                    let input = MaterializationInput::from_closed_original(
+                                        source,
+                                        source.root_id(),
+                                        &prepared.branch,
+                                        &effects,
+                                        graph.read(),
+                                        context,
+                                    )
+                                    .map_err(|error| {
+                                        reject(
+                                            OriginalProductCheck::MemberCompletion(*member),
+                                            error,
+                                        )
+                                    })?;
+                                    context.enter_node()?;
+                                    completed.push(CompletedOriginalMember {
+                                        member: *member,
+                                        input,
+                                    });
+                                }
+                                Ok::<_, OriginalInferenceFailure>((
+                                    effects,
+                                    completed.into_boxed_slice(),
+                                ))
+                            },
+                        )
                     });
                     match closed {
-                        Ok((effects, completed)) => {
+                        Ok(((effects, completed), _)) => {
                             context.enter_node()?;
                             context.enter_node()?;
                             accepted.push((index, effects, completed));
@@ -179,6 +197,7 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
             products.push(OriginalProductInference {
                 members: product.members,
                 scope: product.scope,
+                effect_reads: product.effect_reads,
                 result,
             });
         }

@@ -382,7 +382,7 @@ impl<D: ConstraintDomain> Clone for ConstraintSourceLineage<D> {
 }
 
 impl<D: ConstraintDomain> ConstraintSourceLineage<D> {
-    fn probe_effect_reads(
+    pub(super) fn probe_effect_reads(
         &self,
     ) -> impl Iterator<Item = &crate::effect_row::prepared::PreparedEffectReadScope> {
         self.effect_reads.iter().chain(
@@ -1742,46 +1742,54 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 return;
             }
             let staged = context.with_effect_transaction(graph, |context, graph| {
-                let input = input
-                    .map(|input| {
-                        let scope = Arc::new(context.capture_lexical_scope()?);
-                        ConstraintOperand::from_prepared_original_in(
-                            input,
-                            scope,
-                            self.original.clone(),
-                            &mut operand::ConstraintEffectPhase::new(graph),
-                            context,
-                        )
-                        .map(Arc::new)
-                    })
-                    .transpose()?;
                 context.enter_node()?;
                 let key = Arc::new(key);
                 let mut requests = Vec::new();
                 for path in &self.frontier {
-                    let value = ConstraintOperand::open_template(
-                        value,
-                        path,
-                        self.application,
+                    let request = context.with_effect_reads(
                         graph,
-                        context,
+                        path.lineage.probe_effect_reads(),
+                        |context, graph| {
+                            let input = input
+                                .map(|input| {
+                                    let scope = Arc::new(context.capture_lexical_scope()?);
+                                    ConstraintOperand::from_prepared_original_in(
+                                        input,
+                                        scope,
+                                        self.original.clone(),
+                                        &mut operand::ConstraintEffectPhase::new(graph),
+                                        context,
+                                    )
+                                    .map(Arc::new)
+                                })
+                                .transpose()?;
+                            let value = ConstraintOperand::open_template(
+                                value,
+                                path,
+                                self.application,
+                                graph,
+                                context,
+                            )?;
+                            context.enter_node()?;
+                            Ok::<_, TypeConstraintError>(Arc::new(ProjectionRequest {
+                                application: self.application,
+                                key: Arc::clone(&key),
+                                value,
+                                closure,
+                                source: None,
+                                input,
+                            }))
+                        },
                     )?;
                     context.enter_node()?;
-                    context.enter_node()?;
-                    requests.push(Arc::new(ProjectionRequest {
-                        application: self.application,
-                        key: Arc::clone(&key),
-                        value,
-                        closure,
-                        source: None,
-                        input: input.clone(),
-                    }));
+                    requests.push(request);
                 }
                 Ok::<_, TypeConstraintError>(requests)
             });
             match staged {
                 Ok(requests) => {
-                    for (path, request) in self.frontier.iter_mut().zip(requests) {
+                    for (path, (request, reads)) in self.frontier.iter_mut().zip(requests) {
+                        path.lineage.effect_reads = reads;
                         path.lineage.projections.push(request);
                     }
                 }

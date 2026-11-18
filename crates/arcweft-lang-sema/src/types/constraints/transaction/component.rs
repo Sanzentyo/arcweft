@@ -408,7 +408,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         context: &mut TypeConstraintContext<'_, A, D>,
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         original: super::super::OriginalProducerContext,
-        roots: Vec<SuspendedConstraintFrontier<D>>,
+        mut roots: Vec<SuspendedConstraintFrontier<D>>,
         preparation: P,
     ) -> Result<PreparedValueRef<D>, PreparedValueFailure> {
         let mut application = None;
@@ -439,42 +439,54 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
         }
         let mut alternatives = Vec::new();
-        for (frontier, root) in roots.iter().enumerate() {
-            for (path_index, path) in root.transaction.frontier.iter().enumerate() {
+        for (frontier, root) in roots.iter_mut().enumerate() {
+            for (path_index, path) in root.transaction.frontier.iter_mut().enumerate() {
                 context.enter_node()?;
                 for _ in path.lineage.scope.shape().binders() {
                     context.enter_node()?;
                 }
-                let projection =
-                    context.with_original_scope(path.lineage.scope.clone(), |context| {
-                        let (opened, _) = super::ResolvedConstraintResult::resolve(
-                            root.result.clone(),
-                            path,
-                            graph,
-                            context,
-                        )?;
-                        project_type(
-                            &opened,
-                            path.projection_view(),
-                            ConstraintClosurePolicy::Hint,
-                            graph,
-                            context,
-                        )
-                    });
-                let value = match projection {
-                    Ok(projection) => {
-                        let value = original
-                            .gamma()
-                            .transport_type(&path.lineage.scope, &projection.value, graph, context)
-                            .map_err(Self::projection_failure)?;
-                        context.enter_node()?;
-                        ValueContent::Available { ty: value }
-                    }
-                    Err(TypeConstraintError::Rejected(reason)) => {
-                        ValueContent::UnresolvedProjection(reason)
-                    }
-                    Err(error) => return Err(error.into()),
-                };
+                let (value, reads) = context.with_effect_reads(
+                    graph,
+                    path.lineage.probe_effect_reads(),
+                    |context, graph| {
+                        let projection =
+                            context.with_original_scope(path.lineage.scope.clone(), |context| {
+                                let (opened, _) = super::ResolvedConstraintResult::resolve(
+                                    root.result.clone(),
+                                    path,
+                                    graph,
+                                    context,
+                                )?;
+                                project_type(
+                                    &opened,
+                                    path.projection_view(),
+                                    ConstraintClosurePolicy::Hint,
+                                    graph,
+                                    context,
+                                )
+                            });
+                        match projection {
+                            Ok(projection) => {
+                                let ty = original
+                                    .gamma()
+                                    .transport_type(
+                                        &path.lineage.scope,
+                                        &projection.value,
+                                        graph,
+                                        context,
+                                    )
+                                    .map_err(Self::projection_failure)?;
+                                context.enter_node()?;
+                                Ok::<_, PreparedValueFailure>(ValueContent::Available { ty })
+                            }
+                            Err(TypeConstraintError::Rejected(reason)) => {
+                                Ok(ValueContent::UnresolvedProjection(reason))
+                            }
+                            Err(error) => Err(error.into()),
+                        }
+                    },
+                )?;
+                path.lineage.effect_reads = reads;
                 context.enter_node()?;
                 alternatives.push(ValueAlternative {
                     origins: Box::new([(
