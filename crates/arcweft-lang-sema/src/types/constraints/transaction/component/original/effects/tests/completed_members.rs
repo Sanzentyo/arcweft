@@ -167,7 +167,10 @@ fn a_contextual_result_compares_the_canonical_rows_of_its_two_ports() {
             .remove(0);
         let completed = joint.completed.into_vec().remove(0);
         assert_eq!(completed.member, member);
-        let solved = materialize(completed.materialization, &mut context);
+        let owner = completed
+            .fixture_materialization(&graph, &mut context)
+            .unwrap();
+        let solved = materialize(owner, &mut context);
         let [projection] = solved.component.selected().projections() else {
             panic!("one contextual result projection");
         };
@@ -303,7 +306,10 @@ fn a_closed_member_contains_canonical_sources_and_keeps_original_c_unchanged() {
     assert_eq!(joint.completed.len(), 1);
     let completed = joint.completed.into_vec().remove(0);
     assert_eq!(completed.member, member);
-    let solved = materialize(completed.materialization, &mut context);
+    let owner = completed
+        .fixture_materialization(&graph, &mut context)
+        .unwrap();
+    let solved = materialize(owner, &mut context);
     let sources = solved.component.sources().all();
     assert_eq!(sources.len(), 1);
     sources[0].require_completion(&joint.effects).unwrap();
@@ -437,8 +443,18 @@ fn a_late_member_failure_returns_the_same_forest_without_partial_components() {
     assert_eq!(completed[0].member, first);
     assert_eq!(completed[1].member, second);
     let mut values = completed.into_iter();
-    let _first = materialize(values.next().unwrap().materialization, &mut context);
-    let second = materialize(values.next().unwrap().materialization, &mut context);
+    let first = values
+        .next()
+        .unwrap()
+        .fixture_materialization(&graph, &mut context)
+        .unwrap();
+    let second = values
+        .next()
+        .unwrap()
+        .fixture_materialization(&graph, &mut context)
+        .unwrap();
+    let _first = materialize(first, &mut context);
+    let second = materialize(second, &mut context);
     assert_eq!(
         second.component.sources().all()[0].actual(),
         &TypeKind::Bool

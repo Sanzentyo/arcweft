@@ -1,6 +1,7 @@
 //! Failure-atomic final validation of the already prepared original forest.
 
 use super::*;
+use crate::types::constraints::transaction::ConstraintMaterialization;
 use crate::types::constraints::transaction::materialization::MaterializationInput;
 
 enum OriginalProductClosure<D: ConstraintDomain> {
@@ -57,7 +58,9 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                 let mut rejected = None;
                 for (index, prepared) in prepared.iter().enumerate() {
                     if !Arc::ptr_eq(&prepared.branch.lineage, &product.members) {
-                        return Err(PreparedValueFailure::from(TypeConstraintError::from(TypeConstraintInvariant::OriginalProducer)));
+                        return Err(PreparedValueFailure::from(TypeConstraintError::from(
+                            TypeConstraintInvariant::OriginalProducer,
+                        )));
                     }
                     let closed = context.with_original_scope(product.scope.clone(), |context| {
                         context.with_effect_transaction(graph, |context, graph| {
@@ -84,14 +87,26 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                                 context.enter_node()?;
                                 let source = self.original.original_path(*member)?;
                                 let input = MaterializationInput::from_closed_original(
-                                    source, source.root_id(), &prepared.branch, &effects, graph.read(), context,
-                                ).map_err(|error| reject(OriginalProductCheck::MemberCompletion(*member), error))?;
+                                    source,
+                                    source.root_id(),
+                                    &prepared.branch,
+                                    &effects,
+                                    graph.read(),
+                                    context,
+                                )
+                                .map_err(|error| {
+                                    reject(OriginalProductCheck::MemberCompletion(*member), error)
+                                })?;
                                 context.enter_node()?;
-                                let materialization = crate::types::constraints::transaction::ConstraintMaterialization::from_component(input, &self.original.effect_owner, context)
-                                    .map_err(|error| reject(OriginalProductCheck::MemberCompletion(*member), error))?;
-                                completed.push(CompletedOriginalMember { member: *member, materialization });
+                                completed.push(CompletedOriginalMember {
+                                    member: *member,
+                                    input,
+                                });
                             }
-                            Ok::<_, OriginalInferenceFailure>((effects, completed.into_boxed_slice()))
+                            Ok::<_, OriginalInferenceFailure>((
+                                effects,
+                                completed.into_boxed_slice(),
+                            ))
                         })
                     });
                     match closed {
@@ -171,5 +186,63 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
             original: self.original,
             products: products.into_boxed_slice(),
         })
+    }
+}
+
+impl<D: ConstraintDomain> ClosedOriginalConstraintForest<D, ()> {
+    /// A single producer can use the existing candidate callback protocol.
+    /// Joint products stay grouped and cannot be mistaken for alternatives of
+    /// one producer. Consuming the original inventory releases its aliases to
+    /// the source preparations before a selected callback result takes them.
+    pub(crate) fn into_candidate_materialization<A: TypeConstraintAccounting>(
+        self,
+        producer: &PreparedValueRef<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<ConstraintMaterialization<D>, PreparedValueFailure> {
+        let value = self.original.value(producer)?;
+        if self.original.values.len() != 1
+            || !matches!(&value.definition, ValueDefinition::Constraint { .. })
+        {
+            return Err(PreparedValueFailure::ProducerApplication);
+        }
+        let mut materialization =
+            ConstraintMaterialization::new(self.original.effect_owner.clone(), context)?;
+        let mut accepted = false;
+        let mut rejected = None;
+        for product in self.products.into_vec() {
+            context.enter_node()?;
+            let [member] = product.members.as_ref() else {
+                return Err(PreparedValueFailure::ProducerApplication);
+            };
+            if member.producer != producer.ordinal {
+                return Err(PreparedValueFailure::ProducerApplication);
+            }
+            match product.result {
+                Err(rejection) => {
+                    rejected.get_or_insert(rejection.reason);
+                }
+                Ok(branches) => {
+                    for branch in branches.into_vec() {
+                        context.enter_node()?;
+                        let [completed] = branch
+                            .completed
+                            .into_vec()
+                            .try_into()
+                            .map_err(|_| PreparedValueFailure::ProducerApplication)?;
+                        let completed: CompletedOriginalMember<D> = completed;
+                        if &completed.member != member {
+                            return Err(PreparedValueFailure::ProducerApplication);
+                        }
+                        materialization.push_component(completed.input, context)?;
+                        accepted = true;
+                    }
+                }
+            }
+        }
+        if !accepted {
+            let rejection = rejected.unwrap_or(TypeConstraintRejection::Mismatch);
+            return Err(TypeConstraintError::Rejected(rejection).into());
+        }
+        Ok(materialization)
     }
 }

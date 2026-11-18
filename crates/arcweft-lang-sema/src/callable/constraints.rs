@@ -841,6 +841,56 @@ where
         }
     }
 
+    /// Finalize one independent result with the original equations, canonical
+    /// projections and retained probe allocations from its product forest.
+    pub(crate) fn finish_original_result(
+        self,
+        key: D::Projection,
+        inputs: &[(
+            &crate::effect_row::prepared::PreparedEffectUnknownRef,
+            &crate::effect_row::EffectRow,
+        )],
+    ) -> Result<CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>> {
+        let Self {
+            lower,
+            mut callbacks,
+        } = self;
+        let result = (|| {
+            let frontier = lower.suspend_result(callbacks.context, key)?;
+            let context = &mut *callbacks.context;
+            callbacks
+                .client
+                .with_effect_relation(
+                    CandidateConstraintEffectAccess {
+                        authority: &callbacks.authority,
+                    },
+                    |graph| frontier.into_candidate_materialization(inputs, graph, context),
+                )
+                .map_err(CandidateConstraintCallbacks::<D, C>::checkpoint_failure)?
+                .map_err(|error| {
+                    use crate::types::constraints::{
+                        TypeConstraintError, transaction::PreparedValueFailure,
+                    };
+                    let error = match error {
+                        PreparedValueFailure::Constraint(error) => error,
+                        PreparedValueFailure::Instantiation(error) => {
+                            TypeConstraintInvariant::Instantiation(error).into()
+                        }
+                        PreparedValueFailure::Effect(error) => TypeConstraintError::from(error),
+                        _ => TypeConstraintInvariant::OriginalProducer.into(),
+                    };
+                    TypeConstraintFailure::from(error)
+                })
+        })();
+        match result {
+            Ok(owner) => callbacks.finish_materialization(owner),
+            Err(failure) => {
+                let _ = callbacks.finish_callbacks();
+                Err(failure)
+            }
+        }
+    }
+
     pub(crate) fn defer_child_result(
         self,
         key: D::Projection,

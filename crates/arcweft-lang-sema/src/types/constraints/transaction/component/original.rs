@@ -87,8 +87,19 @@ pub(super) struct ClosedOriginalProduct<D: ConstraintDomain> {
 /// producer/frontier/path. Its joint branch retains proofs, not a second value.
 pub(super) struct CompletedOriginalMember<D: ConstraintDomain> {
     pub(super) member: OriginalProductMember,
-    pub(super) materialization:
-        crate::types::constraints::transaction::ConstraintMaterialization<D>,
+    pub(super) input: super::super::MaterializationInput<D>,
+}
+
+#[cfg(test)]
+impl<D: ConstraintDomain> CompletedOriginalMember<D> {
+    fn fixture_materialization<A: TypeConstraintAccounting>(
+        self,
+        graph: &PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<super::super::ConstraintMaterialization<D>, TypeConstraintError> {
+        let owner = graph.owner(context)?;
+        super::super::ConstraintMaterialization::from_component(self.input, &owner, context)
+    }
 }
 
 /// Only this phase has checked original scope, binding and equation conditions

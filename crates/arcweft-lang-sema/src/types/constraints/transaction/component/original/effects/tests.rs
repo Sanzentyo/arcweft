@@ -633,7 +633,8 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
         .remove(0);
     for completed in joint.completed.into_vec() {
         let solved = completed
-            .materialization
+            .fixture_materialization(&graph, &mut context)
+            .unwrap()
             .finish(&mut context, |_, _, _| Ok(true))
             .unwrap()
             .into_unique()

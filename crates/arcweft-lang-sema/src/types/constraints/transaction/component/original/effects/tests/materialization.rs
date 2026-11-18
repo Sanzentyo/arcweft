@@ -73,6 +73,63 @@ fn finish(
 }
 
 #[test]
+fn standalone_dispatch_releases_the_original_path_before_the_selected_preparation_moves() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let mut component = Component::new(&mut context, &graph).unwrap();
+    let member = root(
+        &mut component,
+        &mut context,
+        &mut graph,
+        EffectPredicate::unconstrained(),
+        false,
+    );
+    let value = component.values.remove(&member.producer).unwrap();
+    let ValueDefinition::Constraint { frontiers } = value.definition else {
+        panic!("original root")
+    };
+    let mut frontier = frontiers.into_vec().remove(0);
+    let path = &mut frontier.transaction.frontier[member.path];
+    let source = ConstraintSourceId::new(path.root_id(), ());
+    path.lineage.probe_trace.push(ActiveConstraintProbe {
+        source,
+        source_ordinal: PreparedSourceOrdinal {
+            application: path.root_id(),
+            ordinal: 0,
+        },
+        branch: SourceProbeObservation::closed_for_test((), ()),
+        selection: StoredSourceSelection::Unchecked,
+        prepared_source_projection: PreparedConstraintSourceProjection::Scalar,
+        value_expected: None,
+        actual: context.fixture_operand(TypeKind::<PreparedEffects>::Bool),
+    });
+    let mut owner = frontier
+        .into_candidate_materialization(&[], &mut graph, &mut context)
+        .unwrap();
+    let mut ticket = owner
+        .next_materialization_ticket(&mut context)
+        .unwrap()
+        .unwrap();
+    assert_eq!(*ticket.requests().next().unwrap().source(), source);
+    ticket.bind_callback().unwrap();
+    let closed = ticket
+        .bind_closed_submission(ClosedMaterializationSubmission::Sealed(()))
+        .unwrap();
+    owner.submit_closed_materialization(ticket, closed).unwrap();
+    let solved = finish(owner, &mut context);
+    assert_eq!(
+        solved.component.sources().all()[0].actual(),
+        &TypeKind::Bool
+    );
+    let Ok(preparations) = solved.source_preparations.into_owned(&mut context) else {
+        panic!("the selected source preparation is still shared")
+    };
+    assert_eq!(preparations.len(), 1);
+    assert_eq!(preparations[0].source, source);
+}
+
+#[test]
 fn canonical_member_callbacks_keep_their_exact_ticket_issuer_without_a_graph_loan() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
@@ -93,8 +150,10 @@ fn canonical_member_callbacks_keep_their_exact_ticket_issuer_without_a_graph_loa
     let second = completed.next().unwrap();
     assert_eq!(first.member, members[0]);
     assert_eq!(second.member, members[1]);
-    let mut first = first.materialization;
-    let mut second = second.materialization;
+    let mut first = first.fixture_materialization(&graph, &mut context).unwrap();
+    let mut second = second
+        .fixture_materialization(&graph, &mut context)
+        .unwrap();
     let retained = graph.retained_terms();
     first.validate_graph(graph.read()).unwrap();
     second.validate_graph(graph.read()).unwrap();

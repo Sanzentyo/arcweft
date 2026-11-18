@@ -95,6 +95,29 @@ impl<D: ConstraintDomain> SuspendedConstraintFrontier<D> {
         &self.result
     }
 
+    /// Run a standalone producer through the original-product calculation and
+    /// transfer its canonical alternatives to the callable callback owner.
+    pub(crate) fn into_candidate_materialization<A: TypeConstraintAccounting>(
+        self,
+        inputs: &[(
+            &crate::effect_row::prepared::PreparedEffectUnknownRef,
+            &crate::effect_row::EffectRow,
+        )],
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<super::ConstraintMaterialization<D>, super::PreparedValueFailure> {
+        context.with_effect_transaction(graph, |context, graph| {
+            let original = self.original_context().clone();
+            let mut component = super::OpenConstraintComponent::new(context, graph)?;
+            let producer = component.admit_roots(context, graph, original, vec![self], ())?;
+            component
+                .infer_original_products(context, graph)?
+                .close(inputs, graph, context)
+                .map_err(|failure| failure.into_parts().0)?
+                .into_candidate_materialization(&producer, context)
+        })
+    }
+
     /// The original transaction resumes in place; no solution, path, source
     /// inventory or ordinal is reconstructed from an observation.
     pub(in crate::types::constraints) fn resume(self) -> TypeConstraintTransaction<D> {

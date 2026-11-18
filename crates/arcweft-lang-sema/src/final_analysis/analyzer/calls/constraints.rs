@@ -6410,7 +6410,12 @@ pub(crate) fn run_prepared_candidate(
                     driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
                 }
                 output.request(&mut driver, application, &enclosing, &limits)?;
-                driver.finish_alternatives()
+                match (&output.result, output.closure) {
+                    (PreparedCallOutput::Value { .. }, TypeConstraintProjectionClosure::Closed) => {
+                        driver.finish_original_result(AnalyzerCallProjection::Result, &[])
+                    }
+                    _ => driver.finish_alternatives(),
+                }
             },
         )
         .map_err(|failure| match failure {
