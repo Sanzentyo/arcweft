@@ -18638,3 +18638,18 @@ Analyzerで閉じた値を投影する独立呼出しは、元のfrontierを引�
 8 Rust path、255追加／17削除。確定処理は候補の所属と元の準備結果を既存の所有型に保持し、ticketの発行は既存のcallback境界で行う。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-original-result-callback-checkpoint.raw.zip) は17 entry、151,807 bytes、SHA256 `54ff3b2a97aae3fb611611b97fa1498032c26cadf265fe6a23460c135bbda204`。各entryの長さとSHA256を再照合した。旧履歴2,888,624 bytesのSHA256 `7fcb3b2519a1fccc548b124bb55c551ed353d96c21cc5e4bba7acfbcb1c898ab` をprefixとして保持した。
+
+<a id="original-probe-effect-reads-checkpoint"></a>
+## 2026-11-18 — 引数準備の作用項を元の差分から読む
+
+基点 `69ee34896be6817b71bd18ff185aa1e4aeb4cca3`。Source `1a2d39a1222a4f7a6901f095c36038dd7de183e7` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した10入力のblobを照合した。
+
+引数準備のcallbackを閉じると、元の呼出しグラフ差分から作用項とその依存を読む権限を取り出し、同じ解析台帳の準備結果へ保持する。公開に必要な権限は既存の差分が保持する。型制約へ渡す直前に、受理した引数と子呼出しの実結果投影から作用行・述語をたどる。差分の適用が失敗した場合も元の準備結果と読取り権限を返す。後続の推論や最終確定で複数の準備から作用を読む接続と、再評価の除去は残る。
+
+元の差分を破棄した後も読取り権限で作用項をたどれること、別発行元または異なる基点からの読取りを拒否すること、rollback後に同じ基点で再読できることを検査する回帰を追加した。既存のAnalyzer fixtureは準備結果と読取り権限を同時に保持することを検査する。いずれも未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。初回の失敗には読取り準備エラーの変換先の型不一致が含まれた。修正後の公開入力dev02ではlibrary **416エラー・25警告**、lib test **1,332エラー・44警告**。変更10 pathを一次位置とする26件は、行番号を除いた一次ファイルとエラーメッセージで基点のログと一致した。Semaのfmtと構造gateは終了0、blocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,067,901 bytesでcleanは未実行。
+
+10 Rust path、234追加／13削除。作用グラフが読取り範囲を発行する。既存の解析台帳は準備結果に読取り範囲を保持し、既存の型制約が元の型から必要な作用項を検査する。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-original-probe-effect-reads-checkpoint.raw.zip) は23 entry、283,309 bytes、SHA256 `d343932bbd977730b3c5ab5abcfcef00dc1bf95903dca1163606e6dd769e1f3b`。各entryの長さとSHA256を再照合した。旧履歴2,891,129 bytesのSHA256 `81eea5a56bcd64b5cbc18749ff77a7780c63a2e27d847dbe51dffe47e9fe83a1` をprefixとして保持した。
