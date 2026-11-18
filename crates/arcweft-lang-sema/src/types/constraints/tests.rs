@@ -18,17 +18,58 @@ use super::{
     ExpectedHint, SourceError, SourcePhase, TypeConstraintConstEligibility,
     TypeConstraintParameterEligibility, TypeConstraintParameterScope,
 };
-use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable, EffectRow};
+use crate::effect_row::{
+    EffectConstraintEligibility, EffectConstraintVariable, EffectRow,
+    prepared::{BoundScopedEffectCompletion, PreparedEffectGraph},
+};
 use crate::effects::EffectSet;
 use crate::types::{
     ArrayLength, DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
-    GenericTypeParameterId, TypeKind, TypePoisonId,
+    GenericTypeParameterId, PreparedEffects, TypeKind, TypePoisonId, UnmeteredTypeProjection,
 };
 
 fn parameter(ordinal: u16) -> GenericTypeParameterId {
     GenericTypeParameterId::new(
         GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(91)),
         ordinal,
+    )
+}
+
+fn bind_fixture_effects<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    path: &ConstraintPath<D>,
+    graph: &mut PreparedEffectGraph,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<BoundScopedEffectCompletion, TypeConstraintError> {
+    let constraint = path.prepare_effect_constraint(graph, context)?;
+    let source = graph
+        .read()
+        .freeze_scoped(&[], &[], &[&constraint], context)?;
+    let bound = graph.bind_original_scoped(&source, context)?;
+    Ok(bound.freeze(graph.read(), context)?)
+}
+
+fn claim_fixture_solution<A, D, B, C>(
+    types: B,
+    constants: C,
+    path: &mut ConstraintPath<D>,
+    graph: &mut PreparedEffectGraph,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<TypeConstraintSolution, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+    B: IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
+    C: IntoIterator<Item = (GenericConstParameterId, ArrayLength)>,
+{
+    let original = bind_fixture_effects(path, graph, context)?;
+    TypeConstraintSolution::test_seal_completed_with_consts(
+        types,
+        constants,
+        path,
+        &original,
+        &[],
+        graph,
+        context,
     )
 }
 
@@ -82,14 +123,21 @@ fn try_type_only_solution(
     )
     .expect("test completed-solution scope is canonical");
     let cancellation = AtomicBool::new(false);
+    let mut graph = PreparedEffectGraph::default();
     let (mut context, mut path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(4_096, 2_048, 256, 128),
             &cancellation,
             scope,
         )
-        .into_path();
-    TypeConstraintSolution::test_seal_completed(bindings, &mut path, &mut context)
+        .into_path(&mut graph);
+    claim_fixture_solution(
+        bindings,
+        std::iter::empty(),
+        &mut path,
+        &mut graph,
+        &mut context,
+    )
 }
 
 fn type_only_solution(
@@ -179,19 +227,24 @@ fn const_scope_is_kind_separated_and_only_rigid_is_constructible() {
         len: super::super::ArrayLength::generic_parameter(constant.clone()),
     };
     let cancellation = AtomicBool::new(false);
+    let mut graph = PreparedEffectGraph::default();
     let (mut context, path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
         )
-        .into_path();
+        .into_path(&mut graph);
+    let array = array
+        .prepare_effects(context.lexical_scope(), &mut UnmeteredTypeProjection)
+        .expect("the array fixture belongs to the const scope");
     assert!(
         super::normalization::project_type(
             &array,
             path.projection_view(),
             super::ConstraintClosurePolicy::Hint,
-            &mut context
+            &mut graph,
+            &mut context,
         )
         .is_ok()
     );
@@ -231,13 +284,14 @@ fn active_const_alias_chain_closes_before_solution_publication() {
     )
     .expect("const alias scope");
     let cancellation = AtomicBool::new(false);
+    let mut graph = PreparedEffectGraph::default();
     let (mut context, mut path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
         )
-        .into_path();
+        .into_path(&mut graph);
     let solution = {
         path.bindings = BTreeMap::new();
         path.const_bindings = context.fixture_bindings([
@@ -261,7 +315,23 @@ fn active_const_alias_chain_closes_before_solution_publication() {
                 ArrayLength::Const(7),
             ),
         ]);
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+        let original = bind_fixture_effects(&path, &mut graph, &mut context)
+            .expect("bound effect constraint for the const scope");
+        let effects = super::normalization::ConstraintClosedEffects::for_path(
+            &path,
+            &original,
+            &[],
+            &mut graph,
+            &mut context,
+        )
+        .expect("closed effects for the const aliases");
+        TypeConstraintSolution::complete_application(
+            &path,
+            path.root_id(),
+            &effects,
+            graph.read(),
+            &mut context,
+        )
     }
     .expect("active aliases close to one canonical constant");
     assert_eq!(
@@ -302,14 +372,15 @@ fn claimed_const_alias_is_rejected_as_noncanonical() {
     )
     .expect("const alias scope");
     let cancellation = AtomicBool::new(false);
+    let mut graph = PreparedEffectGraph::default();
     let (mut context, mut path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
         )
-        .into_path();
-    let error = TypeConstraintSolution::test_seal_completed_with_consts(
+        .into_path(&mut graph);
+    let error = claim_fixture_solution(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [
             (first.clone(), ArrayLength::generic_parameter(second)),
@@ -322,6 +393,7 @@ fn claimed_const_alias_is_rejected_as_noncanonical() {
             ),
         ],
         &mut path,
+        &mut graph,
         &mut context,
     );
     assert!(matches!(
@@ -350,21 +422,23 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
     )
     .expect("self-binding const scope");
     let cancellation = AtomicBool::new(false);
+    let mut self_graph = PreparedEffectGraph::default();
     let (mut self_context, mut self_context_path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             self_scope,
         )
-        .into_path();
+        .into_path(&mut self_graph);
     assert!(matches!(
-        TypeConstraintSolution::test_seal_completed_with_consts(
+        claim_fixture_solution(
             std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
             [(
                 self_parameter.clone(),
                 ArrayLength::generic_parameter(self_parameter.clone()),
             )],
             &mut self_context_path,
+            &mut self_graph,
             &mut self_context
         ),
         Err(TypeConstraintError::Invariant(
@@ -391,15 +465,16 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
         ],
     )
     .expect("cyclic const scope");
+    let mut cycle_graph = PreparedEffectGraph::default();
     let (mut cycle_context, mut cycle_context_path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             cycle_scope,
         )
-        .into_path();
+        .into_path(&mut cycle_graph);
     assert!(matches!(
-        TypeConstraintSolution::test_seal_completed_with_consts(
+        claim_fixture_solution(
             std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
             [
                 (
@@ -409,6 +484,7 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
                 (second.clone(), ArrayLength::generic_parameter(first)),
             ],
             &mut cycle_context_path,
+            &mut cycle_graph,
             &mut cycle_context
         ),
         Err(TypeConstraintError::Invariant(
@@ -435,17 +511,19 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
     )
     .expect("future const scope");
     let cancellation = AtomicBool::new(false);
+    let mut previous_graph = PreparedEffectGraph::default();
     let (mut previous_context, mut previous_context_path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             previous_scope,
         )
-        .into_path();
-    let solution = TypeConstraintSolution::test_seal_completed_with_consts(
+        .into_path(&mut previous_graph);
+    let solution = claim_fixture_solution(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [(parameter.clone(), ArrayLength::Const(9))],
         &mut previous_context_path,
+        &mut previous_graph,
         &mut previous_context,
     )
     .expect("completed future const binding");
@@ -463,13 +541,14 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
         ([parameter.clone()]).into_iter().map(Into::into),
     )
     .expect("inherited const key scope");
+    let mut next_graph = PreparedEffectGraph::default();
     let (mut next_context, next_context_path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             next_scope,
         )
-        .into_path();
+        .into_path(&mut next_graph);
     let solution = Arc::new(solution);
     let retained_solution = Arc::downgrade(&solution);
     let sealed_parameter = solution.const_bindings().next().unwrap().0.value().clone();
@@ -477,6 +556,7 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
         .restore_inherited_path(
             next_context_path.root_id(),
             next_context_path,
+            &mut next_graph,
             &mut next_context,
         )
         .expect("FutureEligible const becomes Bindable");
@@ -524,20 +604,22 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
     )
     .expect("unexpected const scope");
     let cancellation = AtomicBool::new(false);
+    let mut graph = PreparedEffectGraph::default();
     let (mut context, mut path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
         )
-        .into_path();
-    let solution = TypeConstraintSolution::test_seal_completed_with_consts(
+        .into_path(&mut graph);
+    let solution = claim_fixture_solution(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [
             (first.clone(), ArrayLength::Const(1)),
             (second.clone(), ArrayLength::Const(2)),
         ],
         &mut path,
+        &mut graph,
         &mut context,
     )
     .expect("complete const rows");
@@ -560,15 +642,16 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
         ([first.clone()]).into_iter().map(Into::into),
     )
     .expect("unexpected-key continuation scope");
+    let mut next_graph = PreparedEffectGraph::default();
     let (mut next_context, next_context_path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             next_scope,
         )
-        .into_path();
+        .into_path(&mut next_graph);
     assert!(matches!(
-        Arc::new(solution).restore_inherited_path(next_context_path.root_id(), next_context_path, &mut next_context),
+        Arc::new(solution).restore_inherited_path(next_context_path.root_id(), next_context_path, &mut next_graph, &mut next_context),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::UnexpectedKey,
@@ -588,17 +671,19 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
         ],
     )
     .expect("missing-key source scope");
+    let mut previous_graph = PreparedEffectGraph::default();
     let (mut previous_context, mut previous_context_path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             previous_scope,
         )
-        .into_path();
-    let solution = TypeConstraintSolution::test_seal_completed_with_consts(
+        .into_path(&mut previous_graph);
+    let solution = claim_fixture_solution(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [(first.clone(), ArrayLength::Const(1))],
         &mut previous_context_path,
+        &mut previous_graph,
         &mut previous_context,
     )
     .expect("complete partial future const rows");
@@ -621,15 +706,16 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
         ([first, second.clone()]).into_iter().map(Into::into),
     )
     .expect("missing-key continuation scope");
+    let mut next_graph = PreparedEffectGraph::default();
     let (mut next_context, next_context_path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             next_scope,
         )
-        .into_path();
+        .into_path(&mut next_graph);
     assert!(matches!(
-        Arc::new(solution).restore_inherited_path(next_context_path.root_id(), next_context_path, &mut next_context),
+        Arc::new(solution).restore_inherited_path(next_context_path.root_id(), next_context_path, &mut next_graph, &mut next_context),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::Unclosed,
@@ -651,17 +737,19 @@ fn completed_const_solution_applies_array_length_parameter() {
     )
     .expect("array-length const scope");
     let cancellation = AtomicBool::new(false);
+    let mut graph = PreparedEffectGraph::default();
     let (mut context, mut path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
         )
-        .into_path();
-    let solution = TypeConstraintSolution::test_seal_completed_with_consts(
+        .into_path(&mut graph);
+    let solution = claim_fixture_solution(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [(parameter.clone(), ArrayLength::Const(5))],
         &mut path,
+        &mut graph,
         &mut context,
     )
     .expect("canonical array-length binding");
@@ -812,6 +900,7 @@ fn close_materialization_ticket<D: ConstraintDomain>(
 struct TestConstraintTransaction<'c, A: TypeConstraintAccounting, D: ConstraintDomain> {
     lower: TypeConstraintTransaction<D>,
     context: TypeConstraintContext<'c, A, D>,
+    graph: PreparedEffectGraph,
 }
 
 impl<'c, A, D> TestConstraintTransaction<'c, A, D>
@@ -827,14 +916,25 @@ where
         D::Application: Default,
     {
         let (mut context, test_parameters) = setup.into_parts();
+        let mut graph = PreparedEffectGraph::default();
         let lower = TypeConstraintTransaction::initialize_fixture(
             &mut context,
+            &mut graph,
             D::Application::default(),
             test_parameters,
             inherited,
         )
         .expect("valid test initialization");
-        Self { lower, context }
+        Self {
+            lower,
+            context,
+            graph,
+        }
+    }
+
+    fn prepare(&self, ty: &TypeKind) -> TypeKind<PreparedEffects> {
+        ty.prepare_effects(self.context.lexical_scope(), &mut UnmeteredTypeProjection)
+            .expect("the fixture type belongs to its original scope")
     }
 
     fn constrain(
@@ -843,8 +943,32 @@ where
         actual: &TypeKind,
         acceptance: ConstraintAcceptance,
     ) {
-        self.lower
-            .constrain(&mut self.context, pattern, actual, acceptance);
+        let pattern = self.prepare(pattern);
+        let actual = self.prepare(actual);
+        self.lower.constrain(
+            &mut self.context,
+            &mut self.graph,
+            &pattern,
+            &actual,
+            acceptance,
+        );
+    }
+
+    fn constrain_result(
+        &mut self,
+        pattern: &TypeKind,
+        actual: &TypeKind,
+        acceptance: ConstraintAcceptance,
+    ) {
+        let pattern = self.prepare(pattern);
+        let actual = self.prepare(actual);
+        self.lower.constrain_result(
+            &mut self.context,
+            &mut self.graph,
+            &pattern,
+            &actual,
+            acceptance,
+        );
     }
 
     fn constrain_opened(
@@ -853,8 +977,15 @@ where
         actual: &TypeKind,
         acceptance: ConstraintAcceptance,
     ) {
-        self.lower
-            .constrain_application_template(&mut self.context, pattern, actual, acceptance);
+        let pattern = self.prepare(pattern);
+        let actual = self.prepare(actual);
+        self.lower.constrain_application_template(
+            &mut self.context,
+            &mut self.graph,
+            &pattern,
+            &actual,
+            acceptance,
+        );
     }
     fn request_projection(
         &mut self,
@@ -862,8 +993,9 @@ where
         value: &TypeKind,
         closure: TypeConstraintProjectionClosure,
     ) {
+        let value = self.prepare(value);
         self.lower
-            .request_projection(&mut self.context, key, value, closure);
+            .request_projection(&mut self.context, &mut self.graph, key, &value, closure);
     }
 
     fn finish(mut self) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>>
@@ -871,7 +1003,9 @@ where
         D::SealedBranchValue: PartialEq,
     {
         self.lower
-            .finish(&mut self.context, |left, right, _| Ok(left == right))
+            .finish(&mut self.context, &mut self.graph, |left, right, _| {
+                Ok(left == right)
+            })
     }
 }
 
@@ -929,8 +1063,7 @@ fn result_context_infers_omitted_function_effects_from_closed_results() {
             ),
             None,
         );
-        transaction.lower.constrain_result(
-            &mut transaction.context,
+        transaction.constrain_result(
             &actual,
             &annotation,
             ConstraintAcceptance::ActualAcceptsPattern,
@@ -970,8 +1103,7 @@ fn result_context_waits_for_source_type_inference_before_completing_effect_annot
         ),
         None,
     );
-    transaction.lower.constrain_result(
-        &mut transaction.context,
+    transaction.constrain_result(
         &pending,
         &annotation,
         ConstraintAcceptance::ActualAcceptsPattern,
@@ -1025,8 +1157,7 @@ fn result_context_keeps_unknown_source_rows_and_fixed_contract_mismatches_reject
             ),
             None,
         );
-        transaction.lower.constrain_result(
-            &mut transaction.context,
+        transaction.constrain_result(
             &actual,
             &annotation,
             ConstraintAcceptance::ActualAcceptsPattern,
