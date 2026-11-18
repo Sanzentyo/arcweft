@@ -3,7 +3,7 @@
 use super::{
     Arc, BTreeMap, BTreeSet, DecisionControl, DecisionWork, Function, PredicateTerm,
     PreparedEffectFailure, PreparedEffectGraph, PreparedEffectInvariant, PreparedEffectIssuer,
-    RowTerm, ScopedObligation,
+    PreparedEffectReadScope, RowTerm, ScopedObligation, scope::ActiveEffectScope,
 };
 
 mod replay;
@@ -36,6 +36,14 @@ pub(crate) struct PreparedEffectCheckpoint {
     state: PreparedEffectStateId,
     ancestor_limit: usize,
     ordinal: u64,
+    reads: EffectCheckpointReads,
+}
+
+enum EffectCheckpointReads {
+    Inherited,
+    Opened {
+        previous: Option<PreparedEffectReadScope>,
+    },
 }
 
 /// Owns every effect fact produced by an extracted candidate, including body
@@ -89,7 +97,11 @@ impl<E> PreparedEffectRestoreBatchFailure<E> {
 }
 
 struct PreparedEffectPublication {
-    scope: super::PreparedEffectReadScope,
+    functions: BTreeMap<u64, Arc<Function>>,
+    rows: BTreeMap<u64, Arc<RowTerm>>,
+    predicates: BTreeMap<u64, Arc<PredicateTerm>>,
+    choices: BTreeSet<u64>,
+    layers: BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
     result: PreparedEffectStateId,
     ancestors: Vec<PreparedEffectStateId>,
     next_state: u64,
@@ -172,7 +184,33 @@ impl PreparedEffectGraph {
             state: self.state,
             ancestor_limit: self.state_ancestors.len(),
             ordinal,
+            reads: EffectCheckpointReads::Inherited,
         })
+    }
+
+    /// Attach selected reads to a checkpoint that must be extracted or rolled
+    /// back. Ordinary nested checkpoints inherit the same active function map.
+    pub(crate) fn checkpoint_in_read_scope<C: DecisionControl>(
+        &mut self,
+        input: &PreparedEffectReadScope,
+        control: &mut C,
+    ) -> Result<PreparedEffectCheckpoint, PreparedEffectFailure<C::Error>> {
+        input.validate(self, control)?;
+        input.require_enclosing(self.active_scope.as_ref(), control)?;
+        let mut checkpoint = self.checkpoint(control)?;
+        let input = input.clone();
+        let previous = match &mut self.active_scope {
+            Some(active) => Some(std::mem::replace(&mut active.input, input)),
+            None => {
+                self.active_scope = Some(ActiveEffectScope {
+                    input,
+                    functions: BTreeMap::new(),
+                });
+                None
+            }
+        };
+        checkpoint.reads = EffectCheckpointReads::Opened { previous };
+        Ok(checkpoint)
     }
 
     pub(crate) fn validate_checkpoint(
@@ -193,11 +231,38 @@ impl PreparedEffectGraph {
         checkpoint: &PreparedEffectCheckpoint,
     ) -> Result<(), PreparedEffectInvariant> {
         self.validate_checkpoint(checkpoint)?;
+        if matches!(checkpoint.reads, EffectCheckpointReads::Opened { .. }) {
+            return Err(PreparedEffectInvariant::ReadScopeActive);
+        }
         self.checkpoints.pop();
         if self.checkpoints.is_empty() {
             self.journal.clear();
         }
         Ok(())
+    }
+
+    fn leave_checkpoint_scope(&mut self, checkpoint: &mut PreparedEffectCheckpoint) {
+        let EffectCheckpointReads::Opened { previous } =
+            std::mem::replace(&mut checkpoint.reads, EffectCheckpointReads::Inherited)
+        else {
+            return;
+        };
+        match previous {
+            Some(previous) => {
+                self.active_scope
+                    .as_mut()
+                    .expect("the scope belongs to the closing checkpoint")
+                    .input = previous;
+            }
+            None => {
+                debug_assert!(
+                    self.active_scope
+                        .as_ref()
+                        .is_some_and(|active| active.functions.is_empty())
+                );
+                self.active_scope = None;
+            }
+        }
     }
 
     pub(crate) fn rollback(
@@ -235,6 +300,7 @@ impl PreparedEffectGraph {
         if self.checkpoints.is_empty() {
             self.journal.clear();
         }
+        self.leave_checkpoint_scope(checkpoint);
         Ok(())
     }
 
@@ -354,9 +420,11 @@ impl PreparedEffectGraph {
         if self.checkpoints.is_empty() {
             self.journal.clear();
         }
+        let dependencies = self.active_scope.as_ref().map(|scope| scope.input.clone());
+        self.leave_checkpoint_scope(checkpoint);
         Ok(PreparedEffectDelta {
             data: Arc::new(delta),
-            dependencies: self.active_scope.as_ref().map(|scope| scope.input.clone()),
+            dependencies,
         })
     }
 
@@ -375,7 +443,7 @@ impl PreparedEffectGraph {
             return Err(PreparedEffectInvariant::DeltaBase.into());
         }
         if let Some(scope) = &delta.dependencies {
-            scope.validate(self, control)?;
+            scope.validate_at_ancestor(self, control)?;
         }
         let delta = &delta.data;
         for () in delta
@@ -429,10 +497,14 @@ impl PreparedEffectGraph {
         inputs: impl Iterator<Item = &'a PreparedEffectDelta> + Clone,
         control: &mut C,
     ) -> Result<PreparedEffectPublication, PreparedEffectFailure<C::Error>> {
-        if self.active_scope.is_some() {
-            return Err(PreparedEffectInvariant::ReadScopeActive.into());
-        }
-        let scope = self.read_scope(inputs.clone(), control)?;
+        let super::scope::ReadScopeData {
+            mut functions,
+            mut rows,
+            mut predicates,
+            mut choices,
+            mut layers,
+            ..
+        } = self.read_scope_data(inputs.clone(), control)?;
         let mut permits = BTreeSet::new();
         let mut last = None;
         for delta in inputs {
@@ -444,28 +516,53 @@ impl PreparedEffectGraph {
             }
             last = Some(&delta.data);
         }
-        if permits.is_empty() || permits.len() != scope.data.layers.len() {
+        if permits.is_empty() {
             return Err(PreparedEffectInvariant::ReadScopeDependencies.into());
         }
-        for () in scope
-            .data
-            .functions
+        let inherited = self.active_scope.as_ref().map(|scope| &scope.input.data);
+        for id in layers.keys() {
+            control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?;
+            let inherited = inherited.is_some_and(|scope| scope.layers.contains_key(id));
+            match (permits.contains(id), inherited) {
+                (true, true) => return Err(PreparedEffectInvariant::ReadScopeConflict.into()),
+                (false, false) => {
+                    return Err(PreparedEffectInvariant::ReadScopeDependencies.into());
+                }
+                _ => {}
+            }
+        }
+        for () in functions
             .iter()
             .map(|_| ())
-            .chain(scope.data.rows.iter().map(|_| ()))
-            .chain(scope.data.predicates.iter().map(|_| ()))
-            .chain(scope.data.choices.iter().map(|_| ()))
+            .chain(rows.iter().map(|_| ()))
+            .chain(predicates.iter().map(|_| ()))
+            .chain(choices.iter().map(|_| ()))
             .chain(
-                scope
-                    .data
-                    .layers
+                layers
                     .values()
+                    .filter(|layer| permits.contains(&layer.ordinal))
                     .flat_map(|layer| layer.obligations.iter().map(|_| ())),
             )
         {
             control
                 .charge(DecisionWork::Node)
                 .map_err(PreparedEffectFailure::Control)?;
+        }
+        if let Some(inherited) = inherited {
+            // Inherited reads already belong to the target checkpoint. Import
+            // only writes authorized by the supplied permits into its journal.
+            let target = self.read();
+            functions.retain(|id, function| {
+                !target
+                    .function_definition(*id)
+                    .is_some_and(|before| Arc::ptr_eq(before, function))
+            });
+            rows.retain(|id, _| !inherited.rows.contains_key(id));
+            predicates.retain(|id, _| !inherited.predicates.contains_key(id));
+            choices.retain(|id| !inherited.choices.contains(id));
+            layers.retain(|id, _| permits.contains(id));
         }
         let (result, ancestors, next_state) = if permits.len() == 1 {
             let delta = last.expect("one publication permit");
@@ -488,7 +585,11 @@ impl PreparedEffectGraph {
             )
         };
         Ok(PreparedEffectPublication {
-            scope,
+            functions,
+            rows,
+            predicates,
+            choices,
+            layers,
             result,
             ancestors,
             next_state,
@@ -498,43 +599,39 @@ impl PreparedEffectGraph {
     /// All fallible work, dependency checks and allocation charges precede the
     /// first live mutation. The journal retains only changes to this live base.
     fn publish_preflight(&mut self, publication: PreparedEffectPublication) {
-        let super::scope::ReadScopeData {
+        let PreparedEffectPublication {
             functions,
             rows,
             predicates,
             choices,
             layers,
-            ..
-        } = &*publication.scope.data;
+            result,
+            ancestors,
+            next_state,
+        } = publication;
         for id in rows.keys() {
             self.record_mutation(EffectMutation::Row(*id));
         }
         for id in predicates.keys() {
             self.record_mutation(EffectMutation::Predicate(*id));
         }
-        for id in choices {
+        for id in &choices {
             self.record_mutation(EffectMutation::Choice(*id));
         }
         for (id, function) in functions {
-            self.publish_function(*id, Arc::clone(function));
+            self.publish_function(id, function);
         }
-        self.relation
-            .rows
-            .extend(rows.iter().map(|(id, value)| (*id, Arc::clone(value))));
-        self.relation.predicates.extend(
-            predicates
-                .iter()
-                .map(|(id, value)| (*id, Arc::clone(value))),
-        );
-        self.relation.choices.extend(choices.iter().copied());
+        self.relation.rows.extend(rows);
+        self.relation.predicates.extend(predicates);
+        self.relation.choices.extend(choices);
         self.relation.obligations.extend(
             layers
                 .values()
                 .flat_map(|layer| layer.obligations.iter().map(Arc::clone)),
         );
-        self.state_ancestors.extend(publication.ancestors);
-        self.state = publication.result;
-        self.next_state = publication.next_state;
+        self.state_ancestors.extend(ancestors);
+        self.state = result;
+        self.next_state = next_state;
     }
 }
 

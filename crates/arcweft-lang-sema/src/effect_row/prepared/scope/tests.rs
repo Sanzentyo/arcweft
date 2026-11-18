@@ -110,6 +110,164 @@ fn assert_base(graph: &PreparedEffectGraph, state: PreparedEffectStateId) {
 }
 
 #[test]
+fn nested_checkpoints_inherit_selected_reads_and_restore_their_parent_on_close() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let base = graph.state;
+    let parent = prepare_source(&mut graph);
+    let parent_reads = graph.read_scope([&parent.delta], &mut work).unwrap();
+    let child = prepare_source(&mut graph);
+    let child_reads = graph.read_scope([&child.delta], &mut work).unwrap();
+
+    let mut parent_checkpoint = graph
+        .checkpoint_in_read_scope(&parent_reads, &mut work)
+        .unwrap();
+    assert_eq!(
+        graph.commit(&parent_checkpoint),
+        Err(PreparedEffectInvariant::ReadScopeActive)
+    );
+    assert!(matches!(
+        graph.checkpoint_in_read_scope(&child_reads, &mut work),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ReadScopeConflict
+        ))
+    ));
+    graph
+        .prepare_body(
+            &parent.scheme,
+            open(&parent.parameters[0]),
+            vec![],
+            &mut work,
+        )
+        .unwrap();
+    let parent_state = graph.state;
+    let mut ordinary = graph.checkpoint(&mut work).unwrap();
+    graph.choice(&mut work).unwrap();
+    let ordinary = graph.extract_delta(&mut ordinary, &mut work).unwrap();
+    graph.read_extracted(&ordinary, &mut work).unwrap();
+    assert_eq!(graph.state, parent_state);
+
+    let reads = graph
+        .compose_read_scopes([&child_reads], &mut work)
+        .unwrap();
+    let mut child_checkpoint = graph.checkpoint_in_read_scope(&reads, &mut work).unwrap();
+    assert!(matches!(
+        graph.rollback(&mut parent_checkpoint),
+        Err(PreparedEffectInvariant::CheckpointOrder)
+    ));
+    graph.read().validate_retained_row(&parent.row).unwrap();
+    graph.read().validate_retained_row(&child.row).unwrap();
+    graph
+        .prepare_body(&child.scheme, open(&child.parameters[0]), vec![], &mut work)
+        .unwrap();
+    assert!(matches!(
+        graph.extract_delta(&mut child_checkpoint, &mut Budget(0)),
+        Err(PreparedEffectFailure::Control(Exhausted))
+    ));
+    graph.read().validate_retained_row(&child.row).unwrap();
+    let detached = graph
+        .extract_delta(&mut child_checkpoint, &mut work)
+        .unwrap();
+    assert_eq!(graph.state, parent_state);
+    assert_eq!(
+        graph.read().validate_retained_row(&child.row),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+    assert!(matches!(
+        graph.read().scheme(&parent.scheme).unwrap().state,
+        SchemeState::BodyPrepared { .. }
+    ));
+    assert!(matches!(
+        graph
+            .read_extracted(&detached, &mut work)
+            .unwrap()
+            .scheme(&child.scheme)
+            .unwrap()
+            .state,
+        SchemeState::BodyPrepared { .. }
+    ));
+    graph.rollback(&mut parent_checkpoint).unwrap();
+    assert_base(&graph, base);
+}
+
+#[test]
+fn restoring_a_nested_projection_journals_only_authorized_writes() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let base = graph.state;
+    let parent = prepare_source(&mut graph);
+    let reads = graph.read_scope([&parent.delta], &mut work).unwrap();
+    let sibling = prepare_source(&mut graph);
+    let sibling_reads = graph.read_scope([&sibling.delta], &mut work).unwrap();
+    let mut callback = graph.checkpoint_in_read_scope(&reads, &mut work).unwrap();
+
+    let extra_reads = graph
+        .compose_read_scopes([&sibling_reads], &mut work)
+        .unwrap();
+    let mut nested = graph
+        .checkpoint_in_read_scope(&extra_reads, &mut work)
+        .unwrap();
+    let unused = graph.extract_delta(&mut nested, &mut work).unwrap();
+    let (error, _) = graph
+        .restore_delta(unused, &mut work)
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        error,
+        PreparedEffectFailure::Invariant(PreparedEffectInvariant::ReadScopeDependencies)
+    ));
+    assert_eq!(graph.state, base);
+    assert!(graph.journal.is_empty());
+
+    let mut candidate = graph.checkpoint(&mut work).unwrap();
+    graph
+        .prepare_body(
+            &parent.scheme,
+            open(&parent.parameters[0]),
+            vec![],
+            &mut work,
+        )
+        .unwrap();
+    graph
+        .add_scoped_obligation(
+            vec![],
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            &mut work,
+        )
+        .unwrap();
+    let selected = graph.extract_delta(&mut candidate, &mut work).unwrap();
+    graph.restore_delta(selected, &mut work).unwrap();
+    assert!(graph.relation.functions.is_empty());
+    assert!(graph.relation.rows.is_empty());
+    assert_eq!(graph.relation.obligations.len(), 1);
+    assert!(matches!(
+        graph.read().scheme(&parent.scheme).unwrap().state,
+        SchemeState::BodyPrepared { .. }
+    ));
+
+    let callback = graph.extract_delta(&mut callback, &mut work).unwrap();
+    assert_base(&graph, base);
+    let (error, callback) = graph
+        .restore_delta(callback, &mut work)
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        error,
+        PreparedEffectFailure::Invariant(PreparedEffectInvariant::ReadScopeDependencies)
+    ));
+    graph
+        .restore_deltas(vec![parent.delta, callback], &mut work)
+        .unwrap();
+    assert_eq!(graph.relation.obligations.len(), 2);
+    graph.read().validate_retained_row(&parent.row).unwrap();
+    assert_eq!(
+        graph.read().validate_retained_row(&sibling.row),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+}
+
+#[test]
 fn selected_sources_at_different_live_bases_compose_without_reading_siblings() {
     let mut graph = PreparedEffectGraph::default();
     let mut work = budget();

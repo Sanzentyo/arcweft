@@ -244,6 +244,7 @@ where
     pub(super) fn begin_probe_callback(
         &mut self,
         source: ConstraintSourceId<D::Source>,
+        reads: Option<&PreparedEffectReadScope>,
     ) -> Result<
         (
             SourceCallbackTicket<D>,
@@ -260,7 +261,7 @@ where
             context.charge_source_probe()
         })?;
         let checkpoint = self
-            .with_callback(|client, work| client.open_probe_checkpoint(work, source))
+            .with_callback(|client, work| client.open_probe_checkpoint(work, source, reads))
             .map_err(Self::checkpoint_failure)?;
         let identity = ticket.identity.clone();
         self.active_ticket = Some(ticket.identity.clone());

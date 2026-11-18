@@ -54,6 +54,41 @@ impl PreparedEffectReadScope {
         Ok(())
     }
 
+    pub(super) fn validate_at_ancestor<C: DecisionControl>(
+        &self,
+        graph: &PreparedEffectGraph,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        self.validate_issuer(graph, &mut Work(control))?;
+        if !graph.retains_state(self.data.base) {
+            return Err(PreparedEffectInvariant::DeltaBase.into());
+        }
+        Ok(())
+    }
+
+    pub(super) fn require_enclosing<C: DecisionControl>(
+        &self,
+        enclosing: Option<&ActiveEffectScope>,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        if let Some(enclosing) = enclosing {
+            for (&id, layer) in &enclosing.input.data.layers {
+                control
+                    .charge(DecisionWork::Visit)
+                    .map_err(PreparedEffectFailure::Control)?;
+                if !self
+                    .data
+                    .layers
+                    .get(&id)
+                    .is_some_and(|selected| Arc::ptr_eq(selected, layer))
+                {
+                    return Err(PreparedEffectInvariant::ReadScopeConflict.into());
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn same_origin<C: DecisionControl>(
         &self,
         other: &Self,
@@ -84,8 +119,24 @@ impl PreparedEffectGraph {
         inputs: impl IntoIterator<Item = &'a PreparedEffectDelta>,
         control: &mut C,
     ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
+        self.read_scope_data(inputs, control)
+            .map(|data| PreparedEffectReadScope {
+                data: Arc::new(data),
+            })
+    }
+
+    pub(super) fn read_scope_data<'a, C: DecisionControl>(
+        &self,
+        inputs: impl IntoIterator<Item = &'a PreparedEffectDelta>,
+        control: &mut C,
+    ) -> Result<ReadScopeData, PreparedEffectFailure<C::Error>> {
         let mut layers = BTreeMap::new();
         let mut work = Work(control);
+        if let Some(active) = &self.active_scope {
+            for layer in active.input.data.layers.values() {
+                retain_layer(&mut layers, layer, &mut work)?;
+            }
+        }
         for input in inputs {
             self.validate_delta(input, work.0)?;
             if let Some(dependencies) = &input.dependencies {
@@ -109,13 +160,20 @@ impl PreparedEffectGraph {
         let mut work = Work(control);
         let mut layers = BTreeMap::new();
         let mut bases = BTreeSet::new();
-        for scope in scopes {
+        let mut retain_scope = |scope: &PreparedEffectReadScope| {
             scope.validate_issuer(self, &mut work)?;
             work.charge(DecisionWork::Node)?;
             bases.insert(scope.data.base);
             for layer in scope.data.layers.values() {
                 retain_layer(&mut layers, layer, &mut work)?;
             }
+            Ok::<(), PreparedEffectFailure<C::Error>>(())
+        };
+        for scope in scopes {
+            retain_scope(scope)?;
+        }
+        if let Some(active) = &self.active_scope {
+            retain_scope(&active.input)?;
         }
         let mut states = BTreeSet::new();
         for (_, layer) in ordered_layers(&layers, &mut work)? {
@@ -134,13 +192,16 @@ impl PreparedEffectGraph {
             }
         }
         self.assemble_read_scope(layers, &mut work)
+            .map(|data| PreparedEffectReadScope {
+                data: Arc::new(data),
+            })
     }
 
     fn assemble_read_scope<C: DecisionControl>(
         &self,
         layers: BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
         work: &mut Work<'_, C>,
-    ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
+    ) -> Result<ReadScopeData, PreparedEffectFailure<C::Error>> {
         let mut functions = BTreeMap::<u64, Arc<Function>>::new();
         let mut origins = BTreeMap::<u64, u64>::new();
         let mut rows = BTreeMap::new();
@@ -186,7 +247,12 @@ impl PreparedEffectGraph {
         }
         for (&id, detached) in &mut functions {
             work.charge(DecisionWork::Visit)?;
-            if let Some(live) = self.relation.functions.get(&id) {
+            let live = self
+                .active_scope
+                .as_ref()
+                .and_then(|scope| scope.functions.get(&id))
+                .or_else(|| self.relation.functions.get(&id));
+            if let Some(live) = live {
                 if prepared_body_of(detached, live) {
                     *detached = Arc::clone(live);
                 } else if !Arc::ptr_eq(live, detached) && !prepared_body_of(live, detached) {
@@ -196,17 +262,15 @@ impl PreparedEffectGraph {
         }
         work.charge(DecisionWork::Node)?;
         work.charge(DecisionWork::Node)?;
-        Ok(PreparedEffectReadScope {
-            data: Arc::new(ReadScopeData {
-                issuer: Arc::clone(&self.relation.issuer),
-                base: self.state,
-                ids: ids.into(),
-                layers,
-                functions,
-                rows,
-                predicates,
-                choices,
-            }),
+        Ok(ReadScopeData {
+            issuer: Arc::clone(&self.relation.issuer),
+            base: self.state,
+            ids: ids.into(),
+            layers,
+            functions,
+            rows,
+            predicates,
+            choices,
         })
     }
 
@@ -215,15 +279,7 @@ impl PreparedEffectGraph {
         input: &PreparedEffectReadScope,
         control: &mut C,
     ) -> Result<PreparedEffectScopeEdit<'_>, PreparedEffectFailure<C::Error>> {
-        if self.active_scope.is_some() {
-            return Err(PreparedEffectInvariant::ReadScopeActive.into());
-        }
-        input.validate(self, control)?;
-        let checkpoint = self.checkpoint(control)?;
-        self.active_scope = Some(ActiveEffectScope {
-            input: input.clone(),
-            functions: BTreeMap::new(),
-        });
+        let checkpoint = self.checkpoint_in_read_scope(input, control)?;
         Ok(PreparedEffectScopeEdit {
             graph: self,
             checkpoint: Some(checkpoint),
@@ -315,7 +371,6 @@ impl Drop for PreparedEffectScopeEdit<'_> {
                 .rollback(checkpoint)
                 .expect("scope edit owns the last checkpoint");
         }
-        self.graph.active_scope = None;
     }
 }
 

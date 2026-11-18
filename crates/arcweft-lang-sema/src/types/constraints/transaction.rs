@@ -814,6 +814,12 @@ impl<D: ConstraintDomain> ProbeTicket<D> {
         Arc::clone(&self.input)
     }
 
+    pub(crate) fn effect_reads(
+        &self,
+    ) -> Option<&crate::effect_row::prepared::PreparedEffectReadScope> {
+        self.path.as_ref()?.lineage.effect_reads.as_ref()
+    }
+
     pub(crate) fn receipt(&self) -> ConstraintSourceReceipt<D> {
         ConstraintSourceReceipt {
             input: Arc::clone(&self.input),
@@ -1958,7 +1964,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 TypeConstraintSourceProtocolInvariant::Ticket,
             ));
         }
-        let Some(path) = operation.rows.pop_front() else {
+        let Some(mut path) = operation.rows.pop_front() else {
             let operation = self.probe.take().expect("probe operation exists");
             if let Some(mut group) = self.probe_group.take() {
                 group.remaining_sources =
@@ -1992,42 +1998,50 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             }
             return Ok(None);
         };
-        let mut hints = Vec::new();
-        for alternative in operation.prepared.alternatives() {
-            let scope = Arc::new(context.capture_lexical_scope()?);
-            let expected = bind_source_expectation(
-                alternative.expectation(),
-                &self.original,
-                self.application,
-                &path,
-                scope,
-                graph,
-                context,
-            )?;
-            let projected = project_type(
-                expected.value(),
-                path.projection_view(),
-                ConstraintClosurePolicy::Hint,
-                graph,
-                context,
-            )?;
-            let unbound = projected
-                .remaining
-                .iter()
-                .map(|parameter| parameter.parameter().clone())
-                .collect::<Box<[_]>>();
-            let scope_lease = if unbound.is_empty() {
-                None
-            } else {
-                Some(path.applications.import_parameters(&unbound)?)
-            };
-            hints.push(OwnedAlternativeHint {
-                alternative: alternative.alternative(),
-                expected: projected.value,
-                unbound,
-                scope_lease,
-            });
-        }
+        let (hints, effect_reads) = context.with_effect_reads(
+            graph,
+            path.lineage.probe_effect_reads(),
+            |context, graph| -> Result<_, TypeConstraintError> {
+                let mut hints = Vec::new();
+                for alternative in operation.prepared.alternatives() {
+                    let scope = Arc::new(context.capture_lexical_scope()?);
+                    let expected = bind_source_expectation(
+                        alternative.expectation(),
+                        &self.original,
+                        self.application,
+                        &path,
+                        scope,
+                        graph,
+                        context,
+                    )?;
+                    let projected = project_type(
+                        expected.value(),
+                        path.projection_view(),
+                        ConstraintClosurePolicy::Hint,
+                        graph,
+                        context,
+                    )?;
+                    let unbound = projected
+                        .remaining
+                        .iter()
+                        .map(|parameter| parameter.parameter().clone())
+                        .collect::<Box<[_]>>();
+                    let scope_lease = if unbound.is_empty() {
+                        None
+                    } else {
+                        Some(path.applications.import_parameters(&unbound)?)
+                    };
+                    hints.push(OwnedAlternativeHint {
+                        alternative: alternative.alternative(),
+                        expected: projected.value,
+                        unbound,
+                        scope_lease,
+                    });
+                }
+                Ok(hints)
+            },
+        )?;
+        path.lineage.effect_reads = effect_reads;
         let input = Arc::new(ProbeInput {
             source: operation.source,
             prepared: Arc::clone(&operation.prepared),

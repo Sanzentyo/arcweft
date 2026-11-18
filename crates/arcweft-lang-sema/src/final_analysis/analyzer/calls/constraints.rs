@@ -35,6 +35,7 @@ use crate::{
         PreparedResolvedCallable, PreparedResolvedCallableDetachArena,
         PreparedSourceConstraintGroup, TypeConstraintClient, VariantPayloadRequirement,
     },
+    effect_row::prepared::PreparedEffectReadScope,
     types::{
         GenericScope, GenericTypeReference, PreparedEffects, TypeKind, TypeProjectionControl,
         TypeProjectionNodeKind,
@@ -2084,6 +2085,7 @@ trait AnalyzerCallConstraintOperations {
         &mut self,
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         source: AnalyzerCallConstraintSourceId,
+        reads: Option<&PreparedEffectReadScope>,
     ) -> Result<
         Self::ProbeCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
@@ -2503,6 +2505,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         &mut self,
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         source: AnalyzerCallConstraintSourceId,
+        reads: Option<&PreparedEffectReadScope>,
     ) -> Result<
         Self::ProbeCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
@@ -2519,7 +2522,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         let scope = self
             .analyzer
             .facts
-            .open_callback_fact_scope(work)
+            .open_callback_fact_scope(reads, work)
             .map_err(|failure| match failure {
                 super::super::state::CandidateFactMutationFailure::Control(error) => {
                     crate::callable::SourceCheckpointFailure::Constraint(error)
@@ -2638,19 +2641,20 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 ),
             ));
         }
-        let scope =
-            self.analyzer.facts.open_callback_fact_scope(work).map_err(
-                |failure| match failure {
-                    super::super::state::CandidateFactMutationFailure::Control(error) => {
-                        crate::callable::SourceCheckpointFailure::Constraint(error)
-                    }
-                    super::super::state::CandidateFactMutationFailure::Invariant(violation) => {
-                        crate::callable::SourceCheckpointFailure::client(
-                            AnalyzerCallClientInvariant::fact_transaction(owner.local(), violation),
-                        )
-                    }
-                },
-            )?;
+        let scope = self
+            .analyzer
+            .facts
+            .open_callback_fact_scope(None, work)
+            .map_err(|failure| match failure {
+                super::super::state::CandidateFactMutationFailure::Control(error) => {
+                    crate::callable::SourceCheckpointFailure::Constraint(error)
+                }
+                super::super::state::CandidateFactMutationFailure::Invariant(violation) => {
+                    crate::callable::SourceCheckpointFailure::client(
+                        AnalyzerCallClientInvariant::fact_transaction(owner.local(), violation),
+                    )
+                }
+            })?;
         let checkpoint = AnalyzerMaterializationCheckpoint {
             checkpoint: scope.materialization_checkpoint(),
             sources: ordered_sources,
@@ -3163,11 +3167,12 @@ impl<O: AnalyzerCallConstraintOperations>
         &mut self,
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         source: AnalyzerCallConstraintSourceId,
+        reads: Option<&PreparedEffectReadScope>,
     ) -> Result<
         Self::ProbeCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
     > {
-        self.operations.open_probe_checkpoint(work, source)
+        self.operations.open_probe_checkpoint(work, source, reads)
     }
 
     fn close_probe_checkpoint(
@@ -7376,7 +7381,7 @@ mod tests {
                 .expect("source observation");
             let mut preparation_owner = super::super::super::state::SemanticFactState::new();
             let preparation_scope = preparation_owner
-                .open_callback_fact_scope(&mut context)
+                .open_callback_fact_scope(None, &mut context)
                 .unwrap();
             let preparation = preparation_owner
                 .extract_callback_fact_scope(preparation_scope, &mut context)
@@ -7553,6 +7558,13 @@ mod tests {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let owner = callback_test_owner(&fixture);
         let cancellation = AtomicBool::new(false);
+        let mut resolver = crate::callable::ResolverWork::new(4_096);
+        let mut work = resolver
+            .begin_candidate_constraint_session(
+                crate::callable::PRODUCTION_CALLABLE_LIMITS,
+                &cancellation,
+            )
+            .unwrap_or_else(|_| panic!("callback test work reservation"));
         let mut analyzer = super::super::Analyzer::new(
             fixture.project.analysis_view().expect("executable HIR"),
             &fixture.symbols,
@@ -7583,12 +7595,17 @@ mod tests {
             existing.application(),
             AnalyzerCallConstraintSource::Result { source: owner },
         );
-        let checkpoint =
-            AnalyzerCallConstraintOperations::open_probe_checkpoint(&mut client, existing)
-                .unwrap_or_else(|_| panic!("first callback scope"));
+        let checkpoint = AnalyzerCallConstraintOperations::open_probe_checkpoint(
+            &mut client,
+            &mut work,
+            existing,
+            None,
+        )
+        .unwrap_or_else(|_| panic!("first callback scope"));
 
         let conflict = AnalyzerCallConstraintOperations::open_materialization_checkpoint(
             &mut client,
+            &mut work,
             &[requested, existing],
         );
         let conflict = match conflict {
@@ -7620,14 +7637,21 @@ mod tests {
 
         AnalyzerCallConstraintOperations::close_probe_checkpoint(
             &mut client,
+            &mut work,
             checkpoint,
             crate::callable::ProbeCheckpointDisposition::Discard,
         )
         .unwrap_or_else(|_| panic!("the original scope remains closable after the conflict"));
-        let next = AnalyzerCallConstraintOperations::open_probe_checkpoint(&mut client, requested)
-            .unwrap_or_else(|_| panic!("conflict must not leave an active scope behind"));
+        let next = AnalyzerCallConstraintOperations::open_probe_checkpoint(
+            &mut client,
+            &mut work,
+            requested,
+            None,
+        )
+        .unwrap_or_else(|_| panic!("conflict must not leave an active scope behind"));
         AnalyzerCallConstraintOperations::close_probe_checkpoint(
             &mut client,
+            &mut work,
             next,
             crate::callable::ProbeCheckpointDisposition::Discard,
         )
@@ -7635,11 +7659,16 @@ mod tests {
 
         let materialization = AnalyzerCallConstraintOperations::open_materialization_checkpoint(
             &mut client,
+            &mut work,
             &[existing, requested],
         )
         .unwrap_or_else(|_| panic!("materialization callback scope"));
-        let conflict =
-            AnalyzerCallConstraintOperations::open_probe_checkpoint(&mut client, existing);
+        let conflict = AnalyzerCallConstraintOperations::open_probe_checkpoint(
+            &mut client,
+            &mut work,
+            existing,
+            None,
+        );
         let conflict = match conflict {
             Err(conflict) => conflict,
             Ok(_) => panic!("a second probe callback scope must be rejected"),
@@ -7668,6 +7697,7 @@ mod tests {
         );
         let close = AnalyzerCallConstraintOperations::close_materialization_checkpoint(
             &mut client,
+            &mut work,
             materialization,
             None,
         );
@@ -7680,6 +7710,13 @@ mod tests {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let owner = callback_test_owner(&fixture);
         let cancellation = AtomicBool::new(false);
+        let mut resolver = crate::callable::ResolverWork::new(4_096);
+        let mut work = resolver
+            .begin_candidate_constraint_session(
+                crate::callable::PRODUCTION_CALLABLE_LIMITS,
+                &cancellation,
+            )
+            .unwrap_or_else(|_| panic!("callback test work reservation"));
         let mut analyzer = super::super::Analyzer::new(
             fixture.project.analysis_view().expect("executable HIR"),
             &fixture.symbols,
@@ -7695,6 +7732,22 @@ mod tests {
             .facts
             .initialize_effect_declarations(declarations)
             .unwrap();
+        let (effect_reads, effect_hint) = {
+            let (graph, _) = analyzer.facts.effect_declarations_mut().unwrap().relation();
+            let mut checkpoint = graph.checkpoint(&mut work).unwrap();
+            let declared = graph
+                .declare(
+                    vec![],
+                    crate::effect_row::EffectPredicate::unconstrained(),
+                    &mut work,
+                )
+                .unwrap();
+            let hint = graph.application(&declared, vec![], &mut work).unwrap();
+            let delta = graph.extract_delta(&mut checkpoint, &mut work).unwrap();
+            let reads = graph.read_scope([&delta], &mut work).unwrap();
+            assert!(graph.read().validate_retained_row(&hint).is_err());
+            (reads, hint)
+        };
         let mut children = Vec::new();
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
@@ -7717,9 +7770,23 @@ mod tests {
             ProbeCheckpointDisposition::Retain,
             ProbeCheckpointDisposition::Discard,
         ] {
-            let checkpoint =
-                AnalyzerCallConstraintOperations::open_probe_checkpoint(&mut client, source)
-                    .unwrap_or_else(|_| panic!("open original source scope"));
+            let checkpoint = AnalyzerCallConstraintOperations::open_probe_checkpoint(
+                &mut client,
+                &mut work,
+                source,
+                Some(&effect_reads),
+            )
+            .unwrap_or_else(|_| panic!("open original source scope"));
+            client
+                .analyzer
+                .facts
+                .prepared_calls()
+                .unwrap()
+                .effect_declarations()
+                .unwrap()
+                .read()
+                .validate_retained_row(&effect_hint)
+                .unwrap();
             let observed = client
                 .check_source(
                     source,
@@ -7747,19 +7814,42 @@ mod tests {
                 .expect("the probe owns the evaluated expression");
             let preparation = AnalyzerCallConstraintOperations::close_probe_checkpoint(
                 &mut client,
+                &mut work,
                 checkpoint,
                 disposition,
             )
             .unwrap_or_else(|_| panic!("close the exact source scope"));
             assert!(!client.analyzer.facts.expressions().contains_key(&owner));
+            assert!(
+                client
+                    .analyzer
+                    .facts
+                    .prepared_calls()
+                    .unwrap()
+                    .effect_declarations()
+                    .unwrap()
+                    .read()
+                    .validate_retained_row(&effect_hint)
+                    .is_err()
+            );
             match disposition {
                 ProbeCheckpointDisposition::Retain => {
                     let preparation =
                         preparation.expect("accepted close retains the original facts");
                     assert_eq!(preparation.expression_update(owner), Some(Some(&original)));
-                    assert!(preparation.probe_effect_reads().is_some());
                     preparation
                         .effect_view(client.analyzer.facts.prepared_calls().unwrap())
+                        .unwrap();
+                    let (graph, _) = client
+                        .analyzer
+                        .facts
+                        .effect_declarations_mut()
+                        .unwrap()
+                        .relation();
+                    graph
+                        .read_scoped(preparation.probe_effect_reads().unwrap(), &mut work)
+                        .unwrap()
+                        .validate_retained_row(&effect_hint)
                         .unwrap();
                     client
                         .analyzer
@@ -7778,6 +7868,13 @@ mod tests {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let owner = callback_test_owner(&fixture);
         let cancellation = AtomicBool::new(false);
+        let mut resolver = crate::callable::ResolverWork::new(4_096);
+        let mut work = resolver
+            .begin_candidate_constraint_session(
+                crate::callable::PRODUCTION_CALLABLE_LIMITS,
+                &cancellation,
+            )
+            .unwrap_or_else(|_| panic!("callback test work reservation"));
         let mut analyzer = super::super::Analyzer::new(
             fixture.project.analysis_view().expect("executable HIR"),
             &fixture.symbols,
@@ -7808,12 +7905,17 @@ mod tests {
             source.application(),
             AnalyzerCallConstraintSource::Result { source: owner },
         );
-        let mut checkpoint =
-            AnalyzerCallConstraintOperations::open_probe_checkpoint(&mut client, source)
-                .unwrap_or_else(|_| panic!("callback scope"));
+        let mut checkpoint = AnalyzerCallConstraintOperations::open_probe_checkpoint(
+            &mut client,
+            &mut work,
+            source,
+            None,
+        )
+        .unwrap_or_else(|_| panic!("callback scope"));
         checkpoint.source = wrong_source;
         let close = AnalyzerCallConstraintOperations::close_probe_checkpoint(
             &mut client,
+            &mut work,
             checkpoint,
             crate::callable::ProbeCheckpointDisposition::Discard,
         );
@@ -7824,11 +7926,16 @@ mod tests {
             ))
         ));
 
-        let next =
-            AnalyzerCallConstraintOperations::open_probe_checkpoint(&mut client, wrong_source)
-                .unwrap_or_else(|_| panic!("wrong-source close must clear the active scope"));
+        let next = AnalyzerCallConstraintOperations::open_probe_checkpoint(
+            &mut client,
+            &mut work,
+            wrong_source,
+            None,
+        )
+        .unwrap_or_else(|_| panic!("wrong-source close must clear the active scope"));
         AnalyzerCallConstraintOperations::close_probe_checkpoint(
             &mut client,
+            &mut work,
             next,
             crate::callable::ProbeCheckpointDisposition::Discard,
         )
@@ -7840,6 +7947,13 @@ mod tests {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let owner = callback_test_owner(&fixture);
         let cancellation = AtomicBool::new(false);
+        let mut resolver = crate::callable::ResolverWork::new(4_096);
+        let mut work = resolver
+            .begin_candidate_constraint_session(
+                crate::callable::PRODUCTION_CALLABLE_LIMITS,
+                &cancellation,
+            )
+            .unwrap_or_else(|_| panic!("callback test work reservation"));
         let mut analyzer = super::super::Analyzer::new(
             fixture.project.analysis_view().expect("executable HIR"),
             &fixture.symbols,
@@ -7872,12 +7986,14 @@ mod tests {
         );
         let mut checkpoint = AnalyzerCallConstraintOperations::open_materialization_checkpoint(
             &mut client,
+            &mut work,
             &[first, second],
         )
         .unwrap_or_else(|_| panic!("materialization scope"));
         checkpoint.sources.reverse();
         let close = AnalyzerCallConstraintOperations::close_materialization_checkpoint(
             &mut client,
+            &mut work,
             checkpoint,
             None,
         );
@@ -7888,10 +8004,16 @@ mod tests {
             ))
         ));
 
-        let next = AnalyzerCallConstraintOperations::open_probe_checkpoint(&mut client, first)
-            .unwrap_or_else(|_| panic!("wrong-order close must clear the active scope"));
+        let next = AnalyzerCallConstraintOperations::open_probe_checkpoint(
+            &mut client,
+            &mut work,
+            first,
+            None,
+        )
+        .unwrap_or_else(|_| panic!("wrong-order close must clear the active scope"));
         AnalyzerCallConstraintOperations::close_probe_checkpoint(
             &mut client,
+            &mut work,
             next,
             crate::callable::ProbeCheckpointDisposition::Discard,
         )

@@ -9,6 +9,7 @@ use super::continuation::{
     PreparedConstraintInitialization,
 };
 pub(crate) use super::limits::{CandidateConstraintWorkLoan, CandidateConstraintWorkSession};
+use crate::effect_row::prepared::PreparedEffectReadScope;
 use crate::types::constraints::context::TypeConstraintContext;
 use crate::types::constraints::transaction::{
     ClosedMaterialization, ConstraintMaterialization, MaterializationCallbackBinding,
@@ -71,6 +72,7 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
         &mut self,
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         source: ConstraintSourceId<D::Source>,
+        reads: Option<&PreparedEffectReadScope>,
     ) -> Result<Self::ProbeCheckpoint, SourceCheckpointFailure<D>>;
 
     fn close_probe_checkpoint(
@@ -736,14 +738,16 @@ where
                 break;
             };
             let source = lower_ticket.source();
-            let (callback_ticket, mut checkpoint) =
-                match self.callbacks.begin_probe_callback(source) {
-                    Ok(callback) => callback,
-                    Err(error) => {
-                        self.lower.record_failure(error);
-                        break;
-                    }
-                };
+            let (callback_ticket, mut checkpoint) = match self
+                .callbacks
+                .begin_probe_callback(source, lower_ticket.effect_reads())
+            {
+                Ok(callback) => callback,
+                Err(error) => {
+                    self.lower.record_failure(error);
+                    break;
+                }
+            };
             let mut source_context = CandidateConstraintSourceContext {
                 ticket: lower_ticket,
                 authority: &self.callbacks.authority,
@@ -992,6 +996,7 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
         &mut self,
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         _source: ConstraintSourceId<()>,
+        _reads: Option<&PreparedEffectReadScope>,
     ) -> Result<Self::ProbeCheckpoint, SourceCheckpointFailure<crate::types::NoConstraintClient>>
     {
         Ok(())
@@ -1545,6 +1550,7 @@ pub(crate) mod tests {
             &mut self,
             work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
             _source: ConstraintSourceId<u8>,
+            _reads: Option<&PreparedEffectReadScope>,
         ) -> Result<Self::ProbeCheckpoint, SourceCheckpointFailure<Domain>> {
             self.counts.probe_begin.fetch_add(1, Ordering::Relaxed);
             if matches!(self.mode, CallbackMode::OpenProbeFailure) {
@@ -2790,7 +2796,10 @@ pub(crate) mod tests {
                 |mut driver| {
                     let (ticket, checkpoint) = driver
                         .callbacks
-                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
+                        .begin_probe_callback(
+                            crate::types::constraints::test_support::source_id(1),
+                            None,
+                        )
                         .expect("driver mints a probe ticket");
                     let foreign_ticket = SourceCallbackTicket {
                         identity: SourceCallbackTicketIdentity {
@@ -2819,7 +2828,10 @@ pub(crate) mod tests {
 
                     let (valid_ticket, valid_checkpoint) = driver
                         .callbacks
-                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
+                        .begin_probe_callback(
+                            crate::types::constraints::test_support::source_id(1),
+                            None,
+                        )
                         .expect("foreign close clears the active ticket");
                     driver
                         .callbacks
@@ -2852,7 +2864,10 @@ pub(crate) mod tests {
                 |mut driver| {
                     let (ticket, mut checkpoint) = driver
                         .callbacks
-                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
+                        .begin_probe_callback(
+                            crate::types::constraints::test_support::source_id(1),
+                            None,
+                        )
                         .expect("driver can mint the next generation");
                     checkpoint.identity.issuer = Arc::new(SourceCallbackTicketIssuer);
                     assert!(matches!(
@@ -2873,7 +2888,10 @@ pub(crate) mod tests {
 
                     let (valid_ticket, valid_checkpoint) = driver
                         .callbacks
-                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
+                        .begin_probe_callback(
+                            crate::types::constraints::test_support::source_id(1),
+                            None,
+                        )
                         .expect("foreign checkpoint close clears the active ticket");
                     driver
                         .callbacks
@@ -2951,7 +2969,10 @@ pub(crate) mod tests {
                     assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
                     let (probe_ticket, probe_checkpoint) = driver
                         .callbacks
-                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
+                        .begin_probe_callback(
+                            crate::types::constraints::test_support::source_id(1),
+                            None,
+                        )
                         .expect("foreign close clears the active callback ticket");
                     driver
                         .callbacks
@@ -3018,7 +3039,10 @@ pub(crate) mod tests {
                     assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
                     let (probe_ticket, probe_checkpoint) = driver
                         .callbacks
-                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
+                        .begin_probe_callback(
+                            crate::types::constraints::test_support::source_id(1),
+                            None,
+                        )
                         .expect("foreign checkpoint close clears the active callback ticket");
                     driver
                         .callbacks

@@ -55,10 +55,8 @@ impl PreparedEffectGraph {
         scope: &'a PreparedEffectReadScope,
         control: &mut C,
     ) -> Result<PreparedEffectReadView<'a>, PreparedEffectFailure<C::Error>> {
-        if self.active_scope.is_some() {
-            return Err(PreparedEffectInvariant::ReadScopeActive.into());
-        }
         scope.validate(self, control)?;
+        scope.require_enclosing(self.active_scope.as_ref(), control)?;
         Ok(PreparedEffectReadView {
             dependencies: Some(scope),
             ..self.read()
@@ -209,11 +207,11 @@ impl<'a> PreparedEffectReadView<'a> {
     ) -> Option<&'a Arc<Function>> {
         self.extracted
             .and_then(|delta| delta.functions.get(&id))
+            .or_else(|| self.scope.and_then(|scope| scope.functions.get(&id)))
             .or_else(|| {
                 self.dependencies
                     .and_then(|scope| scope.data.functions.get(&id))
             })
-            .or_else(|| self.scope.and_then(|scope| scope.functions.get(&id)))
             .or_else(|| {
                 self.scope
                     .and_then(|scope| scope.input.data.functions.get(&id))

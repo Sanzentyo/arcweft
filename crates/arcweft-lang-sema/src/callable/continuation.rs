@@ -1471,6 +1471,14 @@ impl<P, U> PreparedCallGraph<P, U> {
         &mut self,
         control: &mut C,
     ) -> Result<PreparedCallGraphCheckpoint, PreparedCallGraphMutationFailure<C::Error>> {
+        self.begin_delta_with_effect_reads(None, control)
+    }
+
+    pub(crate) fn begin_delta_with_effect_reads<C: DecisionControl>(
+        &mut self,
+        reads: Option<&PreparedEffectReadScope>,
+        control: &mut C,
+    ) -> Result<PreparedCallGraphCheckpoint, PreparedCallGraphMutationFailure<C::Error>> {
         let id = self.next_delta;
         let next_delta = self
             .next_delta
@@ -1483,12 +1491,24 @@ impl<P, U> PreparedCallGraph<P, U> {
         control
             .charge(crate::effect_row::DecisionWork::Node)
             .map_err(PreparedCallGraphMutationFailure::Control)?;
-        let relation = self
-            .declarations
-            .as_mut()
-            .map(|declarations| declarations.relation().0.checkpoint(control))
-            .transpose()
-            .map_err(PreparedCallGraphMutationFailure::effect)?;
+        let relation = match (&mut self.declarations, reads) {
+            (Some(declarations), reads) => {
+                let (graph, _) = declarations.relation();
+                let checkpoint = match reads {
+                    Some(reads) => {
+                        let reads = graph
+                            .compose_read_scopes([reads], control)
+                            .map_err(PreparedCallGraphMutationFailure::effect)?;
+                        graph.checkpoint_in_read_scope(&reads, control)
+                    }
+                    None => graph.checkpoint(control),
+                }
+                .map_err(PreparedCallGraphMutationFailure::effect)?;
+                Some(checkpoint)
+            }
+            (None, None) => None,
+            (None, Some(_)) => return Err(CallConstraintInvariant::InvalidPreparedNodeState.into()),
+        };
         self.next_delta = next_delta;
         self.active_deltas.push(PreparedCallGraphActiveDelta {
             id,

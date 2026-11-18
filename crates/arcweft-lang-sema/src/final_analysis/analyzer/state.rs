@@ -806,9 +806,10 @@ impl SemanticFactState {
     /// from the returned scope.
     pub(super) fn open_callback_fact_scope<C: crate::effect_row::DecisionControl>(
         &mut self,
+        reads: Option<&crate::effect_row::prepared::PreparedEffectReadScope>,
         control: &mut C,
     ) -> Result<ActiveCallbackFactScope, CandidateFactMutationFailure<C::Error>> {
-        let checkpoint = self.begin_candidate_transaction(control)?;
+        let checkpoint = self.begin_candidate_transaction_with_effect_reads(reads, control)?;
         Ok(ActiveCallbackFactScope { checkpoint })
     }
 
@@ -1683,6 +1684,14 @@ impl SemanticFactState {
         &mut self,
         control: &mut C,
     ) -> Result<CandidateFactCheckpoint, CandidateFactMutationFailure<C::Error>> {
+        self.begin_candidate_transaction_with_effect_reads(None, control)
+    }
+
+    fn begin_candidate_transaction_with_effect_reads<C: crate::effect_row::DecisionControl>(
+        &mut self,
+        reads: Option<&crate::effect_row::prepared::PreparedEffectReadScope>,
+        control: &mut C,
+    ) -> Result<CandidateFactCheckpoint, CandidateFactMutationFailure<C::Error>> {
         self.ensure_healthy()?;
         let opens_root = self.candidate_checkpoints.is_empty();
         if opens_root
@@ -1699,7 +1708,7 @@ impl SemanticFactState {
             .ok_or(CandidateFactTransactionViolation::SequenceExhausted)?;
         let graph = self
             .prepared_calls_mut()?
-            .begin_delta(control)
+            .begin_delta_with_effect_reads(reads, control)
             .map_err(CandidateFactMutationFailure::from)?;
         let checkpoint = CandidateFactCheckpoint {
             issuer: Arc::clone(&self.issuer),

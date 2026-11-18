@@ -237,6 +237,7 @@ impl TypeConstraintClient<Domain> for Client<'_> {
         &mut self,
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
         _: ConstraintSourceId<u8>,
+        _: Option<&PreparedEffectReadScope>,
     ) -> Result<(), SourceCheckpointFailure<Domain>> {
         Ok(())
     }
