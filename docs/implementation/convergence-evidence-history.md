@@ -18707,3 +18707,16 @@ Analyzerで閉じた値を投影する独立呼出しは、元のfrontierを引�
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は3回とも終了101。初回は読取り範囲の合成にlifetimeエラーがあり修正した。公開入力はlibrary **416エラー・25警告**、lib test **1,314エラー・44警告**。前回Sourceとの一次診断の比較では、チェックポイントの作業セッション引数を揃えたAnalyzer fixtureのE0061が18件減った。型制約の旧 `ConstraintClosedEffects::for_path` 呼出しの引数不足は `transaction.rs:2568` に残る。Semaのfmtと構造gateは終了0、blocking違反0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,997,277 bytesで、約300 GBを目安とするcleanは未実行。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-scoped-probe-checkpoint.raw.zip) は29 entry、417,039 bytes、SHA256 `f379bd37dcc1b7470891ec1a26c1b5577281fd801d43f65d0450b4d31c2b0a17`。各entryの長さとSHA256を再照合した。旧履歴2,900,966 bytesのSHA256 `818304cc4d201b3720d27dad1774b37d34dd927c67fa41d141fcf7ee43c1dffc` をprefixとして保持した。
+
+<a id="ancestral-effect-publication"></a>
+## 2026-11-18 — 開始時点の異なる元の差分を一括適用する
+
+基点 `34bd6b981cb2dd9743d814a43b18acc340618140`。Source `478535a05f82807426e98b0676f914dd60942714` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した5入力のblobを照合した。
+
+作用グラフの一括適用では元の書込み権限の発行元を検証し、現在の状態を起点とする。子の開始時点は、バッチ内の元の親差分が保持する履歴で証明する。参照専用の範囲だけでは書込み権限を得られない。適用した状態の履歴も一括で保持し、外側のチェックポイントで作用項・義務・履歴をまとめて戻す。Analyzerの台帳は既存の一括適用を通じてこの検証を使う。通常の候補適用で再評価から元の差分へ切り替える移行は継続する。
+
+新規回帰は、親・子・孫の元の差分を逆順で渡した場合の一括適用、親の差分を欠く場合の拒否、予算中断からの再試行、作用グラフとAnalyzer台帳のロールバックを検査する。コンパイル段階で停止し、回帰は未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。公開入力はlibrary **416エラー・25警告**、lib test **1,314エラー・44警告**。変更5 pathを一次位置とするエラーは0件。Semaのfmtと構造gateは終了0、blocking違反0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,005,223 bytesで、約300 GBを目安とするcleanは未実行。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-ancestral-effect-publication.raw.zip) は22 entry、275,952 bytes、SHA256 `b143c6f793a77034aedbb10953c58b734901c81596416466526c99844598ce50`。各entryの長さとSHA256を再照合した。旧履歴2,903,585 bytesのSHA256 `4b0306133c64168f9af345169bab7c7a7b01b3f5211f3bd3e205f8535166201b` をprefixとして保持した。
