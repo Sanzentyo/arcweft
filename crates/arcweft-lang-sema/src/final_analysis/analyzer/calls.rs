@@ -5928,7 +5928,13 @@ mod tests {
         .expect("checked Character item");
         let exact_checked = crate::final_analysis::PreparedExpressionFact::from(
             crate::final_analysis::prepared::PreparedResolvedExpression::value(
-                exact_item.ty(),
+                exact_item
+                    .ty()
+                    .prepare_effects(
+                        &crate::types::GenericScope::default(),
+                        &mut crate::types::UnmeteredTypeProjection,
+                    )
+                    .expect("retained Character type"),
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),
                 CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(exact_item)),
@@ -5944,7 +5950,12 @@ mod tests {
 
         let structural_checked = crate::final_analysis::PreparedExpressionFact::from(
             crate::final_analysis::prepared::PreparedResolvedExpression::value(
-                TypeKind::entity_ref(crate::types::EntityKind::Character),
+                TypeKind::entity_ref(crate::types::EntityKind::Character)
+                    .prepare_effects(
+                        &crate::types::GenericScope::default(),
+                        &mut crate::types::UnmeteredTypeProjection,
+                    )
+                    .expect("retained Character reference type"),
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),
                 CheckedExpressionResolution::Structural,

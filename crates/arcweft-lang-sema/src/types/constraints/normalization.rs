@@ -316,20 +316,20 @@ impl<D: ConstraintDomain> fmt::Debug for SolvedCandidate<D> {
 pub(crate) struct RejectedConstraintSourceProjection<D: ConstraintDomain> {
     source: ConstraintSourceId<D::Source>,
     alternative: Option<D::AlternativeIndex>,
-    source_projection: CheckedConstraintSourceProjection<PreparedEffects>,
+    source_projection: CheckedConstraintSourceProjection,
     acceptance: ConstraintAcceptance,
-    expected: TypeKind<PreparedEffects>,
-    actual: TypeKind<PreparedEffects>,
+    expected: TypeKind,
+    actual: TypeKind,
 }
 
 impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
     pub(super) fn new(
         source: ConstraintSourceId<D::Source>,
         alternative: Option<D::AlternativeIndex>,
-        source_projection: CheckedConstraintSourceProjection<PreparedEffects>,
+        source_projection: CheckedConstraintSourceProjection,
         acceptance: ConstraintAcceptance,
-        expected: TypeKind<PreparedEffects>,
-        actual: TypeKind<PreparedEffects>,
+        expected: TypeKind,
+        actual: TypeKind,
     ) -> Self {
         Self {
             source,
@@ -349,9 +349,7 @@ impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
         self.alternative
     }
 
-    pub(crate) const fn source_projection(
-        &self,
-    ) -> &CheckedConstraintSourceProjection<PreparedEffects> {
+    pub(crate) const fn source_projection(&self) -> &CheckedConstraintSourceProjection {
         &self.source_projection
     }
 
@@ -359,11 +357,11 @@ impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
         self.acceptance
     }
 
-    pub(crate) const fn expected(&self) -> &TypeKind<PreparedEffects> {
+    pub(crate) const fn expected(&self) -> &TypeKind {
         &self.expected
     }
 
-    pub(crate) const fn actual(&self) -> &TypeKind<PreparedEffects> {
+    pub(crate) const fn actual(&self) -> &TypeKind {
         &self.actual
     }
 
@@ -371,10 +369,10 @@ impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
     pub(crate) fn test_new(
         source: ConstraintSourceId<D::Source>,
         alternative: Option<D::AlternativeIndex>,
-        source_projection: CheckedConstraintSourceProjection<PreparedEffects>,
+        source_projection: CheckedConstraintSourceProjection,
         acceptance: ConstraintAcceptance,
-        expected: TypeKind<PreparedEffects>,
-        actual: TypeKind<PreparedEffects>,
+        expected: TypeKind,
+        actual: TypeKind,
     ) -> Self {
         Self::new(
             source,

@@ -440,6 +440,27 @@ impl From<super::TypeProjectionError<TypeConstraintError>> for TypeConstraintErr
     }
 }
 
+impl From<super::TypeProjectionError<super::PreparedTypeEffectProjectionFailure<Self>>>
+    for TypeConstraintError
+{
+    fn from(
+        error: super::TypeProjectionError<super::PreparedTypeEffectProjectionFailure<Self>>,
+    ) -> Self {
+        use super::{PreparedTypeEffectProjectionFailure, TypeProjectionError};
+        match error {
+            TypeProjectionError::Instantiation(error) => {
+                TypeConstraintInvariant::Instantiation(error).into()
+            }
+            TypeProjectionError::Control(PreparedTypeEffectProjectionFailure::Control(error)) => {
+                error
+            }
+            TypeProjectionError::Control(PreparedTypeEffectProjectionFailure::Effects(error)) => {
+                error.map_control(Self::from).into()
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum TypeConstraintInitializationFailure {
     #[error("constraint initialization aborted: {0}")]

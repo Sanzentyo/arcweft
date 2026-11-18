@@ -99,6 +99,22 @@ pub(crate) enum PreparedTypeEffectProjectionFailure<E: std::error::Error + 'stat
 }
 
 impl<E: std::error::Error + 'static> PreparedTypeEffectProjectionFailure<E> {
+    /// A rejected candidate may lack a principal observation. An optional
+    /// diagnostic records only an observable type and preserves real failures.
+    pub(crate) fn optional_observation<T>(
+        observation: Result<T, TypeProjectionError<Self>>,
+    ) -> Result<Option<T>, TypeProjectionError<Self>> {
+        match observation {
+            Ok(value) => Ok(Some(value)),
+            Err(TypeProjectionError::Control(Self::Effects(
+                PreparedEffectFailure::ObservationNeedsBody(_)
+                | PreparedEffectFailure::ObservationNotTotal
+                | PreparedEffectFailure::NonPointwiseObservation,
+            ))) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     pub(in crate::types) fn from_projection(
         error: TypeProjectionError<E>,
     ) -> TypeProjectionError<Self> {

@@ -398,26 +398,8 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         scope: &crate::types::GenericScope,
         context: &mut C,
     ) -> Result<crate::types::TypeKind, TypeConstraintError> {
-        use crate::types::{PreparedTypeEffectProjectionFailure, TypeProjectionError};
         ty.project_canonical_effects(scope, &self.context.principal, context)
-            .map_err(|error| match error {
-                TypeProjectionError::Instantiation(error) => {
-                    TypeConstraintInvariant::Instantiation(error).into()
-                }
-                TypeProjectionError::Control(PreparedTypeEffectProjectionFailure::Control(
-                    error,
-                )) => error,
-                TypeProjectionError::Control(PreparedTypeEffectProjectionFailure::Effects(
-                    error,
-                )) => error
-                    .map_control(|error| match error {
-                        TypeProjectionError::Control(error) => error,
-                        TypeProjectionError::Instantiation(error) => {
-                            TypeConstraintInvariant::Instantiation(error).into()
-                        }
-                    })
-                    .into(),
-            })
+            .map_err(TypeConstraintError::from)
     }
 
     /// Complete an annotation using the principal already proved for this

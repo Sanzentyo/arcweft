@@ -2255,16 +2255,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         StoredSourceSelection::Checked { alternative, .. } => Some(*alternative),
                         StoredSourceSelection::Unchecked => None,
                     };
-                    let relation_rejection = pattern.as_ref().map(|expected| {
-                        RejectedConstraintSourceProjection::new(
-                            input.source,
-                            rejected_alternative,
-                            source_projection.clone(),
-                            input.acceptance,
-                            expected.value().clone(),
-                            actual.clone(),
-                        )
-                    });
+                    let diagnostic_operands = pattern
+                        .as_ref()
+                        .filter(|_| D::observes_rejected_source(input.source.local()))
+                        .map(|expected| (expected, actual_operand.clone()));
                     let probe = ActiveConstraintProbe {
                         source: input.source,
                         source_ordinal: operation.source_ordinal,
@@ -2309,15 +2303,40 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             .map(|()| vec![path])
                     };
                     match related {
-                        Ok(paths) if paths.is_empty() => {
-                            if let Some(rejection) = relation_rejection {
-                                operation.relation_rejections.push(rejection);
-                            }
-                        }
-                        Ok(paths) => operation.advanced.extend(paths),
-                        Err(TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch)) => {
-                            if let Some(rejection) = relation_rejection {
-                                operation.relation_rejections.push(rejection);
+                        Ok(paths) if !paths.is_empty() => operation.advanced.extend(paths),
+                        Ok(_)
+                        | Err(TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch)) => {
+                            if let Some((expected, actual)) = diagnostic_operands {
+                                let read = match &reads {
+                                    Some(reads) => graph.read_scoped(reads, context)?,
+                                    None => graph.read(),
+                                };
+                                let observed = crate::types::PreparedTypeEffectProjectionFailure::optional_observation(
+                                    expected.value().observe_compatibility_inputs(
+                                        actual.value(), expected.scope().shape(), read, context,
+                                    ),
+                                )?;
+                                if let Some((expected, actual)) = observed {
+                                    let projection = CheckedConstraintSourceProjection::derive(
+                                        input.prepared.source_projection(),
+                                        &actual,
+                                    )
+                                    .ok_or_else(|| {
+                                        protocol_error(
+                                            TypeConstraintSourceProtocolInvariant::Outcome,
+                                        )
+                                    })?;
+                                    operation.relation_rejections.push(
+                                        RejectedConstraintSourceProjection::new(
+                                            input.source,
+                                            rejected_alternative,
+                                            projection,
+                                            input.acceptance,
+                                            expected,
+                                            actual,
+                                        ),
+                                    );
+                                }
                             }
                         }
                         Err(error) => {

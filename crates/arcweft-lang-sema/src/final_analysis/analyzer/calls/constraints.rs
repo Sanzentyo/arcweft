@@ -922,6 +922,10 @@ impl ConstraintDomain for AnalyzerCallConstraintDomain {
         rule.accepts(checked)
     }
 
+    fn observes_rejected_source(source: Self::Source) -> bool {
+        matches!(source, AnalyzerCallConstraintSource::DialoguePatch { .. })
+    }
+
     fn project_checked_evidence(
         checked: &Self::ObservedEvidence,
         actual: &TypeKind,
@@ -966,15 +970,15 @@ impl AnalyzerCallSourceAdmission {
 enum AnalyzerCallEvidenceRuleKind {
     Guarded {
         guard: CallableSemanticValueGuard,
-        declared: TypeKind,
+        owner: TypeKind<PreparedEffects>,
     },
     Otherwise,
 }
 
 impl AnalyzerCallEvidenceRule {
-    fn guarded(guard: CallableSemanticValueGuard, declared: TypeKind) -> Self {
+    fn guarded(guard: CallableSemanticValueGuard, owner: TypeKind<PreparedEffects>) -> Self {
         Self {
-            kind: AnalyzerCallEvidenceRuleKind::Guarded { guard, declared },
+            kind: AnalyzerCallEvidenceRuleKind::Guarded { guard, owner },
             source_admission: None,
         }
     }
@@ -1004,8 +1008,8 @@ impl AnalyzerCallEvidenceRule {
 
     fn accepts(&self, checked: &ObservedSemanticValueEvidence) -> bool {
         match &self.kind {
-            AnalyzerCallEvidenceRuleKind::Guarded { guard, declared } => {
-                guard.accepts_observation(declared, checked)
+            AnalyzerCallEvidenceRuleKind::Guarded { guard, owner } => {
+                guard.accepts_observation(owner, checked)
             }
             AnalyzerCallEvidenceRuleKind::Otherwise => true,
         }
@@ -1025,7 +1029,7 @@ struct AnalyzerCallObservedSource {
 
 enum AnalyzerSourceProbeAttempt {
     Selected(AnalyzerCallObservedSource),
-    Rejected(Option<Arc<AnalyzerObservedSourceValue>>),
+    Rejected(Option<TypeKind>),
 }
 
 impl AnalyzerCallObservedSource {
@@ -1682,6 +1686,26 @@ impl<'a, 'project, 'catalog, 'control>
         let selected = checked
             .as_ref()
             .is_ok_and(|checked| accepts(&checked.evidence));
+        // The rejected value's prepared terms are owned by this attempt.
+        // Only a diagnostic observation can survive the discard below.
+        let diagnostic = if !selected
+            && self.dialogue_patch_admissions.contains_key(&source)
+            && let Some(owner) = source.expression_owner()
+            && let Some(actual) = checked
+                .as_ref()
+                .ok()
+                .and_then(|value| value.actual.as_deref())
+        {
+            (|| {
+                let work = AnalyzerPreparationWork::candidate(work.clone(), owner);
+                let graph = self.analyzer.facts.effect_declarations()?.read();
+                self.analyzer
+                    .source_type_preparation(work)?
+                    .observe_diagnostic_type(owner, actual.actual(), graph)
+            })()
+        } else {
+            Ok(None)
+        };
         let disposition = if selected {
             ProbeCheckpointDisposition::Retain
         } else {
@@ -1695,9 +1719,7 @@ impl<'a, 'project, 'catalog, 'control>
             Ok(checked) if selected => Ok(AnalyzerSourceProbeAttempt::Selected(checked)),
             Ok(checked) => {
                 let AnalyzerCallObservedSource {
-                    actual,
-                    prepared_children,
-                    ..
+                    prepared_children, ..
                 } = checked;
                 let owners = PreparedCalleeProjectionOwners::for_source(&prepared_children, source)
                     .map_err(SourceCallbackFailure::invariant)?;
@@ -1705,7 +1727,25 @@ impl<'a, 'project, 'catalog, 'control>
                 owners
                     .discard(self.analyzer)
                     .map_err(SourceCallbackFailure::invariant)?;
-                Ok(AnalyzerSourceProbeAttempt::Rejected(actual))
+                let diagnostic = diagnostic.map_err(|error| match error {
+                    FinalSemanticAnalysisError::Cancelled => {
+                        SourceCallbackFailure::Abort(TypeConstraintAbort::Cancelled)
+                    }
+                    error => match AnalyzerExpressionError::fatal(error) {
+                        AnalyzerExpressionError::Abort(abort) => {
+                            SourceCallbackFailure::Abort(abort)
+                        }
+                        AnalyzerExpressionError::Fatal(error) => {
+                            SourceCallbackFailure::fatal(SourceError::new(
+                                source_id,
+                                SourcePhase::Probe,
+                                AnalyzerCallSourceFailureCause::FinalSemantic(error),
+                            ))
+                        }
+                        _ => unreachable!("fatal source errors are fatal or abort the candidate"),
+                    },
+                })?;
+                Ok(AnalyzerSourceProbeAttempt::Rejected(diagnostic))
             }
             Err(AnalyzerCallCheckFailure::Mismatch) => {
                 Ok(AnalyzerSourceProbeAttempt::Rejected(None))
@@ -2154,26 +2194,8 @@ impl<'a, 'project, 'catalog, 'control>
                             },
                         ))
                     }
-                    crate::final_analysis::PreparedExpressionFact::Resolved(complete) => match
-                        complete.resolution()
-                    {
-                        crate::final_analysis::CheckedExpressionResolution::Variant(variant) => {
-                        if &variant.owner().ty() != checked_type
-                        {
-                            return Err(invalid_variant_evidence());
-                        }
-                        Some((
-                            variant.ordinal(),
-                            if !variant.selected().payload().is_unit() {
-                                VariantPayloadRequirement::Present
-                            } else {
-                                VariantPayloadRequirement::Unit
-                            },
-                        ))
-                        }
-                        _ => None,
-                    },
-                    crate::final_analysis::PreparedExpressionFact::OwnerBound(_)
+                    crate::final_analysis::PreparedExpressionFact::Resolved(_)
+                    | crate::final_analysis::PreparedExpressionFact::OwnerBound(_)
                     | crate::final_analysis::PreparedExpressionFact::DialogueApplication(_)
                     | crate::final_analysis::PreparedExpressionFact::ContentApplication(_)
                     | crate::final_analysis::PreparedExpressionFact::CompileTimeScalar(_)
@@ -2185,11 +2207,10 @@ impl<'a, 'project, 'catalog, 'control>
                         None
                     }
                 };
-                let actual = checked_type.clone();
                 let evidence = variant.map_or(
                     ObservedSemanticValueEvidence::NoVariantCase,
                     |(ordinal, payload)| ObservedSemanticValueEvidence::VariantCase {
-                        owner: actual.clone(),
+                        owner: checked_type.clone(),
                         ordinal,
                         payload,
                     },
@@ -2533,7 +2554,14 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 let expected_projection = ParameterExpectedTypeProjection::ApplyUnary(
                     crate::callable::CallableUnaryTypeConstructor::Option,
                 );
-                let expected = expected_projection.apply_to(admission.declared());
+                let expected = self.analyzer
+                    .source_type_preparation(source_work.clone())
+                    .and_then(|types| types.retain(admission.source(), admission.declared()))
+                    .map(|declared| expected_projection.apply_to_owned(declared))
+                    .map_err(|error| SourceCallbackFailure::fatal(SourceError::new(
+                        source_id, SourcePhase::Probe,
+                        AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
+                    )))?;
                 let guard = CallableSemanticValueGuard::VariantCase {
                     owner: expected_projection,
                     ordinal: 1,
@@ -2552,7 +2580,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             source_work.clone(),
                             None,
                         )?;
-                        if guard.accepts_observation(admission.declared(), &checked.evidence) {
+                        if guard.accepts_observation(&expected, &checked.evidence) {
                             return Err(AnalyzerCallCheckFailure::Fatal(SourceError::new(
                                 source_id,
                                 SourcePhase::Probe,
@@ -2566,7 +2594,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     |_| false,
                 )?;
                 if let AnalyzerSourceProbeAttempt::Rejected(actual) = attempt {
-                    observed = actual.map(|actual| actual.actual().clone());
+                    observed = actual;
                 }
             }
             match hint {
@@ -2654,7 +2682,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             }
                             AnalyzerSourceProbeAttempt::Rejected(actual) => {
                                 if observed.is_none() {
-                                    observed = actual.map(|actual| actual.actual().clone());
+                                    observed = actual;
                                 }
                             }
                         }
@@ -6444,9 +6472,15 @@ fn prepare_parameter_source_constraint(
         .zip(0..otherwise_index)
         .map(|(guarded, ordinal)| {
             let expected = preparation.expected_type(declared, guarded.expected())?;
+            let CallableSemanticValueGuard::VariantCase { owner, .. } = guarded.guard();
+            let owner = if owner == guarded.expected() {
+                expected.clone()
+            } else {
+                preparation.expected_type(declared, owner)?
+            };
             Ok(PreparedSourceAlternative::new(
                 ordinal,
-                AnalyzerCallEvidenceRule::guarded(guarded.guard().clone(), declared.clone()),
+                AnalyzerCallEvidenceRule::guarded(guarded.guard().clone(), owner),
                 expected,
             ))
         })
@@ -7975,7 +8009,7 @@ mod tests {
                 .unwrap_or_else(|_| panic!("check the rejected alternative"));
             assert!(matches!(
                 attempted,
-                AnalyzerSourceProbeAttempt::Rejected(Some(_))
+                AnalyzerSourceProbeAttempt::Rejected(None)
             ));
             assert!(!client.analyzer.facts.expressions().contains_key(&owner));
             assert!(

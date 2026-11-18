@@ -1451,7 +1451,8 @@ pub enum SemanticValueEvidence<Owner> {
 pub type CheckedSemanticValueEvidence = SemanticValueEvidence<SemanticTypeDigest>;
 
 /// Source observation before candidate-owned variables have been resolved.
-pub(crate) type ObservedSemanticValueEvidence = SemanticValueEvidence<TypeKind>;
+pub(crate) type ObservedSemanticValueEvidence =
+    SemanticValueEvidence<TypeKind<crate::types::PreparedEffects>>;
 
 impl<Owner> SemanticValueEvidence<Owner> {
     pub(crate) fn try_project_owner<T, E>(
@@ -1746,11 +1747,11 @@ impl CallableSemanticValueGuard {
 
     pub(crate) fn accepts_observation(
         &self,
-        declared: &TypeKind,
+        expected_owner: &TypeKind<crate::types::PreparedEffects>,
         observed: &ObservedSemanticValueEvidence,
     ) -> bool {
-        self.accepts_owner(observed, |owner, observed_owner| {
-            owner.apply_to(declared) == *observed_owner
+        self.accepts_owner(observed, |_, observed_owner| {
+            expected_owner == observed_owner
         })
     }
 
@@ -4024,21 +4025,29 @@ mod generic_inventory_tests {
             TypeConstraintParameterEligibility::Bindable,
         )])
         .expect("application parameter");
-        let item = TypeKind::GenericParam(
+        let item: TypeKind = TypeKind::GenericParam(
             scope
                 .type_reference(&(parameter).clone().into())
                 .expect("active parameter"),
         );
+        let owner = TypeKind::Option(Box::new(item));
+        let prepared = owner
+            .prepare_effects(
+                &crate::types::GenericScope::default(),
+                &mut crate::types::UnmeteredTypeProjection,
+            )
+            .expect("retained owner");
         let observed = ObservedSemanticValueEvidence::VariantCase {
-            owner: TypeKind::Option(Box::new(item.clone())),
+            owner: prepared.clone(),
             ordinal: 1,
             payload: VariantPayloadRequirement::Unit,
         };
         let rule = CallableParameterValueRule::clearable_option();
         let guard = rule.guarded()[0].guard();
-        assert!(guard.accepts_observation(&item, &observed));
+        assert!(guard.accepts_observation(&prepared, &observed));
+        assert!(!guard.accepts_observation(&TypeKind::Option(Box::new(TypeKind::I64)), &observed));
         assert!(matches!(
-            observed.try_project_owner(TypeKind::semantic_identity_digest),
+            owner.semantic_identity_digest(),
             Err(GenericScopeError::EscapedInference { .. }),
         ));
 

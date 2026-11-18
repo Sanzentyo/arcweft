@@ -64,6 +64,11 @@ pub(crate) trait ConstraintDomain: Sized + 'static {
     /// is issued at completion.
     fn evidence_accepts(rule: &Self::EvidenceRule, observed: &Self::ObservedEvidence) -> bool;
 
+    /// Retain a scoped type observation for sources with an authored mismatch diagnostic.
+    fn observes_rejected_source(_source: Self::Source) -> bool {
+        false
+    }
+
     /// Project observed evidence alongside the lower-owned terminal actual
     /// type. Domains may retain semantic coordinates that change identity
     /// when generic/effect substitutions close; lower never interprets or

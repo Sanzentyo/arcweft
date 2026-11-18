@@ -181,6 +181,25 @@ impl<'a> SourceTypePreparation<'a> {
             })
     }
 
+    pub(super) fn observe_diagnostic_type(
+        &self,
+        owner: super::ExprId,
+        ty: &TypeKind<crate::types::PreparedEffects>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    ) -> Result<Option<TypeKind>, super::FinalSemanticAnalysisError> {
+        use super::FinalSemanticAnalysisError;
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let formals = self
+            .owner(owner, &mut work)?
+            .declaration_formals_with_control(&mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        crate::types::PreparedTypeEffectProjectionFailure::optional_observation(
+            ty.observe_canonical_effects(formals.template_scope(), graph, &mut work),
+        )
+        .map_err(|error| FinalSemanticAnalysisError::source_type_effect_projection(owner, error))
+    }
+
     pub(super) fn call_value_operand(
         &self,
         expression: super::ExprId,
