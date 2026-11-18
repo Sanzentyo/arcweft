@@ -19136,3 +19136,15 @@ ThreadHandleのペイロードを準備済み型のまま保持し、子タス�
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。各試行の終了は101。dev01はlibrary 79エラー、lib test 944エラー。dev02はlibrary 84エラー、lib test 949エラー。dev03はlibrary 79エラー、lib test 944エラー。正規化した一次診断は前回950件、今回は948件。前回比2件減、新規0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、Semaの回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは774,684,574 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-thread-return-seal.raw.zip) は36 entry、320512 bytes、SHA256 `0bad0f4b755becb8bd932de58749abd8ffd4a5fc76acb9ce36fd6f47dbdd609f`。各entryの長さとSHA256を再照合した。更新前の履歴2982751 bytesのSHA256 `ee0c96bd3f1acf37d79efc3f95c5d5af1057fad332ac0c8700e3e2bf7a4e0319`をprefixとして保持した。
+
+
+<a id="prepared-record-arguments"></a>
+## 2026-11-18 — レコードリテラルで準備済み型引数を保持
+
+Source `596843302c7ccb3e6ceff43f413c5c9ecca3bb39`。変更の基点は `64c5c8a720cf39853572babfd0c821a75b0c260f`。比較元は `f0636cb5a7faed65ee0f4a5dd7f9ecddc43ad2d4` の `prepared-thread-return-seal.dev03-check.log`。公開したmainと17件のRust入力のblobを照合した。
+
+ジェネリックなレコードリテラルでは、宣言の型パラメーターにフィールドから推論した準備済み型を対応付ける。型引数に含まれる作用項を元のグラフに保持し、文脈から確定している引数とソース順で推論した引数を同じ型投影に渡す。入れ子の関数から型を移す際は、実際に共有する束縛フレームを照合する。元の呼出し側から見える束縛を保持し、入れ子の関数だけに属する束縛の持ち出しを拒否する。明示フィールドと省略記法はそれぞれの出典を引き継ぎ、C2で元の値とフィールド投影の型を確定して照合する。旧レコード用の正準型置換入口を削除した。未準備のコールバックの作用項を型引数に保持するケースと、同じ形をした内外の束縛フレームを区別するケースをSema回帰に追加した。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。各試行は終了101。dev01はlibrary 214エラー、lib test 1,108エラー。nominal型のメソッドを誤ったimplへ移していたため修正した。dev02はlibrary 76エラー、lib test 942エラー。レコード準備時の借用範囲と回帰テストの関数型の組み立てをdev03で修正した。公開したdev03はlibrary 73エラー・24警告、lib test 938エラー・36警告。正規化した一次診断は948件から942件に減少し、新規0件。削減した6件の主診断はいずれも旧レコード検査の型不一致。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Sema回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,634,343 bytes で、約300 GBを目安とする `cargo clean` は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-record-arguments.raw.zip) は 30 entry、324881 bytes、SHA256 `ea9c8ad6547432daac79d81f073dd18bc75a0b3d4a83efc17a7f114449e7d92b`。各entryの長さとSHA256を再照合した。更新前の履歴2985565 bytesのSHA256 `f4741f56a00a91a2026f9b91055d48f02face9633f61e0b554a863c45fa31877`をprefixとして保持した。
