@@ -19108,3 +19108,17 @@ Source `7c84b332097997df6accc09329acded78e1dd996`。変更の基点は `15c714a7
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。各試行の終了は101。dev01はlibrary 113エラー、lib test 978エラー。dev02はlibrary 105エラー、lib test 970エラー。dev03はlibrary 106エラー、lib test 971エラー。dev04はlibrary 105エラー、lib test 970エラー。正規化した一次診断は前回988件、今回は977件。前回比11件減、新規0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,172,404 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-contextual-type-decision-seal.raw.zip) は42 entry、437317 bytes、SHA256 `690d6b89fe79a62c2c45edcf429a26869a462ca8be16fe7cb60cb9fd36b359a1`。各entryの長さとSHA256を再照合した。更新前の履歴2976683 bytesのSHA256 `c207d5643fc49d8b32a8c107657167bf0eeb772401b9cbe46a13e4fd4f3844c1`をprefixとして保持した。
+
+
+<a id="prepared-entity-field-sources"></a>
+## 2026-11-18 — 参照とフィールド選択で準備済み型を保持
+
+Source `4f4fb85de93ca098bbe7e39010fc0367c5b2d032`。変更の基点は `4f12425830914b3ea1c973dca316a130abf9cc67`。比較元は `7c84b332097997df6accc09329acded78e1dd996` の `contextual-type-decision-seal.dev04-check.log`。公開したmainと5件のRust入力のblobを照合した。
+
+Signal参照のペイロードは、元の標準Watch・Stream・Sample型から借用する。文のSignalパターンはパターン所有者の作業予算でペイロードを保持し、choiceも同じSignal参照の判定を使う。登録済みの文の入力型、外部・プロジェクトの実体参照、レジストリ読み取りの型は、各式とパターンの元スコープで準備済み型に移す。AgentとProgressのフィールドは両方の型領域で同じ座標と結果型を使う。
+
+環境レコードのフィールド選択には、元の受信側を観測して得た正準型をカタログ検索に使う。フィールドの型はカタログから借用して式のスコープに保持する。最終検査は確定した受信側・結果型と、選択したフィールドの意味識別を照合する。未準備本体を指す作用項を含むSignalのコールバックについて、元のペイロードを借用し続ける回帰を追加した。Agentフィールドの既存検査も両方の型領域に適用した。Threadの結果とジェネリックなレコードリテラルの型引数は移行を継続する。dev01で正準型ダイジェストの呼出しがスコープを渡していないことを確認し、dev02で修正した。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。各試行の終了は101。dev01はlibrary 82エラー、lib test 947エラー。dev02はlibrary 81エラー、lib test 946エラー。正規化した一次診断は前回977件、今回は950件。前回比27件減、新規0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは343,965,656 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-entity-field-sources.raw.zip) は26 entry、214917 bytes、SHA256 `78e42fd328f3b8cd2dcdda1e86a6680c59c737253f38dd591c1c068e48b96bb0`。各entryの長さとSHA256を再照合した。更新前の履歴2979877 bytesのSHA256 `da1a39fafaa001b0c74816bffe704cee3ccc2aa30bf7d3f2e70a956b97526cb7`をprefixとして保持した。
