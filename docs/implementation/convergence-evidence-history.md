@@ -19412,3 +19412,15 @@ Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ。captu
 locked Sema全feature checkは通常ライブラリ成功、lib testは終了101・823エラー・33警告。前回から `closed_effects.rs` のE0277が3件、E0599が2件、`effect_admission.rs` のE0599が1件減った。fmt、差分チェック、構造ゲートは終了0、構造阻害0件。hostの全featureのCargo graphはSemaを含む22パッケージ。Semaユニット、Clippy、全逆依存と最終受入はこのSourceで未実行。
 
 [検証原本・LLDB・Cargo graph・公開照合](acceptance-evidence/task-final-canonical-inspection.raw.zip) は19 entry、417582 bytes、SHA256 `72b2b788dd5cef8b27ab7e366b76aacbf1ecc7c7565a3a497c9bf2bc54d49c59`。各原本の長さとハッシュを照合し、既存履歴をそのまま保持した。
+
+
+<a id="share-completed-effect-members"></a>
+## 2026-11-19 — コンパイル済み作用行を共有
+
+Source `529c4c63c23b2aea8be3d4ab5a0fd6aa0d4b40cc`。基点は `f5c744a6d43a3819f22f58055c19177dc042e251`。同じグラフ・ラベル基底・形式変数のコンパイル内で、既存の行と許可条件を共有する。行の参照を読み取るたびにグラフの所有者を検査し、キャッシュの新規登録と共有参照の読取りを作業量に計上する。無条件の作用述語は型から定数と分かるので、そのラベルクラス表を組み立てずに真とする。元プログラムの独立照合、ガードと作用行の検査は維持する。5 Rustファイル、物理行の純増12、公開blob 5件を照合した。
+
+Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ、captured Mapも成功。遅延コールバックは最終式の照合を通過し、`MaterializationInput` のソーストレースの型投影で上限に達した。retained Mapは適用結果を確定し、`MaterializationInput::finish_projections` で作用行を組み立てる途中に同じ候補共有の作業上限に達した。
+
+locked Sema全feature checkは通常ライブラリ成功、lib testは終了101・823エラー・33警告。コード・ファイル別の内訳は `4a2f0a89ed9dfc00fe9735d1a3a32ebdb0be29ae` と一致。SemaのライブラリClippy、fmt、構造ゲートは終了0、構造阻害0件。Semaユニットと全体受入は未実行。
+
+[検証原本・全ID比較・LLDB・公開照合](acceptance-evidence/task-share-completed-effect-members.raw.zip) は18 entry、858341 bytes、SHA256 `e05ceeb072cd0f039a689d21d9250580a889a23b7cf6f8ac596bd20310d89351`。原本の長さとハッシュを照合し、既存履歴をそのまま保持した。
