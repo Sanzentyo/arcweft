@@ -19122,3 +19122,17 @@ Signal参照のペイロードは、元の標準Watch・Stream・Sample型から
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。各試行の終了は101。dev01はlibrary 82エラー、lib test 947エラー。dev02はlibrary 81エラー、lib test 946エラー。正規化した一次診断は前回977件、今回は950件。前回比27件減、新規0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは343,965,656 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-entity-field-sources.raw.zip) は26 entry、214917 bytes、SHA256 `78e42fd328f3b8cd2dcdda1e86a6680c59c737253f38dd591c1c068e48b96bb0`。各entryの長さとSHA256を再照合した。更新前の履歴2979877 bytesのSHA256 `da1a39fafaa001b0c74816bffe704cee3ccc2aa30bf7d3f2e70a956b97526cb7`をprefixとして保持した。
+
+
+<a id="prepared-thread-return-seal"></a>
+## 2026-11-18 — Threadの戻り値を元の子タスクに照合して確定
+
+Source `f0636cb5a7faed65ee0f4a5dd7f9ecddc43ad2d4`。変更の基点は `5463411a81b62fcaaa8489ed643e2ff595a9e040`。比較元は `4f4fb85de93ca098bbe7e39010fc0367c5b2d032` の `prepared-entity-field-sources.dev02-check.log`。公開したmainと12件のRust入力のblobを照合した。dev02で準備処理の分割に伴う可視性と型推論の診断が出たため、公開入力のdev03で修正した。
+
+ThreadHandleのペイロードを準備済み型のまま保持し、子タスク自身のreturn文とその値、通常終了を最終確定まで引き継ぐ。型構造が一致して作用項の確定で同一になり得る戻り値は、元の作用項を保持して準備を進める。公開前に選択済みの座標から各returnの宛先と値を照合し、確定した作用関係で戻り値型を再計算する。ペイロードや完全な期待型との不一致はThreadの結果型エラーとして公開前に拒否する。通常終了はUnitを加え、戻り値も通常終了もない場合はNeverを使う。共通結果型の規則は他の式が使う既存の規則を共用する。
+
+異なる宣言から返るコールバックを同じ子タスクの戻り値として確定するSema回帰を追加した。HIRのThread関連nextestは25件通過、956件対象外。これはThread本体の文・式の所有関係、ソース順、回復と上限の既存検査であり、新しいSema回帰の実行結果は未取得。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。各試行の終了は101。dev01はlibrary 79エラー、lib test 944エラー。dev02はlibrary 84エラー、lib test 949エラー。dev03はlibrary 79エラー、lib test 944エラー。正規化した一次診断は前回950件、今回は948件。前回比2件減、新規0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、Semaの回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは774,684,574 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-thread-return-seal.raw.zip) は36 entry、320512 bytes、SHA256 `0bad0f4b755becb8bd932de58749abd8ffd4a5fc76acb9ce36fd6f47dbdd609f`。各entryの長さとSHA256を再照合した。更新前の履歴2982751 bytesのSHA256 `ee0c96bd3f1acf37d79efc3f95c5d5af1057fad332ac0c8700e3e2bf7a4e0319`をprefixとして保持した。
