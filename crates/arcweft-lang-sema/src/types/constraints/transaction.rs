@@ -2584,8 +2584,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<MaterializationInput<D>, TypeConstraintError> {
-        let (input, _) = context.with_original_scope(path.lineage.scope.clone(), |context| {
-            context.with_effect_read_scope(
+        context.with_original_scope(path.lineage.scope.clone(), |context| {
+            context.validate_in_effect_read_scope(
                 graph,
                 path.lineage.effect_reads.as_ref(),
                 |context, graph| {
@@ -2609,8 +2609,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     )
                 },
             )
-        })?;
-        Ok(input)
+        })
     }
 
     fn prepare_application<A>(

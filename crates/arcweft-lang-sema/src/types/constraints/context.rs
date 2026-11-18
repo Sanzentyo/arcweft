@@ -2436,6 +2436,26 @@ where
             .compute_in_read_scope(reads, self, |graph, context| operation(context, graph))
             .map(|(value, reads)| (value, Some(reads)))
     }
+
+    /// Run terminal validation using transient derived terms. Only closed
+    /// output can survive the read scope; its temporary edit is rolled back.
+    pub(in crate::types::constraints) fn validate_in_effect_read_scope<T, E>(
+        &mut self,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        scope: Option<&crate::effect_row::prepared::PreparedEffectReadScope>,
+        validate: impl FnOnce(
+            &mut Self,
+            &mut crate::effect_row::prepared::PreparedEffectGraph,
+        ) -> Result<T, E>,
+    ) -> Result<T, E>
+    where
+        E: From<crate::effect_row::prepared::PreparedEffectFailure<TypeConstraintError>>,
+    {
+        let Some(reads) = scope else {
+            return self.with_effect_transaction(graph, validate);
+        };
+        graph.validate_in_read_scope(reads, self, |graph, context| validate(context, graph))
+    }
 }
 
 impl<A: TypeConstraintAccounting, D: ConstraintDomain> Drop for TypeConstraintContext<'_, A, D> {

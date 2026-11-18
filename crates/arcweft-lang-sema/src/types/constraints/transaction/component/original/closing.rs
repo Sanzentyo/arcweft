@@ -126,14 +126,7 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                                     completed.into_boxed_slice(),
                                 ))
                             };
-                        match reads.as_ref() {
-                            Some(reads) => {
-                                graph.validate_in_read_scope(reads, context, |graph, context| {
-                                    validate(context, graph)
-                                })
-                            }
-                            None => context.with_effect_transaction(graph, validate),
-                        }
+                        context.validate_in_effect_read_scope(graph, reads.as_ref(), validate)
                     });
                     match closed {
                         Ok((effects, completed)) => {
