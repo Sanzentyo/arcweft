@@ -128,6 +128,26 @@ impl<'a> SourceTypePreparation<'a> {
             })
     }
 
+    /// A signature that comes entirely from authored annotations needs no
+    /// solution from the live relation.
+    pub(super) fn project_annotations(
+        &self,
+        owner: super::ExprId,
+        ty: &TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<Option<TypeKind>, super::FinalSemanticAnalysisError> {
+        use super::FinalSemanticAnalysisError;
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let formals = self
+            .owner(owner, &mut work)?
+            .declaration_formals_with_control(&mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        ty.project_effect_annotations(formals.template_scope(), &mut work)
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_type_effect_projection(owner, error)
+            })
+    }
+
     /// An authored mismatch is decidable before closing the candidate graph.
     /// When either type has a graph term, the consumer retains the relation
     /// inputs for its checked seal.

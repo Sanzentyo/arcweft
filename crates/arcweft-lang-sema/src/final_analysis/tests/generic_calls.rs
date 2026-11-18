@@ -446,6 +446,40 @@ flow main() -> i64 { return fallback(.Full(42i64), 0i64) }
 }
 
 #[test]
+fn contextual_constructor_shares_its_declaration_across_payload_types() {
+    let fixture = fixture(
+        r#"
+enum Slot<T> { Empty, Full T }
+fn string_slot() -> Slot<String> { .Full("ok") }
+fn integer_slot() -> Slot<i64> { .Full(42i64) }
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("both short constructors are valid");
+    assert_selected_calls(&analysis, 2);
+    let mut constructors = analysis.calls().map(|(_, facts)| {
+        let application = facts.selected_application().expect("selected call");
+        let crate::callable::CallableCandidateId::EnumVariant(case) =
+            application.core().candidates().selected().id()
+        else {
+            panic!("selected callable owns an enum case");
+        };
+        let Some(TypeKind::ProjectNominal(result)) = application.result().value_type() else {
+            panic!("constructor returns its instantiated nominal");
+        };
+        (case, result.arguments())
+    });
+    let (first_case, first_args) = constructors.next().expect("first constructor");
+    let (second_case, second_args) = constructors.next().expect("second constructor");
+    assert_eq!(first_case, second_case);
+    assert!(
+        (first_args == &[TypeKind::I64] && second_args == &[TypeKind::String])
+            || (first_args == &[TypeKind::String] && second_args == &[TypeKind::I64])
+    );
+    assert!(constructors.next().is_none());
+}
+
+#[test]
 fn correlated_ordinary_call_closes_from_a_later_parent_argument() {
     let fixture = fixture(
         r"

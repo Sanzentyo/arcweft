@@ -1712,14 +1712,15 @@ fn seal_prepared_entry_expression(
     checked_entries: &crate::entry::CheckedEntryCatalog,
     types: &mut PublicationSourceTypes<'_, '_>,
 ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
-    let (reference, shell, value_type) = prepared.into_parts();
+    let (reference, shell) = prepared.into_parts();
+    let (value, effects) = shell.seal_value(owner, types)?;
+    let value_type = types.digest(value.source_type())?;
     let binding = checked_entries
         .get_public(reference.diagnostic_public_id())
         .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
     let reference =
         crate::final_analysis::CheckedEntryReference::seal(reference, value_type, binding)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-    let (value, effects) = shell.seal_value(owner, types)?;
     Ok(CheckedExpression::typed_value(
         value,
         effects,

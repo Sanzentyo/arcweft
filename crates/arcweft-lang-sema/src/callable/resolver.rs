@@ -65,7 +65,7 @@ use crate::{
     effect_model::CallableId,
     final_analysis::{
         CheckedCaptureAuthorityViolation, CheckedExpressionResolution, CheckedValueResolution,
-        PreparedExpressionFact, PreparedOwnerBoundResolution,
+        FinalSemanticAnalysisError, PreparedExpressionFact, PreparedOwnerBoundResolution,
     },
     nominal::{ResolvedAssociatedTypeReceiver, TypeResolutionReport},
     registration::RegisteredSemanticWorld,
@@ -774,23 +774,32 @@ impl PreparedFinalCallCallee<'_> {
     }
 }
 
+/// A read of declared types in their original source scope.
+type FinalCallSourceAnnotations<'a> = dyn Fn(
+        ExprId,
+        &TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<Option<TypeKind>, FinalSemanticAnalysisError>
+    + 'a;
+
 /// Immutable child facts needed to prepare one final-HIR call.
-pub(crate) struct FinalCallCalleeFacts<'a, P, U> {
+pub(crate) struct FinalCallCalleeFacts<'a, 'source, P, U> {
     flow_transfer: Option<arcweft_lang_hir::identity::StmtId>,
     expressions: &'a BTreeMap<ExprId, PreparedExpressionFact>,
     prepared_calls: super::PreparedCallGraphIngress<'a, P, U>,
     nominal_receivers: &'a BTreeMap<TypeId, TypeResolutionReport>,
     types: &'a BTreeMap<TypeId, TypeKind>,
     function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
+    annotations: &'source FinalCallSourceAnnotations<'source>,
 }
 
-impl<'a, P, U> FinalCallCalleeFacts<'a, P, U> {
+impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
     pub(crate) const fn new(
         expressions: &'a BTreeMap<ExprId, PreparedExpressionFact>,
         prepared_calls: super::PreparedCallGraphIngress<'a, P, U>,
         nominal_receivers: &'a BTreeMap<TypeId, TypeResolutionReport>,
         types: &'a BTreeMap<TypeId, TypeKind>,
         function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
+        annotations: &'source FinalCallSourceAnnotations<'source>,
     ) -> Self {
         Self {
             flow_transfer: None,
@@ -799,6 +808,7 @@ impl<'a, P, U> FinalCallCalleeFacts<'a, P, U> {
             nominal_receivers,
             types,
             function_value_origin,
+            annotations,
         }
     }
 
@@ -849,6 +859,8 @@ pub(crate) enum PrepareFinalCallCalleeError {
     InvalidFunctionSchema,
     #[error("checked enum variant cannot issue one accepted constructor case")]
     InvalidEnumVariantAuthority { expression: ExprId },
+    #[error("a callee's authored type projection failed")]
+    SourceAnnotations(#[source] Box<FinalSemanticAnalysisError>),
     #[error("checked channel cannot issue its declaration-backed record constructor")]
     InvalidRecordConstructorAuthority { expression: ExprId },
     #[error("checked Character project item has no exact Character identity")]
@@ -964,37 +976,57 @@ impl AcceptedRecordConstructor {
 }
 
 impl AcceptedEnumVariantCase {
-    pub(crate) fn try_from_prepared(
+    fn try_from_prepared(
         authority: CallResolverAuthority<'_>,
+        expression: ExprId,
         prepared: &crate::final_analysis::PreparedVariantExpression,
+        mut project: impl FnMut(
+            &TypeKind<crate::types::PreparedEffects>,
+        ) -> Result<Option<TypeKind>, FinalSemanticAnalysisError>,
         limits: &CallableLimits,
-    ) -> Result<Self, super::CallableSchemaError> {
-        Self::try_from_owner(
+    ) -> Result<Self, PrepareFinalCallCalleeError> {
+        let malformed = || PrepareFinalCallCalleeError::InvalidEnumVariantAuthority { expression };
+        let owner = prepared.owner();
+        let selected = owner
+            .case(prepared.selected_ordinal())
+            .ok_or_else(malformed)?;
+        let mut authored = |ty: &TypeKind<crate::types::PreparedEffects>| {
+            project(ty)
+                .map_err(|error| PrepareFinalCallCalleeError::SourceAnnotations(Box::new(error)))?
+                .ok_or_else(malformed)
+        };
+        let ty = authored(&owner.ty())?;
+        let payload = selected
+            .payload()
+            .map(|payload| payload.try_map(&mut authored))
+            .transpose()?;
+        Self::try_from_case(
             authority,
-            prepared.owner(),
-            prepared.selected_ordinal(),
+            ty,
+            owner.payload_owner_family(),
+            selected.ordinal(),
+            payload.as_ref(),
             limits,
         )
+        .map_err(|_| malformed())
     }
 
-    fn try_from_owner(
+    fn try_from_case(
         authority: CallResolverAuthority<'_>,
-        owner_seed: &crate::final_analysis::PreparedVariantOwnerSeed,
+        expected: TypeKind,
+        family: crate::types::VariantPayloadOwnerFamily,
         ordinal: u32,
+        payload: Option<&crate::types::VariantPayloadTypeShape>,
         limits: &CallableLimits,
     ) -> Result<Self, super::CallableSchemaError> {
-        let selected = owner_seed
-            .case(ordinal)
-            .ok_or(super::CallableSchemaError::InvalidCandidateIssuer)?;
-        let expected = owner_seed.ty();
         let owner = expected.semantic_identity_digest()?;
-        let payload = match selected.payload() {
+        let payload = match payload {
             None => VariantPayloadShape::Unit,
             Some(payload) => payload
                 .try_seal(
-                    owner_seed.payload_owner_family(),
+                    family,
                     owner,
-                    selected.ordinal(),
+                    ordinal,
                     &crate::types::GenericScope::default(),
                 )
                 .map_err(|_| super::CallableSchemaError::FamilyInvariant {
@@ -1002,7 +1034,7 @@ impl AcceptedEnumVariantCase {
                     code: super::CallableFamilyInvariantCode::InvalidParameterType,
                 })?,
         };
-        let id = super::EnumVariantSignatureId::new(owner, selected.ordinal());
+        let id = super::EnumVariantSignatureId::new(owner, ordinal);
         let (issuer, template) = super::CallableGenericParameterIssuer::for_enum_constructor_type(
             &expected,
             authority.symbols,
@@ -1046,7 +1078,18 @@ impl AcceptedEnumVariantCase {
                 .map_err(|_| super::CallableSchemaError::InvalidCandidateIssuer)?;
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| super::CallableSchemaError::InvalidCandidateIssuer)?;
-        Self::try_from_owner(authority, &owner, ordinal, limits).map(Some)
+        let selected = owner
+            .case(ordinal)
+            .ok_or(super::CallableSchemaError::InvalidCandidateIssuer)?;
+        Self::try_from_case(
+            authority,
+            owner.ty(),
+            owner.payload_owner_family(),
+            selected.ordinal(),
+            selected.payload(),
+            limits,
+        )
+        .map(Some)
     }
 
     pub(crate) const fn id(&self) -> &super::EnumVariantSignatureId {

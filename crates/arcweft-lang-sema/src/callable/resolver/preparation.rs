@@ -37,7 +37,7 @@ use arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily;
 pub(crate) fn prepare_final_call_callee<'a, P, U>(
     authority: CallResolverAuthority<'a>,
     expression: ExprId,
-    facts: FinalCallCalleeFacts<'a, P, U>,
+    facts: FinalCallCalleeFacts<'a, '_, P, U>,
     dialogue_context: CharacterDialoguePatchContext,
     limits: &CallableLimits,
 ) -> Result<PreparedFinalCallCallee<'a>, PrepareFinalCallCalleeError>
@@ -104,7 +104,7 @@ where
 fn prepare_value_call_callee<'a, P, U>(
     authority: CallResolverAuthority<'a>,
     value: ExprId,
-    mut facts: FinalCallCalleeFacts<'a, P, U>,
+    mut facts: FinalCallCalleeFacts<'a, '_, P, U>,
     dialogue_context: CharacterDialoguePatchContext,
     context: PreparedFreeCallContext,
     limits: &CallableLimits,
@@ -246,9 +246,12 @@ where
                 expression: value,
             });
         }
-        let seed = super::AcceptedEnumVariantCase::try_from_prepared(authority, prepared, limits)
-            .map_err(
-            |_| PrepareFinalCallCalleeError::InvalidEnumVariantAuthority { expression: value },
+        let seed = super::AcceptedEnumVariantCase::try_from_prepared(
+            authority,
+            value,
+            prepared,
+            |ty| (facts.annotations)(value, ty),
+            limits,
         )?;
         return Ok(PreparedFinalCallCallee::EnumConstructor {
             seed: Box::new(seed),
@@ -468,7 +471,7 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
     value_receiver: ExprId,
     nominal_receiver: &HirAssociatedReceiver,
     member: &arcweft_lang_hir::leaf::HirName,
-    facts: FinalCallCalleeFacts<'a, P, U>,
+    facts: FinalCallCalleeFacts<'a, '_, P, U>,
     dialogue_context: CharacterDialoguePatchContext,
     limits: &CallableLimits,
 ) -> Result<PreparedFinalCallCallee<'a>, PrepareFinalCallCalleeError>

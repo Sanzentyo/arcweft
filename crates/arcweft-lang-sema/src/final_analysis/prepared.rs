@@ -26,7 +26,7 @@ use crate::{
     checked_text_proxy::CheckedCompileTimeScalar,
     effects::EffectSet,
     env::nominal::AcceptedEnvironmentRecord,
-    types::{GenericScope, PreparedEffects, SemanticTypeDigest, TypeKind, TypeProjectionControl},
+    types::{GenericScope, PreparedEffects, TypeKind, TypeProjectionControl},
 };
 
 pub(crate) use super::model::{PreparedVariantCaseSeed, PreparedVariantOwnerSeed};
@@ -843,7 +843,6 @@ impl PreparedEntryReference {
 pub(crate) struct PreparedEntryExpression {
     reference: PreparedEntryReference,
     shell: PreparedExpressionShell,
-    value_type: SemanticTypeDigest,
 }
 
 impl PreparedEntryExpression {
@@ -851,14 +850,13 @@ impl PreparedEntryExpression {
         reference: PreparedEntryReference,
         type_selection: CheckedTypeSelection,
     ) -> Self {
-        let ty = TypeKind::entity_ref(crate::types::EntityKind::Entry);
-        let value_type = ty
-            .semantic_identity_digest()
-            .expect("the Entry entity leaf contains no generic references");
+        let ty = TypeKind::Ref(crate::types::EntityType::new(
+            crate::types::EntityKind::Entry,
+            None,
+        ));
         Self {
             reference,
             shell: PreparedExpressionShell::value(ty, type_selection, EffectSet::new()),
-            value_type,
         }
     }
 
@@ -866,14 +864,8 @@ impl PreparedEntryExpression {
         &self.shell
     }
 
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        PreparedEntryReference,
-        PreparedExpressionShell,
-        SemanticTypeDigest,
-    ) {
-        (self.reference, self.shell, self.value_type)
+    pub(crate) fn into_parts(self) -> (PreparedEntryReference, PreparedExpressionShell) {
+        (self.reference, self.shell)
     }
 }
 
@@ -1862,8 +1854,10 @@ impl PreparedExpressionFact {
         let Some(value_type) = self.value_type() else {
             return false;
         };
-        self.type_selection() != Some(CheckedTypeSelection::Expected)
-            || value_type.semantic_identity_digest() == expected.semantic_identity_digest()
+        // A cache hit preserves the original expectation. Different live
+        // terms must go back through the owning candidate relation even when
+        // their shapes are identical.
+        self.type_selection() != Some(CheckedTypeSelection::Expected) || value_type == expected
     }
 
     pub(crate) fn checked_call_site(

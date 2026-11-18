@@ -1898,25 +1898,36 @@ impl Analyzer<'_, '_, '_> {
                     })
             })
             .map(|(statement, _)| statement);
-        let prepared = prepare_final_call_callee(
-            authority,
-            source.owner,
-            FinalCallCalleeFacts::new(
-                self.facts.expressions(),
-                PreparedCallGraphIngress::new(
-                    self.facts
-                        .prepared_calls()
-                        .map_err(AnalyzerExpressionError::fact)?,
-                ),
-                &self.type_reports,
-                &self.types,
-                function_value_origin,
+        let prepared = {
+            let types = self
+                .source_type_preparation(context.work())
+                .map_err(AnalyzerExpressionError::fatal)?;
+            let annotations =
+                |owner, ty: &TypeKind<PreparedEffects>| types.project_annotations(owner, ty);
+            prepare_final_call_callee(
+                authority,
+                source.owner,
+                FinalCallCalleeFacts::new(
+                    self.facts.expressions(),
+                    PreparedCallGraphIngress::new(
+                        self.facts
+                            .prepared_calls()
+                            .map_err(AnalyzerExpressionError::fact)?,
+                    ),
+                    &self.type_reports,
+                    &self.types,
+                    function_value_origin,
+                    &annotations,
+                )
+                .with_flow_transfer(flow_transfer),
+                dialogue_context,
+                &self.catalogs.callable_limits,
             )
-            .with_flow_transfer(flow_transfer),
-            dialogue_context,
-            &self.catalogs.callable_limits,
-        )
+        }
         .map_err(|error| match error {
+            crate::callable::PrepareFinalCallCalleeError::SourceAnnotations(error) => {
+                AnalyzerExpressionError::fatal(*error)
+            }
             crate::callable::PrepareFinalCallCalleeError::PreparedContinuationInvariant(
                 invariant,
             ) => AnalyzerExpressionError::Call {
@@ -2141,6 +2152,7 @@ impl Analyzer<'_, '_, '_> {
                 };
                 let callee_expression = this
                     .stage_associated_receiver_recovery_expression(
+                        &context,
                         source.module,
                         source.call,
                         &recovery.result,
@@ -2260,6 +2272,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn stage_associated_receiver_recovery_expression(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         call: &HirCallInvocation,
         receiver_type: &TypeKind,
@@ -2271,11 +2284,13 @@ impl Analyzer<'_, '_, '_> {
             .resolve_expr(*value_receiver)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
         if !self.facts.expressions().contains_key(value_receiver) {
+            let receiver_type =
+                self.retain_source_value_type(context, *value_receiver, receiver_type)?;
             self.facts
                 .publish_new_expression(
                     *value_receiver,
                     crate::final_analysis::prepared::PreparedResolvedExpression::value(
-                        receiver_type.clone(),
+                        receiver_type,
                         CheckedTypeSelection::Inferred,
                         EffectSet::new(),
                         CheckedExpressionResolution::Structural,
@@ -5298,8 +5313,8 @@ impl Analyzer<'_, '_, '_> {
         &self,
         owner: ExprId,
         ordinal: u32,
-        expected: Option<&TypeKind>,
-    ) -> Result<TypeKind, FinalSemanticAnalysisError> {
+        expected: Option<&TypeKind<PreparedEffects>>,
+    ) -> Result<TypeKind<PreparedEffects>, FinalSemanticAnalysisError> {
         let module = self.module(owner.module())?;
         let expression = module
             .resolve_expr(owner)
@@ -5460,7 +5475,7 @@ impl Analyzer<'_, '_, '_> {
         if let CallableCandidateId::Project(declaration) = selected.id()
             && declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View
         {
-            let expected = TypeKind::CompileTimeCallable(
+            let expected = TypeKind::<PreparedEffects>::CompileTimeCallable(
                 crate::types::CompileTimeCallableType::ProjectView(declaration.clone()),
             );
             let checked = self
@@ -5480,8 +5495,11 @@ impl Analyzer<'_, '_, '_> {
             let Some(ty) = ty else {
                 return Ok(AnalyzerPreparedCalleeExpression::none());
             };
+            let ty = self
+                .source_type_preparation(preparation_work.clone())?
+                .retain(value, ty)?;
             if let Some(checked) = self.facts.expressions().get(&value) {
-                if checked.value_type() != Some(ty) {
+                if checked.value_type() != Some(&ty) {
                     return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: value });
                 }
                 return Ok(AnalyzerPreparedCalleeExpression::semantic(value));
@@ -5490,7 +5508,7 @@ impl Analyzer<'_, '_, '_> {
                 .publish_new_expression(
                     value,
                     crate::final_analysis::prepared::PreparedResolvedExpression::value(
-                        ty.clone(),
+                        ty,
                         CheckedTypeSelection::Inferred,
                         EffectSet::new(),
                         CheckedExpressionResolution::Structural,
@@ -5516,12 +5534,15 @@ impl Analyzer<'_, '_, '_> {
                 .schema()
                 .value_type()
                 .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?;
+            let template = self
+                .source_type_preparation(preparation_work.clone())?
+                .retain(value, template)?;
             let prepared = self
                 .prepare_variant_expression_kind(
                     preparation_work,
                     value,
                     expression,
-                    Some(template),
+                    Some(&template),
                     true,
                 )
                 .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?
@@ -5668,6 +5689,9 @@ impl Analyzer<'_, '_, '_> {
             .as_ref()
             .and_then(|(receiver, _)| self.facts.expressions().get(receiver))
             .map_or_else(EffectSet::new, |receiver| receiver.effects().clone());
+        let ty = self
+            .source_type_preparation(preparation_work)?
+            .retain(value, &ty)?;
         let prepared = if let Some((_, name)) = method_callee {
             super::PreparedExpressionFact::from(
                 crate::final_analysis::PreparedMethodExpression::new(

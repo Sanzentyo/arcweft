@@ -24,8 +24,8 @@ use crate::{
     record_field::AcceptedRecordFieldSemanticId,
     types::{
         AcceptedVariantPayloadFieldSemanticId, GenericConstParameterId, GenericParameterOwnerId,
-        GenericTypeParameterId, LanguageIntrinsicGenericOwner, SemanticTypeDigest, TypeKind,
-        VariantPayloadShape,
+        GenericTypeParameterId, LanguageIntrinsicGenericOwner, SemanticTypeDigest,
+        TypeEffectDomain, TypeKind, VariantPayloadShape,
     },
 };
 
@@ -509,10 +509,10 @@ enum CallableGenericParameterAuthority {
 impl CallableGenericParameterIssuer {
     /// Selects one declaration-owned constructor template from a contextual
     /// owner type. Contextual arguments are not copied into the child solver.
-    pub(crate) fn for_enum_constructor_type(
-        ty: &TypeKind,
+    pub(crate) fn for_enum_constructor_type<D: TypeEffectDomain>(
+        ty: &TypeKind<D>,
         symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
-    ) -> Result<(Self, TypeKind), CallableSchemaError> {
+    ) -> Result<(Self, TypeKind<D>), CallableSchemaError> {
         let (owner, type_count) = match ty {
             TypeKind::ProjectNominal(nominal) => {
                 let declaration = symbols

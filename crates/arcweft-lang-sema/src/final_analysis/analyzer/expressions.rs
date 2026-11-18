@@ -5372,14 +5372,24 @@ impl Analyzer<'_, '_, '_> {
                 super::PreparedVariantOwnerSeed::result((**ok).clone(), (**error).clone())
             }
             ty => {
+                let source = self
+                    .source_type_preparation(work)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                let authored = source
+                    .project_annotations(owner, ty)
+                    .map_err(AnalyzerExpressionError::fatal)?
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
                 let schema = self
                     .catalogs
                     .world
                     .environment()
                     .typecheck_env()
-                    .closed_enum(ty)
+                    .closed_enum(&authored)
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                super::PreparedVariantOwnerSeed::try_environment(schema, ty)?
+                source
+                    .environment_variant(owner, schema, &authored)
+                    .map_err(AnalyzerExpressionError::fatal)?
+                    .1
             }
         };
         let selected = seed
