@@ -18998,3 +18998,17 @@ Source `aadc26c516e2faf04779c85e424408f258a277f2`。変更の基点は `02d74291
 `Slot<String>` と `Slot<i64>` で同じcaseの識別子を共有し、結果型は個別に確定する回帰fixtureを追加した。関数値や値receiverの候補準備、TextProxyの型の受け渡しなどにはコンパイル診断が残る。fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-constructor-candidate-types.raw.zip) は40 entry、441453 bytes、SHA256 `cab976ff56fed3ed239f0ff1f81c1b21a6a13c9da2b9695f997282b1b10c9131`。各entryの長さとSHA256を再照合した。更新前の履歴2955382 bytesのSHA256 `b46ab3861692bb5ea6020c80f15d2f36d0be833e8cf1d3d982bea6ce5a6f549c`をprefixとして保持した。
+
+
+<a id="compile-time-scalar-source-types"></a>
+## 2026-11-18 — コンパイル時スカラーの登録型を候補と既定値へ渡す
+
+Source `6967b0a8968b27c665a40c1ea4074879b2eadd32`。変更の基点は `c9588642161f3afce7a531c94933d4a7d81b7b0d`。比較元は `aadc26c516e2faf04779c85e424408f258a277f2` の `constructor-candidate-types.dev04-check.log`。公開したmainと9件のRust入力のblobを照合した。
+
+登録済みのスカラー種別が値型と縮約方式を決める。呼出しの候補では元の式スコープで登録型を保持し、下位制約が渡した期待型と照合してから評価と縮約を同じ候補内で処理する。TextProxyの既定値も同じ型と方式を使う。既に縮約したfactを再利用するときは値型と種別を照合する。閉じたenumの縮約では宣言と型引数が空であること、caseの序数と識別子を確認する。Viewの引数は準備済みの期待型で評価し、互換性判定の手前で元の式の作用注釈を投影する。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。全試行の終了は101、libraryは25警告、lib testは37警告。dev01はlibrary 149エラー、lib test 1,024エラー。dev02はlibrary 151エラー、lib test 1,026エラー。dev03はlibrary 149エラー、lib test 1,024エラー。dev04はlibrary 148エラー、lib test 1,023エラー。dev02で生じた対話line planの種別参照を整理し、dev03に残ったView引数の互換性判定をdev04で正準型へつないだ。一次診断は1,040件から1,030件に減った。10件削除、追加0件。Semaのfmt checkと `just structure-audit-gate` は終了0。
+
+TextProxyで同じ閉じたenumの異なるcaseを既定値と明示引数に使い、宣言・序数・case識別子を確認する回帰fixtureを追加した。Sema全体では値receiverや関数値の候補準備などのコンパイル診断が残る。fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-compile-time-scalar-source-types.raw.zip) は40 entry、441246 bytes、SHA256 `549c803841caba7e9a0fe29ddc583d23af70e603a8d3d036cfbaeb253eaca679`。各entryの長さとSHA256を再照合した。更新前の履歴2958023 bytesのSHA256 `bd158324d51d062ca7b3aa1c49ad47ce19411263d2518b0063f69ef814303852`をprefixとして保持した。
