@@ -3369,7 +3369,7 @@ impl Analyzer<'_, '_, '_> {
     fn apply_sealed_candidate(
         &mut self,
         mut preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
-        transaction: PreparedCallApplicationTransaction,
+        mut transaction: PreparedCallApplicationTransaction,
         outer_projection: super::state::CandidateSemanticProjection,
         metadata: AnalyzerPreparedCandidateMetadata,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
@@ -3382,7 +3382,18 @@ impl Analyzer<'_, '_, '_> {
                 ..
             } => owner,
         };
-        let result = match transaction.result() {
+        let validated = transaction
+            .result()
+            .map_err(|error| AnalyzerExpressionError::Call {
+                owner,
+                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
+            })
+            .and_then(|result| {
+                transaction
+                    .discard_original_source_preparations(&self.facts, &mut preparation_work)?;
+                Ok(result)
+            });
+        let result = match validated {
             Ok(result) => result,
             Err(error) => {
                 let (_, _, _, _, branch, _) = transaction.into_parts();
@@ -3395,14 +3406,7 @@ impl Analyzer<'_, '_, '_> {
                             violation,
                         ))
                     })?;
-                return Err(CandidateFactOperationFailure::Expression(
-                    AnalyzerExpressionError::Call {
-                        owner,
-                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                            error,
-                        )),
-                    },
-                ));
+                return Err(CandidateFactOperationFailure::Expression(error));
             }
         };
         let (application, consumer, callee_inputs, inputs, sealed_branch, component) =

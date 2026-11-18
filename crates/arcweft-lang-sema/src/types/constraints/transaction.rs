@@ -35,7 +35,9 @@ use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
 mod completed_component;
 mod materialization;
-pub(crate) use materialization::{ConstraintMaterialization, RetainedSourcePreparations};
+pub(crate) use materialization::{
+    ConstraintMaterialization, RetainedSourcePreparations, SourcePreparationTakeError,
+};
 use materialization::{MaterializationInput, SourcePreparation};
 mod operand;
 pub(in crate::types::constraints) use operand::ConstraintAliasStep;

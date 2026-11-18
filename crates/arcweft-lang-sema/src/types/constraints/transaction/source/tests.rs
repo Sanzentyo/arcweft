@@ -23,12 +23,17 @@ type TestContext<'a> = ConstraintTestSetup<'a, LocalConstraintAccounting<'a>, No
 
 mod retained_preparation {
     use super::*;
+    use crate::effect_row::{
+        EffectPredicate,
+        prepared::{PreparedEffectDelta, PreparedEffectRow},
+    };
     use crate::types::constraints::{SourceProbeResult, TypeConstraintProjectionClosure};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct Facts {
         value: u32,
         drops: Arc<AtomicUsize>,
+        relation: Option<PreparedEffectDelta>,
     }
     impl Drop for Facts {
         fn drop(&mut self) {
@@ -103,10 +108,31 @@ mod retained_preparation {
             .observe(SourceProbeResult::unchecked(TypeKind::String, ()))
             .unwrap();
         left.append(right).unwrap();
+        let mut source_base = graph.checkpoint(&mut context).unwrap();
+        let mut callback = graph.checkpoint(&mut context).unwrap();
+        let original_function = graph
+            .declare(Vec::new(), EffectPredicate::unconstrained(), &mut context)
+            .unwrap();
+        let row = graph
+            .application(&original_function, Vec::new(), &mut context)
+            .unwrap();
+        graph
+            .prepare_body(
+                &original_function,
+                PreparedEffectRow::Canonical(EffectRow::closed(
+                    EffectSet::from_labels(["probe.once"]).unwrap(),
+                )),
+                Vec::new(),
+                &mut context,
+            )
+            .unwrap();
+        let relation = graph.extract_delta(&mut callback, &mut context).unwrap();
+        assert!(graph.read().retain_row(&row, &mut context).is_err());
         let drops = Arc::new(AtomicUsize::new(0));
         let contribution = left.close_preparation(Facts {
             value: 913,
             drops: Arc::clone(&drops),
+            relation: Some(relation),
         });
         transaction
             .submit_probe(
@@ -167,7 +193,6 @@ mod retained_preparation {
             .unwrap();
             materialization.push_component(input, &mut context).unwrap();
         }
-        drop(resumed);
         let mut observations = Vec::new();
         while let Some(mut ticket) = materialization
             .next_materialization_ticket(&mut context)
@@ -205,7 +230,53 @@ mod retained_preparation {
             ..
         } = selected;
         assert_eq!(drops.load(Ordering::Relaxed), 0);
-        drop(source_preparations);
+        let failure = source_preparations
+            .into_owned(&mut context)
+            .err()
+            .expect("the original forest still owns the preparation");
+        assert!(matches!(
+            failure.error,
+            crate::types::constraints::transaction::SourcePreparationTakeError::Shared
+        ));
+        assert_eq!(failure.source, component.sources().all()[0].source());
+        assert!(std::ptr::eq(
+            failure
+                .retained
+                .requests(&component)
+                .next()
+                .unwrap()
+                .preparation(),
+            observations[0].0,
+        ));
+        drop(resumed);
+        cancellation.store(true, Ordering::Release);
+        let failure = failure
+            .retained
+            .into_owned(&mut context)
+            .err()
+            .expect("the move is cancellable");
+        assert!(matches!(
+            failure.error,
+            crate::types::constraints::transaction::SourcePreparationTakeError::Control(
+                TypeConstraintError::Abort(
+                    crate::types::constraints::TypeConstraintAbort::Cancelled
+                )
+            )
+        ));
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
+        cancellation.store(false, Ordering::Release);
+        let mut owned = failure
+            .retained
+            .into_owned(&mut context)
+            .unwrap_or_else(|_| panic!("selected callback preparation"));
+        assert_eq!(owned.len(), 1);
+        assert_eq!(owned[0].source, component.sources().all()[0].source());
+        assert_eq!(owned[0].preparation.value, 913);
+        graph.rollback(&mut source_base).unwrap();
+        let original_delta = owned[0].preparation.relation.take().unwrap();
+        graph.restore_delta(original_delta, &mut context).unwrap();
+        assert_eq!(graph.read().retain_row(&row, &mut context).unwrap(), row);
+        drop(owned);
         assert_eq!(drops.load(Ordering::Relaxed), 1);
         assert_eq!(component.sources().all()[0].actual(), &observations[1].1);
     }
@@ -248,6 +319,7 @@ mod retained_preparation {
             .close_preparation(Facts {
                 value: 7,
                 drops: Arc::clone(&drops),
+                relation: None,
             });
         cancellation.store(true, Ordering::Release);
         assert!(matches!(

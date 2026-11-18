@@ -53,6 +53,32 @@ impl<D: ConstraintDomain> SourceProbeObservation<D> {
         })
     }
 
+    /// A unique observation can still alias a callback that contributed
+    /// several observations. Verify that owner separately before taking it.
+    pub(super) fn has_unique_preparation(&mut self) -> bool {
+        match self.preparation.get_mut() {
+            Some(RetainedProbePreparation::Owned(_)) => true,
+            Some(RetainedProbePreparation::Shared(preparation)) => {
+                Arc::get_mut(preparation).is_some()
+            }
+            None => false,
+        }
+    }
+
+    /// The batch verified both ownership layers before any value was moved.
+    pub(super) fn into_unique_preparation(self) -> D::ProbePreparation {
+        match self
+            .preparation
+            .into_inner()
+            .expect("checked callback preparation")
+        {
+            RetainedProbePreparation::Owned(preparation) => preparation,
+            RetainedProbePreparation::Shared(preparation) => {
+                Arc::into_inner(preparation).expect("checked sole preparation owner")
+            }
+        }
+    }
+
     pub(in crate::types::constraints) fn retain_owned(
         &self,
         preparation: D::ProbePreparation,

@@ -8,6 +8,22 @@ pub(crate) struct RetainedSourcePreparations<D: ConstraintDomain> {
     rows: Box<[SourcePreparation<D>]>,
 }
 
+pub(crate) struct OwnedSourcePreparation<D: ConstraintDomain> {
+    pub(crate) source: ConstraintSourceId<D::Source>,
+    pub(crate) preparation: D::ProbePreparation,
+}
+
+pub(crate) enum SourcePreparationTakeError<E> {
+    Shared,
+    Control(E),
+}
+
+pub(crate) struct SourcePreparationTakeFailure<D: ConstraintDomain, E> {
+    pub(crate) source: ConstraintSourceId<D::Source>,
+    pub(crate) error: SourcePreparationTakeError<E>,
+    pub(crate) retained: RetainedSourcePreparations<D>,
+}
+
 pub(super) struct SourcePreparation<D: ConstraintDomain> {
     source: ConstraintSourceId<D::Source>,
     observation: Arc<SourceProbeObservation<D>>,
@@ -77,6 +93,52 @@ impl<D: ConstraintDomain> RetainedSourcePreparations<D> {
                 debug_assert!(source.source() == row.source);
                 MaterializedSourceRequest::for_source(component, source, row.preparation())
             })
+    }
+
+    /// Take the selected callback allocations in source order. While losing
+    /// observations or an original forest also own a preparation, selection
+    /// cannot move it. A failed check returns the entire original batch.
+    pub(crate) fn into_owned<C: crate::effect_row::DecisionControl>(
+        mut self,
+        control: &mut C,
+    ) -> Result<Box<[OwnedSourcePreparation<D>]>, SourcePreparationTakeFailure<D, C::Error>> {
+        use crate::effect_row::DecisionWork;
+        for row in &mut self.rows {
+            let source = row.source;
+            let error = match control
+                .charge(DecisionWork::Visit)
+                .and_then(|()| control.charge(DecisionWork::Node))
+            {
+                Err(error) => SourcePreparationTakeError::Control(error),
+                Ok(())
+                    if Arc::get_mut(&mut row.observation)
+                        .is_some_and(SourceProbeObservation::has_unique_preparation) =>
+                {
+                    continue;
+                }
+                Ok(()) => SourcePreparationTakeError::Shared,
+            };
+            return Err(SourcePreparationTakeFailure {
+                source,
+                error,
+                retained: self,
+            });
+        }
+        // No Arc or Weak escapes a uniquely preflighted row. Only this batch
+        // owns the observations and payloads, so no owner can appear here.
+        Ok(self
+            .rows
+            .into_vec()
+            .into_iter()
+            .map(|row| {
+                let observation =
+                    Arc::into_inner(row.observation).expect("checked sole observation owner");
+                OwnedSourcePreparation {
+                    source: row.source,
+                    preparation: observation.into_unique_preparation(),
+                }
+            })
+            .collect())
     }
 }
 

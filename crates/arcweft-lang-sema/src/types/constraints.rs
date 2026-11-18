@@ -277,6 +277,8 @@ pub(crate) enum TypeConstraintSourceProtocolInvariant {
     Ticket,
     #[error("source callback checkpoint is stale, foreign, or already closed")]
     Checkpoint,
+    #[error("selected source preparation still has another owner")]
+    SharedPreparation,
     #[error("source callback returned an invalid outcome shape")]
     Outcome,
 }

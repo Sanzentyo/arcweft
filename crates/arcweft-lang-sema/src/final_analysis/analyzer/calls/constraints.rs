@@ -3715,6 +3715,11 @@ struct PreparedCallApplicationTransactionData {
     inputs: PreparedCallInputs,
     sealed_branch: AnalyzerCallSealedBranch,
     component: CompletedCallApplicationEvidence,
+    source_preparations: Option<
+        crate::types::constraints::transaction::RetainedSourcePreparations<
+            AnalyzerCallConstraintDomain,
+        >,
+    >,
 }
 
 /// Shared immutable completion evidence limited to one exact admitted call
@@ -3870,7 +3875,7 @@ impl RanCandidateTransaction {
         let crate::types::constraints::SolvedCandidate {
             component,
             sealed_branch,
-            source_preparations: _,
+            source_preparations,
         } = solved;
         let component =
             CompletedCallApplicationEvidence::new(Arc::new(component), application_owner)?;
@@ -3900,6 +3905,7 @@ impl RanCandidateTransaction {
                 inputs,
                 sealed_branch,
                 component,
+                source_preparations: Some(source_preparations),
             }),
         })
     }
@@ -3953,6 +3959,7 @@ impl PreparedCallApplicationTransaction {
                 inputs: recipe.inputs.clone(),
                 sealed_branch: AnalyzerCallSealedBranch::Empty,
                 component: evidence,
+                source_preparations: None,
             }),
         })
     }
@@ -4129,6 +4136,51 @@ impl PreparedCallApplicationTransaction {
             return Some(CallConstraintInvariant::ReplayClosedSourcesMismatch);
         }
         None
+    }
+
+    pub(super) fn discard_original_source_preparations(
+        &mut self,
+        facts: &super::super::state::SemanticFactState,
+        work: &mut AnalyzerPreparationWork<'_>,
+    ) -> Result<(), AnalyzerExpressionError> {
+        use crate::types::constraints::{
+            TypeConstraintSourceProtocolInvariant, transaction::SourcePreparationTakeError,
+        };
+
+        let Some(retained) = self.data.source_preparations.take() else {
+            return Ok(());
+        };
+        let owned = match retained.into_owned(work) {
+            Ok(owned) => owned,
+            Err(failure) => {
+                self.data.source_preparations = Some(failure.retained);
+                return Err(match failure.error {
+                    SourcePreparationTakeError::Control(error) => {
+                        AnalyzerExpressionError::fatal(error)
+                    }
+                    SourcePreparationTakeError::Shared => AnalyzerExpressionError::Call {
+                        owner: failure
+                            .source
+                            .local()
+                            .expression_owner()
+                            .unwrap_or(self.data.component.application()),
+                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            CallConstraintInvariant::Lower(
+                                TypeConstraintInvariant::SourceProtocol(
+                                    TypeConstraintSourceProtocolInvariant::SharedPreparation,
+                                ),
+                            ),
+                        )),
+                    },
+                });
+            }
+        };
+        for source in &owned {
+            facts
+                .require_candidate_projection_owner(&source.preparation)
+                .map_err(AnalyzerExpressionError::fact)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn into_parts(
