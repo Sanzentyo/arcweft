@@ -18817,3 +18817,14 @@ Matchの分岐とChoiceの入れ子パスを、準備済みの式が持つ情報
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。初回で型の形だけを持つスコープを移送に使った誤りを、元のlexical framesを使う形に修正した。公開入力はlibrary **390エラー・25警告**、lib test **1,272エラー・37警告**。前回公開入力から一次診断1件が消滅し、追加0件。Semaのfmtと構造gateは終了0、blocking違反0件。回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,788,883 bytesで、約300 GBを目安とするcleanは未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-scoped-binding-completion.raw.zip) は23 entry、267,192 bytes、SHA256 `c13a23c52f26a688769f708c6ddb0618ba436a2e1a9094bd4165b09de3a6066a`。各entryの長さとSHA256を再照合した。旧履歴2,921,029 bytesのSHA256 `25663f6beaec92511a52acae53c56eee65da3eae19d9a5d38d49875515fe9ee1` をprefixとして保持した。
+
+<a id="standalone-original-effect-closure"></a>
+## 2026-11-18 — 単独の制約経路を元の作用関係で確定する
+
+基点 `d0ad8db0340f5196e5a82c7f724d4654b33934a3`。Source `1688f238a2aca0d9e58352cd709ade6bb7ec8c0c` を既存mainへcommitし、非force push後にリモートのfull SHAと3入力のblobを照合した。
+
+単独経路はprobeの作用読み取りスコープを引き継いで型束縛を正規化する。実際の投影要求、probe、方程式、束縛と導入した作用関数から元の関係を固定し、同じスコープで確定型とcallback入力を組み立てる。合同経路も同じ関係収集処理を使う。単独経路の入口には外部Future実値の供給がなく、実値を必要とする関係は確定時に検査する。Future実値を渡す入口は合同経路の履歴に記録済み。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。library **389エラー・25警告**、lib test **1,271エラー・37警告**。前回公開入力から単独経路の引数不足の一次診断1件が消滅し、追加0件。Semaのfmtと構造gateは終了0、blocking違反0件。nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,779,115 bytesで、約300 GBを目安とするcleanは未実行。Generic Matchは受入・公開済み。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-standalone-original-effect-closure.raw.zip) は18 entry、143,008 bytes、SHA256 `ed5402dfb3d478c515e8dd49dcccfc7a3bdf6287b9b2dece8ee42d850902c82c`。各entryの長さとSHA256を再照合した。旧履歴2,923,298 bytesのSHA256 `8847281e1653ae0b8d3035392ced58b53e270f0610b38034bf41765bfda9f22d` をprefixとして保持した。
