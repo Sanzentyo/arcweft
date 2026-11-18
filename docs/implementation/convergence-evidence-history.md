@@ -19174,3 +19174,15 @@ Source `5265849e8e31e96e6dcccbb92179f191b8a680af`。変更の基点は `335f30f1
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` でdev01からdev03まで実行した。jobs／profileの上書きはなし。3回とも終了101、library 48エラー・23警告、lib test 913エラー・35警告。正規化した一次診断は924件から914件に減少し、新規0件。削減した10件はいずれも行プランの型移行の箇所。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Sema回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,420,484 bytesで、約300 GBを目安とする `cargo clean` は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-line-output.raw.zip) は 30 entry、304675 bytes、SHA256 `4b069af4d2e44fec355387d69176c558cb6ada3d311d28512dc417688c695054`。各entryの長さとSHA256を再照合した。更新前の履歴2990904 bytesのSHA256 `82527fdf775efe02791edc6ad8c74fd5d248c9be3bd518c4680d43e5abf8e12b`をprefixとして保持した。
+
+
+<a id="prepared-binding-patterns"></a>
+## 2026-11-18 — 型付き束縛とパターンで元の作用型を保持
+
+Source `49b9cb8cbc13a47dd7e41f14bfe6318388ffa371`。変更の基点は `3e5e2d059aea27bf6f5db3ff9ae1d552965f51b0`。比較元は `5265849e8e31e96e6dcccbb92179f191b8a680af` の `prepared-line-output.dev03-check.log`。公開したmainと10件のRust入力のblobを照合した。
+
+型注釈付きの局所束縛は、元の初期化式を準備済み型で保持し、既存の型構造の投影を使って省略された作用行を補う。型付きパターンも同じ補完を使い、Choiceの適合方向を保持する。公開時に、元のパターンから解決したローカルの確定型と型注釈の確定型を照合する。登録済みのレコードと閉じた列挙型は観測した正準型でカタログを引き、パターン自体には元の準備済み型を保持する。文の入力・Event・Selectは登録型を使用箇所のスコープに投影して検査する。Signalの対象型から元のペイロードを借用し、registryの読取りは到達した書込みの準備済み型を保持する。省略作用を持つ型付きパターンでコールバックを束縛し、ローカル型と注釈の効果行を照合するSema回帰を追加した。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` でdev01からdev04まで実行した。jobs／profileの上書きはなし。すべて終了101。dev01はlibrary 34エラー、lib test 899エラー。dev02とdev03はlibrary 29エラー、lib test 894エラー。今回追加したregistry読取りの借用とHIRのパターン束縛の取得方法を修正した。公開したdev04はlibrary 27エラー・21警告、lib test 892エラー・33警告。正規化した一次診断は914件から893件に減り、新規0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Sema回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,243,777 bytesで、約300 GBを目安とする `cargo clean` は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-binding-patterns.raw.zip) は 36 entry、384612 bytes、SHA256 `4cf6c8f89f811e264a16e012fc93d673db5943074d19f78fd78a6b8a922d8499`。各entryの長さとSHA256を再照合した。更新前の履歴2993508 bytesのSHA256 `86ba1919f7cecd433768031078d5d53bec93982be359985228db058d5bedaaf9`をprefixとして保持した。
