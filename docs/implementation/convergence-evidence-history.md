@@ -18746,3 +18746,16 @@ Analyzer回帰に、元の差分に入っていた式の型が同じ割当ての
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。初回の追加3診断は分岐のパターンと借用の修正で解消した。公開入力はlibrary **416エラー・25警告**、lib test **1,314エラー・44警告**。変更pathを一次位置とする28件は、行番号の移動を除くと前回の診断と同じ。Semaのfmtと構造gateは終了0、blocking違反0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,021,425 bytesで、約300 GBを目安とするcleanは未実行。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-retained-closed-source.raw.zip) は22 entry、281,123 bytes、SHA256 `ac4d95912d4543662267e0b30026303c18272ac2ff9f5ea9b4a56252c37cbb3b`。各entryの長さとSHA256を再照合した。旧履歴2,908,028 bytesのSHA256 `d7a5e3a80f19d4b2ff4027fa6943d1b304956d1a18d06824f9d7aa2fdca9e46e` をprefixとして保持した。
+
+<a id="selected-probe-publication"></a>
+## 2026-11-18 — 採用候補の元差分を呼出しへ公開する
+
+基点 `da4e409978aa424756d71093dce5bdfec9d46b9a`。Source `99dfcf59dd2668d07c39594ca53e2eaf0361e01a` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した8入力のblobを照合した。
+
+候補の選択後は、採用候補が評価時に保持した外側と引数の差分を既存の公開トランザクションへ渡す。不採用候補の差分と入れ子呼出しの前提は所有者の破棄処理を通す。選択後に候補全体を再評価する処理と、物理評価に再評価を分類する内部状態を除去した。CLIのversion 1の `selected_replay_argument_visits` は項目を維持し、0を報告する。型置換や作用項、関数特殊化を要する引数は、個別の元差分で確定できるよう追加の移行を要する。
+
+オーバーロード、3候補、256候補、postfix、定長スプレッド、入れ子呼出しの回帰を更新した。各候補・スロットの評価回数と、採用候補の元の観測だけに確定型が付くことを検査する。コンパイル段階で停止し、回帰は未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。library **416エラー・25警告**、lib test **1,314エラー・44警告**。一次診断のパスとヘッダは前回と一致した。Semaのfmtと構造gateは終了0、blocking違反0件。locked・workspace・all-featuresのCargo依存グラフはSema自身と逆依存21 packageを含み、直逆依存はCLIを含む12 package。Cargo依存グラフの取得は終了0。nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,025,442 bytesで、約300 GBを目安とするcleanは未実行。
+
+[検証原本・逆依存グラフ・所有レビュー・公開照合](acceptance-evidence/task-selected-probe-publication.raw.zip) は18 entry、155,862 bytes、SHA256 `02b8f550cb86bbb91fb50aa3a08848e861739394607be5221008da15d813e5b2`。各entryの長さとSHA256を再照合した。旧履歴2,910,220 bytesのSHA256 `a1f01169c50c52f904d16193c6776a9998f338e08f244c7eea2c13af77bc644a` をprefixとして保持した。
