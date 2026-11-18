@@ -19472,3 +19472,15 @@ Core libraryは2,360/2,360成功。前回の2,359 IDとその結果をすべて�
 最初のCompilerビルドではSemaの型importが1件不足し、追加して再実行した。最終Sourceのlocked Sema全feature checkは通常ライブラリ成功、テスト対象は終了101・817エラー・33警告。前回の公開Sourceとエラーのコード・ファイル別の内訳が一致した。Core／Semaの全featureライブラリClippy、両crateのfmt、構造ゲートは終了0、構造阻害0件。ClippyはSema側の新しい `single_match_else` の指摘を1件含む。今回のCargo全feature逆依存は起点を含めCore 52 package、Sema 22 package。公開5 source blobと比較し、`target` は8130746764 bytesだった。
 
 [CoreとCompilerの全ID、初回の失敗、作業上限のLLDB、最終検証と公開照合](acceptance-evidence/task-copy-owned-effect-membership.raw.zip) は32 entry、951951 bytes、SHA256 `f1deda1fec2994c9b3467ea16f4fa13b6099790cc149208e668ad3e03c64bda7`。各原本の長さとハッシュを照合した。
+
+
+<a id="terminal-effect-read-validation"></a>
+## 2026-11-19 — 完成型のポート検査と終端作用スコープ
+
+基点 `cf3997ad43e6dcf57ef581eedb6f4fddd6980d23`。Source `9c734711f4a859ce3362b7a4d3979d57f370f8b1` は、完成型の移し替え中に未解決の形を拒否し、型・定数・作用の束縛と自由参照のキャプチャを確認する。作用行と述語を自身の代数で名前変更し、完成後に同じ型を再構築して照合する経路を削除した。再オープンの既存テストに、述語だけに現れる自由参照のキャプチャ拒否と、正当なキャプチャで元型が復元される確認を加えた。このSourceのretained Mapは完成型の移し替えを通過し、読み取りスコープの一時差分の抽出で作業上限に達した。
+
+Source `f62720f0a6918c52cafc0be3941169e6fb9eeada` は、直接経路と結合された元プロダクトの終端検証を同じ作用スコープAPIへ揃えた。読み取りスコープがある場合は完成値を返し、一時編集をロールバックする。直接経路が直後に破棄していた差分の抽出を省いた。両SourceでCompilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ。最終版のretained Mapは実体化コールバックの予約に進んで候補共有の上限に達した。遅延コールバックは選択したソースの具体化中、空の述語置換における複製前検査で同じ上限に達した。captured Mapは成功。
+
+追加のCompiler 3 targetは変更前後で同じ396 IDと成否だった。`callable_execution` は322成功・54失敗、`project_function_instances` は12/12成功、`scope_propagation` は8/8成功。変更前の比較では対象7ファイルのGit blobを使用し、実行後に復元して変更後のSHA256と照合した。両Sourceのlocked Sema全feature checkは通常ライブラリ成功、lib testは終了101・817エラー・33警告で、前回とコード・ファイル別の内訳が同じ。両SourceのライブラリClippy、fmt、構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存graphは起点を含め22 package。公開した7 source blobを検証入力と照合し、`target` は10598235246 bytesだった。
+
+[Compilerの変更前後の全ID、次の停止箇所、検証原本と公開照合](acceptance-evidence/task-terminal-effect-read-validation.raw.zip) は44 entry、1808714 bytes、SHA256 `33c6afa99e3c6d4e3589107cf99f121b0c9fd598bcd98b74524764564df6a8f0`。各原本の長さとハッシュを照合した。
