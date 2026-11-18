@@ -19052,3 +19052,17 @@ Source `2bf8b4358a0b3d2723862b53def8f87923bba1f5`。変更の基点は `5be2d7e3
 部分適用の既存回帰に、宣言値の外側グループが純粋であり、キャッシュの前後とも終端グループが宣言の作用項を持ち、解が公開済みの作用行と一致する検査を追加した。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,396,350 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-retained-declaration-refs.raw.zip) は30 entry、318706 bytes、SHA256 `457689d853d0445dc93eaf82c89816d3652e6f5ef9ece93ef94af122bd5c5948`。各entryの長さとSHA256を再照合した。更新前の履歴2965433 bytesのSHA256 `7e6388b24c698fe659975eeb755f37ce1ab3a586c3ca9e7bc52c746114d830b8`をprefixとして保持した。
+
+
+<a id="call-effect-observation-dependencies"></a>
+## 2026-11-18 — 呼び出しの作用観測から元の宣言本体を準備する
+
+Source `a7e0b2f34b8a205192c2aae1f9fa1f74ce853f2c`。変更の基点は `1d043de9fa88632a42d95407438bada802961500`。比較元は `2bf8b4358a0b3d2723862b53def8f87923bba1f5` の `retained-declaration-refs.dev03-check.log`。公開したmainと15件のRust入力のblobを照合した。
+
+元の作用グラフの観測は、到達した未準備の宣言を型付きスキーム参照で返す。呼出しの値callee・値receiver・パイプ左辺と環境関数の期待型は、宣言の照合後に本体を準備し、同じ型と出典を再観測する。関数値の出典は値の観測が成功するまで保持する。準備済みの推論宣言への依存は元のスキーム参照を使う。本体方程式は準備トランザクションに保持する。最終確定は選ばれた実行グラフから方程式を一時的に再構築し、閉包を得たあとその一時編集をロールバックする。
+
+入れ子の型観測で要求したスキーム参照を照合する検査、宣言の別名からの間接呼出しが推論した作用を持つ回帰、準備済み方程式の観測と最終再検証の独立性の回帰を用意した。進行中の宣言に戻る観測循環、未確定のFuture入力を含む観測、特殊化と実行の受入は継続する。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。全試行の終了は101、libraryは24警告、lib testは36警告。dev01はlibrary 130エラー、lib test 1,005エラー。dev02はlibrary 130エラー、lib test 1,005エラー。dev03はlibrary 131エラー、lib test 1,006エラー。dev04はlibrary 130エラー、lib test 1,005エラー。dev03で方程式の宣言表をクロージャに移動していたため、再検証に同じ表を渡せなかった。dev04で共有参照に変更した。正規化した一次診断は前回1,012件、今回は1,012件。追加0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,402,506 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-call-effect-observation-dependencies.raw.zip) は38 entry、434900 bytes、SHA256 `66fd7b0398347bd0e987fbeff1f7d69c87af10bb089862441ebc44b220c5fe4c`。各entryの長さとSHA256を再照合した。更新前の履歴2968025 bytesのSHA256 `f50743bda03315f7f4857d542aa69ffea31682e7fe344a4c53a34bd0e1f4a39d`をprefixとして保持した。
