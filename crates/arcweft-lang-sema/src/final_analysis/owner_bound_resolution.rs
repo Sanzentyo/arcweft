@@ -33,6 +33,8 @@ use super::{
     PreparedImplicitCallableBody, PreparedOwnerBoundResolution, TypeKind,
 };
 
+mod thread;
+
 /// Seals every selected prepared owner-bound row in one transaction-local batch.
 ///
 /// The returned map contains replacements for the owner-bound entries only.
@@ -279,9 +281,35 @@ pub(super) fn seal(
         let Some(PreparedExpressionFact::OwnerBound(prepared)) = expressions.get(&owner) else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
-        let PreparedOwnerBoundResolution::ImplicitParameter(parameter) = prepared.resolution()
-        else {
-            continue;
+        let parameter = match prepared.resolution() {
+            PreparedOwnerBoundResolution::Thread(thread) => {
+                let checked = thread::seal(
+                    owner,
+                    thread,
+                    prepared.shell(),
+                    expressions,
+                    &callable_identities,
+                    coordinates,
+                    types,
+                )?;
+                let (value, effects) = prepared
+                    .shell()
+                    .clone()
+                    .into_value_parts()
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                replacements.insert(
+                    owner,
+                    PreparedResolvedExpression::typed_value(
+                        value,
+                        effects,
+                        CheckedExpressionResolution::Thread(checked),
+                    )
+                    .into(),
+                );
+                continue;
+            }
+            PreparedOwnerBoundResolution::ImplicitParameter(parameter) => parameter,
+            _ => continue,
         };
         let callable = callable_evidence
             .get(&parameter.callable())
@@ -681,6 +709,17 @@ fn seal_owner_bound_body(
     types: &mut PublicationTypes<'_, '_>,
 ) -> Result<CheckedExpressionResolution, FinalSemanticAnalysisError> {
     match prepared.resolution() {
+        PreparedOwnerBoundResolution::Thread(thread) => {
+            Ok(CheckedExpressionResolution::Thread(thread::seal(
+                owner,
+                thread,
+                prepared.shell(),
+                expressions,
+                callable_identities,
+                coordinates,
+                types,
+            )?))
+        }
         PreparedOwnerBoundResolution::Try(tried) => Ok(CheckedExpressionResolution::Try(seal_try(
             owner,
             tried,

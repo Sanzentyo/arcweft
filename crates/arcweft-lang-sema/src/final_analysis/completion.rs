@@ -3,7 +3,29 @@
 //! The checked expression result remains the semantic authority, including non-value emissions.
 use super::prepared::{PreparedExpressionResult, PreparedNonValueExpressionResult};
 use super::{CheckedExpressionResult, CheckedNonValueExpressionResult};
-use crate::types::TypeKind;
+use crate::types::{TypeEffectDomain, TypeKind};
+
+pub(super) enum ResultTypeJoin<D: TypeEffectDomain> {
+    Left,
+    Right,
+    Combined(TypeKind<D>),
+}
+
+impl<D: TypeEffectDomain> ResultTypeJoin<D> {
+    pub(super) fn for_values(left: &TypeKind<D>, right: &TypeKind<D>) -> Option<Self> {
+        match (left, right) {
+            (TypeKind::Never, _) => Some(Self::Right),
+            (_, TypeKind::Never) => Some(Self::Left),
+            (TypeKind::CharacterDialogue(left), TypeKind::CharacterDialogue(right)) => {
+                Some(Self::Combined(TypeKind::CharacterDialogue(
+                    crate::types::CharacterDialogueType::join(left.clone(), right),
+                )))
+            }
+            _ if left == right => Some(Self::Left),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum NormalContinuation {

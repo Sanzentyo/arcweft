@@ -672,6 +672,12 @@ pub enum FinalSemanticAnalysisError {
         source_span: SourceSpan,
         result_sources: Box<[SourceSpan]>,
     },
+    #[error("Thread {owner:?} expected result {expected:?} but a completed result was {actual:?}")]
+    ThreadResultTypeMismatch {
+        owner: ExprId,
+        expected: Box<TypeKind>,
+        actual: Box<TypeKind>,
+    },
     #[error(
         "lifetime registry write {owner:?} requires a non-optional registry address at {target:?}"
     )]
@@ -969,7 +975,9 @@ impl FinalSemanticAnalysisError {
             Self::ReturnBoundaryUnavailable { .. } => "sema.return.boundary",
             Self::YieldOutsideGenerator { .. } => "sema.yield.context",
             Self::ReturnValueTypeMismatch { .. } => "sema.return.value_type",
-            Self::IncompatibleCallableResults { .. } => "sema.callable.result_type",
+            Self::IncompatibleCallableResults { .. } | Self::ThreadResultTypeMismatch { .. } => {
+                "sema.callable.result_type"
+            }
             Self::AssertionConditionNotBool { .. } => "sema.assert.condition_not_bool",
             Self::AssertionConditionNotPure { .. } => "sema.assert.condition_not_pure",
             Self::InvalidUnsafeAuditReason { .. } => "sema.unsafe.reason",

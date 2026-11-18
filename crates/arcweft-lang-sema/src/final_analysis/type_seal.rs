@@ -98,7 +98,15 @@ impl PublicationSourceTypes<'_, '_> {
     ) -> Result<bool, FinalSemanticAnalysisError> {
         let expected = self.canonical(expected)?;
         let actual = self.canonical(actual)?;
-        expected.accepts_recovery_with(&actual, self.work)
+        self.accepts_canonical_type(&expected, &actual)
+    }
+
+    pub(super) fn accepts_canonical_type(
+        &mut self,
+        expected: &TypeKind,
+        actual: &TypeKind,
+    ) -> Result<bool, FinalSemanticAnalysisError> {
+        expected.accepts_recovery_with(actual, self.work)
     }
 
     /// A completed call can issue a new type for its expression after the

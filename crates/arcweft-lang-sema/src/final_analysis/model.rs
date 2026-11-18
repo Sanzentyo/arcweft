@@ -1760,13 +1760,13 @@ pub struct CheckedThread {
 }
 
 impl CheckedThread {
-    pub(super) fn from_source(
-        thread: &arcweft_lang_hir::expr::HirThreadExpr,
+    pub(super) fn from_prepared(
+        thread: &super::prepared::PreparedThread,
         result: TypeKind,
     ) -> Self {
         Self {
-            body: thread.scope(),
-            mode: thread.mode(),
+            body: thread.body,
+            mode: thread.mode,
             result,
             body_effects: EffectSet::new(),
         }

@@ -221,6 +221,35 @@ fn thread_results_and_returns_belong_to_their_original_child_frames() {
 }
 
 #[test]
+fn thread_joins_distinct_prepared_callbacks_at_effect_closure() {
+    let world = super::fixture(
+        r#"fn left(value: i64) -> i64 { value }
+fn right(value: i64) -> i64 { value }
+fn root(pick: bool) -> ThreadHandle<(i64) -> i64 effects {}> effects { control.spawn } {
+    thread { if pick { return left }; return right }
+}"#,
+        None,
+    );
+    let report = super::analyze(&world).unwrap();
+    let expected = TypeKind::function_with_effects(
+        [TypeKind::I64],
+        TypeKind::I64,
+        crate::effect_row::EffectRow::closed(crate::effects::EffectSet::new()),
+    );
+    let checked = report
+        .expressions()
+        .find_map(|(_, expression)| {
+            let CheckedExpressionResolution::Thread(thread) = expression.resolution() else {
+                return None;
+            };
+            Some((expression.value_type(), thread.result()))
+        })
+        .expect("checked child thread");
+    assert_eq!(checked.1, &expected);
+    assert_eq!(checked.0, Some(&TypeKind::ThreadHandle(Box::new(expected))));
+}
+
+#[test]
 fn contextual_thread_result_types_its_return_literal_before_publication() {
     let world = super::fixture(
         "fn root() -> ThreadHandle<i32> effects { control.spawn } { thread { return 7 } }",

@@ -5,7 +5,8 @@ mod type_updates;
 mod typed_binding;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
-    identity::{ExprId, ItemId, LocalId, PatternId},
+    expr::{HirThreadExpr, HirThreadMode},
+    identity::{ExprId, ItemId, LocalId, PatternId, ScopeId, StmtId},
     leaf::HirName,
     symbol::CallableDeclarationKey,
 };
@@ -392,6 +393,24 @@ pub(crate) enum PreparedOwnerBoundResolution {
     Pipe(PreparedPipe),
     PipeLeft(PreparedPipeLeft),
     Try(PreparedTry),
+    Thread(PreparedThread),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::final_analysis) struct PreparedThreadReturn {
+    pub(in crate::final_analysis) statement: StmtId,
+    pub(in crate::final_analysis) value: ExprId,
+}
+
+/// The result lives in the expression shell's ThreadHandle. The body retains
+/// the source rows that must agree with that result after effect closure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedThread {
+    pub(super) body: ScopeId,
+    pub(super) mode: HirThreadMode,
+    pub(super) returns: Box<[PreparedThreadReturn]>,
+    pub(super) normal: super::completion::NormalContinuation,
+    pub(super) expected: Option<Box<TypeKind<PreparedEffects>>>,
 }
 
 /// Prepared implicit callable body and its contextual function parts. A body
@@ -663,6 +682,21 @@ impl PreparedPipeLeft {
 }
 
 impl PreparedOwnerBoundResolution {
+    pub(in crate::final_analysis) fn thread(
+        thread: &HirThreadExpr,
+        returns: Box<[PreparedThreadReturn]>,
+        normal: super::completion::NormalContinuation,
+        expected: Option<TypeKind<PreparedEffects>>,
+    ) -> Self {
+        Self::Thread(PreparedThread {
+            body: thread.scope(),
+            mode: thread.mode(),
+            returns,
+            normal,
+            expected: expected.map(Box::new),
+        })
+    }
+
     pub(crate) fn implicit_callable(
         parameter: TypeKind<PreparedEffects>,
         result: TypeKind<PreparedEffects>,
@@ -770,6 +804,7 @@ impl PreparedOwnerBoundExpression {
             | PreparedOwnerBoundResolution::ImplicitParameter(_)
             | PreparedOwnerBoundResolution::Pipe(_)
             | PreparedOwnerBoundResolution::PipeLeft(_)
+            | PreparedOwnerBoundResolution::Thread(_)
             | PreparedOwnerBoundResolution::Try(_) => None,
         }
     }
@@ -799,6 +834,12 @@ impl PreparedOwnerBoundExpression {
                 Ok(())
             }
             PreparedOwnerBoundResolution::PipeLeft(_) => Ok(()),
+            PreparedOwnerBoundResolution::Thread(thread) => {
+                if let Some(expected) = &thread.expected {
+                    visitor(expected)?;
+                }
+                Ok(())
+            }
             PreparedOwnerBoundResolution::Try(tried) => {
                 tried.carrier().visit_types(visitor)?;
                 if let Some(boundary_type) = tried.boundary().boundary_type() {

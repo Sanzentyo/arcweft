@@ -644,18 +644,15 @@ pub(super) fn common_type<'a>(
     values: impl IntoIterator<Item = &'a TypeKind<crate::types::PreparedEffects>>,
     expected: Option<&TypeKind<crate::types::PreparedEffects>>,
 ) -> Option<TypeKind<crate::types::PreparedEffects>> {
+    use crate::final_analysis::completion::ResultTypeJoin;
     let mut values = values.into_iter();
     let first = values.next().cloned().or_else(|| expected.cloned())?;
-    values.try_fold(first, |joined, value| match (&joined, value) {
-        (TypeKind::Never, _) => Some(value.clone()),
-        (_, TypeKind::Never) => Some(joined),
-        (TypeKind::CharacterDialogue(left), TypeKind::CharacterDialogue(right)) => {
-            Some(TypeKind::CharacterDialogue(
-                crate::types::CharacterDialogueType::join(left.clone(), right),
-            ))
+    values.try_fold(first, |joined, value| {
+        match ResultTypeJoin::for_values(&joined, value)? {
+            ResultTypeJoin::Left => Some(joined),
+            ResultTypeJoin::Right => Some(value.clone()),
+            ResultTypeJoin::Combined(ty) => Some(ty),
         }
-        _ if value == &joined => Some(joined),
-        _ => None,
     })
 }
 

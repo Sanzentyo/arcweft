@@ -12,6 +12,8 @@ mod records;
 mod source_effects;
 #[path = "expressions/style.rs"]
 mod style;
+#[path = "expressions/thread.rs"]
+mod thread;
 
 use std::{rc::Rc, sync::Arc};
 
@@ -1505,6 +1507,9 @@ impl Analyzer<'_, '_, '_> {
                     expectation,
                 )
                 .map(Some),
+            HirExprKind::Thread(thread) => self
+                .prepare_thread_expression(context, module, owner, thread, expectation)
+                .map(Some),
             HirExprKind::Pipe(pipe) => self
                 .prepare_pipe_expression(context, owner, pipe, expectation)
                 .map(Some),
@@ -2682,73 +2687,78 @@ impl Analyzer<'_, '_, '_> {
         body_type: TypeKind<crate::types::PreparedEffects>,
         continuation: completion::BodyCompletion,
     ) -> Result<TypeKind<crate::types::PreparedEffects>, AnalyzerExpressionError> {
-        let mut results = continuation
+        let returns = continuation
             .returns()
             .iter()
-            .map(|statement| {
-                let source = module.resolve_stmt(*statement).map_err(|_| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                })?;
-                let HirStmtEvaluationPlan::Value {
-                    kind: HirStmtValuePlanKind::Return,
-                    expression,
-                    ..
-                } = source.kind().evaluation_plan()
-                else {
-                    return Err(AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::WrongPayloadFamily,
-                    ));
-                };
-                match expression {
-                    Some(value) => self
-                        .facts
-                        .expressions()
-                        .get(&value)
-                        .and_then(PreparedExpressionFact::value_type)
-                        .ok_or_else(|| {
-                            AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                                    owner: value,
-                                },
-                            )
-                        }),
-                    None => Err(AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::WrongPayloadFamily,
-                    )),
-                }
+            .map(|&statement| {
+                let value = Self::return_operand(module, statement)?;
+                Ok::<_, AnalyzerExpressionError>((value, self.return_operand_type(value)?))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if continuation.continues() {
-            results.push(&body_type);
-        }
-        if results.is_empty() {
+        if returns.is_empty() && !continuation.continues() {
             return Ok(body_type);
         }
+        let results = returns
+            .iter()
+            .map(|(_, ty)| *ty)
+            .chain(continuation.continues().then_some(&body_type));
         if let Some(result) = common_type(results, None) {
             return Ok(result);
         }
-        let source_span = expression_span(module, body).map_err(AnalyzerExpressionError::fatal)?;
-        let mut result_sources = continuation
-            .returns()
-            .iter()
-            .map(|statement| {
-                let source = module.resolve_stmt(*statement).map_err(|_| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                })?;
-                let HirStmtEvaluationPlan::Value {
-                    kind: HirStmtValuePlanKind::Return,
-                    expression: Some(value),
-                    ..
-                } = source.kind().evaluation_plan()
-                else {
-                    return Err(AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::WrongPayloadFamily,
-                    ));
-                };
-                expression_span(module, value).map_err(AnalyzerExpressionError::fatal)
+        Self::reject_body_result_join(
+            module,
+            body,
+            returns.into_iter().map(|(value, _)| value),
+            continuation.continues(),
+        )
+    }
+
+    fn return_operand(
+        module: &HirModule,
+        statement: super::StmtId,
+    ) -> Result<ExprId, AnalyzerExpressionError> {
+        let source = module.resolve_stmt(statement).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+        })?;
+        match source.kind().evaluation_plan() {
+            HirStmtEvaluationPlan::Value {
+                kind: HirStmtValuePlanKind::Return,
+                expression: Some(value),
+                ..
+            } => Ok(value),
+            _ => Err(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::WrongPayloadFamily,
+            )),
+        }
+    }
+
+    fn return_operand_type(
+        &self,
+        value: ExprId,
+    ) -> Result<&TypeKind<PreparedEffects>, AnalyzerExpressionError> {
+        self.facts
+            .expressions()
+            .get(&value)
+            .and_then(PreparedExpressionFact::value_type)
+            .ok_or_else(|| {
+                AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value },
+                )
             })
+    }
+
+    fn reject_body_result_join<T>(
+        module: &HirModule,
+        body: ExprId,
+        returns: impl IntoIterator<Item = ExprId>,
+        falls_through: bool,
+    ) -> Result<T, AnalyzerExpressionError> {
+        let source_span = expression_span(module, body).map_err(AnalyzerExpressionError::fatal)?;
+        let mut result_sources = returns
+            .into_iter()
+            .map(|value| expression_span(module, value).map_err(AnalyzerExpressionError::fatal))
             .collect::<Result<Vec<_>, _>>()?;
-        if continuation.continues() {
+        if falls_through {
             result_sources.push(source_span.clone());
         }
         Err(AnalyzerExpressionError::Rejected(
@@ -3962,29 +3972,6 @@ impl Analyzer<'_, '_, '_> {
                 };
                 Ok(structural_expression(ty, CheckedTypeSelection::Inferred))
             }
-            HirExprKind::Thread(thread) => {
-                let result = self.check_thread_body(
-                    context,
-                    module,
-                    owner,
-                    thread,
-                    expectation.contextual_shape(),
-                )?;
-                let mut effects = EffectSet::new();
-                effects.insert(
-                    EffectId::parse("control.spawn")
-                        .expect("the language-owned Thread effect is a valid effect identity"),
-                );
-                let thread = super::super::CheckedThread::from_source(thread, result);
-                Ok(
-                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
-                        TypeKind::ThreadHandle(Box::new(thread.result().clone())),
-                        CheckedTypeSelection::Inferred,
-                        effects,
-                        CheckedExpressionResolution::Thread(thread),
-                    ),
-                )
-            }
             HirExprKind::Choice(choice) => self.check_choice_expression(
                 context,
                 module,
@@ -3996,69 +3983,6 @@ impl Analyzer<'_, '_, '_> {
             _ => return Ok(None),
         }
         .map(Some)
-    }
-
-    fn check_thread_body(
-        &mut self,
-        context: &AnalyzerExpressionContext<'_>,
-        module: &HirModule,
-        owner: ExprId,
-        thread: &arcweft_lang_hir::expr::HirThreadExpr,
-        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
-    ) -> Result<TypeKind<crate::types::PreparedEffects>, AnalyzerExpressionError> {
-        let expected = match expected {
-            Some(TypeKind::ThreadHandle(result)) => Some(result.as_ref()),
-            Some(_) => return Err(AnalyzerExpressionError::rejected(owner)),
-            None => None,
-        };
-        if let Some(result) = expected {
-            self.function_site_stack.push(super::FunctionSiteContext {
-                owner,
-                result: result.clone(),
-            });
-        }
-        let result = (|| {
-            self.evaluate_thread_body_uses(context, module, thread.body())?;
-            let completion = self.thread_body_completion(module, thread.body(), owner)?;
-            let body_type = if completion.continues() {
-                TypeKind::Unit
-            } else {
-                TypeKind::Never
-            };
-            let result = self.completed_body_result(module, owner, body_type, completion)?;
-            if let Some(expected) = expected {
-                self.check_prepared_contextual_type(context, owner, expected, &result)?;
-            }
-            Ok(result)
-        })();
-        if expected.is_some() {
-            self.function_site_stack
-                .pop()
-                .expect("Thread result context was just pushed");
-        }
-        result
-    }
-
-    fn evaluate_thread_body_uses(
-        &mut self,
-        context: &AnalyzerExpressionContext<'_>,
-        module: &HirModule,
-        body: &arcweft_lang_hir::expr::HirThreadBody,
-    ) -> Result<(), AnalyzerExpressionError> {
-        let projection = body.try_body_projection().map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
-        })?;
-        for edge in projection.children() {
-            match edge.child() {
-                HirBodyChild::Expression(expression) => {
-                    self.evaluate_expression(context, expression, None)?;
-                }
-                HirBodyChild::Statement(statement) => {
-                    self.evaluate_block_statement_uses(context, module, &[statement])?;
-                }
-            }
-        }
-        Ok(())
     }
 
     fn check_choice_expression(

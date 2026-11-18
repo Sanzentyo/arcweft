@@ -65,6 +65,9 @@ impl BodyCompletion {
     pub(in crate::final_analysis::analyzer) const fn continues(&self) -> bool {
         self.normal.is_unit()
     }
+    pub(super) const fn normal(&self) -> NormalContinuation {
+        self.normal
+    }
     pub(super) fn returns(&self) -> &BTreeSet<StmtId> {
         &self.returns
     }
