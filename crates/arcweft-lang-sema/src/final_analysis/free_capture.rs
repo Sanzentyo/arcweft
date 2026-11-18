@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use arcweft_lang_hir::{
     identity::{ExprId, LocalId, StmtId},
+    project::HirSemanticPathOwnerId,
     scope::CaptureAccess,
 };
 
@@ -11,7 +12,7 @@ use crate::{
     semantic_coordinate::{
         CheckedSemanticPath, SemanticCoordinateIndex, StableCheckedBindingCoordinate,
     },
-    types::{SemanticTypeDigest, TypeKind},
+    types::{PreparedEffects, SemanticTypeDigest, TypeKind},
 };
 
 use super::{
@@ -19,6 +20,9 @@ use super::{
     CheckedRecordValueSource, FinalSemanticAnalysisError, PreparedExpressionFact,
     match_edges::CheckedStructuralEdgeDraft,
 };
+
+#[cfg(test)]
+mod tests;
 
 /// One executable use, including HIR shorthand/capture positions without an
 /// independent expression node.
@@ -62,22 +66,29 @@ impl From<ExprId> for CheckedLocalUseSite {
 
 /// One expression's intrinsic input sources, projected from its owning checked
 /// facts. These are transaction-local values, never a second stored read index.
-pub(super) struct CheckedCaptureExpression {
-    sources: Vec<CheckedLocalInputSource>,
+pub(super) struct CheckedCaptureExpression<T = SemanticTypeDigest> {
+    sources: Vec<CheckedLocalInputSource<T>>,
     record_sources: Option<Vec<super::prepared::PreparedRecordValueSource>>,
     descends: bool,
 }
 
 #[derive(Clone)]
-pub(super) struct CheckedLocalInputSource {
+pub(super) struct CheckedLocalInputSource<T = SemanticTypeDigest> {
     site: CheckedLocalUseSite,
     local: LocalId,
-    ty: SemanticTypeDigest,
+    ty: T,
     origin: Option<StableCheckedBindingCoordinate>,
     access: CaptureAccess,
 }
 
-impl CheckedLocalInputSource {
+/// The type attached to the exact source of a local use. Nested callable
+/// creation can already carry an issued capture identity at this stage.
+pub(super) enum PreparedCaptureType<'a> {
+    Source(HirSemanticPathOwnerId, &'a TypeKind<PreparedEffects>),
+    Issued(SemanticTypeDigest),
+}
+
+impl<T> CheckedLocalInputSource<T> {
     pub(super) const fn site(&self) -> CheckedLocalUseSite {
         self.site
     }
@@ -87,10 +98,6 @@ impl CheckedLocalInputSource {
     pub(super) const fn access(&self) -> CaptureAccess {
         self.access
     }
-    pub(super) const fn value_type(&self) -> SemanticTypeDigest {
-        self.ty
-    }
-
     pub(super) fn source_order(
         &self,
         topology: &arcweft_lang_hir::project::HirProjectEvaluationTopology,
@@ -147,9 +154,44 @@ impl CheckedLocalInputSource {
     }
 }
 
+impl CheckedLocalInputSource {
+    pub(super) const fn value_type(&self) -> SemanticTypeDigest {
+        self.ty
+    }
+
+    pub(super) fn admits_origin(&self, origin: &StableCheckedBindingCoordinate) -> bool {
+        self.origin
+            .as_ref()
+            .is_none_or(|expected| expected == origin)
+    }
+}
+
+impl CheckedLocalInputSource<PreparedCaptureType<'_>> {
+    pub(super) fn seal(
+        self,
+        types: &mut super::type_seal::PublicationTypes<'_, '_>,
+    ) -> Result<CheckedLocalInputSource, FinalSemanticAnalysisError> {
+        let ty = match self.ty {
+            PreparedCaptureType::Source(owner, ty) => {
+                let mut source = types.source(owner)?;
+                let ty = source.canonical(ty)?;
+                source.digest(&ty)?
+            }
+            PreparedCaptureType::Issued(ty) => ty,
+        };
+        Ok(CheckedLocalInputSource {
+            site: self.site,
+            local: self.local,
+            ty,
+            origin: self.origin,
+            access: self.access,
+        })
+    }
+}
+
 /// Projects the exact HIR-authenticated implicit region's selected facts.
 /// HIR supplies membership and traversal positions, never local resolution.
-pub(super) fn implicit_region_inputs(
+pub(super) fn implicit_region_inputs<T>(
     topology: &arcweft_lang_hir::project::HirProjectEvaluationTopology,
     owner: ExprId,
     admitted: impl Fn(ExprId) -> bool,
@@ -157,9 +199,9 @@ pub(super) fn implicit_region_inputs(
     expression: impl Fn(
         ExprId,
         CaptureAccess,
-    ) -> Result<CheckedCaptureExpression, FinalSemanticAnalysisError>,
+    ) -> Result<CheckedCaptureExpression<T>, FinalSemanticAnalysisError>,
     record: impl Fn(ExprId) -> Option<Vec<super::prepared::PreparedRecordValueSource>>,
-) -> Result<Vec<CheckedLocalInputSource>, FinalSemanticAnalysisError> {
+) -> Result<Vec<CheckedLocalInputSource<T>>, FinalSemanticAnalysisError> {
     let module = topology
         .module(owner.module())
         .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
@@ -323,72 +365,17 @@ impl CheckedCaptureExpression {
                 });
             }
         }
-        value.include_resolution(owner, checked.resolution(), local_type)?;
-        Ok(value)
-    }
-
-    pub(super) fn from_prepared(
-        owner: ExprId,
-        checked: &PreparedExpressionFact,
-        local_type: impl Fn(LocalId) -> Option<TypeKind>,
-        source: impl Fn(ExprId) -> Option<super::CheckedFieldReceiver>,
-        access: CaptureAccess,
-    ) -> Result<Self, FinalSemanticAnalysisError> {
-        if let PreparedExpressionFact::Resolved(checked) = checked {
-            if matches!(
-                checked.resolution(),
-                CheckedExpressionResolution::Nominal(_)
-            ) {
-                // Records remain ProjectRecord until their C1 slot plan is
-                // joined to C2. A completed record requires that final plan.
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            }
-            return Self::from_checked(owner, checked, &[], local_type, source, access);
-        }
-        let mut value = Self {
-            sources: Vec::new(),
-            record_sources: None,
-            descends: true,
-        };
-        if let Some(local) = checked.execution_local_use() {
-            value.push_typed(
-                CheckedLocalUseSite::Expression(owner),
-                local,
-                checked.value_type(),
-                access,
-            )?;
-        }
-        if let PreparedExpressionFact::ProjectRecord(record) = checked {
-            value.record_sources =
-                Some(record.fields().iter().map(|field| field.source()).collect());
-            for field in record.fields() {
-                if let super::prepared::PreparedRecordValueSource::Local(local) = field.source() {
-                    value.push_typed(
-                        CheckedLocalUseSite::RecordField {
-                            owner,
-                            source_ordinal: field.source_ordinal(),
-                        },
-                        local,
-                        Some(field.field_type()),
-                        CaptureAccess::Read,
-                    )?;
-                }
-            }
-        }
-        if let Some(local) = checked.field_root(source) {
-            let ty = local_type(local)
-                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
-            value.push_typed(
-                CheckedLocalUseSite::Expression(owner),
-                local,
-                Some(&ty),
-                access,
-            )?;
-            value.descends = false;
-        }
-        if let Some(resolution) = checked.checked_resolution() {
-            value.include_resolution(owner, resolution, local_type)?;
-        }
+        value.include_resolution(
+            owner,
+            checked.resolution(),
+            |local| {
+                local_type(local)
+                    .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?
+                    .semantic_identity_digest()
+                    .map_err(Into::into)
+            },
+            |digest| digest,
+        )?;
         Ok(value)
     }
 
@@ -426,65 +413,194 @@ impl CheckedCaptureExpression {
         access: CaptureAccess,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let ty = ty.ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        self.push_source(site, local, ty.semantic_identity_digest()?, access);
+        Ok(())
+    }
+}
+
+impl<'a> CheckedCaptureExpression<PreparedCaptureType<'a>> {
+    pub(super) fn from_prepared(
+        owner: ExprId,
+        fact: &'a PreparedExpressionFact,
+        local_type: impl Fn(LocalId) -> Option<&'a TypeKind<PreparedEffects>>,
+        source: impl Fn(ExprId) -> Option<super::CheckedFieldReceiver>,
+        access: CaptureAccess,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        let resolution = fact.checked_resolution();
+        if matches!(resolution, Some(CheckedExpressionResolution::Nominal(_))) {
+            // The prepared record owns its source order and field types
+            // until the structural record slots join the final plan.
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let mut value = Self {
+            sources: Vec::new(),
+            record_sources: None,
+            descends: !fact.creates_implicit_callable()
+                && !matches!(resolution, Some(CheckedExpressionResolution::Closure(_))),
+        };
+        let binding_type = |local: LocalId| {
+            let ty = local_type(local)
+                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
+            Ok(PreparedCaptureType::Source(local.into(), ty))
+        };
+        if let Some(local) = fact.execution_local_use() {
+            let ty = fact
+                .source_value_type()
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+            value.push_source(
+                CheckedLocalUseSite::Expression(owner),
+                local,
+                PreparedCaptureType::Source(owner.into(), ty),
+                access,
+            );
+        }
+        if let PreparedExpressionFact::ProjectRecord(record) = fact {
+            value.record_sources =
+                Some(record.fields().iter().map(|field| field.source()).collect());
+            for field in record.fields() {
+                if let super::prepared::PreparedRecordValueSource::Local(local) = field.source() {
+                    value.push_source(
+                        CheckedLocalUseSite::RecordField {
+                            owner,
+                            source_ordinal: field.source_ordinal(),
+                        },
+                        local,
+                        PreparedCaptureType::Source(owner.into(), field.field_type()),
+                        CaptureAccess::Read,
+                    );
+                }
+            }
+        }
+        if let Some(local) = fact.field_root(&source) {
+            value.push_source(
+                CheckedLocalUseSite::Expression(owner),
+                local,
+                binding_type(local)?,
+                access,
+            );
+            value.descends = false;
+        }
+        if let Some(local) = fact.inspection_root(&source) {
+            value.push_source(
+                CheckedLocalUseSite::Place(owner),
+                local,
+                binding_type(local)?,
+                CaptureAccess::Read,
+            );
+            value.descends = false;
+        }
+        if let Some(resolution) = resolution {
+            value.include_resolution(
+                owner,
+                resolution,
+                binding_type,
+                PreparedCaptureType::Issued,
+            )?;
+        }
+        if let PreparedExpressionFact::OwnerBound(owner_bound) = fact
+            && let super::PreparedOwnerBoundResolution::ImplicitNominalBody { identity, .. } =
+                owner_bound.resolution()
+        {
+            value.include_implicit_captures(
+                owner,
+                identity.captures(),
+                PreparedCaptureType::Issued,
+            );
+        }
+        Ok(value)
+    }
+
+    pub(super) fn seal_types(
+        self,
+        types: &mut super::type_seal::PublicationTypes<'_, '_>,
+    ) -> Result<CheckedCaptureExpression, FinalSemanticAnalysisError> {
+        let sources = self
+            .sources
+            .into_iter()
+            .map(|source| source.seal(types))
+            .collect::<Result<_, _>>()?;
+        Ok(CheckedCaptureExpression {
+            sources,
+            record_sources: self.record_sources,
+            descends: self.descends,
+        })
+    }
+}
+
+impl<T> CheckedCaptureExpression<T> {
+    fn push_source(
+        &mut self,
+        site: CheckedLocalUseSite,
+        local: LocalId,
+        ty: T,
+        access: CaptureAccess,
+    ) {
         self.sources.push(CheckedLocalInputSource {
             site,
             local,
-            ty: ty.semantic_identity_digest()?,
+            ty,
             origin: None,
             access,
         });
-        Ok(())
     }
 
     fn include_resolution(
         &mut self,
         owner: ExprId,
         resolution: &CheckedExpressionResolution,
-        local_type: impl Fn(LocalId) -> Option<TypeKind>,
+        local_type: impl Fn(LocalId) -> Result<T, FinalSemanticAnalysisError>,
+        issued: impl Fn(SemanticTypeDigest) -> T,
     ) -> Result<(), FinalSemanticAnalysisError> {
         match resolution {
             CheckedExpressionResolution::Closure(closure) => {
                 for capture in closure.captures() {
-                    let ty = local_type(capture.local()).ok_or(
-                        FinalSemanticAnalysisError::LocalTypeUnavailable {
-                            owner: capture.local(),
-                        },
-                    )?;
-                    self.push_typed(
+                    self.push_source(
                         CheckedLocalUseSite::Capture {
                             owner,
                             local: capture.local(),
                         },
                         capture.local(),
-                        Some(&ty),
+                        local_type(capture.local())?,
                         capture.mode(),
-                    )?;
+                    );
                 }
             }
             CheckedExpressionResolution::ImplicitCallable(callable) => {
-                for capture in callable.captures() {
-                    self.sources.push(CheckedLocalInputSource {
-                        site: CheckedLocalUseSite::Capture {
-                            owner,
-                            local: capture.lookup_local(),
-                        },
-                        local: capture.lookup_local(),
-                        ty: capture.value_type(),
-                        origin: Some(capture.origin().clone()),
-                        access: capture.mode(),
-                    });
-                }
+                self.include_implicit_captures(owner, callable.captures(), issued);
             }
             _ => {}
         }
         Ok(())
     }
 
-    pub(super) fn sources(&self) -> impl Iterator<Item = &CheckedLocalInputSource> + '_ {
+    fn include_implicit_captures(
+        &mut self,
+        owner: ExprId,
+        captures: &[super::CheckedImplicitCapture],
+        issued: impl Fn(SemanticTypeDigest) -> T,
+    ) {
+        for capture in captures {
+            self.sources.push(CheckedLocalInputSource {
+                site: CheckedLocalUseSite::Capture {
+                    owner,
+                    local: capture.lookup_local(),
+                },
+                local: capture.lookup_local(),
+                ty: issued(capture.value_type()),
+                origin: Some(capture.origin().clone()),
+                access: capture.mode(),
+            });
+        }
+    }
+
+    pub(super) fn sources(&self) -> impl Iterator<Item = &CheckedLocalInputSource<T>> + '_ {
         self.sources.iter()
     }
 
-    pub(super) fn record_source_at(&self, source_ordinal: u32) -> Option<&CheckedLocalInputSource> {
+    pub(super) fn record_source_at(
+        &self,
+        source_ordinal: u32,
+    ) -> Option<&CheckedLocalInputSource<T>> {
         self.sources
             .binary_search_by_key(&source_ordinal, |source| match source.site {
                 CheckedLocalUseSite::RecordField { source_ordinal, .. } => source_ordinal,
@@ -505,7 +621,7 @@ enum CheckedLocalInputStep {
 /// bodies; the root's caller determines whether an implicit body is executed.
 pub(super) fn ordered_checked_local_inputs(
     root: ExprId,
-    expression: impl Fn(ExprId) -> Result<CheckedCaptureExpression, FinalSemanticAnalysisError>,
+    mut expression: impl FnMut(ExprId) -> Result<CheckedCaptureExpression, FinalSemanticAnalysisError>,
     children: impl Fn(ExprId) -> Result<Vec<ExprId>, FinalSemanticAnalysisError>,
     admitted: impl Fn(ExprId) -> bool,
 ) -> Result<Vec<CheckedLocalInputSource>, FinalSemanticAnalysisError> {
@@ -666,10 +782,7 @@ impl<'a, 'coordinate, F: Fn(LocalId) -> Option<TypeKind>>
             .semantic_identity_digest()
             .or_else(|_| accepted.semantic_identity_digest_in_scope(&self.type_scope))?
             != source.ty
-            || source
-                .origin
-                .as_ref()
-                .is_some_and(|expected| expected != &origin)
+            || !source.admits_origin(&origin)
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
@@ -696,10 +809,16 @@ pub(super) fn collect_checked_free_locals(
     root: ExprId,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
     structural_edges: &CheckedStructuralEdgeDraft,
-    expression: impl Fn(ExprId) -> Result<CheckedCaptureExpression, FinalSemanticAnalysisError>,
+    type_scope: crate::types::GenericScope,
+    expression: impl FnMut(ExprId) -> Result<CheckedCaptureExpression, FinalSemanticAnalysisError>,
     local_type: impl Fn(LocalId) -> Option<TypeKind>,
 ) -> Result<Box<[CheckedExecutableCapture]>, FinalSemanticAnalysisError> {
-    let mut collector = CheckedFreeLocalCollector::new(root, coordinates, local_type)?;
+    let root_coordinate = coordinates
+        .expression_evidence(root)
+        .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?
+        .into_coordinate();
+    let mut collector =
+        CheckedFreeLocalCollector::at_path(root_coordinate, coordinates, local_type, type_scope);
     let sources = ordered_checked_local_inputs(
         root,
         expression,

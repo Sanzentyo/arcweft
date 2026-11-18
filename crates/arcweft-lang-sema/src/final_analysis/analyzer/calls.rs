@@ -4471,7 +4471,7 @@ impl Analyzer<'_, '_, '_> {
             let inputs = super::super::free_capture::CheckedCaptureExpression::from_prepared(
                 expression,
                 fact,
-                |local| self.facts.locals().get(&local).cloned(),
+                |local| self.facts.locals().get(&local),
                 |child| {
                     self.facts
                         .expressions()

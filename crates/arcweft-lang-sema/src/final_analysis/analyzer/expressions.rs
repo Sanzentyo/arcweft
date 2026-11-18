@@ -1349,7 +1349,7 @@ impl Analyzer<'_, '_, '_> {
         let inputs = super::super::free_capture::CheckedCaptureExpression::from_prepared(
             expression,
             fact,
-            |local| self.facts.locals().get(&local).cloned(),
+            |local| self.facts.locals().get(&local),
             |child| {
                 self.facts
                     .expressions()
@@ -1358,8 +1358,12 @@ impl Analyzer<'_, '_, '_> {
             },
             access,
         )?;
-        for input in inputs.sources() {
-            self.record_implicit_capture(input.site(), input.local())?;
+        let uses = inputs
+            .sources()
+            .map(|input| (input.site(), input.local()))
+            .collect::<Vec<_>>();
+        for (site, local) in uses {
+            self.record_implicit_capture(site, local)?;
         }
         Ok(())
     }

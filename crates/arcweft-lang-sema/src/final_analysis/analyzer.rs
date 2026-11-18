@@ -724,7 +724,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             &selected_expressions,
             &mut closure_work,
         )?;
-        {
+        let checked_bindings = {
             let mut types = super::type_seal::PublicationTypes::new(
                 &checked_callables,
                 &self.topology,
@@ -767,12 +767,8 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                     input.push_capture(capture.capture(), binding.clone());
                 }
             }
-            for (owner, binding) in bindings {
-                if selected_expressions.contains_owner(SyntheticOwner::Local(owner)) {
-                    input.push_local(owner, binding);
-                }
-            }
-        }
+            bindings
+        };
         self.display_conformances = Some(display::DisplayConformanceCatalog::build(
             self,
             &checked_callables,
@@ -856,15 +852,26 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             .facts
             .take_implicit_capture_uses_for_owners(&owner_bound_callables)
             .map_err(FinalSemanticAnalysisError::from)?;
-        let owner_bound_replacements = super::owner_bound_resolution::seal(
-            Arc::clone(&self.topology),
-            self.facts.expressions(),
-            self.facts.locals(),
-            &pending_capture_uses,
-            &semantic_coordinates,
-            &structural_edges,
-            &checked_callables,
-        )?;
+        let owner_bound_replacements = {
+            let mut types = super::type_seal::PublicationTypes::new(
+                &checked_callables,
+                &self.topology,
+                super::type_seal::PublicationTypeEffects {
+                    principal: &type_effects,
+                    work: &mut closure_work,
+                },
+            );
+            super::owner_bound_resolution::seal(
+                Arc::clone(&self.topology),
+                self.facts.expressions(),
+                (self.facts.locals(), &checked_bindings),
+                &pending_capture_uses,
+                &semantic_coordinates,
+                &structural_edges,
+                &checked_callables,
+                &mut types,
+            )?
+        };
         self.facts
             .replace_existing_expressions(owner_bound_replacements)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
@@ -876,6 +883,11 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             &semantic_coordinates,
             &structural_edges,
             &checked_callables,
+            &checked_bindings,
+            super::type_seal::PublicationTypeEffects {
+                principal: &type_effects,
+                work: &mut closure_work,
+            },
         )?;
         self.validate_view_modifier_handler_effects(&checked_callables)?;
         let callable_joins = super::match_edges::prepare_checked_callable_joins(
@@ -918,6 +930,11 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         input.set_callable_joins(callable_joins);
         self.type_reports
             .retain(|owner, _| selected_expressions.contains_owner(SyntheticOwner::Type(*owner)));
+        for (owner, binding) in checked_bindings {
+            if selected_expressions.contains_owner(SyntheticOwner::Local(owner)) {
+                input.push_local(owner, binding);
+            }
+        }
         input.set_structural_edges(structural_edges)?;
         input.expressions.clear();
         for (owner, fact) in self.facts.expressions() {

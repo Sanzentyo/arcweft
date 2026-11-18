@@ -113,8 +113,9 @@ enum CheckedContentOwnerFamily {
     ContentCall,
 }
 
-#[derive(Default)]
-struct ContentSealTraversal {
+struct ContentSealTraversal<'a, 'control> {
+    types: crate::final_analysis::type_seal::PublicationTypes<'a, 'control>,
+    bindings: &'a BTreeMap<arcweft_lang_hir::identity::LocalId, super::CheckedBinding>,
     active: BTreeSet<ExprId>,
     visited: BTreeSet<ExprId>,
     ids: BTreeMap<CheckedContentApplicationId, ExprId>,
@@ -158,7 +159,24 @@ fn retain_prepared_effect(
     Ok(())
 }
 
-impl ContentSealTraversal {
+impl<'a, 'control> ContentSealTraversal<'a, 'control> {
+    fn new(
+        types: crate::final_analysis::type_seal::PublicationTypes<'a, 'control>,
+        bindings: &'a BTreeMap<arcweft_lang_hir::identity::LocalId, super::CheckedBinding>,
+    ) -> Self {
+        Self {
+            types,
+            bindings,
+            active: BTreeSet::new(),
+            visited: BTreeSet::new(),
+            ids: BTreeMap::new(),
+            dialogue_site_roots: BTreeSet::new(),
+            dialogue_site_calls: BTreeSet::new(),
+            fragments: Vec::new(),
+            next_fx_ordinal: 0,
+        }
+    }
+
     fn enter(&mut self, owner: ExprId) -> Result<(), FinalSemanticAnalysisError> {
         if self.active.contains(&owner) || !self.visited.insert(owner) {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -572,8 +590,18 @@ impl Analyzer<'_, '_, '_> {
         coordinates: &SemanticCoordinateIndex<'_, '_>,
         structural_edges: &super::super::match_edges::CheckedStructuralEdgeDraft,
         checked_callables: &crate::callable::CheckedCallableCatalog,
+        bindings: &BTreeMap<arcweft_lang_hir::identity::LocalId, super::CheckedBinding>,
+        type_effects: crate::final_analysis::type_seal::PublicationTypeEffects<'_, '_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let mut content_traversal = ContentSealTraversal::default();
+        let topology = Arc::clone(&self.topology);
+        let mut content_traversal = ContentSealTraversal::new(
+            crate::final_analysis::type_seal::PublicationTypes::new(
+                checked_callables,
+                &topology,
+                type_effects,
+            ),
+            bindings,
+        );
         let dialogue_applications = self
             .facts
             .expressions()
@@ -781,7 +809,7 @@ impl Analyzer<'_, '_, '_> {
         coordinates: &SemanticCoordinateIndex<'_, '_>,
         structural_edges: &super::super::match_edges::CheckedStructuralEdgeDraft,
         checked_callables: &crate::callable::CheckedCallableCatalog,
-        traversal: &mut ContentSealTraversal,
+        traversal: &mut ContentSealTraversal<'_, '_>,
     ) -> Result<PreparedExpressionFact, FinalSemanticAnalysisError> {
         let (shell, target, application_patch, content, line_result, nested_path) =
             prepared.into_parts();
@@ -836,7 +864,7 @@ impl Analyzer<'_, '_, '_> {
         structural_edges: &super::super::match_edges::CheckedStructuralEdgeDraft,
         checked_callables: &crate::callable::CheckedCallableCatalog,
         surrounding_role: CheckedContentRole,
-        traversal: &mut ContentSealTraversal,
+        traversal: &mut ContentSealTraversal<'_, '_>,
     ) -> Result<(PreparedExpressionFact, CheckedContentInsertion), FinalSemanticAnalysisError> {
         let (owner, shell, content, emission) = prepared.into_parts();
         if content.is_some() != checked_content.is_some()
@@ -1300,7 +1328,7 @@ impl Analyzer<'_, '_, '_> {
         expected_family: CheckedContentOwnerFamily,
         admission: CheckedAttachedContentAdmission,
         fragment_coordinate: StableCheckedContentFragmentCoordinate,
-        traversal: &mut ContentSealTraversal,
+        traversal: &mut ContentSealTraversal<'_, '_>,
     ) -> Result<CheckedRichTextReport, FinalSemanticAnalysisError> {
         let (content, diagnostics, effect_plan) = prepared.into_parts();
         let (content_id, tokens, diagnostics_complete) = content.into_parts();
@@ -1487,6 +1515,7 @@ impl Analyzer<'_, '_, '_> {
                     coordinates,
                     structural_edges,
                     checked_callables,
+                    traversal,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1517,7 +1546,7 @@ impl Analyzer<'_, '_, '_> {
         structural_edges: &super::super::match_edges::CheckedStructuralEdgeDraft,
         checked_callables: &crate::callable::CheckedCallableCatalog,
         surrounding_role: CheckedContentRole,
-        traversal: &mut ContentSealTraversal,
+        traversal: &mut ContentSealTraversal<'_, '_>,
     ) -> Result<CheckedDialogueToken, FinalSemanticAnalysisError> {
         if reference.node().content() != parent
             || reference.expression().module() != parent.owner().module()
@@ -1595,6 +1624,7 @@ impl Analyzer<'_, '_, '_> {
         coordinates: &SemanticCoordinateIndex<'_, '_>,
         structural_edges: &super::super::match_edges::CheckedStructuralEdgeDraft,
         checked_callables: &crate::callable::CheckedCallableCatalog,
+        traversal: &mut ContentSealTraversal<'_, '_>,
     ) -> Result<CheckedDialogueEffectSite, FinalSemanticAnalysisError> {
         let (id, trigger, root, prepared_operation) = site.into_parts();
         let (operation, effects) = match prepared_operation {
@@ -1672,7 +1702,7 @@ impl Analyzer<'_, '_, '_> {
             }
         };
         let captures =
-            self.checked_dialogue_effect_captures(root, coordinates, structural_edges)?;
+            self.checked_dialogue_effect_captures(root, coordinates, structural_edges, traversal)?;
         Ok(CheckedDialogueEffectSite::new(
             id,
             trigger,
@@ -1699,11 +1729,15 @@ impl Analyzer<'_, '_, '_> {
         root: ExprId,
         coordinates: &SemanticCoordinateIndex<'_, '_>,
         structural_edges: &super::super::match_edges::CheckedStructuralEdgeDraft,
+        traversal: &mut ContentSealTraversal<'_, '_>,
     ) -> Result<Box<[CheckedExecutableCapture]>, FinalSemanticAnalysisError> {
+        let scope = traversal.types.source(root)?.scope().clone();
+        let bindings = traversal.bindings;
         super::super::free_capture::collect_checked_free_locals(
             root,
             coordinates,
             structural_edges,
+            scope,
             |owner| {
                 let checked = self
                     .facts
@@ -1713,7 +1747,7 @@ impl Analyzer<'_, '_, '_> {
                 super::super::free_capture::CheckedCaptureExpression::from_prepared(
                     owner,
                     checked,
-                    |local| self.facts.locals().get(&local).cloned(),
+                    |local| self.facts.locals().get(&local),
                     |child| {
                         self.facts
                             .expressions()
@@ -1725,9 +1759,10 @@ impl Analyzer<'_, '_, '_> {
                         .and_then(|module| module.expression_uses().row(owner))
                         .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
                         .capture_access(),
-                )
+                )?
+                .seal_types(&mut traversal.types)
             },
-            |local| self.facts.locals().get(&local).cloned(),
+            |local| bindings.get(&local).map(|binding| binding.ty().clone()),
         )
     }
 

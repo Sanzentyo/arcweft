@@ -741,6 +741,7 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
                     *expression,
                     self.coordinates,
                     self.structural_edges,
+                    crate::types::GenericScope::default(),
                     |child| {
                         let checked = expressions
                             .get(&child)

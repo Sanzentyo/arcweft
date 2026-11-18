@@ -15,10 +15,13 @@ use arcweft_lang_hir::{
     project::HirProjectEvaluationTopology,
 };
 
-use crate::effects::EffectSet;
 use crate::semantic_coordinate::{CheckedSemanticPath, SemanticCoordinateIndex};
+use crate::types::PreparedEffects;
 
-use super::prepared::{PreparedImplicitCallable, PreparedTry, PreparedTryBoundary};
+use super::prepared::{
+    PreparedImplicitCallable, PreparedResolvedExpression, PreparedTry, PreparedTryBoundary,
+};
+use super::type_seal::PublicationTypes;
 use super::{
     CheckedCallableDeclarationBoundary, CheckedExpression, CheckedExpressionBoundary,
     CheckedExpressionResolution, CheckedFunctionSiteBoundary, CheckedImplicitCallable,
@@ -38,11 +41,15 @@ use super::{
 pub(super) fn seal(
     topology: Arc<HirProjectEvaluationTopology>,
     expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
-    local_types: &BTreeMap<LocalId, TypeKind>,
+    locals: (
+        &BTreeMap<LocalId, TypeKind<PreparedEffects>>,
+        &BTreeMap<LocalId, super::CheckedBinding>,
+    ),
     pending_capture_uses: &BTreeMap<ExprId, Box<[(super::CheckedLocalUseSite, LocalId)]>>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
     structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
     checked_callables: &crate::callable::CheckedCallableCatalog,
+    types: &mut PublicationTypes<'_, '_>,
 ) -> Result<BTreeMap<ExprId, PreparedExpressionFact>, FinalSemanticAnalysisError> {
     let owners = expressions
         .iter()
@@ -140,7 +147,7 @@ pub(super) fn seal(
             }
         }
     }
-    let (pipes, pipe_replacements) = seal_pipe_rows(expressions, &pipe_rows, coordinates)?;
+    let (pipes, pipe_replacements) = seal_pipe_rows(expressions, &pipe_rows, coordinates, types)?;
     replacements.extend(pipe_replacements);
     // Phase one issues body-independent callable identities from one named
     // seed per owner.  Phase two consumes those same seeds and closes bodies
@@ -155,20 +162,19 @@ pub(super) fn seal(
         let PreparedOwnerBoundResolution::ImplicitCallable(callable) = prepared.resolution() else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
-        let (_, ty, _) = prepared_shell_parts(prepared.shell(), owner)?;
-        let function_type = ty.semantic_identity_digest()?;
         let seed = prepare_callable_seed(
             (&topology, structural_edges),
             owner,
-            function_type,
+            prepared.shell(),
             callable,
             pending_capture_uses
                 .get(&owner)
                 .map(Box::as_ref)
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
             expressions,
-            local_types,
+            locals,
             coordinates,
+            types,
         )?;
         let evidence = seed.issue_identity(&topology)?;
         let identity = evidence.identity();
@@ -190,7 +196,7 @@ pub(super) fn seal(
         let Some(PreparedExpressionFact::OwnerBound(prepared)) = expressions.get(&owner) else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
-        let (shell, _ty, effects) = prepared_shell_parts(prepared.shell(), owner)?;
+        let shell = prepared.shell().clone();
         if let Some(body) = seed.body.nominal_expression() {
             replacements.insert(
                 owner,
@@ -206,7 +212,6 @@ pub(super) fn seal(
             continue;
         }
         let checked = seal_callable_seed(
-            &topology,
             seed,
             evidence.clone(),
             expressions,
@@ -215,14 +220,12 @@ pub(super) fn seal(
             checked_callables,
             coordinates,
             structural_edges,
+            types,
         )?;
-        let (value, _) = shell
+        let (value, effects) = shell
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if value.source_type().semantic_identity_digest()? != seed.function_type {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
-        let mut published = CheckedExpression::typed_value(
+        let mut published = PreparedResolvedExpression::typed_value(
             value,
             effects,
             CheckedExpressionResolution::ImplicitCallable(Box::new(checked)),
@@ -254,14 +257,16 @@ pub(super) fn seal(
             structural_edges,
             checked_callables,
             coordinates,
+            types,
         )?;
-        let (shell, _, effects) = prepared_shell_parts(prepared.shell(), owner)?;
-        let (value, _) = shell
+        let (value, effects) = prepared
+            .shell()
+            .clone()
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         replacements.insert(
             owner,
-            PreparedExpressionFact::Resolved(CheckedExpression::typed_value(
+            PreparedExpressionFact::Resolved(PreparedResolvedExpression::typed_value(
                 value,
                 effects,
                 CheckedExpressionResolution::Try(checked),
@@ -280,30 +285,33 @@ pub(super) fn seal(
         let callable = callable_evidence
             .get(&parameter.callable())
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if parameter.parameter() != callable.parameter() {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
         let occurrence = callable
             .parameter_occurrences()
             .iter()
             .find(|occurrence| occurrence.lookup_expression() == owner)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        let (shell, ty, effects) = prepared_shell_parts(prepared.shell(), owner)?;
-        let (value, _) = shell
+        let (value, effects) = prepared
+            .shell()
+            .clone()
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if ty.semantic_identity_digest()? != callable.parameter().semantic_identity_digest()? {
+        let mut source = types.source(owner)?;
+        let parameter_type = source.canonical(parameter.parameter())?;
+        if source.canonical(value.source_type())? != parameter_type
+            || &parameter_type != callable.parameter()
+        {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
+        let parameter_type = source.digest(&parameter_type)?;
         replacements.insert(
             owner,
-            PreparedExpressionFact::Resolved(CheckedExpression::typed_value(
+            PreparedExpressionFact::Resolved(PreparedResolvedExpression::typed_value(
                 value,
                 effects,
                 CheckedExpressionResolution::ImplicitParameter(CheckedImplicitParameter::new(
                     callable.identity(),
                     occurrence.ordinal(),
-                    parameter.parameter().semantic_identity_digest()?,
+                    parameter_type,
                 )),
             )),
         );
@@ -338,11 +346,14 @@ pub(super) fn seal(
             .iter()
             .find(|occurrence| occurrence.lookup_expression() == owner)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        let (shell, value_type, effects) = prepared_shell_parts(prepared.shell(), owner)?;
-        let (value, _) = shell
+        let (value, effects) = prepared
+            .shell()
+            .clone()
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        let value_type = value_type.semantic_identity_digest()?;
+        let mut source = types.source(owner)?;
+        let value_type = source.canonical(value.source_type())?;
+        let value_type = source.digest(&value_type)?;
         if value_type != pipe.value_type()
             || usize::try_from(occurrence.ordinal())
                 .ok()
@@ -352,7 +363,7 @@ pub(super) fn seal(
         }
         replacements.insert(
             owner,
-            PreparedExpressionFact::Resolved(CheckedExpression::typed_value(
+            PreparedExpressionFact::Resolved(PreparedResolvedExpression::typed_value(
                 value,
                 effects,
                 CheckedExpressionResolution::PipeLeft(CheckedPipeLeft::new(
@@ -369,21 +380,11 @@ pub(super) fn seal(
     Ok(replacements)
 }
 
-fn prepared_shell_parts(
-    shell: &PreparedExpressionShell,
-    owner: ExprId,
-) -> Result<(PreparedExpressionShell, TypeKind, EffectSet), FinalSemanticAnalysisError> {
-    let ty = shell
-        .source_value_type()
-        .cloned()
-        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-    Ok((shell.clone(), ty, shell.effects().clone()))
-}
-
 fn seal_pipe_rows(
     expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
     pipe_rows: &BTreeMap<ExprId, super::prepared::PreparedPipe>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
+    types: &mut PublicationTypes<'_, '_>,
 ) -> Result<
     (
         BTreeMap<ExprId, CheckedPipe>,
@@ -413,11 +414,23 @@ fn seal_pipe_rows(
                 ))
             })
             .collect::<Result<Vec<_>, FinalSemanticAnalysisError>>()?;
+        let mut source = types.source(pipe.lookup_left())?;
+        let left_type = source.canonical(pipe.left_value_type())?;
+        let actual = expressions
+            .get(&pipe.lookup_left())
+            .and_then(PreparedExpressionFact::value_type)
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner: pipe.lookup_left(),
+            })?;
+        if source.canonical(actual)? != left_type {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let left_type = source.digest(&left_type)?;
         let checked = CheckedPipe::seal_owner_bound(
             pipe.lookup_left(),
             pipe.lookup_right(),
             coordinate,
-            pipe.left_value_type().semantic_identity_digest()?,
+            left_type,
             occurrences,
         )
         .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
@@ -433,13 +446,14 @@ fn seal_pipe_rows(
             let Some(PreparedExpressionFact::OwnerBound(prepared)) = expressions.get(owner) else {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             };
-            let (shell, _, effects) = prepared_shell_parts(prepared.shell(), *owner)?;
-            let (value, _) = shell
+            let (value, effects) = prepared
+                .shell()
+                .clone()
                 .into_value_parts()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             replacements.insert(
                 *owner,
-                PreparedExpressionFact::Resolved(CheckedExpression::typed_value(
+                PreparedExpressionFact::Resolved(PreparedResolvedExpression::typed_value(
                     value,
                     effects,
                     CheckedExpressionResolution::Pipe(checked),
@@ -458,6 +472,7 @@ fn seal_try(
     structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
     checked_callables: &crate::callable::CheckedCallableCatalog,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
+    types: &mut PublicationTypes<'_, '_>,
 ) -> Result<CheckedTry, FinalSemanticAnalysisError> {
     let carrier = prepared.carrier().clone();
     let operand_id = structural_edges
@@ -467,13 +482,14 @@ fn seal_try(
         .get(&operand_id)
         .and_then(PreparedExpressionFact::value_type)
         .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: operand_id })?;
+    let operand_type = types.source(operand_id)?.canonical(operand_type)?;
     let carrier_type = carrier.as_type();
-    if operand_type != &carrier_type {
+    if operand_type != carrier_type {
         return Err(FinalSemanticAnalysisError::TryOperandAuthority {
             violation: CheckedTryOperandAuthorityViolation::OperandTypeMismatch {
                 owner,
                 expected: Box::new(carrier_type),
-                actual: Box::new(operand_type.clone()),
+                actual: Box::new(operand_type),
             },
         });
     }
@@ -481,7 +497,7 @@ fn seal_try(
         coordinates
             .expression_evidence(operand_id)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
-        operand_type.clone(),
+        operand_type,
     );
     let (boundary_type, boundary_owner) = match prepared.boundary() {
         PreparedTryBoundary::Infallible => {
@@ -516,14 +532,15 @@ fn seal_try(
             lookup_owner,
             boundary_type,
         } => {
-            if !carrier.accepts_boundary_type(boundary_type) {
-                return Err(try_boundary_mismatch(owner, &carrier, Some(boundary_type)));
+            let boundary_type = types.source(*lookup_owner)?.canonical(boundary_type)?;
+            if !carrier.accepts_boundary_type(&boundary_type) {
+                return Err(try_boundary_mismatch(owner, &carrier, Some(&boundary_type)));
             }
             let evidence = coordinates
                 .expression_evidence(*lookup_owner)
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
-                boundary_type.clone(),
+                boundary_type,
                 CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::FunctionSite(
                     CheckedFunctionSiteBoundary::Explicit(
                         CheckedExpressionBoundary::from_evidence(evidence),
@@ -535,14 +552,15 @@ fn seal_try(
             lookup_owner,
             boundary_type,
         } => {
-            if !carrier.accepts_boundary_type(boundary_type) {
-                return Err(try_boundary_mismatch(owner, &carrier, Some(boundary_type)));
+            let boundary_type = types.source(*lookup_owner)?.canonical(boundary_type)?;
+            if !carrier.accepts_boundary_type(&boundary_type) {
+                return Err(try_boundary_mismatch(owner, &carrier, Some(&boundary_type)));
             }
             let evidence = coordinates
                 .expression_evidence(*lookup_owner)
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
-                boundary_type.clone(),
+                boundary_type,
                 CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::Thread(
                     CheckedExpressionBoundary::from_evidence(evidence),
                 )),
@@ -552,8 +570,9 @@ fn seal_try(
             lookup_owner,
             boundary_type,
         } => {
-            if !carrier.accepts_boundary_type(boundary_type) {
-                return Err(try_boundary_mismatch(owner, &carrier, Some(boundary_type)));
+            let boundary_type = types.source(*lookup_owner)?.canonical(boundary_type)?;
+            if !carrier.accepts_boundary_type(&boundary_type) {
+                return Err(try_boundary_mismatch(owner, &carrier, Some(&boundary_type)));
             }
             let callable = callable_identities
                 .get(lookup_owner)
@@ -563,7 +582,7 @@ fn seal_try(
                 .expression_evidence(*lookup_owner)
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
-                boundary_type.clone(),
+                boundary_type,
                 CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::FunctionSite(
                     CheckedFunctionSiteBoundary::Implicit {
                         site: CheckedExpressionBoundary::from_evidence(evidence),
@@ -576,19 +595,20 @@ fn seal_try(
             declaration,
             boundary_type,
         } => {
+            let boundary_type = types.source(owner)?.canonical(boundary_type)?;
             let facts = checked_callables
                 .project_callable(declaration)
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            if facts.signature().value_type() != Some(boundary_type)
-                || !carrier.accepts_boundary_type(boundary_type)
+            if facts.signature().value_type() != Some(&boundary_type)
+                || !carrier.accepts_boundary_type(&boundary_type)
             {
-                return Err(try_boundary_mismatch(owner, &carrier, Some(boundary_type)));
+                return Err(try_boundary_mismatch(owner, &carrier, Some(&boundary_type)));
             }
             let accepted = coordinates
                 .accepted_declaration(declaration)
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
-                boundary_type.clone(),
+                boundary_type,
                 CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::Declaration(
                     CheckedCallableDeclarationBoundary::new(declaration.clone(), accepted),
                 )),
@@ -617,7 +637,6 @@ fn try_boundary_mismatch(
 }
 
 fn seal_owner_bound_body(
-    topology: &Arc<HirProjectEvaluationTopology>,
     owner: ExprId,
     prepared: &super::PreparedOwnerBoundExpression,
     expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
@@ -626,6 +645,7 @@ fn seal_owner_bound_body(
     checked_callables: &crate::callable::CheckedCallableCatalog,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
     structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
+    types: &mut PublicationTypes<'_, '_>,
 ) -> Result<CheckedExpressionResolution, FinalSemanticAnalysisError> {
     match prepared.resolution() {
         PreparedOwnerBoundResolution::Try(tried) => Ok(CheckedExpressionResolution::Try(seal_try(
@@ -636,6 +656,7 @@ fn seal_owner_bound_body(
             structural_edges,
             checked_callables,
             coordinates,
+            types,
         )?)),
         PreparedOwnerBoundResolution::ImplicitParameter(parameter) => {
             let callable_identity = callable_identities
@@ -656,11 +677,25 @@ fn seal_owner_bound_body(
                 .position(|expression| *expression == owner)
                 .and_then(|ordinal| u32::try_from(ordinal).ok())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            let mut source = types.source(owner)?;
+            let parameter_type = source.canonical(parameter.parameter())?;
+            let value = prepared
+                .shell()
+                .source_value_type()
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+            if source.canonical(value)? != parameter_type
+                || types
+                    .source(parameter.callable())?
+                    .canonical(callable.parameter())?
+                    != parameter_type
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
             Ok(CheckedExpressionResolution::ImplicitParameter(
                 super::CheckedImplicitParameter::new(
                     callable_identity,
                     occurrence_ordinal,
-                    parameter.parameter().semantic_identity_digest()?,
+                    types.source(owner)?.digest(&parameter_type)?,
                 ),
             ))
         }
@@ -681,9 +716,12 @@ fn seal_owner_bound_body(
                 .find(|occurrence| occurrence.lookup_expression() == owner)
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             let value_type = prepared
-                .value_type()
-                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?
-                .semantic_identity_digest()?;
+                .shell()
+                .source_value_type()
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+            let mut source = types.source(owner)?;
+            let value_type = source.canonical(value_type)?;
+            let value_type = source.digest(&value_type)?;
             if value_type != pipe.value_type() {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
@@ -738,13 +776,36 @@ fn prepare_callable_seed(
         &super::match_edges::CheckedStructuralEdgeDraft,
     ),
     owner: ExprId,
-    function_type: crate::types::SemanticTypeDigest,
+    shell: &PreparedExpressionShell,
     prepared: &PreparedImplicitCallable,
     pending_uses: &[(super::CheckedLocalUseSite, LocalId)],
     expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
-    local_types: &BTreeMap<LocalId, TypeKind>,
+    (local_types, checked_bindings): (
+        &BTreeMap<LocalId, TypeKind<PreparedEffects>>,
+        &BTreeMap<LocalId, super::CheckedBinding>,
+    ),
     coordinates: &SemanticCoordinateIndex<'_, '_>,
+    types: &mut PublicationTypes<'_, '_>,
 ) -> Result<PreparedImplicitCallableSealSeed, FinalSemanticAnalysisError> {
+    let mut source = types.source(owner)?;
+    let function = shell
+        .source_value_type()
+        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+    let function = source.canonical(function)?;
+    let parameter = source.canonical(prepared.parameter())?;
+    let result = source.canonical(prepared.result())?;
+    let TypeKind::Function {
+        params,
+        return_type,
+        ..
+    } = &function
+    else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    if params.as_slice() != std::slice::from_ref(&parameter) || return_type.as_ref() != &result {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    let function_type = source.digest(&function)?;
     let owner_coordinate = coordinates
         .expression(owner)
         .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
@@ -793,7 +854,7 @@ fn prepare_callable_seed(
             super::free_capture::CheckedCaptureExpression::from_prepared(
                 expression,
                 fact,
-                |local| local_types.get(&local).cloned(),
+                |local| local_types.get(&local),
                 |child| {
                     expressions
                         .get(&child)
@@ -827,71 +888,56 @@ fn prepare_callable_seed(
     let mut captures = Vec::new();
     let mut capture_indices = BTreeMap::<LocalId, usize>::new();
     for (ordinal, input) in uses.into_iter().enumerate() {
+        let input = input.seal(types)?;
         let site = input.site();
         let local = input.local();
         let access = input.access();
         let ordinal =
             u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        let value_type = local_types
+        let binding = checked_bindings
             .get(&local)
             .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
+        let value_type = types.source(local)?.digest(binding.ty())?;
         let coordinate = coordinates
             .local_input(site, local)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if value_type.semantic_identity_digest()? != input.value_type() {
+        if value_type != input.value_type() {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         let origin = coordinates
             .binding(local)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        if !input.admits_origin(&origin) {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
         let occurrence = CheckedImplicitCaptureOccurrence::new(
             site,
             local,
             coordinate,
             origin.clone(),
-            value_type.semantic_identity_digest()?,
+            value_type,
             access,
             ordinal,
         );
         capture_occurrences.push(occurrence);
         if let Some(index) = capture_indices.get(&local).copied() {
             if access == arcweft_lang_hir::scope::CaptureAccess::Reassign {
-                captures[index] = CheckedImplicitCapture::new(
-                    local,
-                    origin,
-                    value_type.semantic_identity_digest()?,
-                    access,
-                );
+                captures[index] = CheckedImplicitCapture::new(local, origin, value_type, access);
             }
         } else {
             capture_indices.insert(local, captures.len());
             captures.push(CheckedImplicitCapture::new(
-                local,
-                origin,
-                value_type.semantic_identity_digest()?,
-                access,
+                local, origin, value_type, access,
             ));
         }
     }
 
-    let TypeKind::Function {
-        params,
-        return_type,
-        ..
-    } = prepared_function_type(prepared)
-    else {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    };
-    if params.len() != 1 || params[0] != *prepared.parameter() || *return_type != *prepared.result()
-    {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    }
     Ok(PreparedImplicitCallableSealSeed {
         owner,
         function_type,
         coordinate: owner_coordinate,
-        parameter: prepared.parameter().clone(),
-        result: prepared.result().clone(),
+        parameter,
+        result,
         parameter_occurrences: parameter_occurrences.into_boxed_slice(),
         capture_occurrences: capture_occurrences.into_boxed_slice(),
         captures: captures.into_boxed_slice(),
@@ -900,7 +946,6 @@ fn prepare_callable_seed(
 }
 
 fn seal_callable_seed(
-    topology: &Arc<HirProjectEvaluationTopology>,
     seed: &PreparedImplicitCallableSealSeed,
     evidence: CheckedImplicitCallableIdentityEvidence,
     expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
@@ -909,12 +954,15 @@ fn seal_callable_seed(
     checked_callables: &crate::callable::CheckedCallableCatalog,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
     structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
+    types: &mut PublicationTypes<'_, '_>,
 ) -> Result<CheckedImplicitCallable, FinalSemanticAnalysisError> {
     let body = match seed.body.expression() {
-        PreparedExpressionFact::Resolved(body) => CheckedImplicitCallableBody::Plain(body.clone()),
+        PreparedExpressionFact::Resolved(body) => CheckedImplicitCallableBody::Plain(
+            body.clone()
+                .seal(seed.owner, &mut types.source(seed.owner)?)?,
+        ),
         PreparedExpressionFact::OwnerBound(owner_bound) => {
             let resolution = seal_owner_bound_body(
-                topology,
                 seed.owner,
                 owner_bound,
                 expressions,
@@ -923,6 +971,7 @@ fn seal_callable_seed(
                 checked_callables,
                 coordinates,
                 structural_edges,
+                types,
             )?;
             match resolution {
                 CheckedExpressionResolution::Try(tried) => CheckedImplicitCallableBody::Try(tried),
@@ -931,8 +980,7 @@ fn seal_callable_seed(
                     let (value, effects) = owner_bound
                         .shell()
                         .clone()
-                        .into_value_parts()
-                        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                        .seal_value(seed.owner, &mut types.source(seed.owner)?)?;
                     CheckedImplicitCallableBody::Plain(CheckedExpression::typed_value(
                         value, effects, resolution,
                     ))
@@ -942,14 +990,4 @@ fn seal_callable_seed(
         _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
     };
     evidence.finalize(body).map_err(Into::into)
-}
-
-fn prepared_function_type(prepared: &PreparedImplicitCallable) -> TypeKind {
-    // The enclosing shell is checked by the caller.  Returning the function
-    // shape here keeps the body/type join in the same owner-bound phase.
-    TypeKind::function_with_effects(
-        [prepared.parameter().clone()],
-        prepared.result().clone(),
-        crate::effect_row::EffectRow::closed(prepared.body().expression().effects().clone()),
-    )
 }

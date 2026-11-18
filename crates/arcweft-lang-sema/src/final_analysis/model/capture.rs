@@ -185,6 +185,10 @@ impl CheckedImplicitCallableIdentityEvidence {
         self.identity
     }
 
+    pub(in crate::final_analysis) const fn captures(&self) -> &[CheckedImplicitCapture] {
+        &self.captures
+    }
+
     pub(in crate::final_analysis) const fn parameter(&self) -> &TypeKind {
         &self.parameter
     }
