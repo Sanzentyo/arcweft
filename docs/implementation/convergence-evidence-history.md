@@ -19160,3 +19160,17 @@ Source `a61f2061f7ab07eeb52081bd19f0245fb18e75cf`。変更の基点は `b949a25c
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。dev01はlibrary 59エラー、lib test 924 エラーで終了101。最終コンテンツを作る分岐で利用不可の準備済み結果の拒否を明記した。公開したdev02はlibrary 58エラー・23警告、lib test 923エラー・35警告で終了101。正規化した一次診断は942件から924件に減り、新規0件。付随コンテンツ側7件と実行効果側11件を解消した。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのテスト、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,502,961 bytesで、約300 GBを目安とする `cargo clean` は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-content-seal.raw.zip) は 24 entry、205033 bytes、SHA256 `389d7ae7f0f5da01bb5afd2c1e1b84213c7836ea4a9ea5f8aa06ee92b6ee15cf`。各entryの長さとSHA256を再照合した。更新前の履歴2988374 bytesのSHA256 `9d6ae6a0507ca06883d50750706c1902dc2fcd8ed88a081183c471cd99572043`をprefixとして保持した。
+
+
+<a id="prepared-line-output"></a>
+## 2026-11-18 — 台詞のoutを準備済みのまま呼出し結果に投影
+
+Source `5265849e8e31e96e6dcccbb92179f191b8a680af`。変更の基点は `335f30f17ed46c65735d4b8d994cd7c8fda43cf0`。比較元は `a61f2061f7ab07eeb52081bd19f0245fb18e75cf` の `prepared-content-seal.dev02-check.log`。公開したmainと15件のRust入力のblobを照合した。
+
+明示された行プランは、通常・マークのoutから得た準備済み型を既存の構造オペランドとして渡す。台詞の呼出し候補にはそのオペランドと結果に共通の宣言所有型パラメーターを置く。確定前の型を使って正準スキーマを組み立てる経路を削除した。行プランがなければUnitを使う。文脈が結果型を確定できる場合はその期待型をoutに渡す。親候補の未束縛パラメーターが残る場合は、元の値から推論して親候補側で照合する。入れ子の行プラン項目はソース順に走査する。取消時のoutは通常・マークの結果型に従う。公開時は各outの宛先と元の値を確かめ、最終作用関係で型を照合してから台詞を確定する。
+
+通常と取消から返すコールバックの作用を確定した後に、行プランのオペランド型と台詞結果が一致すること、取消の作用が異なる場合に拒否することを検査するSema回帰を追加した。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` でdev01からdev03まで実行した。jobs／profileの上書きはなし。3回とも終了101、library 48エラー・23警告、lib test 913エラー・35警告。正規化した一次診断は924件から914件に減少し、新規0件。削減した10件はいずれも行プランの型移行の箇所。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Sema回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,420,484 bytesで、約300 GBを目安とする `cargo clean` は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-line-output.raw.zip) は 30 entry、304675 bytes、SHA256 `4b069af4d2e44fec355387d69176c558cb6ada3d311d28512dc417688c695054`。各entryの長さとSHA256を再照合した。更新前の履歴2990904 bytesのSHA256 `82527fdf775efe02791edc6ad8c74fd5d248c9be3bd518c4680d43e5abf8e12b`をprefixとして保持した。
