@@ -19210,3 +19210,15 @@ Fx定義の既定値と字句スコープの定数式は、式の出典に結び
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行。jobs／profileの上書きはなし。終了101、library 16エラー・20警告、lib test 881エラー・32警告。正規化した一次診断は887件から882件に減り、新規0件。変更したRustファイルの一次診断は0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。FxとViewの実行テスト、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,108,160 bytesで、約300 GBを目安とする `cargo clean` の条件には達していなかった。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-view-fx-values.raw.zip) は 18 entry、104969 bytes、SHA256 `d5ea647e4213e05232b363098719e7195fb24013cbeb4a80a62ae359710a47d6`。各entryの長さとSHA256を再照合した。更新前の履歴2998572 bytesのSHA256 `d1460b00dc5b2758a94fcf04d68d2dea388ae440bcd67cfd971ab288ceeecbb5`をprefixとして保持した。
+
+
+<a id="prepared-capture-storage"></a>
+## 2026-11-18 — 捕捉の格納型と選択済み呼出しを準備済み型へ接続
+
+Source `063caf7208dbe6dc7f9b48f8e1bbf0e06d5a7d9a`。変更の基点は `c7ea03ac134594420433e61f2c96ec77e495819c`。比較元は `511022c1fb9f0d60d6df79acf23f9c215621105c` の `prepared-view-fx-values.dev01-check.log`。公開したmainと7件のRust入力のblobを照合した。
+
+receiverと捕捉元の格納判定は準備済み型を参照する。格納に必要な型パラメーターと配列長だけを既存の呼出し投影で置き換え、関数の捕捉そのものは元の値をたどる。選ばれた呼出し引数の型は制約の確定結果から取得し、関数値の特殊化には同じ呼出しのcallee観測を使う。宣言値の元の型は原作用関係で観測し、特殊化証拠の型と照合する。enumの格納位置は宣言のコンストラクタとなるcaseに結び付ける。レコードパターンの格納位置はパターン検査と同じ型付きフィールド座標を参照し、その座標を得るために作用グラフへ項を追加しない。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` でdev01からdev03まで実行。jobs／profileの上書きはなし。dev01のlibraryは9エラー、dev02は7エラー。dev02で明示された、捕捉解析からレコードの完全な型準備を呼べない問題は、dev03の読取り専用座標照会で解消した。公開したdev03は終了101。libraryは6エラー・20警告、lib testは871エラー・32警告。正規化した一次診断は871件で前回比11件減、新規0件。7件のRust入力のSHA256を公開blobと照合した。 捕捉・レコードパターン実装の一次診断は0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。捕捉・特殊化・部分適用の実行テスト、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 773,997,379 bytesで、約300 GBを目安とする `cargo clean` の条件には達していなかった。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-capture-storage.raw.zip) は 30 entry、283730 bytes、SHA256 `43483be083ef5897303a9677e631701de30d3328cabf26305514865ecf64750e`。各entryの長さとSHA256を再照合した。更新前の履歴3000524 bytesのSHA256 `b4b2c685ed94ca5eb9d2429c44c0b7e5da649db8fe80f5deb0b228dd2d795f6e`をprefixとして保持した。
