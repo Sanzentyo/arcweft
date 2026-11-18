@@ -83,27 +83,15 @@ impl CheckedConstraintSourceOwner {
         control: &mut C,
     ) -> Result<crate::types::GenericDeclarationBinder, crate::types::TypeProjectionError<C::Error>>
     {
+        if let Some(signature) = self.signature() {
+            return signature.function_value_binder_with_control(control);
+        }
         control
             .check()
             .map_err(crate::types::TypeProjectionError::Control)?;
         control
             .visit_binding()
             .map_err(crate::types::TypeProjectionError::Control)?;
-        if let Some(signature) = self.signature() {
-            let inventory = signature.generic_inventory();
-            // Charge before constructing the declaration binder's vectors.
-            for count in [
-                inventory.types().len(),
-                inventory.consts().len(),
-                inventory.effects().len(),
-            ] {
-                for _ in 0..count {
-                    control
-                        .visit_binding()
-                        .map_err(crate::types::TypeProjectionError::Control)?;
-                }
-            }
-        }
         self.declaration_formals().map_err(Into::into)
     }
 

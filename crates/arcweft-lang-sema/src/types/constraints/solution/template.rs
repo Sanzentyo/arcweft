@@ -4,8 +4,8 @@ use crate::effect_row::{EffectPredicate, EffectRow};
 use crate::types::{
     ArrayLength, CanonicalEffects, GenericBinder, GenericConstReference, GenericDeclarationBinder,
     GenericEffectReference, GenericParameterKind, GenericScope, GenericScopeError,
-    GenericTypeReference, ScopedType, ScopedTypeView, TypeKind, TypeProjectionControl,
-    TypeProjectionError, TypeProjectionNodeKind,
+    GenericTypeReference, ScopedType, ScopedTypeView, TypeEffectDomain, TypeKind,
+    TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind,
 };
 
 use crate::types::projection_control::{EffectProjectionControl, UnmeteredTypeProjection};
@@ -15,6 +15,7 @@ use crate::types::structural_projection::{ScopedTypeProjection, child_depth};
 use super::{TypeConstraintSolution, TypeInstantiationError};
 
 mod localized;
+mod prepared;
 pub(crate) use localized::{LocalizedTypeTemplate, TypeTemplateLocalizer};
 
 impl EffectRow {
@@ -352,6 +353,33 @@ fn scoped_pair(
 }
 
 impl GenericDeclarationBinder {
+    fn project_type_at<D: TypeEffectDomain, C: TypeProjectionControl>(
+        &self,
+        reference: &GenericTypeReference,
+        source: &GenericScope,
+        target: &GenericScope,
+        control: &mut C,
+    ) -> Result<TypeKind<D>, TypeProjectionError<C::Error>> {
+        control
+            .visit_binding()
+            .map_err(TypeProjectionError::Control)?;
+        if let Some(key) = reference.template_key(self.template_scope(), source)?
+            && let Some(slot) = self
+                .type_parameters()
+                .iter()
+                .position(|candidate| candidate == &key)
+        {
+            let slot = u16::try_from(slot).map_err(|_| GenericScopeError::BinderArityOverflow {
+                kind: GenericParameterKind::Type,
+                count: self.type_parameters().len(),
+            })?;
+            return Ok(TypeKind::GenericParam(
+                target.bound_type(depth_difference(target, self.scope())?, slot)?,
+            ));
+        }
+        keep_type(reference, source).map_err(Into::into)
+    }
+
     pub(crate) fn project_length_under<C: TypeProjectionControl>(
         &self,
         length: &ArrayLength,
@@ -412,7 +440,6 @@ impl GenericDeclarationBinder {
         under: &GenericScope,
         control: &mut C,
     ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
-        let arity = |kind, count| GenericScopeError::BinderArityOverflow { kind, count };
         let (source_scope, target_scope) = scoped_pair(self.template_scope(), self.scope(), under);
         let value = map_term_with_control(
             ty,
@@ -421,23 +448,7 @@ impl GenericDeclarationBinder {
             1,
             control,
             &|reference, source, target, _, control| {
-                control
-                    .visit_binding()
-                    .map_err(TypeProjectionError::Control)?;
-                if let Some(key) = reference.template_key(self.template_scope(), source)?
-                    && let Some(slot) = self
-                        .type_parameters()
-                        .iter()
-                        .position(|candidate| candidate == &key)
-                {
-                    return Ok(TypeKind::GenericParam(target.bound_type(
-                        depth_difference(target, self.scope())?,
-                        u16::try_from(slot).map_err(|_| {
-                            arity(GenericParameterKind::Type, self.type_parameters().len())
-                        })?,
-                    )?));
-                }
-                keep_type(reference, source).map_err(Into::into)
+                self.project_type_at(reference, source, target, control)
             },
             &|length, source, target, _, control| {
                 self.project_length_at(length, source, target, control)
@@ -468,28 +479,37 @@ impl GenericDeclarationBinder {
         control: &mut C,
     ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
         map_effects_with_control(row, depth, control, &|reference, control| {
-            control
-                .visit_binding()
-                .map_err(TypeProjectionError::Control)?;
-            let reference = if let Some(key) =
-                reference.template_key(self.template_scope(), source)?
-                && let Some(slot) = self
-                    .effect_parameters()
-                    .iter()
-                    .position(|candidate| candidate == &key)
-            {
-                target.bound_effect(
-                    depth_difference(target, self.scope())?,
-                    u32::try_from(slot).map_err(|_| GenericScopeError::BinderArityOverflow {
-                        kind: GenericParameterKind::Effect,
-                        count: self.effect_parameters().len(),
-                    })?,
-                )?
-            } else {
-                keep_effect(reference, source)?
-            };
-            Ok(EffectRow::open(crate::effects::EffectSet::new(), reference))
+            self.project_effect_at(reference, source, target, control)
         })
+    }
+
+    fn project_effect_at<C: TypeProjectionControl>(
+        &self,
+        reference: &GenericEffectReference,
+        source: &GenericScope,
+        target: &GenericScope,
+        control: &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>> {
+        control
+            .visit_binding()
+            .map_err(TypeProjectionError::Control)?;
+        let reference = if let Some(key) = reference.template_key(self.template_scope(), source)?
+            && let Some(slot) = self
+                .effect_parameters()
+                .iter()
+                .position(|candidate| candidate == &key)
+        {
+            target.bound_effect(
+                depth_difference(target, self.scope())?,
+                u32::try_from(slot).map_err(|_| GenericScopeError::BinderArityOverflow {
+                    kind: GenericParameterKind::Effect,
+                    count: self.effect_parameters().len(),
+                })?,
+            )?
+        } else {
+            keep_effect(reference, source)?
+        };
+        Ok(EffectRow::open(crate::effects::EffectSet::new(), reference))
     }
 
     pub(crate) fn quantify_function_with_control<C: TypeProjectionControl>(
@@ -873,10 +893,10 @@ fn lift_length(
     }
 }
 
-fn keep_type(
+fn keep_type<D: TypeEffectDomain>(
     reference: &GenericTypeReference,
     scope: &GenericScope,
-) -> Result<TypeKind, TypeInstantiationError> {
+) -> Result<TypeKind<D>, TypeInstantiationError> {
     match reference {
         GenericTypeReference::Free(_) => Ok(TypeKind::GenericParam(reference.clone())),
         GenericTypeReference::Bound(parameter) => Ok(TypeKind::GenericParam(

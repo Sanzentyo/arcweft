@@ -90,7 +90,7 @@ impl TypeKind {
 
 /// Retains the original control failure separately from malformed graph or
 /// effect constraints. Scope/instantiation errors keep their projection kind.
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum PreparedTypeEffectProjectionFailure<E: std::error::Error + 'static> {
     #[error("prepared type projection aborted")]
     Control(#[source] E),

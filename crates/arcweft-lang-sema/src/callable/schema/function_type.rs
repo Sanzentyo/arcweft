@@ -479,6 +479,29 @@ impl CallableSignatureSchema {
         )
     }
 
+    pub(crate) fn function_value_binder_with_control<C: TypeProjectionControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<crate::types::GenericDeclarationBinder, TypeProjectionError<C::Error>> {
+        control.check().map_err(TypeProjectionError::Control)?;
+        control
+            .visit_binding()
+            .map_err(TypeProjectionError::Control)?;
+        let inventory = self.generic_inventory();
+        for count in [
+            inventory.types().len(),
+            inventory.consts().len(),
+            inventory.effects().len(),
+        ] {
+            for _ in 0..count {
+                control
+                    .visit_binding()
+                    .map_err(TypeProjectionError::Control)?;
+            }
+        }
+        self.function_value_binder().map_err(Into::into)
+    }
+
     pub(crate) fn parameter_type(
         &self,
         coordinate: CallableParameterCoordinate,

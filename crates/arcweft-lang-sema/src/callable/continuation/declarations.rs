@@ -27,6 +27,11 @@ pub(crate) enum PreparedCallableValueTypeFailure<E: std::error::Error + 'static>
             crate::callable::schema::PreparedCallableFunctionTypeFailure<E>,
         >,
     ),
+    #[error(transparent)]
+    Binding(
+        #[from]
+        crate::types::TypeProjectionError<crate::types::PreparedTypeEffectProjectionFailure<E>>,
+    ),
 }
 
 /// Value results enter inference with their live effect terms. Content has no
@@ -319,7 +324,7 @@ impl<P, U> PreparedCallGraph<P, U> {
     }
 
     pub(crate) fn prepare_declaration_value<C>(
-        &self,
+        &mut self,
         builder: &CheckedCallableCatalogBuilder,
         candidate: &PreparedResolvedCallable,
         control: &mut C,
@@ -339,16 +344,32 @@ impl<P, U> PreparedCallGraph<P, U> {
                 .charge(DecisionWork::Visit)
                 .map_err(PreparedEffectFailure::Control)?;
         }
-        self.declarations
-            .as_ref()
-            .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)?
-            .prepare_callable_arrow(
-                builder,
-                candidate,
-                CallableParameterCoordinate::group_start(candidate.base_call_group()),
-                terminal,
-                control,
-            )
+        let binder = candidate
+            .schema()
+            .function_value_binder_with_control(control)
+            .map_err(|error| {
+                use crate::types::{PreparedTypeEffectProjectionFailure, TypeProjectionError};
+                match error {
+                    TypeProjectionError::Instantiation(error) => {
+                        TypeProjectionError::Instantiation(error)
+                    }
+                    TypeProjectionError::Control(error) => TypeProjectionError::Control(
+                        PreparedTypeEffectProjectionFailure::Control(error),
+                    ),
+                }
+            })?;
+        let declarations = self
+            .declarations
+            .as_mut()
+            .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)?;
+        let value = declarations.prepare_callable_arrow(
+            builder,
+            candidate,
+            CallableParameterCoordinate::group_start(candidate.base_call_group()),
+            terminal,
+            control,
+        )?;
+        Ok(binder.quantify_prepared_function(value, &mut declarations.graph, control)?)
     }
 
     pub(crate) fn prepare_application_result<C>(
