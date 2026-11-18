@@ -293,9 +293,7 @@ impl TypeConstraintSolution {
             graph,
             context,
         )?;
-        if closure == ConstraintClosurePolicy::ProjectionFuture {
-            self.context.validate_reified_future_type(&value, context)?;
-        } else {
+        if closure != ConstraintClosurePolicy::ProjectionFuture {
             validate_selected_call_self(value.value(), context)?;
         }
         Ok(super::KeyedConstraintProjection::new(

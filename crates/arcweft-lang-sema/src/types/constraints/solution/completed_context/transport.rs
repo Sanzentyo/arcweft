@@ -6,8 +6,12 @@ use crate::types::constraints::{
 };
 use crate::{
     effect_row::{EffectPredicate, EffectRow},
-    effects::EffectSet,
-    types::{GenericScopeError, TypeProjectionError},
+    types::{
+        CanonicalEffects, GenericScopeError, TypeProjectionControl, TypeProjectionError,
+        TypeProjectionNodeKind,
+        projection_control::{EffectProjectionControl, visit_effect_predicate, visit_effect_row},
+        structural_projection::{ScopedTypeProjection, child_depth},
+    },
 };
 use std::{cell::RefCell, collections::BTreeSet};
 
@@ -235,108 +239,9 @@ impl CompletedGenericContext {
         )?
         .map_predicate(predicate.value(), path, application, context)
     }
-
-    pub(in crate::types::constraints::solution) fn validate_reified_future_type<
-        A: TypeConstraintAccounting,
-        D: ConstraintDomain,
-    >(
-        &self,
-        ty: &CompletedValue<TypeKind>,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(), TypeConstraintError> {
-        // These references already inhabit the completed value's scope. They
-        // must not be looked up or substituted in the active inference path.
-        context.enter_node()?;
-        let mut pending = vec![ty.value()];
-        while let Some(value) = pending.pop() {
-            context.enter_node()?;
-            let shape = value.constraint_shape();
-            if matches!(shape, TypeConstraintShape::Unresolved(_)) {
-                return Err(TypeConstraintRejection::UnresolvedType.into());
-            }
-            for child in shape.children() {
-                context.enter_node()?;
-                pending.push(child);
-            }
-        }
-        let projected = super::super::map_term_with_control(
-            ty.value(),
-            self.value_scope(),
-            self.value_scope(),
-            1,
-            context,
-            &|reference, source, _, _, _| {
-                ty.admit_parameter(&reference.clone().into(), source)
-                    .map_err(TypeProjectionError::Control)?;
-                Ok(TypeKind::GenericParam(reference.clone()))
-            },
-            &|length, source, _, _, _| {
-                match length {
-                    ArrayLength::Generic(reference) => {
-                        ty.admit_parameter(&reference.clone().into(), source)
-                            .map_err(TypeProjectionError::Control)?;
-                    }
-                    ArrayLength::Const(_) => {}
-                    ArrayLength::Error(_) | ArrayLength::Inferred => {
-                        return Err(TypeProjectionError::Control(
-                            TypeConstraintRejection::UnresolvedType.into(),
-                        ));
-                    }
-                }
-                Ok(length.clone())
-            },
-            &|row, source, _, depth, context| {
-                super::super::map_effects_with_control(row, depth, context, &|reference, _| {
-                    ty.admit_parameter(&reference.clone().into(), source)
-                        .map_err(TypeProjectionError::Control)?;
-                    Ok(EffectRow::open(EffectSet::new(), reference.clone()))
-                })
-            },
-        )
-        .map_err(fold_error)?;
-        if projected != *ty.value() {
-            return Err(TypeConstraintRejection::UnresolvedType.into());
-        }
-        Ok(())
-    }
 }
 
-impl<T> CompletedValue<T> {
-    /// Bound ports belong to this exact occurrence; Free ports need this
-    /// value's retained capture. No completed value may retain an inference id.
-    fn admit_parameter(
-        &self,
-        parameter: &ConstraintGenericParameterId,
-        scope: &GenericScope,
-    ) -> Result<(), TypeConstraintError> {
-        match parameter {
-            ConstraintGenericParameterId::Type(reference) => match reference {
-                GenericTypeReference::Bound(bound) => {
-                    scope.bound_type(bound.depth(), bound.slot())?;
-                }
-                GenericTypeReference::Free(_) if self.captures().contains(parameter) => {}
-                _ => return Err(references::type_out_of_scope(reference)),
-            },
-            ConstraintGenericParameterId::Const(reference) => match reference {
-                GenericConstReference::Bound(bound) => {
-                    scope.bound_const(bound.depth(), bound.slot())?;
-                }
-                GenericConstReference::Free(_) if self.captures().contains(parameter) => {}
-                _ => return Err(references::const_out_of_scope(reference)),
-            },
-            ConstraintGenericParameterId::Effect(reference) => match reference {
-                GenericEffectReference::Bound(bound) => {
-                    scope.bound_effect(bound.depth(), bound.slot())?;
-                }
-                GenericEffectReference::Free(_) if self.captures().contains(parameter) => {}
-                _ => return Err(references::effect_out_of_scope(reference)),
-            },
-        }
-        Ok(())
-    }
-}
-
-impl ContextReferenceMap<'_> {
+impl<'scope> ContextReferenceMap<'scope> {
     fn admits_free(&self, parameter: &ConstraintGenericParameterId, visible: bool) -> bool {
         match self.direction {
             Direction::Reify => visible,
@@ -704,41 +609,11 @@ impl ContextReferenceMap<'_> {
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind, TypeConstraintError> {
-        super::super::map_term_with_control(
-            ty,
+        ty.project_structure(
             self.source_scope(),
             self.target_scope(),
             1,
-            context,
-            &|reference, source, target, _, context| {
-                self.type_reference(reference, source, target, path, application, context)
-                    .map(TypeKind::GenericParam)
-                    .map_err(TypeProjectionError::Control)
-            },
-            &|length, source, target, _, context| {
-                self.length(length, source, target, path, application, context)
-                    .map_err(TypeProjectionError::Control)
-            },
-            &|row, source, target, depth, context| {
-                super::super::map_effects_with_control(
-                    row,
-                    depth,
-                    context,
-                    &|reference, context| {
-                        self.effect_reference(
-                            reference,
-                            source,
-                            target,
-                            path,
-                            application,
-                            depth == 2,
-                            context,
-                        )
-                        .map(|reference| EffectRow::open(EffectSet::new(), reference))
-                        .map_err(TypeProjectionError::Control)
-                    },
-                )
-            },
+            &mut self.projection(path, application, context),
         )
         .map_err(fold_error)
     }
@@ -750,20 +625,9 @@ impl ContextReferenceMap<'_> {
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<EffectRow, TypeConstraintError> {
-        super::super::map_effects_with_control(row, 1, context, &|reference, context| {
-            self.effect_reference(
-                reference,
-                self.source_scope(),
-                self.target_scope(),
-                path,
-                application,
-                false,
-                context,
-            )
-            .map(|reference| EffectRow::open(EffectSet::new(), reference))
-            .map_err(TypeProjectionError::Control)
-        })
-        .map_err(fold_error)
+        self.projection(path, application, context)
+            .rename_row(row, self.source_scope(), self.target_scope(), 1)
+            .map_err(fold_error)
     }
 
     fn map_predicate<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
@@ -773,19 +637,198 @@ impl ContextReferenceMap<'_> {
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<EffectPredicate, TypeConstraintError> {
-        super::super::map_predicate_with_control(predicate, 1, context, &|reference, context| {
-            self.effect_reference(
+        self.projection(path, application, context)
+            .rename_predicate(predicate, self.source_scope(), self.target_scope(), 1)
+            .map_err(fold_error)
+    }
+
+    fn projection<'a, 'work, A: TypeConstraintAccounting, D: ConstraintDomain, L>(
+        &'a self,
+        path: &'a ConstraintInferenceBranch<D, L>,
+        application: &'a ConstraintApplicationScope<D>,
+        context: &'a mut TypeConstraintContext<'work, A, D>,
+    ) -> CompletedTypeProjection<'a, 'scope, 'work, A, D, L> {
+        CompletedTypeProjection {
+            mapping: self,
+            path,
+            application,
+            context,
+        }
+    }
+}
+
+struct CompletedTypeProjection<
+    'a,
+    'scope,
+    'work,
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+    L,
+> {
+    mapping: &'a ContextReferenceMap<'scope>,
+    path: &'a ConstraintInferenceBranch<D, L>,
+    application: &'a ConstraintApplicationScope<D>,
+    context: &'a mut TypeConstraintContext<'work, A, D>,
+}
+
+impl<A: TypeConstraintAccounting, D: ConstraintDomain, L>
+    CompletedTypeProjection<'_, '_, '_, A, D, L>
+{
+    fn rename_row(
+        &mut self,
+        row: &EffectRow,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<EffectRow, TypeProjectionError<TypeConstraintError>> {
+        visit_effect_row(self.context, row, depth)?;
+        let (mapping, path, application) = (self.mapping, self.path, self.application);
+        row.try_map_variables(
+            &mut EffectProjectionControl {
+                control: self.context,
+                depth,
+            },
+            &mut |reference, control| {
+                mapping
+                    .effect_reference(
+                        reference,
+                        source,
+                        target,
+                        path,
+                        application,
+                        depth == 2,
+                        control.control,
+                    )
+                    .map_err(TypeProjectionError::Control)
+            },
+        )
+    }
+
+    fn rename_predicate(
+        &mut self,
+        predicate: &EffectPredicate,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<EffectPredicate, TypeProjectionError<TypeConstraintError>> {
+        visit_effect_predicate(self.context, predicate, depth)?;
+        let (mapping, path, application) = (self.mapping, self.path, self.application);
+        predicate.map_references(
+            &mut EffectProjectionControl {
+                control: self.context,
+                depth,
+            },
+            &mut |reference, control| {
+                mapping
+                    .effect_reference(
+                        reference,
+                        source,
+                        target,
+                        path,
+                        application,
+                        depth == 2,
+                        control.control,
+                    )
+                    .map_err(TypeProjectionError::Control)
+            },
+        )
+    }
+}
+
+impl<A: TypeConstraintAccounting, D: ConstraintDomain, L> TypeProjectionControl
+    for CompletedTypeProjection<'_, '_, '_, A, D, L>
+{
+    type Error = TypeConstraintError;
+
+    fn check(&mut self) -> Result<(), Self::Error> {
+        self.context.check()
+    }
+
+    fn visit_node(&mut self, kind: TypeProjectionNodeKind, depth: u64) -> Result<(), Self::Error> {
+        self.context.visit_node(kind, depth)
+    }
+
+    fn visit_binding(&mut self) -> Result<(), Self::Error> {
+        self.context.visit_binding()
+    }
+}
+
+impl<A: TypeConstraintAccounting, D: ConstraintDomain, L>
+    ScopedTypeProjection<CanonicalEffects, CanonicalEffects>
+    for CompletedTypeProjection<'_, '_, '_, A, D, L>
+{
+    fn admit_shape(
+        &mut self,
+        shape: TypeConstraintShape<'_>,
+    ) -> Result<(), TypeProjectionError<Self::Error>> {
+        if matches!(shape, TypeConstraintShape::Unresolved(_)) {
+            return Err(TypeProjectionError::Control(
+                TypeConstraintRejection::UnresolvedType.into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn project_type_reference(
+        &mut self,
+        reference: &GenericTypeReference,
+        source: &GenericScope,
+        target: &GenericScope,
+        _: u64,
+    ) -> Result<TypeKind, TypeProjectionError<Self::Error>> {
+        self.mapping
+            .type_reference(
                 reference,
-                self.source_scope(),
-                self.target_scope(),
-                path,
-                application,
-                false,
-                context,
+                source,
+                target,
+                self.path,
+                self.application,
+                self.context,
             )
-            .map(|reference| EffectRow::open(EffectSet::new(), reference))
+            .map(TypeKind::GenericParam)
             .map_err(TypeProjectionError::Control)
-        })
-        .map_err(fold_error)
+    }
+
+    fn project_length(
+        &mut self,
+        length: &ArrayLength,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<ArrayLength, TypeProjectionError<Self::Error>> {
+        let depth = child_depth(depth)?;
+        self.check().map_err(TypeProjectionError::Control)?;
+        self.visit_node(TypeProjectionNodeKind::Const, depth)
+            .map_err(TypeProjectionError::Control)?;
+        self.mapping
+            .length(
+                length,
+                source,
+                target,
+                self.path,
+                self.application,
+                self.context,
+            )
+            .map_err(TypeProjectionError::Control)
+    }
+
+    fn project_row(
+        &mut self,
+        row: &EffectRow,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<EffectRow, TypeProjectionError<Self::Error>> {
+        self.rename_row(row, source, target, child_depth(depth)?)
+    }
+
+    fn project_predicate(
+        &mut self,
+        predicate: &EffectPredicate,
+        source: &GenericScope,
+        target: &GenericScope,
+        depth: u64,
+    ) -> Result<EffectPredicate, TypeProjectionError<Self::Error>> {
+        self.rename_predicate(predicate, source, target, child_depth(depth)?)
     }
 }

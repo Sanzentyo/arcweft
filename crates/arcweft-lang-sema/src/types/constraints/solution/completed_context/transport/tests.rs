@@ -5,6 +5,7 @@ use crate::{
         PreparedEffectInvariant, PreparedEffectPredicate, PreparedEffectRow,
         PreparedEffectUnknownEligibility, PreparedEffectUnknownRef,
     },
+    effects::EffectSet,
     types::{
         DetachedGenericOwnerId, GenericBinder, GenericConstParameterId, GenericEffectParameterId,
         GenericParameterOwnerId, GenericTypeParameterId, PreparedEffects,
@@ -287,6 +288,13 @@ fn completed_future_ports_use_their_own_scope_and_capture() {
     let ty: GenericTypeReference = GenericTypeParameterId::new(owner.clone(), 0).into();
     let length: GenericConstReference = GenericConstParameterId::new(owner.clone(), 0).into();
     let effect: GenericEffectReference = GenericEffectParameterId::new(owner, 0).into();
+    let required = EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap());
+    let permitted = EffectRow::open(EffectSet::new(), effect.clone());
+    let predicate = required
+        .formula()
+        .unwrap()
+        .subset(permitted.formula().unwrap(), &mut context)
+        .unwrap();
     for (value, parameter) in [
         (TypeKind::GenericParam(ty.clone()), ty.into()),
         (
@@ -302,6 +310,16 @@ fn completed_future_ports_use_their_own_scope_and_capture() {
                 TypeKind::Unit,
                 EffectRow::open(EffectSet::new(), effect.clone()),
             ),
+            effect.clone().into(),
+        ),
+        (
+            TypeKind::function_with_contract(
+                GenericBinder::EMPTY,
+                predicate,
+                [],
+                TypeKind::Unit,
+                EffectRow::closed(EffectSet::new()),
+            ),
             effect.into(),
         ),
     ] {
@@ -311,13 +329,14 @@ fn completed_future_ports_use_their_own_scope_and_capture() {
         };
         assert!(
             generic
-                .validate_reified_future_type(&completed, &mut context)
+                .reopen_type(&completed, &path, path.root_scope(), &mut context)
                 .is_err()
         );
         completed.captures = RetainedRigidGenericScope::from_admitted(BTreeSet::from([parameter]));
-        generic
-            .validate_reified_future_type(&completed, &mut context)
+        let reopened = generic
+            .reopen_type(&completed, &path, path.root_scope(), &mut context)
             .unwrap();
+        assert_eq!(&reopened, completed.value());
     }
     let binder = GenericBinder::new(1, 1, 1);
     let local = generic.value_scope().with_binder(binder);
@@ -334,17 +353,19 @@ fn completed_future_ports_use_their_own_scope_and_capture() {
         ),
         captures: RetainedRigidGenericScope::from_admitted(BTreeSet::new()),
     };
-    generic
-        .validate_reified_future_type(&completed, &mut context)
+    let reopened = generic
+        .reopen_type(&completed, &path, path.root_scope(), &mut context)
         .unwrap();
+    assert_eq!(&reopened, completed.value());
     // Future-result annotations retain the existing omitted-row policy.
     let omitted = CompletedValue {
         value: TypeKind::function_with_effects([], TypeKind::Unit, EffectRow::unknown()),
         captures: RetainedRigidGenericScope::from_admitted(BTreeSet::new()),
     };
-    generic
-        .validate_reified_future_type(&omitted, &mut context)
+    let reopened = generic
+        .reopen_type(&omitted, &path, path.root_scope(), &mut context)
         .unwrap();
+    assert_eq!(&reopened, omitted.value());
     for value in [
         TypeKind::Named("_".into()),
         TypeKind::Error(crate::types::TypePoisonId::from_index(98_932)),
@@ -360,7 +381,7 @@ fn completed_future_ports_use_their_own_scope_and_capture() {
         };
         assert!(
             generic
-                .validate_reified_future_type(&invalid, &mut context)
+                .reopen_type(&invalid, &path, path.root_scope(), &mut context)
                 .is_err()
         );
     }

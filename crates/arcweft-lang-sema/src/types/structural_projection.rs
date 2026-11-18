@@ -17,6 +17,13 @@ mod tests;
 pub(in crate::types) trait ScopedTypeProjection<S: TypeEffectDomain, T: TypeEffectDomain>:
     TypeProjectionControl
 {
+    fn admit_shape(
+        &mut self,
+        _: TypeConstraintShape<'_, S>,
+    ) -> Result<(), TypeProjectionError<Self::Error>> {
+        Ok(())
+    }
+
     fn project_type_reference(
         &mut self,
         reference: &GenericTypeReference,
@@ -173,7 +180,9 @@ impl<S: TypeEffectDomain> TypeKind<S> {
             control
                 .visit_node(TypeProjectionNodeKind::Type, depth)
                 .map_err(TypeProjectionError::Control)?;
-            let mut value = if let TypeKind::GenericParam(reference) = ty {
+            let shape = ty.constraint_shape();
+            control.admit_shape(shape)?;
+            let mut value = if let TypeConstraintShape::Generic(reference) = shape {
                 control.project_type_reference(
                     reference,
                     scopes.source.get(),
@@ -181,7 +190,6 @@ impl<S: TypeEffectDomain> TypeKind<S> {
                     depth,
                 )?
             } else {
-                let shape = ty.constraint_shape();
                 let mut frame = Frame {
                     shape,
                     children: shape.children(),
