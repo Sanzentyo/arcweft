@@ -231,7 +231,7 @@ fn an_ignored_invalid_submission_cannot_publish_an_earlier_sealed_candidate() {
             source,
             source.root_id(),
             &joint.branch,
-            &joint.effects,
+            &mut joint.effects.projection(),
             graph.read(),
             &mut context,
         )

@@ -374,7 +374,7 @@ mod retained_preparation {
                             path,
                             path.root_id(),
                             path,
-                            &effects,
+                            &mut effects.projection(),
                             graph.read(),
                             context,
                         )
@@ -574,15 +574,18 @@ fn source(
 #[test]
 fn an_unclosed_probe_preparation_cannot_issue_a_completed_source() {
     let cancellation = AtomicBool::new(false);
-    let (mut context, path) = context(&cancellation).into_path();
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let (mut context, path) = context(&cancellation).into_path(&mut graph);
     let mut probe = source(&context, path.root_id(), TypeKind::I32);
     probe.branch = SourceProbeObservation::new(());
+    let original = path
+        .bind_original_path_effects(&mut graph, &mut context)
+        .unwrap();
+    let effects =
+        ConstraintClosedEffects::for_original_path(&path, &original, &[], &mut graph, &mut context)
+            .unwrap();
     assert!(matches!(
-        probe.close(
-            &path,
-            &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
-            &mut context
-        ),
+        probe.close(&path, &mut effects.projection(), graph.read(), &mut context),
         Err(TypeConstraintError::Invariant(
             super::super::super::TypeConstraintInvariant::SourceProtocol(
                 TypeConstraintSourceProtocolInvariant::Outcome
@@ -738,7 +741,7 @@ fn a_closed_source_keeps_its_exact_completion_owner() {
         actual,
     };
     let closed = active
-        .close(&path, &effects, graph.read(), &mut context)
+        .close(&path, &mut effects.projection(), graph.read(), &mut context)
         .unwrap();
     closed.require_completion(&effects).unwrap();
     let foreign =

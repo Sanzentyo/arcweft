@@ -12,12 +12,12 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
         source: &ConstraintPath<D>,
         selected: ConstraintApplicationId,
         branch: &ConstraintInferenceBranch<D, L>,
-        effects: &Arc<ConstraintClosedEffects<D>>,
+        projection: &mut ConstraintEffectProjection<D>,
         graph: PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError> {
         context.check_cancelled()?;
-        effects.require_branch(branch)?;
+        projection.owner().require_branch(branch)?;
         ensure_unique_sources(source)?;
         // Source identity and the joint calculation are separate roles. Every
         // source application must be the same opening retained by the branch.
@@ -51,7 +51,7 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
         }
         let (closed_sources, preparations) = source
             .lineage
-            .close_trace(branch, effects, graph, context)?;
+            .close_trace(branch, projection, graph, context)?;
         for equation in &source.equations {
             context.enter_node()?;
             match equation.source_ordinal {
@@ -68,9 +68,10 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
                     let closed = found.ok_or_else(|| {
                         protocol_error(TypeConstraintSourceProtocolInvariant::WrongSource)
                     })?;
-                    equation.validate_completed_source(closed, branch, effects, graph, context)?;
+                    equation
+                        .validate_completed_source(closed, branch, projection, graph, context)?;
                 }
-                None => equation.validate_completed(branch, effects, graph, context)?,
+                None => equation.validate_completed(branch, projection, graph, context)?,
             }
         }
         context.validate_type_and_const_completion(branch)?;
@@ -80,7 +81,7 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
             let solution = Arc::new(TypeConstraintSolution::complete_application_with_effects(
                 branch,
                 application,
-                effects,
+                projection,
                 graph,
                 context,
             )?);
@@ -89,7 +90,7 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
                 branch,
                 application,
                 &solution,
-                effects,
+                projection,
                 graph,
                 context,
             )?;
@@ -116,7 +117,7 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
         branch: &ConstraintInferenceBranch<D, L>,
         application: ConstraintApplicationId,
         solution: &TypeConstraintSolution,
-        effects: &Arc<ConstraintClosedEffects<D>>,
+        projection: &mut ConstraintEffectProjection<D>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<
@@ -138,34 +139,28 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
                     ConstraintClosurePolicy::ProjectionFuture
                 }
             };
-            let value = project_closed_operand(
-                request.value.view(),
-                branch,
-                policy,
-                effects,
-                graph,
-                context,
-            )
-            .map_err(projection_error)?;
+            let value = projection
+                .project_operand(request.value.view(), branch, policy, graph, context)
+                .map_err(projection_error)?;
             let input = request
                 .input
                 .as_ref()
                 .map(|input| {
-                    let projected = project_closed_operand(
-                        input.view(),
-                        branch,
-                        ConstraintClosurePolicy::ProjectionClosed,
-                        effects,
-                        graph,
-                        context,
-                    )
-                    .map_err(projection_error)?;
+                    let projected = projection
+                        .project_operand(
+                            input.view(),
+                            branch,
+                            ConstraintClosurePolicy::ProjectionClosed,
+                            graph,
+                            context,
+                        )
+                        .map_err(projection_error)?;
                     solution
                         .reify_projection_input(
                             &projected,
                             branch,
                             application,
-                            effects,
+                            projection.owner(),
                             graph,
                             context,
                         )
@@ -180,7 +175,7 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
                         branch,
                         application,
                         policy,
-                        effects,
+                        projection.owner(),
                         graph,
                         context,
                     )

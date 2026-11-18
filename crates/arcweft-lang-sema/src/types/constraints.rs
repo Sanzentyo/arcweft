@@ -17,7 +17,7 @@ pub(crate) mod context;
 mod hints;
 pub(in crate::types) mod lexical;
 mod normalization;
-pub(in crate::types) use normalization::{ConstraintClosedEffects, project_closed_operand};
+pub(in crate::types) use normalization::ConstraintClosedEffects;
 mod original_context;
 pub(crate) use original_context::{
     OriginalProducerContext, OriginalProducerSource, OriginalRigidScope,

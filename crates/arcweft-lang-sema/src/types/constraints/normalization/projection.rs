@@ -17,9 +17,11 @@ use super::super::{
     context::{TypeConstraintAccounting, TypeConstraintContext},
     shape::TypeConstraintChildren,
 };
+#[cfg(test)]
+use super::ConstraintClosedEffects;
 use super::{
-    ConstraintClosurePolicy, ConstraintProjectionView, ProjectedConstraintType,
-    RemainingConstraintParameter,
+    ConstraintClosurePolicy, ConstraintEffectProjection, ConstraintProjectionView,
+    ProjectedConstraintType, RemainingConstraintParameter,
 };
 
 mod mode;
@@ -150,10 +152,11 @@ where
     })
 }
 
+#[cfg(test)]
 pub(in crate::types::constraints) fn close_type_operand<'ty, A, D, L>(
     input: ConstraintOperandView<'ty, D>,
     path: &'ty super::super::transaction::ConstraintInferenceBranch<D, L>,
-    effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
+    effects: &std::sync::Arc<ConstraintClosedEffects<D>>,
     graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstraintOperand<D>, TypeConstraintError>
@@ -161,7 +164,6 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    effects.require_branch(path)?;
     project_closed_operand(
         input,
         path,
@@ -173,11 +175,12 @@ where
 }
 
 /// Retain the exact operand's derivation while closing it under this branch's C.
-pub(in crate::types) fn project_closed_operand<'ty, A, D, L>(
+#[cfg(test)]
+pub(in crate::types::constraints) fn project_closed_operand<'ty, A, D, L>(
     input: ConstraintOperandView<'ty, D>,
     branch: &'ty super::super::transaction::ConstraintInferenceBranch<D, L>,
     policy: ConstraintClosurePolicy,
-    effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
+    effects: &std::sync::Arc<ConstraintClosedEffects<D>>,
     graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ConstraintOperand<D>, TypeConstraintError>
@@ -185,32 +188,51 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    effects.require_branch(branch)?;
-    let scope = input.lexical_scope().as_ref().clone();
-    context.with_original_scope(scope, |context| {
-        project_type_fold::<A, D, RetainOrigins>(
-            input,
-            branch.projection_view(),
-            policy,
-            &mut ConstraintProjectionPhase::Completion {
-                graph,
-                owner: std::sync::Arc::clone(effects),
-            },
-            context,
-            &mut BTreeSet::new(),
-            &mut BTreeSet::new(),
-        )
-        .map(|value| value.into_operand())
-    })
+    effects
+        .projection()
+        .project_operand(input, branch, policy, graph, context)
+}
+
+impl<D: ConstraintDomain> ConstraintEffectProjection<D> {
+    pub(in crate::types::constraints) fn project_operand<'ty, A, L>(
+        &mut self,
+        input: ConstraintOperandView<'ty, D>,
+        branch: &'ty super::super::transaction::ConstraintInferenceBranch<D, L>,
+        policy: ConstraintClosurePolicy,
+        graph: PreparedEffectReadView<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<ConstraintOperand<D>, TypeConstraintError>
+    where
+        A: TypeConstraintAccounting,
+    {
+        self.owner().require_branch(branch)?;
+        let scope = input.lexical_scope().as_ref().clone();
+        context.with_original_scope(scope, |context| {
+            project_type_fold::<A, D, RetainOrigins>(
+                input,
+                branch.projection_view(),
+                policy,
+                &mut ConstraintProjectionPhase::Completion {
+                    graph,
+                    projection: self,
+                },
+                context,
+                &mut BTreeSet::new(),
+                &mut BTreeSet::new(),
+            )
+            .map(|value| value.into_operand())
+        })
+    }
 }
 
 /// Inspect the canonical algebra directly in the binding fold for read-only
 /// equation checks.
+#[cfg(test)]
 pub(in crate::types::constraints) fn project_closed_type<A, D, L>(
     ty: &TypeKind<PreparedEffects>,
     branch: &super::super::transaction::ConstraintInferenceBranch<D, L>,
     policy: ConstraintClosurePolicy,
-    effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
+    effects: &std::sync::Arc<ConstraintClosedEffects<D>>,
     graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeKind, TypeConstraintError>
@@ -218,19 +240,34 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    effects.require_branch(branch)?;
-    project_type_fold::<A, D, InspectValues<CanonicalEffects>>(
-        ty,
-        branch.projection_view(),
-        policy,
-        &mut ConstraintProjectionPhase::Completion {
-            graph,
-            owner: std::sync::Arc::clone(effects),
-        },
-        context,
-        &mut BTreeSet::new(),
-        &mut BTreeSet::new(),
-    )
+    effects
+        .projection()
+        .project_type(ty, branch, policy, graph, context)
+}
+
+impl<D: ConstraintDomain> ConstraintEffectProjection<D> {
+    pub(in crate::types::constraints) fn project_type<A: TypeConstraintAccounting, L>(
+        &mut self,
+        ty: &TypeKind<PreparedEffects>,
+        branch: &super::super::transaction::ConstraintInferenceBranch<D, L>,
+        policy: ConstraintClosurePolicy,
+        graph: PreparedEffectReadView<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        self.owner().require_branch(branch)?;
+        project_type_fold::<A, D, InspectValues<CanonicalEffects>>(
+            ty,
+            branch.projection_view(),
+            policy,
+            &mut ConstraintProjectionPhase::Completion {
+                graph,
+                projection: self,
+            },
+            context,
+            &mut BTreeSet::new(),
+            &mut BTreeSet::new(),
+        )
+    }
 }
 
 pub(in crate::types::constraints) fn project_const_operand<'ty, A, D>(

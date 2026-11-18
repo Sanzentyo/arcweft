@@ -88,11 +88,12 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                                     context,
                                 )
                                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
+                                let mut projection = effects.projection();
                                 self.original.validate_original_bindings(
                                     &prepared.branch,
                                     &product.members,
                                     &product.scope,
-                                    &effects,
+                                    &mut projection,
                                     graph,
                                     context,
                                 )?;
@@ -104,7 +105,7 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                                         source,
                                         source.root_id(),
                                         &prepared.branch,
-                                        &effects,
+                                        &mut projection,
                                         graph.read(),
                                         context,
                                     )

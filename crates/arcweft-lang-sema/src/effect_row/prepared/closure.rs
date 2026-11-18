@@ -382,6 +382,55 @@ pub(crate) struct PrincipalEffectClosure {
     input_bindings: BTreeMap<u64, EffectRow>,
 }
 
+/// Reuses total row resolutions during one ordered projection of a candidate.
+/// The completed principal is immutable and never retains this working state.
+pub(crate) struct PreparedEffectRowProjection {
+    principal: Arc<PrincipalEffectClosure>,
+    rows: BTreeMap<u64, EffectRow>,
+}
+
+impl PrincipalEffectClosure {
+    pub(crate) fn project_rows(self: &Arc<Self>) -> PreparedEffectRowProjection {
+        PreparedEffectRowProjection {
+            principal: Arc::clone(self),
+            rows: BTreeMap::new(),
+        }
+    }
+}
+
+impl PreparedEffectRowProjection {
+    pub(crate) fn resolve<C: DecisionControl>(
+        &mut self,
+        reference: &PreparedEffectRowRef,
+        control: &mut C,
+    ) -> Result<EffectRow, PreparedEffectFailure<C::Error>> {
+        use std::collections::btree_map::Entry;
+
+        match self.rows.entry(reference.0.ordinal) {
+            Entry::Occupied(entry) => {
+                let mut work = Work(control);
+                work.charge(DecisionWork::Visit)?;
+                self.principal.graph.row(reference)?;
+                Ok(EffectRow {
+                    formula: Some(work.copy_formula(entry.get().known()?)?),
+                })
+            }
+            Entry::Vacant(entry) => {
+                let row = self
+                    .principal
+                    .resolve_row(&PreparedEffectRow::Term(reference.clone()), control)?;
+                let mut work = Work(control);
+                work.charge(DecisionWork::Node)?;
+                let retained = EffectRow {
+                    formula: Some(work.copy_formula(row.known()?)?),
+                };
+                entry.insert(retained);
+                Ok(row)
+            }
+        }
+    }
+}
+
 /// Functions actually used by one query, borrowed from its verified owner.
 /// Declaration formals remain inside their functions, never ambient Γ ports.
 pub(crate) struct PreparedEffectFunctionUses<'g> {

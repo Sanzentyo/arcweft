@@ -16,7 +16,7 @@ use crate::types::{
         TypeConstraintInvariant,
         application::ConstraintApplicationInventory,
         lexical::ConstraintLexicalScope,
-        normalization::{ConstraintClosedEffects, project_closed_type, seal_path},
+        normalization::{ConstraintClosedEffects, ConstraintEffectProjection, seal_path},
     },
 };
 
@@ -435,17 +435,17 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         branch: &JointBranch<D>,
         members: &[OriginalProductMember],
         scope: &ConstraintLexicalScope,
-        effects: &Arc<ConstraintClosedEffects<D>>,
+        projection: &mut ConstraintEffectProjection<D>,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), OriginalInferenceFailure> {
-        let project = |ty: &TypeKind<PreparedEffects>,
+        let project = |projection: &mut ConstraintEffectProjection<D>,
+                       ty: &TypeKind<PreparedEffects>,
                        context: &mut TypeConstraintContext<'_, A, D>| {
-            project_closed_type(
+            projection.project_type(
                 ty,
                 branch,
                 crate::types::constraints::ConstraintClosurePolicy::Hint,
-                effects,
                 graph.read(),
                 context,
             )
@@ -473,7 +473,11 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 else {
                     unreachable!("type key")
                 };
-                let value = project(&TypeKind::GenericParam(reference.clone()), context)?;
+                let value = project(
+                    projection,
+                    &TypeKind::GenericParam(reference.clone()),
+                    context,
+                )?;
                 let value = owner
                     .transport_canonical_type(scope, &value, context)
                     .map_err(|error| {
@@ -543,7 +547,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 }
             }
             for parameter in original.effects.original_variables() {
-                let Some(value) = effects.row(parameter) else {
+                let Some(value) = projection.owner().row(parameter) else {
                     continue;
                 };
                 context.enter_node()?;
@@ -577,18 +581,20 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     parameter: parameter.clone(),
                 };
                 let owner = context.binding_scope(original, &parameter.clone().into())?;
-                let left = project(&TypeKind::GenericParam(parameter.clone()), context)?;
+                let left = project(
+                    projection,
+                    &TypeKind::GenericParam(parameter.clone()),
+                    context,
+                )?;
                 let right = context.with_original_scope(owner, |context| {
-                    let projected =
-                        crate::types::constraints::normalization::project_closed_operand(
-                            value.view(),
-                            branch,
-                            crate::types::constraints::ConstraintClosurePolicy::Hint,
-                            effects,
-                            graph.read(),
-                            context,
-                        )?;
-                    let canonical = effects.canonicalize(
+                    let projected = projection.project_operand(
+                        value.view(),
+                        branch,
+                        crate::types::constraints::ConstraintClosurePolicy::Hint,
+                        graph.read(),
+                        context,
+                    )?;
+                    let canonical = projection.owner().canonicalize(
                         projected.value(),
                         projected.scope().shape(),
                         context,
@@ -634,7 +640,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     equation: equation.ordinal,
                 };
                 equation
-                    .validate_completed(branch, effects, graph.read(), context)
+                    .validate_completed(branch, projection, graph.read(), context)
                     .map_err(|error| reject(check, error))?;
             }
         }

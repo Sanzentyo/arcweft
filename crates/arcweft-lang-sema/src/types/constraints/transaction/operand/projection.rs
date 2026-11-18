@@ -143,19 +143,22 @@ impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
     pub(in crate::types::constraints) fn close_canonical<A: TypeConstraintAccounting, L>(
         &self,
         branch: &'a super::super::ConstraintInferenceBranch<D, L>,
-        effects: &Arc<crate::types::constraints::normalization::ConstraintClosedEffects<D>>,
+        projection: &mut crate::types::constraints::normalization::ConstraintEffectProjection<D>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ConstraintOperand<D, TypeKind>, TypeConstraintError> {
-        let projected = crate::types::constraints::normalization::project_closed_operand(
+        let projected = projection.project_operand(
             self.clone(),
             branch,
             crate::types::constraints::ConstraintClosurePolicy::ProjectionClosed,
-            effects,
             graph,
             context,
         )?;
-        let value = effects.canonicalize(projected.value(), projected.scope().shape(), context)?;
+        let value = projection.owner().canonicalize(
+            projected.value(),
+            projected.scope().shape(),
+            context,
+        )?;
         context.enter_node()?;
         Ok(ConstraintOperand {
             value: Arc::new(value),

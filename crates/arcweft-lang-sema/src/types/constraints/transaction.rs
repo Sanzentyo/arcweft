@@ -16,9 +16,7 @@ use super::application::{
 };
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::hints::{ConstraintSourceValueOwner, PreparedSourceExpectation, SourceProbeTerm};
-use super::normalization::{
-    ConstraintClosedEffects, project_closed_operand, project_closed_type, project_type,
-};
+use super::normalization::{ConstraintClosedEffects, ConstraintEffectProjection, project_type};
 use super::{
     CheckedConstraintSourceProjection, ClosedMaterializationSubmission, ConstraintAcceptance,
     ConstraintClosurePolicy, ConstraintDomain, ExpectedHint, InheritedSolutionInvariant,
@@ -80,12 +78,12 @@ impl<D: ConstraintDomain> PendingEquation<D> {
     pub(super) fn validate_completed<A: TypeConstraintAccounting, L>(
         &self,
         branch: &ConstraintInferenceBranch<D, L>,
-        effects: &Arc<ConstraintClosedEffects<D>>,
+        projection: &mut ConstraintEffectProjection<D>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         context.with_original_scope(self.scope().clone(), |context| {
-            self.validate_in_scope(branch, effects, graph, context)
+            self.validate_in_scope(branch, projection, graph, context)
         })
     }
 
@@ -99,12 +97,12 @@ impl<D: ConstraintDomain> PendingEquation<D> {
         &self,
         source: &ClosedConstraintProbe<D>,
         branch: &ConstraintInferenceBranch<D, L>,
-        effects: &Arc<ConstraintClosedEffects<D>>,
+        projection: &mut ConstraintEffectProjection<D>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        effects.require_branch(branch)?;
-        source.require_completion(effects)?;
+        projection.owner().require_branch(branch)?;
+        source.require_completion(projection.owner())?;
         if self.source_ordinal != Some(source.ordinal()) {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
@@ -115,40 +113,33 @@ impl<D: ConstraintDomain> PendingEquation<D> {
                     source.actual_operand().value(),
                     source.actual_operand().scope(),
                 ),
-                effects,
+                projection.owner(),
                 context,
             ),
-            None => self.validate_completed(branch, effects, graph, context),
+            None => self.validate_completed(branch, projection, graph, context),
         }
     }
 
     fn validate_in_scope<A: TypeConstraintAccounting, L>(
         &self,
         branch: &ConstraintInferenceBranch<D, L>,
-        effects: &Arc<ConstraintClosedEffects<D>>,
+        projection: &mut ConstraintEffectProjection<D>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         let pattern = self.pattern.value();
-        let project = |value: &TypeKind<PreparedEffects>,
+        let project = |projection: &mut ConstraintEffectProjection<D>,
+                       value: &TypeKind<PreparedEffects>,
                        context: &mut TypeConstraintContext<'_, A, D>| {
-            project_closed_type(
-                value,
-                branch,
-                ConstraintClosurePolicy::Hint,
-                effects,
-                graph,
-                context,
-            )
+            projection.project_type(value, branch, ConstraintClosurePolicy::Hint, graph, context)
         };
-        let pattern = project(pattern, context)?;
+        let pattern = project(projection, pattern, context)?;
         let actual = context.with_original_scope(self.actual.scope().clone(), |context| {
             if self.timing == ConstraintEquationTiming::InferredEffectResult {
-                let annotation = project_closed_type(
+                let annotation = projection.project_type(
                     self.actual.value(),
                     branch,
                     ConstraintClosurePolicy::ResultAnnotation,
-                    effects,
                     graph,
                     context,
                 )?;
@@ -161,13 +152,13 @@ impl<D: ConstraintDomain> PendingEquation<D> {
                     .binding_type_with_inferred_effects_with_control(&value, context)?
                     .ok_or_else(|| TypeConstraintRejection::Mismatch.into())
             } else {
-                project(self.actual.value(), context)
+                project(projection, self.actual.value(), context)
             }
         })?;
         self.compare_completed(
             (&pattern, self.pattern.scope()),
             (&actual, self.actual.scope()),
-            effects,
+            projection.owner(),
             context,
         )
     }
@@ -2612,7 +2603,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         path,
                         selected,
                         path,
-                        &effects,
+                        &mut effects.projection(),
                         graph.read(),
                         context,
                     )
@@ -2888,18 +2879,18 @@ impl<D: ConstraintDomain> ConstraintSourceLineage<D> {
     fn close_trace<A: TypeConstraintAccounting, L>(
         &self,
         branch: &ConstraintInferenceBranch<D, L>,
-        effects: &Arc<ConstraintClosedEffects<D>>,
+        projection: &mut ConstraintEffectProjection<D>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(Box<[ClosedConstraintProbe<D>]>, Box<[SourcePreparation<D>]>), TypeConstraintError>
     {
-        effects.require_branch(branch)?;
+        projection.owner().require_branch(branch)?;
         let mut closed = Vec::new();
         let mut preparations = Vec::new();
         for probe in &self.probe_trace {
             context.enter_node()?;
             context.enter_node()?;
-            closed.push(probe.clone().close(branch, effects, graph, context)?);
+            closed.push(probe.clone().close(branch, projection, graph, context)?);
             context.enter_node()?;
             preparations.push(SourcePreparation::new(
                 probe.source(),

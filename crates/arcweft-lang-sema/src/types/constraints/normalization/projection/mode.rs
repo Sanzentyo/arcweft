@@ -248,7 +248,7 @@ impl InspectionEffects for CanonicalEffects {
         phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind, TypeConstraintError> {
-        let ConstraintProjectionPhase::Completion { owner, .. } = phase else {
+        let ConstraintProjectionPhase::Completion { projection, .. } = phase else {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         };
         let mut header = match shape {
@@ -257,7 +257,7 @@ impl InspectionEffects for CanonicalEffects {
             } => {
                 let scope = context.capture_lexical_scope()?;
                 let (row, predicate) =
-                    owner.project_inspected_header(&scope, effects, predicate, context)?;
+                    projection.project_inspected_header(&scope, effects, predicate, context)?;
                 (Some(row), Some(predicate))
             }
             _ => (None, None),

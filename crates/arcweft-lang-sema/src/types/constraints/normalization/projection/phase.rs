@@ -5,14 +5,13 @@ use crate::effect_row::prepared::PreparedEffectGraph;
 use crate::types::constraints::{
     normalization::ConstraintProjectedEffectHeader, transaction::AdmittedConstraintFunctionHeader,
 };
-use std::sync::Arc;
 
 pub(in crate::types::constraints) enum ConstraintProjectionPhase<'g, D: ConstraintDomain> {
     Admission(PreparedEffectReadView<'g>),
     Preparation(&'g mut PreparedEffectGraph),
     Completion {
         graph: PreparedEffectReadView<'g>,
-        owner: Arc<super::super::ConstraintClosedEffects<D>>,
+        projection: &'g mut ConstraintEffectProjection<D>,
     },
 }
 
@@ -38,8 +37,8 @@ impl<D: ConstraintDomain> ConstraintProjectionPhase<'_, D> {
         match self {
             Self::Admission(_) => Err(TypeConstraintInvariant::OriginalProducer.into()),
             Self::Preparation(_) => Ok(ConstraintProjectedEffectHeader::Original),
-            Self::Completion { owner, .. } => match header {
-                Some(header) => owner.project_header(&header, context),
+            Self::Completion { projection, .. } => match header {
+                Some(header) => projection.project_header(&header, context),
                 None => Ok(ConstraintProjectedEffectHeader::Original),
             },
         }
@@ -60,11 +59,13 @@ impl<D: ConstraintDomain> ConstraintProjectionPhase<'_, D> {
                 .map_err(|error| {
                     TypeConstraintContext::<A, D>::binding_transport_error(error, parameter)
                 }),
-            Self::Completion { owner, .. } => {
+            Self::Completion { projection, .. } => {
                 // Binding values have already traversed every header through
                 // this completion. Transport their canonical algebra without
                 // minting query terms after the immutable principal was built.
-                let canonical = owner.canonicalize(value, source.shape(), context)?;
+                let canonical = projection
+                    .owner()
+                    .canonicalize(value, source.shape(), context)?;
                 let value = target
                     .transport_canonical_type(source, &canonical, context)
                     .map_err(|error| {

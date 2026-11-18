@@ -585,12 +585,17 @@ fn actual_closed_joint_products_seal_each_application_and_canonical_projection()
                     value_expected: None,
                     actual: context.fixture_operand(TypeKind::<PreparedEffects>::I64),
                 }
-                .close(&joint.branch, &joint.effects, graph.read(), context)?;
+                .close(
+                    &joint.branch,
+                    &mut joint.effects.projection(),
+                    graph.read(),
+                    context,
+                )?;
                 assert_eq!(source.actual(), &TypeKind::I64);
                 let solution = TypeConstraintSolution::complete_application_with_effects(
                     &joint.branch,
                     application,
-                    &joint.effects,
+                    &mut joint.effects.projection(),
                     graph.read(),
                     context,
                 )?;

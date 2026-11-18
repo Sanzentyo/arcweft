@@ -152,7 +152,7 @@ fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
     });
     let (sources, _) = path
         .lineage
-        .close_trace(&path, &effects, graph.read(), &mut context)
+        .close_trace(&path, &mut effects.projection(), graph.read(), &mut context)
         .unwrap();
     let closed = &sources[0];
     closed.require_completion(&effects).unwrap();
@@ -183,7 +183,13 @@ fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
     assert_eq!(*binder, GenericBinder::new(1, 1, 0));
     assert!(closed.source_projection().matches_actual(closed.actual()));
     path.equations[0]
-        .validate_completed_source(closed, &path, &effects, graph.read(), &mut context)
+        .validate_completed_source(
+            closed,
+            &path,
+            &mut effects.projection(),
+            graph.read(),
+            &mut context,
+        )
         .unwrap();
     let other =
         ConstraintClosedEffects::for_path(&path, &original, &[], &mut graph, &mut context).unwrap();
@@ -191,7 +197,7 @@ fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
         path.equations[0].validate_completed_source(
             closed,
             &path,
-            &other,
+            &mut other.projection(),
             graph.read(),
             &mut context
         ),
@@ -204,7 +210,7 @@ fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
         &path,
         application,
         &path,
-        &effects,
+        &mut effects.projection(),
         graph.read(),
         &mut context,
     )
@@ -245,7 +251,7 @@ fn a_canonical_source_transport_keeps_real_frames_and_its_source_authority() {
         value_expected: None,
         actual: context.fixture_operand(value),
     }
-    .close(&path, &effects, graph.read(), &mut context)
+    .close(&path, &mut effects.projection(), graph.read(), &mut context)
     .unwrap();
     let source_context = source.actual_operand().original_context().clone();
     let old_scope = source.actual_operand().scope().clone();

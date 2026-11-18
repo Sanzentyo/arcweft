@@ -18,7 +18,7 @@ use super::super::{
 use super::super::{GenericConstParameterId, GenericTypeParameterId};
 use super::context::{CompletedParameterScope, TypeConstraintAccounting, TypeConstraintContext};
 use super::normalization::{
-    ConstraintClosedEffects, project_closed_operand, project_const_operand,
+    ConstraintClosedEffects, ConstraintEffectProjection, project_const_operand,
     validate_selected_call_self,
 };
 use super::{
@@ -337,7 +337,13 @@ impl TypeConstraintSolution {
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
     {
-        Self::complete_application_with_effects(path, application, effects, graph, context)
+        Self::complete_application_with_effects(
+            path,
+            application,
+            &mut effects.projection(),
+            graph,
+            context,
+        )
     }
 
     /// Seal one application from the immutable effect completion shared by
@@ -345,7 +351,7 @@ impl TypeConstraintSolution {
     pub(super) fn complete_application_with_effects<A, D, L>(
         path: &ConstraintInferenceBranch<D, L>,
         application: super::application::ConstraintApplicationId,
-        effects: &Arc<ConstraintClosedEffects<D>>,
+        projection: &mut ConstraintEffectProjection<D>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
@@ -364,7 +370,7 @@ impl TypeConstraintSolution {
         Self::seal_application(
             path,
             application,
-            effects,
+            projection,
             graph,
             CompletedSolutionInput::ActivePath,
             context,
@@ -503,7 +509,7 @@ impl TypeConstraintSolution {
         Self::seal_application(
             path,
             application,
-            &effects,
+            &mut effects.projection(),
             graph.read(),
             CompletedSolutionInput::ClaimedCompleted,
             context,
@@ -513,7 +519,7 @@ impl TypeConstraintSolution {
     fn seal_application<A, D, L>(
         path: &ConstraintInferenceBranch<D, L>,
         application: &super::application::ConstraintApplicationScope<D>,
-        effects: &Arc<ConstraintClosedEffects<D>>,
+        projection: &mut ConstraintEffectProjection<D>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         input: CompletedSolutionInput,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -522,7 +528,7 @@ impl TypeConstraintSolution {
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
     {
-        effects.require_branch(path)?;
+        projection.owner().require_branch(path)?;
         let source_bindings = path
             .bindings
             .iter()
@@ -600,17 +606,17 @@ impl TypeConstraintSolution {
                 ));
             }
             let reified = context.with_original_scope(owner, |context| {
-                let projected = project_closed_operand(
-                    value.view(),
-                    path,
-                    ConstraintClosurePolicy::SolutionCompletion,
-                    effects,
-                    graph,
-                    context,
-                )
-                .map_err(|error| {
-                    map_completed_canonical_error(error, parameter.clone().into(), input)
-                })?;
+                let projected = projection
+                    .project_operand(
+                        value.view(),
+                        path,
+                        ConstraintClosurePolicy::SolutionCompletion,
+                        graph,
+                        context,
+                    )
+                    .map_err(|error| {
+                        map_completed_canonical_error(error, parameter.clone().into(), input)
+                    })?;
                 if input.requires_canonical_claim() && projected.value() != value.value() {
                     return Err(completed_solution_invariant(
                         super::InheritedSolutionInvariantKind::NonCanonical,
@@ -622,7 +628,7 @@ impl TypeConstraintSolution {
                     path,
                     application,
                     None,
-                    effects,
+                    projection.owner(),
                     graph,
                     context,
                 )?;
@@ -706,7 +712,7 @@ impl TypeConstraintSolution {
         context.validate_type_and_const_completion(path)?;
 
         let effect_predicate = generic_context.reify_effect_predicate(
-            effects.predicate(),
+            projection.owner().predicate(),
             path,
             application,
             context,
@@ -720,7 +726,7 @@ impl TypeConstraintSolution {
                 .parameters()
                 .effect_reference(row.variable())
                 .expect("sealed effect parameter opening");
-            let value = effects.row(&reference).ok_or_else(|| {
+            let value = projection.owner().row(&reference).ok_or_else(|| {
                 super::effect_invariant(
                     super::TypeConstraintEffectInvariantKind::MissingInherited,
                     Some(row.variable().clone()),

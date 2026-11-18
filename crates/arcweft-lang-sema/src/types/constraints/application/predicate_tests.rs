@@ -95,7 +95,7 @@ fn complete(
     crate::types::constraints::TypeConstraintSolution::complete_application_with_effects(
         path,
         path.root_id(),
-        &closed,
+        &mut closed.projection(),
         graph.read(),
         context,
     )

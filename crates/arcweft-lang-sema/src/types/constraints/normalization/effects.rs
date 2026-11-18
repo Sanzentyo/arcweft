@@ -12,8 +12,9 @@ use super::super::{
 use super::*;
 use crate::effect_row::prepared::{
     BoundScopedEffectCompletion, PreparedEffectActualInputs, PreparedEffectGraph,
-    PreparedEffectPredicate, PreparedEffectRow, PreparedEffectScopedConstraint,
-    PreparedEffectUnknownRef, PrincipalEffectClosure, ScopedEffectCompletion,
+    PreparedEffectPredicate, PreparedEffectRow, PreparedEffectRowProjection,
+    PreparedEffectScopedConstraint, PreparedEffectUnknownRef, PrincipalEffectClosure,
+    ScopedEffectCompletion,
 };
 use crate::effect_row::{EffectConstraintEnvironment, EffectPredicate, EffectRow};
 use crate::types::{GenericEffectReference, PreparedEffects, TypeProjectionControl};
@@ -47,6 +48,11 @@ pub(in crate::types) struct ConstraintClosedEffects<D: ConstraintDomain> {
     substitution: BTreeMap<GenericEffectReference, ConstraintEffectBinding<D>>,
     predicate: ConstraintOperand<D, EffectPredicate>,
     context: Arc<ConstraintEffectCompletionContext<D>>,
+}
+
+pub(in crate::types::constraints) struct ConstraintEffectProjection<D: ConstraintDomain> {
+    owner: Arc<ConstraintClosedEffects<D>>,
+    rows: PreparedEffectRowProjection,
 }
 
 struct ConstraintEffectBinding<D: ConstraintDomain> {
@@ -452,8 +458,23 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
             .map_err(TypeConstraintError::from)
     }
 
-    pub(in crate::types::constraints) fn project_header<A: TypeConstraintAccounting>(
+    pub(in crate::types::constraints) fn projection(
         self: &Arc<Self>,
+    ) -> ConstraintEffectProjection<D> {
+        ConstraintEffectProjection {
+            owner: Arc::clone(self),
+            rows: self.context.principal.project_rows(),
+        }
+    }
+}
+
+impl<D: ConstraintDomain> ConstraintEffectProjection<D> {
+    pub(in crate::types::constraints) fn owner(&self) -> &Arc<ConstraintClosedEffects<D>> {
+        &self.owner
+    }
+
+    pub(in crate::types::constraints) fn project_header<A: TypeConstraintAccounting>(
+        &mut self,
         header: &AdmittedConstraintFunctionHeader<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<
@@ -462,15 +483,16 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     > {
         let header = header.view();
         let mut uses = HeaderReplacementUses::default();
-        let (row, predicate) = self.project_header_values(
+        let (row, predicate) = self.owner.project_header_values(
             header.lexical_scope(),
             header.row(),
             header.predicate(),
             Some(&mut uses),
+            &mut self.rows,
             context,
         )?;
         let row_support = if row.is_known() {
-            Some(self.header_support(
+            Some(self.owner.header_support(
                 header,
                 ConstraintEffectField::Row,
                 row.variables()?,
@@ -480,7 +502,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         } else {
             None
         };
-        let predicate_support = self.header_support(
+        let predicate_support = self.owner.header_support(
             header,
             ConstraintEffectField::Predicate,
             predicate.variables(),
@@ -489,7 +511,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         )?;
         let proof = ConstraintClosedEffectHeader {
             input: header.derivation(),
-            owner: Arc::clone(self),
+            owner: Arc::clone(&self.owner),
             row_keys: uses.row.into_iter().collect(),
             predicate_keys: uses.predicate.into_iter().collect(),
             row_support,
@@ -506,15 +528,18 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     pub(in crate::types::constraints::normalization) fn project_inspected_header<
         A: TypeConstraintAccounting,
     >(
-        &self,
+        &mut self,
         scope: &ConstraintLexicalScope,
         row: &PreparedEffectRow,
         predicate: &PreparedEffectPredicate,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(EffectRow, EffectPredicate), TypeConstraintError> {
-        self.project_header_values(scope, row, predicate, None, context)
+        self.owner
+            .project_header_values(scope, row, predicate, None, &mut self.rows, context)
     }
+}
 
+impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     fn header_support<'a, A: TypeConstraintAccounting>(
         &self,
         header: &ConstraintFunctionHeaderView<'_, D>,
@@ -566,6 +591,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         row: &PreparedEffectRow,
         predicate: &PreparedEffectPredicate,
         uses: Option<&mut HeaderReplacementUses>,
+        rows: &mut PreparedEffectRowProjection,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(EffectRow, EffectPredicate), TypeConstraintError> {
         let (mut row_keys, mut predicate_keys) = uses.map_or((None, None), |uses| {
@@ -576,8 +602,10 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 .try_substitute_variables(context, &mut |key, context| {
                     self.replacement(key, scope, row_keys.as_deref_mut(), context)
                 })?,
-            PreparedEffectRow::Term(_) => {
-                if let Some(row_keys) = row_keys {
+            PreparedEffectRow::Term(reference) => {
+                if let Some(row_keys) = row_keys
+                    && !self.substitution.is_empty()
+                {
                     let uses = self.context.principal.row_function_uses(row, context)?;
                     for (key, binding) in &self.substitution {
                         context.enter_node()?;
@@ -586,7 +614,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                         }
                     }
                 }
-                self.context.principal.resolve_row(row, context)?
+                rows.resolve(reference, context)?
             }
         };
         let predicate = match predicate {
@@ -596,7 +624,9 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 })?
             }
             PreparedEffectPredicate::Term(_) => {
-                if let Some(predicate_keys) = predicate_keys {
+                if let Some(predicate_keys) = predicate_keys
+                    && !self.substitution.is_empty()
+                {
                     let uses = self
                         .context
                         .principal

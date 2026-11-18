@@ -189,7 +189,10 @@ fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_befo
     let right_header = right_header
         .admit_for_test(graph.read(), &mut context)
         .unwrap();
-    let mut incomplete = effects.project_header(&left_header, &mut context).unwrap();
+    let mut projection = effects.projection();
+    let mut incomplete = projection
+        .project_header(&left_header, &mut context)
+        .unwrap();
     assert_eq!(
         incomplete.take_row(left_header.view().row()),
         EffectRow::closed(expected[0].clone())
@@ -201,7 +204,7 @@ fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_befo
         ))
     ));
     for (index, admitted) in [left_header, right_header].iter().enumerate() {
-        let mut projected = effects.project_header(admitted, &mut context).unwrap();
+        let mut projected = projection.project_header(admitted, &mut context).unwrap();
         let header = admitted.view();
         assert_eq!(
             projected.take_row(header.row()),
@@ -565,7 +568,13 @@ fn completed_equations_distinguish_the_ambient_effect_from_the_local_binder() {
             source_ordinal: None,
             timing: ConstraintEquationTiming::Immediate,
         };
-        let result = equation.validate_completed(&path, &completion, &mut context);
+        let graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+        let result = equation.validate_completed(
+            &path,
+            &mut completion.projection(),
+            graph.read(),
+            &mut context,
+        );
         if accepted {
             result.unwrap();
         } else {

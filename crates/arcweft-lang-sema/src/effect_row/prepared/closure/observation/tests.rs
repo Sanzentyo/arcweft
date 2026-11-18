@@ -27,6 +27,54 @@ fn assert_only_region(observation: &EffectRowObservation<'_>, expected: EffectRo
 }
 
 #[test]
+fn resolved_row_reuse_checks_graph_ownership_and_copy_budget() {
+    let mut control = budget();
+    let row = |graph: &mut PreparedEffectGraph, control: &mut Budget, label| {
+        let scheme = graph
+            .declare(vec![], EffectPredicate::unconstrained(), control)
+            .unwrap();
+        graph
+            .prepare_body(&scheme, literal(&[label]), vec![], control)
+            .unwrap();
+        let PreparedEffectRow::Term(reference) =
+            graph.application(&scheme, vec![], control).unwrap()
+        else {
+            panic!("an application should issue a live row");
+        };
+        reference
+    };
+    let mut graph = PreparedEffectGraph::default();
+    let original = row(&mut graph, &mut control, "fs.read");
+    let foreign = row(
+        &mut PreparedEffectGraph::default(),
+        &mut control,
+        "ui.write",
+    );
+    assert_eq!(original.0.ordinal, foreign.0.ordinal);
+    let principal = Arc::new(graph.solve_principal(&mut control).unwrap());
+    let mut projection = principal.project_rows();
+    let expected = EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap());
+    assert_eq!(
+        projection.resolve(&original, &mut control).unwrap(),
+        expected
+    );
+    assert!(matches!(
+        projection.resolve(&foreign, &mut control),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ForeignIssuer
+        ))
+    ));
+    assert!(matches!(
+        projection.resolve(&original, &mut Budget(1)),
+        Err(PreparedEffectFailure::Control(Exhausted))
+    ));
+    assert_eq!(
+        projection.resolve(&original, &mut control).unwrap(),
+        expected
+    );
+}
+
+#[test]
 fn vacuity_rejection_mixed_admission_and_row_ambiguity_are_distinct() {
     let mut graph = PreparedEffectGraph::default();
     let mut control = budget();

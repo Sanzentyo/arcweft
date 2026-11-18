@@ -219,7 +219,7 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
             path,
             path.root_id(),
             path,
-            &effects,
+            &mut effects.projection(),
             graph.read(),
             &mut context,
         )
@@ -459,7 +459,7 @@ fn source_equation_operands_keep_their_receipts_when_closed_and_transported() {
     let effects = pure_component_effects(&path, &mut graph, &mut context);
     let (closed, _) = path
         .lineage
-        .close_trace(&path, &effects, graph.read(), &mut context)
+        .close_trace(&path, &mut effects.projection(), graph.read(), &mut context)
         .unwrap();
     let equation = &path.equations[0];
     assert!(equation.actual.source_receipt().unwrap().matches(&receipt));
@@ -662,7 +662,7 @@ fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport
     let effects = pure_component_effects(&path, &mut graph, &mut context);
     let (closed, _) = path
         .lineage
-        .close_trace(&path, &effects, graph.read(), &mut context)
+        .close_trace(&path, &mut effects.projection(), graph.read(), &mut context)
         .unwrap();
     assert!(Arc::ptr_eq(
         &recorded_value,

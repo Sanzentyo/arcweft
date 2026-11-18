@@ -179,7 +179,7 @@ fn a_final_header_projects_the_actual_function_beneath_its_local_binder() {
             let effects =
                 ConstraintClosedEffects::for_path(&path, &original, &[], &mut graph, context)?;
             let admitted = header.admit_for_test(graph.read(), context)?;
-            let mut projected = effects.project_header(&admitted, context)?;
+            let mut projected = effects.projection().project_header(&admitted, context)?;
             let header = admitted.view();
             let row = projected.take_row(header.row());
             let predicate = projected.take_predicate(header.predicate());

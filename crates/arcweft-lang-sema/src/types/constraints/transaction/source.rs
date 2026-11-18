@@ -10,7 +10,7 @@ use crate::types::{PreparedEffects, TypeKind, TypeProjectionControl};
 
 use super::super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::super::hints::RetainedSourceType;
-use super::super::normalization::{ConstraintClosedEffects, close_type_operand};
+use super::super::normalization::{ConstraintClosedEffects, ConstraintEffectProjection};
 use super::{ConstraintApplicationId, ConstraintApplicationInventory};
 use super::{ConstraintInferenceBranch, ConstraintOperand};
 
@@ -18,7 +18,7 @@ use super::{ConstraintInferenceBranch, ConstraintOperand};
 mod canonical_tests;
 #[cfg(test)]
 mod tests;
-use super::super::{ConstraintSourceValueOwner, OriginalProducerContext};
+use super::super::{ConstraintClosurePolicy, ConstraintSourceValueOwner, OriginalProducerContext};
 use super::{
     CheckedConstraintSourceProjection, ConstraintDomain, ConstraintResultProjection,
     ConstraintSourceId, PreparedConstraintSourceProjection, PreparedSourceOrdinal,
@@ -327,7 +327,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
     pub(super) fn close<A: TypeConstraintAccounting, L>(
         self,
         path: &ConstraintInferenceBranch<D, L>,
-        effects: &Arc<ConstraintClosedEffects<D>>,
+        projection: &mut ConstraintEffectProjection<D>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ClosedConstraintProbe<D>, TypeConstraintError> {
@@ -336,7 +336,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
                 TypeConstraintSourceProtocolInvariant::Outcome,
             ));
         }
-        effects.require_branch(path)?;
+        projection.owner().require_branch(path)?;
         path.projection_view()
             .applications()
             .require_application(self.source.application())?;
@@ -348,7 +348,13 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
         let (original, retained_value) = self.actual.source_origin(self.source)?;
         let original = original.clone();
         let retained_value = retained_value.map(Arc::clone);
-        let projected = close_type_operand(self.actual.view(), path, effects, graph, context)?;
+        let projected = projection.project_operand(
+            self.actual.view(),
+            path,
+            ConstraintClosurePolicy::ProjectionClosed,
+            graph,
+            context,
+        )?;
         let prepared_projection = CheckedConstraintSourceProjection::derive(
             self.prepared_source_projection,
             projected.value(),
@@ -356,7 +362,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
         .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::Outcome))?;
         let actual = projected
             .view()
-            .close_canonical(path, effects, graph, context)?;
+            .close_canonical(path, projection, graph, context)?;
         let source_projection = CheckedConstraintSourceProjection::derive(
             self.prepared_source_projection,
             actual.value(),
@@ -371,8 +377,13 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
                 },
                 Some(expected),
             ) => {
-                let value_expected =
-                    close_type_operand(expected.view(), path, effects, graph, context)?;
+                let value_expected = projection.project_operand(
+                    expected.view(),
+                    path,
+                    ConstraintClosurePolicy::ProjectionClosed,
+                    graph,
+                    context,
+                )?;
                 let evidence = D::project_checked_evidence(evidence.as_ref(), actual.value())
                     .ok_or_else(|| {
                         protocol_error(TypeConstraintSourceProtocolInvariant::InvalidEvidence)
@@ -383,7 +394,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
                     expected: prepared_projection
                         .compose_operand(&projected.view(), &value_expected.view())?
                         .view()
-                        .close_canonical(path, effects, graph, context)?,
+                        .close_canonical(path, projection, graph, context)?,
                 }
             }
             _ => {
@@ -394,7 +405,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
         };
         context.enter_node()?;
         Ok(ClosedConstraintProbe {
-            completion: Arc::clone(effects),
+            completion: Arc::clone(projection.owner()),
             source: self.source,
             original,
             retained_value,
