@@ -267,19 +267,21 @@ fn repeated_source_component<'a>(
     ApplicationSourceContext<'a>,
     TypeConstraintTransaction<ApplicationSourceDomain>,
 ) {
-    // Prepare the child opening first so source precedence cannot accidentally
-    // rely on monotonically issued application identities.
-    let child_scope = ConstraintApplicationScope::test_root(
-        child_application,
-        TypeConstraintParameterScope::empty(),
-    );
-    let mut child_scope = Some(child_scope);
     let (mut context, parameters) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, ApplicationSourceDomain>::new(
             TypeConstraintLimits::new(4096, 2048, 128, 128),
             cancellation,
         )
         .into_parts();
+    // Prepare the child opening first so source precedence cannot accidentally
+    // rely on monotonically issued application identities.
+    let child_scope = ConstraintApplicationScope::test_root(
+        child_application,
+        TypeConstraintParameterScope::empty(),
+        graph,
+        &mut context,
+    );
+    let mut child_scope = Some(child_scope);
     let mut transaction =
         TypeConstraintTransaction::initialize_fixture(&mut context, graph, 0, parameters, None)
             .unwrap();
@@ -591,11 +593,15 @@ fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .unwrap();
-    let mut ticket = transaction.next_probe(&mut context).unwrap().unwrap();
+    let mut ticket = transaction
+        .next_probe(&mut context, &mut graph)
+        .unwrap()
+        .unwrap();
     let receipt = ticket.receipt();
     let nested = ticket.fork_for_child(&mut context).unwrap();
     let mut child = TypeConstraintTransaction::initialize_from_nested_path(
         &mut context,
+        &mut graph,
         nested.original_context().unwrap().clone(),
         2,
         TypeConstraintParameterScope::empty(),
@@ -606,6 +612,7 @@ fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport
     let child_id = child.application;
     child.request_projection(
         &mut context,
+        &mut graph,
         (),
         &TypeKind::String,
         TypeConstraintProjectionClosure::Closed,
@@ -626,17 +633,30 @@ fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport
         )
         .unwrap()
         .close_preparation(());
-    transaction
+    let mut observed = transaction
         .submit_probe(
             &mut context,
+            &mut graph,
             ticket.input(),
             ProbeSubmission::Accepted(contribution),
         )
         .unwrap();
-    assert!(transaction.next_probe(&mut context).unwrap().is_none());
+    assert_eq!(observed.len(), 1);
+    let (recorded_source, recorded_value) = observed.pop().unwrap().into_parts();
+    assert_eq!(recorded_source, receipt.source());
+    assert!(
+        transaction
+            .next_probe(&mut context, &mut graph)
+            .unwrap()
+            .is_none()
+    );
     let path = context.fork_path(transaction.test_single_path()).unwrap();
     let before = path.equations.last().unwrap().actual.clone();
     assert_eq!(before.value(), &TypeKind::String);
+    assert!(Arc::ptr_eq(
+        &recorded_value,
+        before.shared_result_observation().unwrap()
+    ));
     assert_eq!(before.result_origin().unwrap().application(), child_id);
     assert!(before.source_receipt().unwrap().matches(&receipt));
     let effects = pure_component_effects(&path, &mut graph, &mut context);
@@ -644,6 +664,10 @@ fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport
         .lineage
         .close_trace(&path, &effects, graph.read(), &mut context)
         .unwrap();
+    assert!(Arc::ptr_eq(
+        &recorded_value,
+        closed.last().unwrap().observed_result().unwrap()
+    ));
     assert_eq!(
         closed
             .last()

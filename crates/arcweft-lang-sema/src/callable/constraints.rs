@@ -12,8 +12,8 @@ pub(crate) use super::limits::{CandidateConstraintWorkLoan, CandidateConstraintW
 use crate::types::constraints::context::TypeConstraintContext;
 use crate::types::constraints::transaction::{
     ClosedMaterialization, ConstraintMaterialization, MaterializationCallbackBinding,
-    MaterializationTicket, ProbeStart, ProbeSubmission, ProbeTicket, SuspendedConstraintFrontier,
-    TypeConstraintTransaction,
+    MaterializationTicket, ProbeStart, ProbeSubmission, ProbeTicket, ResolvedResultProbe,
+    SuspendedConstraintFrontier, TypeConstraintTransaction,
 };
 use crate::types::constraints::{
     ClosedMaterializationSubmission, CompletedCandidateAlternatives, ConstraintDomain,
@@ -58,6 +58,14 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
         checkpoint: &mut Self::ProbeCheckpoint,
         source: &mut CandidateConstraintSourceContext<'_, '_, D>,
     ) -> Result<SourceProbeOutcome<D>, SourceCallbackFailure<D>>;
+
+    /// Publish operational observations only after the lower owner has
+    /// resolved the child ports and released the relation loan.
+    fn record_resolved_probe_results(
+        &mut self,
+        observations: Vec<ResolvedResultProbe<D>>,
+        work: &mut CandidateConstraintWorkSession<'_>,
+    ) -> Result<(), SourceCheckpointFailure<D>>;
 
     fn open_probe_checkpoint(
         &mut self,
@@ -758,11 +766,25 @@ where
                         break;
                     }
                 };
-            if let Err(error) = self.with_effect_relation(|lower, context, effects| {
+            match self.with_effect_relation(|lower, context, effects| {
                 lower.submit_probe(context, effects, input, submission)
             })? {
-                self.lower.record_failure(error.into());
-                break;
+                Ok(observations) => {
+                    if !observations.is_empty()
+                        && let Err(failure) = self.callbacks.with_callback(|client, work| {
+                            client.record_resolved_probe_results(observations, work)
+                        })
+                    {
+                        self.lower.record_failure(
+                            CandidateConstraintCallbacks::<D, C>::checkpoint_failure(failure),
+                        );
+                        break;
+                    }
+                }
+                Err(error) => {
+                    self.lower.record_failure(error.into());
+                    break;
+                }
             }
         }
         Ok(())
@@ -892,6 +914,14 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
     type ProbeCheckpoint = ();
     type MaterializationCheckpoint = ();
     type PreparedSealedBranchValue = ();
+
+    fn record_resolved_probe_results(
+        &mut self,
+        _: Vec<ResolvedResultProbe<crate::types::NoConstraintClient>>,
+        _: &mut CandidateConstraintWorkSession<'_>,
+    ) -> Result<(), SourceCheckpointFailure<crate::types::NoConstraintClient>> {
+        Ok(())
+    }
 
     fn probe_source(
         &mut self,
@@ -1328,6 +1358,14 @@ pub(crate) mod tests {
         type ProbeCheckpoint = u8;
         type MaterializationCheckpoint = u8;
         type PreparedSealedBranchValue = u8;
+
+        fn record_resolved_probe_results(
+            &mut self,
+            _: Vec<ResolvedResultProbe<Domain>>,
+            _: &mut CandidateConstraintWorkSession<'_>,
+        ) -> Result<(), SourceCheckpointFailure<Domain>> {
+            Ok(())
+        }
 
         fn probe_source(
             &mut self,

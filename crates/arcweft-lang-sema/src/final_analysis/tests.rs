@@ -11008,7 +11008,7 @@ fn caller() { choose(identity(1i64)); }
             TestCallableOverload::strict([TypeKind::U64], TypeKind::U64),
         ],
     );
-    assert_nested_call_candidate_rechecks(&fixture);
+    assert_nested_call_candidate_rechecks(&fixture, TypeKind::I64);
 }
 
 #[test]
@@ -11027,10 +11027,10 @@ fn caller() { choose(wrap(1i64)); }
             ),
         ],
     );
-    assert_nested_call_candidate_rechecks(&fixture);
+    assert_nested_call_candidate_rechecks(&fixture, TypeKind::Vec(Box::new(TypeKind::I64)));
 }
 
-fn assert_nested_call_candidate_rechecks(fixture: &Fixture) {
+fn assert_nested_call_candidate_rechecks(fixture: &Fixture, expected_child_result: TypeKind) {
     let report = analyze(fixture).expect("nested contextual call analysis");
     let outer = report
         .calls()
@@ -11065,6 +11065,23 @@ fn assert_nested_call_candidate_rechecks(fixture: &Fixture) {
     assert_eq!(inner_physical[0].pass(), CandidateEvaluationPass::Probe);
     assert_eq!(inner_physical[1].pass(), CandidateEvaluationPass::Probe);
     assert_eq!(inner_physical[2].pass(), CandidateEvaluationPass::Probe);
+    assert!(
+        outer_physical[..2]
+            .iter()
+            .all(|evaluation| { evaluation.completed_observed_types().next().is_none() }),
+        "discarded attempts retain no selected result"
+    );
+    let selected = outer_physical[2];
+    assert_eq!(
+        selected.source(),
+        CheckedCallArgumentSlotSource::Expression(inner.expression())
+    );
+    assert_eq!(selected.observed_types().count(), 1);
+    assert!(
+        selected
+            .completed_observed_types()
+            .eq([&expected_child_result])
+    );
 }
 
 #[test]

@@ -637,6 +637,41 @@ struct ObservedProbeAlternative<D: ConstraintDomain> {
     result: SourceProbeResult<D>,
 }
 
+/// A child result resolved against the exact parent probe receipt. The
+/// operational client shares the value already admitted to the parent path.
+pub(crate) struct ResolvedResultProbe<D: ConstraintDomain> {
+    source: ConstraintSourceId<D::Source>,
+    actual: Arc<TypeKind<PreparedEffects>>,
+}
+
+impl<D: ConstraintDomain> ResolvedResultProbe<D> {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        ConstraintSourceId<D::Source>,
+        Arc<TypeKind<PreparedEffects>>,
+    ) {
+        (self.source, self.actual)
+    }
+}
+
+impl<D: ConstraintDomain> std::fmt::Debug for ResolvedResultProbe<D> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ResolvedResultProbe")
+            .field("actual", &self.actual)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<D: ConstraintDomain> PartialEq for ResolvedResultProbe<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.source == other.source && Arc::ptr_eq(&self.actual, &other.actual)
+    }
+}
+
+impl<D: ConstraintDomain> Eq for ResolvedResultProbe<D> {}
+
 impl<D: ConstraintDomain> SourceProbeContribution<D> {
     pub(crate) fn close_preparation(
         self,
@@ -1933,7 +1968,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         input: Arc<ProbeInput<D>>,
         submission: ProbeSubmission<D>,
-    ) -> Result<(), TypeConstraintError>
+    ) -> Result<Vec<ResolvedResultProbe<D>>, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
     {
@@ -1957,6 +1992,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 TypeConstraintSourceProtocolInvariant::Ticket,
             ));
         }
+        let mut observed_results = Vec::new();
         match submission {
             ProbeSubmission::Rejected(cause) => {
                 operation.active_input = None;
@@ -1979,6 +2015,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         graph,
                         context,
                     )?;
+                    if let Some(actual) = actual_operand.shared_result_observation() {
+                        context.enter_node()?;
+                        observed_results.push(ResolvedResultProbe {
+                            source: input.source,
+                            actual: Arc::clone(actual),
+                        });
+                    }
                     let actual = actual_operand.value().clone();
                     let callback_selection = match callback_selection {
                         SourceProbeSelection::Unchecked => SourceProbeSelection::Unchecked,
@@ -2150,7 +2193,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 }
             }
         }
-        Ok(())
+        Ok(observed_results)
     }
 
     pub(crate) fn next_materialization_ticket<A: TypeConstraintAccounting>(

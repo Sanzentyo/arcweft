@@ -209,20 +209,19 @@ pub(crate) struct PhysicalSourceType {
 
 impl PhysicalSourceType {
     pub(crate) fn new(root: ExprId, prepared: TypeKind<PreparedEffects>) -> Self {
-        Self {
-            root,
-            prepared: Arc::new(prepared),
-        }
+        Self::from_shared(root, Arc::new(prepared))
+    }
+
+    pub(crate) fn from_shared(root: ExprId, prepared: Arc<TypeKind<PreparedEffects>>) -> Self {
+        Self { root, prepared }
     }
 
     pub(crate) const fn root(&self) -> ExprId {
         self.root
     }
 
-    /// In-memory lookup only. Neither ordering nor identity escapes the trace
-    /// owner, and the identity is never used as a semantic digest input.
-    pub(in crate::final_analysis) fn identity(&self) -> *const TypeKind<PreparedEffects> {
-        Arc::as_ptr(&self.prepared)
+    pub(in crate::final_analysis) fn shared_prepared(&self) -> &Arc<TypeKind<PreparedEffects>> {
+        &self.prepared
     }
 
     fn same_observation(&self, other: &Self) -> bool {

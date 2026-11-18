@@ -349,6 +349,16 @@ impl<D: ConstraintDomain> ConstraintOperand<D, TypeKind> {
 }
 
 impl<D: ConstraintDomain> ConstraintOperand<D> {
+    pub(super) fn shared_result_observation(&self) -> Option<&Arc<TypeKind<PreparedEffects>>> {
+        match self.origin.as_ref() {
+            ConstraintOperandOrigin::Source {
+                value: ResolvedConstraintSource::Result(_),
+                ..
+            } => Some(&self.value),
+            _ => None,
+        }
+    }
+
     pub(super) fn source_origin(
         &self,
         source: super::ConstraintSourceId<D::Source>,

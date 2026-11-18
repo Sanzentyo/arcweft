@@ -1607,7 +1607,7 @@ impl SemanticFactState {
             control.check()?;
             let (owner, source, actual) = completed.into_parts();
             if remaining
-                .insert(source.identity(), (ordinal, owner, source.root(), actual))
+                .insert(Arc::as_ptr(source), (ordinal, owner, actual))
                 .is_some()
             {
                 return Err(
@@ -1628,10 +1628,13 @@ impl SemanticFactState {
                 control.check()?;
                 for (observation_index, source) in row.observation_sources().enumerate() {
                     control.check()?;
-                    if let Some((_, owner, expected_root, actual)) =
-                        remaining.remove(&source.identity())
+                    if let Some((_, owner, actual)) =
+                        remaining.remove(&Arc::as_ptr(source.shared_prepared()))
                     {
-                        if root != expected_root || row.call_expression() != owner {
+                        if root != source.root()
+                            || root != row.attempt().root()
+                            || row.call_expression() != owner
+                        {
                             return Err(CandidateFactTransactionViolation::PhysicalCandidateTypeObservationConflict { owner }.into());
                         }
                         matched.push((root, row_index, observation_index, actual));
@@ -1639,9 +1642,9 @@ impl SemanticFactState {
                 }
             }
         }
-        if let Some((_, owner, _, _)) = remaining
+        if let Some((_, owner, _)) = remaining
             .into_values()
-            .min_by_key(|(ordinal, _, _, _)| *ordinal)
+            .min_by_key(|(ordinal, _, _)| *ordinal)
         {
             return Err(
                 CandidateFactTransactionViolation::PhysicalCandidateEvaluationMissing { owner }

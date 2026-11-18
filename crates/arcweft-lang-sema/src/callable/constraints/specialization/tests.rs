@@ -90,6 +90,14 @@ impl TypeConstraintClient<Domain> for Client<'_> {
     type MaterializationCheckpoint = ();
     type PreparedSealedBranchValue = ();
 
+    fn record_resolved_probe_results(
+        &mut self,
+        _: Vec<ResolvedResultProbe<Domain>>,
+        _: &mut CandidateConstraintWorkSession<'_>,
+    ) -> Result<(), SourceCheckpointFailure<Domain>> {
+        Ok(())
+    }
+
     fn with_effect_relation<R>(
         &mut self,
         access: CandidateConstraintEffectAccess<'_>,

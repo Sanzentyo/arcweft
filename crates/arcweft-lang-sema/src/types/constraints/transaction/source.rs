@@ -137,6 +137,7 @@ pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
     source: ConstraintSourceId<D::Source>,
     original: OriginalProducerContext,
     retained_value: Option<Arc<D::SourceValue>>,
+    observed_result: Option<Arc<TypeKind<PreparedEffects>>>,
     source_ordinal: PreparedSourceOrdinal,
     branch: D::ProbeSemanticBranch,
     selection: ClosedSourceSelection<D>,
@@ -385,6 +386,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
             source: self.source,
             original,
             retained_value,
+            observed_result: self.actual.shared_result_observation().map(Arc::clone),
             source_ordinal: self.source_ordinal,
             branch: self.branch.branch().clone(),
             selection,
@@ -398,6 +400,11 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
 impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
     pub(crate) fn retained_value(&self) -> Option<&D::SourceValue> {
         self.retained_value.as_deref()
+    }
+
+    /// The same prepared result observed while this source was submitted.
+    pub(crate) fn observed_result(&self) -> Option<&Arc<TypeKind<PreparedEffects>>> {
+        self.observed_result.as_ref()
     }
 
     /// The expression checker operates in the source's Γ. Move the closed
@@ -638,6 +645,7 @@ impl<D: ConstraintDomain> Clone for ClosedConstraintProbe<D> {
             source: self.source,
             original: self.original.clone(),
             retained_value: self.retained_value.as_ref().map(Arc::clone),
+            observed_result: self.observed_result.as_ref().map(Arc::clone),
             source_ordinal: self.source_ordinal,
             branch: self.branch.clone(),
             selection: self.selection.clone(),

@@ -1328,10 +1328,12 @@ impl<'a, 'project, 'catalog, 'control>
         work: &mut AnalyzerPreparationWork<'_>,
     ) -> Result<(), crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>> {
         let source = source_id.local();
-        let Some(physical) = source.physical_argument() else {
-            return Ok(());
-        };
-        let Some(candidate) = self.candidate.as_ref() else {
+        let Some(identity) = self.physical_source_identity(source).map_err(|violation| {
+            crate::callable::SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::fact_transaction(source, violation),
+            )
+        })?
+        else {
             return Ok(());
         };
         if !actual.is_probed_source(source_id) {
@@ -1344,14 +1346,6 @@ impl<'a, 'project, 'catalog, 'control>
                 ),
             ));
         }
-        let attempt = self.attempt.clone().ok_or_else(|| {
-            crate::callable::SourceCallbackFailure::invariant(
-                AnalyzerCallClientInvariant::fact_transaction(
-                    source,
-                    crate::final_analysis::CandidateFactTransactionViolation::PhysicalCallAttemptRootMismatch,
-                ),
-            )
-        })?;
         let graph = self
             .analyzer
             .facts
@@ -1365,7 +1359,7 @@ impl<'a, 'project, 'catalog, 'control>
             .0
             .read();
         let actual = actual
-            .record_physical_type(&attempt, physical.source().owner(), graph, work)
+            .record_physical_type(identity.attempt(), identity.source().owner(), graph, work)
             .map_err(|error| {
                 crate::callable::SourceCallbackFailure::fatal(SourceError::new(
                     source_id,
@@ -1373,12 +1367,6 @@ impl<'a, 'project, 'catalog, 'control>
                     AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
                 ))
             })?;
-        let identity = PhysicalCandidateArgumentEvaluation::new(
-            attempt,
-            candidate.id().clone(),
-            self.pass,
-            physical,
-        );
         self.analyzer
             .facts
             .retain_physical_candidate_observed_type(identity, actual)
@@ -1387,6 +1375,29 @@ impl<'a, 'project, 'catalog, 'control>
                     AnalyzerCallClientInvariant::fact_transaction(source, violation),
                 )
             })
+    }
+
+    fn physical_source_identity(
+        &self,
+        source: AnalyzerCallConstraintSource,
+    ) -> Result<
+        Option<PhysicalCandidateArgumentEvaluation>,
+        crate::final_analysis::CandidateFactTransactionViolation,
+    > {
+        let (Some(physical), Some(candidate)) =
+            (source.physical_argument(), self.candidate.as_ref())
+        else {
+            return Ok(None);
+        };
+        let attempt = self.attempt.clone().ok_or(
+            crate::final_analysis::CandidateFactTransactionViolation::PhysicalCallAttemptRootMismatch,
+        )?;
+        Ok(Some(PhysicalCandidateArgumentEvaluation::new(
+            attempt,
+            candidate.id().clone(),
+            self.pass,
+            physical,
+        )))
     }
 
     fn admit_physical_source(
@@ -2053,6 +2064,16 @@ trait AnalyzerCallConstraintOperations {
         crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>,
     >;
 
+    fn record_resolved_probe_results(
+        &mut self,
+        observations: Vec<
+            crate::types::constraints::transaction::ResolvedResultProbe<
+                AnalyzerCallConstraintDomain,
+            >,
+        >,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+    ) -> Result<(), crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>>;
+
     fn open_probe_checkpoint(
         &mut self,
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
@@ -2127,6 +2148,42 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
     type ProbeCheckpoint = AnalyzerProbeCheckpoint;
     type MaterializationCheckpoint = AnalyzerMaterializationCheckpoint;
     type PreparedSealedBranchValue = AnalyzerCallPreparedSealedBranch;
+
+    fn record_resolved_probe_results(
+        &mut self,
+        observations: Vec<
+            crate::types::constraints::transaction::ResolvedResultProbe<
+                AnalyzerCallConstraintDomain,
+            >,
+        >,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+    ) -> Result<(), crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>> {
+        use crate::effect_row::{DecisionControl, DecisionWork};
+
+        for observation in observations {
+            let (source, actual) = observation.into_parts();
+            let source = source.local();
+            let failure = |violation| {
+                crate::callable::SourceCheckpointFailure::client(
+                    AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                )
+            };
+            let Some(identity) = self.physical_source_identity(source).map_err(failure)? else {
+                continue;
+            };
+            work.charge(DecisionWork::Node)
+                .map_err(crate::callable::SourceCheckpointFailure::Constraint)?;
+            let actual = crate::final_analysis::accounting::PhysicalSourceType::from_shared(
+                identity.attempt().root(),
+                actual,
+            );
+            self.analyzer
+                .facts
+                .retain_physical_candidate_observed_type(identity, actual)
+                .map_err(failure)?;
+        }
+        Ok(())
+    }
 
     fn with_effect_relation<R>(
         &mut self,
@@ -3042,6 +3099,19 @@ impl<O: AnalyzerCallConstraintOperations>
     type MaterializationCheckpoint = O::MaterializationCheckpoint;
     type PreparedSealedBranchValue = O::PreparedSealedBranchValue;
 
+    fn record_resolved_probe_results(
+        &mut self,
+        observations: Vec<
+            crate::types::constraints::transaction::ResolvedResultProbe<
+                AnalyzerCallConstraintDomain,
+            >,
+        >,
+        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+    ) -> Result<(), crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>> {
+        self.operations
+            .record_resolved_probe_results(observations, work)
+    }
+
     fn with_effect_relation<R>(
         &mut self,
         access: crate::callable::CandidateConstraintEffectAccess<'_>,
@@ -3821,7 +3891,14 @@ impl CompletedCallApplicationEvidence {
         &self,
     ) -> impl Iterator<Item = CompletedPhysicalCallSource<'_>> {
         self.sources().selected().filter_map(|source| {
-            let observation = source.retained_value()?.physical_type()?;
+            // Result observations follow the admitted result operand. Direct
+            // values share the type retained by their original source owner.
+            let observation = if let Some(result) = source.observed_result() {
+                source.source().local().physical_argument()?;
+                result
+            } else {
+                source.retained_value()?.physical_type()?.shared_prepared()
+            };
             Some(CompletedPhysicalCallSource {
                 application: self.application,
                 observation,
@@ -3835,7 +3912,7 @@ impl CompletedCallApplicationEvidence {
 /// component. Only the application that owns the source trace can form it.
 pub(in crate::final_analysis::analyzer) struct CompletedPhysicalCallSource<'a> {
     application: ExprId,
-    observation: &'a crate::final_analysis::accounting::PhysicalSourceType,
+    observation: &'a Arc<TypeKind<PreparedEffects>>,
     actual: &'a Arc<TypeKind>,
 }
 
@@ -3844,7 +3921,7 @@ impl<'a> CompletedPhysicalCallSource<'a> {
         self,
     ) -> (
         ExprId,
-        &'a crate::final_analysis::accounting::PhysicalSourceType,
+        &'a Arc<TypeKind<PreparedEffects>>,
         &'a Arc<TypeKind>,
     ) {
         (self.application, self.observation, self.actual)
