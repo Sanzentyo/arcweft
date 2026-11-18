@@ -40,7 +40,7 @@ use super::calls::{
     AnalyzerDetachedCandidateRecord, AnalyzerDetachedConsideredCandidate,
     AnalyzerDetachedUnselectedCall, AnalyzerDetachedUnselectedOutcome, AnalyzerPreparedCallGraph,
     AnalyzerPreparedCalleeExpression, AnalyzerPreparedExpressionResolution,
-    final_callable_effect_row, final_callable_effects,
+    CompletedCallApplicationEvidence, final_callable_effect_row, final_callable_effects,
 };
 use super::display::DisplayConformanceCatalog;
 
@@ -1276,6 +1276,7 @@ struct SealedSelectedCall {
     callee_expression: AnalyzerPreparedCalleeExpression,
     enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     accounting: crate::callable::CallResolverAccountingReport,
+    component: CompletedCallApplicationEvidence,
 }
 
 impl SealedSelectedCall {
@@ -1577,6 +1578,7 @@ fn seal_selected_call(
         callee_expression: record.callee_expression,
         enclosing_callable: record.enclosing_callable,
         accounting: record.accounting,
+        component: record.component,
     })
 }
 
@@ -1851,6 +1853,7 @@ impl super::Analyzer<'_, '_, '_> {
         let mut bases = BTreeMap::new();
         let mut applications = BTreeMap::new();
         let mut pending = Vec::with_capacity(nodes.len());
+        let mut selected_components = Vec::new();
         {
             let expressions = self.facts.expressions();
             let locals = self.facts.locals();
@@ -1895,6 +1898,7 @@ impl super::Analyzer<'_, '_, '_> {
                             display,
                         )?;
                         let callee = sealed.callee_update(expressions, checked_callables)?;
+                        selected_components.push(sealed.component);
                         let update = PendingSelectedExpressionUpdate {
                             resolution: sealed.expression_resolution,
                             result: checked_call_result_schema(&sealed.application)?,
@@ -1946,6 +1950,7 @@ impl super::Analyzer<'_, '_, '_> {
                             display,
                         )?;
                         let callee = sealed.callee_update(expressions, checked_callables)?;
+                        selected_components.push(sealed.component);
                         let update = PendingSelectedExpressionUpdate {
                             resolution: sealed.expression_resolution,
                             result: checked_call_result_schema(&sealed.application)?,
@@ -2126,6 +2131,12 @@ impl super::Analyzer<'_, '_, '_> {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
         }
+        self.facts.complete_physical_observations(
+            selected_components
+                .iter()
+                .flat_map(CompletedCallApplicationEvidence::physical_observations),
+            self.control,
+        )?;
         Ok(())
     }
 }

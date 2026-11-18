@@ -59,6 +59,51 @@ impl PreparedEffectDefinitions {
 }
 
 impl<'a> PreparedEffectReadView<'a> {
+    /// Check a live contextual hint for the test that distinguishes a bare
+    /// open parameter from a constant body row. Identity substitutions keep
+    /// the property without reifying an inference function as a final row.
+    #[cfg(test)]
+    pub(crate) fn is_single_open_parameter(self, mut value: &'a PreparedEffectRow) -> bool {
+        let mut work = super::test_support::budget();
+        loop {
+            if work.charge(DecisionWork::Visit).is_err() {
+                return false;
+            }
+            let (formula, substitutions) = match value {
+                PreparedEffectRow::Canonical(row) => {
+                    if let Some(formula) = row.formula() {
+                        (formula, None)
+                    } else {
+                        return false;
+                    }
+                }
+                PreparedEffectRow::Term(reference) => match self.row(reference) {
+                    Ok(RowTerm::Application {
+                        function: FunctionRef::Unknown(unknown),
+                        arguments,
+                    }) => {
+                        return arguments.is_empty() && self.validate_unknown(unknown).is_ok();
+                    }
+                    Ok(RowTerm::Substitution { formula, arguments }) => (formula, Some(arguments)),
+                    _ => return false,
+                },
+            };
+            let Some(variable) = formula.variables().next() else {
+                return false;
+            };
+            let Ok(single) = EffectFormula::variable(variable.clone(), &mut work) else {
+                return false;
+            };
+            if *formula != single {
+                return false;
+            }
+            match substitutions.and_then(|arguments| arguments.get(variable)) {
+                Some(replacement) => value = replacement,
+                None => return true,
+            }
+        }
+    }
+
     /// Enumerate the visible inventories without allocating a copied index.
     /// The same immutable definition can occur in several retained layers.
     pub(super) fn visible_function_ids(self) -> impl Iterator<Item = u64> + 'a {

@@ -8328,6 +8328,8 @@ fn caller() { add([1i64, 2i64]...); }
             evaluation.expected(),
             &CandidateExpectedType::Exact(TypeKind::I64)
         );
+        assert!(evaluation.observed_types().eq([&TypeKind::I64]));
+        assert!(evaluation.completed_observed_types().eq([&TypeKind::I64]));
         assert!(matches!(
             evaluation.source(),
             CheckedCallArgumentSlotSource::CompactNumericElement {
@@ -8800,7 +8802,14 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
             let CandidateExpectedType::Exact(actual) = evaluation.expected() else {
                 panic!("contextual candidate owns an exact expected type");
             };
-            match (actual, expected) {
+            let expected = expected
+                .prepare_effects(
+                    &crate::types::GenericScope::default(),
+                    &mut crate::types::UnmeteredTypeProjection,
+                )
+                .expect("fixture has a closed lexical scope");
+            use crate::effect_row::prepared::PreparedEffectRow;
+            match (actual, &expected) {
                 (
                     TypeKind::Function {
                         binder: actual_binder,
@@ -8814,7 +8823,7 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                         predicate: expected_predicate,
                         params: expected_params,
                         return_type: expected_return,
-                        effects: expected_effects,
+                        effects: PreparedEffectRow::Canonical(expected_effects),
                     },
                 ) => {
                     assert_eq!(actual_binder, expected_binder);
@@ -8826,14 +8835,20 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                         "the fixture deliberately omits its input row"
                     );
                     assert!(
-                        actual_effects
-                            .constant_effects()
-                            .expect("admitted effect parameter")
-                            .is_empty()
+                        evaluation.expected_open_parameter(),
+                        "the live contextual hint retains one bare open effect parameter"
                     );
-                    assert!(actual_effects.is_known() && !actual_effects.is_closed());
+                    if let PreparedEffectRow::Canonical(actual_effects) = actual_effects {
+                        assert!(
+                            actual_effects
+                                .constant_effects()
+                                .expect("admitted effect parameter")
+                                .is_empty()
+                        );
+                        assert!(actual_effects.is_known() && !actual_effects.is_closed());
+                    }
                 }
-                _ => assert_eq!(actual, expected),
+                _ => assert_eq!(actual, &expected),
             }
             let CheckedCallArgumentSlotSource::Expression(owner) = evaluation.source() else {
                 panic!("contextual shorthand/placeholder is expression-backed");
@@ -8842,9 +8857,12 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                 report.expression(owner).is_none(),
                 "an unresolved tie does not publish a candidate's expression authority"
             );
-            let observed = evaluation
-                .observed_type()
+            let mut observations = evaluation.observed_types();
+            let observed = observations
+                .next()
                 .expect("the actual source type is retained for this candidate probe");
+            assert!(observations.next().is_none());
+            assert_eq!(evaluation.completed_observed_types().count(), 0);
             match (observed, actual) {
                 (
                     TypeKind::Function {
@@ -8852,7 +8870,7 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                         predicate: observed_predicate,
                         params: observed_params,
                         return_type: observed_return,
-                        effects: observed_effects,
+                        effects: PreparedEffectRow::Canonical(observed_effects),
                     },
                     TypeKind::Function {
                         binder: expected_binder,
@@ -8866,16 +8884,20 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                     assert_eq!(observed_predicate, expected_predicate);
                     assert_eq!(observed_params, expected_params);
                     assert_eq!(observed_return, expected_return);
-                    assert_eq!(
+                    assert!(observed_effects.is_closed());
+                    assert!(
                         observed_effects
                             .constant_effects()
-                            .expect("known effect row"),
-                        expected_effects
-                            .constant_effects()
                             .expect("known effect row")
+                            .is_empty()
                     );
-                    assert!(observed_effects.is_closed());
-                    assert!(expected_effects.is_known() && !expected_effects.is_closed());
+                    assert_ne!(
+                        &PreparedEffectRow::Canonical(observed_effects.clone()),
+                        expected_effects
+                    );
+                }
+                (TypeKind::Function { .. }, TypeKind::Function { .. }) => {
+                    panic!("the contextual fixture must retain its inline observed effect row");
                 }
                 _ => assert_eq!(observed, actual),
             }

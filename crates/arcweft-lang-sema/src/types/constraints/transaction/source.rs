@@ -396,7 +396,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
 }
 
 impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
-    pub(in crate::types::constraints) fn retained_value(&self) -> Option<&D::SourceValue> {
+    pub(crate) fn retained_value(&self) -> Option<&D::SourceValue> {
         self.retained_value.as_deref()
     }
 
@@ -514,6 +514,9 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
     }
     pub(crate) fn actual(&self) -> &TypeKind {
         self.actual.value()
+    }
+    pub(crate) fn shared_actual(&self) -> &Arc<TypeKind> {
+        self.actual.shared_value()
     }
     pub(crate) fn final_expected(&self) -> Option<&TypeKind> {
         match &self.selection {

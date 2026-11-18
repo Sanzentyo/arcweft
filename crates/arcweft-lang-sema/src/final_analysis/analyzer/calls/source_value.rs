@@ -1,11 +1,14 @@
 //! Actual source terms retain their checked or staged value owner.
 
 use super::*;
+use crate::final_analysis::accounting::PhysicalSourceType;
+use std::sync::OnceLock;
 
 pub(in crate::final_analysis::analyzer) struct AnalyzerObservedSourceValue {
     origin: AnalyzerObservedSourceOrigin,
     original: crate::types::constraints::OriginalProducerContext,
     value: ObservedValue,
+    physical: OnceLock<PhysicalSourceType>,
 }
 
 enum ObservedValue {
@@ -40,6 +43,7 @@ impl AnalyzerObservedSourceValue {
             origin,
             original,
             value: ObservedValue::Expression(value),
+            physical: OnceLock::new(),
         }))
     }
 
@@ -53,6 +57,7 @@ impl AnalyzerObservedSourceValue {
                 origin,
                 original,
                 value: ObservedValue::Prepared(value),
+                physical: OnceLock::new(),
             })
         })
     }
@@ -78,6 +83,40 @@ impl AnalyzerObservedSourceValue {
         }
     }
 
+    pub(super) fn record_physical_type(
+        &self,
+        attempt: &PhysicalCallAttemptId,
+        value_owner: ExprId,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        work: &mut AnalyzerPreparationWork<'_>,
+    ) -> Result<PhysicalSourceType, FinalSemanticAnalysisError> {
+        work.visit_binding()?;
+        let prepared = self
+            .actual()
+            .retain_effects(self.original.occurrence_scope(), graph, work)
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_prepared_type_retention(
+                    value_owner.into(),
+                    error,
+                )
+            })?;
+        let source = PhysicalSourceType::new(attempt.root(), prepared);
+        self.physical.set(source.clone()).map_err(|_| {
+            crate::final_analysis::CandidateFactTransactionViolation::PhysicalCandidateTypeObservationConflict {
+                owner: attempt.owner(),
+            }
+        })?;
+        Ok(source)
+    }
+
+    pub(super) fn physical_type(&self) -> Option<&PhysicalSourceType> {
+        self.physical.get()
+    }
+
+    pub(super) fn is_probed_source(&self, source: AnalyzerCallConstraintSourceId) -> bool {
+        matches!(&self.origin, AnalyzerObservedSourceOrigin::Probe(receipt) if receipt.source() == source)
+    }
+
     pub(super) fn staged_value(&self) -> Option<&Arc<AnalyzerPreparedSourceActual>> {
         match &self.value {
             ObservedValue::Prepared(value) => Some(value),
@@ -96,6 +135,7 @@ impl AnalyzerObservedSourceValue {
             origin: AnalyzerObservedSourceOrigin::Check(source),
             original: fixture_original_context(),
             value: ObservedValue::Fixture(value),
+            physical: OnceLock::new(),
         })
     }
 }

@@ -1302,20 +1302,30 @@ impl<'a, 'project, 'catalog, 'control>
                 crate::final_analysis::CandidateFactTransactionViolation::PhysicalCallAttemptRootMismatch,
             )
         })?;
-        self.analyzer.record_physical_candidate_argument_evaluation(
-            PhysicalCandidateArgumentEvaluation::new(
-                attempt,
-                candidate.id().clone(),
-                self.pass,
-                physical,
-            ),
-        )
+        let evaluation = PhysicalCandidateArgumentEvaluation::new(
+            attempt,
+            candidate.id().clone(),
+            self.pass,
+            physical,
+        );
+        #[cfg(test)]
+        let evaluation = evaluation.inspect_expected_effects(
+            self.analyzer
+                .facts
+                .effect_declarations_mut()?
+                .relation()
+                .0
+                .read(),
+        );
+        self.analyzer
+            .record_physical_candidate_argument_evaluation(evaluation)
     }
 
     fn retain_physical_observed_type(
         &mut self,
         source_id: AnalyzerCallConstraintSourceId,
-        actual: &TypeKind<PreparedEffects>,
+        actual: &AnalyzerObservedSourceValue,
+        work: &mut AnalyzerPreparationWork<'_>,
     ) -> Result<(), crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>> {
         let source = source_id.local();
         let Some(physical) = source.physical_argument() else {
@@ -1324,6 +1334,16 @@ impl<'a, 'project, 'catalog, 'control>
         let Some(candidate) = self.candidate.as_ref() else {
             return Ok(());
         };
+        if !actual.is_probed_source(source_id) {
+            return Err(crate::callable::SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::constraint(
+                    source,
+                    CallConstraintInvariant::Lower(TypeConstraintInvariant::SourceProtocol(
+                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::WrongSource,
+                    )),
+                ),
+            ));
+        }
         let attempt = self.attempt.clone().ok_or_else(|| {
             crate::callable::SourceCallbackFailure::invariant(
                 AnalyzerCallClientInvariant::fact_transaction(
@@ -1332,6 +1352,27 @@ impl<'a, 'project, 'catalog, 'control>
                 ),
             )
         })?;
+        let graph = self
+            .analyzer
+            .facts
+            .effect_declarations_mut()
+            .map_err(|violation| {
+                crate::callable::SourceCallbackFailure::invariant(
+                    AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                )
+            })?
+            .relation()
+            .0
+            .read();
+        let actual = actual
+            .record_physical_type(&attempt, physical.source().owner(), graph, work)
+            .map_err(|error| {
+                crate::callable::SourceCallbackFailure::fatal(SourceError::new(
+                    source_id,
+                    SourcePhase::Probe,
+                    AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
+                ))
+            })?;
         let identity = PhysicalCandidateArgumentEvaluation::new(
             attempt,
             candidate.id().clone(),
@@ -2230,7 +2271,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             .extend(checked.prepared_children.iter().cloned());
                         match (checked.actual, checked.pending_child) {
                         (Some(actual), None) => {
-                            self.retain_physical_observed_type(source_id, actual.actual())?;
+                            self.retain_physical_observed_type(source_id, &actual, &mut source_work.clone())?;
                             let declarations = self.analyzer.facts.effect_declarations_mut()
                                 .map_err(|violation| crate::callable::SourceCallbackFailure::invariant(
                                     AnalyzerCallClientInvariant::fact_transaction(source, violation),
@@ -2321,7 +2362,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             if alternative.evidence().accepts(&checked.evidence) {
                                 return match (checked.actual, checked.pending_child) {
                                     (Some(actual), None) => {
-                                        self.retain_physical_observed_type(source_id, actual.actual())?;
+                                        self.retain_physical_observed_type(source_id, &actual, &mut source_work.clone())?;
                                         let declarations = self.analyzer.facts.effect_declarations_mut()
                                             .map_err(|violation| crate::callable::SourceCallbackFailure::invariant(
                                                 AnalyzerCallClientInvariant::fact_transaction(source, violation),
@@ -2678,7 +2719,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             | PhysicalArgumentEvaluationKind::FixedLiteralSpread => request
                                 .expected()
                                 .map_or(CandidateExpectedType::Unchecked, |expected| {
-                                    CandidateExpectedType::Exact(expected.clone())
+                                    CandidateExpectedType::Completed(expected.clone())
                                 }),
                         },
                     );
@@ -3774,6 +3815,39 @@ impl CompletedCallApplicationEvidence {
             component: &self.component,
             application: self.application,
         }
+    }
+
+    pub(in crate::final_analysis::analyzer) fn physical_observations(
+        &self,
+    ) -> impl Iterator<Item = CompletedPhysicalCallSource<'_>> {
+        self.sources().selected().filter_map(|source| {
+            let observation = source.retained_value()?.physical_type()?;
+            Some(CompletedPhysicalCallSource {
+                application: self.application,
+                observation,
+                actual: source.shared_actual(),
+            })
+        })
+    }
+}
+
+/// The exact source observation and the actual from its selected, closed
+/// component. Only the application that owns the source trace can form it.
+pub(in crate::final_analysis::analyzer) struct CompletedPhysicalCallSource<'a> {
+    application: ExprId,
+    observation: &'a crate::final_analysis::accounting::PhysicalSourceType,
+    actual: &'a Arc<TypeKind>,
+}
+
+impl<'a> CompletedPhysicalCallSource<'a> {
+    pub(in crate::final_analysis::analyzer) fn into_parts(
+        self,
+    ) -> (
+        ExprId,
+        &'a crate::final_analysis::accounting::PhysicalSourceType,
+        &'a Arc<TypeKind>,
+    ) {
+        (self.application, self.observation, self.actual)
     }
 }
 

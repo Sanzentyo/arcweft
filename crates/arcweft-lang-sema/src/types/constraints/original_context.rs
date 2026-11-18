@@ -136,6 +136,11 @@ impl OriginalProducerContext {
     pub(super) fn gamma(&self) -> &ConstraintLexicalScope {
         &self.0.gamma
     }
+
+    /// Shape in which the producer's original prepared values occur.
+    pub(crate) fn occurrence_scope(&self) -> &GenericScope {
+        self.0.gamma.shape()
+    }
 }
 
 impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_, A, D> {

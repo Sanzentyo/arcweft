@@ -2,7 +2,10 @@
 
 #[cfg(test)]
 use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use super::analyzer::PhysicalCallAttemptId;
 use super::{
@@ -10,6 +13,7 @@ use super::{
     CheckedCallArgumentSlotSource, ExprId, FinalSemanticAnalysisError, HirCallArgumentOrdinal,
     TypeKind,
 };
+use crate::types::PreparedEffects;
 
 /// Caller-owned cancellation observed while a semantic generation is staged.
 ///
@@ -116,7 +120,8 @@ pub(crate) enum CandidateEvaluationPass {
 /// Candidate-specific expectation in force at one physical evaluation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CandidateExpectedType {
-    Exact(TypeKind),
+    Exact(TypeKind<PreparedEffects>),
+    Completed(TypeKind),
     Unchecked,
     Unmapped,
 }
@@ -189,7 +194,46 @@ pub(crate) struct PhysicalCandidateArgumentEvaluation {
     source: CheckedCallArgumentSlotSource,
     kind: PhysicalArgumentEvaluationKind,
     expected: CandidateExpectedType,
-    observed_type: Option<TypeKind>,
+    observations: Vec<PhysicalArgumentTypeObservation>,
+    #[cfg(test)]
+    expected_open_parameter: bool,
+}
+
+/// Shares the original observation with the source owner that can close it.
+/// Prepared term identities here are operational evidence only.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PhysicalSourceType {
+    root: ExprId,
+    prepared: Arc<TypeKind<PreparedEffects>>,
+}
+
+impl PhysicalSourceType {
+    pub(crate) fn new(root: ExprId, prepared: TypeKind<PreparedEffects>) -> Self {
+        Self {
+            root,
+            prepared: Arc::new(prepared),
+        }
+    }
+
+    pub(crate) const fn root(&self) -> ExprId {
+        self.root
+    }
+
+    /// In-memory lookup only. Neither ordering nor identity escapes the trace
+    /// owner, and the identity is never used as a semantic digest input.
+    pub(in crate::final_analysis) fn identity(&self) -> *const TypeKind<PreparedEffects> {
+        Arc::as_ptr(&self.prepared)
+    }
+
+    fn same_observation(&self, other: &Self) -> bool {
+        self.root == other.root && Arc::ptr_eq(&self.prepared, &other.prepared)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PhysicalArgumentTypeObservation {
+    source: PhysicalSourceType,
+    completed: Option<Arc<TypeKind>>,
 }
 
 impl PhysicalCandidateArgumentEvaluation {
@@ -208,7 +252,9 @@ impl PhysicalCandidateArgumentEvaluation {
             source: argument.source,
             kind: argument.kind,
             expected: argument.expected,
-            observed_type: None,
+            observations: Vec::new(),
+            #[cfg(test)]
+            expected_open_parameter: false,
         }
     }
 
@@ -254,24 +300,73 @@ impl PhysicalCandidateArgumentEvaluation {
     }
 
     #[cfg(test)]
-    pub(crate) const fn observed_type(&self) -> Option<&TypeKind> {
-        self.observed_type.as_ref()
+    pub(in crate::final_analysis) fn inspect_expected_effects(
+        mut self,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    ) -> Self {
+        if let CandidateExpectedType::Exact(TypeKind::Function { effects, .. }) = &self.expected {
+            self.expected_open_parameter = graph.is_single_open_parameter(effects);
+        }
+        self
     }
 
-    pub(in crate::final_analysis) fn retain_observed_type(
+    #[cfg(test)]
+    pub(crate) const fn expected_open_parameter(&self) -> bool {
+        self.expected_open_parameter
+    }
+
+    #[cfg(test)]
+    pub(crate) fn observed_types(&self) -> impl Iterator<Item = &TypeKind<PreparedEffects>> {
+        self.observations
+            .iter()
+            .map(|observation| observation.source.prepared.as_ref())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn completed_observed_types(&self) -> impl Iterator<Item = &TypeKind> {
+        self.observations
+            .iter()
+            .filter_map(|observation| observation.completed.as_deref())
+    }
+
+    pub(in crate::final_analysis) fn observation_index(
+        &self,
+        source: &PhysicalSourceType,
+    ) -> Option<usize> {
+        self.observations
+            .iter()
+            .position(|observation| observation.source.same_observation(source))
+    }
+
+    pub(in crate::final_analysis) fn observation_sources(
+        &self,
+    ) -> impl Iterator<Item = &PhysicalSourceType> {
+        self.observations
+            .iter()
+            .map(|observation| &observation.source)
+    }
+
+    pub(in crate::final_analysis) fn retain_observed_type(&mut self, source: PhysicalSourceType) {
+        if self.observation_index(&source).is_none() {
+            self.observations.push(PhysicalArgumentTypeObservation {
+                source,
+                completed: None,
+            });
+        }
+    }
+
+    pub(in crate::final_analysis) fn complete_observed_type(
         &mut self,
-        actual: &TypeKind,
-    ) -> Result<(), super::CandidateFactTransactionViolation> {
-        match &self.observed_type {
-            Some(existing) if existing != actual => {
-                Err(super::CandidateFactTransactionViolation::PhysicalCandidateTypeObservationConflict {
-                    owner: self.call_expression(),
-                })
-            }
-            Some(_) => Ok(()),
-            None => {
-                self.observed_type = Some(actual.clone());
-                Ok(())
+        index: usize,
+        actual: Arc<TypeKind>,
+    ) {
+        self.observations[index].completed = Some(actual);
+    }
+
+    pub(in crate::final_analysis) fn merge_observations(&mut self, other: Self) {
+        for observation in other.observations {
+            if self.observation_index(&observation.source).is_none() {
+                self.observations.push(observation);
             }
         }
     }

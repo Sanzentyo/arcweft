@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use super::calls::{
     AnalyzerPreparedCallGraph, AnalyzerPreparedCallPrefix, AnalyzerPreparedUnselectedCall,
+    CompletedPhysicalCallSource,
 };
 use super::expression_error::PhysicalCallAttemptId;
 use super::{
@@ -19,6 +20,7 @@ use crate::{
     effect_row::{DecisionControl, DecisionWork},
     final_analysis::{
         PreparedContentApplication, PreparedDialogueApplication, PreparedExpressionFact,
+        accounting::PhysicalSourceType,
     },
 };
 
@@ -520,10 +522,12 @@ impl PhysicalCandidateEvaluationTranscript {
         for (root, rows) in other.rows {
             let target = self.rows.entry(root).or_default();
             for proposed in rows {
-                if !target
-                    .iter()
-                    .any(|existing| existing.same_candidate_slot(&proposed))
+                if let Some(existing) = target
+                    .iter_mut()
+                    .find(|existing| existing.same_candidate_slot(&proposed))
                 {
+                    existing.merge_observations(proposed);
+                } else {
                     target.push(proposed);
                 }
             }
@@ -1548,14 +1552,16 @@ impl SemanticFactState {
     pub(super) fn retain_physical_candidate_observed_type(
         &mut self,
         identity: PhysicalCandidateArgumentEvaluation,
-        actual: &TypeKind<crate::types::PreparedEffects>,
+        actual: PhysicalSourceType,
     ) -> Result<(), CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
         let active = self
             .active_physical_call_attempts
             .last()
             .ok_or(CandidateFactTransactionViolation::PhysicalCallAttemptRootMismatch)?;
-        if !active.attempt.same_issued_attempt(identity.attempt()) {
+        if !active.attempt.same_issued_attempt(identity.attempt())
+            || actual.root() != identity.attempt().root()
+        {
             return Err(CandidateFactTransactionViolation::PhysicalCallAttemptMismatch);
         }
         let root = identity.attempt().root();
@@ -1563,18 +1569,21 @@ impl SemanticFactState {
             .physical_candidate_argument_evaluations
             .matching_row_mut(root, &identity)
         {
-            return row.retain_observed_type(actual);
+            row.retain_observed_type(actual);
+            return Ok(());
         }
         if let Some(row) = self
             .active_physical_candidate_argument_evaluations
             .as_mut()
             .and_then(|candidate| candidate.matching_row_mut(root, &identity))
         {
-            return row.retain_observed_type(actual);
+            row.retain_observed_type(actual);
+            return Ok(());
         }
         for attempt in &mut self.active_physical_call_attempts {
             if let Some(row) = attempt.transcript.matching_row_mut(root, &identity) {
-                return row.retain_observed_type(actual);
+                row.retain_observed_type(actual);
+                return Ok(());
             }
         }
         Err(
@@ -1582,6 +1591,69 @@ impl SemanticFactState {
                 owner: identity.call_expression(),
             },
         )
+    }
+
+    /// Attach the selected lower type to its exact original physical
+    /// observation. A different attempt at the same expression or a probe
+    /// with the same prepared type cannot supply this observation.
+    pub(super) fn complete_physical_observations<'a>(
+        &mut self,
+        selected: impl IntoIterator<Item = CompletedPhysicalCallSource<'a>>,
+        control: super::FinalSemanticAnalysisControl<'_>,
+    ) -> Result<(), super::FinalSemanticAnalysisError> {
+        self.ensure_healthy()?;
+        let mut remaining = BTreeMap::new();
+        for (ordinal, completed) in selected.into_iter().enumerate() {
+            control.check()?;
+            let (owner, source, actual) = completed.into_parts();
+            if remaining
+                .insert(source.identity(), (ordinal, owner, source.root(), actual))
+                .is_some()
+            {
+                return Err(
+                    CandidateFactTransactionViolation::PhysicalCandidateTypeObservationConflict {
+                        owner,
+                    }
+                    .into(),
+                );
+            }
+        }
+        if remaining.is_empty() {
+            return Ok(());
+        }
+        let transcript = &mut self.physical_candidate_argument_evaluations.rows;
+        let mut matched = Vec::with_capacity(remaining.len());
+        for (&root, rows) in transcript.iter() {
+            for (row_index, row) in rows.iter().enumerate() {
+                control.check()?;
+                for (observation_index, source) in row.observation_sources().enumerate() {
+                    control.check()?;
+                    if let Some((_, owner, expected_root, actual)) =
+                        remaining.remove(&source.identity())
+                    {
+                        if root != expected_root || row.call_expression() != owner {
+                            return Err(CandidateFactTransactionViolation::PhysicalCandidateTypeObservationConflict { owner }.into());
+                        }
+                        matched.push((root, row_index, observation_index, actual));
+                    }
+                }
+            }
+        }
+        if let Some((_, owner, _, _)) = remaining
+            .into_values()
+            .min_by_key(|(ordinal, _, _, _)| *ordinal)
+        {
+            return Err(
+                CandidateFactTransactionViolation::PhysicalCandidateEvaluationMissing { owner }
+                    .into(),
+            );
+        }
+        control.check()?;
+        for (root, row_index, observation_index, actual) in matched {
+            transcript.get_mut(&root).expect("checked physical root")[row_index]
+                .complete_observed_type(observation_index, Arc::clone(actual));
+        }
+        Ok(())
     }
 
     pub(super) fn begin_expression(

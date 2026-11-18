@@ -298,6 +298,10 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
         &self.value
     }
 
+    pub(in crate::types::constraints) fn shared_value(&self) -> &Arc<T> {
+        &self.value
+    }
+
     pub(in crate::types::constraints) fn scope(&self) -> &ConstraintLexicalScope {
         &self.scope
     }
