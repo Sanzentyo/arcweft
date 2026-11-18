@@ -28,6 +28,11 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ClosedOriginalConstraintForest<D, P>, OriginalForestCloseFailure<D, P>> {
         let staged = context.with_effect_transaction(graph, |context, graph| {
+            graph
+                .read()
+                .validate_owner(&self.original.effect_owner)
+                .map_err(TypeConstraintError::from)?;
+            let inputs = graph.read().actual_inputs(inputs, context)?;
             let mut staged = Vec::new();
             for product in &self.products {
                 context.enter_node()?;
@@ -61,7 +66,7 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                                 &product.scope,
                                 Arc::clone(&sources),
                                 &prepared.effects,
-                                inputs,
+                                &inputs,
                                 graph,
                                 context,
                             )

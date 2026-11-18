@@ -39,6 +39,13 @@ fn a_registered_projection_keeps_named_and_future_queries_before_final_closure()
     let future_row = graph
         .unknown_application(&future, vec![], &mut context)
         .unwrap();
+    let unrelated_future = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Future,
+            &mut context,
+        )
+        .unwrap();
     let row = graph
         .union(vec![application, future_row], &mut context)
         .unwrap();
@@ -97,9 +104,23 @@ fn a_registered_projection_keeps_named_and_future_queries_before_final_closure()
         )
         .unwrap();
     let actual_future = EffectRow::closed(EffectSet::from_labels(["future.actual"]).unwrap());
+    let failed = match forest.close(&[], &mut graph, &mut context) {
+        Ok(_) => panic!("the selected product still requires its Future input"),
+        Err(failure) => failure,
+    };
+    let (error, forest) = failed.into_parts();
+    assert!(matches!(
+        error,
+        PreparedValueFailure::Constraint(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::PreparedEffect(PreparedEffectFailure::Invariant(
+                crate::effect_row::prepared::PreparedEffectInvariant::UnresolvedFuture
+            ))
+        ))
+    ));
     let closed = forest
         .close(&[(&future, &actual_future)], &mut graph, &mut context)
         .unwrap();
+    graph.read().validate_unknown(&unrelated_future).unwrap();
     let joint = &closed.products[0].result.as_ref().unwrap()[0];
     let retained = graph.retained_terms();
     let value = project_closed_operand(

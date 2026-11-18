@@ -47,7 +47,7 @@ pub(crate) use functions::{
 mod scoped;
 pub(crate) use closure::{
     EffectPredicateObservation, EffectPredicateRegion, EffectRowObservation, EffectRowRegion,
-    GuardedEffectPredicate, GuardedEffectRow, PrincipalEffectClosure,
+    GuardedEffectPredicate, GuardedEffectRow, PreparedEffectActualInputs, PrincipalEffectClosure,
 };
 pub(crate) use declaration::PreparedEffectDeclaration;
 use scoped::ScopedObligation;

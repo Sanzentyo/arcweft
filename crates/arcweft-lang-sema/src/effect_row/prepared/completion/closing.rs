@@ -18,19 +18,40 @@ impl ScopedEffectCompletion {
         bindings: &[(&PreparedEffectUnknownRef, &EffectRow)],
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
+        self.final_definitions(receiving, query_rows, query_predicates, control)?
+            .specialize_principal(bindings, control)
+    }
+
+    pub(crate) fn close_original_with_inputs<C: DecisionControl>(
+        &self,
+        receiving: PreparedEffectReadView<'_>,
+        query_rows: &[&PreparedEffectRow],
+        query_predicates: &[&PreparedEffectPredicate],
+        inputs: &PreparedEffectActualInputs<'_>,
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
+        self.final_definitions(receiving, query_rows, query_predicates, control)?
+            .solve_with_actual_inputs(inputs, control)
+    }
+
+    fn final_definitions<C: DecisionControl>(
+        &self,
+        receiving: PreparedEffectReadView<'_>,
+        query_rows: &[&PreparedEffectRow],
+        query_predicates: &[&PreparedEffectPredicate],
+        control: &mut C,
+    ) -> Result<PreparedEffectDefinitions, PreparedEffectFailure<C::Error>> {
         let owner = PreparedEffectGraphOwner(Arc::clone(&self.graph.issuer));
         receiving.validate_owner(&owner)?;
         if !self.fixed.is_empty() {
             return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
         }
-        receiving
-            .snapshot(
-                query_rows,
-                query_predicates,
-                &[],
-                SnapshotSource::Final(&self.graph),
-                control,
-            )?
-            .specialize_principal(bindings, control)
+        receiving.snapshot(
+            query_rows,
+            query_predicates,
+            &[],
+            SnapshotSource::Final(&self.graph),
+            control,
+        )
     }
 }

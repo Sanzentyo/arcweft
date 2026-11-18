@@ -11,8 +11,9 @@ use super::super::{
 };
 use super::*;
 use crate::effect_row::prepared::{
-    BoundScopedEffectCompletion, PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
-    PreparedEffectScopedConstraint, PreparedEffectUnknownRef, PrincipalEffectClosure,
+    BoundScopedEffectCompletion, PreparedEffectActualInputs, PreparedEffectGraph,
+    PreparedEffectPredicate, PreparedEffectRow, PreparedEffectScopedConstraint,
+    PreparedEffectUnknownRef, PrincipalEffectClosure,
 };
 use crate::effect_row::{EffectConstraintEnvironment, EffectPredicate, EffectRow};
 use crate::types::{GenericEffectReference, PreparedEffects, TypeProjectionControl};
@@ -215,12 +216,13 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         for _ in path.lineage.scope.shape().binders() {
             context.enter_node()?;
         }
+        let inputs = graph.read().actual_inputs(inputs, context)?;
         Self::complete_branch(
             path,
             Arc::new(path.lineage.scope.clone()),
             ConstraintEffectCompletionOrigin::Source(path.lineage.original.clone()),
             original,
-            inputs,
+            &inputs,
             graph,
             context,
         )
@@ -233,7 +235,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         scope: &ConstraintLexicalScope,
         sources: Arc<[OriginalProducerContext]>,
         original: &BoundScopedEffectCompletion,
-        inputs: &[(&PreparedEffectUnknownRef, &EffectRow)],
+        inputs: &PreparedEffectActualInputs<'_>,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<Self>, TypeConstraintError> {
@@ -257,7 +259,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         scope: Arc<ConstraintLexicalScope>,
         origin: ConstraintEffectCompletionOrigin,
         original: &BoundScopedEffectCompletion,
-        inputs: &[(&PreparedEffectUnknownRef, &EffectRow)],
+        inputs: &PreparedEffectActualInputs<'_>,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<Self>, TypeConstraintError> {
@@ -310,7 +312,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 context.enter_node()?;
                 ports.push(row);
             }
-            let principal = original.close_original(
+            let principal = original.close_original_with_inputs(
                 graph.read(),
                 &ports,
                 &[source_constraint.domain(), source_constraint.predicate()],

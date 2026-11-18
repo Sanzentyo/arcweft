@@ -10,6 +10,7 @@ use crate::effects::EffectId;
 mod canonical;
 mod compilation;
 mod component;
+pub(crate) use component::PreparedEffectActualInputs;
 use component::{CompiledComponent, ComponentCompletion};
 mod imports;
 use imports::ImportedRelations;

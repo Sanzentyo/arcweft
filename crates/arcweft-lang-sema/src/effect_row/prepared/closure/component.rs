@@ -363,8 +363,54 @@ impl PreparedEffectDefinitions {
         bindings: &[(&PreparedEffectUnknownRef, &EffectRow)],
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
-        let mut work = Work(control);
+        let inputs = self.read().actual_inputs(bindings, control)?;
+        self.solve_with_actual_inputs(&inputs, control)
+    }
+
+    /// Close one dependency component using the shared invocation's actuals.
+    /// Other products can own distinct Future identities on the same graph.
+    pub(in crate::effect_row::prepared) fn solve_with_actual_inputs<C: DecisionControl>(
+        &self,
+        inputs: &PreparedEffectActualInputs<'_>,
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
+        self.read().validate_owner(&inputs.owner)?;
         let mut fixed = BTreeMap::new();
+        let mut work = Work(control);
+        for (&id, input) in &inputs.rows {
+            work.charge(DecisionWork::Visit)?;
+            if self.functions.contains_key(&id) {
+                let formula = input
+                    .known()?
+                    .map_references(&mut work, &mut |reference, _| Ok(reference.clone()))?;
+                work.charge(DecisionWork::Node)?;
+                fixed.insert(
+                    id,
+                    EffectRow {
+                        formula: Some(formula),
+                    },
+                );
+            }
+        }
+        self.solve_with_bindings(fixed, control)
+    }
+}
+
+/// One validated batch of concrete Future functions for the issuing graph.
+/// The batch has no access to the graph or permission to specialize a source.
+pub(crate) struct PreparedEffectActualInputs<'a> {
+    owner: PreparedEffectGraphOwner,
+    rows: BTreeMap<u64, &'a EffectRow>,
+}
+
+impl PreparedEffectReadView<'_> {
+    pub(crate) fn actual_inputs<'a, C: DecisionControl>(
+        self,
+        bindings: &[(&PreparedEffectUnknownRef, &'a EffectRow)],
+        control: &mut C,
+    ) -> Result<PreparedEffectActualInputs<'a>, PreparedEffectFailure<C::Error>> {
+        let mut work = Work(control);
+        let mut rows = BTreeMap::new();
         for (reference, row) in bindings {
             work.charge(DecisionWork::Visit)?;
             let reference = FunctionRef::Unknown((*reference).clone());
@@ -373,7 +419,7 @@ impl PreparedEffectDefinitions {
                 return Err(PreparedEffectInvariant::FutureBinding.into());
             }
             let id = reference.reference().ordinal;
-            if fixed.contains_key(&id) {
+            if rows.contains_key(&id) {
                 return Err(PreparedEffectInvariant::DuplicateFutureBinding.into());
             }
             let allowed =
@@ -386,17 +432,13 @@ impl PreparedEffectDefinitions {
                     );
                 }
             }
-            let formula = row
-                .known()?
-                .map_references(&mut work, &mut |parameter, _| Ok(parameter.clone()))?;
             work.charge(DecisionWork::Node)?;
-            fixed.insert(
-                id,
-                EffectRow {
-                    formula: Some(formula),
-                },
-            );
+            rows.insert(id, *row);
         }
-        self.solve_with_bindings(fixed, control)
+        work.charge(DecisionWork::Node)?;
+        Ok(PreparedEffectActualInputs {
+            owner: self.graph_owner(),
+            rows,
+        })
     }
 }

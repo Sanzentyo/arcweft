@@ -144,9 +144,31 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
             let roots = PreparedTypeEffectRoots::collect(types, predicates, context)
                 .map_err(projection_failure)?;
+            let mut introduced = Vec::new();
+            for parameter in branch.effects.original_variables() {
+                context.enter_node()?;
+                if matches!(
+                    parameter,
+                    crate::types::GenericEffectReference::Inference(_)
+                ) {
+                    let function = branch
+                        .applications
+                        .effect_function(parameter)
+                        .ok_or(TypeConstraintInvariant::OriginalProducer)
+                        .map_err(TypeConstraintError::from)?;
+                    context.enter_node()?;
+                    introduced.push(function);
+                }
+            }
             graph
                 .read()
-                .freeze_scoped(roots.rows(), roots.predicates(), &constraints, context)
+                .freeze_product(
+                    roots.rows(),
+                    roots.predicates(),
+                    &constraints,
+                    &introduced,
+                    context,
+                )
                 .map_err(Into::into)
         })
     }

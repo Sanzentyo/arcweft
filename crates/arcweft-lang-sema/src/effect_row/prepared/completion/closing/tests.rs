@@ -205,6 +205,63 @@ fn a_future_added_after_freeze_is_required_if_a_final_query_reaches_it() {
 }
 
 #[test]
+fn a_validated_actual_batch_specializes_only_the_futures_each_product_reaches() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let first = graph
+        .declare_unknown(vec![], PreparedEffectUnknownEligibility::Future, &mut work)
+        .unwrap();
+    let second = graph
+        .declare_unknown(vec![], PreparedEffectUnknownEligibility::Future, &mut work)
+        .unwrap();
+    let first_row = graph
+        .unknown_application(&first, vec![], &mut work)
+        .unwrap();
+    let second_row = graph
+        .unknown_application(&second, vec![], &mut work)
+        .unwrap();
+    let first_source = graph
+        .read()
+        .freeze_product(&[&first_row], &[], &[], &[], &mut work)
+        .unwrap();
+    let second_source = graph
+        .read()
+        .freeze_product(&[&second_row], &[], &[], &[], &mut work)
+        .unwrap();
+    let first_actual = literal_row(&["first.actual"]);
+    let second_actual = literal_row(&["second.actual"]);
+    let input = graph
+        .read()
+        .actual_inputs(
+            &[(&first, &first_actual), (&second, &second_actual)],
+            &mut work,
+        )
+        .unwrap();
+    for (source, row, expected, sibling) in [
+        (first_source, first_row, &first_actual, second.clone()),
+        (second_source, second_row, &second_actual, first.clone()),
+    ] {
+        let closed = source
+            .close_original_with_inputs(graph.read(), &[], &[], &input, &mut work)
+            .unwrap();
+        assert_eq!(&closed.resolve_row(&row, &mut work).unwrap(), expected);
+        assert_eq!(
+            closed.unknown(&sibling),
+            Err(PreparedEffectInvariant::StaleReference)
+        );
+    }
+    assert!(matches!(
+        graph.read().actual_inputs(
+            &[(&second, &literal_row(&[])), (&second, &literal_row(&[]))],
+            &mut work
+        ),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::DuplicateFutureBinding
+        ))
+    ));
+}
+
+#[test]
 fn final_closure_preserves_the_bound_original_identity_with_late_named_values() {
     let mut graph = PreparedEffectGraph::default();
     let named = graph

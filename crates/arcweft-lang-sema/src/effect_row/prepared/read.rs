@@ -265,6 +265,10 @@ impl<'a> PreparedEffectReadView<'a> {
         }
     }
 
+    pub(super) fn graph_owner(self) -> PreparedEffectGraphOwner {
+        PreparedEffectGraphOwner(Arc::clone(&self.relation.issuer))
+    }
+
     pub(crate) fn validate_retained_row(
         self,
         row: &PreparedEffectRow,

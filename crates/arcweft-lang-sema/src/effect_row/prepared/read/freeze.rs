@@ -8,7 +8,9 @@ mod tests;
 
 #[derive(Clone, Copy)]
 pub(in crate::effect_row::prepared) enum SnapshotSource<'a> {
-    Open,
+    #[cfg(test)]
+    AllUnknowns,
+    Product(&'a [&'a PreparedEffectUnknownRef]),
     Bound(&'a PreparedEffectDefinitions),
     Final(&'a PreparedEffectDefinitions),
 }
@@ -17,6 +19,7 @@ impl PreparedEffectReadView<'_> {
     /// Named declarations are inputs even when their bodies are already known.
     /// Keep original C and the declared inference unknowns. Named and imported
     /// functions enter the relation through the actual roots and constraints.
+    #[cfg(test)]
     pub(crate) fn freeze_scoped<C: DecisionControl>(
         self,
         rows: &[&PreparedEffectRow],
@@ -24,8 +27,34 @@ impl PreparedEffectReadView<'_> {
         constraints: &[&PreparedEffectScopedConstraint],
         control: &mut C,
     ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
-        self.snapshot(rows, predicates, constraints, SnapshotSource::Open, control)?
-            .complete_scoped(control)
+        self.snapshot(
+            rows,
+            predicates,
+            constraints,
+            SnapshotSource::AllUnknowns,
+            control,
+        )?
+        .complete_scoped(control)
+    }
+
+    /// An original product owns only the introduced unknowns of its selected
+    /// applications. Other inputs must be reachable from its terms or C.
+    pub(crate) fn freeze_product<C: DecisionControl>(
+        self,
+        rows: &[&PreparedEffectRow],
+        predicates: &[&PreparedEffectPredicate],
+        constraints: &[&PreparedEffectScopedConstraint],
+        introduced: &[&PreparedEffectUnknownRef],
+        control: &mut C,
+    ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
+        self.snapshot(
+            rows,
+            predicates,
+            constraints,
+            SnapshotSource::Product(introduced),
+            control,
+        )?
+        .complete_scoped(control)
     }
 
     /// Binding adds candidate receipts to original C. Final validation also
@@ -44,8 +73,8 @@ impl PreparedEffectReadView<'_> {
             _ => SchemeDependencies::Headers,
         };
         let original = match source {
-            SnapshotSource::Open => None,
             SnapshotSource::Bound(original) | SnapshotSource::Final(original) => Some(original),
+            _ => None,
         };
         let mut retained_rows = Vec::new();
         let mut retained_predicates = Vec::new();
@@ -84,7 +113,15 @@ impl PreparedEffectReadView<'_> {
                 work.charge(DecisionWork::Node)?;
                 obligations.push(Arc::clone(obligation));
             }
+        } else if let SnapshotSource::Product(introduced) = source {
+            for reference in introduced {
+                work.charge(DecisionWork::Visit)?;
+                self.validate_unknown(reference)?;
+                work.charge(DecisionWork::Node)?;
+                inventory.insert(reference.reference().ordinal);
+            }
         } else {
+            #[cfg(test)]
             for id in self.visible_function_ids() {
                 work.charge(DecisionWork::Visit)?;
                 if matches!(
