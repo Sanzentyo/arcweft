@@ -370,17 +370,23 @@ impl<V: Clone + Ord> EffectDecision<V> {
 
     /// Simultaneous substitution: references inside a replacement are not
     /// recursively processed by the same substitution.
+    /// Only replacements for variables reachable in this decision are imported.
     pub fn substitute<C: DecisionControl>(
         &self,
         replacements: &BTreeMap<V, Self>,
         control: &mut C,
     ) -> Result<Self, C::Error> {
+        control.charge(DecisionWork::Visit)?;
         let mut builder = DecisionBuilder::new(control);
         let root = builder.import(self)?;
         let mut roots = BTreeMap::new();
-        for (variable, replacement) in replacements {
+        for variable in self.variables() {
             builder.control.charge(DecisionWork::Visit)?;
-            roots.insert(variable.clone(), builder.import(replacement)?);
+            if !roots.contains_key(variable)
+                && let Some(replacement) = replacements.get(variable)
+            {
+                roots.insert(variable.clone(), builder.import(replacement)?);
+            }
         }
         let root = builder.substitute(root, &roots)?;
         builder.finish(root)

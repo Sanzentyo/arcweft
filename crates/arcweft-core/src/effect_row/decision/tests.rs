@@ -111,6 +111,29 @@ fn substitutions_are_simultaneous_and_reorder_decisions() {
 }
 
 #[test]
+fn substitution_work_depends_only_on_reachable_replacements() {
+    let source = atom(0);
+    let replacement = atom(1);
+    let mut replacements = BTreeMap::from([(0, replacement.clone())]);
+    let mut exact = Meter::default();
+    assert_eq!(
+        source.substitute(&replacements, &mut exact).unwrap(),
+        replacement
+    );
+
+    replacements.extend((1..=u8::MAX).map(|variable| (variable, EffectDecision::constant(false))));
+    let mut limited = Meter {
+        used: 0,
+        limit: Some(exact.used),
+    };
+    assert_eq!(
+        source.substitute(&replacements, &mut limited).unwrap(),
+        replacement
+    );
+    assert_eq!(limited.used, exact.used);
+}
+
+#[test]
 fn least_completion_can_require_difference_of_rigid_rows() {
     let mut meter = Meter::default();
     let (p, q, e) = (atom(0), atom(1), atom(2));
