@@ -18623,3 +18623,18 @@ original productの作用snapshotは、選択したapplicationが導入した推
 11 Rust path、246追加／34削除。候補の入力範囲は元のapplicationと元の制約が決め、発行元の照合とFuture実値の検証は既存の作用グラフが担当する。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-original-product-future-inputs-checkpoint.raw.zip) は22 entry、282,545 bytes、SHA256 `913a52eb95c21dfa54c2ac6e2d39b20b829b946d8f27ca5a228e4b6dcd0a9f43`。各entryの長さとSHA256を再照合した。旧履歴2,886,008 bytesのSHA256 `ec72218837360cef08cc2d96efc19a4b90f766d14c60731950d69a34d5280b3c` をprefixとして保持した。
+
+<a id="original-result-callback-checkpoint"></a>
+## 2026-11-18 — 閉じた呼出し結果をoriginal productからcallbackへ渡す
+
+基点 `7ba8342e3fcebf322ce2b62e9f18fe61e26c9fe0`。Source `33a1b24d7efc68e46338da95cd06be28911980f7` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した8入力のblobを照合した。
+
+Analyzerで閉じた値を投影する独立呼出しは、元のfrontierを引き継ぎ、元の作用制約・引数・結果投影をoriginal productで確定する。単一producerの記録と候補の所属を照合し、既存のcallable callbackへ確定済みの候補と準備結果を渡す。callback開始前に元のfrontierが保持していた共有参照を解放する。複数producerからなるproductは一つのproducerの候補へ混ぜない。段階適用とcontent emissionの従来経路、Named本体および後段Futureの供給、選択した準備差分の適用と再評価の除去は残る。
+
+単独のproducerを実際のticketへ引き継ぎ、元の引数を確定した後に、選んだ準備結果を単独所有として取り出せることを検査する回帰を追加した。既存の複数producerのfixtureも、各memberが確定した入力からticketを発行する形に更新した。いずれも未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。libraryは **416エラー・25警告**、lib testは **1,332エラー・44警告**。変更8 pathを一次位置とする39件は、同じ一次ファイルとエラーメッセージで基点のログに存在した。Semaのfmtと構造gateは終了0、blocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,059,865 bytesでcleanは未実行。
+
+8 Rust path、255追加／17削除。確定処理は候補の所属と元の準備結果を既存の所有型に保持し、ticketの発行は既存のcallback境界で行う。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-original-result-callback-checkpoint.raw.zip) は17 entry、151,807 bytes、SHA256 `54ff3b2a97aae3fb611611b97fa1498032c26cadf265fe6a23460c135bbda204`。各entryの長さとSHA256を再照合した。旧履歴2,888,624 bytesのSHA256 `7fcb3b2519a1fccc548b124bb55c551ed353d96c21cc5e4bba7acfbcb1c898ab` をprefixとして保持した。
