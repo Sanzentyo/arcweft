@@ -18505,3 +18505,18 @@ checked／uncheckedの両方で別の観測receiptを拒否し、元のトラン
 16 Rust path、259追加／109削除、物理150 LOC増。Cargo manifest・公開契約・版に差分はない。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-retained-source-value-checkpoint.raw.zip) は20 entry、296,113 bytes、SHA256 `146131cafc58d3f645f10c44750930f7c80660456b7bbdae82d22787ce3cbe24`。各entryの長さとSHA256を再読取で照合した。旧履歴2,862,791 bytesのSHA256 `af249a48f1dccb9c4c9388b50503a53ed3fc09f78d24cdd159b3913213293b33` をprefixとして保持した。
+
+<a id="materialization-preparation-ownership-checkpoint"></a>
+## 2026-11-18 — 確定した型から観測時の準備結果を切り離す
+
+基点 `b4974cc7ffb7e6584c0e3bb0685748c33fd9d0ee`。Source `027a35946146e463d22d9d8b9da3240b05b2fcb3` を既存mainへ通常commitし、非force push後のmainと16入力の公開blobをSHA256で照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+確定したcomponentは意味上の分岐情報を保持する。観測callbackが閉じた式の準備・作用グラフ差分は、各source IDに対応する元の所有オブジェクトから別に保持する。ticket構築前に並びと件数を元のsourceに照合する。materializationのcallbackは借用した準備結果の解析ledgerとepochを照合する。順位付けと等価な候補の集約を経ても、選択した候補の準備結果は同じ所有オブジェクトに残る。現行の呼出し適用は従来通り最終チェックで得た差分を使う。選択した元の準備差分の適用、body一回準備、実original productのdispatchは未達である。
+
+既存の非Cloneな準備fixtureを拡張した。分岐と中断を経た二つの候補に同じ準備結果が届くこと、選択結果から準備を一度だけ解放できること、その後も確定型を読めることを検査する。fixtureは未実行。
+
+必須の `cargo check --locked -p arcweft-lang-sema --tests --all-features` は5回とも終了101。dev01はlibrary 420／lib test 1,414エラー。dev02は閉じた入力のコンストラクタを所有型へ移し、import不足で421／1,418エラー。dev03はimport修正後に旧fixtureでタプルを直接添字アクセスしていたため420／1,414エラー。dev04は420／1,413エラーで、残る呼出し元とfixtureのgraph owner取得を修正した。固定入力dev05はlibrary **420エラー・25警告**、lib test **1,405エラー・44警告**。最終差分のRust pathの一次診断373件を原本に保持した。5回のowner fmtは終了0。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Web最終受入は未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,405,245 bytesで、既存の成果物を再利用した。
+
+16 Rust path、327追加／140削除、物理187 LOC増。Cargo manifest・公開契約・版に差分はない。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-materialization-preparation-ownership-checkpoint.raw.zip) は38 entry、707,481 bytes、SHA256 `e1a4bf8b63647f0413b34da3af1f041612a9bc63bcfa1935f9e096d0b8557a93`。各entryの長さとSHA256を再読取で照合した。旧履歴2,865,450 bytesのSHA256 `4c854df610e835a4770daff555ed6df5d75a57ce97e52a3b3de4b810801f4558` をprefixとして保持した。
