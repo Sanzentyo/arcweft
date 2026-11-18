@@ -19272,3 +19272,14 @@ Mapの失敗箇所について[前節のデバッガ観測](#correlated-effect-p
 差分の合成を省いた試験入力dev01は、captured Mapが選択した差分の公開前検査まで進んだ。公開入力dev02では別の候補を開く `application_scope` の作用述語準備で上限に達した。同じCompiler nextestの2 target・152 IDを実行し、149成功・3失敗・0スキップ。失敗は遅延コールバックの `SchemeState` とMapの復元2件。fmtと構造ゲートは終了0。予算上限とテストの実行条件は保持した。Compilerの2 target以外の逆依存テスト、Semaユニットテスト、Clippy、workspace最終受入、Native／Web最終受入は未実行。
 
 [検証原本・試験入力・LLDB・全テストID比較](acceptance-evidence/task-validate-original-without-detaching.raw.zip) は 25 entry、100722 bytes、SHA256 `4f51e149a8b53f92eb5eac5c284fb41278da53cd36eee9abf048f0deebb59545`。各entryの長さとSHA256を再照合した。既存履歴 3011650 bytesのSHA256 `db10b6e6d84101ffac0a3d1214db85199a4bda8774dcd39fed0f08f937089f29` をprefixとして保持した。
+
+<a id="named-source-body-read-view"></a>
+## 2026-11-19 — 遅延コールバックの参照宣言を候補内で準備
+
+Source `ad12f74311a1e89696a25bae5b7102d9c3f79f4b`。基点は `b5e0a977218ec0bd5b6b0e245c78121c3a3f354e`。比較元は `35519abc9142f9b66817c5b3e757c4a58d3bf6be`。公開後に6件のRust blobと実行入力のSHA256を照合した。
+
+引数が保持する準備済み型の作用項から、宣言本体を必要とする依存を辿る。該当する宣言本体のみを元の候補内で準備する。名前付きの宣言本体と元の制約は候補の読取り範囲から主作用解を計算し、最終検証では完成したグラフ全体の照合を行う。読取り範囲と作用グラフが依存探索と主作用解を所有する。Analyzerの候補処理は元の型、式ID、チェックポイントと作業権限を渡す。constraintsの追加は実引数の既存コールバック境界に置いた。6 Rustファイルで物理行の純増100。
+
+Compilerの同じ2 target・152 IDのnextestは149成功・3失敗・0スキップ。遅延コールバックが `SchemeState` を通過し、`ScopedEffectCompletion::close_original_with_inputs` が作用式を構築する段階で `WorkLimit { requested: 1, consumed: 4096, limit: 4096 }` に達した。Mapの復元2件と合わせて3件とも型検査で止まる。fmtと構造ゲートは終了0。Compilerの2 target以外の逆依存テスト、Semaユニットテスト、Clippy、workspace最終受入、Native／Web最終受入は未実行。targetは7,207,503,408 bytes。今回の `cargo clean` は0回。
+
+[検証原本・LLDB・全テストID比較・公開照合](acceptance-evidence/task-named-source-body-read-view.raw.zip) は 17 entry、53391 bytes、SHA256 `4b34a4c68e358ea6af05a76bb2700c64eb9535cda8ba7f4f753b66f07939d3a3`。各entryの長さとSHA256を再照合した。既存履歴 3014067 bytesのSHA256 `548fa616452f6bdb94a1b9a068cf9ccded72bdb3e706a572dc196af823cb8456` をprefixとして保持した。
