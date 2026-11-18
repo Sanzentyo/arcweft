@@ -1001,6 +1001,39 @@ flow main() -> i64 {
 }
 
 #[test]
+fn omitted_returned_callback_effects_use_each_reachable_return() {
+    let source = r#"
+fn read(value: i64) -> i64 effects { fs.read } { value }
+fn write(value: i64) -> i64 effects { fs.write } { value }
+fn left(value: i64) -> i64 { read(value) }
+fn right(value: i64) -> i64 { read(value) }
+fn choose(flag: bool) -> (i64 -> i64) {
+    if flag { return left }
+    return right
+}
+flow main() -> i64 { return choose(false)(42i64) }
+"#;
+    let report = analyze(&fixture(source, None)).expect("both reachable exits infer one row");
+    let applications = project_applications(&report, "choose");
+    let [(_, application)] = applications.as_slice() else {
+        panic!("one application of choose");
+    };
+    let Some(TypeKind::Function { effects, .. }) = application.result().value_type() else {
+        panic!("choose returns its callback");
+    };
+    assert_eq!(effects.closed_value().unwrap().to_labels(), ["fs.read"]);
+
+    let mismatched = source.replace(
+        "left(value: i64) -> i64 { read(value) }",
+        "left(value: i64) -> i64 { write(value) }",
+    );
+    assert!(
+        analyze(&fixture(&mismatched, None)).is_err(),
+        "the early return cannot add an effect absent from the inferred result"
+    );
+}
+
+#[test]
 fn shared_prefix_opens_later_callback_effects_independently() {
     let fixture = fixture(
         r#"

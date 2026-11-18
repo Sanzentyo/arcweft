@@ -22,6 +22,7 @@ use super::{
 use crate::callable::{
     CallableResultSchema, CheckedCallSite, EffectPermission, PreparedCallGraphSelectedNode,
 };
+use crate::types::{TypeCompatibilityControl, TypeProjectionControl};
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
     expr::{
@@ -127,73 +128,100 @@ fn callable_label(module: &HirModule, owner: ItemId) -> Result<String, FinalSema
     }
 }
 
-pub(super) fn inferred_callable_result_schema(
-    modules: &BTreeMap<super::HirModuleId, &HirModule>,
-    symbol: &arcweft_lang_hir::symbol::CallableSymbol,
+pub(super) fn inferred_callable_result_schema<C>(
     schema: &crate::callable::CallableSignatureSchema,
-    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
-) -> Result<Option<CallableResultSchema>, FinalSemanticAnalysisError> {
+    returns: &[ExprId],
+    work: &mut C,
+    mut close: impl FnMut(ExprId, &mut C) -> Result<TypeKind, FinalSemanticAnalysisError>,
+) -> Result<Option<CallableResultSchema>, FinalSemanticAnalysisError>
+where
+    C: TypeProjectionControl<Error = FinalSemanticAnalysisError>
+        + TypeCompatibilityControl<Error = FinalSemanticAnalysisError>,
+{
     let Some(declared) = schema.result_schema().value_type() else {
         return Ok(None);
     };
     if !result_schema_has_omitted_function_rows(schema) {
         return Ok(None);
     }
-    let module = modules
-        .get(&symbol.source_item().module())
-        .copied()
-        .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-    let item = module
-        .resolve_item(symbol.source_item())
-        .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
-    let body = match (symbol.source_owner(), item.kind()) {
-        (HirCallableSourceOwner::Item, HirItemKind::Function(function)) => function.body(),
-        (HirCallableSourceOwner::ImplFunction { member }, HirItemKind::Impl(implementation)) => {
-            let Some(HirImplMember::Function(function)) =
-                implementation.members().get(usize::from(member))
-            else {
-                return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
-            };
-            let Some(body) = function.body() else {
-                return Err(FinalSemanticAnalysisError::UnsupportedCallableBody {
-                    owner: symbol.source_item(),
-                });
-            };
-            body
-        }
-        _ => return Err(FinalSemanticAnalysisError::OpenEffectRow),
-    };
-    let HirFunctionBody::Block {
-        statements, tail, ..
-    } = body
-    else {
-        return Err(FinalSemanticAnalysisError::RecoveredOwner);
-    };
-    let result_owner = match statements.last() {
-        Some(statement) => {
-            let statement = module
-                .resolve_stmt(*statement)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            match statement.kind() {
-                HirStmtKind::Return { value } => *value,
-                _ => *tail,
+    let mut inferred = None;
+    for &owner in returns {
+        work.visit_binding()?;
+        let actual = close(owner, work)?;
+        let result = declared
+            .binding_type_with_inferred_effects_with_control(&actual, work)
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_type_projection(owner.into(), error)
+            })?
+            .filter(|result| result != declared)
+            .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?;
+        if let Some(previous) = &inferred {
+            if previous != &result {
+                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
             }
+        } else {
+            inferred = Some(result);
         }
-        None => *tail,
-    };
-    let actual = expressions
-        .get(&result_owner)
-        .and_then(super::PreparedExpressionFact::value_type)
-        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-            owner: result_owner,
-        })?;
-    let inferred = declared
-        .binding_type_with_inferred_effects(actual)
-        .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?;
-    if inferred == *declared {
-        return Err(FinalSemanticAnalysisError::OpenEffectRow);
     }
-    Ok(Some(CallableResultSchema::Value(inferred)))
+    inferred
+        .map(CallableResultSchema::Value)
+        .map(Some)
+        .ok_or(FinalSemanticAnalysisError::OpenEffectRow)
+}
+
+impl Analyzer<'_, '_, '_> {
+    pub(super) fn callable_return_owners(
+        &self,
+        symbol: &arcweft_lang_hir::symbol::CallableSymbol,
+    ) -> Result<Vec<ExprId>, FinalSemanticAnalysisError> {
+        let module = self.module(symbol.source_item().module())?;
+        let item = module
+            .resolve_item(symbol.source_item())
+            .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+        let body = match (symbol.source_owner(), item.kind()) {
+            (HirCallableSourceOwner::Item, HirItemKind::Function(function)) => function.body(),
+            (
+                HirCallableSourceOwner::ImplFunction { member },
+                HirItemKind::Impl(implementation),
+            ) => {
+                let Some(HirImplMember::Function(function)) =
+                    implementation.members().get(usize::from(member))
+                else {
+                    return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+                };
+                let Some(body) = function.body() else {
+                    return Err(FinalSemanticAnalysisError::UnsupportedCallableBody {
+                        owner: symbol.source_item(),
+                    });
+                };
+                body
+            }
+            _ => return Err(FinalSemanticAnalysisError::OpenEffectRow),
+        };
+        let HirFunctionBody::Block {
+            statements, tail, ..
+        } = body
+        else {
+            return Err(FinalSemanticAnalysisError::RecoveredOwner);
+        };
+        let values = self
+            .checked_function_value_sources(
+                module,
+                (symbol.source_item(), symbol.declaration()),
+                statements,
+                *tail,
+            )
+            .map_err(|error| error.into_public(*tail))?;
+        // A propagated error supplies only the residual field. Only complete
+        // returned values can determine all omitted rows of a result annotation.
+        Ok(values
+            .into_iter()
+            .filter_map(|source| match source {
+                crate::final_analysis::model::CallableResultSource::Returned(value) => Some(value),
+                _ => None,
+            })
+            .collect())
+    }
 }
 
 pub(super) fn result_schema_has_omitted_function_rows(
@@ -923,13 +951,62 @@ impl Analyzer<'_, '_, '_> {
                     .symbols
                     .callable(declaration)
                     .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
-                inferred_callable_result_schema(
-                    &self.modules,
-                    symbol,
-                    pending.record().schema(),
-                    self.facts.expressions(),
-                )?
+                let schema = pending.record().schema();
+                if result_schema_has_omitted_function_rows(schema) {
+                    let returns = self.callable_return_owners(symbol)?;
+                    inferred_callable_result_schema(
+                        schema,
+                        &returns,
+                        closure_work,
+                        |owner, work| {
+                            let ty = self
+                                .facts
+                                .expressions()
+                                .get(&owner)
+                                .and_then(super::PreparedExpressionFact::value_type)
+                                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                    owner,
+                                })?;
+                            let source = staged.builder.constraint_source_owner(&self.topology, owner)
+                            .map_err(|error| FinalSemanticAnalysisError::SourceTypeRetention {
+                                owner: owner.into(),
+                                error: crate::final_analysis::SourceTypeRetentionFailure::Owner(error),
+                            })?;
+                            let formals =
+                                source
+                                    .declaration_formals_with_control(work)
+                                    .map_err(|error| {
+                                        FinalSemanticAnalysisError::source_type_projection(
+                                            owner.into(),
+                                            error,
+                                        )
+                                    })?;
+                            ty.project_canonical_effects(
+                                formals.template_scope(),
+                                &type_effects,
+                                work,
+                            )
+                            .map_err(|error| {
+                                FinalSemanticAnalysisError::source_type_effect_projection(
+                                    owner.into(),
+                                    error,
+                                )
+                            })
+                        },
+                    )?
+                } else {
+                    None
+                }
             };
+            if let Some(prepared) = self
+                .facts
+                .prepared_calls()?
+                .effect_rows()
+                .result_schema(&body.id)
+                && Some(prepared) != result_schema.as_ref()
+            {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            }
             if let Some(result_schema) = result_schema {
                 staged
                     .builder

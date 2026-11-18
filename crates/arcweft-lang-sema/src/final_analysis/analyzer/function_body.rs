@@ -9,8 +9,9 @@ use super::state::{
 };
 use super::{
     Analyzer, ExprId, FinalSemanticAnalysisError, HirFunctionBody, HirModule, HirStmtKind, ItemId,
-    Rc, TypeKind,
+    TypeKind,
 };
+use crate::types::PreparedEffects;
 
 /// The two existing function-body typing rules. A generator must declare a
 /// Stream and contain a selected own-scope yield; a returned value must not.
@@ -21,10 +22,10 @@ enum FunctionBodyInterpretation {
 }
 
 impl FunctionBodyInterpretation {
-    fn expected(self, result: &TypeKind) -> TypeKind {
+    fn expected(self, result: &TypeKind) -> &TypeKind {
         match self {
-            Self::ReturnValue => result.clone(),
-            Self::Generator => TypeKind::Unit,
+            Self::ReturnValue => result,
+            Self::Generator => &TypeKind::Unit,
         }
     }
 
@@ -132,7 +133,7 @@ impl Analyzer<'_, '_, '_> {
                     &context,
                     module,
                     body,
-                    &interpretation.expected(result),
+                    interpretation.expected(result),
                 )?;
                 Ok(CandidateFactTransactionAction::Extract(
                     interpretation.accepts_yields(yields),
@@ -160,12 +161,15 @@ impl Analyzer<'_, '_, '_> {
                 FinalSemanticAnalysisError::RecoveredOwner,
             ));
         };
+        let expected = self
+            .retain_source_value_type(context, *tail, expected)
+            .map_err(AnalyzerExpressionError::fatal)?;
         for owner in statements {
             let statement = module.resolve_stmt(*owner).map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;
             if let HirStmtKind::Return { value } = statement.kind() {
-                self.check_function_result_expression(context, *value, Some(expected))?;
+                self.check_function_result_expression(context, *value, Some(&expected))?;
             }
         }
         self.evaluate_block_statement_uses(context, module, statements)?;
@@ -173,7 +177,7 @@ impl Analyzer<'_, '_, '_> {
         self.check_function_result_expression(
             context,
             *tail,
-            completion.continues().then_some(expected),
+            completion.continues().then_some(&expected),
         )?;
         function_body_roles(module, body, self.facts.expressions())
             .map(|roles| roles.yields)
@@ -184,7 +188,7 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
-        expected: Option<&TypeKind>,
+        expected: Option<&TypeKind<PreparedEffects>>,
     ) -> Result<(), AnalyzerExpressionError> {
         let value = match self.evaluate_expression(context, owner, expected) {
             Ok(value) => value,
@@ -210,11 +214,11 @@ impl Analyzer<'_, '_, '_> {
         {
             return Ok(());
         }
-        if value
+        let actual = value
             .value_type()
-            .is_none_or(|actual| expected.is_some_and(|expected| !expected.accepts(actual)))
-        {
-            return Err(AnalyzerExpressionError::rejected(owner));
+            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        if let Some(expected) = expected {
+            self.require_source_type(context, owner, expected, actual)?;
         }
         Ok(())
     }

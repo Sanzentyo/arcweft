@@ -6,13 +6,14 @@ use crate::{
         CallableParameterCoordinate, CallableSignatureSchema, CheckedDeclarationDefault,
         PRODUCTION_CALLABLE_LIMITS, ResolverWork,
     },
+    effect_row::prepared::PreparedEffectGraph,
     effect_row::{EffectConstraintEligibility, EffectConstraintVariable, EffectPredicate},
     types::constraints::context::TypeConstraintContext,
     types::constraints::transaction::TypeConstraintTransaction,
     types::constraints::{
         ConstraintAcceptance, ConstraintDomain, TypeConstraintAbort, TypeConstraintEffectScope,
-        TypeConstraintFailure, TypeConstraintFailureInvariant, TypeConstraintInitializationFailure,
-        TypeConstraintInvariant, TypeConstraintParameterScope,
+        TypeConstraintError, TypeConstraintFailure, TypeConstraintFailureInvariant,
+        TypeConstraintInitializationFailure, TypeConstraintInvariant, TypeConstraintParameterScope,
     },
     types::{GenericBinder, GenericEffectReference, TypeGenericUseCollector, TypeKind},
 };
@@ -101,7 +102,32 @@ impl CheckedDeclarationDefault {
         let expected = signature
             .parameter_type(coordinate)
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-        if expected.accepts(actual) {
+        let failure = |failure| {
+            FinalSemanticAnalysisError::DeclarationDefaultConstraintFailure(
+                FinalDeclarationDefaultConstraintFailure {
+                    owner,
+                    failure: Arc::new(failure),
+                },
+            )
+        };
+        let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+        let session = work
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, control.cancellation())
+            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+        let mut context = TypeConstraintContext::with_accounting(session);
+        let preparation_failure = |error| {
+            failure(match error {
+                TypeConstraintError::Abort(error) => DefaultConstraintFailure::Abort(error),
+                TypeConstraintError::Invariant(error) => DefaultConstraintFailure::Invariant(error),
+                TypeConstraintError::Rejected(_) => {
+                    DefaultConstraintFailure::Invariant(TypeConstraintInvariant::OriginalProducer)
+                }
+            })
+        };
+        if expected
+            .accepts_recovery_with(actual, &mut context)
+            .map_err(preparation_failure)?
+        {
             return Ok(true);
         }
         let variables = Self::effect_variables(signature, coordinate)?;
@@ -122,37 +148,24 @@ impl CheckedDeclarationDefault {
             [],
         )
         .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-        let failure = |failure| {
-            FinalSemanticAnalysisError::DeclarationDefaultConstraintFailure(
-                FinalDeclarationDefaultConstraintFailure {
-                    owner,
-                    failure: Arc::new(failure),
-                },
-            )
-        };
-        let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
-        let session = work
-            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, control.cancellation())
-            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-        let mut context = TypeConstraintContext::with_accounting(session);
+        let expected = source
+            .retain_value_type(expected, &mut context)
+            .map_err(TypeConstraintError::from)
+            .map_err(preparation_failure)?;
+        let actual = source
+            .retain_value_type(actual, &mut context)
+            .map_err(TypeConstraintError::from)
+            .map_err(preparation_failure)?;
         let enclosing =
             crate::callable::EnclosingGenericParameterScope::for_source(source.clone(), None)
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-        let original = enclosing.original_context(&mut context).map_err(|error| {
-            failure(match error {
-                crate::types::constraints::TypeConstraintError::Abort(error) => {
-                    DefaultConstraintFailure::Abort(error)
-                }
-                crate::types::constraints::TypeConstraintError::Invariant(error) => {
-                    DefaultConstraintFailure::Invariant(error)
-                }
-                crate::types::constraints::TypeConstraintError::Rejected(_) => {
-                    DefaultConstraintFailure::Invariant(TypeConstraintInvariant::OriginalProducer)
-                }
-            })
-        })?;
+        let original = enclosing
+            .original_context(&mut context)
+            .map_err(preparation_failure)?;
+        let mut graph = PreparedEffectGraph::default();
         let mut relation = TypeConstraintTransaction::<DefaultTypeRelation>::initialize(
             &mut context,
+            &mut graph,
             original,
             coordinate,
             parameters,
@@ -170,11 +183,12 @@ impl CheckedDeclarationDefault {
         })?;
         relation.constrain(
             &mut context,
-            expected,
-            actual,
+            &mut graph,
+            &expected,
+            &actual,
             ConstraintAcceptance::PatternAcceptsActual,
         );
-        match relation.finish(&mut context, |left, right, _| Ok(left == right)) {
+        match relation.finish(&mut context, &mut graph, |left, right, _| Ok(left == right)) {
             Ok(_) => Ok(true),
             Err(TypeConstraintFailure::Rejected(_)) => Ok(false),
             Err(TypeConstraintFailure::Abort(error)) => {

@@ -316,14 +316,34 @@ impl Analyzer<'_, '_, '_> {
         self.pipe_stack = pipes;
         self.function_site_stack = function_sites;
         let row = prepared?;
-        let result_schema = inferred_callable_result_schema(
-            &self.modules,
-            self.symbols
+        let result_schema = if needs_result {
+            let symbol = self
+                .symbols
                 .callable(&declaration)
-                .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?,
-            candidate.schema(),
-            self.facts.expressions(),
-        )?;
+                .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
+            let returns = self.callable_return_owners(symbol)?;
+            let context = self.published_expression_context();
+            inferred_callable_result_schema(
+                candidate.schema(),
+                &returns,
+                &mut context.work(),
+                |owner, work| {
+                    let actual = self
+                        .facts
+                        .expressions()
+                        .get(&owner)
+                        .and_then(super::PreparedExpressionFact::value_type)
+                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                    let graph = self.facts.effect_declarations()?.read();
+                    let actual = self
+                        .source_type_preparation(work.clone())?
+                        .retain_prepared(owner, actual, graph)?;
+                    self.observe_source_type_with_dependencies(&context, owner, &actual)
+                },
+            )?
+        } else {
+            None
+        };
         self.facts
             .complete_effect_projection(&reference, &checked, row, result_schema)
             .map_err(FinalSemanticAnalysisError::from)
