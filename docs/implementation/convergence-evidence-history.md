@@ -19497,3 +19497,14 @@ Source `f62720f0a6918c52cafc0be3941169e6fb9eeada` は、直接経路と結合さ
 途中版の全feature Sema checkは、残余式を直接取得していた既存fixtureで追加コンパイルエラー1件を検出した。fixtureを明示的なコンパイルに切り替えた最終版のlibrary checkは成功し、lib testは終了101・817エラー・33警告。発生ファイルとエラーコードの組ごとに、前回の内訳とすべて一致した。fixture実行、全推移的逆依存テスト、workspace全target check、Native／Web最終受入は未実行。同じproduction入力の全featureライブラリClippy、最終版のfmt、差分検査と構造ゲートは終了0。構造阻害0件。Cargo全feature逆依存は起点込み22 package。公開した4 blobを入力と照合した。 `target` は10596417208 bytesだった。
 
 [基点計測、Compilerの全ID比較、停止位置、途中のエラーと最終検証、公開照合](acceptance-evidence/task-bound-effect-definitions.raw.zip) は36 entry、1329994 bytes、SHA256 `977ba5cfbd1a7ccd08b89970a02e59624eeb59e9364e1c1df9449bf244735e8d`。各原本の長さとハッシュを照合した。
+
+<a id="retain-bound-effect-reachability"></a>
+## 2026-11-19 — 終端作用の計算で束縛済みの依存関係を再利用
+
+基点 `fa17a4e2b1a945bc5119e9e8aaeb529b339856a7`。Source `f324f3043c1b773093ffd2eaf9c7fabf530d4b16` は、束縛済みのスナップショットがすでにたどった作用行・述語を、終端の読み取り範囲で同じArcであることを照合してから再利用する。choiceは元の発行IDで参照可能か確認する。束縛済みの制約は終端の計算に供給し、構造の再走査を省く。実際のNamed本体、新しい照会と公開制約は共通の依存関係探索へ渡す。束縛前のスナップショットを直接閉じるAPIは利用先に合わせてfixture側へ限定した。既存fixtureに、束縛時に存在しなかった子宣言を本体が参照し、子の本体準備前は拒否し、準備後に元の出力と作用を解決する条件を追加した。
+
+最終Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ。遅延コールバックは作用述語の出典照合を通過し、実体化時の `prepare_declaration_value` で候補共有の作業上限に達した。retained Mapは選択済みの元のソース値を移す処理に4回入り、後続の候補では `start_path_with_imported` が残り作業量の上限で止まった。遅延コールバックの実体化では元の値の再利用条件を2回検査し、1回は保持した型を準備し、1回は式を再評価した。両方とも型検査中の失敗である。captured Mapは引き続き成功した。追加の3 targetは同じ396 IDで342成功・54失敗。 `callable_execution` は322成功・54失敗、`project_function_instances` は12/12成功、`scope_propagation` は8/8成功。
+
+locked Semaの全feature checkはlibrary成功、lib testは終了101・817エラー・33警告。前回と発生ファイル・コード別のエラーの内訳が一致した。Semaのfixture実行、全推移的逆依存テスト、workspace全target check、Native／Web最終受入は未実行。SemaライブラリClippy、fmt、差分検査、構造ゲートは終了0、構造阻害0件。Cargo全feature逆依存は起点込み22 package。公開した7 blobを検証入力と照合した。 `target` は10596519637 bytesだった。
+
+[Compilerの全ID比較、停止位置、途中と最終の検証、公開照合](acceptance-evidence/task-retain-bound-effect-reachability.raw.zip) は38 entry、1754745 bytes、SHA256 `d4a63603d7f90d8679f8325621534f5286f92001e40582ef9197ce64e5e585e7`。各原本の長さとハッシュを照合した。
