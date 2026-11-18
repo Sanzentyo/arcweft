@@ -18771,3 +18771,14 @@ Matchの分岐とChoiceの入れ子パスを、準備済みの式が持つ情報
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。初回はlibrary 411エラー・27警告、lib test 1,289エラー・36警告。初回で表面化したimportの誤りを修正した。公開入力はlibrary **404エラー・25警告**、lib test **1,288エラー・37警告**。前回公開入力との一次診断のパス・ヘッダ比較では追加0件、解消28件。Semaのfmtと構造gateは終了0、blocking違反0件。残るエラーには準備済み式の型を確定する境界と、nominal recordのエッジで確定済みidentityを要求する箇所が含まれる。回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,865,037 bytesで、約300 GBを目安とするcleanは未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-expression-edges.raw.zip) は23 entry、273,374 bytes、SHA256 `5d14633a603403c1f6264087386f87d40a47bde9c1ccbc6e4a31b98b00e92698`。各entryの長さとSHA256を再照合した。旧履歴2,912,580 bytesのSHA256 `8b2aa5f2ffecc6e354d53f135aef9d2b47f146b9cb68f73316368812a59cd708` をprefixとして保持した。
+
+<a id="call-storage-prepared-source"></a>
+## 2026-11-18 — 捕捉元の呼出し結果と関数値の特殊化を準備済みの式で照合する
+
+基点 `95a084050bfb99535d18ee387eb8c1aca8591a3b`。Source `f404eb9e9e305fb0722d65e7a6a9fc2b7fccce9e` を既存mainへcommitし、非force push後にリモートのfull SHAと6入力のblobを照合した。
+
+キャプチャ探索では、呼出しグラフが同じsiteで検証した結果型を式の元スコープへ保持し、特殊化前の準備済み型と照合する。継続と終端値の区別は呼出しグラフが所有する。関数値の特殊化証拠は式の値結果が所有し、解決済みとowner-boundのどちらからも同じ参照を取得できる。回帰は元の型、使用箇所での特殊化後の型、証拠の同一性を両方の式で検査する。束縛が公開する関数型の互換性と宣言呼出しにおける作用項の確定を含むresolverの移行は継続。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。library **401エラー・25警告**、lib test **1,285エラー・37警告**。前回公開入力との一次診断のパス・ヘッダ比較で追加0件、解消4件。Semaのfmtと構造gateは終了0、blocking違反0件。回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,841,847 bytesで、約300 GBを目安とするcleanは未実行。Generic Matchは受入・公開済み。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-call-storage-prepared-source.raw.zip) は17 entry、144,681 bytes、SHA256 `c7176ca5d92aa4a62fbe6ff2d3fa40d998fb79b2367d00c60dd2ac1482871b76`。各entryの長さとSHA256を再照合した。旧履歴2,914,775 bytesのSHA256 `869b48fe0e306f9e0c3135c981fa45dc987002d8c4b2e4f9ea9e4b5dd2eb374e` をprefixとして保持した。
