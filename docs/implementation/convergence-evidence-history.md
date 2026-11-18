@@ -19532,3 +19532,16 @@ Source `bd3059f32934738b29b561ed7aba921e91a85c5b` の作用探索は、参照の
 locked Semaの全feature checkはlibrary成功、lib testは終了101・817エラー・33警告。前回と発生ファイル・コード別のエラーの内訳が一致した。Semaのfixture実行、全推移的逆依存テスト、workspace全target check、Native／Web最終受入は未実行。SemaライブラリClippy、fmt、差分検査、構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存は起点込み22 package。公開4 blobを照合した。 `target` は10596566257 bytesだった。
 
 [候補別の計測、Compilerの全ID比較、途中と最終の検証、公開照合](acceptance-evidence/task-effect-dependency-worklist.raw.zip) は42 entry、1811552 bytes、SHA256 `37eaccbc3496aeae6e7b3e436619a80d6bffc5c29dbbd8d220dfc4318a8219f7`。各原本の長さとハッシュを照合した。
+
+<a id="effect-publication-layers"></a>
+## 2026-11-19 — 作用グラフを変更しない差分の公開依存を除去
+
+基点 `e77aa2e45e90fa9678cb5874ad17ac0bb4045b6d` の追加396件から `ReadScopeDependencies` の13件を抽出した。LLDBの3例は最終公開の同じpreflightで停止した。13件の計測では、最初に欠けたレイヤーはすべて関数・作用行・述語・choice・制約の書き込みが空で、開始と終了の状態が同一、祖先の追加もなかった。Mapの2件の入力には、これとは別に作用行1つを持つ未承認レイヤーも残っていた。計測差分は取り除いた。
+
+Source `17880916d8de944bf57e509c236f5708e5f81793` は、書き込みも状態遷移もない差分を作用グラフの読み取りレイヤーに加えない。差分を受け取る際の発行元、基点、実際の依存レイヤーの公開権限の検査は維持し、同じbatch内の実際の定義や制約は一括で反映する。作用遷移がないbatchを反映しても、作用グラフの状態番号を進めない。空の差分をまとめた場合の状態保持と、その参照範囲から発行した作用行を公開できることを検査するSema fixtureを追加した。
+
+主要Compilerの同じ152 IDは全件成功。追加396 IDは361成功・35失敗で、前回失敗した13 IDが成功した。対象にした公開依存の13件のうち11件が成功し、Mapの2件は同じ診断が残る。ほかに、rich textのタイポグラフィ値と単位を保つ組合せと、並列処理の公開保存と内部ロールバックのfixtureが通った。 `callable_execution` は341成功・35失敗、`project_function_instances` は12/12、`scope_propagation` は8/8成功。
+
+locked Semaの全feature checkはlibrary成功、lib testは終了101・817エラー・33警告。発生ファイル・コード別のエラーの内訳は前回と一致した。追加fixtureの実行、全推移的逆依存テスト、workspace全target check、Native／Web最終受入は未実行。SemaライブラリClippy、fmt、差分検査、構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存は起点込み22 package。公開3 blobを照合した。 `target` は10596522515 bytesだった。
+
+[レイヤー別の計測、Compilerの全ID比較、最終検証と公開照合](acceptance-evidence/task-effect-publication-layers.raw.zip) は30 entry、928648 bytes、SHA256 `d97cdc31cb318c0e737ca6d5ecc298ad657107da3eb4d441475ef512800edfa8`。各原本の長さとハッシュを照合した。
