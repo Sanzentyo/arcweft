@@ -13,7 +13,7 @@ pub(in crate::effect_row::prepared) enum SnapshotSource<'a> {
     Product(&'a [&'a PreparedEffectUnknownRef]),
     Bound(&'a PreparedEffectDefinitions),
     Final(&'a PreparedEffectDefinitions),
-    Observation,
+    Observation(&'a [&'a PreparedEffectSchemeRef]),
 }
 
 impl PreparedEffectReadView<'_> {
@@ -71,7 +71,7 @@ impl PreparedEffectReadView<'_> {
         let mut work = Work(control);
         let schemes = match source {
             SnapshotSource::Final(_) => SchemeDependencies::Bodies,
-            SnapshotSource::Observation => SchemeDependencies::Observation,
+            SnapshotSource::Observation(_) => SchemeDependencies::Observation,
             _ => SchemeDependencies::Headers,
         };
         let original = match source {
@@ -121,6 +121,12 @@ impl PreparedEffectReadView<'_> {
                 self.validate_unknown(reference)?;
                 work.charge(DecisionWork::Node)?;
                 inventory.insert(reference.reference().ordinal);
+            }
+        } else if let SnapshotSource::Observation(roots) = source {
+            for root in roots {
+                self.scheme(root)?;
+                work.charge(DecisionWork::Node)?;
+                inventory.insert(self.relation.validate(&root.0)?);
             }
         }
         #[cfg(test)]

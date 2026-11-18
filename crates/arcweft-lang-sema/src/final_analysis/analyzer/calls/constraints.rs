@@ -1139,6 +1139,26 @@ fn materialized_source_failure(
     ))
 }
 
+fn source_analysis_failure(
+    source: AnalyzerCallConstraintSourceId,
+    phase: SourcePhase,
+    error: FinalSemanticAnalysisError,
+) -> crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain> {
+    use crate::callable::SourceCallbackFailure;
+    if matches!(&error, FinalSemanticAnalysisError::Cancelled) {
+        return SourceCallbackFailure::Abort(TypeConstraintAbort::Cancelled);
+    }
+    match AnalyzerExpressionError::fatal(error) {
+        AnalyzerExpressionError::Abort(abort) => SourceCallbackFailure::Abort(abort),
+        AnalyzerExpressionError::Fatal(error) => SourceCallbackFailure::fatal(SourceError::new(
+            source,
+            phase,
+            AnalyzerCallSourceFailureCause::FinalSemantic(error),
+        )),
+        _ => unreachable!("a semantic source error is fatal or an abort"),
+    }
+}
+
 /// A source value that was already checked while the callee or a
 /// schema-owned semantic application was staged.  These rows are the only
 /// callback inputs that may bypass expression re-evaluation: the variant
@@ -1727,23 +1747,8 @@ impl<'a, 'project, 'catalog, 'control>
                 owners
                     .discard(self.analyzer)
                     .map_err(SourceCallbackFailure::invariant)?;
-                let diagnostic = diagnostic.map_err(|error| match error {
-                    FinalSemanticAnalysisError::Cancelled => {
-                        SourceCallbackFailure::Abort(TypeConstraintAbort::Cancelled)
-                    }
-                    error => match AnalyzerExpressionError::fatal(error) {
-                        AnalyzerExpressionError::Abort(abort) => {
-                            SourceCallbackFailure::Abort(abort)
-                        }
-                        AnalyzerExpressionError::Fatal(error) => {
-                            SourceCallbackFailure::fatal(SourceError::new(
-                                source_id,
-                                SourcePhase::Probe,
-                                AnalyzerCallSourceFailureCause::FinalSemantic(error),
-                            ))
-                        }
-                        _ => unreachable!("fatal source errors are fatal or abort the candidate"),
-                    },
+                let diagnostic = diagnostic.map_err(|error| {
+                    source_analysis_failure(source_id, SourcePhase::Probe, error)
                 })?;
                 Ok(AnalyzerSourceProbeAttempt::Rejected(diagnostic))
             }
@@ -1781,6 +1786,42 @@ impl<'a, 'project, 'catalog, 'control>
         };
         match (checked.actual, checked.pending_child) {
             (Some(actual), None) => {
+                if let Some(owner) = source.expression_owner() {
+                    let mut roots = crate::types::PreparedTypeEffectRoots::default();
+                    let source_failure =
+                        |error| source_analysis_failure(source_id, SourcePhase::Probe, error);
+                    roots.extend([actual.actual()], work).map_err(|error| {
+                        source_failure(FinalSemanticAnalysisError::source_type_projection(
+                            owner.into(),
+                            error,
+                        ))
+                    })?;
+                    if !roots.rows().is_empty() || !roots.predicates().is_empty() {
+                        let active = self.active_fact_scope.as_ref().ok_or_else(|| {
+                            SourceCallbackFailure::invariant(AnalyzerCallClientInvariant::fact_transaction(
+                                source, crate::final_analysis::CandidateFactTransactionViolation::StaleCheckpoint,
+                            ))
+                        })?;
+                        let authority = self
+                            .analyzer
+                            .facts
+                            .callback_fact_authority(&active.scope)
+                            .map_err(|violation| {
+                                SourceCallbackFailure::invariant(
+                                    AnalyzerCallClientInvariant::fact_transaction(
+                                        source, violation,
+                                    ),
+                                )
+                            })?;
+                        let context = self
+                            .context
+                            .child_candidate(authority)
+                            .with_work(work.clone());
+                        self.analyzer
+                            .prepare_source_effect_bodies(&context, owner, &roots)
+                            .map_err(source_failure)?;
+                    }
+                }
                 self.retain_physical_observed_type(source_id, &actual, work)?;
                 let declarations =
                     self.analyzer

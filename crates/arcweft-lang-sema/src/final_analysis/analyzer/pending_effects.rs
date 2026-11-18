@@ -139,6 +139,20 @@ impl Analyzer<'_, '_, '_> {
         })
     }
 
+    pub(super) fn prepare_source_effect_bodies(
+        &mut self,
+        context: &super::AnalyzerExpressionContext<'_>,
+        owner: super::ExprId,
+        roots: &crate::types::PreparedTypeEffectRoots<'_>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let mut work = context.work();
+        self.observe_source_with_dependencies(context, owner, |_, graph| {
+            graph
+                .require_query_bodies(roots.rows(), roots.predicates(), &mut work)
+                .map_err(FinalSemanticAnalysisError::from)
+        })
+    }
+
     fn observe_source_with_dependencies<T>(
         &mut self,
         context: &super::expression_error::AnalyzerExpressionContext<'_>,

@@ -22,7 +22,28 @@ impl PreparedEffectReadView<'_> {
         predicates: &[&PreparedEffectPredicate],
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        let mut reachable = Reachable::new(self, SchemeDependencies::Headers);
+        self.validate_reachable_query(rows, predicates, SchemeDependencies::Headers, control)
+    }
+
+    /// Check whether the source can be closed while keeping its original
+    /// equations open for joint inference.
+    pub(crate) fn require_query_bodies<C: DecisionControl>(
+        self,
+        rows: &[&PreparedEffectRow],
+        predicates: &[&PreparedEffectPredicate],
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        self.validate_reachable_query(rows, predicates, SchemeDependencies::Observation, control)
+    }
+
+    fn validate_reachable_query<C: DecisionControl>(
+        self,
+        rows: &[&PreparedEffectRow],
+        predicates: &[&PreparedEffectPredicate],
+        schemes: SchemeDependencies,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        let mut reachable = Reachable::new(self, schemes);
         for row in rows {
             reachable.push(Dependency::Row(row), control)?;
         }

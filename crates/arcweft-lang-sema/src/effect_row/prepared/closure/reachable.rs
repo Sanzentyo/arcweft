@@ -13,8 +13,26 @@ impl PreparedEffectReadView<'_> {
         predicates: &[&PreparedEffectPredicate],
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
-        self.snapshot(rows, predicates, &[], SnapshotSource::Observation, control)?
-            .solve_with_bindings(BTreeMap::new(), control)
+        self.observe_principal_with_named_roots(&[], rows, predicates, control)
+    }
+
+    /// Observe exact declaration bodies in the selected read view along with
+    /// their original published obligations.
+    pub(crate) fn observe_principal_with_named_roots<C: DecisionControl>(
+        self,
+        roots: &[&PreparedEffectSchemeRef],
+        rows: &[&PreparedEffectRow],
+        predicates: &[&PreparedEffectPredicate],
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
+        self.snapshot(
+            rows,
+            predicates,
+            &[],
+            SnapshotSource::Observation(roots),
+            control,
+        )?
+        .solve_with_bindings(BTreeMap::new(), control)
     }
 }
 

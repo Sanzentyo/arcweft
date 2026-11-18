@@ -735,11 +735,6 @@ impl CallableEffectEquations {
             declarations.insert(owner.clone(), declaration);
         }
         use crate::effect_row::prepared::{PreparedEffectFailure, PreparedEffectGraph};
-        let without_type_roots = PreparedTypeEffectRoots::default();
-        let observed = match scope {
-            CallableEffectClosureScope::Prepare => &without_type_roots,
-            CallableEffectClosureScope::Verify(observed) => observed,
-        };
         let build = |graph: &mut PreparedEffectGraph,
                      work: &mut CallableEffectClosureWork<'_>|
          -> Result<_, FinalSemanticAnalysisError> {
@@ -821,12 +816,17 @@ impl CallableEffectEquations {
                 work.charge(DecisionWork::Node)?;
                 roots.push(declaration.scheme());
             }
-            let closure = graph.solve_reachable_principal(
-                &roots,
-                observed.rows(),
-                observed.predicates(),
-                work,
-            )?;
+            let closure = match scope {
+                CallableEffectClosureScope::Prepare => graph
+                    .read()
+                    .observe_principal_with_named_roots(&roots, &[], &[], work)?,
+                CallableEffectClosureScope::Verify(observed) => graph.solve_reachable_principal(
+                    &roots,
+                    observed.rows(),
+                    observed.predicates(),
+                    work,
+                )?,
+            };
             let mut completed = BTreeMap::new();
             for (owner, declaration) in &declarations {
                 work.charge(DecisionWork::Visit)?;
