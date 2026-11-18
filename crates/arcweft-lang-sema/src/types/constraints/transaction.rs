@@ -2602,8 +2602,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     let original = path.bind_original_path_effects(graph, context)?;
                     // The direct terminal path has no caller-provided Future rows.
                     // Closing the actual relation verifies that this inventory is complete.
-                    let effects =
-                        ConstraintClosedEffects::for_path(path, &original, &[], graph, context)?;
+                    let effects = ConstraintClosedEffects::for_original_path(
+                        path,
+                        &original,
+                        &[],
+                        graph,
+                        context,
+                    )?;
                     MaterializationInput::from_closed_original(
                         path,
                         selected,

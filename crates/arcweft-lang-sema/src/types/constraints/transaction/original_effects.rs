@@ -1,10 +1,11 @@
 //! Retain the prepared query roots of the original constraint calculation.
 
+use super::super::normalization::PreparedConstraintEffects;
 use super::*;
 use crate::{
     effect_row::prepared::{
-        BoundScopedEffectCompletion, PreparedEffectFailure, PreparedEffectGraph,
-        PreparedEffectScopedConstraint, ScopedEffectCompletion,
+        PreparedEffectFailure, PreparedEffectGraph, PreparedEffectScopedConstraint,
+        ScopedEffectCompletion,
     },
     types::{GenericEffectReference, TypeProjectionError, effect_domain::PreparedTypeEffectRoots},
 };
@@ -47,7 +48,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         &self,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<BoundScopedEffectCompletion, TypeConstraintError> {
+    ) -> Result<PreparedConstraintEffects, TypeConstraintError> {
         let constraint = self.prepare_effect_constraint(graph, context)?;
         let mut types = Vec::new();
         self.collect_original_effect_types(&mut types, context)?;
@@ -64,8 +65,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             graph,
             context,
         )?;
-        let binding = graph.bind_original_scoped(&original, context)?;
-        Ok(binding.freeze(graph.read(), context)?)
+        PreparedConstraintEffects::bind(&original, constraint, graph, context)
     }
 }
 

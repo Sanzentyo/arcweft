@@ -30,6 +30,23 @@ impl PreparedEffectScopedConstraint {
     }
 }
 
+impl PreparedEffectDefinitions {
+    pub(super) fn retains_constraint<C: DecisionControl>(
+        &self,
+        constraint: &PreparedEffectScopedConstraint,
+        work: &mut Work<'_, C>,
+    ) -> Result<bool, PreparedEffectFailure<C::Error>> {
+        self.read().validate_owner(&constraint.owner)?;
+        for obligation in &self.obligations {
+            work.charge(DecisionWork::Visit)?;
+            if Arc::ptr_eq(obligation, &constraint.obligation) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
 impl PreparedEffectGraph {
     /// Retain D and C separately: pointwise implication of their membership
     /// formulas does not express implication between whole finite-row facts.

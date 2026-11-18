@@ -61,7 +61,7 @@ type JointBranch<D> = ConstraintInferenceBranch<D, Arc<[OriginalProductMember]>>
 
 pub(super) struct PreparedOriginalProduct<D: ConstraintDomain> {
     pub(super) branch: JointBranch<D>,
-    pub(super) effects: crate::effect_row::prepared::BoundScopedEffectCompletion,
+    pub(super) effects: crate::types::constraints::normalization::PreparedConstraintEffects,
 }
 
 pub(super) struct OriginalProductInference<S> {
@@ -409,7 +409,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     TypeConstraintRejection::CyclicInstantiation { parameter }.into(),
                 ));
             }
-            let effects = self.freeze_original_effects(
+            let (relation, constraint) = self.freeze_original_effects(
                 &branch,
                 members,
                 scope,
@@ -417,9 +417,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 graph,
                 context,
             )?;
-            let effects = graph
-                .bind_original_scoped(&effects, context)?
-                .freeze(graph.read(), context)?;
+            let effects =
+                crate::types::constraints::normalization::PreparedConstraintEffects::bind(
+                    &relation, constraint, graph, context,
+                )?;
             context
                 .validate_type_and_const_completion(&branch)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;

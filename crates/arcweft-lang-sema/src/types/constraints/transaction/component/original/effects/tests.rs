@@ -227,7 +227,7 @@ fn contradictory_joint_premises_cannot_erase_an_individual_sources_failure() {
             .effects
             .restore_predicate(&impossible, &mut graph, &mut context)
             .unwrap();
-        let frozen = component
+        let (frozen, _) = component
             .freeze_original_effects(
                 &branch,
                 &members,
@@ -332,7 +332,7 @@ fn a_later_use_is_not_an_original_label_or_type_root() {
         )
         .unwrap();
     let branch = branch(&component, &members, graph.read(), &mut context);
-    let frozen = component
+    let (frozen, _) = component
         .freeze_original_effects(
             &branch,
             &members,
@@ -393,7 +393,7 @@ fn independent_bound_premises_remain_independent_in_the_joint_domain() {
         .effects
         .restore_predicate(&impossible, &mut graph, &mut context)
         .unwrap();
-    let frozen = component
+    let (frozen, _) = component
         .freeze_original_effects(
             &branch,
             &members,

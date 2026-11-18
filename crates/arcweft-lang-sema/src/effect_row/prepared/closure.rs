@@ -428,7 +428,12 @@ impl PrincipalEffectClosure {
         constraint: &PreparedEffectScopedConstraint,
         control: &mut C,
     ) -> Result<EffectPredicate, PreparedEffectFailure<C::Error>> {
-        self.graph.read().validate_owner(&constraint.owner)?;
+        let mut work = Work(control);
+        // The closure already replayed every retained obligation against all
+        // witnesses. The exact same immutable obligation carries that proof.
+        if self.graph.retains_constraint(constraint, &mut work)? {
+            return Ok(EffectPredicate::unconstrained());
+        }
         self.graph
             .read()
             .validate_retained_predicate(&constraint.obligation.domain)?;
@@ -441,7 +446,7 @@ impl PrincipalEffectClosure {
             parameters: &constraint.obligation.parameters,
         };
         canonical::CanonicalReplay::new(self, scope)
-            .confirm_obligation(&constraint.obligation, &mut Work(control))?;
+            .confirm_obligation(&constraint.obligation, &mut work)?;
         Ok(EffectPredicate::unconstrained())
     }
 }

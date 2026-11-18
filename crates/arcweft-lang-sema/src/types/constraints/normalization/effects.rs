@@ -13,12 +13,35 @@ use super::*;
 use crate::effect_row::prepared::{
     BoundScopedEffectCompletion, PreparedEffectActualInputs, PreparedEffectGraph,
     PreparedEffectPredicate, PreparedEffectRow, PreparedEffectScopedConstraint,
-    PreparedEffectUnknownRef, PrincipalEffectClosure,
+    PreparedEffectUnknownRef, PrincipalEffectClosure, ScopedEffectCompletion,
 };
 use crate::effect_row::{EffectConstraintEnvironment, EffectPredicate, EffectRow};
 use crate::types::{GenericEffectReference, PreparedEffects, TypeProjectionControl};
 
 mod scoped;
+
+/// The original relation and its exact source obligation travel together
+/// through the bound phase, before the final canonical closure is available.
+pub(in crate::types::constraints) struct PreparedConstraintEffects {
+    bound: BoundScopedEffectCompletion,
+    constraint: PreparedEffectScopedConstraint,
+}
+
+impl PreparedConstraintEffects {
+    pub(in crate::types::constraints) fn bind<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        original: &Arc<ScopedEffectCompletion>,
+        constraint: PreparedEffectScopedConstraint,
+        graph: &mut PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError> {
+        context.with_effect_transaction(graph, |context, graph| {
+            original.require_retained_constraint(&constraint, context)?;
+            let binding = graph.bind_original_scoped(original, context)?;
+            let bound = binding.freeze(graph.read(), context)?;
+            Ok(Self { bound, constraint })
+        })
+    }
+}
 
 pub(in crate::types) struct ConstraintClosedEffects<D: ConstraintDomain> {
     substitution: BTreeMap<GenericEffectReference, ConstraintEffectBinding<D>>,
@@ -206,9 +229,9 @@ impl<D: ConstraintDomain, E: crate::types::TypeEffectDomain>
 }
 
 impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
-    pub(in crate::types::constraints) fn for_path<A: TypeConstraintAccounting>(
+    pub(in crate::types::constraints) fn for_original_path<A: TypeConstraintAccounting>(
         path: &ConstraintPath<D>,
-        original: &BoundScopedEffectCompletion,
+        original: &PreparedConstraintEffects,
         inputs: &[(&PreparedEffectUnknownRef, &EffectRow)],
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -221,11 +244,41 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
             path,
             Arc::new(path.lineage.scope.clone()),
             ConstraintEffectCompletionOrigin::Source(path.lineage.original.clone()),
-            original,
+            &original.bound,
+            &original.constraint,
             &inputs,
             graph,
             context,
         )
+    }
+
+    /// Some fixtures supply a separately bound relation and an additional
+    /// path fact to validate against it.
+    #[cfg(test)]
+    pub(in crate::types::constraints) fn for_path<A: TypeConstraintAccounting>(
+        path: &ConstraintPath<D>,
+        original: &BoundScopedEffectCompletion,
+        inputs: &[(&PreparedEffectUnknownRef, &EffectRow)],
+        graph: &mut PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Arc<Self>, TypeConstraintError> {
+        context.with_effect_transaction(graph, |context, graph| {
+            let constraint = path.prepare_effect_constraint(graph, context)?;
+            for _ in path.lineage.scope.shape().binders() {
+                context.enter_node()?;
+            }
+            let inputs = graph.read().actual_inputs(inputs, context)?;
+            Self::complete_branch(
+                path,
+                Arc::new(path.lineage.scope.clone()),
+                ConstraintEffectCompletionOrigin::Source(path.lineage.original.clone()),
+                original,
+                &constraint,
+                &inputs,
+                graph,
+                context,
+            )
+        })
     }
 
     /// C is interpreted in the real relation context, including a joint
@@ -234,7 +287,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         branch: &ConstraintInferenceBranch<D, L>,
         scope: &ConstraintLexicalScope,
         sources: Arc<[OriginalProducerContext]>,
-        original: &BoundScopedEffectCompletion,
+        original: &PreparedConstraintEffects,
         inputs: &PreparedEffectActualInputs<'_>,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -247,7 +300,8 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
             branch,
             scope,
             ConstraintEffectCompletionOrigin::Joint(sources),
-            original,
+            &original.bound,
+            &original.constraint,
             inputs,
             graph,
             context,
@@ -259,32 +313,12 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         scope: Arc<ConstraintLexicalScope>,
         origin: ConstraintEffectCompletionOrigin,
         original: &BoundScopedEffectCompletion,
+        source_constraint: &PreparedEffectScopedConstraint,
         inputs: &PreparedEffectActualInputs<'_>,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<Self>, TypeConstraintError> {
         context.with_effect_transaction(graph, |context, graph| {
-            let sources = match &origin {
-                ConstraintEffectCompletionOrigin::Source(source) => std::slice::from_ref(source),
-                ConstraintEffectCompletionOrigin::Joint(sources) => sources.as_ref(),
-            };
-            let mut domains = Vec::new();
-            for source in sources {
-                context.enter_node()?;
-                let domain = scope
-                    .transport_predicate(source.gamma(), &source.domain(), context)
-                    .map_err(|error| match error {
-                        crate::types::TypeProjectionError::Control(error) => error,
-                        crate::types::TypeProjectionError::Instantiation(error) => {
-                            TypeConstraintInvariant::Instantiation(error).into()
-                        }
-                    })?;
-                context.enter_node()?;
-                domains.push(PreparedEffectPredicate::Canonical(domain));
-            }
-            let domain = graph.and(domains, context)?;
-            let source_constraint =
-                branch.prepare_effect_constraint_in(&scope, &domain, graph, context)?;
             let mut queries = Vec::new();
             for key in branch.effects.original_variables() {
                 context.enter_node()?;
@@ -319,7 +353,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 inputs,
                 context,
             )?;
-            let domain = principal.confirm_scoped_constraint(&source_constraint, context)?;
+            let domain = principal.confirm_scoped_constraint(source_constraint, context)?;
             let owner = Arc::new(ConstraintEffectCompletionContext {
                 constraints: branch.effects.clone(),
                 applications: Arc::clone(&branch.applications),
@@ -327,7 +361,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 origin,
                 domain: Arc::new(domain),
                 principal: Arc::new(principal),
-                source_constraint,
+                source_constraint: source_constraint.clone(),
             });
             let predicate =
                 owner.seal(Arc::clone(&owner.domain), owner.domain.variables(), context)?;

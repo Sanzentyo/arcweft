@@ -350,7 +350,7 @@ mod retained_preparation {
                     path.lineage.probe_effect_reads(),
                     |context, graph| {
                         let original = path.bind_original_path_effects(graph, context)?;
-                        let effects = ConstraintClosedEffects::for_path(
+                        let effects = ConstraintClosedEffects::for_original_path(
                             path,
                             &original,
                             &[],

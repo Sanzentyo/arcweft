@@ -60,7 +60,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         original: &PreparedOriginalEffects,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Arc<ScopedEffectCompletion>, OriginalInferenceFailure> {
+    ) -> Result<
+        (Arc<ScopedEffectCompletion>, PreparedEffectScopedConstraint),
+        OriginalInferenceFailure,
+    > {
         context.with_effect_transaction(graph, |context, graph| {
             let joint = branch
                 .prepare_effect_constraint_in(scope, &original.joint_domain, graph, context)
@@ -121,7 +124,13 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
             let roots = PreparedTypeEffectRoots::collect(types, predicates, context)
                 .map_err(projection_failure)?;
-            branch.freeze_original_effect_roots(&roots, &constraints, graph, context)
+            let relation = branch.freeze_original_effect_roots::<_, OriginalInferenceFailure>(
+                &roots,
+                &constraints,
+                graph,
+                context,
+            )?;
+            Ok((relation, joint))
         })
     }
 }
