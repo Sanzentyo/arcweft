@@ -128,6 +128,49 @@ fn existential_projection_preserves_its_full_admissibility_domain() {
 }
 
 #[test]
+fn quantifying_terminal_decisions_preserves_zero_work() {
+    for quantified in [BTreeSet::new(), BTreeSet::from([0u8])] {
+        for value in [false, true] {
+            let relation = EffectDecision::constant(value);
+            let mut meter = Meter {
+                used: 0,
+                limit: Some(0),
+            };
+            assert_eq!(relation.exists(&quantified, &mut meter).unwrap(), relation);
+            assert_eq!(relation.forall(&quantified, &mut meter).unwrap(), relation);
+            assert_eq!(meter.used, 0);
+        }
+    }
+}
+
+#[test]
+fn universal_projection_combines_branches_without_rebuilding_complements() {
+    let (a, b, c) = (atom(0), atom(1), atom(2));
+    let mut setup = Meter::default();
+    let relation = a
+        .or(&b, &mut setup)
+        .unwrap()
+        .and(&c.or(&b, &mut setup).unwrap(), &mut setup)
+        .unwrap();
+    let quantified = BTreeSet::from([0, 2]);
+    let mut dual = Meter::default();
+    let expected = relation
+        .not(&mut dual)
+        .unwrap()
+        .exists(&quantified, &mut dual)
+        .unwrap()
+        .not(&mut dual)
+        .unwrap();
+    let mut direct = Meter {
+        used: 0,
+        limit: Some(dual.used - 1),
+    };
+    let actual = relation.forall(&quantified, &mut direct).unwrap();
+    assert_eq!(actual, b);
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn substitutions_are_simultaneous_and_reorder_decisions() {
     let mut meter = Meter::default();
     let first = atom(0);
@@ -304,6 +347,12 @@ fn completion_matches_exhaustive_models_of_every_three_variable_relation() {
             let quantified = (0..3u8)
                 .filter(|variable| quantified_mask & (1 << variable) != 0)
                 .collect::<BTreeSet<_>>();
+            let universal = relation.forall(&quantified, &mut meter).unwrap();
+            assert!(
+                universal
+                    .variables()
+                    .all(|variable| !quantified.contains(variable))
+            );
             let completed = relation.complete(&quantified, &mut meter).unwrap();
             let conditional = relation
                 .complete_conditionally(&quantified, &mut meter)
@@ -331,6 +380,11 @@ fn completion_matches_exhaustive_models_of_every_three_variable_relation() {
                         witness & !quantified_mask == 0 && table & (1 << (rigid | witness)) != 0
                     })
                     .collect::<Vec<_>>();
+                assert_eq!(
+                    universal.evaluate(|variable| rigid & (1 << variable) != 0),
+                    models.len() == (1usize << quantified.len()),
+                    "forall: table {table}, mask {quantified_mask}, rigid {rigid}"
+                );
                 assert_eq!(
                     completed
                         .admissibility

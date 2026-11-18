@@ -109,6 +109,12 @@ struct CompletionRoots<V> {
     instantiated: Root,
 }
 
+#[derive(Clone, Copy)]
+enum Quantifier {
+    Exists,
+    ForAll,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Conditional {
     condition: Root,
@@ -430,10 +436,7 @@ impl<V: Clone + Ord> EffectDecision<V> {
         quantified: &BTreeSet<V>,
         control: &mut C,
     ) -> Result<Self, C::Error> {
-        let mut builder = DecisionBuilder::new(control);
-        let root = builder.import(self)?;
-        let root = builder.exists(root, quantified)?;
-        builder.finish(root)
+        self.quantify(quantified, Quantifier::Exists, control)
     }
 
     /// Universally eliminates the supplied caller-owned variables.
@@ -442,7 +445,27 @@ impl<V: Clone + Ord> EffectDecision<V> {
         quantified: &BTreeSet<V>,
         control: &mut C,
     ) -> Result<Self, C::Error> {
-        self.not(control)?.exists(quantified, control)?.not(control)
+        self.quantify(quantified, Quantifier::ForAll, control)
+    }
+
+    fn quantify<C: DecisionControl>(
+        &self,
+        quantified: &BTreeSet<V>,
+        quantifier: Quantifier,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        match self.root {
+            Root::False => return Ok(Self::constant(false)),
+            Root::True => return Ok(Self::constant(true)),
+            Root::Branch(_) => {}
+        }
+        if quantified.is_empty() {
+            return self.copy_with_control(control);
+        }
+        let mut builder = DecisionBuilder::new(control);
+        let root = builder.import(self)?;
+        let root = builder.quantify(root, quantified, quantifier)?;
+        builder.finish(root)
     }
 
     /// Simultaneous substitution: references inside a replacement are not
@@ -540,13 +563,13 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         relation: Root,
         quantified: &BTreeSet<V>,
     ) -> Result<CompletionRoots<V>, C::Error> {
-        let admissibility = self.exists(relation, quantified)?;
+        let admissibility = self.quantify(relation, quantified, Quantifier::Exists)?;
         let mut replacements = BTreeMap::new();
         for variable in quantified {
             self.control.charge(DecisionWork::Visit)?;
             let atom = self.branch(variable.clone(), Root::False, Root::True)?;
             let without = self.conditional(Conditional::new(atom, Root::False, relation))?;
-            let possible_without = self.exists(without, quantified)?;
+            let possible_without = self.quantify(without, quantified, Quantifier::Exists)?;
             let required = self.conditional(Conditional::new(
                 possible_without,
                 Root::False,
@@ -727,7 +750,12 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         Ok(ordered)
     }
 
-    fn exists(&mut self, root: Root, quantified: &BTreeSet<V>) -> Result<Root, C::Error> {
+    fn quantify(
+        &mut self,
+        root: Root,
+        quantified: &BTreeSet<V>,
+        quantifier: Quantifier,
+    ) -> Result<Root, C::Error> {
         let order = self.postorder(root)?;
         let mut indices = BTreeMap::new();
         for index in order {
@@ -736,7 +764,11 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             let low = Self::remap(node.low, &indices);
             let high = Self::remap(node.high, &indices);
             let mapped = if quantified.contains(&node.variable) {
-                self.conditional(Conditional::new(low, Root::True, high))?
+                let combine = match quantifier {
+                    Quantifier::Exists => Conditional::new(low, Root::True, high),
+                    Quantifier::ForAll => Conditional::new(low, high, Root::False),
+                };
+                self.conditional(combine)?
             } else {
                 self.branch(node.variable, low, high)?
             };
