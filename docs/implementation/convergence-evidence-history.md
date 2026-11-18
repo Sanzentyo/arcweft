@@ -19283,3 +19283,14 @@ Source `ad12f74311a1e89696a25bae5b7102d9c3f79f4b`。基点は `b5e0a977218ec0bd5
 Compilerの同じ2 target・152 IDのnextestは149成功・3失敗・0スキップ。遅延コールバックが `SchemeState` を通過し、`ScopedEffectCompletion::close_original_with_inputs` が作用式を構築する段階で `WorkLimit { requested: 1, consumed: 4096, limit: 4096 }` に達した。Mapの復元2件と合わせて3件とも型検査で止まる。fmtと構造ゲートは終了0。Compilerの2 target以外の逆依存テスト、Semaユニットテスト、Clippy、workspace最終受入、Native／Web最終受入は未実行。targetは7,207,503,408 bytes。今回の `cargo clean` は0回。
 
 [検証原本・LLDB・全テストID比較・公開照合](acceptance-evidence/task-named-source-body-read-view.raw.zip) は 17 entry、53391 bytes、SHA256 `4b34a4c68e358ea6af05a76bb2700c64eb9535cda8ba7f4f753b66f07939d3a3`。各entryの長さとSHA256を再照合した。既存履歴 3014067 bytesのSHA256 `548fa616452f6bdb94a1b9a068cf9ccded72bdb3e706a572dc196af823cb8456` をprefixとして保持した。
+
+<a id="reachable-effect-substitution"></a>
+## 2026-11-19 — 作用式の同時置換で到達する変数の置換先を取り込む
+
+Source `e59fd6ac05e1316ff76f1877f56f45406c3c757a`。基点は `01d65015838f097d852985f485a6219c6c2a252c`。比較元のCompiler統合テストは `ad12f74311a1e89696a25bae5b7102d9c3f79f4b`。公開後に2件のRust blobと実行入力のSHA256を照合した。
+
+Coreの決定グラフは、元の式に現れる変数に対応する置換先を一度ずつ取り込む。置換先の式は元の変数参照と同時に代入する。正準化と作業量の計測は既存の決定グラフの処理で行う。消費作業量の回帰テストは未使用の置換を255件増やし、対応する置換だけの場合と同じ上限で同じ式が得られることを確認する。置換先自体が参照する変数も未使用集合に含まれ、同時置換の意味を照合する。
+
+`cargo nextest run --locked -p arcweft-core --lib --no-fail-fast` は2,357成功、0失敗、0スキップ。Compilerの同じ2 target・152 IDのnextestは149成功、3失敗、0スキップ。遅延コールバックとMapの復元2件は型検査に残る。最新のLLDBでは遅延コールバックは作用式を組み立てる途中の代入、captured Mapは新しい型制約の適用範囲で上限に達した。fmtと構造ゲートは終了0。Cargo treeのworkspace既定featureでCoreを含む52 packageを計測した。Core単体テストとCompilerの2 target以外の逆依存テスト、Clippy、workspace最終受入、Native／Web最終受入は未実行。CARGO_INCREMENTAL=0。targetは7,979,510,245 bytes。
+
+[検証原本・全ID比較・作業量の診断](acceptance-evidence/task-reachable-effect-substitution.raw.zip) は 19 entry、128561 bytes、SHA256 `e11abef67e06f2ad1c8c86664e3a24564907dd988a9d933ca02afd3527c43170`。各entryの長さとSHA256を再照合した。既存履歴 3016101 bytesのSHA256 `5546134fd2d184a98a5d4629904e82f88331978bcaddbbc9bf5b61957aef422c` をprefixとして保持した。
