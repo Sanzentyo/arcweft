@@ -18426,3 +18426,20 @@ Supersedes: 関数値の特殊化がcanonicalなcallable schemaの生成とseman
 6 Rust path、物理 301 LOC増。宣言の矢印構築を既存の署名投影に統合し、結果と補助投影を同じ制約入力に揃えた。Cargo manifestと公開契約に差分はない。現在の範囲は[現状一覧](current-status.md)に集約する。
 
 [検証原本・clean結果・入力・公開照合・staged diff・所有レビュー](acceptance-evidence/task-prepared-application-result-checkpoint.raw.zip) は 21 entry、303044 bytes、SHA256 `904b3909e710ba8a3698fc4975a0a40e3d6db00115ca793a5c1797da51f74f6c`。各entryの長さとSHA256を再読取で照合した。旧履歴の2,845,886 bytesとSHA256 `db93429c48d6803f063451c21c57b7c223de43947385fe67daf673dbf9ef73ed` をprefixとして保持した。
+
+<a id="prepared-contextual-call-checkpoint"></a>
+## 2026-11-18 — 呼出し結果の期待型と完全一致の投影
+
+基点 `84e74a0fd8a40b3f8bc051f8feba3f4047d2778a`。Source `d8ad873d194ef2a0de6b1c575a0ba8bb4a0f0c24` を既存mainへ通常commitし、非force push後のmainと実際に検証した14入力の公開blobをSHA256で照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+早期canonical結果から期待型の方程式を作り直していた処理を置き換えた。候補が保持する準備済み結果の型を関係のpatternに使い、呼出し元の期待型は元の作用項とlexical scopeを持ったままactualに渡す。途中適用の次グループでは、引数を残りの矢印のパラメータに照合し、文脈の戻り値は矢印の戻り値に照合する。次グループが返す関数値の特殊化には、その戻り値専用のprojectionを使う。候補の出力は従来のResult投影から読む。ルートと中断中の子は同じ制約・投影登録を使う。パラメータのタプルを保持する際は、候補と元sourceの各scopeで実graph参照を検査し、既存workで各項を課金する。
+
+完全一致で順位を決める際は、元sourceの期待型をResultの入力として保持し、同じ完了componentで結果と期待型を閉じる。型・作用行・captureの完全一致を同じ結果から読む。省略作用行は推論を許すため、完全一致の入力には使わない。投影入力のlexical admissionとtemplateのopeningは同じgraph editに入り、失敗時に一括でrollbackする。既存の関数値特殊化もこの投影登録を使う。
+
+新規2 fixtureを追加した。一つは本体が後で入る実Named項を閉じ、同じ作用行で完全一致し、余分な作用を許容する期待型で完全一致しない両方向を検査する。もう一つは実HIRの段階適用から2段・1段の矢印が順に得られ、返された関数を呼べるSema結果を検査する。先行fixtureは変数のtype／const／effect scopeと、投影の失敗時のrollbackの検査を保持した。新規・変更fixtureはいずれも未実行。
+
+必須の cargo check --locked -p arcweft-lang-sema --tests --all-features は3回とも終了101。初回dev01は導入した2 importの誤りが診断を打ち切り、library 2・lib test 5エラーだった。import修正後のdev02は453／1,496エラー。dev03は新規fixtureの配置誤りでfmtが終了1となり、checkを開始していない。fixtureの配置と既存fixtureのfinish引数を修正した最終dev04はlibrary **453エラー・25警告**、lib test **1,493エラー・44警告**。dev01・dev02・dev04のfmtは終了0。CARGO_INCREMENTAL=0、jobs／profile上書きなし。旧eager completion・引数とcalleeの移行・既存fixtureがコンパイル未完了。変更pathの一次診断183件を原本へ保持した。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Web最終受入は未実行。
+
+14 Rust path、555追加／348削除、物理207 LOC増。結果と期待型の登録はfrontendの一か所、lexical inputの移送とrollbackはlowerの既存projection owner、完了時の比較は同じcomponentのprojectionに置く。Cargo manifest・公開契約・版に差分はない。ユーザー指定の全体 cargo clean は target が約300 GBになったときに実行する。今回のtargetの実測は347,972,633 bytesで既存ビルド成果物を再利用した。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-prepared-contextual-call-checkpoint.raw.zip) は29 entry、327,398 bytes、SHA256 `706f17a27babf4938f068232b3ffe2d040ff3fca650edc653142122023d6ea5c`。再読取した全entryの長さとSHA256を照合した。以前の履歴2,849,387 bytesの SHA256 `ba1ba15a2b4e8c047eb101d10e8c3e770e287402977da7b68db2ad6520c4c38b` をprefixとして保持した。
