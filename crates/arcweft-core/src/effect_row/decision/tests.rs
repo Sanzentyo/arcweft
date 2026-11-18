@@ -148,6 +148,39 @@ fn substitutions_are_simultaneous_and_reorder_decisions() {
 }
 
 #[test]
+fn substitution_borrows_target_formulas_and_resolves_each_source_reference_once() {
+    let mut meter = Meter::default();
+    let (a, b) = (atom(0), atom(1));
+    let source = a
+        .conditional(&b, &b.not(&mut meter).unwrap(), &mut meter)
+        .unwrap();
+    assert_eq!(
+        source
+            .variables()
+            .filter(|variable| **variable == 1)
+            .count(),
+        2
+    );
+    let target = atom(2).or(&a, &mut meter).unwrap();
+    let mut seen = BTreeSet::new();
+    let result = source
+        .substitute_references(&mut meter, |reference, _| {
+            assert!(seen.insert(*reference));
+            Ok(if *reference == 0 {
+                EffectDecisionReplacement::Decision(&target)
+            } else {
+                EffectDecisionReplacement::Variable(0)
+            })
+        })
+        .unwrap();
+    assert_eq!(seen, BTreeSet::from([0, 1]));
+    assert_eq!(
+        result,
+        a.or(&atom(2).not(&mut meter).unwrap(), &mut meter).unwrap()
+    );
+}
+
+#[test]
 fn substitution_work_depends_only_on_reachable_replacements() {
     let source = atom(0);
     let replacement = atom(1);

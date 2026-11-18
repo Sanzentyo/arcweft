@@ -1,6 +1,7 @@
 //! Iterative term compilation. Applications reference cells, never callee bodies.
 
 use super::*;
+use arcweft_core::effect_row::EffectDecisionReplacement;
 
 pub(super) struct CompiledRow {
     pub(super) membership: Vec<Decision>,
@@ -127,38 +128,23 @@ impl<'a> Compilation<'a> {
         argument: impl Fn(&GenericEffectReference) -> Option<&'r CompiledRow>,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let mut replacements = BTreeMap::new();
-        for parameter in source.variables() {
-            work.charge(DecisionWork::Visit)?;
-            if replacements.contains_key(&Atom::Reference(parameter.clone())) {
-                continue;
+        source.substitute_references(work, |parameter, _| {
+            if let Some(argument) = argument(parameter) {
+                return Ok(EffectDecisionReplacement::Decision(
+                    &argument.membership[class],
+                ));
             }
-            let value = if let Some(argument) = argument(parameter) {
-                work.copy_decision(&argument.membership[class])?
-            } else {
-                let slot = self
-                    .parameters
-                    .iter()
-                    .position(|declared| declared == parameter)
-                    .ok_or_else(|| {
-                        PreparedEffectInvariant::UndeclaredParameter(parameter.clone())
-                    })?;
-                Decision::variable(
-                    Atom::Formal {
-                        owner: self.owner,
-                        class,
-                        parameter: slot,
-                    },
-                    work,
-                )?
-            };
-            replacements.insert(Atom::Reference(parameter.clone()), value);
-        }
-        source
-            .map_references(work, &mut |reference, _| {
-                Ok(Atom::Reference(reference.clone()))
-            })?
-            .substitute(&replacements, work)
+            let slot = self
+                .parameters
+                .iter()
+                .position(|declared| declared == parameter)
+                .ok_or_else(|| PreparedEffectInvariant::UndeclaredParameter(parameter.clone()))?;
+            Ok(EffectDecisionReplacement::Variable(Atom::Formal {
+                owner: self.owner,
+                class,
+                parameter: slot,
+            }))
+        })
     }
 
     pub(super) fn canonical_row<C: DecisionControl>(

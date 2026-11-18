@@ -368,12 +368,10 @@ impl PrincipalEffectClosure {
     }
 
     fn require_whole<E>(decision: &Decision) -> Result<(), PreparedEffectFailure<E>> {
-        if decision.variables().any(|atom| {
-            matches!(
-                atom,
-                Atom::Formal { class: 0, .. } | Atom::Cell { .. } | Atom::Reference(_)
-            )
-        }) {
+        if decision
+            .variables()
+            .any(|atom| matches!(atom, Atom::Formal { class: 0, .. } | Atom::Cell { .. }))
+        {
             return Err(PreparedEffectInvariant::UnclosedCell.into());
         }
         Ok(())

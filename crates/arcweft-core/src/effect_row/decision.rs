@@ -60,6 +60,12 @@ pub struct EffectDecision<V> {
     pub(super) root: Root,
 }
 
+/// A simultaneous replacement for one source reference in a decision.
+pub enum EffectDecisionReplacement<'a, V> {
+    Variable(V),
+    Decision(&'a EffectDecision<V>),
+}
+
 /// Exact projection of a relation onto its unquantified references, together
 /// with its pointwise least witnesses when those witnesses satisfy the relation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -316,14 +322,49 @@ impl<V: Clone + Ord> EffectDecision<V> {
         control: &mut C,
         mapping: &mut impl FnMut(&V, &mut C) -> Result<U, C::Error>,
     ) -> Result<EffectDecision<U>, C::Error> {
+        self.rebuild_references(control, |reference, builder| {
+            let variable = mapping(reference, builder.control)?;
+            builder.branch(variable, Root::False, Root::True)
+        })
+    }
+
+    /// Resolve each reachable reference once and compose with the supplied
+    /// target decisions. The replacements are already in the target scope.
+    pub fn substitute_references<'r, U: Clone + Ord + 'r, C: DecisionControl>(
+        &self,
+        control: &mut C,
+        mut binding: impl FnMut(&V, &mut C) -> Result<EffectDecisionReplacement<'r, U>, C::Error>,
+    ) -> Result<EffectDecision<U>, C::Error> {
+        control.charge(DecisionWork::Visit)?;
+        let mut replacements = BTreeMap::<&V, Root>::new();
+        self.rebuild_references(control, |reference, builder| {
+            if let Some(&root) = replacements.get(&reference) {
+                return Ok(root);
+            }
+            let root = match binding(reference, builder.control)? {
+                EffectDecisionReplacement::Variable(variable) => {
+                    builder.branch(variable, Root::False, Root::True)?
+                }
+                EffectDecisionReplacement::Decision(decision) => builder.import(decision)?,
+            };
+            builder.control.charge(DecisionWork::Node)?;
+            replacements.insert(reference, root);
+            Ok(root)
+        })
+    }
+
+    fn rebuild_references<'s, U: Clone + Ord, C: DecisionControl>(
+        &'s self,
+        control: &mut C,
+        mut resolve: impl FnMut(&'s V, &mut DecisionBuilder<'_, U, C>) -> Result<Root, C::Error>,
+    ) -> Result<EffectDecision<U>, C::Error> {
         let mut builder = DecisionBuilder::new(control);
         let mut indices = BTreeMap::new();
         for (index, node) in self.nodes.iter().enumerate() {
             builder.control.charge(DecisionWork::Visit)?;
-            let variable = mapping(&node.variable, builder.control)?;
+            let condition = resolve(&node.variable, &mut builder)?;
             let low = DecisionBuilder::<U, C>::remap(node.low, &indices);
             let high = DecisionBuilder::<U, C>::remap(node.high, &indices);
-            let condition = builder.branch(variable, Root::False, Root::True)?;
             let root = builder.conditional(Conditional::new(condition, high, low))?;
             indices.insert(index, root);
         }
@@ -415,20 +456,12 @@ impl<V: Clone + Ord> EffectDecision<V> {
         if replacements.is_empty() || self.nodes.is_empty() {
             return self.copy_with_control(control);
         }
-        control.charge(DecisionWork::Visit)?;
-        let mut builder = DecisionBuilder::new(control);
-        let root = builder.import(self)?;
-        let mut roots = BTreeMap::new();
-        for variable in self.variables() {
-            builder.control.charge(DecisionWork::Visit)?;
-            if !roots.contains_key(variable)
-                && let Some(replacement) = replacements.get(variable)
-            {
-                roots.insert(variable.clone(), builder.import(replacement)?);
-            }
-        }
-        let root = builder.substitute(root, &roots)?;
-        builder.finish(root)
+        self.substitute_references(control, |variable, _| {
+            Ok(match replacements.get(variable) {
+                Some(replacement) => EffectDecisionReplacement::Decision(replacement),
+                None => EffectDecisionReplacement::Variable(variable.clone()),
+            })
+        })
     }
 
     /// Eliminate current existential references without selecting an arbitrary

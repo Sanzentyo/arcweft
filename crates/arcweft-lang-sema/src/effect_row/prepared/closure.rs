@@ -60,8 +60,6 @@ enum Atom {
         mask: usize,
     },
     Choice(u64),
-    /// Temporary substitution key, eliminated before any relation is retained.
-    Reference(GenericEffectReference),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
