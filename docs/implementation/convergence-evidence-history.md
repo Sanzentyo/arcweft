@@ -19460,3 +19460,15 @@ Source `0b97354d083bfb603da5a2aa0d7470981a8b3e95`。基点 `6af41b6b47070bfa1b1e
 locked Sema全feature checkは通常ライブラリ成功。初回はproduction側で型のimportが2箇所不足し、途中版は新たなfixture呼出しの型違いを3件検出した。最終テスト対象は前回の公開Sourceから古い引数指定4件が減り、終了101・817エラー・33警告。共有時のグラフ所有権と複製予算を検査するunit caseは追加したが、Sema全体のtest compileで停止しており未実行。ライブラリClippy、Sema fmt、差分検査、構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存graphは起点を含む22 package。対象24 source blobの公開を照合し、`target` は8130089768 bytesだった。
 
 [計測、失敗、再利用と作業上限のLLDB、最終検証と公開照合](acceptance-evidence/task-reuse-closed-effect-rows.raw.zip) は47 entry、1001453 bytes、SHA256 `4516b4d37887201b1208aa3ddd6fe572d79e8799d45fc3743d757d4601763cd5`。各原本の長さとハッシュを照合した。
+
+
+<a id="copy-owned-effect-membership"></a>
+## 2026-11-19 — 空の作用置換と正準値の複製を所有グラフで検査
+
+基点 `7d5e528c01d77910cb3de4956a94c2dca37e47cb`。Core `7b9dd7c02ee0e8c86b0a6c0a3cd9bfbe1e34f761` は空の同時置換で決定グラフとラベルを複製前に検査し、同じ正準値を複製する。Sema `db7219d689bc2803e3125023a5850819e07fbbf3` は正準値の複製に同じ検査を使う。決定の根をヘッダの深さ、格納するラベルと決定ノードを一段深い位置に計上し、取消と上限は型投影の既存の制御が適用する。独立した符号化・ダイジェスト経路はそのままの実装を使う。
+
+Core libraryは2,360/2,360成功。前回の2,359 IDとその結果をすべて保持し、ラベルと記号的決定を持つ述語の複製が作業4で成功し、作業3で拒否される1件を追加した。Compilerの最終152 IDは150成功・2失敗・0スキップで、captured Mapを含む成功IDは一致。遅延コールバックは `ConstraintSourceLineage::close_trace` 中の空の述語置換で複製前の決定根を計上した際に候補共有の作業上限に達した。retained Mapは正準型への変換を通過し、`CompletedGenericContext::validate_reified_future_type` に入った時点で同じ上限に達した。
+
+最初のCompilerビルドではSemaの型importが1件不足し、追加して再実行した。最終Sourceのlocked Sema全feature checkは通常ライブラリ成功、テスト対象は終了101・817エラー・33警告。前回の公開Sourceとエラーのコード・ファイル別の内訳が一致した。Core／Semaの全featureライブラリClippy、両crateのfmt、構造ゲートは終了0、構造阻害0件。ClippyはSema側の新しい `single_match_else` の指摘を1件含む。今回のCargo全feature逆依存は起点を含めCore 52 package、Sema 22 package。公開5 source blobと比較し、`target` は8130746764 bytesだった。
+
+[CoreとCompilerの全ID、初回の失敗、作業上限のLLDB、最終検証と公開照合](acceptance-evidence/task-copy-owned-effect-membership.raw.zip) は32 entry、951951 bytes、SHA256 `f1deda1fec2994c9b3467ea16f4fa13b6099790cc149208e668ad3e03c64bda7`。各原本の長さとハッシュを照合した。
