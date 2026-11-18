@@ -43,6 +43,7 @@ impl ConstraintDomain for DefaultTypeRelation {
     type ObservedEvidence = Infallible;
     type CheckedEvidence = Infallible;
     type ProbeSemanticBranch = ();
+    type SourceValue = std::convert::Infallible;
     type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = Infallible;

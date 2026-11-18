@@ -3,7 +3,9 @@
 use crate::types::PreparedEffects;
 
 use super::*;
-use crate::types::constraints::{OriginalProducerContext, lexical::ConstraintLexicalScope};
+use crate::types::constraints::{
+    ConstraintSourceValueOwner, OriginalProducerContext, lexical::ConstraintLexicalScope,
+};
 
 mod function_scheme;
 mod original_value;
@@ -23,7 +25,7 @@ pub(in crate::types::constraints) use projection::{
 };
 
 pub(super) enum ResolvedConstraintSource<D: ConstraintDomain> {
-    Value(Arc<dyn super::super::ConstraintSourceValueOwner<D>>),
+    Value(Arc<D::SourceValue>),
     Result(ResolvedConstraintResult<D>),
     #[cfg(test)]
     Fixture,
@@ -42,7 +44,7 @@ impl<D: ConstraintDomain> Clone for ResolvedConstraintSource<D> {
 
 impl<D: ConstraintDomain> ResolvedConstraintSource<D> {
     pub(super) fn value<A: TypeConstraintAccounting>(
-        owner: Arc<dyn super::super::ConstraintSourceValueOwner<D>>,
+        owner: Arc<D::SourceValue>,
         target: &ConstraintLexicalScope,
         phase: &mut ConstraintEffectPhase<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -343,16 +345,29 @@ impl<D: ConstraintDomain> ConstraintOperand<D, TypeKind> {
 }
 
 impl<D: ConstraintDomain> ConstraintOperand<D> {
-    pub(super) fn source_original(
+    pub(super) fn source_origin(
         &self,
         source: super::ConstraintSourceId<D::Source>,
-    ) -> Result<&OriginalProducerContext, TypeConstraintError> {
+    ) -> Result<(&OriginalProducerContext, Option<&Arc<D::SourceValue>>), TypeConstraintError> {
         match self.origin.as_ref() {
             ConstraintOperandOrigin::Source {
-                original, receipt, ..
-            } if receipt.source() == source => Ok(original),
+                original,
+                receipt,
+                value,
+            } if receipt.source() == source => {
+                let owner = match value {
+                    ResolvedConstraintSource::Value(owner) => {
+                        self.require_source_receipt(receipt)?;
+                        Some(owner)
+                    }
+                    ResolvedConstraintSource::Result(_) => None,
+                    #[cfg(test)]
+                    ResolvedConstraintSource::Fixture => None,
+                };
+                Ok((original, owner))
+            }
             #[cfg(test)]
-            ConstraintOperandOrigin::Original(original) => Ok(original),
+            ConstraintOperandOrigin::Original(original) => Ok((original, None)),
             _ => Err(protocol_error(
                 TypeConstraintSourceProtocolInvariant::WrongSource,
             )),

@@ -3,7 +3,7 @@
 use super::*;
 use crate::{
     callable::EnclosingGenericParameterScope,
-    effect_row::EffectFormula,
+    effect_row::{EffectFormula, prepared::PreparedEffectGraph},
     types::{
         GenericBinder, GenericConstParameterId, GenericConstReference, GenericEffectParameterId,
         GenericEffectReference, GenericScope, GenericTypeReference,
@@ -71,7 +71,7 @@ impl SourceParameters {
         .unwrap()
     }
 
-    fn values(&self, context: &mut Context<'_>) -> Vec<TypeKind> {
+    fn values(&self, context: &mut Context<'_>) -> Vec<TypeKind<PreparedEffects>> {
         let binder = GenericBinder::new(1, 1, 1);
         let scope = GenericScope::default().with_binder(binder);
         let predicate = EffectFormula::variable(self.effect.clone(), context)
@@ -100,6 +100,12 @@ impl SourceParameters {
                 EffectRow::open(EffectSet::new(), scope.bound_effect(0, 0).unwrap()),
             ),
         ]
+        .into_iter()
+        .map(|ty| {
+            ty.prepare_effects(&GenericScope::default(), context)
+                .unwrap()
+        })
+        .collect()
     }
 }
 
@@ -110,15 +116,36 @@ fn context(cancellation: &AtomicBool) -> Context<'_> {
     ))
 }
 
+fn admit(
+    owner: Arc<OwnedSourceValue>,
+    target: &crate::types::constraints::lexical::ConstraintLexicalScope,
+    graph: &mut PreparedEffectGraph,
+    context: &mut Context<'_>,
+) -> Result<
+    (
+        TypeKind<PreparedEffects>,
+        ResolvedConstraintSource<ApplicationSourceDomain>,
+    ),
+    TypeConstraintError,
+> {
+    ResolvedConstraintSource::value(
+        owner,
+        target,
+        &mut super::super::operand::ConstraintEffectPhase::new(graph),
+        context,
+    )
+}
+
 #[test]
 fn source_values_cannot_borrow_free_references_from_the_receiving_inventory() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
     let parameters = SourceParameters::new();
     let application = context
-        .fixture_application_scope(0, parameters.visible())
+        .fixture_application_scope(0, parameters.visible(), &mut graph)
         .unwrap();
-    let path = context.start_path(application).unwrap();
+    let path = context.start_path(application, &mut graph).unwrap();
     let original = context.fixture_original_context(None).unwrap();
     assert_eq!(
         path.applications.parameter_eligibility(&parameters.ty),
@@ -137,13 +164,7 @@ fn source_values_cannot_borrow_free_references_from_the_receiving_inventory() {
             _ => references::effect_out_of_scope(&parameters.effect),
         };
         assert_eq!(
-            resolve_probe_term(
-                SourceProbeTerm::Value(owner),
-                &path,
-                &path.lineage.scope,
-                &mut context
-            )
-            .err(),
+            admit(owner, &path.lineage.scope, &mut graph, &mut context).err(),
             Some(expected)
         );
     }
@@ -154,11 +175,12 @@ fn source_values_keep_their_own_declaration_and_explicit_import_authority() {
     for imported in [false, true] {
         let cancellation = AtomicBool::new(false);
         let mut context = context(&cancellation);
+        let mut graph = PreparedEffectGraph::default();
         let parameters = SourceParameters::new();
         let application = context
-            .fixture_application_scope(0, parameters.visible())
+            .fixture_application_scope(0, parameters.visible(), &mut graph)
             .unwrap();
-        let path = context.start_path(application).unwrap();
+        let path = context.start_path(application, &mut graph).unwrap();
         let original = if imported {
             let mut keys: Vec<ConstraintGenericParameterId> = vec![
                 parameters.ty.clone().into(),
@@ -174,21 +196,15 @@ fn source_values_keep_their_own_declaration_and_explicit_import_authority() {
         assert_ne!(original, path.lineage.original);
         for value in parameters.values(&mut context) {
             let expected = value.clone();
-            let owner: Arc<dyn ConstraintSourceValueOwner<ApplicationSourceDomain>> =
-                Arc::new(OwnedSourceValue {
-                    source: ConstraintSourceId::new(path.root_id(), 7),
-                    original: original.clone(),
-                    receipt: None,
-                    value,
-                });
+            let owner = Arc::new(OwnedSourceValue {
+                source: ConstraintSourceId::new(path.root_id(), 7),
+                original: original.clone(),
+                receipt: None,
+                value,
+            });
             let retained = Arc::downgrade(&owner);
-            let (actual, resolved) = resolve_probe_term(
-                SourceProbeTerm::Value(owner),
-                &path,
-                &path.lineage.scope,
-                &mut context,
-            )
-            .unwrap();
+            let (actual, resolved) =
+                admit(owner, &path.lineage.scope, &mut graph, &mut context).unwrap();
             assert_eq!(actual, expected);
             let ResolvedConstraintSource::Value(owner) = resolved else {
                 panic!("the checked source value keeps its actual owner");
@@ -203,10 +219,11 @@ fn source_values_keep_their_own_declaration_and_explicit_import_authority() {
 fn source_value_admission_checks_budget_before_copying_the_owned_type() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
     let application = context
-        .fixture_application_scope(0, TypeConstraintParameterScope::empty())
+        .fixture_application_scope(0, TypeConstraintParameterScope::empty(), &mut graph)
         .unwrap();
-    let path = context.start_path(application).unwrap();
+    let path = context.start_path(application, &mut graph).unwrap();
     let owner = Arc::new(OwnedSourceValue {
         source: ConstraintSourceId::new(path.root_id(), 7),
         original: context.fixture_original_context(None).unwrap(),
@@ -217,12 +234,7 @@ fn source_value_admission_checks_budget_before_copying_the_owned_type() {
         LocalConstraintAccounting::new(TypeConstraintLimits::new(0, 0, 0, 0), &cancellation),
     );
     assert!(matches!(
-        resolve_probe_term(
-            SourceProbeTerm::Value(owner),
-            &path,
-            &path.lineage.scope,
-            &mut exhausted
-        ),
+        admit(owner, &path.lineage.scope, &mut graph, &mut exhausted),
         Err(TypeConstraintError::Abort(_))
     ));
 }
@@ -231,10 +243,11 @@ fn source_value_admission_checks_budget_before_copying_the_owned_type() {
 fn source_value_admission_checks_cancellation_for_closed_grammar_leaves() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
     let application = context
-        .fixture_application_scope(0, TypeConstraintParameterScope::empty())
+        .fixture_application_scope(0, TypeConstraintParameterScope::empty(), &mut graph)
         .unwrap();
-    let path = context.start_path(application).unwrap();
+    let path = context.start_path(application, &mut graph).unwrap();
     let owner = Arc::new(OwnedSourceValue {
         source: ConstraintSourceId::new(path.root_id(), 7),
         original: context.fixture_original_context(None).unwrap(),
@@ -243,12 +256,7 @@ fn source_value_admission_checks_cancellation_for_closed_grammar_leaves() {
     });
     cancellation.store(true, Ordering::Release);
     assert!(matches!(
-        resolve_probe_term(
-            SourceProbeTerm::Value(owner),
-            &path,
-            &path.lineage.scope,
-            &mut context
-        ),
+        admit(owner, &path.lineage.scope, &mut graph, &mut context),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
 }
@@ -257,14 +265,15 @@ fn source_value_admission_checks_cancellation_for_closed_grammar_leaves() {
 fn checked_source_values_reject_a_same_shape_foreign_frame_at_the_receiving_port() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
     let binder = GenericBinder::new(1, 0, 0);
     let previous = context.enter_binder_scope(binder);
     let original = SourceParameters::new().original(&mut context);
     let parameter = original.scope().bound_type(0, 0).unwrap();
     let application = context
-        .fixture_application_scope(0, TypeConstraintParameterScope::empty())
+        .fixture_application_scope(0, TypeConstraintParameterScope::empty(), &mut graph)
         .unwrap();
-    let path = context.start_path(application).unwrap();
+    let path = context.start_path(application, &mut graph).unwrap();
     context.restore_binder_scope(previous);
     let foreign = context.enter_binder_scope(binder);
     let target = context.capture_lexical_scope().unwrap();
@@ -275,7 +284,7 @@ fn checked_source_values_reject_a_same_shape_foreign_frame_at_the_receiving_port
         value: TypeKind::GenericParam(parameter.clone()),
     });
     assert_eq!(
-        resolve_probe_term(SourceProbeTerm::Value(owner), &path, &target, &mut context).err(),
+        admit(owner, &target, &mut graph, &mut context).err(),
         Some(
             TypeConstraintRejection::EscapingInstantiation {
                 parameter: parameter.into()
@@ -290,27 +299,26 @@ fn checked_source_values_reject_a_same_shape_foreign_frame_at_the_receiving_port
 fn checked_source_values_transport_their_own_bound_reference_before_port_selection() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
     let binder = GenericBinder::new(1, 0, 0);
     let previous = context.enter_binder_scope(binder);
     let original = SourceParameters::new().original(&mut context);
     let parameter = original.scope().bound_type(0, 0).unwrap();
     let application = context
-        .fixture_application_scope(0, TypeConstraintParameterScope::empty())
+        .fixture_application_scope(0, TypeConstraintParameterScope::empty(), &mut graph)
         .unwrap();
-    let path = context.start_path(application).unwrap();
+    let path = context.start_path(application, &mut graph).unwrap();
     let nested = context.enter_binder_scope(binder);
     let target = context.capture_lexical_scope().unwrap();
     let expected = TypeKind::GenericParam(target.shape().bound_type(1, 0).unwrap());
-    let owner: Arc<dyn ConstraintSourceValueOwner<ApplicationSourceDomain>> =
-        Arc::new(OwnedSourceValue {
-            source: ConstraintSourceId::new(path.root_id(), 7),
-            original: original.clone(),
-            receipt: None,
-            value: TypeKind::GenericParam(parameter),
-        });
+    let owner = Arc::new(OwnedSourceValue {
+        source: ConstraintSourceId::new(path.root_id(), 7),
+        original: original.clone(),
+        receipt: None,
+        value: TypeKind::GenericParam(parameter),
+    });
     let retained = Arc::downgrade(&owner);
-    let (actual, resolved) =
-        resolve_probe_term(SourceProbeTerm::Value(owner), &path, &target, &mut context).unwrap();
+    let (actual, resolved) = admit(owner, &target, &mut graph, &mut context).unwrap();
     assert_eq!(actual, expected);
     let ResolvedConstraintSource::Value(owner) = resolved else {
         panic!("checked value owner");
@@ -325,6 +333,7 @@ fn checked_source_values_transport_their_own_bound_reference_before_port_selecti
 fn checked_source_values_cannot_use_the_receivers_inference_key_without_an_import() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
     let source = SourceParameters::new();
     let original = source.original(&mut context);
     let parameters = TypeConstraintParameterScope::seal_call_scope(
@@ -341,10 +350,10 @@ fn checked_source_values_cannot_use_the_receivers_inference_key_without_an_impor
     .unwrap();
     let parameter = parameters.type_reference(&source.ty).unwrap();
     let application = context
-        .application_scope(0, parameters, original.clone())
+        .application_scope(0, parameters, original.clone(), &mut graph)
         .unwrap();
     let path = context
-        .start_path_with_imported(application, None, original.clone())
+        .start_path_with_imported(application, None, original.clone(), graph.read())
         .unwrap();
     let lease = path
         .applications
@@ -352,20 +361,14 @@ fn checked_source_values_cannot_use_the_receivers_inference_key_without_an_impor
         .unwrap();
     let imported = context.fixture_original_context(Some(&lease)).unwrap();
     for (original, admitted) in [(original, false), (imported, true)] {
-        let owner: Arc<dyn ConstraintSourceValueOwner<ApplicationSourceDomain>> =
-            Arc::new(OwnedSourceValue {
-                source: ConstraintSourceId::new(path.root_id(), 7),
-                original: original.clone(),
-                receipt: None,
-                value: TypeKind::GenericParam(parameter.clone()),
-            });
+        let owner = Arc::new(OwnedSourceValue {
+            source: ConstraintSourceId::new(path.root_id(), 7),
+            original: original.clone(),
+            receipt: None,
+            value: TypeKind::GenericParam(parameter.clone()),
+        });
         let retained = Arc::downgrade(&owner);
-        let result = resolve_probe_term(
-            SourceProbeTerm::Value(owner),
-            &path,
-            &path.lineage.scope,
-            &mut context,
-        );
+        let result = admit(owner, &path.lineage.scope, &mut graph, &mut context);
         if admitted {
             let (value, resolved) = result.unwrap();
             assert_eq!(value, TypeKind::GenericParam(parameter.clone()));
@@ -387,6 +390,7 @@ fn checked_source_values_cannot_use_the_receivers_inference_key_without_an_impor
 fn nested_source_gamma_is_owned_by_the_child_application_not_the_root_lineage() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
     let source = SourceParameters::new();
     let root_original = source.original(&mut context);
     let parameters = TypeConstraintParameterScope::seal_call_scope(
@@ -404,6 +408,7 @@ fn nested_source_gamma_is_owned_by_the_child_application_not_the_root_lineage() 
     let parent_key = parameters.type_reference(&source.ty).unwrap();
     let mut parent = TypeConstraintTransaction::initialize(
         &mut context,
+        &mut graph,
         root_original.clone(),
         1,
         parameters.clone(),
@@ -422,10 +427,15 @@ fn nested_source_gamma_is_owned_by_the_child_application_not_the_root_lineage() 
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .unwrap();
-    let ticket = parent.next_probe(&mut context).unwrap().unwrap();
+    let ticket = parent
+        .next_probe(&mut context, &mut graph)
+        .unwrap()
+        .unwrap();
     assert_eq!(ticket.original_context().unwrap(), &root_original);
-    let foreign_scope = context.fixture_application_scope(1, parameters).unwrap();
-    let foreign = context.start_path(foreign_scope).unwrap();
+    let foreign_scope = context
+        .fixture_application_scope(1, parameters, &mut graph)
+        .unwrap();
+    let foreign = context.start_path(foreign_scope, &mut graph).unwrap();
     let foreign_lease = foreign
         .applications
         .import_parameters(&[parent_key.clone().into()])
@@ -436,6 +446,7 @@ fn nested_source_gamma_is_owned_by_the_child_application_not_the_root_lineage() 
     let foreign_nested = ticket.fork_for_child(&mut context).unwrap();
     let rejected = TypeConstraintTransaction::initialize_from_nested_path(
         &mut context,
+        &mut graph,
         foreign_original,
         2,
         TypeConstraintParameterScope::empty(),
@@ -465,6 +476,7 @@ fn nested_source_gamma_is_owned_by_the_child_application_not_the_root_lineage() 
     let child_key = child_parameters.type_reference(&source.ty).unwrap();
     let mut child = TypeConstraintTransaction::initialize_from_nested_path(
         &mut context,
+        &mut graph,
         child_original.clone(),
         2,
         child_parameters,
@@ -476,15 +488,21 @@ fn nested_source_gamma_is_owned_by_the_child_application_not_the_root_lineage() 
     assert_eq!(child.frontier[0].lineage.original, root_original);
     child.constrain(
         &mut context,
+        &mut graph,
         &TypeKind::GenericParam(child_key),
         &TypeKind::GenericParam(parent_key),
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert!(child.first_failure.is_none(), "{:?}", child.first_failure);
     let negative_path = context.fork_path(&child.frontier[0]).unwrap();
-    let mut negative =
-        TypeConstraintTransaction::from_path(&mut context, child.application, negative_path, None)
-            .unwrap();
+    let mut negative = TypeConstraintTransaction::from_path(
+        &mut context,
+        &mut graph,
+        child.application,
+        negative_path,
+        None,
+    )
+    .unwrap();
     child
         .begin_prepared_probe(
             &mut context,
@@ -492,11 +510,12 @@ fn nested_source_gamma_is_owned_by_the_child_application_not_the_root_lineage() 
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .unwrap();
-    let ticket = child.next_probe(&mut context).unwrap().unwrap();
+    let ticket = child.next_probe(&mut context, &mut graph).unwrap().unwrap();
     assert_eq!(ticket.original_context().unwrap(), &child_original);
     drop(ticket);
     negative.constrain(
         &mut context,
+        &mut graph,
         &TypeKind::I64,
         &TypeKind::GenericParam(source.ty.clone()),
         ConstraintAcceptance::PatternAcceptsActual,

@@ -3047,6 +3047,7 @@ impl ConstraintDomain for SyntheticClient {
     type ObservedEvidence = u8;
     type CheckedEvidence = u8;
     type ProbeSemanticBranch = u8;
+    type SourceValue = std::convert::Infallible;
     type ProbePreparation = ();
     type SealedBranchValue = u8;
     type Projection = u8;
@@ -3963,6 +3964,7 @@ impl ConstraintDomain for PreparedDomain {
     type ObservedEvidence = PreparedRule;
     type CheckedEvidence = PreparedRule;
     type ProbeSemanticBranch = PreparedBranch;
+    type SourceValue = std::convert::Infallible;
     type ProbePreparation = ();
     type SealedBranchValue = PreparedSealed;
     type Projection = u8;

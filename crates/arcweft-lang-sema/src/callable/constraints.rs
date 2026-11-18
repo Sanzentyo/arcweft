@@ -1169,6 +1169,7 @@ pub(crate) mod tests {
         type ObservedEvidence = ();
         type CheckedEvidence = ();
         type ProbeSemanticBranch = Branch;
+        type SourceValue = std::convert::Infallible;
         type ProbePreparation = ();
         type SealedBranchValue = Sealed;
         type Projection = u8;

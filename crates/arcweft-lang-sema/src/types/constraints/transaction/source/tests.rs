@@ -43,6 +43,7 @@ mod retained_preparation {
         type ObservedEvidence = ();
         type CheckedEvidence = ();
         type ProbeSemanticBranch = ();
+        type SourceValue = std::convert::Infallible;
         type ProbePreparation = Facts;
         type SealedBranchValue = ();
         type Projection = ();
@@ -433,6 +434,7 @@ impl ConstraintDomain for EvidenceDomain {
     type ObservedEvidence = ObservedCase;
     type CheckedEvidence = CheckedCase;
     type ProbeSemanticBranch = ();
+    type SourceValue = std::convert::Infallible;
     type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = u8;

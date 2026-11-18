@@ -803,6 +803,7 @@ impl ConstraintDomain for AnalyzerCallConstraintDomain {
     type ObservedEvidence = ObservedSemanticValueEvidence;
     type CheckedEvidence = CheckedSemanticValueEvidence;
     type ProbeSemanticBranch = AnalyzerCallProbeSemanticBranch;
+    type SourceValue = AnalyzerObservedSourceValue;
     type ProbePreparation = CandidateSemanticProjection;
     type SealedBranchValue = AnalyzerCallSealedBranch;
     type Projection = AnalyzerCallProjection;
@@ -2690,7 +2691,27 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     ))
                 })?;
             }
-            let validation = if let Some(result) = request.result_projection() {
+            let staged_value = application_context
+                .map_or(&self.prepared_source_actuals, |recipe| {
+                    &recipe.source_preparation.prepared_source_actuals
+                })
+                .get(&source);
+            let validation = if let Some(staged_value) = staged_value {
+                let retained = request
+                    .retained_value()
+                    .and_then(AnalyzerObservedSourceValue::staged_value)
+                    .filter(|retained| Arc::ptr_eq(retained, staged_value))
+                    .ok_or_else(|| {
+                        crate::callable::SourceCallbackFailure::invariant(
+                            AnalyzerCallClientInvariant::constraint(
+                                source,
+                                CallConstraintInvariant::MalformedMapperSeal,
+                            ),
+                        )
+                    })?;
+                validate_materialized_source_value(&request, request.actual(), &retained.evidence())
+                    .map_err(TypeConstraintError::from)
+            } else if let Some(result) = request.result_projection() {
                 if matches!(
                     result.application_id(),
                     CallableConstraintApplication::Specialize(_)

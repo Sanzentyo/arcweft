@@ -26,7 +26,7 @@ pub(crate) struct NoConstraintClient;
 /// callback values carry evidence owned by the client, which decides replay
 /// equivalence in its actual context. Lower storage does not require those
 /// values to implement `Eq`, `Copy`, `Clone` or `Ord` to let a frontier fork.
-pub(crate) trait ConstraintDomain: 'static {
+pub(crate) trait ConstraintDomain: Sized + 'static {
     type Application: Copy + Ord;
     type Source: Copy + Ord;
     type AlternativeIndex: Copy + Eq + Ord;
@@ -34,6 +34,7 @@ pub(crate) trait ConstraintDomain: 'static {
     type ObservedEvidence: Eq;
     type CheckedEvidence: Eq;
     type ProbeSemanticBranch: Eq;
+    type SourceValue: ConstraintSourceValueOwner<Self>;
     /// Affine source facts transferred by the callback's successful close.
     /// They are retained evidence, not a completed type/equivalence certificate.
     type ProbePreparation;
@@ -80,6 +81,7 @@ impl ConstraintDomain for NoConstraintClient {
     type ObservedEvidence = ();
     type CheckedEvidence = ();
     type ProbeSemanticBranch = ();
+    type SourceValue = std::convert::Infallible;
     type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = ();
@@ -622,8 +624,23 @@ pub(crate) trait ConstraintSourceValueOwner<D: ConstraintDomain>: 'static {
     fn value_type(&self) -> &TypeKind<PreparedEffects>;
 }
 
+impl<D: ConstraintDomain> ConstraintSourceValueOwner<D> for std::convert::Infallible {
+    fn source(&self) -> ConstraintSourceId<D::Source> {
+        match *self {}
+    }
+    fn original_context(&self) -> &super::OriginalProducerContext {
+        match *self {}
+    }
+    fn probe_receipt(&self) -> Option<&super::ConstraintSourceReceipt<D>> {
+        match *self {}
+    }
+    fn value_type(&self) -> &TypeKind<PreparedEffects> {
+        match *self {}
+    }
+}
+
 pub(crate) enum SourceProbeTerm<D: ConstraintDomain> {
-    Value(Arc<dyn ConstraintSourceValueOwner<D>>),
+    Value(Arc<D::SourceValue>),
     AdmittedValue(super::transaction::ConstraintOperand<D>),
     #[cfg(test)]
     Type(TypeKind<PreparedEffects>),
@@ -632,7 +649,7 @@ pub(crate) enum SourceProbeTerm<D: ConstraintDomain> {
 
 impl<D: ConstraintDomain> SourceProbeResult<D> {
     pub(crate) fn unchecked_value(
-        actual: Arc<dyn ConstraintSourceValueOwner<D>>,
+        actual: Arc<D::SourceValue>,
         canonical_branch: D::ProbeSemanticBranch,
     ) -> Self {
         Self {
@@ -643,7 +660,7 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
     }
 
     pub(crate) fn checked_value(
-        actual: Arc<dyn ConstraintSourceValueOwner<D>>,
+        actual: Arc<D::SourceValue>,
         canonical_branch: D::ProbeSemanticBranch,
         alternative: D::AlternativeIndex,
         evidence: D::ObservedEvidence,
@@ -682,7 +699,7 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
     pub(super) fn admit_value(
         mut self,
         admit: impl FnOnce(
-            Arc<dyn ConstraintSourceValueOwner<D>>,
+            Arc<D::SourceValue>,
         )
             -> Result<super::transaction::ConstraintOperand<D>, TypeConstraintError>,
     ) -> Result<Self, TypeConstraintError> {
@@ -834,6 +851,10 @@ impl<D: ConstraintDomain> super::CompletedConstraintComponent<D> {
 impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
     pub(crate) fn preparation(&self) -> &'h D::ProbePreparation {
         self.source.preparation()
+    }
+
+    pub(crate) fn retained_value(&self) -> Option<&'h D::SourceValue> {
+        self.source.retained_value()
     }
 
     pub(super) fn from_component(

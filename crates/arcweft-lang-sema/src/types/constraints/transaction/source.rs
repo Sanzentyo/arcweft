@@ -110,6 +110,7 @@ pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
     completion: Arc<ConstraintClosedEffects<D>>,
     source: ConstraintSourceId<D::Source>,
     original: OriginalProducerContext,
+    retained_value: Option<Arc<D::SourceValue>>,
     source_ordinal: PreparedSourceOrdinal,
     branch: Arc<SourceProbeObservation<D>>,
     selection: ClosedSourceSelection<D>,
@@ -305,7 +306,9 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
                 TypeConstraintSourceProtocolInvariant::Outcome,
             ));
         }
-        let original = self.actual.source_original(self.source)?.clone();
+        let (original, retained_value) = self.actual.source_origin(self.source)?;
+        let original = original.clone();
+        let retained_value = retained_value.map(Arc::clone);
         let projected = close_type_operand(self.actual.view(), path, effects, graph, context)?;
         let prepared_projection = CheckedConstraintSourceProjection::derive(
             self.prepared_source_projection,
@@ -354,6 +357,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
             completion: Arc::clone(effects),
             source: self.source,
             original,
+            retained_value,
             source_ordinal: self.source_ordinal,
             branch: self.branch,
             selection,
@@ -365,6 +369,10 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
 }
 
 impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
+    pub(in crate::types::constraints) fn retained_value(&self) -> Option<&D::SourceValue> {
+        self.retained_value.as_deref()
+    }
+
     /// The expression checker operates in the source's Γ. Move the closed
     /// requirement back to those frames before embedding it as prepared rows.
     pub(in crate::types::constraints) fn prepare_expected<
@@ -605,6 +613,7 @@ impl<D: ConstraintDomain> Clone for ClosedConstraintProbe<D> {
             completion: Arc::clone(&self.completion),
             source: self.source,
             original: self.original.clone(),
+            retained_value: self.retained_value.as_ref().map(Arc::clone),
             source_ordinal: self.source_ordinal,
             branch: Arc::clone(&self.branch),
             selection: self.selection.clone(),

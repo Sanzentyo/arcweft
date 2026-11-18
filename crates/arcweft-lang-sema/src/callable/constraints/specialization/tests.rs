@@ -30,6 +30,7 @@ impl ConstraintDomain for Domain {
     type ObservedEvidence = ();
     type CheckedEvidence = ();
     type ProbeSemanticBranch = u8;
+    type SourceValue = std::convert::Infallible;
     type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = u8;

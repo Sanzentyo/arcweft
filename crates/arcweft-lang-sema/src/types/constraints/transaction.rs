@@ -15,7 +15,7 @@ use super::application::{
     ConstraintApplicationId, ConstraintApplicationInventory, ConstraintApplicationScope,
 };
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
-use super::hints::{PreparedSourceExpectation, SourceProbeTerm};
+use super::hints::{ConstraintSourceValueOwner, PreparedSourceExpectation, SourceProbeTerm};
 use super::normalization::{
     ConstraintClosedEffects, project_closed_operand, project_closed_type, project_type,
 };

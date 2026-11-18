@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(super) struct AnalyzerObservedSourceValue {
+pub(in crate::final_analysis::analyzer) struct AnalyzerObservedSourceValue {
     origin: AnalyzerObservedSourceOrigin,
     original: crate::types::constraints::OriginalProducerContext,
     value: ObservedValue,
@@ -73,6 +73,15 @@ impl AnalyzerObservedSourceValue {
         match &self.value {
             ObservedValue::Expression(fact) => Some(fact),
             ObservedValue::Prepared(_) => None,
+            #[cfg(test)]
+            ObservedValue::Fixture(_) => None,
+        }
+    }
+
+    pub(super) fn staged_value(&self) -> Option<&Arc<AnalyzerPreparedSourceActual>> {
+        match &self.value {
+            ObservedValue::Prepared(value) => Some(value),
+            ObservedValue::Expression(_) => None,
             #[cfg(test)]
             ObservedValue::Fixture(_) => None,
         }

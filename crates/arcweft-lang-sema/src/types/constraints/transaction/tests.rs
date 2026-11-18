@@ -32,6 +32,7 @@ impl ConstraintDomain for ApplicationSourceDomain {
     type ObservedEvidence = ();
     type CheckedEvidence = ();
     type ProbeSemanticBranch = u8;
+    type SourceValue = OwnedSourceValue;
     type ProbePreparation = ();
     type SealedBranchValue = ();
     type Projection = ();
@@ -56,11 +57,11 @@ impl ConstraintDomain for ApplicationSourceDomain {
 type ApplicationSourceContext<'a> =
     TypeConstraintContext<'a, LocalConstraintAccounting<'a>, ApplicationSourceDomain>;
 
-struct OwnedSourceValue {
+pub(super) struct OwnedSourceValue {
     source: ConstraintSourceId<u8>,
     original: OriginalProducerContext,
     receipt: Option<ConstraintSourceReceipt<ApplicationSourceDomain>>,
-    value: TypeKind,
+    value: TypeKind<PreparedEffects>,
 }
 
 impl crate::types::constraints::ConstraintSourceValueOwner<ApplicationSourceDomain>
@@ -75,7 +76,7 @@ impl crate::types::constraints::ConstraintSourceValueOwner<ApplicationSourceDoma
     fn probe_receipt(&self) -> Option<&ConstraintSourceReceipt<ApplicationSourceDomain>> {
         self.receipt.as_ref()
     }
-    fn value_type(&self) -> &TypeKind {
+    fn value_type(&self) -> &TypeKind<PreparedEffects> {
         &self.value
     }
 }
@@ -90,9 +91,15 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
                 &cancellation,
             )
             .into_parts();
-        let mut transaction =
-            TypeConstraintTransaction::initialize_fixture(&mut context, 0, parameters, None)
-                .unwrap();
+        let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+        let mut transaction = TypeConstraintTransaction::initialize_fixture(
+            &mut context,
+            &mut graph,
+            0,
+            parameters,
+            None,
+        )
+        .unwrap();
         let sibling = context.fork_path(&transaction.frontier[0]).unwrap();
         transaction.frontier.push(sibling);
         let prepared = if checked {
@@ -113,7 +120,10 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
                 ConstraintAcceptance::PatternAcceptsActual,
             )
             .unwrap();
-        let probe = transaction.next_probe(&mut context).unwrap().unwrap();
+        let probe = transaction
+            .next_probe(&mut context, &mut graph)
+            .unwrap()
+            .unwrap();
         let stale = Arc::new(OwnedSourceValue {
             source: probe.source(),
             original: probe.original_context().unwrap().clone(),
@@ -123,12 +133,16 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
         transaction
             .submit_probe(
                 &mut context,
+                &mut graph,
                 probe.input(),
                 ProbeSubmission::Rejected("discard the first branch"),
             )
             .unwrap();
         drop(probe);
-        let mut probe = transaction.next_probe(&mut context).unwrap().unwrap();
+        let mut probe = transaction
+            .next_probe(&mut context, &mut graph)
+            .unwrap()
+            .unwrap();
         assert_eq!(stale.source, probe.source());
         assert!(!stale.receipt.as_ref().unwrap().matches(&probe.receipt()));
         assert!(matches!(
@@ -180,32 +194,64 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
             SourceProbeResult::unchecked_value(value.clone(), 0)
         };
         let contribution = probe
-            .observe(observed)
+            .observe_prepared(observed, &mut graph, &mut context)
             .expect("foreign observation did not consume the ticket")
             .close_preparation(());
         drop(value);
         transaction
             .submit_probe(
                 &mut context,
+                &mut graph,
                 probe.input(),
                 ProbeSubmission::Accepted(contribution),
             )
             .unwrap();
-        assert!(transaction.next_probe(&mut context).unwrap().is_none());
+        assert!(
+            transaction
+                .next_probe(&mut context, &mut graph)
+                .unwrap()
+                .is_none()
+        );
         assert!(retained.upgrade().is_some());
-        let mut ticket = transaction
+        let path = transaction.test_single_path();
+        let effects = pure_component_effects(path, &mut graph, &mut context);
+        let component = super::super::CompletedConstraintComponent::from_closed_original(
+            path,
+            path.root_id(),
+            path,
+            &effects,
+            graph.read(),
+            &mut context,
+        )
+        .unwrap();
+        let mut materialization = ConstraintMaterialization::from_component(
+            component,
+            &transaction.effect_owner,
+            &mut context,
+        )
+        .unwrap();
+        drop(transaction);
+        let mut ticket = materialization
             .next_materialization_ticket(&mut context)
             .unwrap()
             .unwrap();
+        let request = ticket.requests().next().unwrap();
+        assert!(std::ptr::eq(
+            request.retained_value().unwrap(),
+            retained.upgrade().unwrap().as_ref(),
+        ));
+        assert_eq!(request.actual(), &TypeKind::I64);
         ticket.bind_callback().unwrap();
         let submission = ticket
             .bind_closed_submission(ClosedMaterializationSubmission::Sealed(()))
             .unwrap();
-        transaction
+        materialization
             .submit_closed_materialization(ticket, submission)
             .unwrap();
-        let solved = transaction
+        let solved = materialization
             .finish(&mut context, |left, right, _| Ok(left == right))
+            .unwrap()
+            .into_unique()
             .unwrap();
         assert!(
             retained.upgrade().is_some(),
