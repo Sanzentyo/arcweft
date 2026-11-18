@@ -3035,6 +3035,27 @@ impl PreparedResolvedExpression {
         &mut self.data.result
     }
 
+    pub(super) fn with_sealed_application(
+        mut self,
+        owner: ExprId,
+        source: &TypeKind,
+        effects: EffectSet,
+        resolution: CheckedExpressionResolution,
+        types: &mut super::type_seal::PublicationSourceTypes<'_, '_>,
+        location: super::FinalCallSealLocation,
+    ) -> Result<Self, super::FinalSemanticAnalysisError> {
+        if let CheckedExpressionResolution::ImplicitCallable(callable) = &mut self.data.resolution {
+            callable
+                .seal_call_body(owner, source, effects, resolution)
+                .map_err(|error| location.failure(error))?;
+            return Ok(self);
+        }
+        self.data.result.refine_call_type(source, types, location)?;
+        self.data.effects = effects;
+        self.data.resolution = resolution;
+        Ok(self)
+    }
+
     pub(crate) const fn type_selection(&self) -> Option<CheckedTypeSelection> {
         self.data.result.type_selection()
     }
@@ -3422,20 +3443,7 @@ impl CheckedExpression {
         Ok(self)
     }
 
-    pub(in crate::final_analysis) fn with_sealed_application(
-        mut self,
-        owner: ExprId,
-        source: TypeKind,
-        effects: EffectSet,
-        resolution: CheckedExpressionResolution,
-    ) -> Result<Self, crate::callable::CallConstraintInvariant> {
-        if let CheckedExpressionResolution::ImplicitCallable(callable) = &mut self.data.resolution {
-            callable.seal_call_body(owner, &source, effects, resolution)?;
-            return Ok(self);
-        }
-        self.with_sealed_value(source, effects, resolution)
-    }
-
+    #[cfg(test)]
     pub(crate) fn with_function_specialization(
         mut self,
         owner: ExprId,

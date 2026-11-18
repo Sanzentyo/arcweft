@@ -130,6 +130,12 @@ pub enum FinalCallSealLocation {
     Graph,
 }
 
+impl FinalCallSealLocation {
+    pub(super) fn failure(self, failure: CallConstraintInvariant) -> FinalSemanticAnalysisError {
+        FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(self, failure))
+    }
+}
+
 /// Opaque public carrier for a terminal C-seal invariant.
 ///
 /// The location and private typed callable invariant remain paired instead of

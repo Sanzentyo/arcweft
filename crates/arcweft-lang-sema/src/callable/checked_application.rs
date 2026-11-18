@@ -1290,16 +1290,25 @@ impl FrozenCallTypeSolution {
         Ok(self.solution.apply_result_template(ty)?)
     }
 
-    pub(crate) fn instantiate_call_input(
+    pub(crate) fn instantiate_result_with_control<C: crate::types::TypeProjectionControl>(
         &self,
         ty: &TypeKind,
-    ) -> Result<TypeKind, CallConstraintInvariant> {
+        control: &mut C,
+    ) -> Result<TypeKind, crate::types::TypeProjectionError<C::Error>> {
+        self.solution
+            .apply_result_template_with_control(ty, control)
+    }
+
+    pub(crate) fn instantiate_call_input_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        control: &mut C,
+    ) -> Result<TypeKind, crate::types::TypeProjectionError<C::Error>> {
         if self.transition.first_unbound().is_some() {
-            return Ok(self.solution.apply_result_template(ty)?);
+            return self.instantiate_result_with_control(ty, control);
         }
         self.solution
-            .apply_call_input_template_with_control(ty, &mut crate::types::UnmeteredTypeProjection)
-            .map_err(|error| error.into_instantiation().into())
+            .apply_call_input_template_with_control(ty, control)
     }
 
     /// Source values are already normalized by source completion.

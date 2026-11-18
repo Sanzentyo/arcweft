@@ -17,7 +17,7 @@ use crate::{
         CheckedCallContextualReceiverKind, CheckedCallExecutionArgumentSeal,
         CheckedCallExecutionProjectionSeal, CheckedCallExecutionSlotSeal,
         CheckedCallExecutionSource, CheckedCallOperandDestination, CheckedCallReceiverProjection,
-        CheckedCallSemanticOperandSeal, CheckedCallSemanticOperandSource,
+        CheckedCallResultSeal, CheckedCallSemanticOperandSeal, CheckedCallSemanticOperandSource,
         CheckedCallSemanticSelection, CheckedCallSite, CheckedCaptureSignatureSeal, CheckedFmtCall,
         DetachedPreparedCallableApplication, MappedCallArgumentPassing,
         PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
@@ -28,10 +28,9 @@ use crate::{
         ResolvedCallableStableIdentitySeal, ResolvedCallableState,
     },
     final_analysis::{
-        CheckedExpression, CheckedExpressionResolution, CheckedValueResolution,
-        FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysisError,
-        PreparedExpressionFact,
-        type_seal::{PublicationTypeEffects, PublicationTypes},
+        CheckedExpressionResolution, CheckedValueResolution, FinalCallSealLocation,
+        FinalSemanticAnalysisError, PreparedExpressionFact,
+        type_seal::{PublicationSourceTypes, PublicationTypeEffects, PublicationTypes},
     },
     semantic_coordinate::SemanticCoordinateIndex,
     types::{PreparedEffects, TypeKind},
@@ -59,13 +58,9 @@ pub(super) struct DetachedAnalyzerCallNode {
 }
 
 pub(super) enum DetachedAnalyzerCallPayload {
-    SelectedValue {
+    Selected {
         selected: DetachedAnalyzerSelectedCall,
-        result: crate::callable::CallableResultSchema,
-    },
-    SelectedContinuation {
-        selected: DetachedAnalyzerSelectedCall,
-        result: crate::types::TypeKind,
+        result: CheckedCallResultSeal,
     },
     Unselected(AnalyzerDetachedUnselectedCall),
 }
@@ -104,7 +99,15 @@ pub(super) fn detach_prepared_call_graph(
                 let (application, record) = prefix.into_parts();
                 let application = application.detach(&mut arena)?;
                 let record = record.into_parts().detach(&mut arena)?;
-                DetachedAnalyzerCallPayload::SelectedValue {
+                let result = match result {
+                    crate::callable::CallableResultSchema::Value(prepared) => {
+                        CheckedCallResultSeal::Value { prepared }
+                    }
+                    crate::callable::CallableResultSchema::ContentEmission(operation) => {
+                        CheckedCallResultSeal::ContentEmission { operation }
+                    }
+                };
+                DetachedAnalyzerCallPayload::Selected {
                     selected: DetachedAnalyzerSelectedCall {
                         application,
                         record,
@@ -117,12 +120,12 @@ pub(super) fn detach_prepared_call_graph(
                 let result = application.function_type()?;
                 let application = application.detach(&mut arena)?;
                 let record = record.into_parts().detach(&mut arena)?;
-                DetachedAnalyzerCallPayload::SelectedContinuation {
+                DetachedAnalyzerCallPayload::Selected {
                     selected: DetachedAnalyzerSelectedCall {
                         application,
                         record,
                     },
-                    result,
+                    result: CheckedCallResultSeal::Continuation { prepared: result },
                 }
             }
             PreparedCallGraphSealPayload::Unselected(value) => {
@@ -1291,180 +1294,198 @@ struct SealedSelectedCall {
 impl SealedSelectedCall {
     fn callee_update(
         &self,
-        expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
+        previous: &BTreeMap<ExprId, PreparedExpressionFact>,
+        replacements: &BTreeMap<ExprId, PreparedExpressionFact>,
         checked_callables: &crate::callable::CheckedCallableCatalog,
+        types: &mut PublicationTypes<'_, '_>,
     ) -> Result<Option<(ExprId, PreparedExpressionFact)>, FinalSemanticAnalysisError> {
         let Some(callee) = self.callee_expression.semantic_expression() else {
             return Ok(None);
         };
-        let previous = expressions
+        let expression = replacements
             .get(&callee)
-            .cloned()
+            .or_else(|| previous.get(&callee))
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: callee })?;
-        if matches!(
-            self.callee_expression,
-            AnalyzerPreparedCalleeExpression::RetainExisting { .. }
-        ) {
-            return Ok(None);
-        }
-        if matches!(
-            self.callee_expression,
-            AnalyzerPreparedCalleeExpression::VariantHead { .. }
-        ) {
-            let selected = self.application.core().candidates().selected();
-            let crate::callable::CallableCandidateId::EnumVariant(candidate) = selected.id() else {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            };
-            let PreparedExpressionFact::Variant(prepared) = previous else {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            };
-            let ResolvedCallableBaseInstantiation::EnumConstructor = selected.instantiation()
-            else {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            };
-            let expected = selected
-                .schema()
-                .value_type()
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if prepared.owner().ty() != *expected
-                || prepared.selected_ordinal() != candidate.case()
-                || expected.semantic_identity_digest()? != candidate.owner()
-            {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        match self.callee_expression {
+            AnalyzerPreparedCalleeExpression::None
+            | AnalyzerPreparedCalleeExpression::RetainExisting { .. } => return Ok(None),
+            AnalyzerPreparedCalleeExpression::VariantHead { .. } => {
+                let PreparedExpressionFact::Variant(variant) = expression else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                let updated = self.seal_variant_head(variant, &mut types.source(callee)?)?;
+                return Ok(Some((callee, updated.into())));
             }
-            let updated = prepared.try_map_types(&mut |ty| {
-                self.application
-                    .core()
-                    .solution()
-                    .instantiate_template(ty)
-                    .map_err(|error| {
-                        final_call_seal_error(
-                            FinalCallSealLocation::Site(self.application.core().site()),
-                            error,
-                        )
-                    })
-            })?;
-            if updated.shell().value_type() != self.application.result().value_type() {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            }
-            return Ok(Some((callee, PreparedExpressionFact::from(updated))));
+            AnalyzerPreparedCalleeExpression::SealCallable { .. } => {}
         }
-        let specialization = previous
+        let mut expression = expression.clone();
+        let mut types = types.source(callee)?;
+        let location = FinalCallSealLocation::Site(self.application.core().site());
+        let selected = self.application.core().candidates().selected();
+        let specialization_error = |error| match error {
+            crate::callable::FunctionSpecializationSealFailure::Invariant(error) => {
+                location.failure(error)
+            }
+            crate::callable::FunctionSpecializationSealFailure::Projection(error) => {
+                FinalSemanticAnalysisError::source_type_projection(callee.into(), error)
+            }
+        };
+        let existing = expression.function_specialization();
+        let specialization = expression
             .value_type()
             .filter(|source| {
-                self.application
-                    .core()
-                    .candidates()
-                    .selected()
-                    .requires_value_callee()
+                existing.is_none()
+                    && selected.requires_value_callee()
                     && matches!(source, TypeKind::Function { binder, .. } if !binder.is_empty())
-                    && matches!(
-                        self.application.core().candidates().selected().state(),
-                        ResolvedCallableState::Base
-                    )
+                    && matches!(selected.state(), ResolvedCallableState::Base)
             })
             .map(|source| {
+                let source = types.canonical(source)?;
                 self.application
                     .core()
                     .solution()
-                    .function_input_specialization_with_control(
-                        callee,
-                        source,
-                        &mut crate::types::UnmeteredTypeProjection,
-                    )
+                    .function_input_specialization_with_control(callee, &source, types.control())
+                    .map_err(specialization_error)
             })
-            .transpose()
-            .map_err(|error| {
-                let failure = match error {
-                    crate::callable::FunctionSpecializationSealFailure::Invariant(error) => error,
-                    crate::callable::FunctionSpecializationSealFailure::Projection(error) => {
-                        error.into_instantiation().into()
-                    }
-                };
-                final_call_seal_error(
-                    FinalCallSealLocation::Site(self.application.core().site()),
-                    failure,
-                )
-            })?;
+            .transpose()?;
         let ty = selected_callable_type(
             &self.application,
             checked_callables,
             specialization.is_some(),
+            types.control(),
         )?;
-        if specialization
-            .as_ref()
-            .is_some_and(|witness| witness.specialized_type() != &ty)
-        {
-            return Err(final_call_seal_error(
-                FinalCallSealLocation::Site(self.application.core().site()),
-                CallConstraintInvariant::PreparedFunctionTypeMismatch,
-            ));
+        if let Some(witness) = specialization.as_ref().or(existing) {
+            if witness.owner() != callee || witness.specialized_type() != &ty {
+                return Err(location.failure(CallConstraintInvariant::PreparedFunctionTypeMismatch));
+            }
         }
-        let updated = match previous {
-            PreparedExpressionFact::Method(prepared) => PreparedExpressionFact::from(
-                prepared
-                    .with_type(ty)
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
-            ),
-            PreparedExpressionFact::Resolved(previous) if specialization.is_some() => previous
-                .with_function_specialization(callee, specialization.expect("guarded above"))
-                .map_err(|error| {
-                    final_call_seal_error(
-                        FinalCallSealLocation::Site(self.application.core().site()),
-                        error,
-                    )
-                })?
-                .into(),
-            PreparedExpressionFact::Resolved(previous) => previous
-                .clone()
-                .with_sealed_value(
-                    ty,
-                    previous.effects().clone(),
-                    previous.resolution().clone(),
-                )
-                .map_err(|error| {
-                    final_call_seal_error(
-                        FinalCallSealLocation::Site(self.application.core().site()),
-                        error,
-                    )
-                })?
-                .into(),
-            PreparedExpressionFact::CompileTimeScalar(prepared) => {
-                let (shell, scalar, original) = prepared.into_parts();
-                let PreparedExpressionFact::Resolved(previous) = original else {
-                    return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
-                };
-                PreparedExpressionFact::from(
-                    crate::final_analysis::PreparedCompileTimeScalarExpression::try_new(
-                        shell,
-                        scalar,
-                        CheckedExpression::value(
-                            ty,
-                            previous.required_type_selection(callee)?,
-                            previous.effects().clone(),
-                            previous.resolution().clone(),
-                        )
-                        .into(),
-                    )
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
-                )
-            }
-            PreparedExpressionFact::OwnerBound(_)
-            | PreparedExpressionFact::DialogueApplication(_)
-            | PreparedExpressionFact::ContentApplication(_)
-            | PreparedExpressionFact::Entry(_)
-            | PreparedExpressionFact::Variant(_)
-            | PreparedExpressionFact::ProjectField(_)
-            | PreparedExpressionFact::ProjectRecord(_)
-            | PreparedExpressionFact::ProjectNominalTypeValue(_) => {
-                return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
-            }
+        if let Some(witness) = specialization {
+            expression = expression
+                .with_function_specialization(callee, witness, types.control())
+                .map_err(specialization_error)?;
+        } else if existing.is_none() {
+            expression.refine_call_callee_type(&ty, &mut types, location)?;
+        }
+        Ok(Some((callee, expression)))
+    }
+
+    fn seal_variant_head(
+        &self,
+        prepared: &crate::final_analysis::prepared::PreparedVariantExpression,
+        types: &mut PublicationSourceTypes<'_, '_>,
+    ) -> Result<
+        crate::final_analysis::prepared::PreparedVariantExpression,
+        FinalSemanticAnalysisError,
+    > {
+        let selected = self.application.core().candidates().selected();
+        let crate::callable::CallableCandidateId::EnumVariant(candidate) = selected.id() else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
-        Ok(Some((callee, updated)))
+        let ResolvedCallableBaseInstantiation::EnumConstructor = selected.instantiation() else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        let expected = selected
+            .schema()
+            .value_type()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        if types.canonical(&prepared.owner().ty())? != *expected
+            || prepared.selected_ordinal() != candidate.case()
+            || types.digest(expected)? != candidate.owner()
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let location = FinalCallSealLocation::Site(self.application.core().site());
+        let solution = self.application.core().solution();
+        let updated = prepared.try_map_types(&mut |source| {
+            let ty = types.canonical(source)?;
+            let projected = solution
+                .project_template_with_control(&ty, types.control())
+                .map_err(|error| match error {
+                    crate::types::TypeProjectionError::Control(error) => error,
+                    crate::types::TypeProjectionError::Instantiation(error) => {
+                        location.failure(error.into())
+                    }
+                })?
+                .view()
+                .to_root_type()
+                .map_err(|error| location.failure(error.into()))?;
+            if projected == ty {
+                Ok(source.clone())
+            } else {
+                types.retain_closed(&projected)
+            }
+        })?;
+        let result = updated
+            .shell()
+            .value_type()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        if self.application.result().value_type() != Some(&types.canonical(result)?) {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        Ok(updated)
+    }
+
+    fn expression_update(
+        &self,
+        owner: ExprId,
+        previous: PreparedExpressionFact,
+        types: &mut PublicationSourceTypes<'_, '_>,
+    ) -> Result<PreparedExpressionFact, FinalSemanticAnalysisError> {
+        let result = self.application.result();
+        let effects = self.application.core().effects().constant_effects()?;
+        match &self.expression_resolution {
+            AnalyzerPreparedExpressionResolution::Complete(resolution) => {
+                let source = result
+                    .value_type()
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                previous.with_sealed_call_result(
+                    owner,
+                    source,
+                    effects,
+                    resolution.clone(),
+                    types,
+                    FinalCallSealLocation::Site(self.application.core().site()),
+                )
+            }
+            AnalyzerPreparedExpressionResolution::DialogueApplication => {
+                let PreparedExpressionFact::DialogueApplication(prepared) = previous else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                let ty = prepared
+                    .shell()
+                    .value_type()
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                if result.value_type() != Some(&types.canonical(ty)?) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                Ok(PreparedExpressionFact::DialogueApplication(prepared))
+            }
+            AnalyzerPreparedExpressionResolution::ContentApplication => {
+                use crate::final_analysis::prepared::{
+                    PreparedExpressionResult, PreparedNonValueExpressionResult,
+                };
+
+                let PreparedExpressionFact::ContentApplication(prepared) = previous else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                let matches = match prepared.shell().result() {
+                    PreparedExpressionResult::Value(value) => {
+                        result.value_type() == Some(&types.canonical(value.ty())?)
+                    }
+                    PreparedExpressionResult::NonValue(
+                        PreparedNonValueExpressionResult::ContentEmission(operation),
+                    ) => result.content_emission() == Some(*operation),
+                    _ => false,
+                };
+                if !matches {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                Ok(PreparedExpressionFact::ContentApplication(prepared))
+            }
+        }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn seal_selected_call(
     location: FinalCallSealLocation,
     site: CheckedCallSite,
@@ -1755,39 +1776,11 @@ fn seal_unselected_call(
     })
 }
 
-struct PendingFinalCall {
-    owner: ExprId,
-    facts: crate::callable::CallTargetFacts,
-    selected: Option<PendingSelectedExpressionUpdate>,
-}
-
-struct PendingSelectedExpressionUpdate {
-    resolution: AnalyzerPreparedExpressionResolution,
-    result: crate::callable::CallableResultSchema,
-    effects: crate::effects::EffectSet,
-    callee: Option<(ExprId, PreparedExpressionFact)>,
-}
-
-fn checked_call_result_schema(
-    application: &crate::callable::CheckedCallApplication,
-) -> Result<crate::callable::CallableResultSchema, FinalSemanticAnalysisError> {
-    match application.result() {
-        crate::callable::CheckedCallResult::Value(value) => {
-            Ok(crate::callable::CallableResultSchema::Value(value.clone()))
-        }
-        crate::callable::CheckedCallResult::ContentEmission(operation) => Ok(
-            crate::callable::CallableResultSchema::ContentEmission(*operation),
-        ),
-        crate::callable::CheckedCallResult::Continuation(continuation) => Ok(
-            crate::callable::CallableResultSchema::Value(continuation.function_type().clone()),
-        ),
-    }
-}
-
 fn selected_callable_type(
     application: &crate::callable::CheckedCallApplication,
     checked_callables: &crate::callable::CheckedCallableCatalog,
     specializes_input: bool,
+    control: &mut impl crate::types::TypeProjectionControl<Error = FinalSemanticAnalysisError>,
 ) -> Result<TypeKind, FinalSemanticAnalysisError> {
     let selected = application.core().candidates().selected();
     if let ResolvedCallableState::Continuation(continuation) = selected.state() {
@@ -1820,15 +1813,15 @@ fn selected_callable_type(
         })?;
     let solution = application.core().solution();
     let projected = if specializes_input {
-        solution.instantiate_call_input(&declared)
+        solution.instantiate_call_input_with_control(&declared, control)
     } else {
-        solution.instantiate_result(&declared)
+        solution.instantiate_result_with_control(&declared, control)
     };
-    projected.map_err(|error| {
-        final_call_seal_error(
-            FinalCallSealLocation::Site(application.core().site()),
-            error,
-        )
+    projected.map_err(|error| match error {
+        crate::types::TypeProjectionError::Control(error) => error,
+        crate::types::TypeProjectionError::Instantiation(error) => {
+            FinalCallSealLocation::Site(application.core().site()).failure(error.into())
+        }
     })
 }
 
@@ -1855,295 +1848,114 @@ impl super::Analyzer<'_, '_, '_> {
             .map_err(|error| final_call_seal_error(FinalCallSealLocation::Graph, error))?;
         let mut bases = BTreeMap::new();
         let mut applications = BTreeMap::new();
-        let mut pending = Vec::with_capacity(nodes.len());
+        let mut replacements = BTreeMap::new();
+        let mut final_calls = BTreeMap::new();
         let mut selected_components = Vec::new();
-        {
-            let mut types = PublicationTypes::new(checked_callables, &self.topology, effects);
-            let mut sources = CallSourceFacts {
-                expressions: self.facts.expressions(),
-                locals: self.facts.locals(),
-                types: &mut types,
-            };
-            for node in nodes.into_vec() {
-                let DetachedAnalyzerCallNode {
-                    key,
-                    site,
-                    dependencies,
-                    payload,
-                } = node;
-                self.control.check()?;
-                let owner = site.expression();
-                match payload {
-                    DetachedAnalyzerCallPayload::SelectedValue { selected, result } => {
-                        let expected_result = match &result {
-                            crate::callable::CallableResultSchema::Value(value) => {
-                                crate::callable::CheckedCallResultSeal::Value {
-                                    prepared: value.clone(),
-                                }
-                            }
-                            crate::callable::CallableResultSchema::ContentEmission(operation) => {
-                                crate::callable::CheckedCallResultSeal::ContentEmission {
-                                    operation: *operation,
-                                }
-                            }
-                        };
-                        let sealed = seal_selected_call(
-                            FinalCallSealLocation::Site(site),
-                            site,
-                            selected,
-                            expected_result,
-                            &dependencies,
-                            &authority,
-                            &mut definitions,
-                            &mut bases,
-                            &applications,
-                            coordinates,
-                            &mut sources,
-                            checked_callables,
-                            &self.catalogs.callable_limits,
-                            display,
-                        )?;
-                        let callee =
-                            sealed.callee_update(sources.expressions, checked_callables)?;
-                        selected_components.push(sealed.component);
-                        let update = PendingSelectedExpressionUpdate {
-                            resolution: sealed.expression_resolution,
-                            result: checked_call_result_schema(&sealed.application)?,
-                            effects: sealed.application.core().effects().constant_effects()?,
-                            callee,
-                        };
-                        applications.insert(key, sealed.application.clone());
-                        let facts = crate::callable::CallTargetFacts::try_new(
-                            crate::callable::CallTargetFactsInput {
-                                enclosing_callable: sealed.enclosing_callable,
-                                outcome: crate::callable::CallAnalysisOutcome::Selected(
-                                    sealed.application,
-                                ),
-                                accounting: sealed.accounting,
-                            },
-                            self.module(owner.module())?,
-                            &self.catalogs.callable_limits,
-                        )
-                        .map_err(|error| {
-                            FinalSemanticAnalysisError::CallFactsSeal {
-                                owner,
-                                error: Box::new(error),
-                            }
-                        })?;
-                        pending.push(PendingFinalCall {
-                            owner,
-                            facts,
-                            selected: Some(update),
-                        });
+        let mut types = PublicationTypes::new(checked_callables, &self.topology, effects);
+        let mut sources = CallSourceFacts {
+            expressions: self.facts.expressions(),
+            locals: self.facts.locals(),
+            types: &mut types,
+        };
+        for node in nodes.into_vec() {
+            let DetachedAnalyzerCallNode {
+                key,
+                site,
+                dependencies,
+                payload,
+            } = node;
+            self.control.check()?;
+            let owner = site.expression();
+            let location = FinalCallSealLocation::Site(site);
+            let input = match payload {
+                DetachedAnalyzerCallPayload::Selected { selected, result } => {
+                    let sealed = seal_selected_call(
+                        location,
+                        site,
+                        selected,
+                        result,
+                        &dependencies,
+                        &authority,
+                        &mut definitions,
+                        &mut bases,
+                        &applications,
+                        coordinates,
+                        &mut sources,
+                        checked_callables,
+                        &self.catalogs.callable_limits,
+                        display,
+                    )?;
+                    if let Some((callee, expression)) = sealed.callee_update(
+                        sources.expressions,
+                        &replacements,
+                        checked_callables,
+                        sources.types,
+                    )? {
+                        replacements.insert(callee, expression);
                     }
-                    DetachedAnalyzerCallPayload::SelectedContinuation { selected, result } => {
-                        let sealed = seal_selected_call(
-                            FinalCallSealLocation::Site(site),
-                            site,
-                            selected,
-                            crate::callable::CheckedCallResultSeal::Continuation {
-                                prepared: result,
-                            },
-                            &dependencies,
-                            &authority,
-                            &mut definitions,
-                            &mut bases,
-                            &applications,
-                            coordinates,
-                            &mut sources,
-                            checked_callables,
-                            &self.catalogs.callable_limits,
-                            display,
-                        )?;
-                        let callee =
-                            sealed.callee_update(sources.expressions, checked_callables)?;
-                        selected_components.push(sealed.component);
-                        let update = PendingSelectedExpressionUpdate {
-                            resolution: sealed.expression_resolution,
-                            result: checked_call_result_schema(&sealed.application)?,
-                            effects: sealed.application.core().effects().constant_effects()?,
-                            callee,
-                        };
-                        applications.insert(key, sealed.application.clone());
-                        let facts = crate::callable::CallTargetFacts::try_new(
-                            crate::callable::CallTargetFactsInput {
-                                enclosing_callable: sealed.enclosing_callable,
-                                outcome: crate::callable::CallAnalysisOutcome::Selected(
-                                    sealed.application,
-                                ),
-                                accounting: sealed.accounting,
-                            },
-                            self.module(owner.module())?,
-                            &self.catalogs.callable_limits,
-                        )
-                        .map_err(|error| {
-                            FinalSemanticAnalysisError::CallFactsSeal {
-                                owner,
-                                error: Box::new(error),
-                            }
-                        })?;
-                        pending.push(PendingFinalCall {
-                            owner,
-                            facts,
-                            selected: Some(update),
-                        });
-                    }
-                    DetachedAnalyzerCallPayload::Unselected(value) => {
-                        let sealed = seal_unselected_call(
-                            FinalCallSealLocation::Site(site),
-                            site,
-                            value,
-                            &dependencies,
-                            &authority,
-                            &mut definitions,
-                            &mut bases,
-                            &applications,
-                            coordinates,
-                            &mut sources,
-                            &self.catalogs.callable_limits,
-                        )?;
-                        let facts = crate::callable::CallTargetFacts::try_new(
-                            crate::callable::CallTargetFactsInput {
-                                enclosing_callable: sealed.enclosing_callable,
-                                outcome: sealed.outcome,
-                                accounting: sealed.accounting,
-                            },
-                            self.module(owner.module())?,
-                            &self.catalogs.callable_limits,
-                        )
-                        .map_err(|error| {
-                            FinalSemanticAnalysisError::CallFactsSeal {
-                                owner,
-                                error: Box::new(error),
-                            }
-                        })?;
-                        pending.push(PendingFinalCall {
-                            owner,
-                            facts,
-                            selected: None,
-                        });
+                    let previous = replacements
+                        .remove(&owner)
+                        .or_else(|| sources.expressions.get(&owner).cloned())
+                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                    let expression = sealed.expression_update(
+                        owner,
+                        previous,
+                        &mut sources.types.source(owner)?,
+                    )?;
+                    replacements.insert(owner, expression);
+                    selected_components.push(sealed.component);
+                    applications.insert(key, sealed.application.clone());
+                    crate::callable::CallTargetFactsInput {
+                        enclosing_callable: sealed.enclosing_callable,
+                        outcome: crate::callable::CallAnalysisOutcome::Selected(sealed.application),
+                        accounting: sealed.accounting,
                     }
                 }
+                DetachedAnalyzerCallPayload::Unselected(value) => {
+                    let sealed = seal_unselected_call(
+                        location,
+                        site,
+                        value,
+                        &dependencies,
+                        &authority,
+                        &mut definitions,
+                        &mut bases,
+                        &applications,
+                        coordinates,
+                        &mut sources,
+                        &self.catalogs.callable_limits,
+                    )?;
+                    crate::callable::CallTargetFactsInput {
+                        enclosing_callable: sealed.enclosing_callable,
+                        outcome: sealed.outcome,
+                        accounting: sealed.accounting,
+                    }
+                }
+            };
+            let facts = crate::callable::CallTargetFacts::try_new(
+                input,
+                self.module(owner.module())?,
+                &self.catalogs.callable_limits,
+            )
+            .map_err(|error| FinalSemanticAnalysisError::CallFactsSeal {
+                owner,
+                error: Box::new(error),
+            })?;
+            if final_calls.insert(owner, facts).is_some() {
+                return Err(location.failure(CallConstraintInvariant::PreparedCallSiteMismatch));
             }
         }
         definitions
             .finish()
-            .map_err(|error| final_call_seal_error(FinalCallSealLocation::Graph, error))?;
-        for pending in pending {
-            self.control.check()?;
-            if let Some(update) = pending.selected {
-                if let Some((callee, updated)) = update.callee {
-                    self.facts
-                        .replace_existing_expression(callee, updated)
-                        .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                }
-                let previous = self
-                    .facts
-                    .expressions()
-                    .get(&pending.owner)
-                    .cloned()
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                        owner: pending.owner,
-                    })?;
-                let updated = match update.resolution {
-                    AnalyzerPreparedExpressionResolution::Complete(resolution) => {
-                        let crate::callable::CallableResultSchema::Value(result) = update.result
-                        else {
-                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                        };
-                        match previous {
-                            PreparedExpressionFact::CompileTimeScalar(prepared) => {
-                                let (shell, scalar, original) = prepared.into_parts();
-                                let original = CheckedExpression::value(
-                                    result,
-                                    original.required_type_selection(pending.owner)?,
-                                    update.effects,
-                                    resolution,
-                                );
-                                PreparedExpressionFact::from(
-                                    crate::final_analysis::PreparedCompileTimeScalarExpression::try_new(
-                                        shell,
-                                        scalar,
-                                        original.into(),
-                                    )
-                                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
-                                )
-                            }
-                            PreparedExpressionFact::Resolved(previous) => previous
-                                .with_sealed_application(
-                                    pending.owner,
-                                    result,
-                                    update.effects,
-                                    resolution,
-                                )
-                                .map_err(|error| {
-                                    final_call_seal_error(
-                                        FinalCallSealLocation::Site(
-                                            crate::callable::CheckedCallSite::HirCall(
-                                                pending.owner,
-                                            ),
-                                        ),
-                                        error,
-                                    )
-                                })?
-                                .into(),
-                            _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
-                        }
-                    }
-                    AnalyzerPreparedExpressionResolution::DialogueApplication => {
-                        let PreparedExpressionFact::DialogueApplication(prepared) = previous else {
-                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                        };
-                        let crate::callable::CallableResultSchema::Value(result) = &update.result
-                        else {
-                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                        };
-                        if prepared.shell().value_type() != Some(result) {
-                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                        }
-                        PreparedExpressionFact::DialogueApplication(prepared)
-                    }
-                    AnalyzerPreparedExpressionResolution::ContentApplication => {
-                        let PreparedExpressionFact::ContentApplication(prepared) = previous else {
-                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                        };
-                        match (&update.result, prepared.shell().result()) {
-                            (
-                                crate::callable::CallableResultSchema::Value(result),
-                                super::super::prepared::PreparedExpressionResult::Value(value),
-                            ) if value.ty() == result => {}
-                            (
-                                crate::callable::CallableResultSchema::ContentEmission(operation),
-                                super::super::prepared::PreparedExpressionResult::NonValue(
-                                    super::super::prepared::PreparedNonValueExpressionResult::ContentEmission(
-                                        actual,
-                                    ),
-                                ),
-                            ) if operation == actual => {}
-                            _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
-                        }
-                        PreparedExpressionFact::ContentApplication(prepared)
-                    }
-                };
-                self.facts
-                    .replace_existing_expression(pending.owner, updated)
-                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            }
-            if self
-                .facts
-                .publish_final_call_fact(pending.owner, pending.facts)
-                .map_err(FinalSemanticAnalysisError::from)?
-            {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            }
-        }
-        self.facts.complete_physical_observations(
+            .map_err(|error| FinalCallSealLocation::Graph.failure(error))?;
+        self.facts.publish_final_call_batch(
+            replacements,
+            final_calls,
             selected_components
                 .iter()
                 .flat_map(CompletedCallApplicationEvidence::physical_observations),
             self.control,
-        )?;
-        Ok(())
+        )
     }
 }
 
@@ -2233,5 +2045,5 @@ fn final_call_seal_error(
     location: FinalCallSealLocation,
     failure: CallConstraintInvariant,
 ) -> FinalSemanticAnalysisError {
-    FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(location, failure))
+    location.failure(failure)
 }

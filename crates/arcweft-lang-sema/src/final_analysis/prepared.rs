@@ -30,7 +30,10 @@ use crate::{
 };
 
 pub(crate) use super::model::{PreparedVariantCaseSeed, PreparedVariantOwnerSeed};
-use super::{CheckedExpressionResolution, CheckedPattern, CheckedTryCarrier, CheckedTypeSelection};
+use super::{
+    CheckedExpressionResolution, CheckedPattern, CheckedTryCarrier, CheckedTypeSelection,
+    FinalCallSealLocation, FinalSemanticAnalysisError, type_seal::PublicationSourceTypes,
+};
 
 #[path = "prepared/evaluated_effect.rs"]
 mod evaluated_effect;
@@ -172,6 +175,24 @@ pub(crate) enum PreparedExpressionResult {
 }
 
 impl PreparedExpressionResult {
+    pub(super) fn refine_call_type(
+        &mut self,
+        source: &TypeKind,
+        types: &mut PublicationSourceTypes<'_, '_>,
+        location: FinalCallSealLocation,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let Self::Value(value) = self else {
+            return Err(location.failure(CallConstraintInvariant::PreparedFunctionTypeMismatch));
+        };
+        if types.canonical(value.source_type())? != *source {
+            if value.specialization.is_some() {
+                return Err(location.failure(CallConstraintInvariant::PreparedFunctionTypeMismatch));
+            }
+            value.source = types.retain_closed(source)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn seal(
         self,
         owner: ExprId,
@@ -353,15 +374,6 @@ impl PreparedMethodExpression {
 
     pub(crate) fn into_parts(self) -> (PreparedExpressionShell, HirName) {
         (self.shell, self.diagnostic_name)
-    }
-
-    #[must_use]
-    pub(crate) fn with_type(self, ty: TypeKind<PreparedEffects>) -> Option<Self> {
-        let (value, effects) = self.shell.into_value_parts()?;
-        Some(Self {
-            shell: PreparedExpressionShell::value(ty, value.type_selection(), effects),
-            diagnostic_name: self.diagnostic_name,
-        })
     }
 }
 
@@ -1251,6 +1263,17 @@ impl PreparedCompileTimeScalarExpression {
     ) {
         (self.shell, self.value, self.original)
     }
+
+    fn try_map_original(
+        self,
+        map: impl FnOnce(
+            PreparedExpressionFact,
+        ) -> Result<PreparedExpressionFact, FinalSemanticAnalysisError>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        let (shell, value, original) = self.into_parts();
+        Self::try_new(shell, value, map(original)?)
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+    }
 }
 
 /// Analyzer-owned expression facts retain open types in every value-bearing
@@ -1338,6 +1361,59 @@ impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact 
 }
 
 impl PreparedExpressionFact {
+    pub(super) fn refine_call_callee_type(
+        &mut self,
+        source: &TypeKind,
+        types: &mut PublicationSourceTypes<'_, '_>,
+        location: FinalCallSealLocation,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let result = match self {
+            Self::Resolved(value) => value.result_mut(),
+            Self::OwnerBound(value) => &mut value.shell.result,
+            Self::Method(value) => &mut value.shell.result,
+            Self::Entry(value) => &mut value.shell.result,
+            Self::ProjectField(value) => &mut value.shell.result,
+            Self::CompileTimeScalar(value) => {
+                let Self::Resolved(original) = &mut value.original else {
+                    return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
+                };
+                original.result_mut()
+            }
+            Self::DialogueApplication(_)
+            | Self::ContentApplication(_)
+            | Self::Variant(_)
+            | Self::ProjectRecord(_)
+            | Self::ProjectNominalTypeValue(_) => {
+                return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
+            }
+        };
+        result.refine_call_type(source, types, location)
+    }
+
+    pub(super) fn with_sealed_call_result(
+        self,
+        owner: ExprId,
+        source: &TypeKind,
+        effects: EffectSet,
+        resolution: CheckedExpressionResolution,
+        types: &mut PublicationSourceTypes<'_, '_>,
+        location: FinalCallSealLocation,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        match self {
+            Self::Resolved(value) => Ok(value
+                .with_sealed_application(owner, source, effects, resolution, types, location)?
+                .into()),
+            Self::CompileTimeScalar(value) => Ok(value
+                .try_map_original(|original| {
+                    original.with_sealed_call_result(
+                        owner, source, effects, resolution, types, location,
+                    )
+                })?
+                .into()),
+            _ => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+        }
+    }
+
     pub(super) fn visit_canonical_types<E>(
         &self,
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,

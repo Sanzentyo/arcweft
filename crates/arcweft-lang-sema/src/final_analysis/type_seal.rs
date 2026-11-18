@@ -91,6 +91,22 @@ impl PublicationSourceTypes<'_, '_> {
             })
     }
 
+    /// A completed call can issue a new type for its expression after the
+    /// principal relation has closed. Retaining it adds no open effect terms.
+    pub(super) fn retain_closed(
+        &mut self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind<PreparedEffects>, FinalSemanticAnalysisError> {
+        ty.prepare_effects(self.binder.template_scope(), self.work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(self.owner, error))
+    }
+
+    pub(super) fn control(
+        &mut self,
+    ) -> &mut impl TypeProjectionControl<Error = FinalSemanticAnalysisError> {
+        self.work
+    }
+
     pub(super) fn digest(
         &mut self,
         ty: &TypeKind,

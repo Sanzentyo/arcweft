@@ -1797,7 +1797,7 @@ impl SemanticFactState {
     /// Attach the selected lower type to its exact original physical
     /// observation. A different attempt at the same expression or a probe
     /// with the same prepared type cannot supply this observation.
-    pub(super) fn complete_physical_observations<'a>(
+    fn complete_physical_observations<'a>(
         &mut self,
         selected: impl IntoIterator<Item = CompletedPhysicalCallSource<'a>>,
         control: super::FinalSemanticAnalysisControl<'_>,
@@ -1820,7 +1820,7 @@ impl SemanticFactState {
             }
         }
         if remaining.is_empty() {
-            return Ok(());
+            return control.check();
         }
         let transcript = &mut self.physical_candidate_argument_evaluations.rows;
         let mut matched = Vec::with_capacity(remaining.len());
@@ -2787,6 +2787,17 @@ impl SemanticFactState {
         &mut self,
         replacements: BTreeMap<ExprId, PreparedExpressionFact>,
     ) -> Result<(), ExpressionFactWriteViolation> {
+        self.validate_expression_replacements(&replacements)?;
+        for (owner, value) in replacements {
+            self.write_expression(owner, value);
+        }
+        Ok(())
+    }
+
+    fn validate_expression_replacements(
+        &self,
+        replacements: &BTreeMap<ExprId, PreparedExpressionFact>,
+    ) -> Result<(), ExpressionFactWriteViolation> {
         self.ensure_healthy()
             .map_err(ExpressionFactWriteViolation::Candidate)?;
         if replacements
@@ -2795,12 +2806,9 @@ impl SemanticFactState {
         {
             return Err(ExpressionFactWriteViolation::MissingPublishedFact);
         }
-        for (owner, value) in &replacements {
+        for (owner, value) in replacements {
             self.validate_call_expression_write(*owner, value)
                 .map_err(ExpressionFactWriteViolation::Candidate)?;
-        }
-        for (owner, value) in replacements {
-            self.write_expression(owner, value);
         }
         Ok(())
     }
@@ -2821,21 +2829,42 @@ impl SemanticFactState {
         }
     }
 
-    pub(super) fn publish_final_call_fact(
+    pub(super) fn publish_final_call_batch<'a>(
         &mut self,
-        owner: ExprId,
-        value: CallTargetFacts,
-    ) -> Result<bool, CandidateFactTransactionViolation> {
-        self.ensure_healthy()?;
+        replacements: BTreeMap<ExprId, PreparedExpressionFact>,
+        calls: BTreeMap<ExprId, CallTargetFacts>,
+        selected: impl IntoIterator<Item = CompletedPhysicalCallSource<'a>>,
+        control: super::FinalSemanticAnalysisControl<'_>,
+    ) -> Result<(), super::FinalSemanticAnalysisError> {
         if self.prepared_calls.is_some()
             || !self.candidate_checkpoints.is_empty()
             || !self.candidate_journal.is_empty()
             || !self.active_physical_call_attempts.is_empty()
-            || value.expression() != owner
+            || !self.final_calls.is_empty()
         {
-            return Err(CandidateFactTransactionViolation::UnrecoverableLedger);
+            return Err(CandidateFactTransactionViolation::UnrecoverableLedger.into());
         }
-        Ok(self.final_calls.insert(owner, value).is_some())
+        self.validate_expression_replacements(&replacements)
+            .map_err(|_| super::FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        for (&owner, facts) in &calls {
+            control.check()?;
+            let site = replacements
+                .get(&owner)
+                .or_else(|| self.expressions.get(&owner))
+                .and_then(|expression| expression.checked_call_site(owner));
+            if site != Some(facts.outcome().site()) {
+                return Err(Self::call_graph_mismatch().into());
+            }
+        }
+        // Observation completion validates the full join before the first
+        // write. Once it succeeds, the prepared graph is consumed and every
+        // remaining map operation installs an already validated fact.
+        self.complete_physical_observations(selected, control)?;
+        for (owner, value) in replacements {
+            self.write_expression(owner, value);
+        }
+        self.final_calls = calls;
+        Ok(())
     }
 
     fn remove_implicit_capture_use(&mut self, key: ImplicitCaptureUseKey) {
@@ -3428,6 +3457,72 @@ mod tests {
         let checkpoint = state.begin_candidate_transaction(&mut work()).unwrap();
         state.set_local_type(local, value).unwrap();
         state.extract_and_rollback(checkpoint, &mut work()).unwrap()
+    }
+
+    #[test]
+    fn final_call_batch_preflight_failure_keeps_publication_state() {
+        use crate::final_analysis::{
+            CheckedExpressionResolution, CheckedTypeSelection, FinalSemanticAnalysisControl,
+            FinalSemanticAnalysisError, prepared::PreparedResolvedExpression,
+        };
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let fixture = crate::final_analysis::tests::fixture(
+            "fn callee() -> i64 { 1 }\nfn caller() -> i64 { callee() }\n",
+            None,
+        );
+        let analysis = crate::final_analysis::tests::analyze(&fixture).unwrap();
+        let (_, facts) = analysis.calls().next().expect("caller has one call");
+        let owner = facts.expression();
+        let original = PreparedResolvedExpression::value(
+            TypeKind::I64,
+            CheckedTypeSelection::Inferred,
+            crate::effects::EffectSet::new(),
+            CheckedExpressionResolution::Call,
+        );
+        let updated = original
+            .clone()
+            .with_completed_effects(crate::effects::EffectSet::from_labels(["fs.read"]).unwrap());
+        let mut state = SemanticFactState::new();
+        state.prepared_calls = None;
+        let original = PreparedExpressionFact::from(original);
+        state.expressions.insert(owner, original.clone());
+        let cancellation = AtomicBool::new(true);
+        let control = FinalSemanticAnalysisControl::new(&cancellation);
+        let replacements = BTreeMap::from([(owner, updated.into())]);
+        let calls = BTreeMap::from([(owner, facts.clone())]);
+
+        assert_eq!(
+            state.publish_final_call_batch(replacements.clone(), calls.clone(), [], control),
+            Err(FinalSemanticAnalysisError::Cancelled)
+        );
+        assert_eq!(state.expressions().get(&owner), Some(&original));
+        assert!(state.final_calls.is_empty());
+
+        cancellation.store(false, Ordering::Release);
+        let wrong_site = PreparedResolvedExpression::value(
+            TypeKind::I64,
+            CheckedTypeSelection::Inferred,
+            crate::effects::EffectSet::new(),
+            CheckedExpressionResolution::Structural,
+        );
+        assert_eq!(
+            state.publish_final_call_batch(
+                BTreeMap::from([(owner, wrong_site.into())]),
+                calls.clone(),
+                [],
+                control,
+            ),
+            Err(SemanticFactState::call_graph_mismatch().into())
+        );
+        assert_eq!(state.expressions().get(&owner), Some(&original));
+        assert!(state.final_calls.is_empty());
+
+        state
+            .publish_final_call_batch(replacements.clone(), calls, [], control)
+            .unwrap();
+        assert_eq!(state.expressions(), &replacements);
+        assert_eq!(state.final_calls.get(&owner), Some(facts));
     }
 
     #[test]
