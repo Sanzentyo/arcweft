@@ -19448,3 +19448,15 @@ Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ。captu
 locked Sema全feature checkは通常ライブラリ成功。テスト対象は `closed_effects.rs` の古い引数指定2件が減り、終了101・821エラー・33警告。ライブラリClippy、Sema fmt、差分検査、構造ゲートは終了0、構造阻害0件。対象の14 source blobを公開先と照合した。CARGO_INCREMENTAL=0で実行し、`target` は8129999023 bytesだった。
 
 [初回のコンパイル失敗・最終原本・LLDB・公開照合](acceptance-evidence/task-admit-effect-headers-once.raw.zip) は21 entry、876772 bytes、SHA256 `b9c489322ea50c2e2c8c3f412833e2db1c56ad6c3cf7e33d3a6248bb335cd91b`。各原本の長さとハッシュを照合した。
+
+
+<a id="reuse-closed-effect-rows"></a>
+## 2026-11-19 — 候補の照合から具体化まで解決済みの作用行を共有
+
+Source `0b97354d083bfb603da5a2aa0d7470981a8b3e95`。基点 `6af41b6b47070bfa1b1e27547d85758c22becc1b` の計測では、失敗する2件とも同じ完了計算への作用行の解決4回のうち1回が再計算だった。準備済み項に対して確定した作用行を、同じ候補の元の束縛・等式の照合、ソースの具体化、解の確定、結果投影で共有する。再利用時は保持された完了計算のグラフに項が属することを照合し、行の複製に必要な作業量を計上する。各使用箇所で出典とスコープを検査する。置換対象が空の場合は、出典のキーを集めるための関数依存探索を省く。共有状態の寿命は候補1件の評価の間で、公開結果に含めない。
+
+元の照合を含めず共有した試行は、Compilerの152件で150成功・2失敗のまま、2件で再利用点に到達しなかった。最終版では同じ152 IDで150成功・2失敗・0スキップ、captured Mapも成功。LLDBで残る両ケースが保持済み作用行の取得箇所に到達することを確認した。遅延コールバックは作用行を処理した後、`ConstraintSourceLineage::close_trace` 内の正準述語の置換で、retained Mapは `MaterializationInput::finish_projections` で確定した型を再検査した後の正準型への変換で、それぞれ候補共有の作業上限に達した。
+
+locked Sema全feature checkは通常ライブラリ成功。初回はproduction側で型のimportが2箇所不足し、途中版は新たなfixture呼出しの型違いを3件検出した。最終テスト対象は前回の公開Sourceから古い引数指定4件が減り、終了101・817エラー・33警告。共有時のグラフ所有権と複製予算を検査するunit caseは追加したが、Sema全体のtest compileで停止しており未実行。ライブラリClippy、Sema fmt、差分検査、構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存graphは起点を含む22 package。対象24 source blobの公開を照合し、`target` は8130089768 bytesだった。
+
+[計測、失敗、再利用と作業上限のLLDB、最終検証と公開照合](acceptance-evidence/task-reuse-closed-effect-rows.raw.zip) は47 entry、1001453 bytes、SHA256 `4516b4d37887201b1208aa3ddd6fe572d79e8799d45fc3743d757d4601763cd5`。各原本の長さとハッシュを照合した。
