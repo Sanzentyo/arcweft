@@ -253,10 +253,26 @@ impl CompiledComponent {
     ) -> Result<ComponentCompletion, PreparedEffectFailure<C::Error>> {
         // Substitute actual Future functions before minimization. Unresolved
         // Future cells stay free in the conditional result, including guards.
-        let relation = self.relation.substitute(&self.fixed, work)?;
-        let projected = relation.exists(&self.choices, work)?;
-        let completion = projected.complete_conditionally(&self.minimized, work)?;
-        let witnesses = relation.substitute(completion.lower_envelope(), work)?;
+        // Identity operations can move or borrow the already admitted relation.
+        let relation = if self.fixed.is_empty() || self.relation.node_count() == 0 {
+            self.relation
+        } else {
+            self.relation.substitute(&self.fixed, work)?
+        };
+        let projected = if self.choices.is_empty() {
+            None
+        } else {
+            Some(relation.exists(&self.choices, work)?)
+        };
+        let completion = projected
+            .as_ref()
+            .unwrap_or(&relation)
+            .complete_conditionally(&self.minimized, work)?;
+        let witnesses = if completion.lower_envelope().is_empty() || relation.node_count() == 0 {
+            relation
+        } else {
+            relation.substitute(completion.lower_envelope(), work)?
+        };
         for atom in witnesses.variables() {
             work.charge(DecisionWork::Visit)?;
             let future = self.layout.cells.contains(atom) && !self.minimized.contains(atom);
@@ -266,7 +282,12 @@ impl CompiledComponent {
         }
         // The guard and all remaining discrete witnesses describe the same
         // region. A caller may restrict that region, never re-minimize locals.
-        if witnesses.exists(&self.choices, work)? != *completion.principal() {
+        let confirmed = if self.choices.is_empty() {
+            &witnesses == completion.principal()
+        } else {
+            witnesses.exists(&self.choices, work)? == *completion.principal()
+        };
+        if !confirmed {
             return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
         }
         let mut coefficients = self.fixed;
