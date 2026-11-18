@@ -277,6 +277,36 @@ impl CheckedRegistryAddress {
         module: &HirModule,
         owner: StmtId,
     ) -> Result<Self, FinalSemanticAnalysisError> {
+        let (target, path) = Self::statement_path(module, owner)?;
+        Ok(Self {
+            statement: owner,
+            target,
+            key: Arc::clone(path.key()),
+            effect: EffectId::state_write(path.key()),
+        })
+    }
+
+    pub(in crate::final_analysis) fn validate_statement(
+        &self,
+        module: &HirModule,
+        owner: StmtId,
+        target: ExprId,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let (authored_target, path) = Self::statement_path(module, owner)?;
+        if self.statement != owner
+            || self.target != target
+            || target != authored_target
+            || !self.matches_path(path)
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        Ok(())
+    }
+
+    fn statement_path(
+        module: &HirModule,
+        owner: StmtId,
+    ) -> Result<(ExprId, &HirLifetimeRegistryPath), FinalSemanticAnalysisError> {
         let statement = module
             .resolve_stmt(owner)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
@@ -298,14 +328,7 @@ impl CheckedRegistryAddress {
                 target: *target,
             },
         )?;
-        let key = Arc::clone(path.key());
-        let effect = EffectId::state_write(&key);
-        Ok(Self {
-            statement: owner,
-            target: *target,
-            key,
-            effect,
-        })
+        Ok((*target, path))
     }
 
     pub const fn statement(&self) -> StmtId {

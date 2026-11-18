@@ -4,7 +4,7 @@ use super::{
     Analyzer, Arc, BTreeMap, CallableAccess, CallableCandidateId, CallableEffectContract,
     CallableEffectSchema, CallableMethodRole, CheckedCallableCatalog,
     CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder, CheckedCallableDeclaration,
-    CheckedCallableExecution, CheckedCallableId, CheckedExpression, CheckedExpressionResolution,
+    CheckedCallableExecution, CheckedCallableId, CheckedExpressionResolution,
     CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedSuspensionRole, EffectId,
     EffectRow, EffectSet, EffectSubsetError, ExprId, FinalSemanticAnalysisError,
     FinalSemanticAnalysisInput, HirCallCallee, HirCallableSourceOwner, HirExprKind,
@@ -772,9 +772,6 @@ impl Analyzer<'_, '_, '_> {
         for (owner, fact) in &input.patterns {
             fact.visit_types(&mut |ty| observe((*owner).into(), ty))?;
         }
-        for (owner, fact) in &input.statements {
-            fact.visit_prepared_types(&mut |ty| observe((*owner).into(), ty))?;
-        }
         for (owner, ty) in type_observations.locals() {
             if selected.contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Local(*owner)) {
                 observe((*owner).into(), ty)?;
@@ -1231,7 +1228,7 @@ fn fixed_record_execution(record: &crate::callable::CallableRecord) -> CheckedCa
 
 fn module_effect_expression_facts(
     module: &HirModule,
-) -> Result<Vec<(ExprId, CheckedExpression)>, FinalSemanticAnalysisError> {
+) -> Result<Vec<(ExprId, super::PreparedResolvedExpression)>, FinalSemanticAnalysisError> {
     let mut facts = Vec::new();
     for (_, item) in module.items() {
         for effect in item.kind().effect_expression_roots() {

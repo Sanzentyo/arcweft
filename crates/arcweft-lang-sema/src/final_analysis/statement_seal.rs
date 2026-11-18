@@ -135,23 +135,37 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
     fn assertion(
         &mut self,
         owner: StmtId,
+        conditions: &[ExprId],
+        expressions: &BTreeMap<ExprId, CheckedExpression>,
     ) -> Result<CheckedStatementPayload, FinalSemanticAnalysisError> {
-        match self.take_prepared(owner)? {
-            PreparedStatementPayload::Assertion(assertion) => {
-                Ok(CheckedStatementPayload::Assertion(assertion))
+        let PreparedStatementPayload::Assertion(assertion) = self.take_prepared(owner)? else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        for (index, condition) in conditions.iter().copied().enumerate() {
+            let checked = expressions.get(&condition).ok_or(
+                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: condition },
+            )?;
+            let checked_type = checked.value_type().ok_or(
+                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: condition },
+            )?;
+            if checked_type != &TypeKind::Bool {
+                return Err(FinalSemanticAnalysisError::AssertionConditionNotBool {
+                    owner,
+                    condition,
+                    index,
+                    actual: Box::new(checked_type.clone()),
+                });
             }
-            PreparedStatementPayload::HirOwned
-            | PreparedStatementPayload::Return(_)
-            | PreparedStatementPayload::Assignment(_)
-            | PreparedStatementPayload::RegistryWrite(_)
-            | PreparedStatementPayload::Iteration(_)
-            | PreparedStatementPayload::Suspension(_)
-            | PreparedStatementPayload::Yield
-            | PreparedStatementPayload::EvaluatedEffect(_)
-            | PreparedStatementPayload::SealedEvaluatedEffectReference(_) => {
-                Err(FinalSemanticAnalysisError::WrongPayloadFamily)
+            if !checked.effects().is_empty() {
+                return Err(FinalSemanticAnalysisError::AssertionConditionNotPure {
+                    owner,
+                    condition,
+                    index,
+                    effects: checked.effects().clone(),
+                });
             }
         }
+        Ok(CheckedStatementPayload::Assertion(assertion))
     }
 
     fn iteration(
@@ -179,23 +193,31 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
     fn suspension(
         &mut self,
         owner: StmtId,
+        target: ExprId,
+        expressions: &BTreeMap<ExprId, CheckedExpression>,
     ) -> Result<CheckedStatementPayload, FinalSemanticAnalysisError> {
-        match self.take_prepared(owner)? {
-            PreparedStatementPayload::Suspension(suspension) => {
-                Ok(CheckedStatementPayload::Suspension(suspension))
-            }
-            PreparedStatementPayload::HirOwned
-            | PreparedStatementPayload::Return(_)
-            | PreparedStatementPayload::Assignment(_)
-            | PreparedStatementPayload::RegistryWrite(_)
-            | PreparedStatementPayload::Assertion(_)
-            | PreparedStatementPayload::Iteration(_)
-            | PreparedStatementPayload::Yield
-            | PreparedStatementPayload::EvaluatedEffect(_)
-            | PreparedStatementPayload::SealedEvaluatedEffectReference(_) => {
-                Err(FinalSemanticAnalysisError::WrongPayloadFamily)
-            }
+        let PreparedStatementPayload::Suspension(suspension) = self.take_prepared(owner)? else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        let super::CheckedSuspensionStatement::Wait {
+            target: prepared_target,
+        } = *suspension;
+        if prepared_target != target {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
+        let target_type = expressions
+            .get(&target)
+            .and_then(CheckedExpression::value_type)
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
+        if target_type != &TypeKind::Duration {
+            return Err(FinalSemanticAnalysisError::StatementOperandTypeMismatch {
+                statement: owner,
+                owner: target,
+                expected: Box::new(TypeKind::Duration),
+                actual: Box::new(target_type.clone()),
+            });
+        }
+        Ok(CheckedStatementPayload::Suspension(suspension))
     }
 
     fn yield_statement(
@@ -221,14 +243,17 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
     fn assignment(
         &mut self,
         owner: StmtId,
+        target_id: ExprId,
+        value_id: ExprId,
         expressions: &BTreeMap<ExprId, CheckedExpression>,
     ) -> Result<CheckedStatementPayload, FinalSemanticAnalysisError> {
         let PreparedStatementPayload::Assignment(prepared) = self.take_prepared(owner)? else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
-        let (target, value, target_type) = prepared.into_parts();
-        let target_id = target;
-        let value_id = value;
+        let (target, value, local) = prepared.into_parts();
+        if target != target_id || value != value_id {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
         let target = expressions
             .get(&target)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
@@ -241,12 +266,20 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         let value_type = value
             .value_type()
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value_id })?;
-        if checked_target_type != &target_type || value_type != &target_type {
+        if checked_target_type != value_type {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         let place = target
             .mutable_place()
+            .filter(|place| place.local() == local)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let root = self
+            .locals
+            .get(&local)
+            .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
+        if !place.matches_types(root.ty(), value_type) {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
         Ok(CheckedStatementPayload::Assignment(Box::new(
             CheckedAssignment::new(place, value_type.clone()),
         )))
@@ -609,9 +642,13 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
         _statements: &BTreeMap<StmtId, CheckedStatement>,
     ) -> Result<CheckedStatementPayload, FinalSemanticAnalysisError> {
         match statement {
-            HirStmtKind::Assertion { .. } => self.assertion(owner),
+            HirStmtKind::Assertion { conditions, .. } => {
+                self.assertion(owner, conditions, expressions)
+            }
             HirStmtKind::Let { .. } => self.structural(owner),
-            HirStmtKind::Assign { .. } => self.assignment(owner, expressions),
+            HirStmtKind::Assign { target, value } => {
+                self.assignment(owner, *target, *value, expressions)
+            }
             HirStmtKind::LetElse { .. } => self.structural(owner),
             HirStmtKind::Return { .. } => {
                 let PreparedStatementPayload::Return(boundary) = self.take_prepared(owner)? else {
@@ -765,26 +802,29 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
                 else {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 };
-                let expected = super::CheckedRegistryAddress::from_statement(module, owner)?;
-                if prepared.address.as_ref() != &expected
-                    || prepared.value != *value
-                    || expressions
-                        .get(value)
-                        .and_then(super::CheckedExpression::value_type)
-                        != Some(&prepared.value_type)
+                prepared
+                    .address
+                    .validate_statement(module, owner, *target)?;
+                if prepared.value != *value
                     || !matches!(expressions.get(target).map(super::CheckedExpression::resolution), Some(super::CheckedExpressionResolution::RegistryAddress(address)) if address == &prepared.address)
                 {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
+                let value_type = expressions
+                    .get(value)
+                    .and_then(CheckedExpression::value_type)
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                        owner: *value,
+                    })?;
                 Ok(CheckedStatementPayload::RegistryWrite(Box::new(
                     super::CheckedRegistryWrite::new(
                         prepared.address,
                         prepared.value,
-                        prepared.value_type,
+                        value_type.clone(),
                     ),
                 )))
             }
-            HirStmtKind::Wait { .. } => self.suspension(owner),
+            HirStmtKind::Wait { target } => self.suspension(owner, *target, expressions),
             HirStmtKind::On { trigger, .. } => self.trigger(owner, trigger),
             HirStmtKind::CancelRule { trigger, .. } => self.cancel_trigger(owner, trigger),
             HirStmtKind::UnsafeLifetime { audit, body } => {

@@ -12,7 +12,7 @@ use arcweft_lang_hir::{module::HirModule, stmt::HirStmtKind};
 use crate::final_analysis::{
     CheckedStatementPayload, CheckedSuspensionStatement, FinalSemanticAnalysis,
     FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticCatalogs,
-    PreparedStatementPayload,
+    PreparedAssignmentStatement, PreparedStatementPayload,
 };
 
 use super::{Fixture, fixture};
@@ -782,24 +782,48 @@ fn checked_statement_producer_assignment_row_n16_rejects_hir_owned_mutation() {
     let fixture = fixture(ASSIGNMENT_SOURCE, None);
     let report = super::analyze(&fixture).expect("typed assignment producer");
     let module = root_module(&fixture);
-    let owner = module
+    let (owner, target, value) = module
         .statements()
         .find_map(|(owner, statement)| {
-            matches!(statement.kind(), HirStmtKind::Assign { .. }).then_some(owner)
+            let HirStmtKind::Assign { target, value } = statement.kind() else {
+                return None;
+            };
+            Some((owner, *target, *value))
         })
         .expect("assignment HIR row");
-    assert!(matches!(
-        report
-            .statement(owner)
-            .expect("checked assignment statement")
-            .payload(),
-        CheckedStatementPayload::Assignment(_)
-    ));
+    let CheckedStatementPayload::Assignment(assignment) = report
+        .statement(owner)
+        .expect("checked assignment statement")
+        .payload()
+    else {
+        panic!("checked assignment payload")
+    };
     assert!(
         analyze_with_statement_mutation(&fixture, owner, PreparedStatementPayload::HirOwned)
             .is_err(),
         "Assignment must reject a HIR-owned payload mutation"
     );
+    let unrelated_value = report
+        .expressions()
+        .find_map(|(expression, fact)| {
+            (expression != target
+                && expression != value
+                && fact.value_type() == Some(assignment.value_type()))
+            .then_some(expression)
+        })
+        .expect("independent value of the assignment's type");
+    assert!(matches!(
+        analyze_with_statement_mutation(
+            &fixture,
+            owner,
+            PreparedStatementPayload::Assignment(PreparedAssignmentStatement::new(
+                target,
+                unrelated_value,
+                assignment.place().local(),
+            )),
+        ),
+        Err(FinalSemanticAnalysisError::WrongPayloadFamily)
+    ));
 }
 
 #[test]

@@ -4,7 +4,7 @@ use arcweft_lang_hir::item::HirEnumVariantPayload;
 
 use super::{
     Analyzer, AssertionContext, BTreeMap, BTreeSet, CallableDeclarationKey, CallableEffectContract,
-    CheckedAssertionDisposition, CheckedExpression, CheckedExpressionResolution, CheckedIteration,
+    CheckedAssertionDisposition, CheckedExpressionResolution, CheckedIteration,
     CheckedIteratorFamily, CheckedSuspensionStatement, CheckedTraitConformance,
     CheckedTraitIdentity, CheckedTypeSelection, CheckedValueResolution, EffectClauseSource,
     EffectId, EffectItemSource, EffectRow, EffectSet, ExprId, FinalSemanticAnalysisError,
@@ -250,8 +250,8 @@ impl Analyzer<'_, '_, '_> {
         iteration_facts: &mut BTreeMap<ExprId, CheckedIteration>,
     ) -> Result<PreparedStatementPayload, FinalSemanticAnalysisError> {
         let prepared = match statement {
-            HirStmtKind::Assertion { mode, conditions } => self
-                .checked_assertion_role(module, owner, scope, *mode, conditions)
+            HirStmtKind::Assertion { mode, .. } => self
+                .checked_assertion_role(module, owner, scope, *mode)
                 .map(PreparedStatementPayload::Assertion),
             HirStmtKind::For(statement) => {
                 let source = self.facts.expressions().get(&statement.source()).ok_or(
@@ -316,8 +316,7 @@ impl Analyzer<'_, '_, '_> {
                 if address.statement() != owner || address.target() != *target {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
-                let value_type = self
-                    .facts
+                self.facts
                     .expressions()
                     .get(value)
                     .and_then(PreparedExpressionFact::value_type)
@@ -328,7 +327,6 @@ impl Analyzer<'_, '_, '_> {
                     super::super::prepared::PreparedRegistryWrite {
                         address: std::sync::Arc::clone(address),
                         value: *value,
-                        value_type: value_type.clone(),
                     },
                 ))
             }
@@ -350,25 +348,9 @@ impl Analyzer<'_, '_, '_> {
                 Ok(PreparedStatementPayload::HirOwned)
             }
             HirStmtKind::Yield { .. } => Ok(PreparedStatementPayload::Yield),
-            HirStmtKind::Wait { target } => {
-                let target_fact = self.facts.expressions().get(target).ok_or(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
-                )?;
-                let target_type = target_fact.value_type().ok_or(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
-                )?;
-                if target_type != &TypeKind::Duration {
-                    return Err(FinalSemanticAnalysisError::StatementOperandTypeMismatch {
-                        statement: owner,
-                        owner: *target,
-                        expected: Box::new(TypeKind::Duration),
-                        actual: Box::new(target_type.clone()),
-                    });
-                }
-                Ok(PreparedStatementPayload::Suspension(Box::new(
-                    CheckedSuspensionStatement::Wait { target: *target },
-                )))
-            }
+            HirStmtKind::Wait { target } => Ok(PreparedStatementPayload::Suspension(Box::new(
+                CheckedSuspensionStatement::Wait { target: *target },
+            ))),
             HirStmtKind::Let { .. }
             | HirStmtKind::LetElse { .. }
             | HirStmtKind::Return { .. }
@@ -482,18 +464,14 @@ impl Analyzer<'_, '_, '_> {
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            return Ok(PreparedAssignmentStatement::new(
-                target,
-                value,
-                target_type.clone(),
-            ));
+            return Ok(PreparedAssignmentStatement::new(target, value, *local));
         }
         let PreparedExpressionFact::ProjectField(prepared_field) = target_fact else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
-        if prepared_field.mutable_base().is_none() {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
+        let local = prepared_field
+            .mutable_base()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         let target_type = prepared_field.field_type();
         let value_fact = self
             .facts
@@ -506,11 +484,7 @@ impl Analyzer<'_, '_, '_> {
         if target_type != value_type {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        Ok(PreparedAssignmentStatement::new(
-            target,
-            value,
-            target_type.clone(),
-        ))
+        Ok(PreparedAssignmentStatement::new(target, value, local))
     }
 
     fn checked_assertion_role(
@@ -519,7 +493,6 @@ impl Analyzer<'_, '_, '_> {
         owner: super::StmtId,
         scope: ScopeId,
         mode: HirAssertionMode,
-        conditions: &[ExprId],
     ) -> Result<CheckedAssertionDisposition, FinalSemanticAnalysisError> {
         let mode = match mode {
             HirAssertionMode::Resolved(mode) => mode,
@@ -534,32 +507,6 @@ impl Analyzer<'_, '_, '_> {
                 mode,
                 context,
             });
-        }
-        for (index, condition) in conditions.iter().copied().enumerate() {
-            let checked = self.facts.expressions().get(&condition).ok_or(
-                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: condition },
-            )?;
-            let Some(checked_type) = checked.value_type() else {
-                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                    owner: condition,
-                });
-            };
-            if checked_type != &TypeKind::Bool {
-                return Err(FinalSemanticAnalysisError::AssertionConditionNotBool {
-                    owner,
-                    condition,
-                    index,
-                    actual: Box::new(checked_type.clone()),
-                });
-            }
-            if !checked.effects().is_empty() {
-                return Err(FinalSemanticAnalysisError::AssertionConditionNotPure {
-                    owner,
-                    condition,
-                    index,
-                    effects: checked.effects().clone(),
-                });
-            }
         }
         let disposition = match mode {
             arcweft_lang_syntax::assertion::AssertionMode::Prove => {
@@ -709,7 +656,8 @@ fn checked_effect_identity(
 pub(super) fn checked_effect_expression(
     module: &HirModule,
     owner: ExprId,
-) -> Result<(EffectId, Vec<(ExprId, CheckedExpression)>), FinalSemanticAnalysisError> {
+) -> Result<(EffectId, Vec<(ExprId, super::PreparedResolvedExpression)>), FinalSemanticAnalysisError>
+{
     let (effect, owners) =
         crate::effects::project_hir_effect_id(module, owner).map_err(checked_catalog_error)?;
     let facts = owners

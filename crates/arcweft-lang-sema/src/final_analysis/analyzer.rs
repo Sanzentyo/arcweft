@@ -518,7 +518,7 @@ impl FinalAnalysisMutation for FinalAuthorityMutationForTest {
 struct StagedCheckedCallables {
     builder: CheckedCallableCatalogBuilder,
     bodies: Vec<StagedCallableBody>,
-    effect_expressions: Vec<(ExprId, CheckedExpression)>,
+    effect_expressions: Vec<(ExprId, PreparedResolvedExpression)>,
     accepted: Arc<crate::callable::RegisteredCallableCatalog>,
 }
 

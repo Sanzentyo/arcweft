@@ -596,14 +596,18 @@ impl RuntimeNominalProjectionRequestInventory {
                 Ok::<_, FinalSemanticAnalysisError>(())
             })?;
         }
-        for (owner, statement) in &draft.statements {
-            statement.visit_canonical_types(&mut |ty| inventory.visit_type(symbols, ty))?;
-            statement.visit_prepared_types(&mut |ty| {
-                let mut source = types.source(*owner)?;
+        for statement in draft.statements.values() {
+            statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+            if let Some(owner) = statement.storage_type_source() {
+                let ty = draft
+                    .expressions
+                    .get(&owner)
+                    .and_then(PreparedExpressionFact::value_type)
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                let mut source = types.source(owner)?;
                 let ty = source.canonical(ty)?;
                 inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
-                Ok::<_, FinalSemanticAnalysisError>(())
-            })?;
+            }
         }
         for item in draft.items.values() {
             item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
@@ -656,14 +660,17 @@ impl RuntimeNominalProjectionRequestInventory {
                 Ok::<_, FinalSemanticAnalysisError>(())
             })?;
         }
-        for (owner, statement) in &draft.statements {
-            statement.visit_canonical_types(&mut |ty| inventory.visit_type(symbols, ty))?;
-            statement.visit_prepared_types(&mut |ty| {
-                let mut source = types.source(*owner)?;
-                let ty = source.canonical(ty)?;
-                inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
-                Ok::<_, FinalSemanticAnalysisError>(())
-            })?;
+        for statement in draft.statements.values() {
+            statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+            if let Some(owner) = statement.storage_type_source() {
+                let ty = draft
+                    .expressions
+                    .get(&owner)
+                    .and_then(CheckedExpression::value_type)
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                let source = types.source(owner)?;
+                inventory.visit_scoped_type(symbols, source.scope().type_view(ty))?;
+            }
         }
         for item in draft.items.values() {
             item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
@@ -841,14 +848,8 @@ fn collect_prepared_semantic_nominals(
             Ok::<_, FinalSemanticAnalysisError>(())
         })?;
     }
-    for (owner, statement) in &draft.statements {
-        statement.visit_canonical_types(&mut |ty| inventory.visit_type(symbols, ty))?;
-        statement.visit_prepared_types(&mut |ty| {
-            let mut source = types.source(*owner)?;
-            let ty = source.canonical(ty)?;
-            inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
-            Ok::<_, FinalSemanticAnalysisError>(())
-        })?;
+    for statement in draft.statements.values() {
+        statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
     }
     for item in draft.items.values() {
         item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
@@ -908,14 +909,8 @@ fn collect_post_entry_semantic_nominals(
             Ok::<_, FinalSemanticAnalysisError>(())
         })?;
     }
-    for (owner, statement) in &draft.statements {
-        statement.visit_canonical_types(&mut |ty| inventory.visit_type(symbols, ty))?;
-        statement.visit_prepared_types(&mut |ty| {
-            let mut source = types.source(*owner)?;
-            let ty = source.canonical(ty)?;
-            inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
-            Ok::<_, FinalSemanticAnalysisError>(())
-        })?;
+    for statement in draft.statements.values() {
+        statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
     }
     for item in draft.items.values() {
         item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;

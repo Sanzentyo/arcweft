@@ -2,7 +2,7 @@
 
 use arcweft_lang_hir::{
     dialogue_application::HirDialogueMarkId,
-    identity::{ExprId, ItemId, StmtId},
+    identity::{ExprId, ItemId, LocalId, StmtId},
     symbol::{CallableDeclarationKey, FlowDeclarationId},
 };
 
@@ -20,7 +20,6 @@ use super::PreparedEvaluatedEffect;
 pub(crate) struct PreparedRegistryWrite {
     pub(crate) address: std::sync::Arc<crate::final_analysis::CheckedRegistryAddress>,
     pub(crate) value: ExprId,
-    pub(crate) value_type: TypeKind<crate::types::PreparedEffects>,
 }
 
 /// One typed assignment awaiting the final target place seal.
@@ -31,24 +30,24 @@ pub(crate) struct PreparedRegistryWrite {
 pub(crate) struct PreparedAssignmentStatement {
     target: ExprId,
     value: ExprId,
-    target_type: TypeKind<crate::types::PreparedEffects>,
+    local: LocalId,
 }
 
 impl PreparedAssignmentStatement {
-    pub(crate) const fn new(
-        target: ExprId,
-        value: ExprId,
-        target_type: TypeKind<crate::types::PreparedEffects>,
-    ) -> Self {
+    pub(crate) const fn new(target: ExprId, value: ExprId, local: LocalId) -> Self {
         Self {
             target,
             value,
-            target_type,
+            local,
         }
     }
 
-    pub(crate) fn into_parts(self) -> (ExprId, ExprId, TypeKind<crate::types::PreparedEffects>) {
-        (self.target, self.value, self.target_type)
+    pub(super) const fn target(&self) -> ExprId {
+        self.target
+    }
+
+    pub(crate) fn into_parts(self) -> (ExprId, ExprId, LocalId) {
+        (self.target, self.value, self.local)
     }
 }
 
@@ -75,25 +74,17 @@ pub(crate) enum PreparedStatementPayload {
 }
 
 impl PreparedStatementPayload {
-    pub(crate) fn visit_prepared_types<'a, E>(
-        &'a self,
-        visitor: &mut impl FnMut(&'a TypeKind<crate::types::PreparedEffects>) -> Result<(), E>,
-    ) -> Result<(), E> {
+    /// A place target or a storage operand remains a runtime type root even
+    /// when it does not own an ordinary expression evaluation.
+    pub(in crate::final_analysis) fn storage_type_source(&self) -> Option<ExprId> {
         match self {
-            Self::Assignment(value) => visitor(&value.target_type),
-            Self::RegistryWrite(value) => visitor(&value.value_type),
-            Self::Iteration(_)
-            | Self::HirOwned
-            | Self::Return(_)
-            | Self::Assertion(_)
-            | Self::Suspension(_)
-            | Self::Yield
-            | Self::EvaluatedEffect(_)
-            | Self::SealedEvaluatedEffectReference(_) => Ok(()),
+            Self::Assignment(assignment) => Some(assignment.target()),
+            Self::RegistryWrite(write) => Some(write.value),
+            _ => None,
         }
     }
 
-    pub(crate) fn visit_canonical_types<E>(
+    pub(crate) fn visit_types<E>(
         &self,
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
     ) -> Result<(), E> {

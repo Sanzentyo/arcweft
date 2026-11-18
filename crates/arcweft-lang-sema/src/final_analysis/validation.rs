@@ -725,11 +725,12 @@ pub(super) fn validate_expressions(
                     else {
                         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                     };
-                    let expected = super::CheckedRegistryAddress::from_statement(
+                    address.validate_statement(
                         resolve_module(modules, statement.module())?,
                         *statement,
+                        owner,
                     )?;
-                    if address.as_ref() != &expected || !fact.effects().is_empty() {
+                    if !fact.effects().is_empty() {
                         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                     }
                 }
@@ -2778,12 +2779,12 @@ pub(super) fn validate_statements(
                 else {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 };
-                let expected = super::CheckedRegistryAddress::from_statement(
+                write.address().validate_statement(
                     resolve_module(modules, owner.module())?,
                     owner,
+                    *target,
                 )?;
-                if write.address() != &expected
-                    || write.value() != *value
+                if write.value() != *value
                     || expressions
                         .get(value)
                         .and_then(CheckedExpression::value_type)

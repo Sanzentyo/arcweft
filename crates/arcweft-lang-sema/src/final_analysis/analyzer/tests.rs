@@ -981,10 +981,11 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
     let captured_for_transaction = Rc::clone(&captured);
     let captured_actual = Rc::new(RefCell::new(None));
     let captured_actual_for_transaction = Rc::clone(&captured_actual);
+    let work = analyzer.published_expression_context().work();
     let outcome = analyzer
-        .run_candidate_fact_transaction(|this, authority, _transaction| {
+        .run_candidate_fact_transaction(work.clone(), |this, authority, _transaction| {
             let context =
-                AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames));
+                AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames), work);
             this.evaluate_expression(&context, call_owner, None)?;
             drop(context);
             let actual = this
