@@ -895,13 +895,6 @@ impl PreparedResolvedCallable {
             .expect("PreparedResolvedCallable construction validates one schema authority")
     }
 
-    pub(crate) fn constraint_parameter_type(
-        &self,
-        coordinate: super::super::CallableParameterCoordinate,
-    ) -> Result<Option<TypeKind>, super::super::CallConstraintInvariant> {
-        Ok(self.schema().parameter_type(coordinate).cloned())
-    }
-
     /// Projects this signature with the checked invocation row supplied by its
     /// body-effect authority for the terminal curried application boundary.
     pub(crate) fn constraint_callable_type_with_terminal_effects(
@@ -966,10 +959,7 @@ impl PreparedResolvedCallable {
         current_group: CallableGroupIndex,
         actual: &TypeKind,
         terminal_effects: CallableTerminalEffectProjection<'_>,
-    ) -> Result<
-        CallableProjection<Option<(TypeKind, TypeKind)>>,
-        super::super::CallConstraintInvariant,
-    > {
+    ) -> Result<CallableProjection<Option<TypeKind>>, super::super::CallConstraintInvariant> {
         if current_group != self.call_group() {
             return Err(super::super::CallConstraintInvariant::PreparedGroupMismatch);
         }
@@ -1000,7 +990,7 @@ impl PreparedResolvedCallable {
                         }
                         return Ok(CallableProjection::Ready(None));
                     }
-                    Ok(CallableProjection::Ready(Some((pattern, actual.clone()))))
+                    Ok(CallableProjection::Ready(Some(pattern)))
                 }
                 CallableTerminalEffectProjection::Pending(checked) => {
                     let next = CallableGroupIndex::try_from_usize(

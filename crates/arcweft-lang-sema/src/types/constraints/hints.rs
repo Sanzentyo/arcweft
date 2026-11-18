@@ -261,7 +261,13 @@ impl<E: TypeEffectDomain> CheckedConstraintSourceProjection<E> {
 pub(crate) struct PreparedSourceAlternative<D: ConstraintDomain> {
     alternative: D::AlternativeIndex,
     evidence: Arc<D::EvidenceRule>,
-    value_expected: TypeKind<PreparedEffects>,
+    expected: PreparedSourceExpectation,
+}
+
+#[derive(Clone)]
+pub(super) enum PreparedSourceExpectation {
+    Declaration(Arc<TypeKind<PreparedEffects>>),
+    Original(Arc<TypeKind<PreparedEffects>>),
 }
 
 impl<D: ConstraintDomain> PreparedSourceAlternative<D> {
@@ -273,7 +279,21 @@ impl<D: ConstraintDomain> PreparedSourceAlternative<D> {
         Self {
             alternative,
             evidence: Arc::new(evidence),
-            value_expected,
+            expected: PreparedSourceExpectation::Declaration(Arc::new(value_expected)),
+        }
+    }
+
+    /// The original source fixes the expected value type of this alternative.
+    /// Its formals stay in the lexical owner when opening the candidate.
+    pub(crate) fn from_original(
+        alternative: D::AlternativeIndex,
+        evidence: D::EvidenceRule,
+        expected: Arc<TypeKind<PreparedEffects>>,
+    ) -> Self {
+        Self {
+            alternative,
+            evidence: Arc::new(evidence),
+            expected: PreparedSourceExpectation::Original(expected),
         }
     }
 
@@ -285,8 +305,8 @@ impl<D: ConstraintDomain> PreparedSourceAlternative<D> {
         self.evidence.as_ref()
     }
 
-    pub(crate) const fn value_expected(&self) -> &TypeKind<PreparedEffects> {
-        &self.value_expected
+    pub(super) const fn expectation(&self) -> &PreparedSourceExpectation {
+        &self.expected
     }
 }
 
@@ -295,7 +315,7 @@ impl<D: ConstraintDomain> Clone for PreparedSourceAlternative<D> {
         Self {
             alternative: self.alternative,
             evidence: Arc::clone(&self.evidence),
-            value_expected: self.value_expected.clone(),
+            expected: self.expected.clone(),
         }
     }
 }

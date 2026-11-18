@@ -36,7 +36,8 @@ use crate::{
         PreparedSourceConstraintGroup, TypeConstraintClient, VariantPayloadRequirement,
     },
     types::{
-        GenericTypeReference, PreparedEffects, TypeKind,
+        GenericScope, GenericTypeReference, PreparedEffects, TypeKind, TypeProjectionControl,
+        TypeProjectionNodeKind,
         constraints::{
             ConstraintAcceptance, ConstraintDomain, ExpectedHint, MaterializationOutcome,
             MaterializedSourceRequest, PreparedConstraintSourceProjection,
@@ -50,8 +51,8 @@ use crate::{
 };
 
 use crate::final_analysis::{
-    CandidateEvaluationPass, CandidateExpectedType, PhysicalArgumentEvaluationKind,
-    PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
+    CandidateEvaluationPass, CandidateExpectedType, FinalSemanticAnalysisError,
+    PhysicalArgumentEvaluationKind, PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
 };
 
 use super::super::{
@@ -63,6 +64,7 @@ use super::super::{
         AnalyzerApplicationCalleeExpectation, AnalyzerApplicationCalleePurpose,
         AnalyzerExpressionExpectation,
     },
+    preparation_work::AnalyzerPreparationWork,
     state::{
         ActiveCallbackFactScope, CandidateSemanticProjection, CandidateSemanticReplayMismatch,
         MaterializationFactCheckpoint, ProbeFactCheckpoint,
@@ -994,13 +996,16 @@ fn validate_materialized_source_value(
 /// callback inputs that may bypass expression re-evaluation: the variant
 /// records which owner issued the actual, and the map key records its exact
 /// lower source coordinate.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 enum AnalyzerPreparedSourceActual {
-    ValueReceiver(TypeKind<crate::types::PreparedEffects>),
+    ValueReceiver(Arc<TypeKind<PreparedEffects>>),
     DialogueApplicationMetadata(PreparedDialogueApplicationMetadataArgument),
     DialogueApplicationOperand(TypeKind<crate::types::PreparedEffects>),
-    TextProxyObjectOperand(TypeKind<crate::types::PreparedEffects>),
+    TextProxyObjectOperand(Arc<TypeKind<PreparedEffects>>),
 }
+
+type PreparedCallActuals =
+    BTreeMap<AnalyzerCallConstraintSource, Arc<AnalyzerPreparedSourceActual>>;
 
 impl AnalyzerPreparedSourceActual {
     fn validates(&self, source: AnalyzerCallConstraintSource) -> bool {
@@ -1031,11 +1036,10 @@ impl AnalyzerPreparedSourceActual {
         }
     }
 
-    const fn actual(&self) -> &TypeKind<crate::types::PreparedEffects> {
+    fn actual(&self) -> &TypeKind<PreparedEffects> {
         match self {
-            Self::ValueReceiver(actual)
-            | Self::DialogueApplicationOperand(actual)
-            | Self::TextProxyObjectOperand(actual) => actual,
+            Self::ValueReceiver(actual) | Self::TextProxyObjectOperand(actual) => actual,
+            Self::DialogueApplicationOperand(actual) => actual,
             Self::DialogueApplicationMetadata(prepared) => prepared.actual(),
         }
     }
@@ -1154,7 +1158,7 @@ pub(crate) struct AnalyzerCallExpressionClient<'a, 'project, 'catalog, 'control>
     candidate: Option<Arc<PreparedResolvedCallable>>,
     consumer: Option<AnalyzerCallConsumerAdmission>,
     source_admissions: BTreeMap<(AnalyzerCallConstraintSource, u32), AnalyzerCallSourceAdmission>,
-    prepared_source_actuals: BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedSourceActual>,
+    prepared_source_actuals: PreparedCallActuals,
     dialogue_patch_admissions:
         BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
     pass: CandidateEvaluationPass,
@@ -1177,10 +1181,7 @@ impl<'a, 'project, 'catalog, 'control>
             (AnalyzerCallConstraintSource, u32),
             AnalyzerCallSourceAdmission,
         >,
-        prepared_source_actuals: BTreeMap<
-            AnalyzerCallConstraintSource,
-            AnalyzerPreparedSourceActual,
-        >,
+        prepared_source_actuals: PreparedCallActuals,
         dialogue_patch_admissions: BTreeMap<
             AnalyzerCallConstraintSource,
             AnalyzerPreparedDialoguePatchAdmission,
@@ -1503,8 +1504,9 @@ impl<'a, 'project, 'catalog, 'control>
                     ),
                 ));
             }
-            let actual = AnalyzerObservedSourceValue::prepared(origin, original, prepared.clone())
-                .ok_or(AnalyzerCallCheckFailure::Mismatch)?;
+            let actual =
+                AnalyzerObservedSourceValue::prepared(origin, original, Arc::clone(prepared))
+                    .ok_or(AnalyzerCallCheckFailure::Mismatch)?;
             return Ok(AnalyzerCallObservedSource::checked(
                 actual,
                 prepared.evidence(),
@@ -3057,10 +3059,8 @@ impl<O: AnalyzerCallConstraintOperations>
 }
 
 struct PreparedCallTypeConstraint {
-    source: AnalyzerCallConstraintSource,
-    pattern: TypeKind,
-    actual: TypeKind,
-    acceptance: ConstraintAcceptance,
+    pattern: TypeKind<PreparedEffects>,
+    actual: Arc<TypeKind<PreparedEffects>>,
 }
 
 #[derive(Clone, Copy)]
@@ -3357,7 +3357,7 @@ pub(crate) struct PreparedCallConstraintSet {
     callee_inputs: PreparedCallCalleeConstraintInputs,
     inputs: PreparedCallInputs,
     source_groups: Box<[PreparedSourceConstraintGroup<AnalyzerCallConstraintDomain>]>,
-    prepared_source_actuals: BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedSourceActual>,
+    prepared_source_actuals: PreparedCallActuals,
     dialogue_patch_admissions:
         BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
     receiver_sources: Box<[PreparedSourceConstraint<AnalyzerCallConstraintDomain>]>,
@@ -3395,10 +3395,10 @@ impl PreparedCallConstraintSet {
         for constraint in &self.base_constraints {
             let value = constraint
                 .pattern
-                .prepare_effects(scope, &mut work)
+                .retain_effects(scope, effects, &mut work)
                 .map_err(|error| {
                     AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::source_type_projection(
+                        FinalSemanticAnalysisError::source_prepared_type_retention(
                             application.into(),
                             error,
                         ),
@@ -3602,7 +3602,7 @@ impl PreparedCalleeProjectionOwners {
 pub(super) struct AnalyzerCallApplicationSources {
     application: ExprId,
     original: crate::types::constraints::OriginalProducerContext,
-    prepared_source_actuals: BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedSourceActual>,
+    prepared_source_actuals: PreparedCallActuals,
     dialogue_patch_admissions:
         BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
     source_admissions: BTreeMap<(AnalyzerCallConstraintSource, u32), AnalyzerCallSourceAdmission>,
@@ -4595,7 +4595,74 @@ pub(crate) enum CallAnalysisFailure {
     Invariant(CallAnalysisInvariant),
 }
 
-pub(crate) type CallAnalysisResult<T> = Result<T, CallAnalysisFailure>;
+pub(super) enum CallConstraintPreparationFailure {
+    Invariant(CallConstraintInvariant),
+    Source(FinalSemanticAnalysisError),
+}
+
+impl CallConstraintPreparationFailure {
+    pub(super) fn into_expression(self, application: ExprId) -> AnalyzerExpressionError {
+        match self {
+            Self::Invariant(error) => AnalyzerExpressionError::Call {
+                owner: application,
+                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
+            },
+            Self::Source(error) => AnalyzerExpressionError::fatal(error),
+        }
+    }
+}
+
+/// Input retention follows the original caller and the selected declaration
+/// independently. The lower driver opens each operand in its owning scope.
+struct CallOperandPreparation<'a, 'work> {
+    application: ExprId,
+    declaration: &'a GenericScope,
+    original: &'a GenericScope,
+    work: AnalyzerPreparationWork<'work>,
+}
+
+impl CallOperandPreparation<'_, '_> {
+    fn declaration_type(
+        &mut self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind<PreparedEffects>, CallConstraintPreparationFailure> {
+        ty.prepare_effects(self.declaration, &mut self.work)
+            .map_err(|error| {
+                CallConstraintPreparationFailure::Source(
+                    FinalSemanticAnalysisError::source_type_projection(
+                        self.application.into(),
+                        error,
+                    ),
+                )
+            })
+    }
+
+    fn source_type(
+        &mut self,
+        source: ExprId,
+        ty: &TypeKind,
+    ) -> Result<TypeKind<PreparedEffects>, CallConstraintPreparationFailure> {
+        ty.prepare_effects(self.original, &mut self.work)
+            .map_err(|error| {
+                CallConstraintPreparationFailure::Source(
+                    FinalSemanticAnalysisError::source_type_projection(source.into(), error),
+                )
+            })
+    }
+
+    fn expected_type(
+        &mut self,
+        declared: &TypeKind,
+        projection: &ParameterExpectedTypeProjection,
+    ) -> Result<TypeKind<PreparedEffects>, CallConstraintPreparationFailure> {
+        if matches!(projection, ParameterExpectedTypeProjection::ApplyUnary(_)) {
+            self.work
+                .visit_node(TypeProjectionNodeKind::Type, 1)
+                .map_err(CallConstraintPreparationFailure::Source)?;
+        }
+        Ok(projection.apply_to_owned(self.declaration_type(declared)?))
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AnalyzerPreparedConsideredCandidate {
@@ -4917,8 +4984,8 @@ pub(crate) struct AnalyzerDetachedCandidateRecord {
 /// The single analyzer preparation gate. It seals one composite prepared-input
 /// inventory containing the ordinary mapper and any schema-owned semantic
 /// operands, then asks the callable graph issuer for the exact lower scope/seed
-/// token before any driver callback or accounting charge is possible.
-pub(crate) fn validate_and_prepare_call_constraints(
+/// token and retains the operands before opening the lower driver.
+pub(super) fn validate_and_prepare_call_constraints(
     graph: &AnalyzerPreparedCallGraph,
     candidate: Arc<PreparedResolvedCallable>,
     checked_authority: CheckedCallResolverAuthority<'_>,
@@ -4934,29 +5001,28 @@ pub(crate) fn validate_and_prepare_call_constraints(
     original: &crate::types::constraints::OriginalProducerContext,
     parent_source: Option<&CandidateConstraintSourceContext<'_, '_, AnalyzerCallConstraintDomain>>,
     site: CheckedCallSite,
-) -> CallAnalysisResult<PreparedCallConstraintSet> {
+    work: AnalyzerPreparationWork<'_>,
+) -> Result<PreparedCallConstraintSet, CallConstraintPreparationFailure> {
     let group = candidate.call_group();
     if inputs.candidate() != Some(candidate.id())
         || inputs.group() != group
         || inputs.schema() != candidate.schema().semantic_digest()
         || !inputs.validates_type_application(&candidate)
     {
-        return Err(CallAnalysisFailure::Invariant(
-            CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+        return Err(CallConstraintPreparationFailure::Invariant(
+            CallConstraintInvariant::MalformedMapperSeal,
         ));
     }
     let terminal_effects = checked_authority
         .terminal_effects_for(&candidate)
         .map_err(|_| {
-            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+            CallConstraintPreparationFailure::Invariant(
                 CallConstraintInvariant::CheckedCallableAuthorityMismatch,
-            ))
+            )
         })?;
     let transition = candidate
         .application_transition(inputs.mapping())
-        .map_err(|error| {
-            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-        })?;
+        .map_err(CallConstraintPreparationFailure::Invariant)?;
     let initialization = match parent_source {
         Some(parent_source) => PreparedCallConstraintInitialization::Child(
             parent_source
@@ -4968,18 +5034,14 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     transition,
                     enclosing,
                 )
-                .map_err(|error| {
-                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-                })?,
+                .map_err(CallConstraintPreparationFailure::Invariant)?,
         ),
         None => PreparedCallConstraintInitialization::Root(
             graph
                 .validate_and_issue_constraint_initialization(
                     site, &candidate, transition, enclosing,
                 )
-                .map_err(|error| {
-                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-                })?,
+                .map_err(CallConstraintPreparationFailure::Invariant)?,
         ),
     };
     let future_parameters = match &initialization {
@@ -4992,10 +5054,16 @@ pub(crate) fn validate_and_prepare_call_constraints(
     }
     .to_vec();
     if !consumer.validates_candidate(&candidate) {
-        return Err(CallAnalysisFailure::Invariant(
-            CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+        return Err(CallConstraintPreparationFailure::Invariant(
+            CallConstraintInvariant::MalformedMapperSeal,
         ));
     }
+    let mut preparation = CallOperandPreparation {
+        application: result_source,
+        declaration: candidate.schema().generic_inventory().template_scope(),
+        original: original.scope(),
+        work,
+    };
     let mut type_application_constraints = match inputs.type_application() {
         crate::callable::PreparedCallTypeApplication::Absent => Vec::new(),
         crate::callable::PreparedCallTypeApplication::Present(arguments) => {
@@ -5008,17 +5076,13 @@ pub(crate) fn validate_and_prepare_call_constraints(
                 .filter(|entry| entry.role() == CallableSchemaGenericRole::Candidate);
             for (entry, actual) in parameters.zip(arguments.iter()) {
                 let Some(actual) = actual else {
-                    return Err(CallAnalysisFailure::Invariant(
-                        CallAnalysisInvariant::Constraint(
-                            CallConstraintInvariant::MalformedMapperSeal,
-                        ),
+                    return Err(CallConstraintPreparationFailure::Invariant(
+                        CallConstraintInvariant::MalformedMapperSeal,
                     ));
                 };
                 constraints.push(PreparedCallTypeConstraint {
-                    source: AnalyzerCallConstraintSource::BaseInstantiation,
                     pattern: TypeKind::GenericParam(entry.parameter().clone()),
-                    actual: actual.clone(),
-                    acceptance: ConstraintAcceptance::PatternAcceptsActual,
+                    actual: Arc::clone(actual),
                 });
             }
             constraints
@@ -5035,24 +5099,24 @@ pub(crate) fn validate_and_prepare_call_constraints(
             .iter()
             .filter(|entry| entry.role() == CallableSchemaGenericRole::Candidate);
         let Some(destination) = destination_parameters.next() else {
-            return Err(CallAnalysisFailure::Invariant(
-                CallAnalysisInvariant::Constraint(
-                    CallConstraintInvariant::MalformedSchemaInventory,
-                ),
+            return Err(CallConstraintPreparationFailure::Invariant(
+                CallConstraintInvariant::MalformedSchemaInventory,
             ));
         };
         if destination_parameters.next().is_some() {
-            return Err(CallAnalysisFailure::Invariant(
-                CallAnalysisInvariant::Constraint(
-                    CallConstraintInvariant::MalformedSchemaInventory,
-                ),
+            return Err(CallConstraintPreparationFailure::Invariant(
+                CallConstraintInvariant::MalformedSchemaInventory,
             ));
         }
+        preparation
+            .work
+            .visit_node(TypeProjectionNodeKind::Type, 1)
+            .map_err(CallConstraintPreparationFailure::Source)?;
         type_application_constraints.push(PreparedCallTypeConstraint {
-            source: AnalyzerCallConstraintSource::BaseInstantiation,
             pattern: TypeKind::GenericParam(destination.parameter().clone()),
-            actual: TypeKind::Vec(Box::new(item.clone())),
-            acceptance: ConstraintAcceptance::PatternAcceptsActual,
+            actual: Arc::new(TypeKind::Vec(Box::new(
+                preparation.source_type(result_source, item)?,
+            ))),
         });
     }
     let type_application_constraints = type_application_constraints.into_boxed_slice();
@@ -5063,16 +5127,16 @@ pub(crate) fn validate_and_prepare_call_constraints(
             .insert(row.coordinate(), Arc::clone(row.admission()))
             .is_some()
         {
-            return Err(CallAnalysisFailure::Invariant(
-                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            return Err(CallConstraintPreparationFailure::Invariant(
+                CallConstraintInvariant::MalformedMapperSeal,
             ));
         }
     }
     let mut dialogue_patch_admission_map = BTreeMap::new();
     let (source_groups, mut prepared_source_actuals) = if inputs.semantic_operands().is_empty() {
         if !compile_time_scalar_admission_map.is_empty() {
-            return Err(CallAnalysisFailure::Invariant(
-                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            return Err(CallConstraintPreparationFailure::Invariant(
+                CallConstraintInvariant::MalformedMapperSeal,
             ));
         }
         let mapping = inputs.mapping();
@@ -5081,26 +5145,23 @@ pub(crate) fn validate_and_prepare_call_constraints(
             PreparedCallCalleeConstraintInputs::DialogueApplication
         ) || mapping.arguments().len() != authored_arguments.len()
         {
-            return Err(CallAnalysisFailure::Invariant(
-                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            return Err(CallConstraintPreparationFailure::Invariant(
+                CallConstraintInvariant::MalformedMapperSeal,
             ));
         }
         let mut actuals = BTreeMap::new();
         let mut groups = Vec::with_capacity(mapping.arguments().len());
         for (argument_index, argument) in mapping.arguments().iter().enumerate() {
             let ordinal = HirCallArgumentOrdinal::try_from_usize(argument_index).map_err(|_| {
-                CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                CallConstraintPreparationFailure::Invariant(
                     CallConstraintInvariant::MalformedMapperSeal,
-                ))
+                )
             })?;
-            let authored =
-                authored_arguments
-                    .get(argument_index)
-                    .ok_or(CallAnalysisFailure::Invariant(
-                        CallAnalysisInvariant::Constraint(
-                            CallConstraintInvariant::MalformedMapperSeal,
-                        ),
-                    ))?;
+            let authored = authored_arguments.get(argument_index).ok_or(
+                CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedMapperSeal,
+                ),
+            )?;
             let mut sources = Vec::with_capacity(argument.slots().len());
             for slot in argument.slots() {
                 let consumer = slot.coordinate().and_then(|coordinate| {
@@ -5112,10 +5173,8 @@ pub(crate) fn validate_and_prepare_call_constraints(
                 });
                 let metadata_coordinate = match consumer {
                     Some((_, crate::callable::CallableParameterConsumer::Content(_))) => {
-                        return Err(CallAnalysisFailure::Invariant(
-                            CallAnalysisInvariant::Constraint(
-                                CallConstraintInvariant::MalformedMapperSeal,
-                            ),
+                        return Err(CallConstraintPreparationFailure::Invariant(
+                            CallConstraintInvariant::MalformedMapperSeal,
                         ));
                     }
                     Some((
@@ -5134,10 +5193,8 @@ pub(crate) fn validate_and_prepare_call_constraints(
                         slot.coordinate()
                     }
                     Some((_, crate::callable::CallableParameterConsumer::Content(_))) => {
-                        return Err(CallAnalysisFailure::Invariant(
-                            CallAnalysisInvariant::Constraint(
-                                CallConstraintInvariant::MalformedMapperSeal,
-                            ),
+                        return Err(CallConstraintPreparationFailure::Invariant(
+                            CallConstraintInvariant::MalformedMapperSeal,
                         ));
                     }
                     Some((
@@ -5150,10 +5207,8 @@ pub(crate) fn validate_and_prepare_call_constraints(
                 };
                 let source = if let Some(coordinate) = metadata_coordinate {
                     let CheckedCallArgumentSlotSource::Expression(source) = slot.source() else {
-                        return Err(CallAnalysisFailure::Invariant(
-                            CallAnalysisInvariant::Constraint(
-                                CallConstraintInvariant::MalformedMapperSeal,
-                            ),
+                        return Err(CallConstraintPreparationFailure::Invariant(
+                            CallConstraintInvariant::MalformedMapperSeal,
                         ));
                     };
                     let mut rows = mapping
@@ -5165,15 +5220,13 @@ pub(crate) fn validate_and_prepare_call_constraints(
                                 && row.coordinate() == coordinate
                         });
                     let row = rows.next().cloned().ok_or_else(|| {
-                        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        CallConstraintPreparationFailure::Invariant(
                             CallConstraintInvariant::MalformedMapperSeal,
-                        ))
+                        )
                     })?;
                     if rows.next().is_some() {
-                        return Err(CallAnalysisFailure::Invariant(
-                            CallAnalysisInvariant::Constraint(
-                                CallConstraintInvariant::MalformedMapperSeal,
-                            ),
+                        return Err(CallConstraintPreparationFailure::Invariant(
+                            CallConstraintInvariant::MalformedMapperSeal,
                         ));
                     }
                     let source = AnalyzerCallConstraintSource::DialogueApplicationMetadata {
@@ -5185,14 +5238,14 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     if actuals
                         .insert(
                             source,
-                            AnalyzerPreparedSourceActual::DialogueApplicationMetadata(row),
+                            Arc::new(AnalyzerPreparedSourceActual::DialogueApplicationMetadata(
+                                row,
+                            )),
                         )
                         .is_some()
                     {
-                        return Err(CallAnalysisFailure::Invariant(
-                            CallAnalysisInvariant::Constraint(
-                                CallConstraintInvariant::MalformedMapperSeal,
-                            ),
+                        return Err(CallConstraintPreparationFailure::Invariant(
+                            CallConstraintInvariant::MalformedMapperSeal,
                         ));
                     }
                     source
@@ -5220,19 +5273,15 @@ pub(crate) fn validate_and_prepare_call_constraints(
                             .schema()
                             .group(coordinate.group())
                             .and_then(|group| group.parameter(coordinate.parameter()))
-                            .ok_or(CallAnalysisFailure::Invariant(
-                                CallAnalysisInvariant::Constraint(
-                                    CallConstraintInvariant::MalformedSchemaInventory,
-                                ),
+                            .ok_or(CallConstraintPreparationFailure::Invariant(
+                                CallConstraintInvariant::MalformedSchemaInventory,
                             ))?;
                         if rows.next().is_some()
                             || !row.validates_parameter(coordinate, parameter)
                             || dialogue_patch_admission_map.insert(source, row).is_some()
                         {
-                            return Err(CallAnalysisFailure::Invariant(
-                                CallAnalysisInvariant::Constraint(
-                                    CallConstraintInvariant::MalformedMapperSeal,
-                                ),
+                            return Err(CallConstraintPreparationFailure::Invariant(
+                                CallConstraintInvariant::MalformedMapperSeal,
                             ));
                         }
                     }
@@ -5256,19 +5305,20 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     slot,
                     scalar_types,
                     view_fx_runtime_parameters,
+                    &mut preparation,
                 )?);
             }
             groups.push(
                 PreparedSourceConstraintGroup::seal(sources).map_err(|error| {
-                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        CallConstraintInvariant::Lower(error),
+                    CallConstraintPreparationFailure::Invariant(CallConstraintInvariant::Lower(
+                        error,
                     ))
                 })?,
             );
         }
         if dialogue_patch_admission_map.len() != dialogue_patch_admissions.len() {
-            return Err(CallAnalysisFailure::Invariant(
-                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            return Err(CallConstraintPreparationFailure::Invariant(
+                CallConstraintInvariant::MalformedMapperSeal,
             ));
         }
         (groups.into_boxed_slice(), actuals)
@@ -5310,16 +5360,16 @@ pub(crate) fn validate_and_prepare_call_constraints(
                                 && operand.argument().is_some()
                     )))
         {
-            return Err(CallAnalysisFailure::Invariant(
-                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            return Err(CallConstraintPreparationFailure::Invariant(
+                CallConstraintInvariant::MalformedMapperSeal,
             ));
         }
         let mut actuals = BTreeMap::new();
         let mut groups = Vec::new();
         if is_dialogue_application {
             if !compile_time_scalar_admission_map.is_empty() {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+                return Err(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedMapperSeal,
                 ));
             }
             groups.reserve(semantic_operands.len());
@@ -5333,16 +5383,14 @@ pub(crate) fn validate_and_prepare_call_constraints(
                 if actuals
                     .insert(
                         source,
-                        AnalyzerPreparedSourceActual::DialogueApplicationOperand(
-                            operand.actual().clone(),
-                        ),
+                        Arc::new(AnalyzerPreparedSourceActual::DialogueApplicationOperand(
+                            preparation.source_type(operand.source(), operand.actual())?,
+                        )),
                     )
                     .is_some()
                 {
-                    return Err(CallAnalysisFailure::Invariant(
-                        CallAnalysisInvariant::Constraint(
-                            CallConstraintInvariant::MalformedMapperSeal,
-                        ),
+                    return Err(CallConstraintPreparationFailure::Invariant(
+                        CallConstraintInvariant::MalformedMapperSeal,
                     ));
                 }
                 let prepared = prepare_parameter_source_constraint(
@@ -5352,50 +5400,45 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     PreparedConstraintSourceProjection::Scalar,
                     scalar_types,
                     view_fx_runtime_parameters,
+                    &mut preparation,
                 )?;
                 groups.push(
                     PreparedSourceConstraintGroup::seal([prepared]).map_err(|error| {
-                        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                            CallConstraintInvariant::Lower(error),
+                        CallConstraintPreparationFailure::Invariant(CallConstraintInvariant::Lower(
+                            error,
                         ))
                     })?,
                 );
             }
         } else {
-            let discriminator = semantic_operands
-                .first()
-                .ok_or(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
-                ))?;
+            let discriminator =
+                semantic_operands
+                    .first()
+                    .ok_or(CallConstraintPreparationFailure::Invariant(
+                        CallConstraintInvariant::MalformedMapperSeal,
+                    ))?;
             let crate::callable::CallableCandidateId::Content(
                 crate::callable::ContentCallableIdentity::TextProxyObject { owner, .. },
             ) = candidate.id()
             else {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+                return Err(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedMapperSeal,
                 ));
             };
-            let actual_owner =
-                discriminator
-                    .actual()
-                    .semantic_identity_digest()
-                    .map_err(|error| {
-                        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                            error.into(),
-                        ))
-                    })?;
+            let actual_owner = discriminator
+                .actual()
+                .semantic_identity_digest()
+                .map_err(|error| CallConstraintPreparationFailure::Invariant(error.into()))?;
             if actual_owner != *owner {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+                return Err(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedMapperSeal,
                 ));
             }
             let discriminator_argument =
                 discriminator
                     .argument()
-                    .ok_or(CallAnalysisFailure::Invariant(
-                        CallAnalysisInvariant::Constraint(
-                            CallConstraintInvariant::MalformedMapperSeal,
-                        ),
+                    .ok_or(CallConstraintPreparationFailure::Invariant(
+                        CallConstraintInvariant::MalformedMapperSeal,
                     ))?;
             let discriminator_source = AnalyzerCallConstraintSource::TextProxyObjectOperand {
                 argument: discriminator_argument,
@@ -5407,10 +5450,8 @@ pub(crate) fn validate_and_prepare_call_constraints(
                 .group(discriminator.coordinate().group())
                 .and_then(|group| group.parameter(discriminator.coordinate().parameter()))
             else {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(
-                        CallConstraintInvariant::MalformedSchemaInventory,
-                    ),
+                return Err(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedSchemaInventory,
                 ));
             };
             if !matches!(
@@ -5424,58 +5465,56 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     crate::callable::CallableSemanticAdmission::TextProxyNominal
                 )
             ) {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+                return Err(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedMapperSeal,
                 ));
             }
+            let discriminator_type =
+                Arc::new(preparation.source_type(discriminator.source(), discriminator.actual())?);
             if actuals
                 .insert(
                     discriminator_source,
-                    AnalyzerPreparedSourceActual::TextProxyObjectOperand(
-                        discriminator.actual().clone(),
-                    ),
+                    Arc::new(AnalyzerPreparedSourceActual::TextProxyObjectOperand(
+                        Arc::clone(&discriminator_type),
+                    )),
                 )
                 .is_some()
             {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+                return Err(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedMapperSeal,
                 ));
             }
             for (argument_index, argument) in inputs.mapping().arguments().iter().enumerate() {
                 let ordinal =
                     HirCallArgumentOrdinal::try_from_usize(argument_index).map_err(|_| {
-                        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        CallConstraintPreparationFailure::Invariant(
                             CallConstraintInvariant::MalformedMapperSeal,
-                        ))
+                        )
                     })?;
                 let authored = authored_arguments.get(argument_index).ok_or(
-                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                    CallConstraintPreparationFailure::Invariant(
                         CallConstraintInvariant::MalformedMapperSeal,
-                    )),
+                    ),
                 )?;
                 for slot in argument.slots() {
-                    let coordinate = slot.coordinate().ok_or(CallAnalysisFailure::Invariant(
-                        CallAnalysisInvariant::Constraint(
-                            CallConstraintInvariant::MalformedMapperSeal,
-                        ),
-                    ))?;
+                    let coordinate =
+                        slot.coordinate()
+                            .ok_or(CallConstraintPreparationFailure::Invariant(
+                                CallConstraintInvariant::MalformedMapperSeal,
+                            ))?;
                     let parameter = candidate
                         .schema()
                         .group(coordinate.group())
                         .and_then(|group| group.parameter(coordinate.parameter()))
-                        .ok_or(CallAnalysisFailure::Invariant(
-                            CallAnalysisInvariant::Constraint(
-                                CallConstraintInvariant::MalformedSchemaInventory,
-                            ),
+                        .ok_or(CallConstraintPreparationFailure::Invariant(
+                            CallConstraintInvariant::MalformedSchemaInventory,
                         ))?;
                     if !matches!(
                         parameter.consumer(),
                         crate::callable::CallableParameterConsumer::Content(_)
                     ) {
-                        return Err(CallAnalysisFailure::Invariant(
-                            CallAnalysisInvariant::Constraint(
-                                CallConstraintInvariant::MalformedMapperSeal,
-                            ),
+                        return Err(CallConstraintPreparationFailure::Invariant(
+                            CallConstraintInvariant::MalformedMapperSeal,
                         ));
                     }
                     let source = if matches!(
@@ -5489,10 +5528,8 @@ pub(crate) fn validate_and_prepare_call_constraints(
                                 != CheckedCallArgumentSlotSource::Expression(discriminator.source())
                             || coordinate != discriminator.coordinate()
                         {
-                            return Err(CallAnalysisFailure::Invariant(
-                                CallAnalysisInvariant::Constraint(
-                                    CallConstraintInvariant::MalformedMapperSeal,
-                                ),
+                            return Err(CallConstraintPreparationFailure::Invariant(
+                                CallConstraintInvariant::MalformedMapperSeal,
                             ));
                         }
                         discriminator_source
@@ -5510,15 +5547,20 @@ pub(crate) fn validate_and_prepare_call_constraints(
                         }
                     };
                     let prepared = if source == discriminator_source {
-                        typed_source_constraint(source, discriminator.actual())?
+                        typed_source_constraint(
+                            source,
+                            PreparedSourceAlternative::from_original(
+                                0,
+                                AnalyzerCallEvidenceRule::otherwise(),
+                                Arc::clone(&discriminator_type),
+                            ),
+                        )?
                     } else {
                         let admission = compile_time_scalar_admission_map
                             .get(&coordinate)
                             .cloned()
-                            .ok_or(CallAnalysisFailure::Invariant(
-                                CallAnalysisInvariant::Constraint(
-                                    CallConstraintInvariant::MalformedMapperSeal,
-                                ),
+                            .ok_or(CallConstraintPreparationFailure::Invariant(
+                                CallConstraintInvariant::MalformedMapperSeal,
                             ))?;
                         let CallableParameterAdmission::Semantic(
                             crate::callable::CallableSemanticAdmission::CompileTimeScalar(
@@ -5526,28 +5568,24 @@ pub(crate) fn validate_and_prepare_call_constraints(
                             ),
                         ) = parameter.admission()
                         else {
-                            return Err(CallAnalysisFailure::Invariant(
-                                CallAnalysisInvariant::Constraint(
-                                    CallConstraintInvariant::MalformedMapperSeal,
-                                ),
+                            return Err(CallConstraintPreparationFailure::Invariant(
+                                CallConstraintInvariant::MalformedMapperSeal,
                             ));
                         };
                         if schema_admission.kind() != admission.kind().callable_kind()
                             || schema_admission.value_type() != admission.value_type()
                         {
-                            return Err(CallAnalysisFailure::Invariant(
-                                CallAnalysisInvariant::Constraint(
-                                    CallConstraintInvariant::MalformedMapperSeal,
-                                ),
+                            return Err(CallConstraintPreparationFailure::Invariant(
+                                CallConstraintInvariant::MalformedMapperSeal,
                             ));
                         }
-                        compile_time_scalar_source_constraint(source, admission)?
+                        compile_time_scalar_source_constraint(source, admission, &mut preparation)?
                     };
                     groups.push(PreparedSourceConstraintGroup::seal([prepared]).map_err(
                         |error| {
-                            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            CallConstraintPreparationFailure::Invariant(
                                 CallConstraintInvariant::Lower(error),
-                            ))
+                            )
                         },
                     )?);
                 }
@@ -5569,10 +5607,8 @@ pub(crate) fn validate_and_prepare_call_constraints(
                         .insert((source, alternative.alternative()), admission.clone())
                         .is_some()
                 {
-                    return Err(CallAnalysisFailure::Invariant(
-                        CallAnalysisInvariant::Constraint(
-                            CallConstraintInvariant::MalformedMapperSeal,
-                        ),
+                    return Err(CallConstraintPreparationFailure::Invariant(
+                        CallConstraintInvariant::MalformedMapperSeal,
                     ));
                 }
             }
@@ -5600,27 +5636,33 @@ pub(crate) fn validate_and_prepare_call_constraints(
             CallableInstantiation::Receiver { receiver },
         ) => {
             let receiver_source = AnalyzerCallConstraintSource::Receiver { source: *source };
-            if receiver != actual
-                || prepared_source_actuals
-                    .insert(
-                        receiver_source,
-                        AnalyzerPreparedSourceActual::ValueReceiver(actual.clone()),
-                    )
-                    .is_some()
-            {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(
-                        CallConstraintInvariant::MalformedSchemaInventory,
-                    ),
+            if receiver != actual {
+                return Err(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedSchemaInventory,
                 ));
             }
-            receiver_sources.push(typed_source_constraint(receiver_source, receiver)?);
-            receiver_constraints.push(PreparedCallTypeConstraint {
-                source: receiver_source,
-                pattern: receiver.clone(),
-                actual: actual.clone(),
-                acceptance: ConstraintAcceptance::PatternAcceptsActual,
-            });
+            let actual = Arc::new(preparation.source_type(*source, actual)?);
+            if prepared_source_actuals
+                .insert(
+                    receiver_source,
+                    Arc::new(AnalyzerPreparedSourceActual::ValueReceiver(Arc::clone(
+                        &actual,
+                    ))),
+                )
+                .is_some()
+            {
+                return Err(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedSchemaInventory,
+                ));
+            }
+            receiver_sources.push(typed_source_constraint(
+                receiver_source,
+                PreparedSourceAlternative::from_original(
+                    0,
+                    AnalyzerCallEvidenceRule::otherwise(),
+                    actual,
+                ),
+            )?);
         }
         (
             PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual },
@@ -5631,36 +5673,44 @@ pub(crate) fn validate_and_prepare_call_constraints(
             },
         ) => {
             let receiver_source = AnalyzerCallConstraintSource::Receiver { source: *source };
-            if receiver != actual
-                || prepared_source_actuals
-                    .insert(
-                        receiver_source,
-                        AnalyzerPreparedSourceActual::ValueReceiver(actual.clone()),
-                    )
-                    .is_some()
+            if receiver != actual {
+                return Err(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedSchemaInventory,
+                ));
+            }
+            let actual = Arc::new(preparation.source_type(*source, actual)?);
+            if prepared_source_actuals
+                .insert(
+                    receiver_source,
+                    Arc::new(AnalyzerPreparedSourceActual::ValueReceiver(Arc::clone(
+                        &actual,
+                    ))),
+                )
+                .is_some()
             {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(
-                        CallConstraintInvariant::MalformedSchemaInventory,
-                    ),
+                return Err(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedSchemaInventory,
                 ));
             }
             let declared = candidate
-                .constraint_parameter_type(CallableParameterCoordinate::new(*group, *parameter))
-                .map_err(|error| {
-                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-                })?
+                .schema()
+                .parameter_type(CallableParameterCoordinate::new(*group, *parameter))
                 .ok_or_else(|| {
-                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                    CallConstraintPreparationFailure::Invariant(
                         CallConstraintInvariant::MalformedSchemaInventory,
-                    ))
+                    )
                 })?;
-            receiver_sources.push(typed_source_constraint(receiver_source, &declared)?);
+            receiver_sources.push(typed_source_constraint(
+                receiver_source,
+                PreparedSourceAlternative::new(
+                    0,
+                    AnalyzerCallEvidenceRule::otherwise(),
+                    preparation.declaration_type(declared)?,
+                ),
+            )?);
             receiver_constraints.push(PreparedCallTypeConstraint {
-                source: receiver_source,
-                pattern: declared.clone(),
-                actual: actual.clone(),
-                acceptance: ConstraintAcceptance::PatternAcceptsActual,
+                pattern: preparation.declaration_type(declared)?,
+                actual,
             });
         }
         (
@@ -5671,16 +5721,12 @@ pub(crate) fn validate_and_prepare_call_constraints(
                 .schema()
                 .value_type()
                 .filter(|_| callee_inputs.validates_candidate(&candidate))
-                .ok_or(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(
-                        CallConstraintInvariant::MalformedSchemaInventory,
-                    ),
+                .ok_or(CallConstraintPreparationFailure::Invariant(
+                    CallConstraintInvariant::MalformedSchemaInventory,
                 ))?;
             receiver_constraints.push(PreparedCallTypeConstraint {
-                source: AnalyzerCallConstraintSource::BaseInstantiation,
-                pattern: pattern.clone(),
-                actual: actual.clone(),
-                acceptance: ConstraintAcceptance::PatternAcceptsActual,
+                pattern: preparation.declaration_type(pattern)?,
+                actual: Arc::new(preparation.source_type(result_source, actual)?),
             });
         }
         (
@@ -5688,10 +5734,8 @@ pub(crate) fn validate_and_prepare_call_constraints(
             CallableInstantiation::TypeReceiver { receiver },
         ) => {
             receiver_constraints.push(PreparedCallTypeConstraint {
-                source: AnalyzerCallConstraintSource::BaseInstantiation,
-                pattern: receiver.receiver().clone(),
-                actual: actual.clone(),
-                acceptance: ConstraintAcceptance::PatternAcceptsActual,
+                pattern: preparation.declaration_type(receiver.receiver())?,
+                actual: Arc::new(preparation.source_type(result_source, actual)?),
             });
         }
         (
@@ -5700,19 +5744,13 @@ pub(crate) fn validate_and_prepare_call_constraints(
         ) => {
             let constraint = candidate
                 .prepare_function_value_constraint(group, actual, terminal_effects)
-                .map_err(|error| {
-                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-                })?
+                .map_err(CallConstraintPreparationFailure::Invariant)?
                 .into_ready()
-                .map_err(|error| {
-                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-                })?;
-            if let Some((pattern, actual)) = constraint {
+                .map_err(CallConstraintPreparationFailure::Invariant)?;
+            if let Some(pattern) = constraint {
                 base_constraints.push(PreparedCallTypeConstraint {
-                    source: AnalyzerCallConstraintSource::BaseInstantiation,
-                    pattern,
-                    actual,
-                    acceptance: ConstraintAcceptance::PatternAcceptsActual,
+                    pattern: preparation.declaration_type(&pattern)?,
+                    actual: Arc::new(preparation.source_type(result_source, actual)?),
                 });
             }
         }
@@ -5729,17 +5767,13 @@ pub(crate) fn validate_and_prepare_call_constraints(
             CallableInstantiation::None,
         ) => {}
         (PreparedCallCalleeConstraintInputs::NonCallable, _) => {
-            return Err(CallAnalysisFailure::Invariant(
-                CallAnalysisInvariant::Constraint(
-                    CallConstraintInvariant::MalformedSchemaInventory,
-                ),
+            return Err(CallConstraintPreparationFailure::Invariant(
+                CallConstraintInvariant::MalformedSchemaInventory,
             ));
         }
         _ => {
-            return Err(CallAnalysisFailure::Invariant(
-                CallAnalysisInvariant::Constraint(
-                    CallConstraintInvariant::MalformedSchemaInventory,
-                ),
+            return Err(CallConstraintPreparationFailure::Invariant(
+                CallConstraintInvariant::MalformedSchemaInventory,
             ));
         }
     }
@@ -5793,60 +5827,50 @@ fn lower_source_projection(
 
 fn typed_source_constraint(
     source: AnalyzerCallConstraintSource,
-    expected: &TypeKind,
-) -> CallAnalysisResult<PreparedSourceConstraint<AnalyzerCallConstraintDomain>> {
+    expected: PreparedSourceAlternative<AnalyzerCallConstraintDomain>,
+) -> Result<PreparedSourceConstraint<AnalyzerCallConstraintDomain>, CallConstraintPreparationFailure>
+{
     PreparedSourceConstraint::checked(
         source,
         PreparedConstraintSourceProjection::Scalar,
         [],
-        PreparedSourceAlternative::new(0, AnalyzerCallEvidenceRule::otherwise(), expected.clone()),
+        expected,
     )
-    .map_err(|error| {
-        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-            CallConstraintInvariant::Lower(match error {
-                crate::types::constraints::TypeConstraintError::Invariant(error) => error,
-                crate::types::constraints::TypeConstraintError::Rejected(_) => {
-                    TypeConstraintInvariant::SourceProtocol(
-                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
-                    )
-                }
-                crate::types::constraints::TypeConstraintError::Abort(_) => {
-                    TypeConstraintInvariant::SourceProtocol(
-                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
-                    )
-                }
-            }),
-        ))
-    })
+    .map_err(source_constraint_preparation_failure)
+}
+
+fn source_constraint_preparation_failure(
+    error: crate::types::constraints::TypeConstraintError,
+) -> CallConstraintPreparationFailure {
+    use crate::types::constraints::TypeConstraintError;
+    CallConstraintPreparationFailure::Invariant(CallConstraintInvariant::Lower(match error {
+        TypeConstraintError::Invariant(error) => error,
+        TypeConstraintError::Rejected(_) | TypeConstraintError::Abort(_) => {
+            TypeConstraintInvariant::SourceProtocol(
+                crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+            )
+        }
+    }))
 }
 
 fn compile_time_scalar_source_constraint(
     source: AnalyzerCallConstraintSource,
     admission: Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
-) -> CallAnalysisResult<PreparedSourceConstraint<AnalyzerCallConstraintDomain>> {
+    preparation: &mut CallOperandPreparation<'_, '_>,
+) -> Result<PreparedSourceConstraint<AnalyzerCallConstraintDomain>, CallConstraintPreparationFailure>
+{
+    let expected = preparation.declaration_type(admission.value_type())?;
     PreparedSourceConstraint::checked(
         source,
         PreparedConstraintSourceProjection::Scalar,
         [],
         PreparedSourceAlternative::new(
             0,
-            AnalyzerCallEvidenceRule::compile_time_scalar(Arc::clone(&admission)),
-            admission.value_type().clone(),
+            AnalyzerCallEvidenceRule::compile_time_scalar(admission),
+            expected,
         ),
     )
-    .map_err(|error| {
-        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-            CallConstraintInvariant::Lower(match error {
-                crate::types::constraints::TypeConstraintError::Invariant(error) => error,
-                crate::types::constraints::TypeConstraintError::Rejected(_)
-                | crate::types::constraints::TypeConstraintError::Abort(_) => {
-                    TypeConstraintInvariant::SourceProtocol(
-                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
-                    )
-                }
-            }),
-        ))
-    })
+    .map_err(source_constraint_preparation_failure)
 }
 
 fn prepare_compile_time_scalar_type_admission(
@@ -5919,13 +5943,15 @@ fn prepare_compile_time_scalar_type_admission(
 /// particular, a typed rest slot keeps its prepared container policy; the
 /// callback only supplies an actual container and lower derives the final
 /// constructor and composed expected type.
-pub(crate) fn prepare_source_constraint(
+fn prepare_source_constraint(
     candidate: &PreparedResolvedCallable,
     source: AnalyzerCallConstraintSource,
     slot: &crate::callable::MappedCallArgumentSlot,
     scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
     view_fx_runtime_parameters: Option<&BTreeMap<CallableParameterCoordinate, TypeKind>>,
-) -> Result<PreparedSourceConstraint<AnalyzerCallConstraintDomain>, CallAnalysisFailure> {
+    preparation: &mut CallOperandPreparation<'_, '_>,
+) -> Result<PreparedSourceConstraint<AnalyzerCallConstraintDomain>, CallConstraintPreparationFailure>
+{
     let projection = lower_source_projection(slot.source_projection());
     let Some(coordinate) = slot.coordinate() else {
         return Ok(PreparedSourceConstraint::unchecked(source, projection));
@@ -5937,6 +5963,7 @@ pub(crate) fn prepare_source_constraint(
         projection,
         scalar_types,
         view_fx_runtime_parameters,
+        preparation,
     )
 }
 
@@ -5947,14 +5974,16 @@ fn prepare_parameter_source_constraint(
     projection: PreparedConstraintSourceProjection,
     scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
     view_fx_runtime_parameters: Option<&BTreeMap<CallableParameterCoordinate, TypeKind>>,
-) -> Result<PreparedSourceConstraint<AnalyzerCallConstraintDomain>, CallAnalysisFailure> {
+    preparation: &mut CallOperandPreparation<'_, '_>,
+) -> Result<PreparedSourceConstraint<AnalyzerCallConstraintDomain>, CallConstraintPreparationFailure>
+{
     let Some(parameter) = candidate
         .schema()
         .group(coordinate.group())
         .and_then(|group| group.parameter(coordinate.parameter()))
     else {
-        return Err(CallAnalysisFailure::Invariant(
-            CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedSchemaInventory),
+        return Err(CallConstraintPreparationFailure::Invariant(
+            CallConstraintInvariant::MalformedSchemaInventory,
         ));
     };
     if parameter.admission().is_semantic()
@@ -5963,30 +5992,21 @@ fn prepare_parameter_source_constraint(
             crate::callable::CallableParameterConsumer::Content(_)
         )
     {
-        return Err(CallAnalysisFailure::Invariant(
-            CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+        return Err(CallConstraintPreparationFailure::Invariant(
+            CallConstraintInvariant::MalformedMapperSeal,
         ));
     }
     let runtime_override = view_fx_runtime_parameters.and_then(|rows| rows.get(&coordinate));
-    let declared = if let Some(runtime) = runtime_override {
-        runtime.clone()
-    } else {
-        let Some(declared) = candidate
-            .constraint_parameter_type(coordinate)
-            .map_err(|error| {
-                CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-            })?
-        else {
-            return Ok(PreparedSourceConstraint::unchecked(source, projection));
-        };
-        declared
+    let Some(declared) = runtime_override.or_else(|| candidate.schema().parameter_type(coordinate))
+    else {
+        return Ok(PreparedSourceConstraint::unchecked(source, projection));
     };
     let rule = parameter.value_rule().ok_or_else(|| {
-        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+        CallConstraintPreparationFailure::Invariant(
             CallConstraintInvariant::MalformedSchemaInventory,
-        ))
+        )
     })?;
-    let compile_time_only_scalar = match &declared {
+    let compile_time_only_scalar = match declared {
         TypeKind::CompileTimeScalar(value) => !matches!(
             value.kind(),
             crate::types::CompileTimeScalarKind::Color
@@ -5997,56 +6017,47 @@ fn prepare_parameter_source_constraint(
     if runtime_override.is_none() && compile_time_only_scalar {
         if !projection.is_scalar() || rule != &crate::callable::CallableParameterValueRule::supply()
         {
-            return Err(CallAnalysisFailure::Invariant(
-                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            return Err(CallConstraintPreparationFailure::Invariant(
+                CallConstraintInvariant::MalformedMapperSeal,
             ));
         }
-        let admission = prepare_compile_time_scalar_type_admission(&declared, scalar_types).ok_or(
-            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+        let admission = prepare_compile_time_scalar_type_admission(declared, scalar_types).ok_or(
+            CallConstraintPreparationFailure::Invariant(
                 CallConstraintInvariant::MalformedSchemaInventory,
-            )),
+            ),
         )?;
-        return compile_time_scalar_source_constraint(source, Arc::new(admission));
+        return compile_time_scalar_source_constraint(source, Arc::new(admission), preparation);
     }
+    let otherwise_index = u32::try_from(rule.guarded().len()).map_err(|_| {
+        CallConstraintPreparationFailure::Invariant(
+            CallConstraintInvariant::MalformedSchemaInventory,
+        )
+    })?;
     let guarded = rule
         .guarded()
         .iter()
-        .enumerate()
-        .map(|(ordinal, guarded)| {
-            PreparedSourceAlternative::new(
-                u32::try_from(ordinal).unwrap_or(u32::MAX),
+        .zip(0..otherwise_index)
+        .map(|(guarded, ordinal)| {
+            let expected = preparation.expected_type(declared, guarded.expected())?;
+            Ok(PreparedSourceAlternative::new(
+                ordinal,
                 AnalyzerCallEvidenceRule::guarded(guarded.guard().clone(), declared.clone()),
-                guarded.expected().apply_to(&declared),
-            )
+                expected,
+            ))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CallConstraintPreparationFailure>>()?;
     let otherwise = rule.otherwise();
     let otherwise_evidence = rule.public_id_reference().map_or_else(
         AnalyzerCallEvidenceRule::otherwise,
         AnalyzerCallEvidenceRule::public_id_reference,
     );
     let otherwise = PreparedSourceAlternative::new(
-        u32::try_from(rule.guarded().len()).unwrap_or(u32::MAX),
+        otherwise_index,
         otherwise_evidence,
-        otherwise.expected().apply_to(&declared),
+        preparation.expected_type(declared, otherwise.expected())?,
     );
-    PreparedSourceConstraint::checked(source, projection, guarded, otherwise).map_err(|error| {
-        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-            CallConstraintInvariant::Lower(match error {
-                crate::types::constraints::TypeConstraintError::Invariant(error) => error,
-                crate::types::constraints::TypeConstraintError::Rejected(_) => {
-                    TypeConstraintInvariant::SourceProtocol(
-                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
-                    )
-                }
-                crate::types::constraints::TypeConstraintError::Abort(_) => {
-                    TypeConstraintInvariant::SourceProtocol(
-                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
-                    )
-                }
-            }),
-        ))
-    })
+    PreparedSourceConstraint::checked(source, projection, guarded, otherwise)
+        .map_err(source_constraint_preparation_failure)
 }
 
 /// Execute one complete lower candidate transaction through the affine
@@ -6122,24 +6133,16 @@ pub(crate) fn run_prepared_candidate(
             initialization,
             AnalyzerCallConstraintClient::new(operations),
             |mut driver| {
-                for constraint in &type_application_constraints {
-                    if constraint.pattern != constraint.actual {
-                        driver.constrain(
-                            &constraint.pattern,
-                            &constraint.actual,
-                            constraint.acceptance,
-                        );
-                    }
-                }
-                for constraint in base_constraints.iter().chain(receiver_constraints.iter()) {
-                    let _ = constraint.source;
-                    if constraint.pattern != constraint.actual {
-                        driver.constrain(
-                            &constraint.pattern,
-                            &constraint.actual,
-                            constraint.acceptance,
-                        );
-                    }
+                for constraint in type_application_constraints
+                    .iter()
+                    .chain(base_constraints.iter())
+                    .chain(receiver_constraints.iter())
+                {
+                    driver.constrain(
+                        &constraint.pattern,
+                        &constraint.actual,
+                        ConstraintAcceptance::PatternAcceptsActual,
+                    );
                 }
                 output.constrain_context(&mut driver);
                 for prepared in receiver_sources {
@@ -6958,24 +6961,16 @@ pub(crate) fn run_prepared_child_candidate(
             &candidate,
             AnalyzerCallConstraintClient::new(operations),
             |mut driver| {
-                for constraint in &type_application_constraints {
-                    if constraint.pattern != constraint.actual {
-                        driver.constrain(
-                            &constraint.pattern,
-                            &constraint.actual,
-                            constraint.acceptance,
-                        );
-                    }
-                }
-                for constraint in base_constraints.iter().chain(receiver_constraints.iter()) {
-                    let _ = constraint.source;
-                    if constraint.pattern != constraint.actual {
-                        driver.constrain(
-                            &constraint.pattern,
-                            &constraint.actual,
-                            constraint.acceptance,
-                        );
-                    }
+                for constraint in type_application_constraints
+                    .iter()
+                    .chain(base_constraints.iter())
+                    .chain(receiver_constraints.iter())
+                {
+                    driver.constrain(
+                        &constraint.pattern,
+                        &constraint.actual,
+                        ConstraintAcceptance::PatternAcceptsActual,
+                    );
                 }
                 output.constrain_context(&mut driver);
                 for prepared in receiver_sources {

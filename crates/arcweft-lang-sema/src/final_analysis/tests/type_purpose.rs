@@ -65,6 +65,66 @@ fn explicit_call_type_arguments_keep_checked_types_without_runtime_value_rows() 
 }
 
 #[test]
+fn explicit_function_type_arguments_keep_the_callers_type_reference() {
+    let world = fixture(
+        r#"
+fn identity<T>(value: T) -> T { value }
+fn forward<T>(value: (T -> T effects {})) -> (T -> T effects {}) {
+    identity::<(T -> T effects {})>(value)
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&world).unwrap();
+    let project = world.project.analysis_view().unwrap();
+    let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+    let (owner, ty) = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let HirExprKind::Call(call) = expression.kind() else {
+                return None;
+            };
+            let [arcweft_lang_hir::expr::HirCallTypeArgument::Resolved { ty }] =
+                call.explicit_type_application().arguments()
+            else {
+                return None;
+            };
+            Some((owner, *ty))
+        })
+        .expect("the explicit function type argument");
+    let expected = analysis
+        .type_resolution_node(ty)
+        .unwrap()
+        .recovered()
+        .unwrap();
+    let TypeKind::Function {
+        params,
+        return_type,
+        effects,
+        ..
+    } = expected
+    else {
+        panic!("the caller's retained function type");
+    };
+    let [TypeKind::GenericParam(_)] = params.as_slice() else {
+        panic!("the caller's generic parameter");
+    };
+    assert_eq!(&params[0], return_type.as_ref());
+    assert!(
+        effects
+            .closed_value()
+            .is_some_and(|effects| effects.is_empty())
+    );
+    let application = analysis
+        .call(owner)
+        .unwrap()
+        .selected_application()
+        .unwrap();
+    assert_eq!(application.result().value_type(), Some(expected));
+    assert_eq!(analysis.ty(ty), None);
+}
+
+#[test]
 fn generic_constructor_arguments_retain_semantic_types_and_specific_nonvalue_roles() {
     for ty in [
         "Vec<i64>",

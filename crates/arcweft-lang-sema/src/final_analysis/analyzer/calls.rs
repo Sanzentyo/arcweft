@@ -20,9 +20,10 @@ pub(crate) use constraints::{
     AnalyzerPreparedDialoguePatchAdmission, AnalyzerPreparedExpressionResolution,
     AnalyzerPreparedUnselectedCall, AnalyzerPreparedUnselectedOutcome, CallAnalysisInvariant,
     PreparedCallApplicationTransaction, RanCandidateTransaction, SealedAcceptedCandidate,
-    run_prepared_candidate, validate_and_prepare_call_constraints,
+    run_prepared_candidate,
 };
 
+use constraints::validate_and_prepare_call_constraints;
 use semantics::select_prepared_candidates;
 pub(super) use semantics::{final_callable_effect_row, final_callable_effects};
 
@@ -5163,11 +5164,20 @@ impl Analyzer<'_, '_, '_> {
                         arcweft_lang_hir::expr::HirCallTypeArgument::Resolved { ty } => self
                             .type_reports
                             .get(ty)
-                            .map(|report| report.outcome().product().recovered().clone()),
+                            .map(|report| {
+                                self.retain_source_value_type(
+                                    context,
+                                    owner,
+                                    report.outcome().product().recovered(),
+                                )
+                                .map(Arc::new)
+                            })
+                            .transpose(),
                         arcweft_lang_hir::expr::HirCallTypeArgument::InvalidPresent { .. }
-                        | arcweft_lang_hir::expr::HirCallTypeArgument::Missing => None,
+                        | arcweft_lang_hir::expr::HirCallTypeArgument::Missing => Ok(None),
                     })
-                    .collect(),
+                    .collect::<Result<_, _>>()
+                    .map_err(AnalyzerExpressionError::fatal)?,
             ),
             None => crate::callable::PreparedCallTypeApplication::Absent,
         };
@@ -5253,8 +5263,9 @@ impl Analyzer<'_, '_, '_> {
             original,
             parent_source.as_deref(),
             site,
+            context.work(),
         )
-        .map_err(|failure| terminal_call_constraint_failure(owner, failure))?;
+        .map_err(|failure| failure.into_expression(owner))?;
         let output = constraint_set.prepare_output_projections(
             owner,
             application_result,

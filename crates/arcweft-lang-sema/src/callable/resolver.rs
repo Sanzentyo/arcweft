@@ -424,7 +424,7 @@ pub(crate) struct PreparedCallInputs {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedCallTypeApplication {
     Absent,
-    Present(Box<[Option<TypeKind>]>),
+    Present(Box<[Option<Arc<TypeKind<crate::types::PreparedEffects>>>]>),
 }
 
 impl PreparedCallInputs {

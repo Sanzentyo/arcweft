@@ -1487,10 +1487,17 @@ pub enum ParameterExpectedTypeProjection {
 
 impl ParameterExpectedTypeProjection {
     pub(crate) fn apply_to(&self, declared: &TypeKind) -> TypeKind {
+        self.apply_to_owned(declared.clone())
+    }
+
+    pub(crate) fn apply_to_owned<E: crate::types::TypeEffectDomain>(
+        &self,
+        declared: TypeKind<E>,
+    ) -> TypeKind<E> {
         match self {
-            Self::Identity => declared.clone(),
+            Self::Identity => declared,
             Self::ApplyUnary(CallableUnaryTypeConstructor::Option) => {
-                TypeKind::Option(Box::new(declared.clone()))
+                TypeKind::Option(Box::new(declared))
             }
         }
     }

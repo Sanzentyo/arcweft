@@ -119,7 +119,7 @@ pub(crate) struct PreparedDialogueApplicationMetadataArgument {
     argument: HirCallArgumentOrdinal,
     source: ExprId,
     coordinate: DialogueApplicationMetadataCoordinate,
-    actual: TypeKind,
+    actual: TypeKind<crate::types::PreparedEffects>,
     evidence: PreparedDialogueApplicationMetadataEvidence,
 }
 
@@ -403,28 +403,24 @@ impl PreparedDialogueApplicationMetadataArgument {
         argument: HirCallArgumentOrdinal,
         source: ExprId,
         coordinate: DialogueApplicationMetadataCoordinate,
-        actual: TypeKind,
         evidence: PreparedDialogueApplicationMetadataEvidence,
     ) -> Result<Self, super::CallConstraintInvariant> {
-        let expected = match (&coordinate, &evidence) {
+        let kind = match (&coordinate, &evidence) {
             (
                 DialogueApplicationMetadataCoordinate::Id,
                 PreparedDialogueApplicationMetadataEvidence::Id(_),
-            ) => TypeKind::entity_ref(crate::types::EntityKind::DialogueLine),
+            ) => crate::types::EntityKind::DialogueLine,
             (
                 DialogueApplicationMetadataCoordinate::TextKey,
                 PreparedDialogueApplicationMetadataEvidence::TextKey(_),
-            ) => TypeKind::entity_ref(crate::types::EntityKind::Text),
+            ) => crate::types::EntityKind::Text,
             _ => return Err(super::CallConstraintInvariant::MalformedMapperSeal),
         };
-        if actual != expected {
-            return Err(super::CallConstraintInvariant::MalformedMapperSeal);
-        }
         Ok(Self {
             argument,
             source,
             coordinate,
-            actual,
+            actual: TypeKind::Ref(crate::types::EntityType::new(kind, None)),
             evidence,
         })
     }
@@ -441,7 +437,7 @@ impl PreparedDialogueApplicationMetadataArgument {
         self.coordinate
     }
 
-    pub(crate) const fn actual(&self) -> &TypeKind {
+    pub(crate) const fn actual(&self) -> &TypeKind<crate::types::PreparedEffects> {
         &self.actual
     }
 

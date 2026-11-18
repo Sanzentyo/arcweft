@@ -15,7 +15,7 @@ use super::application::{
     ConstraintApplicationId, ConstraintApplicationInventory, ConstraintApplicationScope,
 };
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
-use super::hints::SourceProbeTerm;
+use super::hints::{PreparedSourceExpectation, SourceProbeTerm};
 use super::normalization::{
     ConstraintClosedEffects, project_closed_operand, project_closed_type, project_type,
 };
@@ -1877,14 +1877,18 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         };
         let mut hints = Vec::new();
         for alternative in operation.prepared.alternatives() {
-            let expected = context.open_template_type(
-                alternative.value_expected(),
-                &path,
+            let scope = Arc::new(context.capture_lexical_scope()?);
+            let expected = bind_source_expectation(
+                alternative.expectation(),
+                &self.original,
                 self.application,
+                &path,
+                scope,
                 graph,
+                context,
             )?;
             let projected = project_type(
-                &expected,
+                expected.value(),
                 path.projection_view(),
                 ConstraintClosurePolicy::Hint,
                 graph,
@@ -2042,13 +2046,19 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                                 )
                             }
                             Some((alternative, evidence, value_expected, source_projection)) => {
-                                let value_expected = context.open_template_type(
-                                    &value_expected,
-                                    &path,
+                                let value_expected = bind_source_expectation(
+                                    value_expected,
+                                    &self.original,
                                     self.application,
+                                    &path,
+                                    scope,
                                     graph,
+                                    context,
                                 )?;
-                                let pattern = source_projection.compose_expected(&value_expected);
+                                let pattern = source_projection.compose_operand(
+                                    &actual_operand.view(),
+                                    &value_expected.view(),
+                                )?;
                                 (
                                     Some(pattern),
                                     StoredSourceSelection::Checked {
@@ -2061,28 +2071,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             }
                         };
 
-                    let value_expected = value_expected
-                        .map(|value| {
-                            Ok::<_, TypeConstraintError>(ConstraintOperand::template(
-                                value,
-                                scope,
-                                path.applications
-                                    .require_application_owner(self.application)?,
-                            ))
-                        })
-                        .transpose()?;
-                    if pattern.is_some() {
-                        let expected = value_expected.as_ref().ok_or_else(|| {
-                            protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
-                        })?;
-                        let pattern = source_projection
-                            .compose_operand(&actual_operand.view(), &expected.view())?;
+                    if let Some(pattern) = &pattern {
                         path.equations.push(PendingEquation {
                             ordinal: input.equation_ordinal.ok_or_else(|| {
                                 protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
                             })?,
                             direction: input.acceptance,
-                            pattern,
+                            pattern: pattern.clone(),
                             actual: actual_operand.clone(),
                             source_ordinal: Some(operation.source_ordinal),
                             timing: ConstraintEquationTiming::Immediate,
@@ -2098,7 +2093,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             rejected_alternative,
                             source_projection.clone(),
                             input.acceptance,
-                            expected.clone(),
+                            expected.value().clone(),
                             actual.clone(),
                         )
                     });
@@ -2529,8 +2524,36 @@ pub(crate) use component::{
     PreparedValueUseAlternative, PreparedValueUseTicket,
 };
 
-fn validate_source_selection<D: ConstraintDomain>(
-    prepared: &PreparedSourceConstraint<D>,
+fn bind_source_expectation<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    expected: &PreparedSourceExpectation,
+    original: &super::OriginalProducerContext,
+    application: ConstraintApplicationId,
+    path: &ConstraintPath<D>,
+    scope: Arc<super::lexical::ConstraintLexicalScope>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<ConstraintOperand<D>, TypeConstraintError> {
+    match expected {
+        PreparedSourceExpectation::Declaration(ty) => {
+            let value = context.open_template_type(ty, path, application, graph)?;
+            Ok(ConstraintOperand::template(
+                value,
+                scope,
+                path.applications.require_application_owner(application)?,
+            ))
+        }
+        PreparedSourceExpectation::Original(ty) => ConstraintOperand::from_prepared_original_in(
+            ty,
+            scope,
+            original.clone(),
+            &mut operand::ConstraintEffectPhase::new(graph),
+            context,
+        ),
+    }
+}
+
+fn validate_source_selection<'a, D: ConstraintDomain>(
+    prepared: &'a PreparedSourceConstraint<D>,
     selected: D::AlternativeIndex,
     evidence: Arc<D::ObservedEvidence>,
     actual: &TypeKind<PreparedEffects>,
@@ -2538,7 +2561,7 @@ fn validate_source_selection<D: ConstraintDomain>(
     Option<(
         D::AlternativeIndex,
         Arc<D::ObservedEvidence>,
-        TypeKind<PreparedEffects>,
+        &'a PreparedSourceExpectation,
         CheckedConstraintSourceProjection<PreparedEffects>,
     )>,
     TypeConstraintError,
@@ -2593,7 +2616,7 @@ fn validate_source_selection<D: ConstraintDomain>(
     Ok(Some((
         selected,
         evidence,
-        selected_row.value_expected().clone(),
+        selected_row.expectation(),
         source_projection,
     )))
 }

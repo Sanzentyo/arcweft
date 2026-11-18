@@ -10,7 +10,7 @@ pub(super) struct AnalyzerObservedSourceValue {
 
 enum ObservedValue {
     Expression(crate::final_analysis::PreparedExpressionFact),
-    Prepared(AnalyzerPreparedSourceActual),
+    Prepared(Arc<AnalyzerPreparedSourceActual>),
     #[cfg(test)]
     Fixture(TypeKind<crate::types::PreparedEffects>),
 }
@@ -46,7 +46,7 @@ impl AnalyzerObservedSourceValue {
     pub(super) fn prepared(
         origin: AnalyzerObservedSourceOrigin,
         original: crate::types::constraints::OriginalProducerContext,
-        value: AnalyzerPreparedSourceActual,
+        value: Arc<AnalyzerPreparedSourceActual>,
     ) -> Option<Arc<Self>> {
         value.validates(origin.source().local()).then(|| {
             Arc::new(Self {

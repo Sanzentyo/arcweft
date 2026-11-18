@@ -1639,7 +1639,7 @@ impl Analyzer<'_, '_, '_> {
             let value = module.dialogue_coordinate_value(coordinate).map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
             })?;
-            let (metadata_coordinate, ty, evidence, resolution) = match (coordinate.kind(), value) {
+            let (metadata_coordinate, evidence, resolution) = match (coordinate.kind(), value) {
                 (
                     arcweft_lang_hir::dialogue_application::HirDialogueCoordinateKind::Id,
                     arcweft_lang_hir::dialogue_application::HirDialogueCoordinateValueRef::IdRef(
@@ -1655,7 +1655,6 @@ impl Analyzer<'_, '_, '_> {
                         })?;
                     (
                         crate::callable::DialogueApplicationMetadataCoordinate::Id,
-                        TypeKind::entity_ref(EntityKind::DialogueLine),
                         crate::callable::PreparedDialogueApplicationMetadataEvidence::Id(
                             id.clone(),
                         ),
@@ -1677,7 +1676,6 @@ impl Analyzer<'_, '_, '_> {
                         })?;
                     (
                         crate::callable::DialogueApplicationMetadataCoordinate::TextKey,
-                        TypeKind::entity_ref(EntityKind::Text),
                         crate::callable::PreparedDialogueApplicationMetadataEvidence::TextKey(
                             key.clone(),
                         ),
@@ -1690,23 +1688,20 @@ impl Analyzer<'_, '_, '_> {
                     ));
                 }
             };
-            prepared.push(
-                crate::callable::PreparedDialogueApplicationMetadataArgument::seal(
-                    coordinate.argument(),
-                    coordinate.value(),
-                    metadata_coordinate,
-                    ty.clone(),
-                    evidence,
-                )
-                .map_err(|_| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-                })?,
-            );
+            let metadata = crate::callable::PreparedDialogueApplicationMetadataArgument::seal(
+                coordinate.argument(),
+                coordinate.value(),
+                metadata_coordinate,
+                evidence,
+            )
+            .map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
+            })?;
             self.facts
                 .publish_new_expression(
                     coordinate.value(),
                     crate::final_analysis::prepared::PreparedResolvedExpression::value(
-                        ty,
+                        metadata.actual().clone(),
                         CheckedTypeSelection::Inferred,
                         EffectSet::new(),
                         resolution,
@@ -1715,6 +1710,7 @@ impl Analyzer<'_, '_, '_> {
                 .map_err(|_| {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
                 })?;
+            prepared.push(metadata);
         }
         crate::callable::PreparedDialogueApplicationMetadataInventory::seal(
             &projection,

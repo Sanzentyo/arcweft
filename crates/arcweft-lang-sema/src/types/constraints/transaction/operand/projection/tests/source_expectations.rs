@@ -6,6 +6,99 @@ use crate::types::constraints::{
 };
 
 #[test]
+fn a_fixed_source_expectation_keeps_the_callers_rigid_reference_in_the_equation() {
+    use crate::types::{
+        DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId,
+        constraints::{
+            OriginalRigidScope, PreparedSourceAlternative, PreparedSourceConstraint,
+            SourceProbeResult, TypeConstraintParameterScope,
+            transaction::{ProbeSubmission, TypeConstraintTransaction},
+        },
+    };
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let caller: GenericTypeReference = GenericTypeParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(91_087)),
+        0,
+    )
+    .into();
+    let original = context
+        .fixture_original_context_with_rigid(OriginalRigidScope {
+            types: std::slice::from_ref(&caller),
+            consts: &[],
+            effects: &[],
+            imported: None,
+        })
+        .unwrap();
+    let application = context
+        .application_scope(
+            (),
+            TypeConstraintParameterScope::empty(),
+            original.clone(),
+            &mut graph,
+        )
+        .unwrap();
+    let path = context
+        .start_path_with_imported(application, None, original.clone(), graph.read())
+        .unwrap();
+    let application = path.root_id();
+    let mut transaction =
+        TypeConstraintTransaction::from_path(&mut context, &mut graph, application, path, None)
+            .unwrap();
+    let actual = Arc::new(TypeKind::Vec(Box::new(TypeKind::GenericParam(caller))));
+    let source = PreparedSourceConstraint::checked(
+        (),
+        PreparedConstraintSourceProjection::Scalar,
+        [],
+        PreparedSourceAlternative::from_original((), (), Arc::clone(&actual)),
+    )
+    .unwrap();
+    transaction
+        .begin_prepared_probe(
+            &mut context,
+            source,
+            ConstraintAcceptance::PatternAcceptsActual,
+        )
+        .unwrap();
+    let mut ticket = transaction
+        .next_probe(&mut context, &mut graph)
+        .unwrap()
+        .unwrap();
+    let observation = ticket
+        .observe(SourceProbeResult::checked(
+            actual.as_ref().clone(),
+            (),
+            (),
+            (),
+        ))
+        .unwrap()
+        .close_preparation(());
+    transaction
+        .submit_probe(
+            &mut context,
+            &mut graph,
+            ticket.input(),
+            ProbeSubmission::Accepted(observation),
+        )
+        .unwrap();
+    assert!(
+        transaction
+            .next_probe(&mut context, &mut graph)
+            .unwrap()
+            .is_none()
+    );
+    let path = transaction.test_single_path();
+    let expected = path.lineage.probe_trace[0].value_expected.as_ref().unwrap();
+    assert!(
+        matches!(expected.origin.as_ref(), ConstraintOperandOrigin::Original(owner) if owner == &original)
+    );
+    assert_eq!(expected.value(), actual.as_ref());
+    assert!(path.bindings.is_empty());
+}
+
+#[test]
 fn source_expectations_keep_the_actual_header_and_selected_template_value_in_distinct_roles() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
