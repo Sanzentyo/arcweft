@@ -18861,3 +18861,14 @@ Matchの分岐とChoiceの入れ子パスを、準備済みの式が持つ情報
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。library **383エラー・25警告**、lib test **1,265エラー・37警告**。前回公開入力との一次診断比較は1,299件、増減0件。Semaのfmtと構造gateは終了0、blocking違反0件。変更回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,744,709 bytesで、約300 GBを目安とするcleanは未実行。Generic Matchは受入・公開済み。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-selected-call-publication-batch.raw.zip) は18 entry、147,489 bytes、SHA256 `8ffd18e368bea10850a3b074724baeb27dc59bcdeadc93a47efafa79444f6cc0`。各entryの長さとSHA256を再照合した。旧履歴2,929,394 bytesのSHA256 `90a6140a75e85212e99ee52fc6ce412a5787c8516236f7e9fe321a7b6c80cff0` をprefixとして保持した。
+
+<a id="retained-probe-declaration-types"></a>
+## 2026-11-18 — probeの元の宣言に属する式と束縛の型を一括確定する
+
+基点 `f96fa3b1fa5f3a4f9a5fb6d630b2ed7e7cf41d7c`。Source `73dd5e98667d8e0435db605fa0750a3966f40c89` を既存mainへcommitし、非force push後にリモートのfull SHAと9入力のblobを照合した。
+
+同じ期待型で確認した引数を認証した後、その元の作用関係で差分の局所束縛・パターン・通常の式の型を投影する。各型のHir ownerを元の宣言と照合し、補助factの型は宣言のtemplate scopeで検査する。対象の引数型は元の出現スコープを使う。全件の型更新が揃った時点で、元の差分を候補の一括適用へ渡す。専用payloadや特殊化を持つ式は、全slotが確定済みの型に一致する場合に再利用する。型の変更が必要な専用payloadや別の束縛フレームと、プロジェクトのnominal sealには移行が残る。スコープ外の参照を退ける検査と、式・局所束縛・パターン・作用を同じバッチでロールバックする回帰を拡張した。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。library **383エラー・25警告**、lib test **1,265エラー・37警告**。前回公開入力との一次診断比較は1,299件、増減0件。Semaのfmtと構造gateは終了0、blocking違反0件。変更回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,748,731 bytesで、約300 GBを目安とするcleanは未実行。Generic Matchは受入・公開済み。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-retained-probe-declaration-types.raw.zip) は18 entry、148,790 bytes、SHA256 `4116e7c564073f3d5b9b12f9f4efc24102be7beaf1cb124b17ccf87345f7dcb5`。各entryの長さとSHA256を再照合した。旧履歴2,931,594 bytesのSHA256 `0ab1785736a937c528ec8dae6343d9c7177b62f7c2e11598860e263489f782f5` をprefixとして保持した。
