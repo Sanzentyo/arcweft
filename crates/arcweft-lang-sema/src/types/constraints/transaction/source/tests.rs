@@ -205,13 +205,32 @@ mod retained_preparation {
             .unwrap()
             .unwrap();
         let canonical = arrow(PreparedEffectRow::Canonical(body));
-        assert_eq!(completed.into_replacement(), Some(canonical.clone()));
-        assert_eq!(actual.ty, arrow(row));
         assert_eq!(
+            completed
+                .project_declaration_type(&actual.ty, &mut context)
+                .unwrap()
+                .unwrap()
+                .into_replacement(),
+            Some(canonical.clone()),
+        );
+        let foreign_scope = GenericScope::default().with_binder(GenericBinder::new(1, 0, 0));
+        let foreign = TypeKind::GenericParam(foreign_scope.bound_type(0, 0).unwrap());
+        assert!(
+            completed
+                .project_declaration_type(&foreign, &mut context)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            completed.into_value().into_replacement(),
+            Some(canonical.clone())
+        );
+        assert_eq!(actual.ty, arrow(row));
+        assert!(
             request
                 .complete_retained_type(Some(&canonical), &mut context)
-                .unwrap(),
-            None
+                .unwrap()
+                .is_none()
         );
     }
 

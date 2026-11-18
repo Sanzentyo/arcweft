@@ -292,6 +292,16 @@ impl EnclosingConstraintSource {
 }
 
 impl EnclosingGenericParameterScope {
+    pub(crate) fn original_source_owner(
+        original: &crate::types::constraints::OriginalProducerContext,
+    ) -> Option<&super::CheckedConstraintSourceOwner> {
+        match &original.source_as::<EnclosingGenericScopeHeader>()?.source {
+            EnclosingConstraintSource::Checked(owner) => Some(owner),
+            #[cfg(test)]
+            EnclosingConstraintSource::Fixture => None,
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn sealed<T, C, E>(
         types: T,

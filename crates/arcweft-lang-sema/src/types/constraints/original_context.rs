@@ -107,6 +107,10 @@ impl OriginalProducerContext {
     pub(crate) fn belongs_to<S: OriginalProducerSource>(&self, source: &Arc<S>) -> bool {
         self.0.source.same_source(source.as_ref())
     }
+
+    pub(crate) fn source_as<S: OriginalProducerSource>(&self) -> Option<&S> {
+        self.0.source.as_any().downcast_ref()
+    }
     #[cfg(test)]
     pub(super) fn ground_fixture(gamma: ConstraintLexicalScope) -> Self {
         Self(Arc::new(OriginalProducer {

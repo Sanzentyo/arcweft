@@ -43,10 +43,10 @@ use crate::{
             ConstraintAcceptance, ConstraintDomain, ExpectedHint, MaterializationOutcome,
             MaterializedSourceRequest, PreparedConstraintSourceProjection,
             PreparedSourceAlternative, PreparedSourceConstraint, ProjectedExpectedHint,
-            RetainedSourceType, SourceError, SourcePhase, SourceProbeOutcome, SourceProbeResult,
-            TypeConstraintAbort, TypeConstraintError, TypeConstraintFailure,
-            TypeConstraintFailureInvariant, TypeConstraintInitializationFailure,
-            TypeConstraintInvariant, TypeConstraintProjectionClosure,
+            SourceError, SourcePhase, SourceProbeOutcome, SourceProbeResult, TypeConstraintAbort,
+            TypeConstraintError, TypeConstraintFailure, TypeConstraintFailureInvariant,
+            TypeConstraintInitializationFailure, TypeConstraintInvariant,
+            TypeConstraintProjectionClosure,
         },
     },
 };
@@ -69,6 +69,7 @@ use super::super::{
     state::{
         ActiveCallbackFactScope, ActiveProbeFactAttempt, CandidateSemanticProjection,
         CandidateSemanticReplayMismatch, MaterializationFactCheckpoint, ProbeFactCheckpoint,
+        RetainedProbeTypes,
     },
 };
 
@@ -596,7 +597,7 @@ pub(in crate::final_analysis::analyzer) enum AnalyzerCallSealedBranch {
     Materialized {
         projections: Vec<CandidateSemanticProjection>,
         nested_calls: Box<[super::PreparedSelectedNestedCall]>,
-        original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedSourceType>,
+        original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedProbeTypes>,
     },
 }
 
@@ -659,13 +660,13 @@ impl AnalyzerCallSealedBranch {
                 work.visit_binding()
                     .map_err(|error| work_failure(row.source, error))?;
                 let projection = facts
-                    .stage_original_expression(
+                    .stage_original_probe(
                         projections
                             .first_mut()
                             .expect("materialized callback projection"),
                         row.preparation,
                         owner,
-                        Some(completed),
+                        completed,
                     )
                     .map_err(|error| {
                         TypeConstraintFailure::client_invariant(
@@ -758,7 +759,7 @@ impl AnalyzerCallSealedBranch {
 #[derive(Debug)]
 pub(crate) struct AnalyzerCallPreparedSealedBranch {
     nested_calls: Vec<super::PreparedSelectedNestedCall>,
-    original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedSourceType>,
+    original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedProbeTypes>,
 }
 
 pub(crate) struct PreparedChildCandidateRun {
@@ -2987,13 +2988,17 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 if source_admission.is_none()
                     && let Some(owner) = source.expression_owner()
                     && unique_expressions.get(&owner) == Some(&true)
-                    && let Some(original) = request.preparation().isolated_resolved_value(owner)
+                    && let Some(original) = request.preparation().retained_resolved_value(owner)
                     && request
                         .retained_value()
                         .and_then(AnalyzerObservedSourceValue::expression_fact)
                         == Some(original)
                     && let Some(completed) = request
                         .complete_retained_type(expected.as_ref(), work)
+                        .map_err(|error| materialized_source_failure(source, error))?
+                    && let Some(completed) = request
+                        .preparation()
+                        .prepare_retained_types(owner, completed, work)
                         .map_err(|error| materialized_source_failure(source, error))?
                 {
                     work.visit_binding()
@@ -8094,7 +8099,7 @@ mod tests {
                     let facts = &mut client.analyzer.facts;
                     let original_type = std::ptr::from_ref(
                         preparation
-                            .isolated_resolved_value(owner)
+                            .retained_resolved_value(owner)
                             .unwrap()
                             .value_type()
                             .unwrap(),
@@ -8105,7 +8110,12 @@ mod tests {
                         .unwrap();
                     assert!(
                         facts
-                            .stage_original_expression(&mut target, preparation, owner, None)
+                            .stage_original_probe(
+                                &mut target,
+                                preparation,
+                                owner,
+                                RetainedProbeTypes::unchanged_for_test()
+                            )
                             .unwrap()
                             .is_none()
                     );

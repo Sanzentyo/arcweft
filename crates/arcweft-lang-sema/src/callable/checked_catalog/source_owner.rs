@@ -142,8 +142,12 @@ impl CheckedConstraintSourceOwner {
     }
 
     pub(crate) fn admits(&self, expression: ExprId) -> bool {
+        self.admits_owner(HirSemanticPathOwnerId::Expression(expression))
+    }
+
+    pub(crate) fn admits_owner(&self, owner: HirSemanticPathOwnerId) -> bool {
         self.topology
-            .semantic_path(HirSemanticPathOwnerId::Expression(expression))
+            .semantic_path(owner)
             .is_ok_and(|location| location.is_some_and(|location| location.root() == &self.root))
     }
 }

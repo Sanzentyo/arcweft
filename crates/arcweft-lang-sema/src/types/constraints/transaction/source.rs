@@ -410,6 +410,10 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
 }
 
 impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
+    pub(in crate::types::constraints) fn original_context(&self) -> &OriginalProducerContext {
+        &self.original
+    }
+
     pub(crate) fn retained_value(&self) -> Option<&D::SourceValue> {
         self.retained_value.as_deref()
     }
@@ -480,20 +484,56 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
         if retained.value_type() == &prepared {
             return Ok(Some(RetainedSourceType(None)));
         }
-        let observed = match self
-            .completion
-            .canonicalize(retained.value_type(), scope, control)
-        {
-            Ok(observed) => observed,
+        let observed = self.canonicalize_retained_type(retained.value_type(), scope, control)?;
+        Ok((observed.as_ref() == Some(actual.as_ref()))
+            .then_some(RetainedSourceType(Some(prepared))))
+    }
+
+    pub(in crate::types::constraints) fn project_retained_declaration_type<
+        C: TypeProjectionControl<Error = TypeConstraintError>,
+    >(
+        &self,
+        ty: &TypeKind<PreparedEffects>,
+        control: &mut C,
+    ) -> Result<Option<RetainedSourceType>, TypeConstraintError> {
+        let scope = self.original.declaration_formals().template_scope();
+        let Some(value) = self.canonicalize_retained_type(ty, scope, control)? else {
+            return Ok(None);
+        };
+        use crate::types::{GenericScopeError, TypeInstantiationError, TypeProjectionError};
+        // The exact original principal can resolve effect terms. A fact with
+        // an open type/const slot still needs the ordinary source check.
+        match value.semantic_identity_digest_in_scope_with_control(scope, control) {
+            Ok(_) => {}
+            Err(TypeProjectionError::Instantiation(TypeInstantiationError::Scope(
+                GenericScopeError::EscapedInference { .. }
+                | GenericScopeError::UnknownDepth { .. }
+                | GenericScopeError::UnknownSlot { .. },
+            ))) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        }
+        let prepared = value.prepare_effects(scope, control)?;
+        Ok(Some(RetainedSourceType(
+            (ty != &prepared).then_some(prepared),
+        )))
+    }
+
+    fn canonicalize_retained_type<C: TypeProjectionControl<Error = TypeConstraintError>>(
+        &self,
+        ty: &TypeKind<PreparedEffects>,
+        scope: &crate::types::GenericScope,
+        control: &mut C,
+    ) -> Result<Option<TypeKind>, TypeConstraintError> {
+        match self.completion.canonicalize(ty, scope, control) {
+            Ok(observed) => Ok(Some(observed)),
             // A source that needs more than an effect projection is checked
             // under the completed expectation by the ordinary callback.
             Err(TypeConstraintError::Invariant(TypeConstraintInvariant::PreparedEffect(
                 PreparedEffectFailure::ObservationNotTotal
                 | PreparedEffectFailure::NonPointwiseObservation,
-            ))) => return Ok(None),
-            Err(error) => return Err(error),
-        };
-        Ok((actual.as_ref() == &observed).then_some(RetainedSourceType(Some(prepared))))
+            ))) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     /// Rechecks carry their exact source and original Γ. Resolve any retained

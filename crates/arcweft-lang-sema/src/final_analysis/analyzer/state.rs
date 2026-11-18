@@ -2,9 +2,11 @@
 
 use std::sync::Arc;
 
+use arcweft_lang_hir::project::HirSemanticPathOwnerId;
+
 use super::calls::{
-    AnalyzerPreparedCallGraph, AnalyzerPreparedCallPrefix, AnalyzerPreparedUnselectedCall,
-    CompletedPhysicalCallSource,
+    AnalyzerCallConstraintDomain, AnalyzerPreparedCallGraph, AnalyzerPreparedCallPrefix,
+    AnalyzerPreparedUnselectedCall, CompletedPhysicalCallSource,
 };
 use super::expression_error::PhysicalCallAttemptId;
 use super::{
@@ -12,8 +14,9 @@ use super::{
     ExprId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation, TypeKind,
 };
 use crate::callable::{
-    CheckedCallSite, PreparedCallContinuationRef, PreparedCallGraph, PreparedCallGraphCheckpoint,
-    PreparedCallGraphDelta, PreparedCallGraphReplayMismatch, PreparedCallGraphSiteState,
+    CheckedCallSite, EnclosingGenericParameterScope, PreparedCallContinuationRef,
+    PreparedCallGraph, PreparedCallGraphCheckpoint, PreparedCallGraphDelta,
+    PreparedCallGraphReplayMismatch, PreparedCallGraphSiteState,
 };
 use crate::{
     checked_rich_text::{PreparedCheckedContentCatalog, PreparedCheckedRichTextCheck},
@@ -21,6 +24,10 @@ use crate::{
     final_analysis::{
         PreparedContentApplication, PreparedDialogueApplication, PreparedExpressionFact,
         accounting::PhysicalSourceType,
+    },
+    types::{
+        PreparedEffects, TypeProjectionControl, TypeProjectionNodeKind,
+        constraints::{RetainedSourceCompletion, TypeConstraintError},
     },
 };
 
@@ -418,6 +425,16 @@ pub(super) struct CandidateSemanticProjection {
     data: Box<CandidateSemanticProjectionData>,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct RetainedProbeTypes(BTreeMap<HirSemanticPathOwnerId, TypeKind<PreparedEffects>>);
+
+#[cfg(test)]
+impl RetainedProbeTypes {
+    pub(super) fn unchanged_for_test() -> Self {
+        Self(BTreeMap::new())
+    }
+}
+
 impl CandidateSemanticProjection {
     pub(super) fn probe_effect_reads(
         &self,
@@ -453,17 +470,14 @@ impl CandidateSemanticProjection {
         self.data.facts.expressions.get(&owner).map(Option::as_ref)
     }
 
-    pub(super) fn isolated_resolved_value(&self, owner: ExprId) -> Option<&PreparedExpressionFact> {
+    pub(super) fn retained_resolved_value(&self, owner: ExprId) -> Option<&PreparedExpressionFact> {
         let facts = &self.data.facts;
         let Some(Some(fact @ PreparedExpressionFact::Resolved(resolved))) =
             self.expression_update(owner)
         else {
             return None;
         };
-        (facts.expressions.len() == 1
-            && facts.locals.is_empty()
-            && facts.patterns.is_empty()
-            && facts.checked_content.is_empty()
+        (facts.checked_content.is_empty()
             && facts.iterations.is_empty()
             && facts.implicit_capture_uses.is_empty()
             && facts.implicit_capture_journal_order.is_empty()
@@ -477,25 +491,96 @@ impl CandidateSemanticProjection {
         .then_some(fact)
     }
 
-    fn complete_isolated_expression(
-        &mut self,
+    pub(super) fn prepare_retained_types<C: TypeProjectionControl<Error = TypeConstraintError>>(
+        &self,
         owner: ExprId,
-        completed: Option<crate::types::constraints::RetainedSourceType>,
-    ) -> Result<(), CandidateFactTransactionViolation> {
-        if self.isolated_resolved_value(owner).is_none() {
-            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
-        }
-        let Some(Some(PreparedExpressionFact::Resolved(expression))) =
-            self.data.facts.expressions.get_mut(&owner)
+        completion: RetainedSourceCompletion<'_, AnalyzerCallConstraintDomain>,
+        control: &mut C,
+    ) -> Result<Option<RetainedProbeTypes>, TypeConstraintError> {
+        let Some(source) =
+            EnclosingGenericParameterScope::original_source_owner(completion.original())
         else {
-            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+            return Ok(None);
         };
-        if let Some(ty) = completed.and_then(|result| result.into_replacement())
-            && !expression.replace_plain_value_type(ty)
+        let mut updates = BTreeMap::new();
+        let facts = &self.data.facts;
+        for (fact_owner, ty) in facts
+            .locals
+            .iter()
+            .map(|(&key, ty)| (HirSemanticPathOwnerId::Local(key), ty.as_ref()))
+            .chain(
+                facts
+                    .patterns
+                    .iter()
+                    .map(|(&key, ty)| (HirSemanticPathOwnerId::Pattern(key), ty.as_ref())),
+            )
         {
-            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+            control.visit_node(TypeProjectionNodeKind::Type, 1)?;
+            if !source.admits_owner(fact_owner) {
+                return Ok(None);
+            }
+            if let Some(ty) = ty {
+                let Some(projected) = completion.project_declaration_type(ty, control)? else {
+                    return Ok(None);
+                };
+                if let Some(replacement) = projected.into_replacement() {
+                    control.visit_binding()?;
+                    updates.insert(fact_owner, replacement);
+                }
+            }
         }
-        Ok(())
+        for (&expression, fact) in &facts.expressions {
+            control.visit_node(TypeProjectionNodeKind::Type, 1)?;
+            let fact_owner = HirSemanticPathOwnerId::Expression(expression);
+            if !source.admits_owner(fact_owner) {
+                return Ok(None);
+            }
+            let Some(fact) = fact else {
+                continue;
+            };
+            if expression == owner {
+                continue;
+            }
+            if fact.checked_call_site(expression).is_some() {
+                return Ok(None);
+            }
+            match fact {
+                PreparedExpressionFact::Resolved(resolved)
+                    if resolved.result().is_plain_value() =>
+                {
+                    let Some(projected) = completion.project_declaration_type(
+                        resolved.value_type().expect("plain value type"),
+                        control,
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    if let Some(replacement) = projected.into_replacement() {
+                        control.visit_binding()?;
+                        updates.insert(fact_owner, replacement);
+                    }
+                }
+                // These carriers already own additional typed metadata. Keep
+                // them when each slot agrees with its declaration projection.
+                fact => {
+                    let mut agrees = true;
+                    fact.visit_types(&mut |ty| {
+                        agrees &= completion
+                            .project_declaration_type(ty, control)?
+                            .is_some_and(|ty| ty.into_replacement().is_none());
+                        Ok::<_, TypeConstraintError>(())
+                    })?;
+                    if !agrees {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+        if let Some(replacement) = completion.into_value().into_replacement() {
+            control.visit_binding()?;
+            updates.insert(owner.into(), replacement);
+        }
+        Ok(Some(RetainedProbeTypes(updates)))
     }
 
     pub(super) fn effect_view<'a>(
@@ -2279,38 +2364,72 @@ impl SemanticFactState {
 
     /// Retain actual graph writes as a separate projection in the same
     /// publication. A fact-only transfer needs no detached graph read permit.
-    pub(super) fn stage_original_expression(
+    pub(super) fn stage_original_probe(
         &self,
         materialized: &mut CandidateSemanticProjection,
         mut original: CandidateSemanticProjection,
         owner: ExprId,
-        completed: Option<crate::types::constraints::RetainedSourceType>,
+        completed: RetainedProbeTypes,
     ) -> Result<Option<CandidateSemanticProjection>, CandidateFactTransactionViolation> {
         self.require_candidate_projection_owner(materialized)?;
         self.require_candidate_projection_owner(&original)?;
         self.prepared_calls()?
             .validate_delta(&original.data.graph_delta)
             .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))?;
-        original.complete_isolated_expression(owner, completed)?;
+        if original.retained_resolved_value(owner).is_none() {
+            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+        }
+        let source = &mut original.data.facts;
+        for (owner, ty) in completed.0 {
+            match owner {
+                HirSemanticPathOwnerId::Local(owner) => {
+                    let Some(Some(value)) = source.locals.get_mut(&owner) else {
+                        return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+                    };
+                    *value = ty;
+                }
+                HirSemanticPathOwnerId::Pattern(owner) => {
+                    let Some(Some(value)) = source.patterns.get_mut(&owner) else {
+                        return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+                    };
+                    *value = ty;
+                }
+                HirSemanticPathOwnerId::Expression(owner) => {
+                    let Some(Some(PreparedExpressionFact::Resolved(value))) =
+                        source.expressions.get_mut(&owner)
+                    else {
+                        return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+                    };
+                    if !value.replace_plain_value_type(ty) {
+                        return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+                    }
+                }
+                _ => return Err(CandidateFactTransactionViolation::ProjectionUnavailable),
+            }
+        }
         if original.data.graph_delta.has_writes() {
             return Ok(Some(original));
         }
-        match materialized.data.facts.expressions.entry(owner) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(
-                    original
-                        .data
-                        .facts
-                        .expressions
-                        .remove(&owner)
-                        .expect("completed original expression"),
-                );
-                Ok(None)
-            }
-            std::collections::btree_map::Entry::Occupied(_) => {
-                Err(CandidateFactTransactionViolation::ProjectionWriteConflict)
-            }
+        let target = &mut materialized.data.facts;
+        if source
+            .locals
+            .keys()
+            .any(|owner| target.locals.contains_key(owner))
+            || source
+                .patterns
+                .keys()
+                .any(|owner| target.patterns.contains_key(owner))
+            || source
+                .expressions
+                .keys()
+                .any(|owner| target.expressions.contains_key(owner))
+        {
+            return Err(CandidateFactTransactionViolation::ProjectionWriteConflict);
         }
+        target.locals.append(&mut source.locals);
+        target.patterns.append(&mut source.patterns);
+        target.expressions.append(&mut source.expressions);
+        Ok(None)
     }
 
     /// A materialization callback borrows the original probe's facts before
@@ -3368,8 +3487,10 @@ mod tests {
             prepared::{PreparedEffectInvariant, PreparedEffectRow},
         };
 
-        let fixture =
-            crate::final_analysis::tests::fixture("fn caller(value: i64) { value; }\n", None);
+        let fixture = crate::final_analysis::tests::fixture(
+            "fn caller(value: i64, other: i64) { value; }\n",
+            None,
+        );
         let module = fixture
             .project
             .analysis_view()
@@ -3377,7 +3498,10 @@ mod tests {
             .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
             .unwrap();
         let parent_expression = module.expressions().next().unwrap().0;
-        let child_local = module.locals().next().unwrap().0;
+        let mut locals = module.locals().map(|(owner, _)| owner);
+        let parent_local = locals.next().unwrap();
+        let child_local = locals.next().unwrap();
+        let parent_pattern = module.patterns().next().unwrap().0;
         let mut state = SemanticFactState::new();
         let mut work = work();
         let declarations =
@@ -3402,6 +3526,10 @@ mod tests {
                     super::super::super::CheckedExpressionResolution::Structural,
                 ),
             )
+            .unwrap();
+        state.set_local_type(parent_local, TypeKind::I64).unwrap();
+        state
+            .set_pattern_type(parent_pattern, TypeKind::I64)
             .unwrap();
         let child_checkpoint = state.begin_candidate_transaction(&mut work).unwrap();
         state
@@ -3460,7 +3588,12 @@ mod tests {
         );
 
         let retained = state
-            .stage_original_expression(&mut child, parent, parent_expression, None)
+            .stage_original_probe(
+                &mut child,
+                parent,
+                parent_expression,
+                RetainedProbeTypes(BTreeMap::new()),
+            )
             .unwrap()
             .expect("the effect writes keep their original projection");
         assert!(child.expression_update(parent_expression).is_none());
@@ -3472,10 +3605,13 @@ mod tests {
             Some(&TypeKind::I64)
         );
         assert_eq!(state.locals().get(&child_local), Some(&TypeKind::Unit));
+        assert_eq!(state.locals().get(&parent_local), Some(&TypeKind::I64));
+        assert_eq!(state.patterns().get(&parent_pattern), Some(&TypeKind::I64));
         row_status(&state).unwrap();
         state.rollback_candidate_transaction(target).unwrap();
         assert!(state.locals().is_empty());
         assert!(state.expressions().is_empty());
+        assert!(state.patterns().is_empty());
         assert_eq!(
             row_status(&state),
             Err(PreparedEffectInvariant::StaleReference)

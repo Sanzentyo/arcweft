@@ -823,6 +823,33 @@ impl RetainedSourceType {
     }
 }
 
+/// The selected source retained under its completed expectation. Other types
+/// from the same declaration can query this exact original calculation.
+pub(crate) struct RetainedSourceCompletion<'h, D: ConstraintDomain> {
+    source: &'h super::ClosedConstraintProbe<D>,
+    value: RetainedSourceType,
+}
+
+impl<D: ConstraintDomain> RetainedSourceCompletion<'_, D> {
+    pub(crate) fn original(&self) -> &super::OriginalProducerContext {
+        self.source.original_context()
+    }
+
+    pub(crate) fn project_declaration_type<
+        C: TypeProjectionControl<Error = TypeConstraintError>,
+    >(
+        &self,
+        ty: &TypeKind<PreparedEffects>,
+        control: &mut C,
+    ) -> Result<Option<RetainedSourceType>, TypeConstraintError> {
+        self.source.project_retained_declaration_type(ty, control)
+    }
+
+    pub(crate) fn into_value(self) -> RetainedSourceType {
+        self.value
+    }
+}
+
 /// The exact child application result that supplied a parent source's actual
 /// type. Both references come from the same completed component; callers do
 /// not reconstruct a child from its source expression or result schema.
@@ -941,8 +968,14 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
         &self,
         expected: Option<&TypeKind<PreparedEffects>>,
         control: &mut C,
-    ) -> Result<Option<RetainedSourceType>, TypeConstraintError> {
-        self.source.complete_retained_type(expected, control)
+    ) -> Result<Option<RetainedSourceCompletion<'h, D>>, TypeConstraintError> {
+        Ok(self
+            .source
+            .complete_retained_type(expected, control)?
+            .map(|value| RetainedSourceCompletion {
+                source: self.source,
+                value,
+            }))
     }
 
     pub(crate) fn canonicalize_observed_type<
