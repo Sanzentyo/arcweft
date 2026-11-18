@@ -875,7 +875,14 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         self.facts
             .replace_existing_expressions(owner_bound_replacements)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        self.finalize_call_facts(&checked_callables, &semantic_coordinates)?;
+        self.finalize_call_facts(
+            &checked_callables,
+            &semantic_coordinates,
+            super::type_seal::PublicationTypeEffects {
+                principal: &type_effects,
+                work: &mut closure_work,
+            },
+        )?;
         self.validate_target_capabilities(&checked_callables)?;
         self.finalize_view_fx_applications(&semantic_coordinates)?;
         self.finalize_evaluated_effects(

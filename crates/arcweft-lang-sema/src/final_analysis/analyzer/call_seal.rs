@@ -31,9 +31,10 @@ use crate::{
         CheckedExpression, CheckedExpressionResolution, CheckedValueResolution,
         FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysisError,
         PreparedExpressionFact,
+        type_seal::{PublicationTypeEffects, PublicationTypes},
     },
     semantic_coordinate::SemanticCoordinateIndex,
-    types::TypeKind,
+    types::{PreparedEffects, TypeKind},
 };
 
 use super::calls::{
@@ -72,6 +73,22 @@ pub(super) enum DetachedAnalyzerCallPayload {
 pub(super) struct DetachedAnalyzerSelectedCall {
     pub(super) application: DetachedPreparedCallableApplication,
     pub(super) record: AnalyzerDetachedCandidateRecord,
+}
+
+struct CallSourceFacts<'facts, 'publication, 'control> {
+    expressions: &'facts BTreeMap<ExprId, PreparedExpressionFact>,
+    locals: &'facts BTreeMap<LocalId, TypeKind<PreparedEffects>>,
+    types: &'facts mut PublicationTypes<'publication, 'control>,
+}
+
+impl CallSourceFacts<'_, '_, '_> {
+    fn local_type(&mut self, owner: LocalId) -> Result<TypeKind, FinalSemanticAnalysisError> {
+        let ty = self
+            .locals
+            .get(&owner)
+            .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner })?;
+        self.types.source(owner)?.canonical(ty)
+    }
 }
 
 pub(super) fn detach_prepared_call_graph(
@@ -133,8 +150,7 @@ fn seal_resolved_callable_base(
     definitions: &mut PreparedResolvedCallableDefinitionBatch,
     sealed: &mut BTreeMap<PreparedCallableDefinitionKey, Arc<ResolvedCallableBase>>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
-    locals: &BTreeMap<LocalId, TypeKind>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
 ) -> Result<Arc<ResolvedCallableBase>, FinalSemanticAnalysisError> {
     if let Some(base) = sealed.get(&key) {
         return Ok(Arc::clone(base));
@@ -143,7 +159,7 @@ fn seal_resolved_callable_base(
         let definition = definitions
             .get(key)
             .map_err(|error| final_call_seal_error(location, error))?;
-        stable_identity_seal(location, definition, coordinates, expressions, locals)?
+        stable_identity_seal(location, definition, coordinates, sources)?
     };
     let definition = definitions
         .take(key)
@@ -164,8 +180,7 @@ fn seal_resolved_callable(
     bases: &mut BTreeMap<PreparedCallableDefinitionKey, Arc<ResolvedCallableBase>>,
     applications: &BTreeMap<PreparedCallGraphSealNodeKey, crate::callable::CheckedCallApplication>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
-    locals: &BTreeMap<LocalId, TypeKind>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
 ) -> Result<Arc<ResolvedCallable>, FinalSemanticAnalysisError> {
     let base = seal_resolved_callable_base(
         location,
@@ -173,8 +188,7 @@ fn seal_resolved_callable(
         definitions,
         bases,
         coordinates,
-        expressions,
-        locals,
+        sources,
     )?;
     match detached {
         crate::callable::DetachedPreparedResolvedCallable::Base { .. } => {
@@ -227,8 +241,7 @@ fn seal_selected_inventory(
     bases: &mut BTreeMap<PreparedCallableDefinitionKey, Arc<ResolvedCallableBase>>,
     applications: &BTreeMap<PreparedCallGraphSealNodeKey, crate::callable::CheckedCallApplication>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
-    locals: &BTreeMap<LocalId, TypeKind>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
     limits: &crate::callable::CallableLimits,
 ) -> Result<crate::callable::CheckedCandidateInventory, FinalSemanticAnalysisError> {
     let selected = seal_resolved_callable(
@@ -240,8 +253,7 @@ fn seal_selected_inventory(
         bases,
         applications,
         coordinates,
-        expressions,
-        locals,
+        sources,
     )?;
     let mut selected_index = None;
     let mut candidates = Vec::with_capacity(considered.len());
@@ -266,8 +278,7 @@ fn seal_selected_inventory(
                     bases,
                     applications,
                     coordinates,
-                    expressions,
-                    locals,
+                    sources,
                 )?);
             }
         }
@@ -353,7 +364,7 @@ fn checked_receiver_projection(
     selected: &ResolvedCallable,
     solution: &crate::callable::FrozenCallTypeSolution,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
 ) -> Result<(CheckedCallReceiverProjection, u32), FinalSemanticAnalysisError> {
     if matches!(selected.state(), ResolvedCallableState::Continuation(_)) {
         return Ok((CheckedCallReceiverProjection::None, 0));
@@ -392,21 +403,16 @@ fn checked_receiver_projection(
             crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual },
         ) => {
             checked_value_receiver_source(
-                location,
-                record,
-                solution,
-                *source,
-                actual,
-                receiver,
-                expressions,
+                location, record, solution, *source, actual, receiver, sources,
             )?;
             let contextual_kind = match (
                 selected.id(),
                 receiver,
-                expressions
+                sources
+                    .expressions
                     .get(source)
                     .and_then(PreparedExpressionFact::resolved)
-                    .map(CheckedExpression::resolution),
+                    .map(|expression| expression.resolution()),
             ) {
                 (
                     crate::callable::CallableCandidateId::LineContextMethod(
@@ -487,13 +493,7 @@ fn checked_receiver_projection(
             crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual },
         ) => {
             checked_value_receiver_source(
-                location,
-                record,
-                solution,
-                *source,
-                actual,
-                receiver,
-                expressions,
+                location, record, solution, *source, actual, receiver, sources,
             )?;
             Ok((
                 CheckedCallReceiverProjection::Operand {
@@ -527,7 +527,7 @@ fn checked_value_receiver_source(
     source: ExprId,
     prepared_actual: &TypeKind,
     resolved_receiver: &TypeKind,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     let source_identity = super::calls::AnalyzerCallConstraintSource::Receiver { source };
     let mut rows = record
@@ -538,6 +538,13 @@ fn checked_value_receiver_source(
     let closed = rows.next().ok_or_else(|| {
         final_call_seal_error(location, CallConstraintInvariant::MalformedMapperSeal)
     })?;
+    let source_type = sources
+        .expressions
+        .get(&source)
+        .and_then(PreparedExpressionFact::value_type)
+        .ok_or_else(|| {
+            final_call_seal_error(location, CallConstraintInvariant::PreparedBaseMismatch)
+        })?;
     if rows.next().is_some()
         || closed.actual() != prepared_actual
         || !closed.prepared_source_projection().is_scalar()
@@ -547,9 +554,7 @@ fn checked_value_receiver_source(
             .complete_value(prepared_actual)
             .map_err(|error| final_call_seal_error(location, error))?
             != *resolved_receiver
-        || expressions
-            .get(&source)
-            .is_none_or(|checked| checked.value_type() != Some(prepared_actual))
+        || sources.types.source(source)?.canonical(source_type)? != *prepared_actual
     {
         return Err(final_call_seal_error(
             location,
@@ -680,17 +685,11 @@ fn checked_execution_projection(
     selected: &ResolvedCallable,
     solution: &crate::callable::FrozenCallTypeSolution,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
     site: &CheckedCallApplicationSite,
 ) -> Result<CheckedCallExecutionProjectionSeal, FinalSemanticAnalysisError> {
-    let (receiver, mut abi_position) = checked_receiver_projection(
-        location,
-        record,
-        selected,
-        solution,
-        coordinates,
-        expressions,
-    )?;
+    let (receiver, mut abi_position) =
+        checked_receiver_projection(location, record, selected, solution, coordinates, sources)?;
     let mapping = record.inputs.mapping();
     let dialogue_application_coordinate = mapping
         .dialogue_application()
@@ -847,7 +846,7 @@ fn checked_execution_projection(
                             CallConstraintInvariant::MalformedMapperSeal,
                         ));
                     };
-                    let checked = expressions.get(&expression).ok_or_else(|| {
+                    let checked = sources.expressions.get(&expression).ok_or_else(|| {
                         final_call_seal_error(
                             location,
                             CallConstraintInvariant::MissingCheckedExpressionCoordinate {
@@ -861,15 +860,16 @@ fn checked_execution_projection(
                             CallConstraintInvariant::MalformedMapperSeal,
                         )
                     })?;
-                    let value_type = TypeKind::MetaType(Box::new(value.nominal().ty()));
+                    let mut types = sources.types.source(expression)?;
+                    let nominal = types.canonical(value.nominal().ty())?;
                     let Some(checked_type) = checked.value_type() else {
                         return Err(final_call_seal_error(
                             location,
                             CallConstraintInvariant::MalformedMapperSeal,
                         ));
                     };
-                    if checked_type != &value_type
-                        || value.nominal().ty() != *closed.actual()
+                    if !matches!(types.canonical(checked_type)?, TypeKind::MetaType(inner) if *inner == nominal)
+                        || nominal != *closed.actual()
                         || destination != CheckedCallOperandDestination::Parameter(coordinate)
                     {
                         return Err(final_call_seal_error(
@@ -883,7 +883,7 @@ fn checked_execution_projection(
                     continue;
                 }
                 if let CheckedCallArgumentSlotSource::Expression(expression) = slot.source() {
-                    let checked = expressions.get(&expression).ok_or_else(|| {
+                    let checked = sources.expressions.get(&expression).ok_or_else(|| {
                         final_call_seal_error(
                             location,
                             CallConstraintInvariant::MissingCheckedExpressionCoordinate {
@@ -899,6 +899,7 @@ fn checked_execution_projection(
                     })?;
                     if let CheckedCallOperandDestination::Parameter(coordinate) = &destination {
                         if record.consumer.runtime_parameter(*coordinate).is_none() {
+                            let actual = sources.types.source(expression)?.canonical(actual)?;
                             validate_checked_parameter_actual(
                                 location,
                                 selected,
@@ -906,11 +907,13 @@ fn checked_execution_projection(
                                 *coordinate,
                                 &source_projection,
                                 &selection,
-                                actual,
+                                &actual,
                                 closed.actual(),
                             )?;
                         }
-                    } else if actual != closed.actual() {
+                    } else if sources.types.source(expression)?.canonical(actual)?
+                        != *closed.actual()
+                    {
                         return Err(final_call_seal_error(
                             location,
                             CallConstraintInvariant::PreparedEffectInstantiationMismatch,
@@ -1064,20 +1067,26 @@ fn checked_execution_projection(
             (
                 crate::callable::PreparedCallSemanticOperandOwner::DialogueApplication,
                 crate::callable::PreparedCallSemanticOperandRole::DialogueTarget,
-            ) => expressions
-                .get(&operand.source())
-                .ok_or_else(|| {
-                    final_call_seal_error(
-                        location,
-                        CallConstraintInvariant::MissingCheckedExpressionCoordinate {
-                            owner: operand.source(),
-                        },
-                    )
-                })?
-                .value_type()
-                .ok_or_else(|| {
-                    final_call_seal_error(location, CallConstraintInvariant::MalformedMapperSeal)
-                })?,
+            ) => {
+                let owner = operand.source();
+                let ty = sources
+                    .expressions
+                    .get(&owner)
+                    .ok_or_else(|| {
+                        final_call_seal_error(
+                            location,
+                            CallConstraintInvariant::MissingCheckedExpressionCoordinate { owner },
+                        )
+                    })?
+                    .value_type()
+                    .ok_or_else(|| {
+                        final_call_seal_error(
+                            location,
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        )
+                    })?;
+                sources.types.source(owner)?.canonical(ty)?
+            }
             (
                 crate::callable::PreparedCallSemanticOperandOwner::DialogueApplication,
                 crate::callable::PreparedCallSemanticOperandRole::DialogueContent
@@ -1089,12 +1098,12 @@ fn checked_execution_projection(
                         CallConstraintInvariant::MalformedMapperSeal,
                     ));
                 }
-                operand.actual()
+                operand.actual().clone()
             }
             (
                 crate::callable::PreparedCallSemanticOperandOwner::TextProxyObject,
                 crate::callable::PreparedCallSemanticOperandRole::TextProxyNominalDiscriminator,
-            ) => operand.actual(),
+            ) => operand.actual().clone(),
             _ => {
                 return Err(final_call_seal_error(
                     location,
@@ -1113,7 +1122,7 @@ fn checked_execution_projection(
             // the mapper projection above. Keep only the affine join here;
             // admission, coordinate, selection, and expected/inferred
             // validation belong to the checked execution projection owner.
-            if actual != closed.actual() {
+            if actual != *closed.actual() {
                 return Err(final_call_seal_error(
                     location,
                     CallConstraintInvariant::MalformedMapperSeal,
@@ -1132,7 +1141,7 @@ fn checked_execution_projection(
                     operand.coordinate(),
                     &source_projection,
                     &selection,
-                    actual,
+                    &actual,
                     closed.actual(),
                 )?;
             }
@@ -1467,8 +1476,7 @@ fn seal_selected_call(
     bases: &mut BTreeMap<PreparedCallableDefinitionKey, Arc<ResolvedCallableBase>>,
     applications: &BTreeMap<PreparedCallGraphSealNodeKey, crate::callable::CheckedCallApplication>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
-    locals: &BTreeMap<LocalId, TypeKind>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
     checked_callables: &crate::callable::CheckedCallableCatalog,
     limits: &crate::callable::CallableLimits,
     display: &DisplayConformanceCatalog,
@@ -1495,8 +1503,7 @@ fn seal_selected_call(
         bases,
         applications,
         coordinates,
-        expressions,
-        locals,
+        sources,
         limits,
     )?;
     let selected = inventory.selected();
@@ -1523,7 +1530,7 @@ fn seal_selected_call(
         selected,
         &solution,
         coordinates,
-        expressions,
+        sources,
         &site,
     )?;
     let terminal_effects = final_callable_effect_row(selected, checked_callables)?;
@@ -1598,8 +1605,7 @@ fn seal_unselected_candidates(
     bases: &mut BTreeMap<PreparedCallableDefinitionKey, Arc<ResolvedCallableBase>>,
     applications: &BTreeMap<PreparedCallGraphSealNodeKey, crate::callable::CheckedCallApplication>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
-    locals: &BTreeMap<LocalId, TypeKind>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
 ) -> Result<Vec<Arc<ResolvedCallable>>, FinalSemanticAnalysisError> {
     candidates
         .into_vec()
@@ -1614,8 +1620,7 @@ fn seal_unselected_candidates(
                 bases,
                 applications,
                 coordinates,
-                expressions,
-                locals,
+                sources,
             )
         })
         .collect()
@@ -1632,8 +1637,7 @@ fn seal_unselected_call(
     bases: &mut BTreeMap<PreparedCallableDefinitionKey, Arc<ResolvedCallableBase>>,
     applications: &BTreeMap<PreparedCallGraphSealNodeKey, crate::callable::CheckedCallApplication>,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
-    locals: &BTreeMap<LocalId, TypeKind>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
     limits: &crate::callable::CallableLimits,
 ) -> Result<SealedUnselectedCall, FinalSemanticAnalysisError> {
     let AnalyzerDetachedUnselectedCall {
@@ -1666,8 +1670,7 @@ fn seal_unselected_call(
                 bases,
                 applications,
                 coordinates,
-                expressions,
-                locals,
+                sources,
             )?;
             let mut candidates = Vec::with_capacity(tied.len());
             for tied in tied {
@@ -1707,8 +1710,7 @@ fn seal_unselected_call(
                 bases,
                 applications,
                 coordinates,
-                expressions,
-                locals,
+                sources,
             )?;
             crate::callable::CallAnalysisOutcome::Rejected(
                 crate::callable::CheckedRejectedCallEvidence::seal(
@@ -1835,6 +1837,7 @@ impl super::Analyzer<'_, '_, '_> {
         &mut self,
         checked_callables: &crate::callable::CheckedCallableCatalog,
         coordinates: &SemanticCoordinateIndex<'_, '_>,
+        effects: PublicationTypeEffects<'_, '_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let display = self
             .display_conformances
@@ -1855,8 +1858,12 @@ impl super::Analyzer<'_, '_, '_> {
         let mut pending = Vec::with_capacity(nodes.len());
         let mut selected_components = Vec::new();
         {
-            let expressions = self.facts.expressions();
-            let locals = self.facts.locals();
+            let mut types = PublicationTypes::new(checked_callables, &self.topology, effects);
+            let mut sources = CallSourceFacts {
+                expressions: self.facts.expressions(),
+                locals: self.facts.locals(),
+                types: &mut types,
+            };
             for node in nodes.into_vec() {
                 let DetachedAnalyzerCallNode {
                     key,
@@ -1891,13 +1898,13 @@ impl super::Analyzer<'_, '_, '_> {
                             &mut bases,
                             &applications,
                             coordinates,
-                            expressions,
-                            locals,
+                            &mut sources,
                             checked_callables,
                             &self.catalogs.callable_limits,
                             display,
                         )?;
-                        let callee = sealed.callee_update(expressions, checked_callables)?;
+                        let callee =
+                            sealed.callee_update(sources.expressions, checked_callables)?;
                         selected_components.push(sealed.component);
                         let update = PendingSelectedExpressionUpdate {
                             resolution: sealed.expression_resolution,
@@ -1943,13 +1950,13 @@ impl super::Analyzer<'_, '_, '_> {
                             &mut bases,
                             &applications,
                             coordinates,
-                            expressions,
-                            locals,
+                            &mut sources,
                             checked_callables,
                             &self.catalogs.callable_limits,
                             display,
                         )?;
-                        let callee = sealed.callee_update(expressions, checked_callables)?;
+                        let callee =
+                            sealed.callee_update(sources.expressions, checked_callables)?;
                         selected_components.push(sealed.component);
                         let update = PendingSelectedExpressionUpdate {
                             resolution: sealed.expression_resolution,
@@ -1992,8 +1999,7 @@ impl super::Analyzer<'_, '_, '_> {
                             &mut bases,
                             &applications,
                             coordinates,
-                            expressions,
-                            locals,
+                            &mut sources,
                             &self.catalogs.callable_limits,
                         )?;
                         let facts = crate::callable::CallTargetFacts::try_new(
@@ -2145,8 +2151,7 @@ fn stable_identity_seal(
     location: FinalCallSealLocation,
     definition: &crate::callable::PreparedResolvedCallableDefinitionSealInput,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
-    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
-    locals: &BTreeMap<LocalId, TypeKind>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
 ) -> Result<ResolvedCallableStableIdentitySeal, FinalSemanticAnalysisError> {
     match definition.identity() {
         PreparedResolvedCallableIdentity::Catalog { .. } => {
@@ -2162,13 +2167,13 @@ fn stable_identity_seal(
                     CallConstraintInvariant::MissingCheckedBindingCoordinate { owner: *local },
                 )
             })?;
+            let function_type = sources.local_type(*local)?;
+            if !matches!(function_type, TypeKind::Function { .. }) {
+                return Err(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local });
+            }
             Ok(ResolvedCallableStableIdentitySeal::Lexical {
                 binding,
-                function_type: locals
-                    .get(local)
-                    .filter(|ty| matches!(ty, TypeKind::Function { .. }))
-                    .cloned()
-                    .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local })?,
+                function_type,
             })
         }
         PreparedResolvedCallableIdentity::FunctionValue {
@@ -2184,14 +2189,15 @@ fn stable_identity_seal(
                     },
                 )
             })?;
-            let function_type = expressions
+            let ty = sources
+                .expressions
                 .get(producer)
                 .and_then(PreparedExpressionFact::value_type)
                 .filter(|ty| matches!(ty, TypeKind::Function { .. }))
-                .cloned()
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                     owner: *producer,
                 })?;
+            let function_type = sources.types.source(*producer)?.canonical(ty)?;
             let captures = captures
                 .iter()
                 .map(|capture| {
@@ -2207,9 +2213,7 @@ fn stable_identity_seal(
                                 )
                             })?,
                             mode: capture.mode(),
-                            ty: locals.get(&local).cloned().ok_or(
-                                FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local },
-                            )?,
+                            ty: sources.local_type(local)?,
                         },
                     )
                 })
