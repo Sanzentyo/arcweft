@@ -433,18 +433,34 @@ impl PreparedEffectGraph {
         delta: &PreparedEffectDelta,
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        self.validate_delta_issuer(delta, control)?;
+        if self.state != delta.data.base {
+            return Err(PreparedEffectInvariant::DeltaBase.into());
+        }
+        if let Some(scope) = &delta.dependencies {
+            scope.validate_ancestry(self, |_| false, control)?;
+        }
+        Self::charge_delta_contents(delta, control)
+    }
+
+    fn validate_delta_issuer<C: DecisionControl>(
+        &self,
+        delta: &PreparedEffectDelta,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
         control
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
         if !Arc::ptr_eq(&self.relation.issuer, &delta.data.issuer) {
             return Err(PreparedEffectInvariant::ForeignIssuer.into());
         }
-        if self.state != delta.data.base {
-            return Err(PreparedEffectInvariant::DeltaBase.into());
-        }
-        if let Some(scope) = &delta.dependencies {
-            scope.validate_at_ancestor(self, control)?;
-        }
+        Ok(())
+    }
+
+    fn charge_delta_contents<C: DecisionControl>(
+        delta: &PreparedEffectDelta,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
         let delta = &delta.data;
         for () in delta
             .functions
@@ -494,9 +510,31 @@ impl PreparedEffectGraph {
 
     fn prepare_publication<'a, C: DecisionControl>(
         &self,
-        inputs: impl Iterator<Item = &'a PreparedEffectDelta> + Clone,
+        inputs: impl Iterator<Item = &'a PreparedEffectDelta>,
         control: &mut C,
     ) -> Result<PreparedEffectPublication, PreparedEffectFailure<C::Error>> {
+        let mut permits = BTreeSet::new();
+        let mut ordered = BTreeMap::new();
+        for delta in inputs {
+            self.validate_delta_issuer(delta, control)?;
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
+            if !permits.insert(delta.data.ordinal) {
+                return Err(PreparedEffectInvariant::ReadScopeConflict.into());
+            }
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
+            ordered.insert((delta.data.base, delta.data.ordinal), delta);
+        }
+        if permits.is_empty() {
+            return Err(PreparedEffectInvariant::ReadScopeDependencies.into());
+        }
+        control
+            .charge(DecisionWork::Node)
+            .map_err(PreparedEffectFailure::Control)?;
+        let mut witnessed = BTreeSet::from([self.state]);
         let super::scope::ReadScopeData {
             mut functions,
             mut rows,
@@ -504,21 +542,27 @@ impl PreparedEffectGraph {
             mut choices,
             mut layers,
             ..
-        } = self.read_scope_data(inputs.clone(), control)?;
-        let mut permits = BTreeSet::new();
-        let mut last = None;
-        for delta in inputs {
-            control
-                .charge(DecisionWork::Node)
-                .map_err(PreparedEffectFailure::Control)?;
-            if !permits.insert(delta.data.ordinal) {
-                return Err(PreparedEffectInvariant::ReadScopeConflict.into());
+        } = self.delta_scope_data(ordered.values().copied(), control, |delta, control| {
+            if !witnessed.contains(&delta.data.base) {
+                return Err(PreparedEffectInvariant::DeltaBase.into());
             }
-            last = Some(&delta.data);
-        }
-        if permits.is_empty() {
-            return Err(PreparedEffectInvariant::ReadScopeDependencies.into());
-        }
+            if let Some(scope) = &delta.dependencies {
+                scope.validate_ancestry(self, |base| witnessed.contains(&base), control)?;
+            }
+            Self::charge_delta_contents(delta, control)?;
+            for &state in delta
+                .data
+                .ancestors
+                .iter()
+                .chain(std::iter::once(&delta.data.result))
+            {
+                control
+                    .charge(DecisionWork::Node)
+                    .map_err(PreparedEffectFailure::Control)?;
+                witnessed.insert(state);
+            }
+            Ok(())
+        })?;
         let inherited = self.active_scope.as_ref().map(|scope| &scope.input.data);
         for id in layers.keys() {
             control
@@ -564,26 +608,24 @@ impl PreparedEffectGraph {
             choices.retain(|id| !inherited.choices.contains(id));
             layers.retain(|id, _| permits.contains(id));
         }
-        let (result, ancestors, next_state) = if permits.len() == 1 {
-            let delta = last.expect("one publication permit");
-            for _ in &delta.ancestors {
-                control
-                    .charge(DecisionWork::Node)
-                    .map_err(PreparedEffectFailure::Control)?;
-            }
-            (delta.result, delta.ancestors.clone(), self.next_state)
+        let (result, next_state) = if permits.len() == 1 {
+            let delta = ordered.first_key_value().expect("one publication permit").1;
+            witnessed.remove(&delta.data.result);
+            (delta.data.result, self.next_state)
         } else {
-            control
-                .charge(DecisionWork::Node)
-                .map_err(PreparedEffectFailure::Control)?;
             (
                 PreparedEffectStateId(self.next_state),
-                vec![self.state],
                 self.next_state
                     .checked_add(1)
                     .ok_or(PreparedEffectInvariant::OrdinalExhausted)?,
             )
         };
+        for _ in &witnessed {
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
+        }
+        let ancestors = witnessed.into_iter().collect();
         Ok(PreparedEffectPublication {
             functions,
             rows,

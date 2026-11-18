@@ -204,6 +204,93 @@ fn delta_rejects_a_changed_base_and_can_retry_after_that_change_rolls_back() {
 }
 
 #[test]
+fn a_batch_restores_nested_deltas_from_their_selected_original_ancestors() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let root = graph.state;
+    let mut parent = graph.checkpoint(&mut work).unwrap();
+    let scheme = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+        .unwrap();
+    let row = graph.application(&scheme, vec![], &mut work).unwrap();
+    let child_base = graph.state;
+    let mut child = graph.checkpoint(&mut work).unwrap();
+    graph
+        .prepare_body(&scheme, literal(&["log.write"]), vec![], &mut work)
+        .unwrap();
+    let grandchild_base = graph.state;
+    let mut grandchild = graph.checkpoint(&mut work).unwrap();
+    let predicate = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            row.clone(),
+            literal(&["log.write"]),
+            &mut work,
+        )
+        .unwrap();
+    graph
+        .add_scoped_obligation(
+            vec![],
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            predicate.clone(),
+            &mut work,
+        )
+        .unwrap();
+    let grandchild = graph.extract_delta(&mut grandchild, &mut work).unwrap();
+    let reads = graph.read_scope([&grandchild], &mut work).unwrap();
+    graph.choice(&mut work).unwrap();
+    let child = graph.extract_delta(&mut child, &mut work).unwrap();
+    graph.choice(&mut work).unwrap();
+    let parent = graph.extract_delta(&mut parent, &mut work).unwrap();
+
+    let mut target = graph.checkpoint(&mut work).unwrap();
+    assert!(matches!(
+        graph.read_extracted(&child, &mut work),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::DeltaBase
+        ))
+    ));
+    let (error, child) = graph
+        .restore_delta(child, &mut work)
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        error,
+        PreparedEffectFailure::Invariant(PreparedEffectInvariant::DeltaBase)
+    ));
+    let (error, deltas) = graph
+        .restore_deltas(vec![grandchild, child, parent], &mut Budget(12))
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(error, PreparedEffectFailure::Control(Exhausted)));
+    assert_eq!(graph.state, root);
+    assert_eq!(graph.retained_terms(), (0, 0));
+    assert!(graph.relation.obligations.is_empty());
+
+    graph.restore_deltas(deltas, &mut work).unwrap();
+    assert!(graph.retains_state(child_base));
+    assert!(graph.retains_state(grandchild_base));
+    assert_eq!(graph.relation.obligations.len(), 1);
+    graph.validate_retained_row(&row).unwrap();
+    graph.validate_retained_predicate(&predicate).unwrap();
+    let selected_reads = graph.compose_read_scopes([&reads], &mut work).unwrap();
+    graph
+        .read_scoped(&selected_reads, &mut work)
+        .unwrap()
+        .validate_retained_predicate(&predicate)
+        .unwrap();
+    let closed = graph.solve_principal(&mut work).unwrap();
+    let expected = EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap());
+    assert_eq!(closed.resolve_row(&row, &mut work).unwrap(), expected);
+    graph.rollback(&mut target).unwrap();
+    assert_eq!(graph.state, root);
+    assert_eq!(graph.retained_terms(), (0, 0));
+    assert!(graph.relation.obligations.is_empty());
+    assert!(!graph.retains_state(child_base));
+    assert!(!graph.retains_state(grandchild_base));
+}
+
+#[test]
 fn foreign_graph_rejection_preserves_the_delta_for_its_actual_issuer() {
     let mut graph = PreparedEffectGraph::default();
     let mut foreign = PreparedEffectGraph::default();

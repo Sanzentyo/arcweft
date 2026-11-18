@@ -3203,6 +3203,98 @@ mod tests {
     }
 
     #[test]
+    fn a_child_fact_projection_applies_with_its_original_parent() {
+        use crate::effect_row::{
+            EffectPredicate, EffectRow,
+            prepared::{PreparedEffectInvariant, PreparedEffectRow},
+        };
+
+        let (parent_local, child_local) = distinct_test_locals();
+        let mut state = SemanticFactState::new();
+        let mut work = work();
+        let declarations =
+            crate::callable::PreparedCallableEffectDeclarations::declare([], &mut work).unwrap();
+        state.initialize_effect_declarations(declarations).unwrap();
+        let parent_checkpoint = state.begin_candidate_transaction(&mut work).unwrap();
+        let (scheme, row) = {
+            let (graph, _) = state.effect_declarations_mut().unwrap().relation();
+            let scheme = graph
+                .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+                .unwrap();
+            let row = graph.application(&scheme, vec![], &mut work).unwrap();
+            (scheme, row)
+        };
+        state.set_local_type(parent_local, TypeKind::I64).unwrap();
+        let child_checkpoint = state.begin_candidate_transaction(&mut work).unwrap();
+        state
+            .effect_declarations_mut()
+            .unwrap()
+            .relation()
+            .0
+            .prepare_body(
+                &scheme,
+                PreparedEffectRow::Canonical(EffectRow::closed(crate::effects::EffectSet::new())),
+                vec![],
+                &mut work,
+            )
+            .unwrap();
+        state.set_local_type(child_local, TypeKind::Unit).unwrap();
+        let child = state
+            .extract_and_rollback(child_checkpoint, &mut work)
+            .unwrap();
+        state
+            .effect_declarations_mut()
+            .unwrap()
+            .relation()
+            .0
+            .choice(&mut work)
+            .unwrap();
+        let parent = state
+            .extract_and_rollback(parent_checkpoint, &mut work)
+            .unwrap();
+
+        let target = state.begin_candidate_transaction(&mut work).unwrap();
+        let authority = state.transaction_authority(&target).unwrap();
+        let (error, child) = state
+            .apply_candidate_projection(&authority, child, &mut work)
+            .unwrap_err()
+            .into_parts();
+        assert!(matches!(
+            error,
+            CandidateFactMutationFailure::Invariant(
+                CandidateFactTransactionViolation::PreparedCallGraph(_)
+            )
+        ));
+        assert!(state.locals().is_empty());
+        let row_status = |state: &SemanticFactState| {
+            state
+                .prepared_calls()
+                .unwrap()
+                .effect_declarations()
+                .unwrap()
+                .read()
+                .validate_retained_row(&row)
+        };
+        assert_eq!(
+            row_status(&state),
+            Err(PreparedEffectInvariant::StaleReference)
+        );
+
+        state
+            .apply_candidate_projections(&authority, vec![child, parent], &mut work)
+            .unwrap();
+        assert_eq!(state.locals().get(&parent_local), Some(&TypeKind::I64));
+        assert_eq!(state.locals().get(&child_local), Some(&TypeKind::Unit));
+        row_status(&state).unwrap();
+        state.rollback_candidate_transaction(target).unwrap();
+        assert!(state.locals().is_empty());
+        assert_eq!(
+            row_status(&state),
+            Err(PreparedEffectInvariant::StaleReference)
+        );
+    }
+
+    #[test]
     fn competing_fact_writes_leave_the_ledger_and_both_projections_intact() {
         let (local, _) = distinct_test_locals();
         let mut state = SemanticFactState::new();

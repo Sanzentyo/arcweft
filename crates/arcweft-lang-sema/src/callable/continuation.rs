@@ -1829,8 +1829,9 @@ impl<P, U> PreparedCallGraph<P, U> {
     }
 
     /// Publishes the original graph and relation permits together. All
-    /// relation permits must share the live base and include their read-scope
-    /// dependencies. Call-node prerequisites use their original issued IDs.
+    /// relation permits must be anchored at the live base or at an ancestor
+    /// witnessed by another selected permit. Read-scope and call-node
+    /// prerequisites use their original issued identities.
     pub(crate) fn restore_deltas<C: DecisionControl>(
         &mut self,
         target: &PreparedCallGraphCheckpoint,

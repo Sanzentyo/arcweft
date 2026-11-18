@@ -54,13 +54,14 @@ impl PreparedEffectReadScope {
         Ok(())
     }
 
-    pub(super) fn validate_at_ancestor<C: DecisionControl>(
+    pub(super) fn validate_ancestry<C: DecisionControl>(
         &self,
         graph: &PreparedEffectGraph,
+        witnessed: impl FnOnce(PreparedEffectStateId) -> bool,
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         self.validate_issuer(graph, &mut Work(control))?;
-        if !graph.retains_state(self.data.base) {
+        if !graph.retains_state(self.data.base) && !witnessed(self.data.base) {
             return Err(PreparedEffectInvariant::DeltaBase.into());
         }
         Ok(())
@@ -119,16 +120,22 @@ impl PreparedEffectGraph {
         inputs: impl IntoIterator<Item = &'a PreparedEffectDelta>,
         control: &mut C,
     ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
-        self.read_scope_data(inputs, control)
-            .map(|data| PreparedEffectReadScope {
-                data: Arc::new(data),
-            })
+        self.delta_scope_data(inputs, control, |input, control| {
+            self.validate_delta(input, control)
+        })
+        .map(|data| PreparedEffectReadScope {
+            data: Arc::new(data),
+        })
     }
 
-    pub(super) fn read_scope_data<'a, C: DecisionControl>(
+    pub(super) fn delta_scope_data<'a, C: DecisionControl>(
         &self,
         inputs: impl IntoIterator<Item = &'a PreparedEffectDelta>,
         control: &mut C,
+        mut validate: impl FnMut(
+            &'a PreparedEffectDelta,
+            &mut C,
+        ) -> Result<(), PreparedEffectFailure<C::Error>>,
     ) -> Result<ReadScopeData, PreparedEffectFailure<C::Error>> {
         let mut layers = BTreeMap::new();
         let mut work = Work(control);
@@ -138,7 +145,7 @@ impl PreparedEffectGraph {
             }
         }
         for input in inputs {
-            self.validate_delta(input, work.0)?;
+            validate(input, work.0)?;
             if let Some(dependencies) = &input.dependencies {
                 for layer in dependencies.data.layers.values() {
                     retain_layer(&mut layers, layer, &mut work)?;
