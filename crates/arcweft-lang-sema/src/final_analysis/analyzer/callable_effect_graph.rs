@@ -1,7 +1,5 @@
 //! Callable-body call inventory, recursion rejection, and effect closure.
 
-use std::sync::Arc;
-
 use super::{
     BTreeMap, BTreeSet, CallableDeclarationOwner, CallableEffectSchema, CheckedCallableId, ExprId,
     FinalSemanticAnalysisControl, FinalSemanticAnalysisError, RecursiveCallableContractEdge,
@@ -11,7 +9,6 @@ use crate::{
     callable::{
         CheckedCallSite, CheckedCallableDeclaration, PreparedCallableApplication,
         PreparedCallableEffectDeclarations, PreparedCallableEffectProjection,
-        PreparedResolvedCallable,
     },
     effect_row::prepared::{PreparedEffectRow, PrincipalEffectClosure},
     effect_row::{DecisionControl, DecisionWork, EffectRow},
@@ -25,7 +22,7 @@ type CallableEdges = BTreeMap<CheckedCallableId, BTreeMap<CheckedCallableId, BTr
 
 pub(super) struct CallableEffectCall {
     site: CheckedCallSite,
-    selected: Arc<PreparedResolvedCallable>,
+    target: CheckedCallableId,
     projection: PreparedCallableEffectProjection,
 }
 
@@ -41,25 +38,18 @@ impl CallableEffectCall {
                 selected.schema().effects(),
                 CallableEffectSchema::Project { .. }
             )
-            || selected.checked().is_none()
         {
             return None;
         }
         Some(Self {
             site,
-            selected: Arc::clone(application.selected_shared()),
+            target: selected.checked()?.clone(),
             projection: application.effect_projection(),
         })
     }
 
     pub(super) fn target(&self) -> &CheckedCallableId {
-        self.selected
-            .checked()
-            .expect("effect call retains a checked declaration")
-    }
-
-    pub(super) fn candidate(&self) -> &PreparedResolvedCallable {
-        &self.selected
+        &self.target
     }
 
     pub(super) fn expression(&self) -> ExprId {
@@ -647,7 +637,7 @@ impl CallableEffectGraph {
             bounded_call_rows,
             catalog,
             declarations,
-            observed,
+            CallableEffectClosureScope::Verify(observed),
             work,
         )
     }
@@ -676,8 +666,13 @@ impl CallableEffectGraph {
     }
 }
 
+enum CallableEffectClosureScope<'a, 'roots> {
+    Prepare,
+    Verify(&'a PreparedTypeEffectRoots<'roots>),
+}
+
 impl CallableEffectEquations {
-    pub(super) fn close(
+    pub(super) fn prepare_bodies(
         &self,
         rows: &mut BTreeMap<CheckedCallableId, EffectRow>,
         boundary: &BTreeMap<CheckedCallableId, EffectRow>,
@@ -687,8 +682,14 @@ impl CallableEffectEquations {
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut work = CallableEffectClosureWork::new(work_limit, control);
-        let observed = PreparedTypeEffectRoots::default();
-        self.close_observed(rows, boundary, catalog, source, &observed, &mut work)?;
+        self.close_observed(
+            rows,
+            boundary,
+            catalog,
+            source,
+            CallableEffectClosureScope::Prepare,
+            &mut work,
+        )?;
         Ok(())
     }
 
@@ -698,7 +699,7 @@ impl CallableEffectEquations {
         boundary: &BTreeMap<CheckedCallableId, EffectRow>,
         catalog: &crate::callable::CheckedCallableCatalogBuilder,
         source: &mut PreparedCallableEffectDeclarations,
-        observed: &PreparedTypeEffectRoots<'_>,
+        scope: CallableEffectClosureScope<'_, '_>,
         work: &mut CallableEffectClosureWork<'_>,
     ) -> Result<PrincipalEffectClosure, FinalSemanticAnalysisError> {
         work.check()?;
@@ -732,10 +733,25 @@ impl CallableEffectEquations {
             work.charge(DecisionWork::Node)?;
             declarations.insert(owner.clone(), declaration);
         }
-        let mut checkpoint = graph.checkpoint(work)?;
-        let completed = (|| -> Result<_, FinalSemanticAnalysisError> {
+        use crate::effect_row::prepared::{PreparedEffectFailure, PreparedEffectGraph};
+        let without_type_roots = PreparedTypeEffectRoots::default();
+        let observed = match scope {
+            CallableEffectClosureScope::Prepare => &without_type_roots,
+            CallableEffectClosureScope::Verify(observed) => observed,
+        };
+        let build = |graph: &mut PreparedEffectGraph,
+                     work: &mut CallableEffectClosureWork<'_>|
+         -> Result<_, FinalSemanticAnalysisError> {
             for (caller, targets) in &self.edges {
                 work.charge(DecisionWork::Visit)?;
+                let scheme = declarations[caller].scheme();
+                if graph
+                    .read()
+                    .scheme_body_is_prepared(scheme)
+                    .map_err(PreparedEffectFailure::Invariant)?
+                {
+                    continue;
+                }
                 let original = rows
                     .get(caller)
                     .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
@@ -768,9 +784,19 @@ impl CallableEffectEquations {
                         let term = if let Some(row) = boundary.get(target) {
                             PreparedEffectRow::Canonical(specialize(row, work)?)
                         } else {
-                            let declaration = declarations
+                            let target_schema = catalog
+                                .pending_by_id(target)
+                                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                                .record()
+                                .schema();
+                            let declaration = headers
                                 .get(target)
-                                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                                .validate_schema(target_schema)
+                                .map_err(PreparedEffectFailure::Invariant)?;
+                            declaration
+                                .validate(graph)
+                                .map_err(PreparedEffectFailure::Invariant)?;
                             let mut arguments = Vec::new();
                             for parameter in declaration.parameters() {
                                 work.charge(DecisionWork::Visit)?;
@@ -787,7 +813,7 @@ impl CallableEffectEquations {
                     }
                 }
                 let body = graph.union(terms, work)?;
-                graph.prepare_body(declarations[caller].scheme(), body, vec![], work)?;
+                graph.prepare_body(scheme, body, vec![], work)?;
             }
             let mut roots = Vec::new();
             for declaration in declarations.values() {
@@ -801,7 +827,7 @@ impl CallableEffectEquations {
                 work,
             )?;
             let mut completed = BTreeMap::new();
-            for (owner, declaration) in declarations {
+            for (owner, declaration) in &declarations {
                 work.charge(DecisionWork::Visit)?;
                 let row = closure
                     .scheme(declaration.scheme())
@@ -811,16 +837,33 @@ impl CallableEffectEquations {
                         >::from,
                     )?
                     .clone_with_control(work)?;
-                completed.insert(owner, row);
+                completed.insert(owner.clone(), row);
             }
             Ok((completed, closure))
-        })();
-        graph.rollback(&mut checkpoint).map_err(
-            crate::effect_row::prepared::PreparedEffectFailure::<FinalSemanticAnalysisError>::from,
-        )?;
-        // Both failure and success leave the original declaration relation in
-        // place. Only the complete canonical query result is published here.
-        let (completed, closure) = completed?;
+        };
+        let (completed, closure) = match scope {
+            CallableEffectClosureScope::Prepare => {
+                let mut checkpoint = graph.checkpoint(work)?;
+                let completed = build(graph, work);
+                if completed.is_ok() {
+                    graph
+                        .commit(&checkpoint)
+                        .map_err(PreparedEffectFailure::Invariant)?;
+                } else {
+                    graph
+                        .rollback(&mut checkpoint)
+                        .map_err(PreparedEffectFailure::Invariant)?;
+                }
+                completed?
+            }
+            CallableEffectClosureScope::Verify(_) => graph.revalidate_bodies(
+                declarations
+                    .values()
+                    .map(|declaration| declaration.scheme()),
+                work,
+                build,
+            )?,
+        };
         *rows = completed;
         Ok(closure)
     }
@@ -966,6 +1009,30 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    impl CallableEffectEquations {
+        fn verify_bodies(
+            &self,
+            rows: &mut BTreeMap<CheckedCallableId, EffectRow>,
+            boundary: &BTreeMap<CheckedCallableId, EffectRow>,
+            catalog: &crate::callable::CheckedCallableCatalogBuilder,
+            source: &mut PreparedCallableEffectDeclarations,
+            work_limit: u64,
+            control: FinalSemanticAnalysisControl<'_>,
+        ) -> Result<(), FinalSemanticAnalysisError> {
+            let mut work = CallableEffectClosureWork::new(work_limit, control);
+            let observed = PreparedTypeEffectRoots::default();
+            self.close_observed(
+                rows,
+                boundary,
+                catalog,
+                source,
+                CallableEffectClosureScope::Verify(&observed),
+                &mut work,
+            )?;
+            Ok(())
+        }
+    }
+
     fn staged_fixture(
         source: &str,
     ) -> (
@@ -985,6 +1052,70 @@ mod tests {
         let staged = analyzer.stage_checked_callables().unwrap();
         let graph = analyzer.facts.take_prepared_calls().unwrap();
         (staged, graph)
+    }
+
+    #[test]
+    fn prepared_bodies_are_observable_and_verification_rebuilds_without_overwriting_them() {
+        let (staged, mut calls) = staged_fixture("fn source() -> i64 { 1i64 }");
+        let [body] = staged.bodies.as_slice() else {
+            panic!("one checked declaration");
+        };
+        let record = staged.builder.pending_by_id(&body.id).unwrap().record();
+        let declarations = calls.effect_declarations_mut().unwrap();
+        let mut equations = CallableEffectEquations::default();
+        equations.insert_body(body.id.clone(), []).unwrap();
+        let read = EffectRow::closed(crate::effects::EffectSet::from_labels(["fs.read"]).unwrap());
+        let write =
+            EffectRow::closed(crate::effects::EffectSet::from_labels(["fs.write"]).unwrap());
+        let cancellation = AtomicBool::new(false);
+        let control = FinalSemanticAnalysisControl::new(&cancellation);
+        let limit = crate::callable::PRODUCTION_CALLABLE_LIMITS.max_catalog_build_work();
+        let mut preparation = CallableEffectClosureWork::new(limit, control);
+        let row = {
+            let (graph, headers) = declarations.relation();
+            let scheme = headers[&body.id]
+                .validate_schema(record.schema())
+                .unwrap()
+                .scheme();
+            graph.application(scheme, vec![], &mut preparation).unwrap()
+        };
+
+        let mut before = BTreeMap::from([(body.id.clone(), read.clone())]);
+        let boundary = BTreeMap::new();
+        equations
+            .prepare_bodies(
+                &mut before,
+                &boundary,
+                &staged.builder,
+                declarations,
+                limit,
+                control,
+            )
+            .unwrap();
+        let observed = |declarations: &PreparedCallableEffectDeclarations,
+                        work: &mut CallableEffectClosureWork<'_>| {
+            declarations
+                .read()
+                .observe_principal(&[&row], &[], work)
+                .unwrap()
+                .resolve_row(&row, work)
+                .unwrap()
+        };
+        assert_eq!(observed(declarations, &mut preparation), read);
+
+        let mut rebuilt = BTreeMap::from([(body.id.clone(), write.clone())]);
+        equations
+            .verify_bodies(
+                &mut rebuilt,
+                &boundary,
+                &staged.builder,
+                declarations,
+                limit,
+                control,
+            )
+            .unwrap();
+        assert_eq!(rebuilt[&body.id], write);
+        assert_eq!(observed(declarations, &mut preparation), read);
     }
 
     #[test]
@@ -1037,7 +1168,7 @@ mod tests {
                 EffectRow::closed(crate::effects::EffectSet::new()),
             )]);
             equations
-                .close(
+                .verify_bodies(
                     &mut rows,
                     &BTreeMap::new(),
                     &staged.builder,
@@ -1106,7 +1237,7 @@ mod tests {
         let production_limit = crate::callable::PRODUCTION_CALLABLE_LIMITS.max_catalog_build_work();
         let mut full = original.clone();
         equations
-            .close(
+            .verify_bodies(
                 &mut full,
                 &boundary,
                 &staged.builder,
@@ -1122,7 +1253,7 @@ mod tests {
         while low < high {
             let limit = low + (high - low) / 2;
             let mut rows = original.clone();
-            match equations.close(
+            match equations.verify_bodies(
                 &mut rows,
                 &boundary,
                 &staged.builder,
@@ -1148,7 +1279,7 @@ mod tests {
         let mut succeeded = false;
         for limit in 0..=required {
             let mut rows = original.clone();
-            match equations.close(
+            match equations.verify_bodies(
                 &mut rows,
                 &boundary,
                 &staged.builder,
@@ -1175,7 +1306,7 @@ mod tests {
         cancellation.store(true, Ordering::Release);
         let mut rows = original.clone();
         assert_eq!(
-            equations.close(
+            equations.verify_bodies(
                 &mut rows,
                 &boundary,
                 &staged.builder,
@@ -1190,7 +1321,7 @@ mod tests {
         let (foreign, _) =
             staged_fixture("fn other(used: i64 -> i64, unused: i64 -> i64) -> i64 { used(0i64) }");
         assert_eq!(
-            equations.close(
+            equations.verify_bodies(
                 &mut rows,
                 &boundary,
                 &foreign.builder,

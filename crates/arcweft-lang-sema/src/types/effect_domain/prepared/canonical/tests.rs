@@ -76,10 +76,10 @@ fn a_nested_type_observation_waits_for_its_named_body() {
     assert!(matches!(
         source.observe_canonical_effects(&scope, graph.read(), &mut Meter::new()),
         Err(TypeProjectionError::Control(
-            PreparedTypeEffectProjectionFailure::Effects(PreparedEffectFailure::Invariant(
-                PreparedEffectInvariant::SchemeState
-            ))
-        ))
+            PreparedTypeEffectProjectionFailure::Effects(
+                PreparedEffectFailure::ObservationNeedsBody(scheme)
+            )
+        )) if scheme == named
     ));
 
     let row = literal(&["iterator.actual"]);

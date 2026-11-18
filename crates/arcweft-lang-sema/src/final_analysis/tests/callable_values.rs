@@ -240,6 +240,42 @@ flow main() -> i64 {
 }
 
 #[test]
+fn a_declared_callback_alias_observes_its_original_inferred_body() {
+    use crate::callable::CheckedCallCalleeExecution;
+
+    let fixture = fixture(
+        r"
+fn read(value: i64) -> i64 effects { fs.read } { value }
+fn inferred(value: i64) -> i64 { read(value) }
+flow main() -> i64 {
+    let alias = inferred
+    return alias(42i64)
+}
+",
+        None,
+    );
+    let analysis = analyze(&fixture).expect("the alias can observe the inferred declaration");
+    let (owner, application) = analysis
+        .calls()
+        .filter_map(|(owner, call)| {
+            call.selected_application()
+                .map(|application| (owner, application))
+        })
+        .find(|(_, application)| {
+            matches!(
+                application.core().callee(),
+                CheckedCallCalleeExecution::Value { .. }
+            )
+        })
+        .expect("the indirect application is selected");
+    assert_eq!(application.result().value_type(), Some(&TypeKind::I64));
+    assert_eq!(
+        analysis.expression(owner).unwrap().effects().to_labels(),
+        ["fs.read"],
+    );
+}
+
+#[test]
 fn surplus_function_arguments_leave_no_selected_application() {
     let fixture = fixture(
         r#"

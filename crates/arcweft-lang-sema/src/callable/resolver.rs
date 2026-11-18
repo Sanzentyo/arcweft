@@ -793,7 +793,7 @@ pub(crate) struct FinalCallCalleeFacts<'a, 'source, P, U> {
     prepared_calls: super::PreparedCallGraphIngress<'a, P, U>,
     nominal_receivers: &'a BTreeMap<TypeId, TypeResolutionReport>,
     types: &'a BTreeMap<TypeId, TypeKind>,
-    function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
+    function_value_origin: &'source mut Option<PreparedFunctionValueOriginEvidence>,
     annotations: &'source FinalCallSourceAnnotations<'source>,
     value_operand: &'source FinalCallValueOperandPreparation<'source>,
 }
@@ -804,7 +804,7 @@ impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
         prepared_calls: super::PreparedCallGraphIngress<'a, P, U>,
         nominal_receivers: &'a BTreeMap<TypeId, TypeResolutionReport>,
         types: &'a BTreeMap<TypeId, TypeKind>,
-        function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
+        function_value_origin: &'source mut Option<PreparedFunctionValueOriginEvidence>,
         annotations: &'source FinalCallSourceAnnotations<'source>,
         value_operand: &'source FinalCallValueOperandPreparation<'source>,
     ) -> Self {
@@ -826,6 +826,19 @@ impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
     ) -> Self {
         self.flow_transfer = statement;
         self
+    }
+
+    fn prepare_value_operand(
+        &self,
+        expression: ExprId,
+        ty: &TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<PreparedCallValueOperand, PrepareFinalCallCalleeError> {
+        (self.value_operand)(expression, ty).map_err(|error| {
+            PrepareFinalCallCalleeError::SourceType {
+                expression,
+                error: Box::new(error),
+            }
+        })
     }
 }
 
@@ -867,8 +880,12 @@ pub(crate) enum PrepareFinalCallCalleeError {
     InvalidFunctionSchema,
     #[error("checked enum variant cannot issue one accepted constructor case")]
     InvalidEnumVariantAuthority { expression: ExprId },
-    #[error("a callee source type projection failed")]
-    SourceType(#[source] Box<FinalSemanticAnalysisError>),
+    #[error("callee source type projection at {expression:?} failed")]
+    SourceType {
+        expression: ExprId,
+        #[source]
+        error: Box<FinalSemanticAnalysisError>,
+    },
     #[error("checked channel cannot issue its declaration-backed record constructor")]
     InvalidRecordConstructorAuthority { expression: ExprId },
     #[error("checked Character project item has no exact Character identity")]
@@ -1000,7 +1017,10 @@ impl AcceptedEnumVariantCase {
             .ok_or_else(malformed)?;
         let mut authored = |ty: &TypeKind<crate::types::PreparedEffects>| {
             project(ty)
-                .map_err(|error| PrepareFinalCallCalleeError::SourceType(Box::new(error)))?
+                .map_err(|error| PrepareFinalCallCalleeError::SourceType {
+                    expression,
+                    error: Box::new(error),
+                })?
                 .ok_or_else(malformed)
         };
         let ty = authored(&owner.ty())?;

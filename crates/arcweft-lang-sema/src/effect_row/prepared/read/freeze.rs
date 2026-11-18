@@ -70,7 +70,8 @@ impl PreparedEffectReadView<'_> {
     ) -> Result<PreparedEffectDefinitions, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
         let schemes = match source {
-            SnapshotSource::Final(_) | SnapshotSource::Observation => SchemeDependencies::Bodies,
+            SnapshotSource::Final(_) => SchemeDependencies::Bodies,
+            SnapshotSource::Observation => SchemeDependencies::Observation,
             _ => SchemeDependencies::Headers,
         };
         let original = match source {

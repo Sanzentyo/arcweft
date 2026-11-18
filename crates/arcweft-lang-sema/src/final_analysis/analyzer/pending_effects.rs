@@ -9,7 +9,8 @@ use crate::{
     callable::{
         CallableCandidateId, CallableInstantiation, CallableProjection,
         CallableTerminalEffectProjection, CheckedCallSite, CheckedCallableDeclaration,
-        CheckedCallableId, PreparedCallableEffectProjectionSite, PreparedResolvedCallable,
+        CheckedCallableId, EffectPermission, PreparedCallableEffectProjectionSite,
+        PreparedResolvedCallable,
     },
     effect_row::EffectRow,
     final_analysis::{
@@ -34,6 +35,75 @@ use super::{
 };
 
 impl Analyzer<'_, '_, '_> {
+    pub(super) fn observe_source_type_with_dependencies(
+        &mut self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
+        owner: arcweft_lang_hir::identity::ExprId,
+        ty: &crate::types::TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<crate::types::TypeKind, FinalSemanticAnalysisError> {
+        loop {
+            let declarations = self.facts.effect_declarations()?;
+            let result = self
+                .source_type_preparation(context.work())?
+                .observe_canonical(owner, ty, declarations.read());
+            match result {
+                Ok(observed) => return Ok(observed),
+                Err(error) => {
+                    let Some(dependency) = error.effect_observation_dependency() else {
+                        return Err(error);
+                    };
+                    self.prepare_type_observation_dependency(context, owner, dependency)?;
+                }
+            }
+        }
+    }
+
+    pub(super) fn prepare_type_observation_dependency(
+        &mut self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
+        operand: arcweft_lang_hir::identity::ExprId,
+        dependency: &crate::effect_row::prepared::PreparedEffectSchemeRef,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        use crate::effect_row::prepared::PreparedEffectFailure;
+        let checked = self
+            .facts
+            .effect_declarations()?
+            .observation_dependency_owner(dependency, &mut context.work())?;
+        let staged = self
+            .staged_callables
+            .as_ref()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let pending = staged
+            .builder
+            .pending_by_id(checked)
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let candidate = PreparedResolvedCallable::try_from_checked_record(
+            checked.clone(),
+            Arc::clone(pending.record()),
+            crate::callable::PreparedCatalogCallee::Direct {
+                project_binding: None,
+            },
+            CallableInstantiation::None,
+            Vec::new(),
+            &self.catalogs.callable_limits,
+        )
+        .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        self.prepare_callable_body_effects(
+            PreparedCallableEffectProjectionSite::CallableValue(operand),
+            &candidate,
+        )?;
+        if !self
+            .facts
+            .effect_declarations()?
+            .read()
+            .scheme_body_is_prepared(dependency)
+            .map_err(PreparedEffectFailure::Invariant)?
+        {
+            return Err(PreparedEffectFailure::ObservationNeedsBody(dependency.clone()).into());
+        }
+        Ok(())
+    }
+
     /// A named value needs its full latent arrow, including inferred effects,
     /// without claiming that the expression invoked the declaration.
     pub(super) fn prepare_named_callable_value_type(
@@ -173,17 +243,34 @@ impl Analyzer<'_, '_, '_> {
             let mut applications = Vec::with_capacity(calls.len());
             for call in calls {
                 self.control.check()?;
-                match self.source_callable_terminal_effects(call.candidate())? {
-                    CallableTerminalEffectProjection::Known { effects, .. } => {
-                        if let Some(previous) =
-                            boundary.insert(call.target().clone(), effects.clone())
+                let target = call.target();
+                let contract = self
+                    .staged_callables
+                    .as_ref()
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                    .builder
+                    .pending_by_id(target)
+                    .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                    .body_contract()
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                match contract.permission() {
+                    EffectPermission::Bounded(effects) => {
+                        if let Some(previous) = boundary.insert(target.clone(), effects.clone())
                             && previous != *effects
                         {
                             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
                         }
                     }
-                    CallableTerminalEffectProjection::Pending(target) => {
-                        if scheduled.insert(target.clone()) {
+                    EffectPermission::UnboundedInference => {
+                        if !self
+                            .facts
+                            .effect_declarations()?
+                            .declaration_body_is_prepared(target)
+                            .map_err(
+                                crate::effect_row::prepared::PreparedEffectFailure::Invariant,
+                            )?
+                            && scheduled.insert(target.clone())
+                        {
                             pending.push_back(target.clone());
                         }
                     }
@@ -194,7 +281,7 @@ impl Analyzer<'_, '_, '_> {
             equations.insert_body(owner.clone(), applications)?;
             rows.insert(owner, row);
         }
-        equations.close(
+        equations.prepare_bodies(
             &mut rows,
             &boundary,
             &self

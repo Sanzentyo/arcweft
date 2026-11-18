@@ -323,6 +323,22 @@ impl From<crate::effect_row::prepared::PreparedEffectFailure<FinalSemanticAnalys
     }
 }
 
+impl FinalSemanticAnalysisError {
+    pub(crate) fn effect_observation_dependency(
+        &self,
+    ) -> Option<&crate::effect_row::prepared::PreparedEffectSchemeRef> {
+        let Self::CallableEffectClosure(error) = self else {
+            return None;
+        };
+        match &error.source {
+            crate::effect_row::prepared::PreparedEffectFailure::ObservationNeedsBody(scheme) => {
+                Some(scheme)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// A source type retains its actual producer and the original failure kind.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum SourceTypeRetentionFailure {

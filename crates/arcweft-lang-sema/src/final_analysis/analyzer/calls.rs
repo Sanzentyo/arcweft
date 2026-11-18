@@ -1855,6 +1855,49 @@ impl Analyzer<'_, '_, '_> {
         })
     }
 
+    fn prepare_pipe_call_receiver(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        call: ExprId,
+    ) -> Result<Option<crate::callable::PreparedCallValueOperand>, AnalyzerExpressionError> {
+        loop {
+            let Some(pipe) = self.pipe_stack.last().filter(|pipe| pipe.right == call) else {
+                return Ok(None);
+            };
+            let invalid =
+                || AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner);
+            let topology = self
+                .topology
+                .module(pipe.owner.module())
+                .ok_or_else(invalid)?;
+            let region = topology
+                .expression_uses()
+                .pipe_left_region(pipe.owner)
+                .map_err(|_| invalid())?;
+            if region.has_placeholders().map_err(|_| invalid())? {
+                return Ok(None);
+            }
+            let left = pipe.left;
+            let declarations = self
+                .facts
+                .effect_declarations()
+                .map_err(AnalyzerExpressionError::fact)?;
+            let result = self
+                .source_type_preparation(context.work())
+                .and_then(|types| types.call_value_operand(left, &pipe.value, declarations.read()));
+            match result {
+                Ok(receiver) => return Ok(Some(receiver)),
+                Err(error) => {
+                    let Some(dependency) = error.effect_observation_dependency() else {
+                        return Err(AnalyzerExpressionError::fatal(error));
+                    };
+                    self.prepare_type_observation_dependency(context, left, dependency)
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                }
+            }
+        }
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "call-query resolution keeps preparation, charged resolver execution, and checked fact publication atomic"
@@ -1866,7 +1909,7 @@ impl Analyzer<'_, '_, '_> {
         mut work: ResolverWork,
         argument_count: u64,
         dialogue_context: CharacterDialoguePatchContext,
-        function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
+        mut function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
     ) -> Result<CallQueryResolution, AnalyzerExpressionError> {
         let authority = CallResolverAuthority::accepted(
             self.project,
@@ -1898,140 +1941,135 @@ impl Analyzer<'_, '_, '_> {
                     })
             })
             .map(|(statement, _)| statement);
-        let prepared = {
-            let types = self
-                .source_type_preparation(context.work())
-                .map_err(AnalyzerExpressionError::fatal)?;
-            let annotations =
-                |owner, ty: &TypeKind<PreparedEffects>| types.project_annotations(owner, ty);
-            let value_operand = |owner, ty: &TypeKind<PreparedEffects>| {
-                types.call_value_operand(owner, ty, self.facts.effect_declarations()?.read())
-            };
-            prepare_final_call_callee(
-                authority,
-                source.owner,
-                FinalCallCalleeFacts::new(
-                    self.facts.expressions(),
-                    PreparedCallGraphIngress::new(
-                        self.facts
-                            .prepared_calls()
-                            .map_err(AnalyzerExpressionError::fact)?,
-                    ),
-                    &self.type_reports,
-                    &self.types,
-                    function_value_origin,
-                    &annotations,
-                    &value_operand,
+        let (
+            mut callee_inputs,
+            implicit_extension_receiver,
+            callee,
+            outcome,
+            function_value_origin,
+        ) = loop {
+            let implicit_extension_receiver =
+                self.prepare_pipe_call_receiver(context, source.owner)?;
+            let prepared = {
+                let types = self
+                    .source_type_preparation(context.work())
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                let annotations =
+                    |owner, ty: &TypeKind<PreparedEffects>| types.project_annotations(owner, ty);
+                let value_operand = |owner, ty: &TypeKind<PreparedEffects>| {
+                    types.call_value_operand(owner, ty, self.facts.effect_declarations()?.read())
+                };
+                prepare_final_call_callee(
+                    authority,
+                    source.owner,
+                    FinalCallCalleeFacts::new(
+                        self.facts.expressions(),
+                        PreparedCallGraphIngress::new(
+                            self.facts
+                                .prepared_calls()
+                                .map_err(AnalyzerExpressionError::fact)?,
+                        ),
+                        &self.type_reports,
+                        &self.types,
+                        &mut function_value_origin,
+                        &annotations,
+                        &value_operand,
+                    )
+                    .with_flow_transfer(flow_transfer),
+                    dialogue_context,
+                    &self.catalogs.callable_limits,
                 )
-                .with_flow_transfer(flow_transfer),
-                dialogue_context,
-                &self.catalogs.callable_limits,
-            )
-        }
-        .map_err(|error| match error {
-            crate::callable::PrepareFinalCallCalleeError::SourceType(error) => {
-                AnalyzerExpressionError::fatal(*error)
+            };
+            let prepared = match prepared {
+                Err(crate::callable::PrepareFinalCallCalleeError::SourceType {
+                    expression,
+                    error,
+                }) => {
+                    let Some(dependency) = error.effect_observation_dependency() else {
+                        return Err(AnalyzerExpressionError::fatal(*error));
+                    };
+                    self.prepare_type_observation_dependency(context, expression, dependency)
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                    continue;
+                }
+                other => other,
             }
-            crate::callable::PrepareFinalCallCalleeError::PreparedContinuationInvariant(
-                invariant,
-            ) => AnalyzerExpressionError::Call {
-                owner: source.owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+            .map_err(|error| match error {
+                crate::callable::PrepareFinalCallCalleeError::PreparedContinuationInvariant(
                     invariant,
-                )),
-            },
-            crate::callable::PrepareFinalCallCalleeError::MissingFunctionValueOrigin { .. } => {
-                AnalyzerExpressionError::Call {
+                ) => AnalyzerExpressionError::Call {
+                    owner: source.owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        invariant,
+                    )),
+                },
+                crate::callable::PrepareFinalCallCalleeError::MissingFunctionValueOrigin {
+                    ..
+                } => AnalyzerExpressionError::Call {
                     owner: source.owner,
                     failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
                         crate::callable::CallConstraintInvariant::MissingFunctionValueOrigin,
                     )),
-                }
-            }
-            crate::callable::PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin {
-                ..
-            } => AnalyzerExpressionError::Call {
-                owner: source.owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                    crate::callable::CallConstraintInvariant::UnexpectedFunctionValueOrigin,
-                )),
-            },
-            crate::callable::PrepareFinalCallCalleeError::InvalidFunctionValueOrigin { .. } => {
-                AnalyzerExpressionError::Call {
+                },
+                crate::callable::PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin {
+                    ..
+                } => AnalyzerExpressionError::Call {
+                    owner: source.owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::UnexpectedFunctionValueOrigin,
+                    )),
+                },
+                crate::callable::PrepareFinalCallCalleeError::InvalidFunctionValueOrigin {
+                    ..
+                } => AnalyzerExpressionError::Call {
                     owner: source.owner,
                     failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
                         crate::callable::CallConstraintInvariant::InvalidFunctionValueOrigin,
                     )),
-                }
-            }
-            _ => AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
-                owner: source.owner,
-            }),
-        })?;
-        let mut callee_inputs = prepared.constraint_inputs();
-        let implicit_extension_receiver = if let Some(pipe) = self
-            .pipe_stack
-            .last()
-            .filter(|pipe| pipe.right == source.owner)
-        {
-            let topology = self.topology.module(pipe.owner.module()).ok_or_else(|| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                },
+                _ => AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::CallResolutionFailed {
+                        owner: source.owner,
+                    },
+                ),
             })?;
-            let region = topology
-                .expression_uses()
-                .pipe_left_region(pipe.owner)
-                .map_err(|_| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                })?;
-            let has_placeholders = region.has_placeholders().map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            let callee_inputs = prepared.constraint_inputs();
+            let staged = self.staged_callables.as_ref().ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
             })?;
-            if has_placeholders {
-                None
-            } else {
-                Some(
-                    self.source_type_preparation(context.work())
-                        .and_then(|types| {
-                            types.call_value_operand(
-                                pipe.left,
-                                &pipe.value,
-                                self.facts.effect_declarations()?.read(),
-                            )
-                        })
-                        .map_err(AnalyzerExpressionError::fatal)?,
-                )
-            }
-        } else {
-            None
+            let request = CallResolverRequest::try_new(
+                prepared.as_borrowed(),
+                &super::CallResolverContext {
+                    authority,
+                    checked: (&staged.builder).into(),
+                    presentation_character_owner: presentation_character_owner.as_ref(),
+                    expression: source.owner,
+                    cancellation: self.control.cancellation(),
+                    prepared_continuations: self
+                        .facts
+                        .prepared_calls()
+                        .map_err(AnalyzerExpressionError::fact)?,
+                    limits: &self.catalogs.callable_limits,
+                    implicit_extension_receiver: implicit_extension_receiver.clone(),
+                },
+                &mut work,
+            )
+            .map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
+                    owner: source.owner,
+                })
+            })?;
+            let callee = request.classification();
+            let outcome = resolve_call_target(request);
+            let function_value_origin = prepared.into_function_value_origin();
+            break (
+                callee_inputs,
+                implicit_extension_receiver,
+                callee,
+                outcome,
+                function_value_origin,
+            );
         };
-        let staged = self.staged_callables.as_ref().ok_or_else(|| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
-        })?;
-        let request = CallResolverRequest::try_new(
-            prepared.as_borrowed(),
-            &super::CallResolverContext {
-                authority,
-                checked: (&staged.builder).into(),
-                presentation_character_owner: presentation_character_owner.as_ref(),
-                expression: source.owner,
-                cancellation: self.control.cancellation(),
-                prepared_continuations: self
-                    .facts
-                    .prepared_calls()
-                    .map_err(AnalyzerExpressionError::fact)?,
-                limits: &self.catalogs.callable_limits,
-                implicit_extension_receiver: implicit_extension_receiver.clone(),
-            },
-            &mut work,
-        )
-        .map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
-                owner: source.owner,
-            })
-        })?;
-        let callee = request.classification();
-        let outcome = resolve_call_target(request);
-        let function_value_origin = prepared.into_function_value_origin();
         let (considered, current_group) = match outcome {
             ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates)) => {
                 let current_group = candidates.first().call_group();

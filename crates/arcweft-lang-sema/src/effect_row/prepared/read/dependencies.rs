@@ -6,6 +6,7 @@ use super::*;
 pub(in crate::effect_row::prepared) enum SchemeDependencies {
     Bodies,
     Headers,
+    Observation,
 }
 
 pub(in crate::effect_row::prepared) enum Dependency<'a> {
@@ -107,10 +108,15 @@ impl<'a> Reachable<'a> {
                         .ok_or(PreparedEffectInvariant::StaleReference)?;
                     match function.as_ref() {
                         Function::Scheme(scheme)
-                            if matches!(self.schemes, SchemeDependencies::Bodies) =>
+                            if !matches!(self.schemes, SchemeDependencies::Headers) =>
                         {
                             let SchemeState::BodyPrepared { body, obligations } = &scheme.state
                             else {
+                                if matches!(self.schemes, SchemeDependencies::Observation) {
+                                    return Err(PreparedEffectFailure::ObservationNeedsBody(
+                                        PreparedEffectSchemeRef(self.view.relation.reference(id)),
+                                    ));
+                                }
                                 return Err(PreparedEffectInvariant::SchemeState.into());
                             };
                             self.push(Dependency::Row(body), control)?;

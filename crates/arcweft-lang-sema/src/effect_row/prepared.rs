@@ -196,6 +196,8 @@ pub(crate) enum PreparedEffectFailure<E> {
     Unsatisfiable,
     #[error("prepared effect equations have no pointwise least solution")]
     NonPrincipal,
+    #[error("the requested effect observation needs a declaration body")]
+    ObservationNeedsBody(PreparedEffectSchemeRef),
     #[error("the requested effect observation is not unconditionally admitted and invariant")]
     ObservationNotTotal,
     #[error("the guarded effect observation cannot be represented by pointwise effect formulas")]
@@ -213,6 +215,9 @@ impl<E> PreparedEffectFailure<E> {
             Self::Declaration(error) => PreparedEffectFailure::Declaration(error),
             Self::Unsatisfiable => PreparedEffectFailure::Unsatisfiable,
             Self::NonPrincipal => PreparedEffectFailure::NonPrincipal,
+            Self::ObservationNeedsBody(scheme) => {
+                PreparedEffectFailure::ObservationNeedsBody(scheme)
+            }
             Self::ObservationNotTotal => PreparedEffectFailure::ObservationNotTotal,
             Self::NonPointwiseObservation => PreparedEffectFailure::NonPointwiseObservation,
         })
@@ -226,6 +231,9 @@ impl<E> PreparedEffectFailure<E> {
             Self::Declaration(error) => PreparedEffectFailure::Declaration(error),
             Self::Unsatisfiable => PreparedEffectFailure::Unsatisfiable,
             Self::NonPrincipal => PreparedEffectFailure::NonPrincipal,
+            Self::ObservationNeedsBody(scheme) => {
+                PreparedEffectFailure::ObservationNeedsBody(scheme)
+            }
             Self::ObservationNotTotal => PreparedEffectFailure::ObservationNotTotal,
             Self::NonPointwiseObservation => PreparedEffectFailure::NonPointwiseObservation,
         }
@@ -571,6 +579,49 @@ impl PreparedEffectGraph {
             })),
         );
         Ok(())
+    }
+
+    /// Rebuild selected equations in a temporary section of the original
+    /// relation. The previously prepared bodies survive both outcomes.
+    pub(crate) fn revalidate_bodies<'s, C, T, E>(
+        &mut self,
+        schemes: impl IntoIterator<Item = &'s PreparedEffectSchemeRef>,
+        control: &mut C,
+        build: impl FnOnce(&mut Self, &mut C) -> Result<T, E>,
+    ) -> Result<T, E>
+    where
+        C: DecisionControl,
+        E: From<PreparedEffectFailure<C::Error>>,
+    {
+        let mut checkpoint = self.checkpoint(control)?;
+        let result = (|| {
+            for reference in schemes {
+                control
+                    .charge(DecisionWork::Visit)
+                    .map_err(PreparedEffectFailure::Control)?;
+                let scheme = self
+                    .scheme(reference)
+                    .map_err(PreparedEffectFailure::Invariant)?;
+                if matches!(scheme.state, SchemeState::BodyPrepared { .. }) {
+                    control
+                        .charge(DecisionWork::Node)
+                        .map_err(PreparedEffectFailure::Control)?;
+                    let header = Arc::clone(&scheme.header);
+                    self.changed(control)?;
+                    self.publish_function(
+                        reference.0.ordinal,
+                        Arc::new(Function::Scheme(Scheme {
+                            header,
+                            state: SchemeState::Declared,
+                        })),
+                    );
+                }
+            }
+            build(self, control)
+        })();
+        self.rollback(&mut checkpoint)
+            .map_err(PreparedEffectFailure::Invariant)?;
+        result
     }
 
     fn validate_predicate(

@@ -63,6 +63,35 @@ impl PreparedCallableEffectDeclarations {
         self.graph.read()
     }
 
+    pub(crate) fn observation_dependency_owner<C: DecisionControl>(
+        &self,
+        scheme: &crate::effect_row::prepared::PreparedEffectSchemeRef,
+        control: &mut C,
+    ) -> Result<&CheckedCallableId, PreparedEffectFailure<C::Error>> {
+        for (owner, declaration) in &self.declarations {
+            control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?;
+            if declaration.header.scheme() == scheme {
+                declaration.header.validate(&self.graph)?;
+                return Ok(owner);
+            }
+        }
+        Err(PreparedEffectInvariant::StaleReference.into())
+    }
+
+    pub(crate) fn declaration_body_is_prepared(
+        &self,
+        owner: &CheckedCallableId,
+    ) -> Result<bool, PreparedEffectInvariant> {
+        let declaration = self
+            .declarations
+            .get(owner)
+            .ok_or(PreparedEffectInvariant::StaleReference)?;
+        self.read()
+            .scheme_body_is_prepared(declaration.header.scheme())
+    }
+
     pub(super) fn with_read_scope<C: DecisionControl, T>(
         &self,
         scope: Option<&PreparedEffectReadScope>,

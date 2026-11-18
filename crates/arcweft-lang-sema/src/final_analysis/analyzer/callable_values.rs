@@ -192,22 +192,14 @@ impl Analyzer<'_, '_, '_> {
         if environment_candidates.peek().is_none() {
             return Ok(None);
         }
-        let types = self
-            .source_type_preparation(context.work())
-            .map_err(AnalyzerExpressionError::fatal)?;
         let expected = if candidates.len() > 1 {
             let expected = expected.ok_or_else(|| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
                     owner,
                 })
             })?;
-            let declarations = self
-                .facts
-                .effect_declarations()
-                .map_err(AnalyzerExpressionError::fact)?;
             Some(
-                types
-                    .observe_canonical(owner, expected, declarations.read())
+                self.observe_source_type_with_dependencies(context, owner, expected)
                     .map_err(AnalyzerExpressionError::fatal)?,
             )
         } else {
@@ -265,8 +257,8 @@ impl Analyzer<'_, '_, '_> {
         let Some((checked, ty)) = selected else {
             return Ok(None);
         };
-        let prepared = types
-            .retain(owner, &ty)
+        let prepared = self
+            .retain_source_value_type(context, owner, &ty)
             .map_err(AnalyzerExpressionError::fatal)?;
         Ok(Some(
             crate::final_analysis::prepared::PreparedResolvedExpression::value(

@@ -997,6 +997,9 @@ impl<E> PreparedCallGraphMutationFailure<E> {
             PreparedEffectFailure::Declaration(error) => PreparedEffectFailure::Declaration(error),
             PreparedEffectFailure::Unsatisfiable => PreparedEffectFailure::Unsatisfiable,
             PreparedEffectFailure::NonPrincipal => PreparedEffectFailure::NonPrincipal,
+            PreparedEffectFailure::ObservationNeedsBody(scheme) => {
+                PreparedEffectFailure::ObservationNeedsBody(scheme)
+            }
             PreparedEffectFailure::ObservationNotTotal => {
                 PreparedEffectFailure::ObservationNotTotal
             }

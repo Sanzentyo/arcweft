@@ -331,6 +331,16 @@ impl<'a> PreparedEffectReadView<'a> {
         }
     }
 
+    pub(crate) fn scheme_body_is_prepared(
+        self,
+        reference: &PreparedEffectSchemeRef,
+    ) -> Result<bool, PreparedEffectInvariant> {
+        Ok(matches!(
+            &self.scheme(reference)?.state,
+            SchemeState::BodyPrepared { .. }
+        ))
+    }
+
     pub(in crate::effect_row::prepared) fn row(
         self,
         reference: &PreparedEffectRowRef,
