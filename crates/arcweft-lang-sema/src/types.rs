@@ -43,7 +43,7 @@ pub use digest::SemanticTypeDigest;
 pub use effect_domain::{CanonicalEffects, TypeEffectDomain};
 pub(crate) use effect_domain::{
     PreparedEffects, PreparedTypeArguments, PreparedTypeEffectProjectionFailure,
-    PreparedTypeRetentionFailure,
+    PreparedTypeEffectRoots, PreparedTypeRetentionFailure,
 };
 pub(crate) use generic_use::TypeGenericUseCollector;
 pub use generic_use::TypeGenericUseError;

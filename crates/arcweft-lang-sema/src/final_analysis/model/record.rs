@@ -170,10 +170,10 @@ pub(crate) struct CheckedRecordFieldSlot {
 impl CheckedRecordFieldSlot {
     pub(crate) fn issue(
         nominal: SemanticTypeDigest,
+        field_type: SemanticTypeDigest,
         field: &super::super::prepared::PreparedProjectRecordExpressionField,
-    ) -> Result<Self, crate::types::GenericScopeError> {
-        let field_type = field.field_type().semantic_identity_digest()?;
-        Ok(Self {
+    ) -> Self {
+        Self {
             source_ordinal: field.source_ordinal(),
             declaration_ordinal: field.declaration_ordinal(),
             semantic_id: CheckedRecordFieldSemanticId::Project(
@@ -185,7 +185,7 @@ impl CheckedRecordFieldSlot {
             ),
             field_type,
             source: field.source(),
-        })
+        }
     }
 
     pub(crate) const fn source_ordinal(&self) -> u32 {

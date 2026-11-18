@@ -13,10 +13,12 @@ use crate::{
         PreparedCallableEffectDeclarations, PreparedCallableEffectProjection,
         PreparedResolvedCallable,
     },
-    effect_row::prepared::PreparedEffectRow,
+    effect_row::prepared::{PreparedEffectRow, PrincipalEffectClosure},
     effect_row::{DecisionControl, DecisionWork, EffectRow},
     final_analysis::statement_effects::PreparedExecutionEffectCatalog,
-    types::{TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind},
+    types::{
+        PreparedTypeEffectRoots, TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind,
+    },
 };
 
 type CallableEdges = BTreeMap<CheckedCallableId, BTreeMap<CheckedCallableId, BTreeSet<ExprId>>>;
@@ -637,16 +639,16 @@ impl CallableEffectGraph {
         bounded_call_rows: &BTreeMap<CheckedCallableId, EffectRow>,
         catalog: &crate::callable::CheckedCallableCatalogBuilder,
         declarations: &mut PreparedCallableEffectDeclarations,
-        work_limit: u64,
-        control: FinalSemanticAnalysisControl<'_>,
-    ) -> Result<(), FinalSemanticAnalysisError> {
-        self.equations.close(
+        observed: &PreparedTypeEffectRoots<'_>,
+        work: &mut CallableEffectClosureWork<'_>,
+    ) -> Result<PrincipalEffectClosure, FinalSemanticAnalysisError> {
+        self.equations.close_observed(
             rows,
             bounded_call_rows,
             catalog,
             declarations,
-            work_limit,
-            control,
+            observed,
+            work,
         )
     }
 
@@ -684,12 +686,22 @@ impl CallableEffectEquations {
         work_limit: u64,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        control.check()?;
-        let mut work = CallableEffectClosureWork {
-            control,
-            limit: work_limit,
-            remaining: work_limit,
-        };
+        let mut work = CallableEffectClosureWork::new(work_limit, control);
+        let observed = PreparedTypeEffectRoots::default();
+        self.close_observed(rows, boundary, catalog, source, &observed, &mut work)?;
+        Ok(())
+    }
+
+    fn close_observed(
+        &self,
+        rows: &mut BTreeMap<CheckedCallableId, EffectRow>,
+        boundary: &BTreeMap<CheckedCallableId, EffectRow>,
+        catalog: &crate::callable::CheckedCallableCatalogBuilder,
+        source: &mut PreparedCallableEffectDeclarations,
+        observed: &PreparedTypeEffectRoots<'_>,
+        work: &mut CallableEffectClosureWork<'_>,
+    ) -> Result<PrincipalEffectClosure, FinalSemanticAnalysisError> {
+        work.check()?;
         if rows.len() != self.edges.len()
             || rows.keys().any(|owner| !self.edges.contains_key(owner))
         {
@@ -720,7 +732,7 @@ impl CallableEffectEquations {
             work.charge(DecisionWork::Node)?;
             declarations.insert(owner.clone(), declaration);
         }
-        let mut checkpoint = graph.checkpoint(&mut work)?;
+        let mut checkpoint = graph.checkpoint(work)?;
         let completed = (|| -> Result<_, FinalSemanticAnalysisError> {
             for (caller, targets) in &self.edges {
                 work.charge(DecisionWork::Visit)?;
@@ -728,7 +740,7 @@ impl CallableEffectEquations {
                     .get(caller)
                     .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                 let mut terms = vec![PreparedEffectRow::Canonical(
-                    original.clone_with_control(&mut work)?,
+                    original.clone_with_control(work)?,
                 )];
                 for (target, expressions) in targets {
                     for expression in expressions {
@@ -754,7 +766,7 @@ impl CallableEffectEquations {
                                 )
                             };
                         let term = if let Some(row) = boundary.get(target) {
-                            PreparedEffectRow::Canonical(specialize(row, &mut work)?)
+                            PreparedEffectRow::Canonical(specialize(row, work)?)
                         } else {
                             let declaration = declarations
                                 .get(target)
@@ -766,24 +778,28 @@ impl CallableEffectEquations {
                                     crate::effects::EffectSet::new(),
                                     parameter.clone(),
                                 );
-                                arguments.push(PreparedEffectRow::Canonical(specialize(
-                                    &row, &mut work,
-                                )?));
+                                arguments
+                                    .push(PreparedEffectRow::Canonical(specialize(&row, work)?));
                             }
-                            graph.application(declaration.scheme(), arguments, &mut work)?
+                            graph.application(declaration.scheme(), arguments, work)?
                         };
                         terms.push(term);
                     }
                 }
-                let body = graph.union(terms, &mut work)?;
-                graph.prepare_body(declarations[caller].scheme(), body, vec![], &mut work)?;
+                let body = graph.union(terms, work)?;
+                graph.prepare_body(declarations[caller].scheme(), body, vec![], work)?;
             }
             let mut roots = Vec::new();
             for declaration in declarations.values() {
                 work.charge(DecisionWork::Node)?;
                 roots.push(declaration.scheme());
             }
-            let closure = graph.solve_reachable_principal(&roots, &mut work)?;
+            let closure = graph.solve_reachable_principal(
+                &roots,
+                observed.rows(),
+                observed.predicates(),
+                work,
+            )?;
             let mut completed = BTreeMap::new();
             for (owner, declaration) in declarations {
                 work.charge(DecisionWork::Visit)?;
@@ -794,18 +810,19 @@ impl CallableEffectEquations {
                             FinalSemanticAnalysisError,
                         >::from,
                     )?
-                    .clone_with_control(&mut work)?;
+                    .clone_with_control(work)?;
                 completed.insert(owner, row);
             }
-            Ok(completed)
+            Ok((completed, closure))
         })();
         graph.rollback(&mut checkpoint).map_err(
             crate::effect_row::prepared::PreparedEffectFailure::<FinalSemanticAnalysisError>::from,
         )?;
         // Both failure and success leave the original declaration relation in
         // place. Only the complete canonical query result is published here.
-        *rows = completed?;
-        Ok(())
+        let (completed, closure) = completed?;
+        *rows = completed;
+        Ok(closure)
     }
 }
 
@@ -834,14 +851,17 @@ pub(super) fn prepare_declarations(
         .map_err(FinalSemanticAnalysisError::from)
 }
 
-pub(super) struct CallableEffectClosureWork<'a> {
+pub(in crate::final_analysis) struct CallableEffectClosureWork<'a> {
     control: FinalSemanticAnalysisControl<'a>,
     limit: u64,
     remaining: u64,
 }
 
 impl<'a> CallableEffectClosureWork<'a> {
-    pub(super) fn new(limit: u64, control: FinalSemanticAnalysisControl<'a>) -> Self {
+    pub(in crate::final_analysis) fn new(
+        limit: u64,
+        control: FinalSemanticAnalysisControl<'a>,
+    ) -> Self {
         Self {
             control,
             limit,

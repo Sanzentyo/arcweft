@@ -739,12 +739,22 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             .staged_callables
             .take()
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let mut closure_work = callable_effect_graph::CallableEffectClosureWork::new(
+            self.catalogs.callable_limits.max_catalog_build_work(),
+            self.control,
+        );
         let (
             mut checked_callables,
             mut closed_flow_effects,
             item_suspensions,
             executable_suspensions,
-        ) = self.finish_checked_callables(staged, &input, &selected_expressions)?;
+            type_effects,
+        ) = self.finish_checked_callables(
+            staged,
+            &input,
+            &selected_expressions,
+            &mut closure_work,
+        )?;
         self.display_conformances = Some(display::DisplayConformanceCatalog::build(
             self,
             &checked_callables,
@@ -794,7 +804,10 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             &selected_expressions,
             &self.modules,
             self.facts.expressions(),
-        );
+            &checked_callables,
+            &type_effects,
+            &mut closure_work,
+        )?;
         let semantic_coordinates =
             SemanticCoordinateIndex::new(accepted_roots.as_ref(), &structural_edges);
 
@@ -1061,6 +1074,8 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
 mod call_seal;
 #[path = "analyzer/callable_effect_graph.rs"]
 mod callable_effect_graph;
+#[cfg(test)]
+pub(super) use callable_effect_graph::CallableEffectClosureWork;
 #[path = "analyzer/callable_values.rs"]
 mod callable_values;
 #[path = "analyzer/calls.rs"]

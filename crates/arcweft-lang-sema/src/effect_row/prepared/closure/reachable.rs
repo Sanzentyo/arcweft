@@ -4,12 +4,15 @@ use super::super::read::dependencies::{Dependency, Reachable, SchemeDependencies
 use super::*;
 
 impl PreparedEffectGraph {
-    /// A canonical projection is allowed only for this closed dependency
-    /// component. Every original graph obligation participates, so selecting
-    /// roots cannot hide a rejection or detach a correlated inference unknown.
+    /// Include dependencies observed by published types alongside the named
+    /// roots. Observations add no constraints. Every original graph obligation
+    /// still participates, so a query cannot hide a rejection or detach an
+    /// inference unknown from the obligations that determine it.
     pub(crate) fn solve_reachable_principal<C: DecisionControl>(
         &self,
         roots: &[&PreparedEffectSchemeRef],
+        rows: &[&PreparedEffectRow],
+        predicates: &[&PreparedEffectPredicate],
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         if self.active_scope.is_some() {
@@ -19,6 +22,12 @@ impl PreparedEffectGraph {
         for root in roots {
             self.scheme(root)?;
             reachable.push(Dependency::Function(self.validate(&root.0)?), control)?;
+        }
+        for row in rows {
+            reachable.push(Dependency::Row(row), control)?;
+        }
+        for predicate in predicates {
+            reachable.push(Dependency::Predicate(predicate), control)?;
         }
         for obligation in &self.relation.obligations {
             reachable.push(Dependency::Predicate(&obligation.domain), control)?;
@@ -62,7 +71,7 @@ mod tests {
             .unwrap();
         let state = graph.state;
         let closed = graph
-            .solve_reachable_principal(&[&root], &mut work)
+            .solve_reachable_principal(&[&root], &[], &[], &mut work)
             .unwrap();
         let expected =
             EffectRow::closed(crate::effects::EffectSet::from_labels(["log.write"]).unwrap());
@@ -129,7 +138,7 @@ mod tests {
             )
             .unwrap();
         let closed = graph
-            .solve_reachable_principal(&[&root], &mut work)
+            .solve_reachable_principal(&[&root], &[], &[], &mut work)
             .unwrap();
         assert_eq!(
             closed.resolve_row(&row, &mut work).unwrap(),
@@ -152,7 +161,7 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(
-            graph.solve_reachable_principal(&[&root], &mut work),
+            graph.solve_reachable_principal(&[&root], &[], &[], &mut work),
             Err(PreparedEffectFailure::Unsatisfiable)
         ));
     }
@@ -171,14 +180,70 @@ mod tests {
         let mut measured = budget();
         let before = measured.0;
         graph
-            .solve_reachable_principal(&[&root], &mut measured)
+            .solve_reachable_principal(&[&root], &[], &[], &mut measured)
             .unwrap();
         for remaining in 0..before - measured.0 {
             assert!(matches!(
-                graph.solve_reachable_principal(&[&root], &mut Budget(remaining)),
+                graph.solve_reachable_principal(&[&root], &[], &[], &mut Budget(remaining)),
                 Err(PreparedEffectFailure::Control(Exhausted))
             ));
             assert_eq!(graph.state, state);
         }
+    }
+
+    #[test]
+    fn observed_type_roots_read_actual_bodies_without_adding_obligations() {
+        let mut graph = PreparedEffectGraph::default();
+        let mut work = budget();
+        let row_owner = graph
+            .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+            .unwrap();
+        let predicate_owner = graph
+            .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+            .unwrap();
+        let row = graph.application(&row_owner, vec![], &mut work).unwrap();
+        let compared = graph
+            .application(&predicate_owner, vec![], &mut work)
+            .unwrap();
+        let predicate = graph
+            .relate(
+                PreparedEffectRelation::Equal,
+                compared,
+                literal(&["effect.read"]),
+                &mut work,
+            )
+            .unwrap();
+        assert!(matches!(
+            graph.solve_reachable_principal(&[], &[&row], &[&predicate], &mut work),
+            Err(PreparedEffectFailure::Invariant(
+                PreparedEffectInvariant::SchemeState
+            ))
+        ));
+
+        let mut checkpoint = graph.checkpoint(&mut work).unwrap();
+        graph
+            .prepare_body(&row_owner, literal(&["effect.read"]), vec![], &mut work)
+            .unwrap();
+        graph
+            .prepare_body(
+                &predicate_owner,
+                literal(&["effect.write"]),
+                vec![],
+                &mut work,
+            )
+            .unwrap();
+        let closure = graph
+            .solve_reachable_principal(&[], &[&row], &[&predicate], &mut work)
+            .unwrap();
+        graph.rollback(&mut checkpoint).unwrap();
+
+        assert_eq!(
+            closure.resolve_row(&row, &mut work).unwrap(),
+            EffectRow::closed(crate::effects::EffectSet::from_labels(["effect.read"]).unwrap())
+        );
+        assert_eq!(
+            closure.resolve_predicate(&predicate, &mut work).unwrap(),
+            EffectPredicate::impossible()
+        );
     }
 }

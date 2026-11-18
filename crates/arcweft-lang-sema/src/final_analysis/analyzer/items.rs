@@ -13,7 +13,9 @@ use super::{
     HirPredicateBody, HirProofBody, HirSourceQuery, HirStmtKind, HirTraitMember, ItemId,
     ProjectSymbolTable, STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan, StagedCallableBody,
     StagedCheckedCallables, TypeId, TypeKind,
-    callable_effect_graph::{CallableEffectGraph, prepared_call_execution_rows},
+    callable_effect_graph::{
+        CallableEffectClosureWork, CallableEffectGraph, prepared_call_execution_rows,
+    },
     calls::{AnalyzerPreparedCallGraph, AnalyzerPreparedCallPrefix},
     statements::{checked_effect_expression, function_effect_contract, scope_span, source_span},
 };
@@ -687,12 +689,14 @@ impl Analyzer<'_, '_, '_> {
         mut staged: StagedCheckedCallables,
         input: &FinalSemanticAnalysisInput,
         selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
+        closure_work: &mut CallableEffectClosureWork<'_>,
     ) -> Result<
         (
             Arc<CheckedCallableCatalog>,
             BTreeMap<ItemId, EffectSet>,
             BTreeMap<ItemId, CheckedSuspensionRole>,
             crate::final_analysis::execution_regions::PreparedExecutableSuspensionCatalog,
+            crate::effect_row::prepared::PrincipalEffectClosure,
         ),
         FinalSemanticAnalysisError,
     > {
@@ -752,15 +756,34 @@ impl Analyzer<'_, '_, '_> {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }
-        graph.close_effect_rows(
+        let record_types = input
+            .expressions
+            .iter()
+            .filter_map(|(_, fact)| fact.project_record_body())
+            .flat_map(|record| {
+                std::iter::once(record.nominal().ty())
+                    .chain(record.fields().iter().map(|field| field.field_type()))
+            });
+        let observed = crate::types::PreparedTypeEffectRoots::collect(
+            record_types,
+            std::iter::empty(),
+            closure_work,
+        )
+        .map_err(|error| match error {
+            crate::types::TypeProjectionError::Control(error) => error,
+            crate::types::TypeProjectionError::Instantiation(error) => {
+                crate::final_analysis::NominalSchemaProjectionError::from(error).into()
+            }
+        })?;
+        let type_effects = graph.close_effect_rows(
             &mut rows,
             &bounded_call_effect_rows,
             &staged.builder,
             self.facts
                 .effect_declarations_mut()
                 .map_err(FinalSemanticAnalysisError::from)?,
-            self.catalogs.callable_limits.max_catalog_build_work(),
-            self.control,
+            &observed,
+            closure_work,
         )?;
         // Preparation rows were derived within candidate transactions. The
         // complete selected execution graph must independently confirm every
@@ -1055,6 +1078,7 @@ impl Analyzer<'_, '_, '_> {
             closed_flow_effects,
             item_suspensions,
             executable_suspensions,
+            type_effects,
         ))
     }
 
@@ -1160,8 +1184,12 @@ impl Analyzer<'_, '_, '_> {
         selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
     ) -> Result<Arc<CheckedCallableCatalog>, FinalSemanticAnalysisError> {
         let staged = self.stage_checked_callables()?;
-        self.finish_checked_callables(staged, input, selected)
-            .map(|(catalog, _, _, _)| catalog)
+        let mut work = CallableEffectClosureWork::new(
+            self.catalogs.callable_limits.max_catalog_build_work(),
+            self.control,
+        );
+        self.finish_checked_callables(staged, input, selected, &mut work)
+            .map(|(catalog, _, _, _, _)| catalog)
     }
 }
 

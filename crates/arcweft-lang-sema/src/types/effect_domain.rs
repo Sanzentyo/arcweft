@@ -13,7 +13,7 @@ use super::{
 mod tests;
 
 mod prepared;
-pub(in crate::types) use prepared::PreparedTypeEffectRoots;
+pub(crate) use prepared::PreparedTypeEffectRoots;
 pub(crate) use prepared::{
     PreparedEffects, PreparedTypeArguments, PreparedTypeEffectProjectionFailure,
     PreparedTypeRetentionFailure,

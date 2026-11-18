@@ -6,7 +6,8 @@ use crate::types::{TypeInstantiationError, constraints::TypeConstraintShape};
 #[cfg(test)]
 mod tests;
 
-pub(in crate::types) struct PreparedTypeEffectRoots<'a> {
+#[derive(Default)]
+pub(crate) struct PreparedTypeEffectRoots<'a> {
     rows: Vec<&'a PreparedEffectRow>,
     predicates: Vec<&'a PreparedEffectPredicate>,
 }
@@ -15,7 +16,7 @@ impl<'a> PreparedTypeEffectRoots<'a> {
     /// The shared type-shape grammar owns every child. This read only retains
     /// the header ports needed by the frozen relation; it issues no type or Γ.
     /// An exhausted collection returns no partial root inventory.
-    pub(in crate::types) fn collect<C: TypeProjectionControl>(
+    pub(crate) fn collect<C: TypeProjectionControl>(
         types: impl IntoIterator<Item = &'a TypeKind<PreparedEffects>>,
         predicates: impl IntoIterator<Item = &'a PreparedEffectPredicate>,
         control: &mut C,
@@ -65,10 +66,10 @@ impl<'a> PreparedTypeEffectRoots<'a> {
         Ok(result)
     }
 
-    pub(in crate::types) fn rows(&self) -> &[&'a PreparedEffectRow] {
+    pub(crate) fn rows(&self) -> &[&'a PreparedEffectRow] {
         &self.rows
     }
-    pub(in crate::types) fn predicates(&self) -> &[&'a PreparedEffectPredicate] {
+    pub(crate) fn predicates(&self) -> &[&'a PreparedEffectPredicate] {
         &self.predicates
     }
 }

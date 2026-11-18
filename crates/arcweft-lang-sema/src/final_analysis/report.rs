@@ -2374,11 +2374,20 @@ impl FinalSemanticAnalysis {
                 Arc::clone(&topology),
                 &expressions,
             )?;
+        let mut work = super::analyzer::CallableEffectClosureWork::new(
+            crate::callable::PRODUCTION_CALLABLE_LIMITS.max_catalog_build_work(),
+            control,
+        );
+        let type_effects = crate::effect_row::prepared::PreparedEffectGraph::default()
+            .solve_reachable_principal(&[], &[], &[], &mut work)?;
         input.set_structural_edges(match_edges::CheckedStructuralEdgeDraft::seal(
             &selected_expressions,
             &modules,
             &expressions,
-        ))?;
+            &checked_callables,
+            &type_effects,
+            &mut work,
+        )?)?;
         input.set_selected_expressions(selected_expressions)?;
         Self::try_new_with_control_and_type_resolutions_and_catalog(
             project,

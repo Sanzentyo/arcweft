@@ -1248,6 +1248,13 @@ impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact 
 }
 
 impl PreparedExpressionFact {
+    pub(super) fn project_record_body(&self) -> Option<&PreparedProjectRecordExpression> {
+        match self.implicit_body_expression().unwrap_or(self) {
+            Self::ProjectRecord(record) => Some(record),
+            _ => None,
+        }
+    }
+
     /// Attach the completed use to the fact whose source was supplied to the
     /// specialization application. The caller authenticates that source
     /// against the completed component before this local state transition.

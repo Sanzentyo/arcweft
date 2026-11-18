@@ -38,11 +38,13 @@ use crate::callable::{
     CheckedCallSite, CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
     validate_selected_application,
 };
+use crate::effect_row::prepared::PrincipalEffectClosure;
 use crate::record_field::CheckedRecordFieldSemanticId;
 use crate::semantic_coordinate::{
     CheckedExpressionChildRole, CheckedExpressionEdgeAuthority, CheckedNestedPathSegmentV1,
     CheckedNestedPathV1,
 };
+use crate::types::TypeProjectionControl;
 
 mod model;
 
@@ -726,7 +728,10 @@ impl CheckedStructuralEdgeDraft {
         selected: &CheckedSelectedExpressionGraph,
         modules: &BTreeMap<HirModuleId, &HirModule>,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
-    ) -> Self {
+        callables: &CheckedCallableCatalog,
+        type_effects: &PrincipalEffectClosure,
+        work: &mut impl TypeProjectionControl<Error = FinalSemanticAnalysisError>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
         let mut facts = BTreeMap::new();
         let mut call_owners = BTreeSet::new();
         for owner in selected.owners() {
@@ -756,68 +761,78 @@ impl CheckedStructuralEdgeDraft {
             if checked_owner.checked_call_site(owner).is_some() {
                 call_owners.insert(owner);
             }
-            let record_owner = checked_owner
-                .implicit_body_expression()
-                .unwrap_or(checked_owner);
             let mut record = None;
             match (
                 matches!(
                     owner_expression.kind(),
                     HirExprKind::Record(_) | HirExprKind::RecordLiteral(_)
                 ),
-                matches!(
-                    record_owner,
-                    super::PreparedExpressionFact::ProjectRecord(_)
-                ),
+                checked_owner.project_record_body(),
             ) {
-                (true, true) => {
-                    let super::PreparedExpressionFact::ProjectRecord(prepared) = record_owner
-                    else {
-                        unreachable!()
-                    };
-                    let slots = prepared
-                        .fields()
-                        .iter()
-                        .map(|field| {
-                            super::CheckedRecordFieldSlot::issue(
-                                prepared.nominal().identity(),
-                                field,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>();
-                    match slots {
-                        Ok(slots)
-                            if slots.iter().enumerate().all(|(ordinal, slot)| {
-                                u32::try_from(ordinal).ok() == Some(slot.source_ordinal())
-                            }) && slots
-                                .iter()
-                                .map(|slot| slot.declaration_ordinal())
-                                .collect::<BTreeSet<_>>()
-                                .len()
-                                == slots.len() =>
-                        {
-                            record =
-                                Some(CheckedRecordFieldPlan::Semantic(slots.into_boxed_slice()))
-                        }
-                        Err(error) => {
-                            facts.insert(owner, Err(CheckedChildEdgeError::GenericScope(error)));
-                            continue;
-                        }
-                        Ok(_) => {
-                            facts.insert(
-                                owner,
-                                Err(CheckedChildEdgeError::CheckedRecordFieldOrderMismatch),
-                            );
-                            continue;
-                        }
+                (true, Some(prepared)) => {
+                    let mut declaration_ordinals = BTreeSet::new();
+                    let mut ordered = true;
+                    for (ordinal, field) in prepared.fields().iter().enumerate() {
+                        work.visit_binding()?;
+                        ordered &= u32::try_from(ordinal).ok() == Some(field.source_ordinal())
+                            && declaration_ordinals.insert(field.declaration_ordinal());
                     }
+                    if !ordered {
+                        facts.insert(
+                            owner,
+                            Err(CheckedChildEdgeError::CheckedRecordFieldOrderMismatch),
+                        );
+                        continue;
+                    }
+                    let source = callables
+                        .constraint_source_owner(selected.topology(), owner)
+                        .map_err(|error| FinalSemanticAnalysisError::SourceTypeRetention {
+                            owner: owner.into(),
+                            error: super::SourceTypeRetentionFailure::Owner(error),
+                        })?;
+                    let binder =
+                        source
+                            .declaration_formals_with_control(work)
+                            .map_err(|error| {
+                                FinalSemanticAnalysisError::source_type_projection(
+                                    owner.into(),
+                                    error,
+                                )
+                            })?;
+                    let scope = binder.template_scope();
+                    let mut digest = |ty: &TypeKind<crate::types::PreparedEffects>| {
+                        ty.project_canonical_effects(scope, type_effects, work)
+                            .map_err(|error| {
+                                FinalSemanticAnalysisError::source_type_effect_projection(
+                                    owner.into(),
+                                    error,
+                                )
+                            })?
+                            .semantic_identity_digest_in_scope_with_control(scope, work)
+                            .map_err(|error| {
+                                FinalSemanticAnalysisError::source_type_projection(
+                                    owner.into(),
+                                    error,
+                                )
+                            })
+                    };
+                    let nominal = digest(prepared.nominal().ty())?;
+                    let mut slots = Vec::with_capacity(prepared.fields().len());
+                    for field in prepared.fields() {
+                        slots.push(super::CheckedRecordFieldSlot::issue(
+                            nominal,
+                            digest(field.field_type())?,
+                            field,
+                        ));
+                    }
+                    record = Some(CheckedRecordFieldPlan::Semantic(slots.into_boxed_slice()));
                 }
-                (false, false) => {}
-                (true, false) => {
+                (false, None) => {}
+                (true, None) => {
                     facts.insert(owner, Err(CheckedChildEdgeError::MissingCheckedRecordField));
                     continue;
                 }
-                (false, true) => {
+                (false, Some(_)) => {
                     facts.insert(
                         owner,
                         Err(CheckedChildEdgeError::UnexpectedCheckedRecordField),
@@ -963,7 +978,7 @@ impl CheckedStructuralEdgeDraft {
                 ),
             );
         }
-        Self { facts, call_owners }
+        Ok(Self { facts, call_owners })
     }
 
     pub(super) fn into_final_facts(
