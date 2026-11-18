@@ -18681,3 +18681,16 @@ Analyzerで閉じた値を投影する独立呼出しは、元のfrontierを引�
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。公開入力ではlibrary **416エラー・25警告**、lib test **1,332エラー・44警告**。変更pathを一次位置とする1件は既存の完了呼出しの引数不足。Semaのfmtと構造gateは終了0、blocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,079,896 bytesでcleanは未実行。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-scoped-result-materialization-checkpoint.raw.zip) は16 entry、151,807 bytes、SHA256 `c56be25df25b8788c4fab5f7b04911fd767076144718018967c2f408662fea32`。各entryの長さとSHA256を再照合した。旧履歴2,896,399 bytesのSHA256 `68306dc5adada8f08467a1b52d1504617b7a630c4ea82da52b9312d2e02ffb30` をprefixとして保持した。
+
+<a id="scoped-result-use-checkpoint"></a>
+## 2026-11-18 — 候補の作用項を引数照合と関数値の特殊化で使う
+
+基点 `1d975d865838aeb70a8c53907aaa1a5e866fbfe4`。Source `1dcb06597f8835d3d20145d23a2d5ee920c3fb52` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した8入力のblobを照合した。
+
+引数応答を取り込む際、候補の既存の読取り範囲と今回の準備差分を合成して実型と照合用の期待型を開く。結果利用は、子の結果を開いてから関数schemeの準備と型制約の照合を行い、派生作用項を同じ候補に保持する。入れ子の適用と特殊化投影もこの範囲を渡す。準備済み関数schemeの発行時には、他候補の処理でliveグラフが進んでいても、元の作用項を正当な発行元と依存関係で再検証する。callbackに渡す事前の期待型ヒントと、選択した元の準備差分の本番適用は継続する。
+
+候補にしか存在しない作用項を保持した関数結果を照合し、作用項がliveグラフへ追加されないことを確認する回帰を追加した。コンパイル段階で停止したため回帰は未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。公開入力ではlibrary **416エラー・25警告**、lib test **1,332エラー・44警告**。変更pathを一次位置とする1件は `transaction.rs:2554` の既存の `ConstraintClosedEffects::for_path` 呼出しの引数不足。Semaのfmtと構造gateは終了0、blocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,087,832 bytesで、約300 GBを目安とするcleanは未実行。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-scoped-result-use-checkpoint.raw.zip) は22 entry、282,343 bytes、SHA256 `e3eed570db69c19f773c6143da2b9affe7be461a1a453b94ac750c48ec21951b`。各entryの長さとSHA256を再照合した。旧履歴2,898,675 bytesのSHA256 `1001c37ee42bb1e72cfa8c1643560743705ee55dbf966faca230c623d73a2dcb` をprefixとして保持した。
