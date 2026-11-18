@@ -19424,3 +19424,15 @@ Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ、captu
 locked Sema全feature checkは通常ライブラリ成功、lib testは終了101・823エラー・33警告。コード・ファイル別の内訳は `4a2f0a89ed9dfc00fe9735d1a3a32ebdb0be29ae` と一致。SemaのライブラリClippy、fmt、構造ゲートは終了0、構造阻害0件。Semaユニットと全体受入は未実行。
 
 [検証原本・全ID比較・LLDB・公開照合](acceptance-evidence/task-share-completed-effect-members.raw.zip) は18 entry、858341 bytes、SHA256 `e05ceeb072cd0f039a689d21d9250580a889a23b7cf6f8ac596bd20310d89351`。原本の長さとハッシュを照合し、既存履歴をそのまま保持した。
+
+
+<a id="canonical-application-experiment"></a>
+## 2026-11-19 — 作用適用の二つの試行を比較
+
+試行の基点は `8f62647c35a544c89504cf511179f1c1f3b61345`。実装の比較元は `529c4c63c23b2aea8be3d4ab5a0fd6aa0d4b40cc`。初回は関数の正準作用式を観測時に適用した。二回目はそれに加え、関数ヘッダで置換すべき束縛がある参照だけを同時置換に渡した。
+
+両試行のCompilerは同じ152 IDで150成功・2失敗・0スキップ。遅延コールバックは両回ともソーストレースの作用パラメータを検査する際に停止し、retained Mapは両回とも `MaterializationInput::finish_projections` の作用行の構築で停止した。現在の受入を進める改善を確認できなかったため、試行したRust差分を取り込まず、検証入力と同じ5ファイルを基点のblobへ戻した。両試行ともSemaのライブラリClippyは終了0、全featureのlocked Semaテスト対象checkは終了101・823エラー・33警告。
+
+次の調査箇所は同じ出典付き関数ヘッダの二重走査である。`project_type_fold` はグラフを読んで各作用参照の適格性を検査し、ヘッダを再構築する `ConstraintFunctionHeaderView::admit` は同じ参照の出典を検査する。どちらの検査も必要で、検査結果を同じヘッダの処理内で使う統合は未実装。
+
+[試行差分・検証入力・原本・LLDB](acceptance-evidence/task-canonical-application-experiment.raw.zip) は24 entry、815330 bytes、SHA256 `1f48311337b91e5b841e31b63245f3b3f800af5eb250ce73ab3c96505abf5467`。二回目の差分に初回3ファイルの同じバイト列が含まれることと、各原本の長さとハッシュを照合した。
