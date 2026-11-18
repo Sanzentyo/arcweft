@@ -19,12 +19,13 @@ use crate::{
         PreparedStatementScrutineeProof, PreparedTriggerScrutineeProof,
     },
     registration::RegisteredStatementIngressTypes,
-    types::{EntityKind, TypeKind},
+    types::{EntityKind, PreparedEffects, TypeKind},
 };
 
 use super::{
     FinalSemanticAnalysisError, SemanticFactState,
     executable_ingress::{PreparedExecutableDeclarationInventory, PreparedExecutableIngressFacts},
+    expression_types::SourceTypePreparation,
     patterns::{PatternSeedContext, seed_pattern_locals},
 };
 
@@ -121,8 +122,8 @@ impl<'a> StatementScrutineeTypeAuthority<'a> {
     fn signal_payload<'b>(
         &self,
         role: StatementScrutineeRole,
-        target: &'b TypeKind,
-    ) -> Result<&'b TypeKind, FinalSemanticAnalysisError> {
+        target: &'b TypeKind<PreparedEffects>,
+    ) -> Result<&'b TypeKind<PreparedEffects>, FinalSemanticAnalysisError> {
         if role != StatementScrutineeRole::TriggerSignal {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
@@ -388,23 +389,14 @@ pub(super) fn seed_choice_event_scrutinees(
 
 /// Rechecks Choice Event patterns after their expressions have completed,
 /// against the same Entry-rooted event type and digest used at seed time.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the borrowed selector compares completed facts with the exact Entry-rooted authority"
-)]
-pub(super) fn validate_choice_event_scrutinees(
+fn validate_choice_event_scrutinees(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    types: &BTreeMap<TypeId, TypeKind>,
-    standard: &RegisteredStatementIngressTypes,
-    project: HirAnalysisProjectView<'_>,
-    topology: &HirProjectEvaluationTopology,
-    ingress: &PreparedExecutableIngressFacts,
+    authority: &StatementScrutineeTypeAuthority<'_>,
+    source: &SourceTypePreparation<'_>,
     declaration: &CallableDeclarationKey,
     expressions: &[ExprId],
     facts: &SemanticFactState,
 ) -> Result<(), FinalSemanticAnalysisError> {
-    let authority =
-        StatementScrutineeTypeAuthority::new(standard, project, topology, types, ingress);
     for owner in expressions {
         let module = modules
             .get(&owner.module())
@@ -427,7 +419,8 @@ pub(super) fn validate_choice_event_scrutinees(
             else {
                 continue;
             };
-            require_pattern(
+            require_registered_pattern(
+                source,
                 facts,
                 *pattern,
                 authority.event(StatementScrutineeRole::TriggerEvent, declaration)?,
@@ -631,11 +624,14 @@ pub(super) fn validate_declaration_scrutinees(
     topology: &HirProjectEvaluationTopology,
     ingress: &PreparedExecutableIngressFacts,
     declaration: &CallableDeclarationKey,
+    expressions: &[ExprId],
     statements: &[StmtId],
+    source: &SourceTypePreparation<'_>,
     facts: &SemanticFactState,
 ) -> Result<(), FinalSemanticAnalysisError> {
     let authority =
         StatementScrutineeTypeAuthority::new(standard, project, topology, types, ingress);
+    validate_choice_event_scrutinees(modules, &authority, source, declaration, expressions, facts)?;
     for owner in statements {
         let module = modules
             .get(&owner.module())
@@ -671,7 +667,7 @@ pub(super) fn validate_declaration_scrutinees(
                 HirTrigger::Event(pattern) => {
                     let expected =
                         authority.event(StatementScrutineeRole::TriggerEvent, declaration)?;
-                    require_pattern(facts, *pattern, expected)?;
+                    require_registered_pattern(source, facts, *pattern, expected)?;
                 }
                 HirTrigger::Signal { target, value } => {
                     let target_type = facts
@@ -690,7 +686,8 @@ pub(super) fn validate_declaration_scrutinees(
                         require_pattern(facts, *value, payload)?;
                     }
                 }
-                HirTrigger::Input(pattern) => require_pattern(
+                HirTrigger::Input(pattern) => require_registered_pattern(
+                    source,
                     facts,
                     *pattern,
                     authority.registered(StatementScrutineeRole::TriggerInput)?,
@@ -698,18 +695,21 @@ pub(super) fn validate_declaration_scrutinees(
                 HirTrigger::Select(pattern) => {
                     authority
                         .require_choice_lifecycle(StatementScrutineeRole::TriggerSelect, *owner)?;
-                    require_pattern(
+                    require_registered_pattern(
+                        source,
                         facts,
                         *pattern,
                         &TypeKind::entity_ref(EntityKind::ChoiceOption),
                     )?;
                 }
-                HirTrigger::Task(pattern) => require_pattern(
+                HirTrigger::Task(pattern) => require_registered_pattern(
+                    source,
                     facts,
                     *pattern,
                     authority.registered(StatementScrutineeRole::TriggerTask)?,
                 )?,
-                HirTrigger::Scope(pattern) => require_pattern(
+                HirTrigger::Scope(pattern) => require_registered_pattern(
+                    source,
                     facts,
                     *pattern,
                     authority.registered(StatementScrutineeRole::TriggerScope)?,
@@ -745,7 +745,7 @@ pub(super) fn validate_declaration_scrutinees(
                         HirSelectBranchHead::Event { pattern, locals } => {
                             let expected = authority
                                 .event(StatementScrutineeRole::SelectEvent, declaration)?;
-                            require_pattern(facts, *pattern, expected)?;
+                            require_registered_pattern(source, facts, *pattern, expected)?;
                             for local in locals {
                                 if !facts.locals().contains_key(local) {
                                     return Err(FinalSemanticAnalysisError::LocalTypeUnavailable {
@@ -757,8 +757,8 @@ pub(super) fn validate_declaration_scrutinees(
                         HirSelectBranchHead::Frame { pattern, locals } => {
                             let expected =
                                 authority.registered(StatementScrutineeRole::SelectFrame)?;
-                            require_pattern(facts, *pattern, expected)?;
-                            require_locals(facts, locals, expected)?;
+                            require_registered_pattern(source, facts, *pattern, expected)?;
+                            require_registered_locals(source, facts, locals, expected)?;
                         }
                         HirSelectBranchHead::Recovered => {
                             return Err(FinalSemanticAnalysisError::RecoveredOwner);
@@ -949,7 +949,7 @@ fn set_local(
 fn require_pattern(
     facts: &SemanticFactState,
     owner: PatternId,
-    expected: &TypeKind,
+    expected: &TypeKind<PreparedEffects>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     if facts.patterns().get(&owner) == Some(expected) {
         Ok(())
@@ -958,13 +958,23 @@ fn require_pattern(
     }
 }
 
-fn require_locals(
+fn require_registered_pattern(
+    source: &SourceTypePreparation<'_>,
+    facts: &SemanticFactState,
+    owner: PatternId,
+    expected: &TypeKind,
+) -> Result<(), FinalSemanticAnalysisError> {
+    require_pattern(facts, owner, &source.retain(owner, expected)?)
+}
+
+fn require_registered_locals(
+    source: &SourceTypePreparation<'_>,
     facts: &SemanticFactState,
     locals: &[arcweft_lang_hir::identity::LocalId],
     expected: &TypeKind,
 ) -> Result<(), FinalSemanticAnalysisError> {
     for owner in locals {
-        if facts.locals().get(owner) != Some(expected) {
+        if facts.locals().get(owner) != Some(&source.retain(*owner, expected)?) {
             return Err(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *owner });
         }
     }

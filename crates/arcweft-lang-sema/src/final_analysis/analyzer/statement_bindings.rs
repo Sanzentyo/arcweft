@@ -1,7 +1,5 @@
 //! Local binding inference in the expression owner's fact transaction.
 
-use std::rc::Rc;
-
 use super::{
     Analyzer, ExprId, FinalSemanticAnalysisError, HirExprKind, HirModule, HirStmtKind, PatternId,
     PreparedExpressionFact, StmtId, TypeId, TypeKind,
@@ -233,18 +231,11 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
             .kind()
             .authored_type());
-        let expected = authored_type
+        let prepared_expected = authored_type
             .map(|annotation| {
-                self.types.get(&annotation).cloned().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation },
-                    )
-                })
+                self.source_type_preparation(context.work())?
+                    .annotation(initializer, annotation)
             })
-            .transpose()?;
-        let prepared_expected = expected
-            .as_ref()
-            .map(|annotation| self.retain_source_value_type(context, initializer, annotation))
             .transpose()
             .map_err(AnalyzerExpressionError::fatal)?;
         // The call produces a line operation. The pattern receives its published result.
@@ -274,11 +265,26 @@ impl Analyzer<'_, '_, '_> {
         } else {
             actual_type
         };
-        let binding = match expected {
-            Some(expected) => expected
-                .binding_type_with_inferred_effects(binding_type)
-                .ok_or_else(|| AnalyzerExpressionError::rejected(initializer))?,
-            None => binding_type.clone(),
+        let expected = match initializer_expectation.as_ref() {
+            Some(TypeKind::DialogueLine(result)) if binds_dialogue_result => Some(result.as_ref()),
+            expected => expected,
+        };
+        let binding = if let Some(expected) = expected {
+            self.require_source_type(context, initializer, expected, binding_type)?;
+            self.source_type_preparation(context.work())
+                .and_then(|source| {
+                    source.complete_binding_effects(initializer, expected, binding_type)
+                })
+                .map_err(AnalyzerExpressionError::fatal)?
+                .ok_or_else(|| AnalyzerExpressionError::rejected(initializer))?
+        } else {
+            let effects = self
+                .facts
+                .effect_declarations()
+                .map_err(AnalyzerExpressionError::fact)?;
+            self.source_type_preparation(context.work())
+                .and_then(|source| source.retain_prepared(pattern, binding_type, effects.read()))
+                .map_err(AnalyzerExpressionError::fatal)?
         };
         self.seed_contextual_pattern_locals(context, module, pattern, &binding)
             .map_err(AnalyzerExpressionError::fatal)

@@ -297,17 +297,7 @@ impl Analyzer<'_, '_, '_> {
             true,
             Some(&selected),
         )?;
-        super::statement_scrutinee::validate_choice_event_scrutinees(
-            &self.modules,
-            &self.types,
-            self.catalogs.world.environment().statement_ingress(),
-            self.executable,
-            self.topology.as_ref(),
-            ingress,
-            declaration.declaration(),
-            declaration.expressions(),
-            &self.facts,
-        )?;
+        let source = self.source_type_preparation(self.preparation_work.clone())?;
         super::statement_scrutinee::validate_declaration_scrutinees(
             &self.modules,
             &self.types,
@@ -316,9 +306,12 @@ impl Analyzer<'_, '_, '_> {
             self.topology.as_ref(),
             ingress,
             &declaration.declaration,
+            declaration.expressions(),
             &declaration.statements,
+            &source,
             &self.facts,
         )?;
+        drop(source);
         self.finalize_declaration_locals(declaration, &selected)
     }
 
@@ -387,7 +380,13 @@ impl Analyzer<'_, '_, '_> {
             for request in super::statement_scrutinee::expression_requests_for_statement(
                 module, owner, &statement,
             )? {
-                let expected = request.expected();
+                let expected = request
+                    .expected()
+                    .map(|expected| {
+                        self.source_type_preparation(self.preparation_work.clone())?
+                            .retain(request.owner(), &expected)
+                    })
+                    .transpose()?;
                 self.check_expression_published(request.owner(), expected.as_ref())?;
             }
             let source_context = super::expression_types::SourceTypePreparation::new(

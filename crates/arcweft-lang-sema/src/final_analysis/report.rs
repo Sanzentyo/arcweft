@@ -1768,6 +1768,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
             &modules,
             &types,
             &patterns,
+            &locals,
         )?;
         control.check()?;
         validate_statements(&modules, &locals, &expressions, &statements)?;

@@ -162,15 +162,33 @@ impl TypeKind<super::PreparedEffects> {
         actual: &Self,
         control: &mut C,
     ) -> Result<bool, super::TypeProjectionError<C::Error>> {
+        self.complete_prepared_binding_effects(actual, control)
+            .map(|completed| completed.as_ref() == Some(actual))
+    }
+
+    /// Complete only omitted annotations. The source owner checks directional
+    /// compatibility and the final seal validates the completed binding.
+    pub(crate) fn complete_prepared_binding_effects<C: super::TypeProjectionControl>(
+        &self,
+        actual: &Self,
+        control: &mut C,
+    ) -> Result<Option<Self>, super::TypeProjectionError<C::Error>> {
         use crate::effect_row::prepared::PreparedEffectRow;
         binding_effects::complete(
             self,
             actual,
-            |row| matches!(row, PreparedEffectRow::Canonical(row) if !row.is_known()),
+            |row| matches!(row, PreparedEffectRow::Canonical(row) if binding_row_is_omitted(row)),
             control,
         )
-        .map(|completed| completed.as_ref() == Some(actual))
     }
+}
+
+fn binding_row_is_omitted(row: &crate::effect_row::EffectRow) -> bool {
+    !row.is_known()
+        || row.variables().is_ok_and(|mut variables| {
+            variables
+                .any(|reference| matches!(reference, super::GenericEffectReference::Inference(_)))
+        })
 }
 
 impl TypeKind {
@@ -230,19 +248,7 @@ impl TypeKind {
                 return Err(super::TypeProjectionError::Control(error));
             }
         }
-        binding_effects::complete(
-            self,
-            actual,
-            |row| {
-                !row.is_known()
-                    || row.variables().is_ok_and(|mut variables| {
-                        variables.any(|reference| {
-                            matches!(reference, super::GenericEffectReference::Inference(_))
-                        })
-                    })
-            },
-            control,
-        )
+        binding_effects::complete(self, actual, binding_row_is_omitted, control)
     }
 
     /// Returns whether an earlier authoritative resolution failure prevents a

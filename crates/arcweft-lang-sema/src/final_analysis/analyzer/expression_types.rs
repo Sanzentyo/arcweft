@@ -256,15 +256,38 @@ impl<'a> SourceTypePreparation<'a> {
     /// through preparation without closing the candidate graph here.
     pub(super) fn contextual_type_mismatch(
         &self,
-        owner: super::ExprId,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
         expected: &TypeKind<crate::types::PreparedEffects>,
         actual: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<bool, super::FinalSemanticAnalysisError> {
-        use crate::types::PreparedTypeCompatibility;
+        Ok(self.prepared_compatibility(owner, expected, actual)?
+            == crate::types::PreparedTypeCompatibility::Rejected)
+    }
+
+    pub(super) fn prepared_compatibility(
+        &self,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
+        expected: &TypeKind<crate::types::PreparedEffects>,
+        actual: &TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<crate::types::PreparedTypeCompatibility, super::FinalSemanticAnalysisError> {
         let mut work = self.work.clone();
         self.owner(owner.into(), &mut work)?;
-        Ok(expected.check_prepared_compatibility(actual, &mut work)?
-            == PreparedTypeCompatibility::Rejected)
+        expected.check_prepared_compatibility(actual, &mut work)
+    }
+
+    pub(super) fn complete_binding_effects(
+        &self,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
+        annotation: &TypeKind<crate::types::PreparedEffects>,
+        actual: &TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<Option<TypeKind<crate::types::PreparedEffects>>, super::FinalSemanticAnalysisError>
+    {
+        let owner = owner.into();
+        annotation
+            .complete_prepared_binding_effects(actual, &mut self.work.clone())
+            .map_err(|error| {
+                super::FinalSemanticAnalysisError::source_type_projection(owner, error)
+            })
     }
 
     /// One actual nominal application owns the argument index and one graph
@@ -383,7 +406,7 @@ impl<'a> SourceTypePreparation<'a> {
         ),
         super::FinalSemanticAnalysisError,
     > {
-        use crate::final_analysis::{FinalSemanticAnalysisError, SourceTypeRetentionFailure};
+        use crate::final_analysis::FinalSemanticAnalysisError;
         let owner = owner.into();
         let mut work = self.work.clone();
         let source = self.owner(owner, &mut work)?;
@@ -394,16 +417,42 @@ impl<'a> SourceTypePreparation<'a> {
         let owner_type = source
             .retain_value_type(ty, &mut work)
             .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
-        let seed = super::PreparedVariantOwnerSeed::try_environment_with(
-            schema,
-            owner_type,
-            &mut work,
-            |field, work| {
-                source.retain_value_type(field, work).map_err(|error| {
-                    FinalSemanticAnalysisError::source_type_projection(owner, error)
-                })
-            },
-        )
+        let seed =
+            Self::prepare_environment_variant_owner(owner, &source, schema, owner_type, &mut work)?;
+        Ok((value_type, seed))
+    }
+
+    pub(super) fn environment_variant_owner(
+        &self,
+        owner: super::PatternId,
+        schema: &super::EnvironmentEnumSchema,
+        ty: TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<
+        super::PreparedVariantOwnerSeed<crate::types::PreparedEffects>,
+        super::FinalSemanticAnalysisError,
+    > {
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let source = self.owner(owner, &mut work)?;
+        Self::prepare_environment_variant_owner(owner, &source, schema, ty, &mut work)
+    }
+
+    fn prepare_environment_variant_owner(
+        owner: arcweft_lang_hir::project::HirSemanticPathOwnerId,
+        source: &crate::callable::CheckedConstraintSourceOwner,
+        schema: &super::EnvironmentEnumSchema,
+        ty: TypeKind<crate::types::PreparedEffects>,
+        work: &mut super::preparation_work::AnalyzerPreparationWork<'_>,
+    ) -> Result<
+        super::PreparedVariantOwnerSeed<crate::types::PreparedEffects>,
+        super::FinalSemanticAnalysisError,
+    > {
+        use crate::final_analysis::{FinalSemanticAnalysisError, SourceTypeRetentionFailure};
+        super::PreparedVariantOwnerSeed::try_environment_with(schema, ty, work, |field, work| {
+            source
+                .retain_value_type(field, work)
+                .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))
+        })
         .map_err(|error| match error {
             FinalSemanticAnalysisError::VariantOwner(error) => {
                 FinalSemanticAnalysisError::SourceTypeRetention {
@@ -412,8 +461,7 @@ impl<'a> SourceTypePreparation<'a> {
                 }
             }
             error => error,
-        })?;
-        Ok((value_type, seed))
+        })
     }
 }
 

@@ -2373,6 +2373,7 @@ pub(super) fn validate_patterns(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     types: &BTreeMap<TypeId, TypeKind>,
     patterns: &BTreeMap<PatternId, CheckedPattern>,
+    locals: &BTreeMap<LocalId, super::CheckedBinding>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     for (&owner, fact) in patterns {
         let pattern = resolve_module(modules, owner.module())?
@@ -2429,9 +2430,19 @@ pub(super) fn validate_patterns(
                     && record.owner().semantic_type() == fact.ty().semantic_identity_digest()?
             }
             (
-                HirPatternKind::TypedBinding { ty: annotation, .. },
+                HirPatternKind::TypedBinding {
+                    binding,
+                    ty: annotation,
+                },
                 CheckedPatternResolution::TypedBinding(checked),
             ) => {
+                let arcweft_lang_hir::pattern::HirPatternBinding::Bound { local, .. } = binding
+                else {
+                    return Err(FinalSemanticAnalysisError::RecoveredOwner);
+                };
+                if locals.get(local).map(CheckedBinding::ty) != Some(checked.annotation()) {
+                    return Err(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local });
+                }
                 let mut compatibility_control = NoopTypeCompatibilityControl;
                 let relation = match fact.ty() {
                     // Choice patterns retain the scrutinee-to-annotation

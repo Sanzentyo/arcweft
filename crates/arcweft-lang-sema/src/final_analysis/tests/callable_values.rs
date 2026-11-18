@@ -240,6 +240,42 @@ flow main() -> i64 {
 }
 
 #[test]
+fn typed_pattern_binding_seals_the_initializer_callback_effects() {
+    let world = fixture(
+        r#"
+fn read(value: i64) -> i64 effects { fs.read } { value }
+fn inferred(value: i64) -> i64 { read(value) }
+fn root() -> i64 {
+    match inferred {
+        callback: (i64 -> i64) => callback(42i64),
+    }
+}
+"#,
+        None,
+    );
+    let report = analyze(&world).expect("the callback binding has the completed annotation type");
+    let project = world.project.analysis_view().unwrap();
+    let (_, module) = project.modules().next().unwrap();
+    let (pattern, local) = module
+        .locals()
+        .find_map(|(owner, local)| {
+            (local.name().as_str() == "callback").then(|| (local.pattern().unwrap(), owner))
+        })
+        .expect("typed callback pattern");
+    let checked = report.pattern(pattern).expect("checked pattern");
+    let crate::final_analysis::CheckedPatternResolution::TypedBinding(binding) =
+        checked.resolution()
+    else {
+        panic!("expected a typed binding");
+    };
+    assert_eq!(report.local(local).unwrap().ty(), binding.annotation());
+    let TypeKind::Function { effects, .. } = binding.annotation() else {
+        panic!("expected a function type");
+    };
+    assert_eq!(effects.closed_value().unwrap().to_labels(), ["fs.read"]);
+}
+
+#[test]
 fn a_declared_callback_alias_observes_its_original_inferred_body() {
     use crate::callable::CheckedCallCalleeExecution;
 

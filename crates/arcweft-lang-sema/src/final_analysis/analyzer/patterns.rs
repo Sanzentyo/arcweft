@@ -1,19 +1,20 @@
 //! Pattern analysis, binding seeding, and variant ownership.
 
 use super::{
-    Analyzer, ArrayLength, BTreeMap, BTreeSet, BuiltinTypeConstructor, CheckedPattern,
-    CheckedPatternResolution, EnumVariantPayload, EnvironmentEnumSchema, ExprId,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, HirItem, HirItemKind, HirModule,
-    HirPathRoot, HirPathSegment, HirPatternBinding, HirPatternField, HirPatternKind,
-    HirPatternRecordPath, HirPatternSequenceRest, HirVariantPattern, HirVariantPatternHead,
-    HirVariantPatternHeadValue, HirVariantPatternName, HirVariantPatternPayload, LocalId,
-    PatternId, ProjectNominalBody, ProjectNominalType, ProjectSymbolTable, ProjectTypeTarget,
-    TypeCheckEnv, TypeId, TypeKind, expression_types::literal_type, statements::pattern_span,
+    Analyzer, ArrayLength, BTreeMap, BTreeSet, BuiltinTypeConstructor, CheckedPatternResolution,
+    EnumVariantPayload, EnvironmentEnumSchema, ExprId, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, HirItem, HirItemKind, HirModule, HirPathRoot, HirPathSegment,
+    HirPatternBinding, HirPatternField, HirPatternKind, HirPatternRecordPath,
+    HirPatternSequenceRest, HirVariantPattern, HirVariantPatternHead, HirVariantPatternHeadValue,
+    HirVariantPatternName, HirVariantPatternPayload, LocalId, PatternId, ProjectNominalBody,
+    ProjectNominalType, ProjectSymbolTable, ProjectTypeTarget, TypeCheckEnv, TypeId, TypeKind,
+    expression_types::literal_type, statements::pattern_span,
 };
 use crate::final_analysis::{
     PreparedRecordPattern, PreparedRecordPatternField, PreparedRecordPatternFieldCoordinate,
     PreparedRecordPatternOwner, PreparedRecordPatternRest, PreparedRecordPatternSource,
 };
+use crate::types::PreparedTypeCompatibility;
 use arcweft_lang_hir::item::{
     HirAttachedContentPresence, HirCallableAttachedContentParameter, HirCapabilityMember,
     HirImplMember, HirTraitMember,
@@ -135,7 +136,9 @@ impl Analyzer<'_, '_, '_> {
                                     FinalSemanticAnalysisError::WrongPayloadFamily
                                 }
                             })?;
-                        if !ty.accepts(&item.ty()) {
+                        let source = self.source_type_preparation(context.work())?;
+                        let entity_type = source.retain(owner, &item.ty())?;
+                        if source.contextual_type_mismatch(owner, &ty, &entity_type)? {
                             return Err(FinalSemanticAnalysisError::PatternTypeUnavailable {
                                 owner,
                             });
@@ -722,7 +725,7 @@ impl PatternSeeder<'_, '_> {
             HirPatternKind::Binding(binding) | HirPatternKind::MutableBinding(binding) => {
                 seed_pattern_binding(binding, ty, self.locals)?;
             }
-            HirPatternKind::Literal(literal) => Self::validate_literal(pattern, literal, ty)?,
+            HirPatternKind::Literal(literal) => self.validate_literal(pattern, literal, ty)?,
             HirPatternKind::EntityReference(_) | HirPatternKind::Discard => {}
             HirPatternKind::Variant(variant) => self.seed_variant(pattern, variant, ty)?,
             HirPatternKind::Tuple { elements } => self.seed_tuple(pattern, elements, ty)?,
@@ -756,13 +759,18 @@ impl PatternSeeder<'_, '_> {
     }
 
     fn validate_literal(
+        &self,
         pattern: PatternId,
         literal: &arcweft_lang_hir::leaf::HirLiteral,
         ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let (literal_ty, _) = literal_type(literal, Some(ty))
             .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
-        if !ty.accepts(&literal_ty) {
+        if self
+            .context
+            .source
+            .contextual_type_mismatch(pattern, ty, &literal_ty)?
+        {
             return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern });
         }
         Ok(())
@@ -932,19 +940,23 @@ impl PatternSeeder<'_, '_> {
         ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let annotation_ty = self.context.source.annotation(pattern, annotation)?;
-        let compatible = match ty {
-            TypeKind::Choice(_) => ty.accepts(&annotation_ty),
-            _ => annotation_ty.accepts(ty),
+        let source = &self.context.source;
+        let forward = source.prepared_compatibility(pattern, &annotation_ty, ty)?;
+        let relation = match ty {
+            TypeKind::Choice(_) => source.prepared_compatibility(pattern, ty, &annotation_ty)?,
+            _ => forward,
         };
-        if !compatible {
+        if relation == PreparedTypeCompatibility::Rejected {
             return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern });
         }
-        let completed = if annotation_ty.accepts(ty) {
-            annotation_ty.binding_type_with_inferred_effects(ty)
+        let initializer = if forward == PreparedTypeCompatibility::Rejected {
+            &annotation_ty
         } else {
-            annotation_ty.binding_type_with_inferred_effects(&annotation_ty)
-        }
-        .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
+            ty
+        };
+        let completed = source
+            .complete_binding_effects(pattern, &annotation_ty, initializer)?
+            .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
         seed_pattern_binding(binding, &completed, self.locals)
     }
 }
@@ -1051,7 +1063,10 @@ fn resolve_record_pattern_schema<'a>(
             Ok(ResolvedRecordPatternSchema::VariantPayload { ty, fields })
         }
         _ => {
-            let semantic_type = ty
+            // The registered catalog is keyed by canonical type. Retain the
+            // pattern's original type for the final catalog and field check.
+            let observed = context.source.observe_canonical(owner, ty, graph.read())?;
+            let semantic_type = observed
                 .semantic_identity_digest()
                 .map_err(|_| FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
             let accepted = context
@@ -1061,7 +1076,9 @@ fn resolve_record_pattern_schema<'a>(
                 .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
             let semantics = accepted
                 .environment_record()
-                .filter(|record| record.ty() == ty && record.semantic_type() == semantic_type)
+                .filter(|record| {
+                    record.ty() == &observed && record.semantic_type() == semantic_type
+                })
                 .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
             match path {
                 HirPatternRecordPath::Absent => {}
@@ -1198,7 +1215,8 @@ fn resolve_variant_pattern(
             })
         }
         closed_enum_ty => resolve_closed_variant_pattern(
-            context.environment,
+            context,
+            graph.read(),
             owner,
             pattern,
             closed_enum_ty,
@@ -1263,14 +1281,17 @@ fn resolve_project_variant_pattern(
 }
 
 fn resolve_closed_variant_pattern(
-    environment: &TypeCheckEnv,
+    context: PatternSeedContext<'_>,
+    graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     owner: PatternId,
     pattern: &HirVariantPattern,
     ty: &TypeKind<crate::types::PreparedEffects>,
     name: &super::HirName,
 ) -> Result<ResolvedVariantPattern, FinalSemanticAnalysisError> {
-    let schema = environment
-        .closed_enum(ty)
+    let observed = context.source.observe_canonical(owner, ty, graph)?;
+    let schema = context
+        .environment
+        .closed_enum(&observed)
         .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
     validate_closed_variant_head(pattern.head(), schema, owner)?;
     let (ordinal, _selected) = schema
@@ -1279,7 +1300,10 @@ fn resolve_closed_variant_pattern(
         .enumerate()
         .find(|(_, variant)| variant.name() == name.as_str())
         .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
-    let checked_owner = super::PreparedVariantOwnerSeed::try_environment(schema, ty)?;
+    let original = context.source.retain_prepared(owner, ty, graph)?;
+    let checked_owner = context
+        .source
+        .environment_variant_owner(owner, schema, original)?;
     let ordinal =
         u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
     let payload = checked_owner

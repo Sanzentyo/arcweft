@@ -3508,7 +3508,7 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    fn require_source_type(
+    pub(super) fn require_source_type(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
@@ -5701,28 +5701,40 @@ impl Analyzer<'_, '_, '_> {
                 let (read, location, activation) =
                     super::super::CheckedRegistryRead::from_path(&self.topology, owner, path)
                         .map_err(AnalyzerExpressionError::fatal)?;
-                // A call candidate must not manufacture a different item type
-                // from its parameter expectation. Explicitly typed reads
-                // outside candidate selection retain the control-flow check.
-                if context.is_candidate()
-                    && !path.optional()
-                    && let Some(expected) = expected
-                    && let Some(item) =
-                        self.infer_registry_item(module, location, activation, read.key())?
-                {
-                    let actual = self
-                        .retain_source_value_type(context, owner, item)
-                        .map_err(AnalyzerExpressionError::fatal)?;
-                    self.require_source_type(context, owner, expected, &actual)?;
-                }
                 let (ty, selection) = match expected {
-                    Some(ty) => (ty.clone(), CheckedTypeSelection::Expected),
+                    Some(expected) => {
+                        // Candidate admission checks the reached source before
+                        // publishing a type supplied by the parameter.
+                        if context.is_candidate()
+                            && !path.optional()
+                            && let Some(item) =
+                                self.infer_registry_item(module, location, activation, read.key())?
+                        {
+                            let effects = self
+                                .facts
+                                .effect_declarations()
+                                .map_err(AnalyzerExpressionError::fact)?;
+                            let actual = self
+                                .source_type_preparation(context.work())
+                                .and_then(|source| {
+                                    source.retain_prepared(owner, item, effects.read())
+                                })
+                                .map_err(AnalyzerExpressionError::fatal)?;
+                            self.require_source_type(context, owner, expected, &actual)?;
+                        }
+                        (expected.clone(), CheckedTypeSelection::Expected)
+                    }
                     None => {
                         let ty = self
                             .infer_registry_item(module, location, activation, read.key())?
                             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                        let effects = self
+                            .facts
+                            .effect_declarations()
+                            .map_err(AnalyzerExpressionError::fact)?;
                         let ty = self
-                            .retain_source_value_type(context, owner, ty)
+                            .source_type_preparation(context.work())
+                            .and_then(|source| source.retain_prepared(owner, ty, effects.read()))
                             .map_err(AnalyzerExpressionError::fatal)?;
                         let ty = if path.optional() {
                             TypeKind::Option(Box::new(ty))
