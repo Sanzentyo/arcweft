@@ -461,6 +461,62 @@ pub struct KeywordHit { channel: Option<String> }
 }
 
 #[test]
+fn closed_enum_default_and_inline_scalar_resolve_the_exact_declared_cases() {
+    let fixture = fixture(
+        r#"
+pub enum SwitchMode { Off, On }
+
+#[text_proxy(initial = .On)]
+pub struct Switch {
+    initial: SwitchMode
+    current: SwitchMode
+}
+
+pub character alice { display = "Alice" }
+flow main() -> String {
+    alice[#object(id = @.switch, type = Switch, current = .Off)[switch]]
+    return "done"
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("both scalar sources resolve against SwitchMode");
+    let application = object_application(&report);
+    let definition = report
+        .checked_text_proxies()
+        .application(application)
+        .expect("application joins its exact definition")
+        .definition();
+    let [defaulted, inline] = application.fields() else {
+        panic!("one defaulted field and one inline field");
+    };
+    assert!(matches!(
+        defaulted.origin(),
+        CheckedTextProxyValueOrigin::AttributeDefault(_)
+    ));
+    assert!(matches!(
+        inline.origin(),
+        CheckedTextProxyValueOrigin::Inline { .. }
+    ));
+    let crate::checked_compile_time::CheckedCompileTimeScalarKind::ClosedEnum(schema) =
+        definition.fields()[0].kind()
+    else {
+        panic!("closed enum schema");
+    };
+    for (field, ordinal) in [(defaulted, 1), (inline, 0)] {
+        let Some(CheckedCompileTimeScalar::Enum(value)) = field.value() else {
+            panic!("checked enum scalar");
+        };
+        assert_eq!(value.declaration(), schema.declaration());
+        assert_eq!(value.ordinal(), ordinal);
+        assert_eq!(
+            value.semantic_id(),
+            schema.cases()[ordinal as usize].semantic_id()
+        );
+    }
+}
+
+#[test]
 fn referenced_invalid_declaration_default_remains_a_typed_diagnostic() {
     let fixture = fixture(
         r#"

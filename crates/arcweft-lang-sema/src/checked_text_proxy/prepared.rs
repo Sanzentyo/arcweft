@@ -257,7 +257,9 @@ impl PreparedCheckedTextProxyApplication {
                 .any(|(field, expected)| {
                     field.declaration_ordinal() != expected.declaration_ordinal()
                         || field.semantic_id() != expected.semantic_id()
-                        || !super::scalar_matches_kind(field.value(), expected.kind())
+                        || field
+                            .value()
+                            .is_some_and(|value| !value.matches_kind(expected.kind()))
                         || !prepared_field_origin_matches(expected, field)
                 })
         {
@@ -673,7 +675,7 @@ fn reconstruct_final_definition(
             return None;
         };
         let value = scalar.value().clone();
-        if !super::scalar_matches_kind(Some(&value), &kind) {
+        if !value.matches_kind(&kind) {
             return None;
         }
         match name.as_str() {
@@ -804,9 +806,10 @@ fn definition_matches_final_nominal(
             accepted.declaration_ordinal() == field.declaration_ordinal
                 && accepted.semantic_id() == field.semantic_id
                 && field_type_matches_kind(accepted.ty(), field, project_nominals, scalar_types)
-                && field.default.as_ref().is_none_or(|default| {
-                    super::scalar_matches_kind(Some(&default.value), &field.kind)
-                })
+                && field
+                    .default
+                    .as_ref()
+                    .is_none_or(|default| default.value.matches_kind(&field.kind))
         })
 }
 
@@ -1268,7 +1271,10 @@ fn prepared_scalar(
     let crate::final_analysis::PreparedExpressionFact::CompileTimeScalar(scalar) = fact else {
         return None;
     };
-    super::scalar_matches_kind(Some(scalar.value()), expected).then(|| scalar.value().clone())
+    scalar
+        .value()
+        .matches_kind(expected)
+        .then(|| scalar.value().clone())
 }
 
 fn compile_time_scalar_admission(
@@ -1542,19 +1548,7 @@ fn classify_scalar(
 )> {
     let role = classify_registered_scalar(report?, ty, optional, scalars)?;
     if let Some(role) = role {
-        let kind = match role {
-            CompileTimeScalarTypeRoleId::Bool => CheckedCompileTimeScalarKind::Bool,
-            CompileTimeScalarTypeRoleId::Int => CheckedCompileTimeScalarKind::Int,
-            CompileTimeScalarTypeRoleId::Milli => CheckedCompileTimeScalarKind::Milli,
-            CompileTimeScalarTypeRoleId::Ratio => CheckedCompileTimeScalarKind::Ratio,
-            CompileTimeScalarTypeRoleId::Length => CheckedCompileTimeScalarKind::Length,
-            CompileTimeScalarTypeRoleId::Angle => CheckedCompileTimeScalarKind::Angle,
-            CompileTimeScalarTypeRoleId::Duration => CheckedCompileTimeScalarKind::Duration,
-            CompileTimeScalarTypeRoleId::PublicId => CheckedCompileTimeScalarKind::PublicId,
-            CompileTimeScalarTypeRoleId::Color => CheckedCompileTimeScalarKind::Color,
-            CompileTimeScalarTypeRoleId::Text => CheckedCompileTimeScalarKind::Text,
-            CompileTimeScalarTypeRoleId::FontFamily => CheckedCompileTimeScalarKind::FontFamily,
-        };
+        let kind = CheckedCompileTimeScalarKind::from_registered_role(role);
         return Some((kind, Some(scalars.row(role).clone())));
     }
     let TypeKind::ProjectNominal(nominal) = ty else {

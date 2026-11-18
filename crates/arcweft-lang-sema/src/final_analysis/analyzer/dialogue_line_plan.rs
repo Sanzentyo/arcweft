@@ -315,41 +315,8 @@ impl Analyzer<'_, '_, '_> {
         let role = crate::registration::CompileTimeScalarTypeRoleId::ALL
             .into_iter()
             .find(|role| scalars.type_for(*role) == expected)?;
-        let kind = match role {
-            crate::registration::CompileTimeScalarTypeRoleId::Bool => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::Bool
-            }
-            crate::registration::CompileTimeScalarTypeRoleId::Int => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::Int
-            }
-            crate::registration::CompileTimeScalarTypeRoleId::Milli => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::Milli
-            }
-            crate::registration::CompileTimeScalarTypeRoleId::Ratio => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::Ratio
-            }
-            crate::registration::CompileTimeScalarTypeRoleId::Length => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::Length
-            }
-            crate::registration::CompileTimeScalarTypeRoleId::Angle => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::Angle
-            }
-            crate::registration::CompileTimeScalarTypeRoleId::Duration => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::Duration
-            }
-            crate::registration::CompileTimeScalarTypeRoleId::PublicId => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::PublicId
-            }
-            crate::registration::CompileTimeScalarTypeRoleId::Color => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::Color
-            }
-            crate::registration::CompileTimeScalarTypeRoleId::FontFamily => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::FontFamily
-            }
-            crate::registration::CompileTimeScalarTypeRoleId::Text => {
-                crate::checked_compile_time::CheckedCompileTimeScalarKind::Text
-            }
-        };
+        let kind =
+            crate::checked_compile_time::CheckedCompileTimeScalarKind::from_registered_role(role);
         let value = if let PreparedExpressionFact::CompileTimeScalar(value) = fact {
             value.value().clone()
         } else if role == crate::registration::CompileTimeScalarTypeRoleId::Color

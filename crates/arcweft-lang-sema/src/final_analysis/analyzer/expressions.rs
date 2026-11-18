@@ -1913,7 +1913,7 @@ impl Analyzer<'_, '_, '_> {
     {
         let expected = expectation.contextual_shape();
         if let Some(checked) =
-            self.check_leaf_expression_kind(module, owner, expression, expected)?
+            self.check_leaf_expression_kind(context, owner, expression, expected)?
         {
             return Ok(checked);
         }
@@ -2066,7 +2066,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn check_leaf_expression_kind(
         &mut self,
-        _module: &HirModule,
+        context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
         expression: &HirExpr,
         expected: Option<&TypeKind<crate::types::PreparedEffects>>,
@@ -2116,12 +2116,18 @@ impl Analyzer<'_, '_, '_> {
                     };
                     crate::checked_text_proxy::reduce_scalar_literal(literal, &checked_kind)
                         .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
-                    let (ty, selection) = literal_type(literal, expected).unwrap_or_else(|| {
-                        (
-                            self.compile_time_scalar_type(&checked_kind),
+                    let (ty, selection) = match literal_type(literal, expected) {
+                        Some(pair) => pair,
+                        None => (
+                            self.retain_source_value_type(
+                                context,
+                                owner,
+                                &self.compile_time_scalar_type(&checked_kind),
+                            )
+                            .map_err(AnalyzerExpressionError::fatal)?,
                             CheckedTypeSelection::Inferred,
-                        )
-                    });
+                        ),
+                    };
                     return Ok(Some(
                         crate::final_analysis::prepared::PreparedResolvedExpression::value(
                             ty,
@@ -4260,14 +4266,16 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let kind = crate::checked_text_proxy::CheckedCompileTimeScalarKind::Color;
-        let color_type = self.compile_time_scalar_type(&kind);
+        let TypeKind::CompileTimeScalar(color_type) = self.compile_time_scalar_type(&kind) else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
         let owners = self
             .facts
             .expressions()
             .iter()
             .filter_map(|(owner, fact)| {
                 (matches!(fact, PreparedExpressionFact::Resolved(_))
-                    && fact.value_type() == Some(&color_type)
+                    && matches!(fact.value_type(), Some(TypeKind::CompileTimeScalar(ty)) if ty == &color_type)
                     && matches!(
                         fact.checked_resolution(),
                         Some(CheckedExpressionResolution::Call)
@@ -4289,7 +4297,7 @@ impl Analyzer<'_, '_, '_> {
                 module,
                 owner,
                 &kind,
-                color_type.clone(),
+                TypeKind::CompileTimeScalar(color_type.clone()),
                 fact,
             )
             .map_err(|error| error.into_public(owner))?;
@@ -4998,6 +5006,11 @@ impl Analyzer<'_, '_, '_> {
                     .type_for(crate::registration::CompileTimeScalarTypeRoleId::Length)
                     .clone(),
             });
+            let prepared_expected = expected
+                .as_ref()
+                .map(|ty| self.retain_source_value_type(context, argument.value(), ty))
+                .transpose()
+                .map_err(AnalyzerExpressionError::fatal)?;
             let part_context;
             let argument_context = if role == Some(arcweft_view::ViewElementArgumentRole::Part) {
                 part_context = context.for_consumer(
@@ -5008,25 +5021,40 @@ impl Analyzer<'_, '_, '_> {
                 context
             };
             let checked = if role == Some(arcweft_view::ViewElementArgumentRole::Target) {
+                let kind = crate::checked_compile_time::CheckedCompileTimeScalarKind::PublicId;
+                let exact_type = prepared_expected
+                    .as_ref()
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?;
                 let fact = self.evaluate_compile_time_scalar_source(
                     argument_context,
                     argument.value(),
-                    &crate::checked_compile_time::CompileTimeScalarSourceMode::PublicId,
+                    &kind,
+                    exact_type,
                 )?;
                 self.materialize_compile_time_scalar_fact(
                     module,
                     argument.value(),
-                    &crate::checked_text_proxy::CheckedCompileTimeScalarKind::PublicId,
-                    expected
-                        .clone()
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?,
+                    &kind,
+                    exact_type.clone(),
                     fact,
                 )?
             } else {
-                self.evaluate_expression(argument_context, argument.value(), expected.as_ref())?
+                self.evaluate_expression(
+                    argument_context,
+                    argument.value(),
+                    prepared_expected.as_ref(),
+                )?
             };
             if let Some(expected) = &expected {
-                if !checked.value_type().is_some_and(|ty| expected.accepts(ty)) {
+                let owner = argument.value();
+                let actual = checked
+                    .value_type()
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                let actual = self
+                    .source_type_preparation(argument_context.work())
+                    .and_then(|types| types.project_annotations(owner, actual))
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                if !actual.is_some_and(|ty| expected.accepts(&ty)) {
                     return Err(AnalyzerExpressionError::rejected(argument.value()));
                 }
             }
@@ -5049,7 +5077,7 @@ impl Analyzer<'_, '_, '_> {
                     module,
                     argument.value(),
                     &scalar_kind,
-                    expected
+                    prepared_expected
                         .clone()
                         .ok_or_else(|| AnalyzerExpressionError::rejected(argument.value()))?,
                     self.facts

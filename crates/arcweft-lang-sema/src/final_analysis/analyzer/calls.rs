@@ -2730,28 +2730,18 @@ impl Analyzer<'_, '_, '_> {
                         FinalSemanticAnalysisError::WrongPayloadFamily,
                     ));
                 };
-                if admission.kind() != kind.callable_kind()
-                    || admission.value_type() != &self.compile_time_scalar_type(&kind)
+                let prepared =
+                    crate::checked_compile_time::PreparedCompileTimeScalarAdmission::for_kind(
+                        kind,
+                        self.catalogs.world().environment().compile_time_scalars(),
+                    );
+                if admission.kind() != prepared.kind().callable_kind()
+                    || admission.value_type() != prepared.value_type()
                 {
                     return Err(AnalyzerExpressionError::fatal(
                         FinalSemanticAnalysisError::WrongPayloadFamily,
                     ));
                 }
-                let prepared =
-                    crate::checked_compile_time::PreparedCompileTimeScalarAdmission::try_new(
-                        kind.clone(),
-                        admission.value_type().clone(),
-                        self.compile_time_scalar_source_mode(&kind).ok_or_else(|| {
-                            AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::WrongPayloadFamily,
-                            )
-                        })?,
-                    )
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?;
                 rows.push(
                     constraints::AnalyzerPreparedCompileTimeScalarAdmission::new(
                         crate::callable::CallableParameterCoordinate::new(
@@ -5290,13 +5280,20 @@ impl Analyzer<'_, '_, '_> {
         else {
             return self.evaluate_expression_with_expectation(context, expression, expectation);
         };
-        if expectation.contextual_shape() != Some(admission.value_type()) {
+        let exact_type = self
+            .retain_source_value_type(context, expression, admission.value_type())
+            .map_err(AnalyzerExpressionError::fatal)?;
+        if expectation.contextual_shape() != Some(&exact_type) {
             return Err(AnalyzerExpressionError::invariant(
                 FinalSemanticAnalysisError::WrongPayloadFamily,
             ));
         }
-        let fact =
-            self.evaluate_compile_time_scalar_source(context, expression, admission.source_mode())?;
+        let fact = self.evaluate_compile_time_scalar_source(
+            context,
+            expression,
+            admission.kind(),
+            &exact_type,
+        )?;
         let module = self
             .module(expression.module())
             .map_err(AnalyzerExpressionError::fatal)?;
@@ -5304,7 +5301,7 @@ impl Analyzer<'_, '_, '_> {
             module,
             expression,
             admission.kind(),
-            admission.value_type().clone(),
+            exact_type,
             fact,
         )
     }

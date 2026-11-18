@@ -6302,72 +6302,6 @@ fn compile_time_scalar_source_constraint(
     .map_err(source_constraint_preparation_failure)
 }
 
-fn prepare_compile_time_scalar_type_admission(
-    value_type: &TypeKind,
-    scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
-) -> Option<crate::checked_compile_time::PreparedCompileTimeScalarAdmission> {
-    use crate::{
-        checked_compile_time::{
-            CheckedCompileTimeScalarKind, CompileTimeScalarSourceMode,
-            PreparedCompileTimeScalarAdmission,
-        },
-        registration::CompileTimeScalarTypeRoleId,
-    };
-
-    let TypeKind::CompileTimeScalar(scalar) = value_type else {
-        return None;
-    };
-    let (kind, role, source_mode) = match scalar.kind() {
-        crate::types::CompileTimeScalarKind::Milli => (
-            CheckedCompileTimeScalarKind::Milli,
-            CompileTimeScalarTypeRoleId::Milli,
-            CompileTimeScalarSourceMode::Literal,
-        ),
-        crate::types::CompileTimeScalarKind::Ratio => (
-            CheckedCompileTimeScalarKind::Ratio,
-            CompileTimeScalarTypeRoleId::Ratio,
-            CompileTimeScalarSourceMode::Literal,
-        ),
-        crate::types::CompileTimeScalarKind::Length => (
-            CheckedCompileTimeScalarKind::Length,
-            CompileTimeScalarTypeRoleId::Length,
-            CompileTimeScalarSourceMode::Literal,
-        ),
-        crate::types::CompileTimeScalarKind::Angle => (
-            CheckedCompileTimeScalarKind::Angle,
-            CompileTimeScalarTypeRoleId::Angle,
-            CompileTimeScalarSourceMode::Literal,
-        ),
-        crate::types::CompileTimeScalarKind::PublicId => (
-            CheckedCompileTimeScalarKind::PublicId,
-            CompileTimeScalarTypeRoleId::PublicId,
-            CompileTimeScalarSourceMode::PublicId,
-        ),
-        crate::types::CompileTimeScalarKind::Color => (
-            CheckedCompileTimeScalarKind::Color,
-            CompileTimeScalarTypeRoleId::Color,
-            CompileTimeScalarSourceMode::Typed(
-                scalar_types
-                    .type_for(CompileTimeScalarTypeRoleId::Color)
-                    .clone(),
-            ),
-        ),
-        crate::types::CompileTimeScalarKind::FontFamily => (
-            CheckedCompileTimeScalarKind::FontFamily,
-            CompileTimeScalarTypeRoleId::FontFamily,
-            CompileTimeScalarSourceMode::Typed(
-                scalar_types
-                    .type_for(CompileTimeScalarTypeRoleId::FontFamily)
-                    .clone(),
-            ),
-        ),
-    };
-    if scalar_types.type_for(role) != value_type {
-        return None;
-    }
-    PreparedCompileTimeScalarAdmission::try_new(kind, value_type.clone(), source_mode)
-}
-
 /// Convert one mapper slot into the lower-owned source algebra.  In
 /// particular, a typed rest slot keeps its prepared container policy; the
 /// callback only supplies an actual container and lower derives the final
@@ -6450,11 +6384,14 @@ fn prepare_parameter_source_constraint(
                 CallConstraintInvariant::MalformedMapperSeal,
             ));
         }
-        let admission = prepare_compile_time_scalar_type_admission(declared, scalar_types).ok_or(
-            CallConstraintPreparationFailure::Invariant(
+        let admission =
+            crate::checked_compile_time::PreparedCompileTimeScalarAdmission::for_declared_type(
+                declared,
+                scalar_types,
+            )
+            .ok_or(CallConstraintPreparationFailure::Invariant(
                 CallConstraintInvariant::MalformedSchemaInventory,
-            ),
-        )?;
+            ))?;
         return compile_time_scalar_source_constraint(source, Arc::new(admission), preparation);
     }
     let otherwise_index = u32::try_from(rule.guarded().len()).map_err(|_| {

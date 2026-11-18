@@ -1277,7 +1277,10 @@ fn application_matches_definition(
                 field.declaration_ordinal == applied.declaration_ordinal
                     && field.semantic_id == applied.semantic_id
                     && (applied.value.is_some() || (field.optional && field.default.is_none()))
-                    && scalar_matches_kind(applied.value.as_ref(), &field.kind)
+                    && applied
+                        .value
+                        .as_ref()
+                        .is_none_or(|value| value.matches_kind(&field.kind))
                     && application_origin_matches(field, application, applied)
             })
 }
@@ -1684,6 +1687,13 @@ impl CheckedCompileTimeScalarEnum {
     pub const fn cases(&self) -> &[CheckedCompileTimeScalarEnumCase] {
         &self.cases
     }
+
+    pub(crate) fn matches_nominal<D: crate::types::TypeEffectDomain>(
+        &self,
+        nominal: &ProjectNominalType<D>,
+    ) -> bool {
+        nominal.declaration() == self.declaration() && nominal.arguments().is_empty()
+    }
 }
 
 impl CheckedCompileTimeScalarEnumCase {
@@ -1849,36 +1859,32 @@ impl<'a> CheckedTextProxyApplicationView<'a> {
     }
 }
 
-fn scalar_matches_kind(
-    value: Option<&CheckedCompileTimeScalar>,
-    kind: &CheckedCompileTimeScalarKind,
-) -> bool {
-    let Some(value) = value else {
-        return true;
-    };
-    match (value, kind) {
-        (CheckedCompileTimeScalar::Bool(_), CheckedCompileTimeScalarKind::Bool)
-        | (CheckedCompileTimeScalar::Int(_), CheckedCompileTimeScalarKind::Int)
-        | (CheckedCompileTimeScalar::Milli(_), CheckedCompileTimeScalarKind::Milli)
-        | (CheckedCompileTimeScalar::Ratio(_), CheckedCompileTimeScalarKind::Ratio)
-        | (CheckedCompileTimeScalar::Length(_), CheckedCompileTimeScalarKind::Length)
-        | (CheckedCompileTimeScalar::Angle(_), CheckedCompileTimeScalarKind::Angle)
-        | (CheckedCompileTimeScalar::Duration(_), CheckedCompileTimeScalarKind::Duration)
-        | (CheckedCompileTimeScalar::PublicId(_), CheckedCompileTimeScalarKind::PublicId)
-        | (CheckedCompileTimeScalar::Text(_), CheckedCompileTimeScalarKind::Text)
-        | (CheckedCompileTimeScalar::Color(_), CheckedCompileTimeScalarKind::Color)
-        | (CheckedCompileTimeScalar::FontFamily(_), CheckedCompileTimeScalarKind::FontFamily) => {
-            true
+impl CheckedCompileTimeScalar {
+    pub(crate) fn matches_kind(&self, kind: &CheckedCompileTimeScalarKind) -> bool {
+        match (self, kind) {
+            (CheckedCompileTimeScalar::Bool(_), CheckedCompileTimeScalarKind::Bool)
+            | (CheckedCompileTimeScalar::Int(_), CheckedCompileTimeScalarKind::Int)
+            | (CheckedCompileTimeScalar::Milli(_), CheckedCompileTimeScalarKind::Milli)
+            | (CheckedCompileTimeScalar::Ratio(_), CheckedCompileTimeScalarKind::Ratio)
+            | (CheckedCompileTimeScalar::Length(_), CheckedCompileTimeScalarKind::Length)
+            | (CheckedCompileTimeScalar::Angle(_), CheckedCompileTimeScalarKind::Angle)
+            | (CheckedCompileTimeScalar::Duration(_), CheckedCompileTimeScalarKind::Duration)
+            | (CheckedCompileTimeScalar::PublicId(_), CheckedCompileTimeScalarKind::PublicId)
+            | (CheckedCompileTimeScalar::Text(_), CheckedCompileTimeScalarKind::Text)
+            | (CheckedCompileTimeScalar::Color(_), CheckedCompileTimeScalarKind::Color)
+            | (CheckedCompileTimeScalar::FontFamily(_), CheckedCompileTimeScalarKind::FontFamily) => {
+                true
+            }
+            (
+                CheckedCompileTimeScalar::Enum(value),
+                CheckedCompileTimeScalarKind::ClosedEnum(schema),
+            ) => {
+                &value.declaration == schema.declaration()
+                    && schema.cases.iter().any(|candidate| {
+                        candidate.ordinal == value.ordinal && candidate.semantic_id == value.case
+                    })
+            }
+            _ => false,
         }
-        (
-            CheckedCompileTimeScalar::Enum(value),
-            CheckedCompileTimeScalarKind::ClosedEnum(schema),
-        ) => {
-            &value.declaration == schema.declaration()
-                && schema.cases.iter().any(|candidate| {
-                    candidate.ordinal == value.ordinal && candidate.semantic_id == value.case
-                })
-        }
-        _ => false,
     }
 }

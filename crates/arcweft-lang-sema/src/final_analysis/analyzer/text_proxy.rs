@@ -15,13 +15,14 @@ use super::{
 };
 use crate::final_analysis::PreparedCompileTimeScalarExpression;
 use crate::{
+    checked_compile_time::CompileTimeScalarSourceMode,
     checked_text_proxy::{
         CheckedCompileTimeScalar, CheckedCompileTimeScalarKind, CheckedTextProxyFieldDefault,
         CompileTimeScalarReductionError, PreparedCheckedTextProxyCatalog,
         TextProxyDeclarationDiagnostic, TextProxyDeclarationDiagnosticCause,
         TextProxyDefaultExpectation, TextProxyMetadataRole,
     },
-    registration::CompileTimeScalarTypeRoleId,
+    types::PreparedEffects,
 };
 
 enum TextProxyDefaultAttempt {
@@ -39,7 +40,7 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         owner: arcweft_lang_hir::identity::ExprId,
         kind: &CheckedCompileTimeScalarKind,
-        exact_type: TypeKind,
+        exact_type: TypeKind<PreparedEffects>,
         fact: PreparedExpressionFact,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         let fact = self.prepare_compile_time_scalar_fact(module, owner, kind, exact_type, fact)?;
@@ -57,16 +58,18 @@ impl Analyzer<'_, '_, '_> {
     /// enclosing expression transaction owns publication for call results;
     /// candidate argument checks use `materialize_compile_time_scalar_fact`
     /// when they replace an already-published source fact.
-    pub(super) fn prepare_compile_time_scalar_fact(
+    fn prepare_compile_time_scalar_fact(
         &self,
         module: &HirModule,
         owner: arcweft_lang_hir::identity::ExprId,
         kind: &CheckedCompileTimeScalarKind,
-        exact_type: TypeKind,
+        exact_type: TypeKind<PreparedEffects>,
         fact: PreparedExpressionFact,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         if let PreparedExpressionFact::CompileTimeScalar(prepared) = &fact {
-            if prepared.shell().value_type() != Some(&exact_type) {
+            if prepared.shell().value_type() != Some(&exact_type)
+                || !prepared.value().matches_kind(kind)
+            {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
             return Ok(fact);
@@ -231,22 +234,20 @@ impl Analyzer<'_, '_, '_> {
                                 }
                             },
                         };
-                        let source_mode = this
-                            .compile_time_scalar_source_mode(&kind)
-                            .ok_or_else(|| {
-                                AnalyzerExpressionError::fatal(
-                                    FinalSemanticAnalysisError::WrongPayloadFamily,
-                                )
-                            })?;
                         let attempt = this.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
                             context.work(), |this, authority, _transaction_authority| {
                                 let context = AnalyzerExpressionContext::candidate(
                                     authority,
                                     Rc::clone(&this.call_frames), context.work());
+                                let exact_type = this.retain_source_value_type(
+                                    &context, expression, &this.compile_time_scalar_type(&kind),
+                                )
+                                .map_err(AnalyzerExpressionError::fatal)?;
                                 let result = this.evaluate_compile_time_scalar_source(
                                     &context,
                                     expression,
-                                    &source_mode,
+                                    &kind,
+                                    &exact_type,
                                 );
                                 drop(context);
                                 let fact = match result {
@@ -319,7 +320,7 @@ impl Analyzer<'_, '_, '_> {
                                     }
                                 };
                                 let shell = PreparedExpressionShell::value(
-                                    this.compile_time_scalar_type(&kind),
+                                    exact_type,
                                     CheckedTypeSelection::Expected,
                                     fact.effects().clone(),
                                 );
@@ -493,41 +494,18 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
-    pub(super) fn compile_time_scalar_source_mode(
-        &self,
-        kind: &CheckedCompileTimeScalarKind,
-    ) -> Option<crate::checked_compile_time::CompileTimeScalarSourceMode> {
-        use crate::checked_compile_time::CompileTimeScalarSourceMode;
-
-        match kind {
-            CheckedCompileTimeScalarKind::Milli
-            | CheckedCompileTimeScalarKind::Ratio
-            | CheckedCompileTimeScalarKind::Length
-            | CheckedCompileTimeScalarKind::Angle => Some(CompileTimeScalarSourceMode::Literal),
-            CheckedCompileTimeScalarKind::PublicId => Some(CompileTimeScalarSourceMode::PublicId),
-            CheckedCompileTimeScalarKind::Bool
-            | CheckedCompileTimeScalarKind::Int
-            | CheckedCompileTimeScalarKind::Duration
-            | CheckedCompileTimeScalarKind::ClosedEnum(_)
-            | CheckedCompileTimeScalarKind::Text
-            | CheckedCompileTimeScalarKind::Color
-            | CheckedCompileTimeScalarKind::FontFamily => Some(CompileTimeScalarSourceMode::Typed(
-                self.compile_time_scalar_type(kind),
-            )),
-        }
-    }
-
     pub(super) fn evaluate_compile_time_scalar_source(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         expression: arcweft_lang_hir::identity::ExprId,
-        source_mode: &crate::checked_compile_time::CompileTimeScalarSourceMode,
+        kind: &CheckedCompileTimeScalarKind,
+        exact_type: &TypeKind<PreparedEffects>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
-        match source_mode {
-            crate::checked_compile_time::CompileTimeScalarSourceMode::Literal => {
+        match kind.source_mode() {
+            CompileTimeScalarSourceMode::Literal => {
                 self.evaluate_expression(context, expression, None)
             }
-            crate::checked_compile_time::CompileTimeScalarSourceMode::PublicId => {
+            CompileTimeScalarSourceMode::PublicId => {
                 let source_type = TypeKind::String;
                 self.evaluate_expression_with_expectation(
                     context,
@@ -537,55 +515,14 @@ impl Analyzer<'_, '_, '_> {
                     ),
                 )
             }
-            crate::checked_compile_time::CompileTimeScalarSourceMode::Typed(source_type) => {
-                self.evaluate_expression(context, expression, Some(source_type))
+            CompileTimeScalarSourceMode::Typed => {
+                self.evaluate_expression(context, expression, Some(exact_type))
             }
         }
     }
 
     pub(super) fn compile_time_scalar_type(&self, kind: &CheckedCompileTimeScalarKind) -> TypeKind {
-        let scalars = self.catalogs.world().environment().compile_time_scalars();
-        match kind {
-            CheckedCompileTimeScalarKind::Bool => {
-                scalars.type_for(CompileTimeScalarTypeRoleId::Bool).clone()
-            }
-            CheckedCompileTimeScalarKind::Int => {
-                scalars.type_for(CompileTimeScalarTypeRoleId::Int).clone()
-            }
-            CheckedCompileTimeScalarKind::Milli => {
-                scalars.type_for(CompileTimeScalarTypeRoleId::Milli).clone()
-            }
-            CheckedCompileTimeScalarKind::Ratio => {
-                scalars.type_for(CompileTimeScalarTypeRoleId::Ratio).clone()
-            }
-            CheckedCompileTimeScalarKind::Length => scalars
-                .type_for(CompileTimeScalarTypeRoleId::Length)
-                .clone(),
-            CheckedCompileTimeScalarKind::Angle => {
-                scalars.type_for(CompileTimeScalarTypeRoleId::Angle).clone()
-            }
-            CheckedCompileTimeScalarKind::Duration => scalars
-                .type_for(CompileTimeScalarTypeRoleId::Duration)
-                .clone(),
-            CheckedCompileTimeScalarKind::PublicId => scalars
-                .type_for(CompileTimeScalarTypeRoleId::PublicId)
-                .clone(),
-            CheckedCompileTimeScalarKind::Text => {
-                scalars.type_for(CompileTimeScalarTypeRoleId::Text).clone()
-            }
-            CheckedCompileTimeScalarKind::Color => {
-                scalars.type_for(CompileTimeScalarTypeRoleId::Color).clone()
-            }
-            CheckedCompileTimeScalarKind::FontFamily => scalars
-                .type_for(CompileTimeScalarTypeRoleId::FontFamily)
-                .clone(),
-            CheckedCompileTimeScalarKind::ClosedEnum(schema) => {
-                TypeKind::ProjectNominal(crate::types::ProjectNominalType::new(
-                    schema.declaration().clone(),
-                    Box::<[TypeKind]>::default(),
-                ))
-            }
-        }
+        kind.value_type(self.catalogs.world().environment().compile_time_scalars())
     }
 }
 
@@ -706,14 +643,7 @@ fn reduce_compile_time_scalar(
             .owner()
             .project_nominal()
             .ok_or(CompileTimeScalarReductionError::WrongEnumDeclaration)?;
-        if nominal.declaration() != schema.declaration()
-            || variant
-                .owner()
-                .ty()
-                .semantic_identity_digest()
-                .map_err(|_| CompileTimeScalarReductionError::WrongEnumDeclaration)?
-                != schema.semantic_type()
-        {
+        if !schema.matches_nominal(nominal) {
             return Err(CompileTimeScalarReductionError::WrongEnumDeclaration);
         }
         let ordinal = variant.selected_ordinal();
