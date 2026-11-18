@@ -35,6 +35,7 @@ use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
 mod completed_component;
 mod materialization;
+mod original_effects;
 pub(crate) use materialization::{
     ConstraintMaterialization, RetainedSourcePreparations, SourcePreparationTakeError,
 };
@@ -2508,9 +2509,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         acyclic.sort_by(path_correlation_cmp::<D>);
 
         let mut groups: Vec<Vec<MaterializationInput<D>>> = Vec::new();
-        for mut path in acyclic {
-            let input = match Self::complete_component(&mut path, self.application, graph, context)
-            {
+        for path in acyclic {
+            let input = match Self::complete_component(&path, self.application, graph, context) {
                 Ok(component) => component,
                 Err(TypeConstraintError::Rejected(rejection)) => {
                     completion_rejection.get_or_insert(rejection);
@@ -2554,7 +2554,12 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         A: TypeConstraintAccounting,
     {
         let cyclic = path.deferred_cycles.parameters.iter().next().cloned();
-        let path = seal_path(path, graph, context)?;
+        let reads = context.compose_effect_reads(graph, path.lineage.probe_effect_reads())?;
+        let (mut path, reads) =
+            context.with_effect_read_scope(graph, reads.as_ref(), |context, graph| {
+                seal_path(path, graph, context)
+            })?;
+        path.lineage.effect_reads = reads;
         if let Some(parameter) = cyclic {
             if self.first_cycle.is_none() {
                 self.first_cycle = Some(parameter.clone());
@@ -2570,15 +2575,28 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<MaterializationInput<D>, TypeConstraintError> {
-        let effects = super::normalization::ConstraintClosedEffects::for_path(path, context)?;
-        MaterializationInput::from_closed_original(
-            path,
-            selected,
-            path,
-            &effects,
-            graph.read(),
-            context,
-        )
+        let (input, _) = context.with_original_scope(path.lineage.scope.clone(), |context| {
+            context.with_effect_read_scope(
+                graph,
+                path.lineage.effect_reads.as_ref(),
+                |context, graph| {
+                    let original = path.bind_original_path_effects(graph, context)?;
+                    // The direct terminal path has no caller-provided Future rows.
+                    // Closing the actual relation verifies that this inventory is complete.
+                    let effects =
+                        ConstraintClosedEffects::for_path(path, &original, &[], graph, context)?;
+                    MaterializationInput::from_closed_original(
+                        path,
+                        selected,
+                        path,
+                        &effects,
+                        graph.read(),
+                        context,
+                    )
+                },
+            )
+        })?;
+        Ok(input)
     }
 
     fn prepare_application<A>(

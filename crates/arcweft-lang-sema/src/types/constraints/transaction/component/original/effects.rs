@@ -113,30 +113,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
             for member in members {
                 let path = self.original_path(*member)?;
-                for request in &path.lineage.projections {
-                    context.enter_node()?;
-                    types.push(request.value.value());
-                    if let Some(input) = &request.input {
-                        context.enter_node()?;
-                        types.push(input.value());
-                    }
-                }
-                for source in &path.lineage.probe_trace {
-                    for ty in source.original_query_types() {
-                        context.enter_node()?;
-                        types.push(ty);
-                    }
-                }
-                for equation in &path.equations {
-                    context.enter_node()?;
-                    context.enter_node()?;
-                    types.push(equation.pattern.value());
-                    types.push(equation.actual.value());
-                }
-                for binding in path.bindings.values() {
-                    context.enter_node()?;
-                    types.push(binding.value());
-                }
+                path.collect_original_effect_types(&mut types, context)?;
             }
             for binding in branch.bindings.values() {
                 context.enter_node()?;
@@ -144,32 +121,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
             let roots = PreparedTypeEffectRoots::collect(types, predicates, context)
                 .map_err(projection_failure)?;
-            let mut introduced = Vec::new();
-            for parameter in branch.effects.original_variables() {
-                context.enter_node()?;
-                if matches!(
-                    parameter,
-                    crate::types::GenericEffectReference::Inference(_)
-                ) {
-                    let function = branch
-                        .applications
-                        .effect_function(parameter)
-                        .ok_or(TypeConstraintInvariant::OriginalProducer)
-                        .map_err(TypeConstraintError::from)?;
-                    context.enter_node()?;
-                    introduced.push(function);
-                }
-            }
-            graph
-                .read()
-                .freeze_product(
-                    roots.rows(),
-                    roots.predicates(),
-                    &constraints,
-                    &introduced,
-                    context,
-                )
-                .map_err(Into::into)
+            branch.freeze_original_effect_roots(&roots, &constraints, graph, context)
         })
     }
 }
