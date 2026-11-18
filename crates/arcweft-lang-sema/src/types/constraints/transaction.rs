@@ -153,22 +153,11 @@ impl<D: ConstraintDomain> PendingEquation<D> {
                     graph,
                     context,
                 )?;
-                let scope = context.lexical_scope().clone();
-                let annotation = effects.canonicalize(&annotation, &scope, context)?;
-                let expected = self
-                    .actual
-                    .scope()
-                    .transport_canonical_type(self.pattern.scope(), &pattern, context)
-                    .map_err(|error| match error {
-                        crate::types::TypeProjectionError::Control(error) => error,
-                        crate::types::TypeProjectionError::Instantiation(error) => {
-                            TypeConstraintInvariant::Instantiation(error).into()
-                        }
-                    })?;
-                let completed = annotation
-                    .binding_type_with_inferred_effects(&expected)
-                    .ok_or(TypeConstraintRejection::Mismatch)?;
-                Ok(completed)
+                effects.complete_binding_annotation(
+                    &annotation,
+                    (&pattern, self.pattern.scope()),
+                    context,
+                )
             } else {
                 let value = project(self.actual.value(), context)?;
                 let scope = context.lexical_scope().clone();

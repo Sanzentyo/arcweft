@@ -146,6 +146,9 @@ impl Analyzer<'_, '_, '_> {
                     .get(&statement.iterator())
                     .ok_or_else(|| AnalyzerExpressionError::rejected(statement.iterator()))?;
                 let item = super::statements::iteration_item(iteration).clone();
+                let item = self
+                    .retain_source_value_type(context, statement.pattern(), &item)
+                    .map_err(AnalyzerExpressionError::fatal)?;
                 let module = self
                     .module(owner.module())
                     .map_err(AnalyzerExpressionError::fatal)?;

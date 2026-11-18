@@ -95,6 +95,14 @@ impl TypeCompatibilityControl for NoopTypeCompatibilityControl {
     }
 }
 
+impl TypeCompatibilityControl for super::UnmeteredTypeProjection {
+    type Error = Infallible;
+
+    fn enter(&mut self, _expected: &TypeKind, _actual: &TypeKind) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
 impl<E: super::TypeEffectDomain> TypeKind<E> {
     /// Recovery checking for a boolean condition depends only on the value
     /// shape. Every alternative of a choice must itself be a condition.
@@ -158,8 +166,31 @@ impl TypeKind {
     /// interface; only unknown rows at corresponding structural positions are
     /// filled by the initializer's solved row. No new generic binder is issued.
     pub(crate) fn binding_type_with_inferred_effects(&self, actual: &Self) -> Option<Self> {
-        if !self.accepts(actual) {
-            return None;
+        self.binding_type_with_inferred_effects_with_control(
+            actual,
+            &mut super::UnmeteredTypeProjection,
+        )
+        .ok()
+        .flatten()
+    }
+
+    /// Use the caller's work authority for both the final type relation and
+    /// the subsequent copy of omitted rows into the binding's interface.
+    pub(crate) fn binding_type_with_inferred_effects_with_control<C>(
+        &self,
+        actual: &Self,
+        control: &mut C,
+    ) -> Result<Option<Self>, super::TypeProjectionError<<C as super::TypeProjectionControl>::Error>>
+    where
+        C: super::TypeProjectionControl
+            + TypeCompatibilityControl<Error = <C as super::TypeProjectionControl>::Error>,
+    {
+        match self.accepts_with(actual, TypeCompatibilityPolicy::Recovery, control) {
+            Ok(true) => {}
+            Ok(false) | Err(TypeCompatibilityFailure::Forbidden { .. }) => return Ok(None),
+            Err(TypeCompatibilityFailure::Control(error)) => {
+                return Err(super::TypeProjectionError::Control(error));
+            }
         }
         binding_effects::complete(
             self,
@@ -172,10 +203,8 @@ impl TypeKind {
                         })
                     })
             },
-            &mut super::UnmeteredTypeProjection,
+            control,
         )
-        .ok()
-        .flatten()
     }
 
     /// Returns whether an earlier authoritative resolution failure prevents a
@@ -1104,6 +1133,86 @@ mod tests {
         ArrayLength, DetachedGenericOwnerId, EntityKind, GenericConstParameterId,
         GenericParameterOwnerId, StageActorHandleType, TypePoisonId,
     };
+
+    #[test]
+    fn binding_compatibility_and_row_completion_share_the_callers_budget() {
+        use crate::types::{TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind};
+
+        #[derive(Debug, Eq, PartialEq, thiserror::Error)]
+        #[error("binding work exhausted")]
+        struct Exhausted;
+
+        struct Work {
+            remaining: usize,
+            relation: usize,
+            projection: usize,
+        }
+
+        impl Work {
+            fn charge(&mut self) -> Result<(), Exhausted> {
+                self.remaining = self.remaining.checked_sub(1).ok_or(Exhausted)?;
+                Ok(())
+            }
+        }
+
+        impl TypeCompatibilityControl for Work {
+            type Error = Exhausted;
+
+            fn enter(&mut self, _: &TypeKind, _: &TypeKind) -> Result<(), Exhausted> {
+                self.charge()?;
+                self.relation += 1;
+                Ok(())
+            }
+        }
+
+        impl TypeProjectionControl for Work {
+            type Error = Exhausted;
+
+            fn check(&mut self) -> Result<(), Exhausted> {
+                (self.remaining > 0).then_some(()).ok_or(Exhausted)
+            }
+
+            fn visit_node(&mut self, _: TypeProjectionNodeKind, _: u64) -> Result<(), Exhausted> {
+                self.charge()?;
+                self.projection += 1;
+                Ok(())
+            }
+
+            fn visit_binding(&mut self) -> Result<(), Exhausted> {
+                self.charge()
+            }
+        }
+
+        let annotation = TypeKind::Tuple(vec![TypeKind::function([TypeKind::I64], TypeKind::I64)]);
+        let value = TypeKind::Tuple(vec![TypeKind::function_with_effects(
+            [TypeKind::I64],
+            TypeKind::I64,
+            crate::effect_row::EffectRow::closed(crate::effects::EffectSet::new()),
+        )]);
+        let mut work = Work {
+            remaining: 100,
+            relation: 0,
+            projection: 0,
+        };
+        assert_eq!(
+            annotation.binding_type_with_inferred_effects_with_control(&value, &mut work),
+            Ok(Some(value.clone()))
+        );
+        assert!(work.relation > 0);
+        assert!(work.projection > 0);
+
+        let mut stopped = Work {
+            remaining: work.relation,
+            relation: 0,
+            projection: 0,
+        };
+        assert_eq!(
+            annotation.binding_type_with_inferred_effects_with_control(&value, &mut stopped),
+            Err(TypeProjectionError::Control(Exhausted))
+        );
+        assert_eq!(stopped.relation, work.relation);
+        assert_eq!(stopped.projection, 0);
+    }
 
     fn accepts_with(
         expected: &TypeKind,
