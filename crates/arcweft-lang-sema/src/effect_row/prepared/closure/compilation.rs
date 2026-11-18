@@ -2,6 +2,7 @@
 
 use super::*;
 use arcweft_core::effect_row::EffectDecisionReplacement;
+use std::borrow::Borrow;
 
 pub(super) struct CompiledRow {
     pub(super) membership: Vec<Decision>,
@@ -49,7 +50,7 @@ pub(super) struct Compilation<'a> {
     owner: FormalOwner,
     parameters: &'a [GenericEffectReference],
     cells: ApplicationCells<'a>,
-    rows: BTreeMap<u64, CompiledRow>,
+    rows: BTreeMap<u64, Arc<CompiledRow>>,
     predicates: BTreeMap<u64, Decision>,
 }
 
@@ -151,24 +152,25 @@ impl<'a> Compilation<'a> {
         &self,
         row: &EffectRow,
         work: &mut Work<'_, C>,
-    ) -> Result<CompiledRow, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Arc<CompiledRow>, PreparedEffectFailure<C::Error>> {
         let view = row.known()?.membership();
         let mut membership = Vec::new();
         for class in 0..self.layout.classes() {
             work.charge(DecisionWork::Node)?;
             membership.push(self.member(self.layout.at(view, class), class, |_| None, work)?);
         }
-        Ok(CompiledRow {
+        work.charge(DecisionWork::Node)?;
+        Ok(Arc::new(CompiledRow {
             membership,
             admitted: Decision::constant(true),
-        })
+        }))
     }
 
     fn read_row<C: DecisionControl>(
         &self,
         row: &PreparedEffectRow,
         work: &mut Work<'_, C>,
-    ) -> Result<CompiledRow, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Arc<CompiledRow>, PreparedEffectFailure<C::Error>> {
         match row {
             PreparedEffectRow::Canonical(row) => self.canonical_row(row, work),
             PreparedEffectRow::Term(reference) => {
@@ -177,14 +179,8 @@ impl<'a> Compilation<'a> {
                     .rows
                     .get(&reference.0.ordinal)
                     .ok_or(PreparedEffectInvariant::StaleReference)?;
-                let mut membership = Vec::new();
-                for decision in &row.membership {
-                    membership.push(work.copy_decision(decision)?);
-                }
-                Ok(CompiledRow {
-                    membership,
-                    admitted: work.copy_decision(&row.admitted)?,
-                })
+                work.charge(DecisionWork::Visit)?;
+                Ok(Arc::clone(row))
             }
         }
     }
@@ -192,7 +188,7 @@ impl<'a> Compilation<'a> {
     pub(super) fn application<C: DecisionControl>(
         &self,
         scheme: u64,
-        arguments: &[CompiledRow],
+        arguments: &[impl Borrow<CompiledRow>],
         work: &mut Work<'_, C>,
     ) -> Result<Vec<Decision>, PreparedEffectFailure<C::Error>> {
         let table = *self
@@ -248,6 +244,7 @@ impl<'a> Compilation<'a> {
                 frontier.push(coefficient);
             }
             for argument in arguments {
+                let argument = argument.borrow();
                 let mut next = Vec::new();
                 for pair in frontier.chunks_exact(2) {
                     next.push(argument.membership[class].conditional(&pair[1], &pair[0], work)?);
@@ -267,7 +264,7 @@ impl<'a> Compilation<'a> {
         &mut self,
         root: &PreparedEffectRow,
         work: &mut Work<'_, C>,
-    ) -> Result<CompiledRow, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Arc<CompiledRow>, PreparedEffectFailure<C::Error>> {
         let mut todo = vec![root];
         let mut reachable = BTreeSet::new();
         while let Some(row) = todo.pop() {
@@ -302,7 +299,10 @@ impl<'a> Compilation<'a> {
                         work.charge(DecisionWork::Node)?;
                         compiled.push(argument);
                     }
-                    if let Some(domain) = definition.domain() {
+                    if let Some(domain) = definition
+                        .domain()
+                        .filter(|domain| !domain.is_unconstrained())
+                    {
                         let mut substitutions = BTreeMap::new();
                         for (parameter, argument) in definition.parameters().iter().zip(&compiled) {
                             work.charge(DecisionWork::Node)?;
@@ -313,7 +313,7 @@ impl<'a> Compilation<'a> {
                             let domain = self.member(
                                 self.layout.at(domain.membership(), class),
                                 class,
-                                |reference| substitutions.get(reference).copied(),
+                                |reference| substitutions.get(reference).map(|row| row.as_ref()),
                                 work,
                             )?;
                             work.charge(DecisionWork::Node)?;
@@ -354,7 +354,7 @@ impl<'a> Compilation<'a> {
                         membership.push(self.member(
                             self.layout.at(formula.membership(), class),
                             class,
-                            |reference| substitutions.get(reference),
+                            |reference| substitutions.get(reference).map(Arc::as_ref),
                             work,
                         )?);
                     }
@@ -398,7 +398,8 @@ impl<'a> Compilation<'a> {
                 }
             };
             work.charge(DecisionWork::Node)?;
-            self.rows.insert(id, value);
+            work.charge(DecisionWork::Node)?;
+            self.rows.insert(id, Arc::new(value));
         }
         self.read_row(root, work)
     }
@@ -408,6 +409,10 @@ impl<'a> Compilation<'a> {
         predicate: &EffectPredicate,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        if predicate.is_unconstrained() {
+            work.charge(DecisionWork::Visit)?;
+            return Ok(Decision::constant(true));
+        }
         let mut members = Vec::new();
         for class in 0..self.layout.classes() {
             work.charge(DecisionWork::Node)?;
@@ -589,7 +594,7 @@ impl<'a> Compilation<'a> {
                         let decision = self.member(
                             self.layout.at(predicate.membership(), class),
                             class,
-                            |reference| substitutions.get(reference),
+                            |reference| substitutions.get(reference).map(Arc::as_ref),
                             work,
                         )?;
                         work.charge(DecisionWork::Node)?;

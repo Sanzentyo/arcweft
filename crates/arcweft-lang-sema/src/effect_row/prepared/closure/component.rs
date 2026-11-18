@@ -28,7 +28,7 @@ pub(super) struct ComponentCompletion {
 
 struct RelationScope<'a> {
     compiler: Compilation<'a>,
-    body: Option<compilation::CompiledRow>,
+    body: Option<Arc<compilation::CompiledRow>>,
 }
 
 fn relation_scope<'g, 's, C: DecisionControl>(

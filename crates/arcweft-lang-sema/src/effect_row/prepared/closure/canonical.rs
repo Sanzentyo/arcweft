@@ -88,6 +88,10 @@ impl<'a> CanonicalReplay<'a> {
         predicate: &Predicate,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        if predicate.is_unconstrained() {
+            work.charge(DecisionWork::Visit)?;
+            return Ok(Decision::constant(true));
+        }
         let mut members = Vec::new();
         for class in 0..self.scope.classes.classes() {
             work.charge(DecisionWork::Node)?;
@@ -189,7 +193,10 @@ impl<'a> CanonicalReplay<'a> {
                         substitutions
                             .insert(Variable::Parameter(parameter.clone()), argument.formula);
                     }
-                    if let Some(domain) = definition.domain() {
+                    if let Some(domain) = definition
+                        .domain()
+                        .filter(|domain| !domain.is_unconstrained())
+                    {
                         let domain = self
                             .canonical_predicate(domain, work)?
                             .substitute(&substitutions, work)?;

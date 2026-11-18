@@ -407,17 +407,17 @@ impl PrincipalEffectClosure {
         let context = compilation.predicate(context, &mut work)?;
         Self::require_whole(&context)?;
         let compiled = compilation.row(row, &mut work)?;
-        let admitted = compiled.admitted;
-        Self::require_whole(&admitted)?;
+        let admitted = &compiled.admitted;
+        Self::require_whole(admitted)?;
         let scoped = self.witnesses.and(&context, &mut work)?;
         let possible = scoped.exists(&self.choices, &mut work)?;
         let yes = scoped
-            .and(&admitted, &mut work)?
+            .and(admitted, &mut work)?
             .exists(&self.choices, &mut work)?;
         let no = scoped
             .and(&admitted.not(&mut work)?, &mut work)?
             .exists(&self.choices, &mut work)?;
-        let accepted = scoped.and(&admitted, &mut work)?;
+        let accepted = scoped.and(admitted, &mut work)?;
         let mut positive = Vec::new();
         let mut negative = Vec::new();
         let mut ambiguous = Decision::constant(false);

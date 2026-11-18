@@ -202,8 +202,8 @@ where
     })
 }
 
-/// Inspect the canonical algebra directly in the binding fold. The result
-/// carries neither a retained derivation nor Free authorization.
+/// Inspect the canonical algebra directly in the binding fold for read-only
+/// equation checks.
 pub(in crate::types::constraints) fn project_closed_type<A, D, L>(
     ty: &TypeKind<PreparedEffects>,
     branch: &super::super::transaction::ConstraintInferenceBranch<D, L>,
