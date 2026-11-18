@@ -18944,3 +18944,17 @@ Source `399af5ff7123c509f70860d5afab276a12ac31ab`。変更の基点は `06661363
 未準備の宣言本体に由来する作用項を、局所参照のキャプチャ探索で保持する回帰fixtureを追加した。Sema全体のコンパイルが未完了のため、fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-owner-bound-capture-types.raw.zip) は24 entry、249,958 bytes、SHA256 `c5254d760ffb4bfd8060550860048c12a6d5dbccab51a46998a8d825e35c6845`。各entryの長さとSHA256を再照合した。更新前の履歴2,945,434 bytesのSHA256 `182f1f3589d7feafc0a40b4a80f7d0e6b9549397a656f5eb6d65796aba3250ad` をprefixとして保持した。
+
+
+<a id="prepared-try-carriers"></a>
+## 2026-11-18 — Tryとcarrier blockの型を元の作用解で確定する
+
+Source `42833e2ee8d72c4652a03cc3f1bd62d882c9c786`。変更の基点は `e0c05ce1e23a49d79b1364d3c22b5c94a267a3dd`。比較元は同じRust入力の `399af5ff7123c509f70860d5afab276a12ac31ab` に対応する `owner-bound-capture-types.dev02-check.log`。公開したmainと17件のRust入力のblobを照合した。
+
+Tryは準備済みの成功値型と残余型を保持する。実装メソッドの伝播先は採用済みの意味パスから特定し、宣言の確定済みシグネチャと照合する。エラー型が合わない場合はTry演算子と戻り型注釈の出典を保持する。carrier blockは式結果がNeverの場合もキャリア型を保持し、その型をnominal投影の入力に含める。文脈付きResultの残余型は方向付きに照合する。推論したResultでは作用項の異なる同じ構造の残余型を最終検査まで保持し、元の作用解で確定した型を照合する。候補推論中に残余側の作用項を連立させる処理と、実行時の検証は継続課題である。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。dev01は終了101でlibrary 209エラー・25警告、lib test 1,084エラー・37警告。dev02も終了101でlibrary 210エラー・25警告、lib test 1,085エラー・37警告。関数型の構築、Thread戻り値の準備時検査、残余の型結合の引数を修正した。dev03は終了101でlibrary 200エラー・25警告、lib test 1,075エラー・37警告。正規化した一次診断は前回1,121件から1,089件へ減った。32件削除、追加0件。パッケージのfmt checkと `just structure-audit-gate` は終了0。
+
+二つ目の実装メソッドを指すTry境界と、別々の作用項が同じ残余型に確定する回帰fixtureを追加した。Sema全体のコンパイルが未完了のため、fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-try-carriers.raw.zip) は32 entry、362,675 bytes、SHA256 `9d6bc6e647a1331a4a143bd52c226b222e61570046f7fa82a687e9ea08982a1f`。各entryの長さとSHA256を再照合した。更新前の履歴2,947,954 bytesのSHA256 `c86ffc0e8ffca1df89994d9200a6fab0318e28267d0ed90d2726bdb0fcd9752c` をprefixとして保持した。
