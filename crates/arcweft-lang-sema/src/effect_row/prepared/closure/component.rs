@@ -119,7 +119,12 @@ fn compile_relation<C: DecisionControl>(
                     compilation::copy(&body.admitted, work)?
                 } else {
                     let parameters = scoped.compiler.parameters(work)?;
-                    let own = scoped.compiler.application(*scheme, &parameters, work)?;
+                    let own = scoped.compiler.application(
+                        *scheme,
+                        &parameters,
+                        ApplicationCells::Variables,
+                        work,
+                    )?;
                     let mut members = Vec::new();
                     for (left, right) in own.iter().zip(&body.membership) {
                         work.charge(DecisionWork::Node)?;

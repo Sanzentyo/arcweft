@@ -39,7 +39,7 @@ impl FunctionInventory<'_> {
     }
 }
 
-use compilation::Compilation;
+use compilation::{ApplicationCells, Compilation};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Atom {
@@ -570,10 +570,14 @@ impl PrincipalEffectClosure {
                 function.parameters(),
             );
             let parameters = compilation.parameters(work)?;
-            let membership = compilation.application(id, &parameters, work)?;
+            let membership = compilation.application(
+                id,
+                &parameters,
+                ApplicationCells::Solved(&coefficients),
+                work,
+            )?;
             let mut output = Vec::new();
             for decision in membership {
-                let decision = decision.substitute(&coefficients, work)?;
                 let mapped = decision.map_references(work, &mut |atom, _| match atom {
                     Atom::Formal {
                         owner: FormalOwner::Scheme(owner),

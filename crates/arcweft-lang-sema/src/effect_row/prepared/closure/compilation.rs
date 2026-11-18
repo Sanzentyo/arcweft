@@ -7,6 +7,13 @@ pub(super) struct CompiledRow {
     pub(super) admitted: Decision,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum ApplicationCells<'a> {
+    Variables,
+    /// Reification applies the same table with its least cells already bound.
+    Solved(&'a BTreeMap<Atom, Decision>),
+}
+
 pub(super) struct Compilation<'a> {
     graph: &'a PreparedEffectDefinitions,
     layout: ClassLayout<'a>,
@@ -93,11 +100,11 @@ impl<'a> Compilation<'a> {
         Ok(result)
     }
 
-    fn member<C: DecisionControl>(
+    fn member<'r, C: DecisionControl>(
         &self,
         source: &EffectDecision<GenericEffectReference>,
         class: usize,
-        arguments: &BTreeMap<GenericEffectReference, CompiledRow>,
+        argument: impl Fn(&GenericEffectReference) -> Option<&'r CompiledRow>,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
         let mut replacements = BTreeMap::new();
@@ -106,7 +113,7 @@ impl<'a> Compilation<'a> {
             if replacements.contains_key(&Atom::Reference(parameter.clone())) {
                 continue;
             }
-            let value = if let Some(argument) = arguments.get(parameter) {
+            let value = if let Some(argument) = argument(parameter) {
                 copy(&argument.membership[class], work)?
             } else {
                 let slot = self
@@ -143,12 +150,7 @@ impl<'a> Compilation<'a> {
         let mut membership = Vec::new();
         for class in 0..self.layout.classes() {
             work.charge(DecisionWork::Node)?;
-            membership.push(self.member(
-                self.layout.at(view, class),
-                class,
-                &BTreeMap::new(),
-                work,
-            )?);
+            membership.push(self.member(self.layout.at(view, class), class, |_| None, work)?);
         }
         Ok(CompiledRow {
             membership,
@@ -185,6 +187,7 @@ impl<'a> Compilation<'a> {
         &self,
         scheme: u64,
         arguments: &[CompiledRow],
+        cells: ApplicationCells<'_>,
         work: &mut Work<'_, C>,
     ) -> Result<Vec<Decision>, PreparedEffectFailure<C::Error>> {
         let table = *self
@@ -192,7 +195,11 @@ impl<'a> Compilation<'a> {
             .tables
             .get(&scheme)
             .ok_or(PreparedEffectInvariant::StaleReference)?;
-        let imported = match self.graph.functions[&scheme].as_ref() {
+        let function = self.graph.functions[&scheme].as_ref();
+        if arguments.len() != function.parameters().len() {
+            return Err(PreparedEffectInvariant::ApplicationArity.into());
+        }
+        let imported = match function {
             Function::Imported(_) => Some(
                 self.layout
                     .imports
@@ -206,18 +213,27 @@ impl<'a> Compilation<'a> {
         for class in 0..self.layout.classes() {
             let mut frontier = Vec::new();
             for mask in 0..table {
-                frontier.push(if let Some(imported) = imported {
-                    imported.coefficient(self.layout, class, mask, work)?
-                } else {
-                    Decision::variable(
-                        Atom::Cell {
-                            scheme,
-                            class,
-                            mask,
-                        },
+                let cell = Atom::Cell {
+                    scheme,
+                    class,
+                    mask,
+                };
+                let coefficient = match (imported, cells) {
+                    (Some(imported), ApplicationCells::Variables) => {
+                        imported.coefficient(self.layout, class, mask, work)?
+                    }
+                    (Some(imported), ApplicationCells::Solved(coefficients)) => imported
+                        .coefficient(self.layout, class, mask, work)?
+                        .substitute(coefficients, work)?,
+                    (None, ApplicationCells::Variables) => Decision::variable(cell, work)?,
+                    (None, ApplicationCells::Solved(coefficients)) => copy(
+                        coefficients
+                            .get(&cell)
+                            .ok_or(PreparedEffectInvariant::UnclosedCell)?,
                         work,
-                    )?
-                });
+                    )?,
+                };
+                frontier.push(coefficient);
             }
             for argument in arguments {
                 let mut next = Vec::new();
@@ -266,25 +282,26 @@ impl<'a> Compilation<'a> {
                     arguments,
                 } => {
                     let mut compiled = Vec::new();
-                    let mut substitutions = BTreeMap::new();
                     let mut admitted = Decision::constant(true);
                     let definition = self.graph.function(function)?;
-                    for (parameter, argument) in
-                        definition.parameters().iter().zip(arguments.iter())
-                    {
+                    for argument in arguments {
                         let argument = self.read_row(argument, work)?;
                         admitted = admitted.and(&argument.admitted, work)?;
-                        compiled.push(self.read_row(&arguments[compiled.len()], work)?);
                         work.charge(DecisionWork::Node)?;
-                        substitutions.insert(parameter.clone(), argument);
+                        compiled.push(argument);
                     }
                     if let Some(domain) = definition.domain() {
+                        let mut substitutions = BTreeMap::new();
+                        for (parameter, argument) in definition.parameters().iter().zip(&compiled) {
+                            work.charge(DecisionWork::Node)?;
+                            substitutions.insert(parameter, argument);
+                        }
                         let mut domains = Vec::new();
                         for class in 0..self.layout.classes() {
                             let domain = self.member(
                                 self.layout.at(domain.membership(), class),
                                 class,
-                                &substitutions,
+                                |reference| substitutions.get(reference).copied(),
                                 work,
                             )?;
                             work.charge(DecisionWork::Node)?;
@@ -305,6 +322,7 @@ impl<'a> Compilation<'a> {
                         membership: self.application(
                             function.reference().ordinal,
                             &compiled,
+                            ApplicationCells::Variables,
                             work,
                         )?,
                         admitted,
@@ -324,7 +342,7 @@ impl<'a> Compilation<'a> {
                         membership.push(self.member(
                             self.layout.at(formula.membership(), class),
                             class,
-                            &substitutions,
+                            |reference| substitutions.get(reference),
                             work,
                         )?);
                     }
@@ -384,7 +402,7 @@ impl<'a> Compilation<'a> {
             members.push(self.member(
                 self.layout.at(predicate.membership(), class),
                 class,
-                &BTreeMap::new(),
+                |_| None,
                 work,
             )?);
         }
@@ -557,7 +575,7 @@ impl<'a> Compilation<'a> {
                         let decision = self.member(
                             self.layout.at(predicate.membership(), class),
                             class,
-                            &substitutions,
+                            |reference| substitutions.get(reference),
                             work,
                         )?;
                         work.charge(DecisionWork::Node)?;
