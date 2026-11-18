@@ -165,6 +165,21 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
+        let mut scopes = scopes.into_iter().peekable();
+        let first = scopes.next();
+        // The retained view already authenticated these layers at this state.
+        // An identical enclosing view introduces no new dependencies.
+        if let Some(scope) = first
+            && scopes.peek().is_none()
+            && scope.data.base == self.state
+            && self
+                .active_scope
+                .as_ref()
+                .is_none_or(|active| Arc::ptr_eq(&active.input.data, &scope.data))
+        {
+            scope.validate_issuer(self, &mut work)?;
+            return Ok(scope.clone());
+        }
         let mut layers = BTreeMap::new();
         let mut bases = BTreeSet::new();
         let mut retain_scope = |scope: &PreparedEffectReadScope| {
@@ -176,7 +191,7 @@ impl PreparedEffectGraph {
             }
             Ok::<(), PreparedEffectFailure<C::Error>>(())
         };
-        for scope in scopes {
+        for scope in first.into_iter().chain(scopes) {
             retain_scope(scope)?;
         }
         if let Some(active) = &self.active_scope {
@@ -291,6 +306,22 @@ impl PreparedEffectGraph {
             graph: self,
             checkpoint: Some(checkpoint),
         })
+    }
+
+    /// Check a branch using transient derived terms. The result uses only
+    /// closed values and owned evidence, so the edit rolls back on either exit.
+    pub(crate) fn validate_in_read_scope<C, T, E>(
+        &mut self,
+        input: &PreparedEffectReadScope,
+        control: &mut C,
+        validate: impl FnOnce(&mut Self, &mut C) -> Result<T, E>,
+    ) -> Result<T, E>
+    where
+        C: DecisionControl,
+        E: From<PreparedEffectFailure<C::Error>>,
+    {
+        let edit = self.edit_scope(input, control)?;
+        validate(&mut *edit.graph, control)
     }
 
     /// Run branch-local algebra against its selected reads. The result gets

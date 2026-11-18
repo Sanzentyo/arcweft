@@ -67,6 +67,7 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                 let sources: Arc<[OriginalProducerContext]> = sources.into();
                 let mut accepted = Vec::new();
                 let mut rejected = None;
+                let reads = context.compose_effect_reads(graph, product.effect_reads.iter())?;
                 for (index, prepared) in prepared.iter().enumerate() {
                     if !Arc::ptr_eq(&prepared.branch.lineage, &product.members) {
                         return Err(PreparedValueFailure::from(TypeConstraintError::from(
@@ -74,10 +75,9 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                         )));
                     }
                     let closed = context.with_original_scope(product.scope.clone(), |context| {
-                        context.with_effect_reads(
-                            graph,
-                            product.effect_reads.iter(),
-                            |context, graph| {
+                        let validate =
+                            |context: &mut TypeConstraintContext<'_, A, D>,
+                             graph: &mut PreparedEffectGraph| {
                                 let effects = ConstraintClosedEffects::for_branch(
                                     &prepared.branch,
                                     &product.scope,
@@ -124,11 +124,18 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                                     effects,
                                     completed.into_boxed_slice(),
                                 ))
-                            },
-                        )
+                            };
+                        match reads.as_ref() {
+                            Some(reads) => {
+                                graph.validate_in_read_scope(reads, context, |graph, context| {
+                                    validate(context, graph)
+                                })
+                            }
+                            None => context.with_effect_transaction(graph, validate),
+                        }
                     });
                     match closed {
-                        Ok(((effects, completed), _)) => {
+                        Ok((effects, completed)) => {
                             context.enter_node()?;
                             context.enter_node()?;
                             accepted.push((index, effects, completed));
