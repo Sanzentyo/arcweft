@@ -19545,3 +19545,16 @@ Source `17880916d8de944bf57e509c236f5708e5f81793` は、書き込みも状態遷
 locked Semaの全feature checkはlibrary成功、lib testは終了101・817エラー・33警告。発生ファイル・コード別のエラーの内訳は前回と一致した。追加fixtureの実行、全推移的逆依存テスト、workspace全target check、Native／Web最終受入は未実行。SemaライブラリClippy、fmt、差分検査、構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存は起点込み22 package。公開3 blobを照合した。 `target` は10596522515 bytesだった。
 
 [レイヤー別の計測、Compilerの全ID比較、最終検証と公開照合](acceptance-evidence/task-effect-publication-layers.raw.zip) は30 entry、928648 bytes、SHA256 `d97cdc31cb318c0e737ca6d5ecc298ad657107da3eb4d441475ef512800edfa8`。各原本の長さとハッシュを照合した。
+
+<a id="bare-effect-substitution"></a>
+## 2026-11-19 — 作用変数の置換で引数行を再利用
+
+基点 `d86b301b24a5dc5ca84fb14096ab793d9e5fb607` のMap 2件を計測した。公開が拒否されたのは制約の一時読み取りスコープで作った作用行だった。標準Mapの作用変数だけの式に、元の引数が保持する作用行をそのまま代入した式を包んでいた。両件で元の引数行は公開対象の差分に含まれていた。計測差分を取り除いてから実装した。
+
+Source `f05f45a88681b559a2ef48aa62381531d7918dcd` では、準備済み作用グラフが引数行を検査し、固定ラベルを持たない変数だけの式ならその行を返す。固定ラベル付きや複合の式は代入項として保持する。実際の依存レイヤーには元の公開権限を求める。固定ラベル付き代入の再生テストを維持し、変数だけの代入がグラフの状態を進めないことを検査するSema fixtureを追加した。
+
+主要Compilerの同じ152 IDは全件成功。追加396 IDは364成功・32失敗で、前回失敗した3 IDが成功した。直接MapではNativeとAWBCで戻り値9とreceiverからmappingへのログ順を確認し、Nativeではコールバック実行が3回だった。もう一件はopaqueなマッピングを直接・保持prefixから使い、`RequireUnrestricted` を除くとAWBCの検証が拒否した。別のMapテストは別名を介した消費、MapとSumの単一融合、NativeとAWBCの1 opずつの実行で成功した。
+
+Semaの全feature checkはライブラリを生成し、テスト対象は終了101・817エラー・33警告だった。前回とコード・ファイル別の内訳が一致した。Semaの追加fixture、全推移的逆依存のテスト、workspace全targetのcheck／Clippy、Native／Web最終受入は未実行。SemaライブラリClippy・fmt・差分検査・構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存は起点込み22 package。公開3 blobを照合した。 `target` は10596801003 bytesだった。
+
+[作用行の発行計測、Compilerの全ID比較、最終検証と公開照合](acceptance-evidence/task-bare-effect-substitution.raw.zip) は26 entry、919878 bytes、SHA256 `12786715b64dad772983571d2ce0dfe24e99b6d3ddc61d9e19edbdda8ccad0a0`。各原本の長さとハッシュを照合した。
