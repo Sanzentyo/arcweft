@@ -18668,3 +18668,16 @@ Analyzerで閉じた値を投影する独立呼出しは、元のfrontierを引�
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。照合処理を接続した公開入力dev02はlibrary **416エラー・25警告**、lib test **1,332エラー・44警告**。変更pathを一次位置とする1件は旧経路の完了引数不足。Semaのfmtと構造gateは終了0、blocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,075,897 bytesでcleanは未実行。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-branch-effect-scope-composition-checkpoint.raw.zip) は22 entry、283,176 bytes、SHA256 `375c5f68e47aa474d0b9dddfe8ef3528c5e6d1a3cd85808679e29e0d5f9f6dcc`。各entryの長さとSHA256を再照合した。旧履歴2,893,806 bytesのSHA256 `d11134596ede38a354deb1801819e081b3cbdb9d55a3005b26751931421c8d50` をprefixとして保持した。
+
+<a id="scoped-result-materialization-checkpoint"></a>
+## 2026-11-18 — 候補の作用項を結果投影と最終確定へ引き継ぐ
+
+基点 `54a3bb827f72d70c39fee6139735b9aed2295731`。Source `47c2edb274e0f29f4973e1b1ae25876f659d5e64` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した7入力のblobを照合した。
+
+結果型と比較用の入力型を投影に登録するとき、候補が保持する作用項を読む。producerへの登録で投影を準備した結果も候補に保持する。original productの推論では選択したmemberの読取り範囲を使い、各productが生成した作用項を最終確定へ渡す。Futureの実値は同じ発行元のliveグラフと、個々のproductが保持する作用項に照らして検査する。確定した投影と元の引数準備を既存のcallback経路へ渡す。期待型の準備、特殊化された結果の投影、選択した準備差分の公開、再評価の除去は残る。
+
+元の差分の公開権限を破棄した状態で、候補内のFutureと後から得られるNamed本体を使い、結果と比較用の入力を確定する回帰を追加した。元のFutureと作用項がliveグラフに存在しないことも検査する。この回帰は未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。公開入力ではlibrary **416エラー・25警告**、lib test **1,332エラー・44警告**。変更pathを一次位置とする1件は既存の完了呼出しの引数不足。Semaのfmtと構造gateは終了0、blocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,079,896 bytesでcleanは未実行。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-scoped-result-materialization-checkpoint.raw.zip) は16 entry、151,807 bytes、SHA256 `c56be25df25b8788c4fab5f7b04911fd767076144718018967c2f408662fea32`。各entryの長さとSHA256を再照合した。旧履歴2,896,399 bytesのSHA256 `68306dc5adada8f08467a1b52d1504617b7a630c4ea82da52b9312d2e02ffb30` をprefixとして保持した。
