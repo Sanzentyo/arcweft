@@ -71,34 +71,15 @@ impl Analyzer<'_, '_, '_> {
         .map_err(|_| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
         })?;
-        use crate::effect_row::{DecisionControl, DecisionWork};
-        let mut work = context.work();
-        match self
-            .source_callable_terminal_effects(&candidate)
-            .map_err(AnalyzerExpressionError::fatal)?
-        {
-            CallableTerminalEffectProjection::Known {
-                effects,
-                result_schema,
-            } => self
-                .facts
-                .effect_declarations()
-                .map_err(AnalyzerExpressionError::fact)?
-                .prepare_known_value_type(candidate.schema(), effects, result_schema, &mut work)
-                .map_err(FinalSemanticAnalysisError::from)
-                .map_err(AnalyzerExpressionError::fatal),
-            CallableTerminalEffectProjection::Pending(owner) => {
-                work.charge(DecisionWork::Visit)
-                    .map_err(AnalyzerExpressionError::fatal)?;
-                let owner = owner.clone();
-                self.facts
-                    .effect_declarations_mut()
-                    .map_err(AnalyzerExpressionError::fact)?
-                    .prepare_declared_value_type(&owner, candidate.schema(), &mut work)
-                    .map_err(FinalSemanticAnalysisError::from)
-                    .map_err(AnalyzerExpressionError::fatal)
-            }
-        }
+        self.facts
+            .ensure_healthy()
+            .map_err(AnalyzerExpressionError::fact)?;
+        self.facts
+            .prepared_calls_mut()
+            .map_err(AnalyzerExpressionError::fact)?
+            .prepare_declaration_value(&staged.builder, &candidate, &mut context.work())
+            .map_err(FinalSemanticAnalysisError::from)
+            .map_err(AnalyzerExpressionError::fatal)
     }
     /// Only a projection that needs an inferred terminal row enters this
     /// prerequisite. Ordinary terminal calls retain their typed effect edge.

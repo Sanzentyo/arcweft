@@ -302,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn inferred_application_result_keeps_the_declaration_term_after_row_caching() {
+    fn inferred_callable_arrows_keep_the_declaration_term_after_row_caching() {
         use crate::callable::{
             CallableInstantiation, PRODUCTION_CALLABLE_LIMITS, PreparedApplicationResult,
             PreparedCallGraph, PreparedCallableEffectDeclarations,
@@ -374,6 +374,9 @@ mod tests {
         let pending = graph
             .prepare_application_result(&builder, &candidate, &mapping, &mut control)
             .unwrap();
+        let pending_value = graph
+            .prepare_declaration_value(&builder, &candidate, &mut control)
+            .unwrap();
         let exposed = analysis
             .checked_callables()
             .callable(id)
@@ -393,6 +396,9 @@ mod tests {
         let cached = graph
             .prepare_application_result(&builder, &candidate, &mapping, &mut control)
             .unwrap();
+        let cached_value = graph
+            .prepare_declaration_value(&builder, &candidate, &mut control)
+            .unwrap();
 
         let (effects_graph, headers) = graph.effect_declarations_mut().unwrap().relation();
         let header = headers.get(id).unwrap().validate_schema(schema).unwrap();
@@ -405,23 +411,39 @@ mod tests {
             )
             .unwrap();
         let closed = effects_graph.solve_principal(&mut control).unwrap();
-        for result in [pending, cached] {
-            let PreparedApplicationResult::Value(TypeKind::Function {
+        for (result, value) in [(pending, pending_value), (cached, cached_value)] {
+            let PreparedApplicationResult::Value(remaining) = result else {
+                panic!("remaining invocation arrow");
+            };
+            let TypeKind::Function {
                 params,
                 return_type,
                 effects,
                 ..
-            }) = result
+            } = value
             else {
-                panic!("remaining invocation arrow");
+                panic!("full declaration arrow");
             };
             assert_eq!(params, [TypeKind::I64]);
-            assert_eq!(*return_type, TypeKind::I64);
-            assert!(matches!(effects, PreparedEffectRow::Term(_)));
-            assert_eq!(
-                &closed.resolve_row(&effects, &mut control).unwrap(),
-                exposed
-            );
+            assert!(matches!(effects, PreparedEffectRow::Canonical(row) if row.is_empty()));
+            for terminal in [remaining, *return_type] {
+                let TypeKind::Function {
+                    params,
+                    return_type,
+                    effects,
+                    ..
+                } = terminal
+                else {
+                    panic!("terminal invocation arrow");
+                };
+                assert_eq!(params, [TypeKind::I64]);
+                assert_eq!(*return_type, TypeKind::I64);
+                assert!(matches!(effects, PreparedEffectRow::Term(_)));
+                assert_eq!(
+                    &closed.resolve_row(&effects, &mut control).unwrap(),
+                    exposed
+                );
+            }
         }
     }
 

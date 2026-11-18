@@ -499,6 +499,16 @@ impl CallableSignatureSchema {
         )
     }
 
+    /// The complete value of an authored declaration owns its generic binder.
+    pub(crate) fn declared_function_value_type(
+        &self,
+        terminal_effects: &EffectRow,
+    ) -> Result<TypeKind, crate::callable::CallConstraintInvariant> {
+        let ty =
+            self.declared_function_type_from_group(CallableGroupIndex::ZERO, terminal_effects)?;
+        self.quantify_function_value(&ty).map_err(Into::into)
+    }
+
     pub(crate) fn declared_function_type_from_position(
         &self,
         position: CallableParameterCoordinate,

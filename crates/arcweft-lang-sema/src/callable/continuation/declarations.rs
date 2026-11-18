@@ -2,7 +2,11 @@
 
 use super::*;
 use crate::{
-    callable::{CallableSignatureSchema, CallableSignatureSchemaDigest, CheckedCallableId},
+    callable::{
+        CallableSignatureSchema, CallableSignatureSchemaDigest, CallableTerminalEffectProjection,
+        CheckedCallResolverAuthority, CheckedCallableCatalogBuilder, CheckedCallableId,
+        EffectPermission, PreparedResolvedCallable,
+    },
     effect_row::prepared::{
         PreparedEffectDeclaration, PreparedEffectFailure, PreparedEffectGraph,
         PreparedEffectInvariant,
@@ -90,10 +94,12 @@ impl PreparedCallableEffectDeclarations {
         })
     }
 
-    pub(crate) fn prepare_declared_value_type<C>(
+    fn prepare_callable_arrow<C>(
         &mut self,
-        owner: &CheckedCallableId,
-        schema: &CallableSignatureSchema,
+        builder: &CheckedCallableCatalogBuilder,
+        candidate: &PreparedResolvedCallable,
+        position: CallableParameterCoordinate,
+        terminal: CallableTerminalEffectProjection<'_>,
         control: &mut C,
     ) -> Result<
         crate::types::TypeKind<crate::types::PreparedEffects>,
@@ -103,13 +109,34 @@ impl PreparedCallableEffectDeclarations {
         C: crate::types::TypeProjectionControl
             + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
     {
-        self.prepare_declared_arrow(
-            owner,
-            schema,
-            CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO),
-            None,
-            control,
-        )
+        let schema = candidate.schema();
+        // An inferred result can refine the payload of an arrow without
+        // changing which declaration scheme owns its terminal effect.
+        if let Some(owner) = candidate.checked() {
+            let pending = builder
+                .pending_by_id(owner)
+                .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
+            if pending.body_contract().is_some_and(|contract| {
+                matches!(contract.permission(), EffectPermission::UnboundedInference)
+            }) {
+                return self.prepare_declared_arrow(
+                    owner,
+                    schema,
+                    position,
+                    terminal.inferred_result_schema(),
+                    control,
+                );
+            }
+        }
+        match terminal {
+            CallableTerminalEffectProjection::Known {
+                effects,
+                result_schema,
+            } => self.prepare_known_arrow(schema, position, effects, result_schema, control),
+            CallableTerminalEffectProjection::Pending(owner) => {
+                self.prepare_declared_arrow(owner, schema, position, None, control)
+            }
+        }
     }
 
     fn prepare_declared_arrow<C>(
@@ -174,29 +201,6 @@ impl PreparedCallableEffectDeclarations {
                 .map_err(PreparedEffectFailure::Invariant)?;
         }
         prepared
-    }
-
-    pub(crate) fn prepare_known_value_type<C>(
-        &self,
-        schema: &CallableSignatureSchema,
-        row: &crate::effect_row::EffectRow,
-        result: Option<&crate::callable::CallableResultSchema>,
-        control: &mut C,
-    ) -> Result<
-        crate::types::TypeKind<crate::types::PreparedEffects>,
-        PreparedCallableValueTypeFailure<<C as crate::types::TypeProjectionControl>::Error>,
-    >
-    where
-        C: crate::types::TypeProjectionControl
-            + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
-    {
-        self.prepare_known_arrow(
-            schema,
-            CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO),
-            row,
-            result,
-            control,
-        )
     }
 
     fn prepare_known_arrow<C>(
@@ -278,6 +282,39 @@ impl PreparedCallableEffectDeclarations {
 }
 
 impl<P, U> PreparedCallGraph<P, U> {
+    pub(crate) fn prepare_declaration_value<C>(
+        &mut self,
+        builder: &CheckedCallableCatalogBuilder,
+        candidate: &PreparedResolvedCallable,
+        control: &mut C,
+    ) -> Result<
+        TypeKind<crate::types::PreparedEffects>,
+        PreparedCallableValueTypeFailure<<C as crate::types::TypeProjectionControl>::Error>,
+    >
+    where
+        C: crate::types::TypeProjectionControl
+            + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
+    {
+        let terminal = CheckedCallResolverAuthority::preparing(builder, self.effects.view())
+            .terminal_effects_for(candidate)
+            .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
+        if matches!(terminal, CallableTerminalEffectProjection::Pending(_)) {
+            control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?;
+        }
+        self.declarations
+            .as_mut()
+            .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)?
+            .prepare_callable_arrow(
+                builder,
+                candidate,
+                CallableParameterCoordinate::group_start(candidate.base_call_group()),
+                terminal,
+                control,
+            )
+    }
+
     pub(crate) fn prepare_application_result<C>(
         &mut self,
         builder: &crate::callable::CheckedCallableCatalogBuilder,
@@ -292,10 +329,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         C: crate::types::TypeProjectionControl
             + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
     {
-        use crate::callable::{
-            CallableResultSchema, CallableTerminalEffectProjection, CheckedCallResolverAuthority,
-            EffectPermission,
-        };
+        use crate::callable::CallableResultSchema;
 
         let transition = candidate.application_transition(mapping)?;
         let terminal = CheckedCallResolverAuthority::preparing(builder, self.effects.view())
@@ -326,35 +360,8 @@ impl<P, U> PreparedCallGraph<P, U> {
             .declarations
             .as_mut()
             .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)?;
-        // The authored interface decides whether the arrow calls a scheme.
-        // A cached body result can refine the result type without replacing
-        // the declaration's live terminal effect term.
-        if let Some(owner) = candidate.checked() {
-            let pending = builder
-                .pending_by_id(owner)
-                .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
-            if pending.body_contract().is_some_and(|contract| {
-                matches!(contract.permission(), EffectPermission::UnboundedInference)
-            }) {
-                let value = declarations.prepare_declared_arrow(
-                    owner,
-                    schema,
-                    next,
-                    terminal.inferred_result_schema(),
-                    control,
-                )?;
-                return Ok(PreparedApplicationResult::Value(value));
-            }
-        }
-        let value = match terminal {
-            CallableTerminalEffectProjection::Known {
-                effects,
-                result_schema,
-            } => declarations.prepare_known_arrow(schema, next, effects, result_schema, control)?,
-            CallableTerminalEffectProjection::Pending(owner) => {
-                declarations.prepare_declared_arrow(owner, schema, next, None, control)?
-            }
-        };
+        let value =
+            declarations.prepare_callable_arrow(builder, candidate, next, terminal, control)?;
         Ok(PreparedApplicationResult::Value(value))
     }
 

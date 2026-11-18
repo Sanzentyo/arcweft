@@ -86,9 +86,7 @@ impl FinalSemanticAnalysis {
         Option<CheckedExternalCallableApplicationProjection>,
         CheckedExternalCallableValueProjectionError,
     > {
-        use crate::callable::{
-            CallableGroupIndex, CallableValidator, CheckedCallCalleeExecution, CheckedCallResult,
-        };
+        use crate::callable::{CallableValidator, CheckedCallCalleeExecution, CheckedCallResult};
         use CheckedExternalCallableValueProjectionError as Error;
         let application = self
             .call(owner)
@@ -134,10 +132,7 @@ impl FinalSemanticAnalysis {
             .fixed_row()
             .ok_or(Error::TypeMismatch { owner })?;
         let ty = schema
-            .declared_function_type_from_group(CallableGroupIndex::ZERO, effects)
-            .map_err(|_| Error::TypeMismatch { owner })?;
-        let ty = schema
-            .quantify_function_value(&ty)
+            .declared_function_value_type(effects)
             .map_err(|_| Error::TypeMismatch { owner })?;
         let function_type = ty
             .semantic_identity_digest()

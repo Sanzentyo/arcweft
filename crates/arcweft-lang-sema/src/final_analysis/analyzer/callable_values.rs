@@ -3,17 +3,17 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::{
-    Analyzer, CheckedExpression, CheckedExpressionResolution, CheckedTypeSelection,
-    CheckedValueResolution, EffectSet, ExprId, FinalSemanticAnalysisError, HirModule,
-    PreparedExpressionFact, TypeKind, expression_error::AnalyzerExpressionError,
+    Analyzer, CheckedExpressionResolution, CheckedTypeSelection, CheckedValueResolution, EffectSet,
+    ExprId, FinalSemanticAnalysisError, HirModule, PreparedExpressionFact, TypeKind,
+    expression_error::AnalyzerExpressionError,
 };
 use crate::{
     callable::{
-        CallResolverAuthority, CallResolverContext, CallResolverRequest, CallableProjection,
-        CheckedCallableDeclaration, ResolveCallError, ResolveCallOutcome, ResolvedCallTarget,
-        ResolverWork, resolve_callable_reference,
+        CallResolverAuthority, CallResolverContext, CallResolverRequest,
+        CallableTerminalEffectProjection, CheckedCallableDeclaration, ResolveCallError,
+        ResolveCallOutcome, ResolvedCallTarget, ResolverWork, resolve_callable_reference,
     },
-    types::{TypeCompatibilityControl, TypeCompatibilityPolicy},
+    types::{PreparedEffects, TypeCompatibilityControl, TypeCompatibilityPolicy},
 };
 
 struct ReferenceTypeControl<'a> {
@@ -24,11 +24,7 @@ struct ReferenceTypeControl<'a> {
 impl TypeCompatibilityControl for ReferenceTypeControl<'_> {
     type Error = ResolveCallError;
 
-    fn enter(
-        &mut self,
-        _: &TypeKind<crate::types::PreparedEffects>,
-        _: &TypeKind<crate::types::PreparedEffects>,
-    ) -> Result<(), Self::Error> {
+    fn enter(&mut self, _: &TypeKind, _: &TypeKind) -> Result<(), Self::Error> {
         if self.cancellation.load(Ordering::Acquire) {
             return Err(ResolveCallError::Cancelled);
         }
@@ -42,7 +38,7 @@ impl Analyzer<'_, '_, '_> {
         context: &super::expression_error::AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
-        expected: Option<&TypeKind<crate::types::PreparedEffects>>,
+        expected: Option<&TypeKind<PreparedEffects>>,
     ) -> Result<Option<PreparedExpressionFact>, AnalyzerExpressionError> {
         let authority = CallResolverAuthority::accepted(
             self.project,
@@ -179,33 +175,66 @@ impl Analyzer<'_, '_, '_> {
             }
             _ => return Ok(None),
         };
-        let mut selected = None;
-        for candidate in &candidates {
-            let Some(checked) = candidate.checked().filter(|checked| {
-                matches!(
-                    checked.declaration(),
-                    CheckedCallableDeclaration::Environment(_)
-                )
-            }) else {
-                continue;
-            };
-            let terminal = self
-                .source_callable_terminal_effects(candidate)
-                .map_err(AnalyzerExpressionError::fatal)?;
-            let ty = candidate.callable_value_type(terminal).map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
+        let mut environment_candidates = candidates
+            .iter()
+            .filter_map(|candidate| {
+                candidate
+                    .checked()
+                    .filter(|checked| {
+                        matches!(
+                            checked.declaration(),
+                            CheckedCallableDeclaration::Environment(_)
+                        )
+                    })
+                    .map(|checked| (candidate, checked))
+            })
+            .peekable();
+        if environment_candidates.peek().is_none() {
+            return Ok(None);
+        }
+        let types = self
+            .source_type_preparation(context.work())
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let expected = if candidates.len() > 1 {
+            let expected = expected.ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
+                    owner,
+                })
             })?;
-            let CallableProjection::Ready(ty) = ty else {
+            let declarations = self
+                .facts
+                .effect_declarations()
+                .map_err(AnalyzerExpressionError::fact)?;
+            Some(
+                types
+                    .observe_canonical(owner, expected, declarations.read())
+                    .map_err(AnalyzerExpressionError::fatal)?,
+            )
+        } else {
+            None
+        };
+        let mut selected = None;
+        for (candidate, checked) in environment_candidates {
+            let CallableTerminalEffectProjection::Known {
+                effects,
+                result_schema: None,
+            } = self
+                .source_callable_terminal_effects(candidate)
+                .map_err(AnalyzerExpressionError::fatal)?
+            else {
                 return Err(AnalyzerExpressionError::fatal(
                     FinalSemanticAnalysisError::CheckedCallableCatalog,
                 ));
             };
-            if candidates.len() > 1 {
-                let Some(expected) = expected else {
-                    return Err(AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ValueResolutionFailed { owner },
-                    ));
-                };
+            let ty = candidate
+                .schema()
+                .declared_function_value_type(effects)
+                .map_err(|_| {
+                    AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::CheckedCallableCatalog,
+                    )
+                })?;
+            if let Some(expected) = &expected {
                 let mut control = ReferenceTypeControl {
                     work: &mut work,
                     cancellation: self.control.cancellation(),
@@ -233,16 +262,22 @@ impl Analyzer<'_, '_, '_> {
                 ));
             }
         }
-        Ok(selected.map(|(checked, ty)| {
+        let Some((checked, ty)) = selected else {
+            return Ok(None);
+        };
+        let prepared = types
+            .retain(owner, &ty)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        Ok(Some(
             crate::final_analysis::prepared::PreparedResolvedExpression::value(
-                ty,
+                prepared,
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),
                 CheckedExpressionResolution::Value(CheckedValueResolution::EnvironmentCallable(
                     checked,
                 )),
             )
-            .into()
-        }))
+            .into(),
+        ))
     }
 }
