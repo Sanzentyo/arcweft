@@ -205,7 +205,7 @@ fn match_alternatives<'a, D: TypeEffectDomain, C: TypeProjectionControl>(
     Ok(Some(matched))
 }
 
-fn corresponding_shape<D: TypeEffectDomain, C: TypeProjectionControl>(
+pub(super) fn corresponding_shape<D: TypeEffectDomain, C: TypeProjectionControl>(
     declared: &TypeKind<D>,
     actual: &TypeKind<D>,
     depth: u64,

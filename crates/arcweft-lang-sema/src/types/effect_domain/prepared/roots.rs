@@ -79,7 +79,7 @@ impl<'a> PreparedTypeEffectRoots<'a> {
         &self.predicates
     }
 
-    pub(super) fn has_terms(&self) -> bool {
+    pub(in crate::types) fn has_terms(&self) -> bool {
         self.rows
             .iter()
             .any(|row| matches!(row, PreparedEffectRow::Term(_)))

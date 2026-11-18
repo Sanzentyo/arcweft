@@ -101,6 +101,59 @@ fn a_nested_type_observation_waits_for_its_named_body() {
 }
 
 #[test]
+fn equal_residual_shapes_can_carry_distinct_effect_terms_until_closure() {
+    let mut graph = PreparedEffectGraph::default();
+    let first = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut Setup)
+        .unwrap();
+    let second = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut Setup)
+        .unwrap();
+    let residual = |row| {
+        arrow(
+            row,
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        )
+    };
+    let left = residual(graph.application(&first, vec![], &mut Setup).unwrap());
+    let right = residual(graph.application(&second, vec![], &mut Setup).unwrap());
+    let scope = GenericScope::default();
+    assert_ne!(left, right);
+    assert!(
+        left.project_effect_annotations(&scope, &mut Meter::new())
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        left.may_equal_after_effect_closure(&right, &mut Meter::new())
+            .unwrap()
+    );
+    assert!(
+        !left
+            .may_equal_after_effect_closure(&TypeKind::Bool, &mut Meter::new())
+            .unwrap()
+    );
+    for declaration in [first, second] {
+        graph
+            .prepare_body(
+                &declaration,
+                literal(&["residual.effect"]),
+                vec![],
+                &mut Setup,
+            )
+            .unwrap();
+    }
+    let principal = graph.solve_principal(&mut Setup).unwrap();
+    assert_eq!(
+        left.project_canonical_effects(&scope, &principal, &mut Meter::new())
+            .unwrap(),
+        right
+            .project_canonical_effects(&scope, &principal, &mut Meter::new())
+            .unwrap(),
+    );
+}
+
+#[test]
 fn original_type_projection_waits_for_actual_bodies_and_retains_its_verified_relation() {
     let scope = GenericScope::default();
     let mut graph = PreparedEffectGraph::default();

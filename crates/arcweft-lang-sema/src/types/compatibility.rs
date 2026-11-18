@@ -116,6 +116,22 @@ impl<E: super::TypeEffectDomain> TypeKind<E> {
 }
 
 impl TypeKind<super::PreparedEffects> {
+    /// A structural join can carry one original term while its peer is open.
+    /// The owner must establish equality of the completed types before
+    /// publishing the join.
+    pub(crate) fn may_equal_after_effect_closure<C: super::TypeProjectionControl>(
+        &self,
+        peer: &Self,
+        control: &mut C,
+    ) -> Result<bool, super::TypeProjectionError<C::Error>> {
+        let inputs =
+            super::PreparedTypeEffectRoots::collect([self, peer], std::iter::empty(), control)?;
+        if !inputs.has_terms() {
+            return Ok(false);
+        }
+        binding_effects::corresponding_shape(self, peer, 1, control)
+    }
+
     /// A seeded type can be refined when filling its omissions produces
     /// exactly the prepared value to install. Graph terms keep their original
     /// identities, and every explicit type and effect port must stay equal.

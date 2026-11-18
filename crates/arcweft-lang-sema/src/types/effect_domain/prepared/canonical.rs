@@ -122,6 +122,23 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, CanonicalEf
 }
 
 impl TypeKind<PreparedEffects> {
+    /// Observe authored annotations without interpreting any live graph term.
+    /// A caller must retain the original type when the comparison needs C.
+    pub(crate) fn project_effect_annotations<C: TypeProjectionControl>(
+        &self,
+        scope: &GenericScope,
+        control: &mut C,
+    ) -> Result<Option<TypeKind>, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>>
+    {
+        let roots = PreparedTypeEffectRoots::collect([self], std::iter::empty(), control)
+            .map_err(PreparedTypeEffectProjectionFailure::from_projection)?;
+        if roots.has_terms() {
+            return Ok(None);
+        }
+        self.project_effects_with_principal(scope, None, control)
+            .map(Some)
+    }
+
     /// Observe this type against the current original relation. Consumers of
     /// the observation must check it again at publication, after C is closed.
     pub(crate) fn observe_canonical_effects<C: TypeProjectionControl>(
@@ -145,14 +162,7 @@ impl TypeKind<PreparedEffects> {
         } else {
             None
         };
-        self.project_effect_domain(
-            scope,
-            &mut Canonicalization {
-                principal: principal.as_ref(),
-                control,
-                depth: 1,
-            },
-        )
+        self.project_effects_with_principal(scope, principal.as_ref(), control)
     }
 
     /// Close the immutable original C against actual inputs, then project each
@@ -204,10 +214,19 @@ impl TypeKind<PreparedEffects> {
         principal: &PrincipalEffectClosure,
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
+        self.project_effects_with_principal(scope, Some(principal), control)
+    }
+
+    fn project_effects_with_principal<C: TypeProjectionControl>(
+        &self,
+        scope: &GenericScope,
+        principal: Option<&PrincipalEffectClosure>,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
         self.project_effect_domain(
             scope,
             &mut Canonicalization {
-                principal: Some(principal),
+                principal,
                 control,
                 depth: 1,
             },

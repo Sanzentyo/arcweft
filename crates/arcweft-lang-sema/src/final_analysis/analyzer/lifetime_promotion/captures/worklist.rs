@@ -144,7 +144,9 @@ impl CarrierStorage {
         }
     }
 
-    pub(super) const fn success(carrier: &CheckedTryCarrier) -> Self {
+    pub(super) const fn success(
+        carrier: &CheckedTryCarrier<crate::types::PreparedEffects>,
+    ) -> Self {
         match carrier {
             CheckedTryCarrier::Option { .. } => Self::OptionItem,
             CheckedTryCarrier::Result { .. } => Self::ResultOk,

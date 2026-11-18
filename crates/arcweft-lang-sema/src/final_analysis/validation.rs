@@ -1725,22 +1725,22 @@ fn validate_checked_try(
             let boundary_fact = expressions
                 .get(&boundary.lookup_owner())
                 .and_then(CheckedExpression::carrier_block)
-                .map(super::CheckedCarrierBlock::carrier_type)
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                     owner: boundary.lookup_owner(),
                 })?;
-            if !family_matches || boundary_fact != tried.boundary().boundary_type() {
+            if !family_matches || boundary_fact.carrier_type() != tried.boundary().boundary_type() {
                 return Err(try_boundary_authority_failure(
                     owner,
                     tried,
-                    Some(boundary_fact),
+                    Some(boundary_fact.carrier_type()),
                 ));
             }
-            tried
-                .carrier()
-                .accepts_boundary_type(boundary_fact)
+            boundary_fact
+                .accepts_carrier(tried.carrier())
                 .then_some(())
-                .ok_or_else(|| try_boundary_authority_failure(owner, tried, Some(boundary_fact)))
+                .ok_or_else(|| {
+                    try_boundary_authority_failure(owner, tried, Some(boundary_fact.carrier_type()))
+                })
         }
         CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::FunctionSite(site)) => {
             let boundary = site.site();

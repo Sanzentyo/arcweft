@@ -26,7 +26,9 @@ use crate::semantic_coordinate::{
     CheckedExpressionCoordinateEvidence, CheckedSemanticPath, SemanticCoordinateIndex,
     StableCheckedValueCoordinate,
 };
-use crate::types::{CharacterField, EntityKind};
+use crate::types::{
+    CanonicalEffects, CharacterField, EntityKind, PreparedEffects, TypeEffectDomain,
+};
 use arcweft_core::value::RuntimeAgentField;
 use arcweft_id::closed_enum::ClosedEnumValueId;
 use arcweft_lang_hir::identity::HirSnapshotId;
@@ -1347,33 +1349,33 @@ impl CheckedChoice {
     }
 }
 
-/// Closed carrier consumed by one prefix Try expression.
+/// Carrier consumed by one prefix Try expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedTryCarrier {
+pub enum CheckedTryCarrier<D: TypeEffectDomain = CanonicalEffects> {
     Result {
-        success: TypeKind,
-        residual: Box<TypeKind>,
+        success: TypeKind<D>,
+        residual: Box<TypeKind<D>>,
     },
     Option {
-        success: TypeKind,
+        success: TypeKind<D>,
     },
 }
 
-impl CheckedTryCarrier {
-    pub const fn success(&self) -> &TypeKind {
+impl<D: TypeEffectDomain> CheckedTryCarrier<D> {
+    pub const fn success(&self) -> &TypeKind<D> {
         match self {
             Self::Result { success, .. } | Self::Option { success } => success,
         }
     }
 
-    pub fn residual(&self) -> Option<&TypeKind> {
+    pub fn residual(&self) -> Option<&TypeKind<D>> {
         match self {
             Self::Result { residual, .. } => Some(residual.as_ref()),
             Self::Option { .. } => None,
         }
     }
 
-    pub(crate) fn from_operand_type(operand: &TypeKind) -> Option<Self> {
+    pub(crate) fn from_operand_type(operand: &TypeKind<D>) -> Option<Self> {
         match operand {
             TypeKind::Result { ok, error } => Some(Self::Result {
                 success: ok.as_ref().clone(),
@@ -1386,7 +1388,7 @@ impl CheckedTryCarrier {
         }
     }
 
-    pub(crate) fn as_type(&self) -> TypeKind {
+    pub(crate) fn as_type(&self) -> TypeKind<D> {
         match self {
             Self::Result { success, residual } => TypeKind::Result {
                 ok: Box::new(success.clone()),
@@ -1396,30 +1398,28 @@ impl CheckedTryCarrier {
         }
     }
 
-    pub(crate) fn accepts_boundary_type(&self, boundary: &TypeKind) -> bool {
+    pub(super) fn wrapped_success<'a>(&self, boundary: &'a TypeKind<D>) -> Option<&'a TypeKind<D>> {
+        match (self, boundary) {
+            (Self::Result { .. }, TypeKind::Result { ok, .. })
+            | (Self::Option { .. }, TypeKind::Option(ok)) => Some(ok),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn has_boundary_family(&self, boundary: &TypeKind<D>) -> bool {
+        self.wrapped_success(boundary).is_some()
+    }
+
+    pub(super) fn residual_types<'a>(
+        &'a self,
+        boundary: &'a TypeKind<D>,
+    ) -> Option<(&'a TypeKind<D>, &'a TypeKind<D>)> {
         match (self, boundary) {
             (Self::Result { residual, .. }, TypeKind::Result { error, .. }) => {
-                error.accepts(residual)
+                Some((error, residual))
             }
-            (Self::Option { .. }, TypeKind::Option(_)) => true,
-            _ => false,
+            _ => None,
         }
-    }
-
-    pub(super) fn accepts_wrapped_success(&self, boundary: &TypeKind) -> bool {
-        match (self, boundary) {
-            (Self::Result { success, .. }, TypeKind::Result { ok, .. })
-            | (Self::Option { success }, TypeKind::Option(ok)) => ok.accepts(success),
-            _ => false,
-        }
-    }
-
-    pub(crate) const fn has_boundary_family(&self, boundary: &TypeKind) -> bool {
-        matches!(
-            (self, boundary),
-            (Self::Result { .. }, TypeKind::Result { .. })
-                | (Self::Option { .. }, TypeKind::Option(_))
-        )
     }
 
     pub(crate) fn is_infallible(&self) -> bool {
@@ -1429,15 +1429,9 @@ impl CheckedTryCarrier {
         )
     }
 
-    pub(crate) fn semantic_type_digest(
-        &self,
-    ) -> Result<SemanticTypeDigest, crate::types::GenericScopeError> {
-        self.as_type().semantic_identity_digest()
-    }
-
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    pub(crate) fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<D>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
             Self::Result { success, residual } => {
@@ -1446,6 +1440,38 @@ impl CheckedTryCarrier {
             }
             Self::Option { success } => visitor(success),
         }
+    }
+}
+
+impl CheckedTryCarrier {
+    pub(crate) fn accepts_boundary_type(&self, boundary: &TypeKind) -> bool {
+        self.has_boundary_family(boundary)
+            && self
+                .residual_types(boundary)
+                .is_none_or(|(expected, actual)| expected.accepts(actual))
+    }
+
+    pub(crate) fn semantic_type_digest(
+        &self,
+    ) -> Result<SemanticTypeDigest, crate::types::GenericScopeError> {
+        self.as_type().semantic_identity_digest()
+    }
+}
+
+impl CheckedTryCarrier<PreparedEffects> {
+    pub(super) fn seal(
+        &self,
+        types: &mut super::type_seal::PublicationSourceTypes<'_, '_>,
+    ) -> Result<CheckedTryCarrier, super::FinalSemanticAnalysisError> {
+        Ok(match self {
+            Self::Result { success, residual } => CheckedTryCarrier::Result {
+                success: types.canonical(success)?,
+                residual: Box::new(types.canonical(residual)?),
+            },
+            Self::Option { success } => CheckedTryCarrier::Option {
+                success: types.canonical(success)?,
+            },
+        })
     }
 }
 
@@ -1519,6 +1545,12 @@ pub enum CheckedTryOperandAuthorityViolation {
         carrier: Box<TypeKind>,
         boundary: Option<Box<TypeKind>>,
     },
+    #[error("checked Try {owner:?} success type differs: expected {expected:?}, found {actual:?}")]
+    SuccessTypeMismatch {
+        owner: ExprId,
+        expected: Box<TypeKind>,
+        actual: Box<TypeKind>,
+    },
 }
 
 mod callable_boundary;
@@ -1538,23 +1570,32 @@ pub enum CheckedTryBoundaryOwner {
 /// The type owned by an immediate carrier block and its ability to deliver
 /// that type to the enclosing expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedCarrierBlock {
-    carrier_type: TypeKind,
+pub struct CheckedCarrierBlock<D: TypeEffectDomain = CanonicalEffects> {
+    carrier_type: TypeKind<D>,
     delivery: super::completion::NormalContinuation,
+    residual_relation: CarrierResidualRelation,
 }
 
-impl CheckedCarrierBlock {
-    pub(crate) const fn new(
-        carrier_type: TypeKind,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CarrierResidualRelation {
+    Directional,
+    Unified,
+}
+
+impl<D: TypeEffectDomain> CheckedCarrierBlock<D> {
+    pub(super) const fn new(
+        carrier_type: TypeKind<D>,
         delivery: super::completion::NormalContinuation,
+        residual_relation: CarrierResidualRelation,
     ) -> Self {
         Self {
             carrier_type,
             delivery,
+            residual_relation,
         }
     }
 
-    pub const fn carrier_type(&self) -> &TypeKind {
+    pub const fn carrier_type(&self) -> &TypeKind<D> {
         &self.carrier_type
     }
 
@@ -1562,7 +1603,7 @@ impl CheckedCarrierBlock {
         self.delivery.is_unit()
     }
 
-    pub(crate) fn result_type(&self) -> TypeKind {
+    pub(crate) fn result_type(&self) -> TypeKind<D> {
         if self.delivers_value() {
             self.carrier_type().clone()
         } else {
@@ -1570,7 +1611,7 @@ impl CheckedCarrierBlock {
         }
     }
 
-    pub(crate) fn matches_result_type(&self, ty: &TypeKind) -> bool {
+    pub(crate) fn matches_result_type(&self, ty: &TypeKind<D>) -> bool {
         if self.delivers_value() {
             ty == self.carrier_type()
         } else {
@@ -1587,6 +1628,47 @@ impl CheckedCarrierBlock {
             (kind, self.carrier_type()),
             (Option, TypeKind::Option(_)) | (Result, TypeKind::Result { .. })
         )
+    }
+}
+
+impl CheckedCarrierBlock<PreparedEffects> {
+    pub(super) fn seal(
+        &self,
+        types: &mut super::type_seal::PublicationSourceTypes<'_, '_>,
+    ) -> Result<CheckedCarrierBlock, super::FinalSemanticAnalysisError> {
+        Ok(CheckedCarrierBlock::new(
+            types.canonical(&self.carrier_type)?,
+            self.delivery,
+            self.residual_relation,
+        ))
+    }
+}
+
+impl CheckedCarrierBlock {
+    pub(super) fn accepts_carrier(&self, carrier: &CheckedTryCarrier) -> bool {
+        if !carrier.has_boundary_family(self.carrier_type()) {
+            return false;
+        }
+        match (
+            self.residual_relation,
+            carrier.residual_types(self.carrier_type()),
+        ) {
+            (_, None) => true,
+            (CarrierResidualRelation::Directional, Some((expected, actual))) => {
+                expected.accepts(actual)
+            }
+            (CarrierResidualRelation::Unified, Some((expected, actual))) => {
+                expected == actual
+                    || match (expected, actual) {
+                        (_, TypeKind::Never) => true,
+                        (
+                            TypeKind::CharacterDialogue(expected),
+                            TypeKind::CharacterDialogue(actual),
+                        ) => &CharacterDialogueType::join(expected.clone(), actual) == expected,
+                        _ => false,
+                    }
+            }
+        }
     }
 }
 
@@ -2692,7 +2774,7 @@ pub struct CheckedExpression {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct ExpressionData<R = CheckedExpressionResult> {
+struct ExpressionData<R = CheckedExpressionResult, D: TypeEffectDomain = CanonicalEffects> {
     result: R,
     effects: EffectSet,
     resolution: CheckedExpressionResolution,
@@ -2700,7 +2782,7 @@ struct ExpressionData<R = CheckedExpressionResult> {
     execution: Option<CheckedExpressionExecutionPlan>,
     evaluated_effect: Option<Box<CheckedEvaluatedEffect>>,
     match_fact: Option<CheckedMatchFact>,
-    carrier_block: Option<Box<CheckedCarrierBlock>>,
+    carrier_block: Option<Box<CheckedCarrierBlock<D>>>,
     nested_path_evidence: Option<Result<NestedPathEvidence, super::CheckedChildEdgeError>>,
 }
 
@@ -2709,10 +2791,10 @@ struct ExpressionData<R = CheckedExpressionResult> {
 /// seal may publish a completed checked expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedResolvedExpression {
-    data: Box<ExpressionData<super::prepared::PreparedExpressionResult>>,
+    data: Box<ExpressionData<super::prepared::PreparedExpressionResult, PreparedEffects>>,
 }
 
-impl<R> ExpressionData<R> {
+impl<R, D: TypeEffectDomain> ExpressionData<R, D> {
     pub const fn effects(&self) -> &EffectSet {
         &self.effects
     }
@@ -2850,12 +2932,12 @@ impl<R> ExpressionData<R> {
         self.match_fact.as_ref()
     }
 
-    pub(crate) fn with_carrier_block(mut self, carrier: CheckedCarrierBlock) -> Self {
+    pub(crate) fn with_carrier_block(mut self, carrier: CheckedCarrierBlock<D>) -> Self {
         self.carrier_block = Some(Box::new(carrier));
         self
     }
 
-    pub fn carrier_block(&self) -> Option<&CheckedCarrierBlock> {
+    pub fn carrier_block(&self) -> Option<&CheckedCarrierBlock<D>> {
         self.carrier_block.as_deref()
     }
 
@@ -2891,6 +2973,9 @@ impl PreparedResolvedExpression {
             nested_path_evidence,
         } = *self.data;
         let result = result.seal(owner, types)?;
+        let carrier_block = carrier_block
+            .map(|block| block.seal(types).map(Box::new))
+            .transpose()?;
         Ok(CheckedExpression {
             data: Box::new(ExpressionData {
                 result,
@@ -2910,10 +2995,18 @@ impl PreparedResolvedExpression {
         &self,
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
     ) -> Result<(), E> {
-        if let Some(carrier) = self.data.carrier_block() {
+        self.data.resolution.visit_types(visitor)
+    }
+
+    pub(super) fn visit_prepared_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.data.result.visit_types(visitor)?;
+        if let Some(carrier) = self.carrier_block() {
             visitor(carrier.carrier_type())?;
         }
-        self.data.resolution.visit_types(visitor)
+        Ok(())
     }
 
     pub(crate) const fn value_type(&self) -> Option<&TypeKind<crate::types::PreparedEffects>> {
@@ -3141,13 +3234,13 @@ impl PreparedResolvedExpression {
         self.data.match_fact()
     }
 
-    pub(crate) fn with_carrier_block(self, carrier: CheckedCarrierBlock) -> Self {
+    pub(crate) fn with_carrier_block(self, carrier: CheckedCarrierBlock<PreparedEffects>) -> Self {
         Self {
             data: Box::new((*self.data).with_carrier_block(carrier)),
         }
     }
 
-    pub fn carrier_block(&self) -> Option<&CheckedCarrierBlock> {
+    pub fn carrier_block(&self) -> Option<&CheckedCarrierBlock<PreparedEffects>> {
         self.data.carrier_block()
     }
 

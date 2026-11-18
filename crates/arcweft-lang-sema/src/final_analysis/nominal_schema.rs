@@ -587,6 +587,11 @@ impl RuntimeNominalProjectionRequestInventory {
                     [(*owner, ty)],
                 )?;
             }
+            if let Some(carrier) = fact.carrier_block() {
+                let mut source = types.source(*owner)?;
+                let ty = source.canonical(carrier.carrier_type())?;
+                inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
+            }
         }
         for (owner, fact) in &draft.patterns {
             let mut source = types.source(*owner)?;
@@ -656,6 +661,11 @@ impl RuntimeNominalProjectionRequestInventory {
                     draft.selected_expressions.topology(),
                     [(*owner, ty)],
                 )?;
+            }
+            if let Some(carrier) = fact.carrier_block() {
+                let source = types.source(*owner)?;
+                inventory
+                    .visit_scoped_type(symbols, source.scope().type_view(carrier.carrier_type()))?;
             }
         }
         for (owner, fact) in &draft.patterns {

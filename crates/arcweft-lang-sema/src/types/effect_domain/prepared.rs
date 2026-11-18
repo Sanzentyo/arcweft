@@ -205,6 +205,20 @@ where
 }
 
 impl TypeKind<PreparedEffects> {
+    pub(crate) fn function_with_canonical_effects(
+        params: impl IntoIterator<Item = Self>,
+        return_type: Self,
+        effects: EffectRow,
+    ) -> Self {
+        Self::function_with_contract(
+            crate::types::GenericBinder::EMPTY,
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            params,
+            return_type,
+            PreparedEffectRow::Canonical(effects),
+        )
+    }
+
     /// Issued terms are known annotations. Only an authored canonical omitted
     /// row requests initializer inference; use the shared shape grammar.
     pub(crate) fn has_omitted_function_effect_rows_with_control<C: TypeProjectionControl>(

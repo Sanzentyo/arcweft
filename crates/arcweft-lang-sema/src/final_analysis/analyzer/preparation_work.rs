@@ -16,7 +16,7 @@ use crate::{
         TypeConstraintAbort, TypeConstraintError, TypeConstraintInvariant,
         TypeConstraintProjectionInvariant,
     },
-    types::{TypeProjectionControl, TypeProjectionNodeKind},
+    types::{TypeCompatibilityControl, TypeKind, TypeProjectionControl, TypeProjectionNodeKind},
 };
 
 trait DeclarationWork {
@@ -129,5 +129,13 @@ impl TypeProjectionControl for AnalyzerPreparationWork<'_> {
 
     fn visit_binding(&mut self) -> Result<(), Self::Error> {
         self.charge(DecisionWork::Node)
+    }
+}
+
+impl TypeCompatibilityControl for AnalyzerPreparationWork<'_> {
+    type Error = FinalSemanticAnalysisError;
+
+    fn enter(&mut self, _: &TypeKind, _: &TypeKind) -> Result<(), Self::Error> {
+        self.charge(DecisionWork::Visit)
     }
 }

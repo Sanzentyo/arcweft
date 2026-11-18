@@ -128,6 +128,44 @@ impl<'a> SourceTypePreparation<'a> {
             })
     }
 
+    /// An authored mismatch is decidable before closing the candidate graph.
+    /// When either type has a graph term, the consumer retains the relation
+    /// inputs for its checked seal.
+    pub(super) fn annotation_mismatch(
+        &self,
+        owner: super::ExprId,
+        expected: &TypeKind<crate::types::PreparedEffects>,
+        actual: &TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<Option<(TypeKind, TypeKind)>, super::FinalSemanticAnalysisError> {
+        use super::FinalSemanticAnalysisError;
+        use crate::types::{TypeCompatibilityFailure, TypeCompatibilityPolicy};
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let formals = self
+            .owner(owner, &mut work)?
+            .declaration_formals_with_control(&mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        let mut observe = |ty: &TypeKind<crate::types::PreparedEffects>| {
+            ty.project_effect_annotations(formals.template_scope(), &mut work)
+                .map_err(|error| {
+                    FinalSemanticAnalysisError::source_type_effect_projection(owner, error)
+                })
+        };
+        let Some(expected) = observe(expected)? else {
+            return Ok(None);
+        };
+        let Some(actual) = observe(actual)? else {
+            return Ok(None);
+        };
+        match expected.accepts_with(&actual, TypeCompatibilityPolicy::Recovery, &mut work) {
+            Ok(true) => Ok(None),
+            Ok(false) | Err(TypeCompatibilityFailure::Forbidden { .. }) => {
+                Ok(Some((expected, actual)))
+            }
+            Err(TypeCompatibilityFailure::Control(error)) => Err(error),
+        }
+    }
+
     /// One actual nominal application owns the argument index and one graph
     /// edit for every declaration payload selected by the containing operation.
     pub(super) fn with_nominal_type_arguments<T>(

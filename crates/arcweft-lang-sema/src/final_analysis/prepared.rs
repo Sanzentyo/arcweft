@@ -9,6 +9,7 @@ use arcweft_lang_hir::{
     leaf::HirName,
     symbol::CallableDeclarationKey,
 };
+use arcweft_source::SourceSpan;
 use std::{borrow::Cow, sync::Arc};
 pub(super) use type_updates::PreparedExpressionTypeUpdates;
 pub(crate) use typed_binding::PreparedTypedBindingPattern;
@@ -29,10 +30,7 @@ use crate::{
 };
 
 pub(crate) use super::model::{PreparedVariantCaseSeed, PreparedVariantOwnerSeed};
-use super::{
-    CheckedCallableBoundary, CheckedExpressionResolution, CheckedFunctionSiteBoundary,
-    CheckedPattern, CheckedTryBoundaryOwner, CheckedTryCarrier, CheckedTypeSelection,
-};
+use super::{CheckedExpressionResolution, CheckedPattern, CheckedTryCarrier, CheckedTypeSelection};
 
 #[path = "prepared/evaluated_effect.rs"]
 mod evaluated_effect;
@@ -439,6 +437,7 @@ pub(crate) struct PreparedImplicitCallable {
     result: TypeKind<PreparedEffects>,
     body: PreparedImplicitCallableBody,
     parameter_occurrences: Box<[ExprId]>,
+    expected_function: Option<Box<TypeKind<PreparedEffects>>>,
 }
 
 impl PreparedImplicitCallable {
@@ -456,6 +455,10 @@ impl PreparedImplicitCallable {
 
     pub(crate) const fn parameter_occurrences(&self) -> &[ExprId] {
         &self.parameter_occurrences
+    }
+
+    pub(super) fn expected_function(&self) -> Option<&TypeKind<PreparedEffects>> {
+        self.expected_function.as_deref()
     }
 }
 
@@ -485,21 +488,45 @@ impl PreparedImplicitParameter {
 /// callable identities exist.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedTry {
-    carrier: CheckedTryCarrier,
+    carrier: CheckedTryCarrier<PreparedEffects>,
     boundary: PreparedTryBoundary,
+    expected_success: Option<TypeKind<PreparedEffects>>,
 }
 
 impl PreparedTry {
-    pub(crate) const fn new(carrier: CheckedTryCarrier, boundary: PreparedTryBoundary) -> Self {
-        Self { carrier, boundary }
-    }
-
-    pub(crate) const fn carrier(&self) -> &CheckedTryCarrier {
+    pub(crate) const fn carrier(&self) -> &CheckedTryCarrier<PreparedEffects> {
         &self.carrier
     }
 
     pub(crate) const fn boundary(&self) -> &PreparedTryBoundary {
         &self.boundary
+    }
+
+    pub(super) const fn expected_success(&self) -> Option<&TypeKind<PreparedEffects>> {
+        self.expected_success.as_ref()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedTryDiagnosticSites {
+    pub(crate) operator: SourceSpan,
+    pub(crate) result: SourceSpan,
+}
+
+impl PreparedTryDiagnosticSites {
+    pub(crate) fn mismatch(
+        &self,
+        owner: ExprId,
+        expected: TypeKind,
+        actual: TypeKind,
+    ) -> super::FinalSemanticAnalysisError {
+        super::FinalSemanticAnalysisError::PropagationErrorMismatch {
+            owner,
+            operand_error: Box::new(actual),
+            return_error: Box::new(expected),
+            operator_source: self.operator.clone(),
+            return_source: self.result.clone(),
+        }
     }
 }
 
@@ -526,11 +553,11 @@ pub(crate) enum PreparedTryBoundary {
     },
     Callable {
         declaration: CallableDeclarationKey,
-        boundary_type: TypeKind<PreparedEffects>,
+        sites: Box<PreparedTryDiagnosticSites>,
     },
 }
 
-/// The generation-local lookup identity shared by prepared and sealed Try facts.
+/// Generation-local destination of a propagation before owner sealing.
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum TryDestination<'a> {
     CarrierBlock(ExprId),
@@ -559,9 +586,8 @@ impl PreparedTryBoundary {
         match self {
             Self::ExplicitFunctionSite { boundary_type, .. }
             | Self::Thread { boundary_type, .. }
-            | Self::ImplicitFunctionSite { boundary_type, .. }
-            | Self::Callable { boundary_type, .. } => Some(boundary_type),
-            Self::Infallible | Self::CarrierBlock { .. } => None,
+            | Self::ImplicitFunctionSite { boundary_type, .. } => Some(boundary_type),
+            Self::Infallible | Self::CarrierBlock { .. } | Self::Callable { .. } => None,
         }
     }
 }
@@ -630,12 +656,14 @@ impl PreparedOwnerBoundResolution {
         result: TypeKind<PreparedEffects>,
         body: PreparedImplicitCallableBody,
         parameter_occurrences: Box<[ExprId]>,
+        expected_function: Option<TypeKind<PreparedEffects>>,
     ) -> Self {
         Self::ImplicitCallable(PreparedImplicitCallable {
             parameter,
             result,
             body,
             parameter_occurrences,
+            expected_function: expected_function.map(Box::new),
         })
     }
 
@@ -668,10 +696,15 @@ impl PreparedOwnerBoundResolution {
     }
 
     pub(crate) const fn try_expression(
-        carrier: CheckedTryCarrier,
+        carrier: CheckedTryCarrier<PreparedEffects>,
         boundary: PreparedTryBoundary,
+        expected_success: Option<TypeKind<PreparedEffects>>,
     ) -> Self {
-        Self::Try(PreparedTry::new(carrier, boundary))
+        Self::Try(PreparedTry {
+            carrier,
+            boundary,
+            expected_success,
+        })
     }
 }
 
@@ -738,6 +771,9 @@ impl PreparedOwnerBoundExpression {
             PreparedOwnerBoundResolution::ImplicitCallable(callable) => {
                 visitor(callable.parameter())?;
                 visitor(callable.result())?;
+                if let Some(expected) = callable.expected_function() {
+                    visitor(expected)?;
+                }
                 callable.body().expression().visit_types(visitor)
             }
             PreparedOwnerBoundResolution::ImplicitNominalBody { body, .. } => {
@@ -752,8 +788,12 @@ impl PreparedOwnerBoundExpression {
             }
             PreparedOwnerBoundResolution::PipeLeft(_) => Ok(()),
             PreparedOwnerBoundResolution::Try(tried) => {
+                tried.carrier().visit_types(visitor)?;
                 if let Some(boundary_type) = tried.boundary().boundary_type() {
                     visitor(boundary_type)?;
+                }
+                if let Some(expected) = tried.expected_success() {
+                    visitor(expected)?;
                 }
                 Ok(())
             }
@@ -1390,7 +1430,7 @@ impl PreparedExpressionFact {
         None
     }
 
-    pub(crate) fn carrier_block(&self) -> Option<&super::CheckedCarrierBlock> {
+    pub(crate) fn carrier_block(&self) -> Option<&super::CheckedCarrierBlock<PreparedEffects>> {
         match self {
             Self::Resolved(value) => value.carrier_block(),
             Self::OwnerBound(value) => match value.resolution() {
@@ -1403,76 +1443,43 @@ impl PreparedExpressionFact {
         }
     }
 
-    pub(super) fn try_propagation(&self) -> Option<(TryDestination<'_>, &CheckedTryCarrier)> {
-        match self {
-            Self::Resolved(value) => {
-                let CheckedExpressionResolution::Try(tried) = value.resolution() else {
-                    return None;
-                };
-                let destination = match tried.boundary().owner() {
-                    CheckedTryBoundaryOwner::Infallible => return None,
-                    CheckedTryBoundaryOwner::CarrierBlock(site) => {
-                        TryDestination::CarrierBlock(site.lookup_owner())
-                    }
-                    CheckedTryBoundaryOwner::Callable(callable) => match callable {
-                        CheckedCallableBoundary::FunctionSite(site) => match site {
-                            CheckedFunctionSiteBoundary::Explicit(site) => {
-                                TryDestination::ExplicitFunctionSite(site.lookup_owner())
-                            }
-                            CheckedFunctionSiteBoundary::Implicit { site, .. } => {
-                                TryDestination::ImplicitFunctionSite(site.lookup_owner())
-                            }
-                        },
-                        CheckedCallableBoundary::Thread(site) => {
-                            TryDestination::Thread(site.lookup_owner())
-                        }
-                        CheckedCallableBoundary::Declaration(site) => {
-                            TryDestination::Declaration(Cow::Borrowed(site.declaration()))
-                        }
-                    },
-                };
-                Some((destination, tried.carrier()))
-            }
-            Self::OwnerBound(value) => {
-                let PreparedOwnerBoundResolution::Try(tried) = value.resolution() else {
-                    return None;
-                };
-                let destination = match tried.boundary() {
-                    PreparedTryBoundary::Infallible => return None,
-                    PreparedTryBoundary::CarrierBlock { lookup_owner } => {
-                        TryDestination::CarrierBlock(*lookup_owner)
-                    }
-                    PreparedTryBoundary::ExplicitFunctionSite { lookup_owner, .. } => {
-                        TryDestination::ExplicitFunctionSite(*lookup_owner)
-                    }
-                    PreparedTryBoundary::ImplicitFunctionSite { lookup_owner, .. } => {
-                        TryDestination::ImplicitFunctionSite(*lookup_owner)
-                    }
-                    PreparedTryBoundary::Thread { lookup_owner, .. } => {
-                        TryDestination::Thread(*lookup_owner)
-                    }
-                    PreparedTryBoundary::Callable { declaration, .. } => {
-                        TryDestination::Declaration(Cow::Borrowed(declaration))
-                    }
-                };
-                Some((destination, tried.carrier()))
-            }
-            _ => None,
-        }
+    fn prepared_try(&self) -> Option<&PreparedTry> {
+        let Self::OwnerBound(value) = self else {
+            return None;
+        };
+        let PreparedOwnerBoundResolution::Try(tried) = value.resolution() else {
+            return None;
+        };
+        Some(tried)
     }
 
-    pub(crate) fn try_carrier(&self) -> Option<&CheckedTryCarrier> {
-        match self {
-            Self::Resolved(value) => match value.resolution() {
-                CheckedExpressionResolution::Try(tried) => Some(tried.carrier()),
-                _ => None,
-            },
-            Self::OwnerBound(value) => match value.resolution() {
-                PreparedOwnerBoundResolution::Try(tried) => Some(tried.carrier()),
-                _ => None,
-            },
-            _ => None,
-        }
+    pub(super) fn try_propagation(
+        &self,
+    ) -> Option<(TryDestination<'_>, &CheckedTryCarrier<PreparedEffects>)> {
+        let tried = self.prepared_try()?;
+        let destination = match tried.boundary() {
+            PreparedTryBoundary::Infallible => return None,
+            PreparedTryBoundary::CarrierBlock { lookup_owner } => {
+                TryDestination::CarrierBlock(*lookup_owner)
+            }
+            PreparedTryBoundary::ExplicitFunctionSite { lookup_owner, .. } => {
+                TryDestination::ExplicitFunctionSite(*lookup_owner)
+            }
+            PreparedTryBoundary::ImplicitFunctionSite { lookup_owner, .. } => {
+                TryDestination::ImplicitFunctionSite(*lookup_owner)
+            }
+            PreparedTryBoundary::Thread { lookup_owner, .. } => {
+                TryDestination::Thread(*lookup_owner)
+            }
+            PreparedTryBoundary::Callable { declaration, .. } => {
+                TryDestination::Declaration(Cow::Borrowed(declaration))
+            }
+        };
+        Some((destination, tried.carrier()))
+    }
+
+    pub(crate) fn try_carrier(&self) -> Option<&CheckedTryCarrier<PreparedEffects>> {
+        self.prepared_try().map(PreparedTry::carrier)
     }
 
     pub(crate) fn supports_place_access(&self) -> bool {
@@ -1839,7 +1846,7 @@ impl PreparedExpressionFact {
         visitor: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::Resolved(value) => value.result().visit_types(visitor),
+            Self::Resolved(value) => value.visit_prepared_types(visitor),
             Self::OwnerBound(value) => value.visit_types(visitor),
             Self::CompileTimeScalar(value) => {
                 value.shell().visit_types(visitor)?;

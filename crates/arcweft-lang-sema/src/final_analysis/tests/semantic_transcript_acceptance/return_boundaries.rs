@@ -2,6 +2,51 @@ use super::*;
 use crate::final_analysis::{CheckedCallableBoundary, CheckedFunctionSiteBoundary};
 
 #[test]
+fn try_uses_the_exact_impl_method_as_its_boundary() {
+    let world = super::fixture(
+        r#"
+struct Stored { value: Result<i64, String> }
+pub trait ReadStored {
+    fn first(self) -> Result<i64, String>
+    fn read(self) -> Result<i64, String>
+}
+impl ReadStored for Stored {
+    fn first(self) -> Result<i64, String> { Ok(0i64) }
+    fn read(self) -> Result<i64, String> { Ok(try self.value) }
+}
+"#,
+        None,
+    );
+    let report = super::analyze(&world).expect("Try in an impl method");
+    let expected = world
+        .symbols
+        .callable_symbols()
+        .find(|symbol| {
+            matches!(
+                symbol.source_owner(),
+                arcweft_lang_hir::source_index::HirCallableSourceOwner::ImplFunction { member: 1 }
+            )
+        })
+        .expect("second impl method");
+    let tried = report
+        .expressions()
+        .find_map(|(_, fact)| {
+            let CheckedExpressionResolution::Try(tried) = fact.resolution() else {
+                return None;
+            };
+            Some(tried)
+        })
+        .expect("checked Try");
+    let crate::final_analysis::CheckedTryBoundaryOwner::Callable(
+        CheckedCallableBoundary::Declaration(boundary),
+    ) = tried.boundary().owner()
+    else {
+        panic!("Try must retain the declaration that owns its method body");
+    };
+    assert_eq!(boundary.declaration(), expected.declaration());
+}
+
+#[test]
 fn return_targets_the_callable_frame_through_a_carrier_block() {
     let world = super::fixture(
         "fn root() -> i64 { let unused = result { return 7i64; 0i64 }; return 9i64 }",

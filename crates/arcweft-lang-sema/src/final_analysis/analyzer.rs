@@ -314,8 +314,8 @@ struct Analyzer<'project, 'catalog, 'control> {
 
 struct ImplicitCallableContext {
     owner: ExprId,
-    parameter: TypeKind,
-    result: Option<TypeKind>,
+    parameter: TypeKind<crate::types::PreparedEffects>,
+    result: Option<TypeKind<crate::types::PreparedEffects>>,
     placeholders: Box<[ExprId]>,
 }
 
@@ -328,7 +328,7 @@ struct PipeContext {
 
 struct FunctionSiteContext {
     owner: ExprId,
-    result: TypeKind,
+    result: TypeKind<crate::types::PreparedEffects>,
 }
 
 trait FinalAnalysisMutation {

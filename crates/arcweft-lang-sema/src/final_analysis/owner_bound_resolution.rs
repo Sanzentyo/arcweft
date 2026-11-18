@@ -252,6 +252,7 @@ pub(super) fn seal(
         let checked = seal_try(
             owner,
             tried,
+            prepared.shell(),
             expressions,
             &callable_identities,
             structural_edges,
@@ -467,6 +468,7 @@ fn seal_pipe_rows(
 fn seal_try(
     owner: ExprId,
     prepared: &PreparedTry,
+    shell: &PreparedExpressionShell,
     expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
     callable_identities: &BTreeMap<ExprId, super::CheckedImplicitCallableIdentity>,
     structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
@@ -474,7 +476,6 @@ fn seal_try(
     coordinates: &SemanticCoordinateIndex<'_, '_>,
     types: &mut PublicationTypes<'_, '_>,
 ) -> Result<CheckedTry, FinalSemanticAnalysisError> {
-    let carrier = prepared.carrier().clone();
     let operand_id = structural_edges
         .exact_operand_child(owner)
         .map_err(FinalSemanticAnalysisError::from)?;
@@ -482,7 +483,9 @@ fn seal_try(
         .get(&operand_id)
         .and_then(PreparedExpressionFact::value_type)
         .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: operand_id })?;
-    let operand_type = types.source(operand_id)?.canonical(operand_type)?;
+    let mut source = types.source(operand_id)?;
+    let operand_type = source.canonical(operand_type)?;
+    let carrier = prepared.carrier().seal(&mut source)?;
     let carrier_type = carrier.as_type();
     if operand_type != carrier_type {
         return Err(FinalSemanticAnalysisError::TryOperandAuthority {
@@ -507,22 +510,25 @@ fn seal_try(
             (carrier.as_type(), CheckedTryBoundaryOwner::Infallible)
         }
         PreparedTryBoundary::CarrierBlock { lookup_owner } => {
-            let boundary_type = expressions
+            let boundary = expressions
                 .get(lookup_owner)
                 .and_then(PreparedExpressionFact::carrier_block)
-                .map(super::CheckedCarrierBlock::carrier_type)
-                .cloned()
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                     owner: *lookup_owner,
                 })?;
-            if !carrier.accepts_boundary_type(&boundary_type) {
-                return Err(try_boundary_mismatch(owner, &carrier, Some(&boundary_type)));
+            let boundary = boundary.seal(&mut types.source(*lookup_owner)?)?;
+            if !boundary.accepts_carrier(&carrier) {
+                return Err(try_boundary_mismatch(
+                    owner,
+                    &carrier,
+                    Some(boundary.carrier_type()),
+                ));
             }
             let evidence = coordinates
                 .expression_evidence(*lookup_owner)
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
-                boundary_type,
+                boundary.carrier_type().clone(),
                 CheckedTryBoundaryOwner::CarrierBlock(CheckedExpressionBoundary::from_evidence(
                     evidence,
                 )),
@@ -591,30 +597,57 @@ fn seal_try(
                 )),
             )
         }
-        PreparedTryBoundary::Callable {
-            declaration,
-            boundary_type,
-        } => {
-            let boundary_type = types.source(owner)?.canonical(boundary_type)?;
+        PreparedTryBoundary::Callable { declaration, sites } => {
             let facts = checked_callables
                 .project_callable(declaration)
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            if facts.signature().value_type() != Some(&boundary_type)
-                || !carrier.accepts_boundary_type(&boundary_type)
-            {
-                return Err(try_boundary_mismatch(owner, &carrier, Some(&boundary_type)));
+            let boundary_type = facts
+                .signature()
+                .value_type()
+                .ok_or_else(|| try_boundary_mismatch(owner, &carrier, None))?;
+            if !carrier.accepts_boundary_type(boundary_type) {
+                return Err(match carrier.residual_types(boundary_type) {
+                    Some((expected, actual)) => {
+                        sites.mismatch(owner, expected.clone(), actual.clone())
+                    }
+                    None => try_boundary_mismatch(owner, &carrier, Some(boundary_type)),
+                });
             }
             let accepted = coordinates
                 .accepted_declaration(declaration)
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
-                boundary_type,
+                boundary_type.clone(),
                 CheckedTryBoundaryOwner::Callable(super::CheckedCallableBoundary::Declaration(
                     CheckedCallableDeclarationBoundary::new(declaration.clone(), accepted),
                 )),
             )
         }
     };
+    let mut source = types.source(owner)?;
+    let result = shell
+        .source_value_type()
+        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+    let result = source.canonical(result)?;
+    if &result != carrier.success() {
+        return Err(CheckedTryOperandAuthorityViolation::SuccessTypeMismatch {
+            owner,
+            expected: Box::new(carrier.success().clone()),
+            actual: Box::new(result),
+        }
+        .into());
+    }
+    if let Some(expected) = prepared.expected_success() {
+        let expected = source.canonical(expected)?;
+        if !expected.accepts(&result) {
+            return Err(CheckedTryOperandAuthorityViolation::SuccessTypeMismatch {
+                owner,
+                expected: Box::new(expected),
+                actual: Box::new(result),
+            }
+            .into());
+        }
+    }
     Ok(CheckedTry::new(
         operand,
         carrier,
@@ -651,6 +684,7 @@ fn seal_owner_bound_body(
         PreparedOwnerBoundResolution::Try(tried) => Ok(CheckedExpressionResolution::Try(seal_try(
             owner,
             tried,
+            prepared.shell(),
             expressions,
             callable_identities,
             structural_edges,
@@ -792,6 +826,11 @@ fn prepare_callable_seed(
         .source_value_type()
         .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
     let function = source.canonical(function)?;
+    if let Some(expected) = prepared.expected_function()
+        && !source.canonical(expected)?.accepts(&function)
+    {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
     let parameter = source.canonical(prepared.parameter())?;
     let result = source.canonical(prepared.result())?;
     let TypeKind::Function {

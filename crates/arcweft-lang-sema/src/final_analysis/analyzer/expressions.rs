@@ -36,7 +36,8 @@ use super::{
     SourceSpan, TypeKind, TypeParameterSubstitutions,
     calls::checked_character_dialogue_target,
     expression_types::{
-        common_type, expected_item, indexed_item, literal_type, value_resolution_type,
+        SourceTypePreparation, common_type, expected_item, indexed_item, literal_type,
+        value_resolution_type,
     },
     patterns::resolve_closed_variant_path,
     statements::{enclosing_item, expression_span},
@@ -47,9 +48,10 @@ use crate::callable::{
     ResolverWork, resolve_call_target,
 };
 use crate::final_analysis::CheckedCompileTimeCallee;
-use crate::final_analysis::prepared::TryDestination;
+use crate::final_analysis::prepared::{PreparedTryDiagnosticSites, TryDestination};
 use crate::final_analysis::type_rules::{integer_suffix_type, nonnegative_integer_magnitude_fits};
 use crate::registration::RegisteredExternalOwner;
+use crate::types::PreparedEffects;
 use arcweft_lang_hir::body_edges::{HirBodyChild, HirBodyKind};
 use arcweft_lang_hir::expr::{
     HirChoicePlanItem, HirExpressionOwnedBodyRole, HirExpressionOwnedChild, HirPlaceholderKind,
@@ -60,7 +62,7 @@ use arcweft_lang_hir::project::HirSemanticPathLocation;
 use arcweft_lang_hir::stmt::{HirStmtEvaluationPlan, HirStmtValuePlanKind, HirTrigger};
 
 use crate::final_analysis::model::{
-    CallableResultSource, LifetimeLexicalActivation, RegistryWritePosition,
+    CallableResultSource, CarrierResidualRelation, LifetimeLexicalActivation, RegistryWritePosition,
 };
 
 use super::expression_error::{
@@ -1181,7 +1183,7 @@ impl Analyzer<'_, '_, '_> {
                 scope
                     .result
                     .clone()
-                    .filter(|result| carrier.accepts_wrapped_success(result))
+                    .filter(|result| carrier.has_boundary_family(result))
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
             } else if let Some(expected) = scope.result {
                 if body_type == TypeKind::Never {
@@ -1213,12 +1215,13 @@ impl Analyzer<'_, '_, '_> {
         if parameter_occurrences.is_empty() {
             return Err(AnalyzerExpressionError::rejected(owner).into());
         }
-        let ty = TypeKind::function_with_effects([parameter.clone()], result.clone(), body_effects);
-        if expectation
-            .complete_type()
-            .is_some_and(|expected| !expected.accepts(&ty))
-        {
-            return Err(AnalyzerExpressionError::rejected(owner).into());
+        let ty = TypeKind::function_with_canonical_effects(
+            [parameter.clone()],
+            result.clone(),
+            body_effects,
+        );
+        if let Some(expected) = expectation.complete_type() {
+            self.check_authored_contextual_type(context, owner, expected, &ty)?;
         }
         let body = PreparedImplicitCallableBody::new(body, value_results)
             .map_err(AnalyzerExpressionError::fatal)?;
@@ -1238,6 +1241,7 @@ impl Analyzer<'_, '_, '_> {
                     result,
                     body,
                     parameter_occurrences,
+                    expectation.complete_type().cloned(),
                 ),
             ),
         ))
@@ -1618,17 +1622,41 @@ impl Analyzer<'_, '_, '_> {
         };
         let carrier = CheckedTryCarrier::from_operand_type(operand_type)
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-        let boundary = self.resolve_prepared_try_boundary(module, owner, scope, &carrier)?;
-        // A direct Try expression evaluates to the carrier's success value,
-        // but a propagation boundary may be the surrounding Result/Option
-        // type (notably an implicit callable body). Resolve that boundary
-        // before rejecting an unrelated contextual shape so a typed
-        // Result-error mismatch can be published by the boundary owner.
-        if expectation.complete_type().is_some_and(|expected| {
-            !expected.accepts(carrier.success()) && !carrier.has_boundary_family(expected)
-        }) {
+        let types = self
+            .source_type_preparation(context.work())
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let boundary =
+            self.resolve_prepared_try_boundary(&types, module, owner, scope, &carrier)?;
+        let wrapped = match &boundary {
+            PreparedTryBoundary::ImplicitFunctionSite { lookup_owner, .. } => {
+                *lookup_owner == owner
+            }
+            PreparedTryBoundary::ExplicitFunctionSite { lookup_owner, .. } => {
+                let site = module.resolve_expr(*lookup_owner).map_err(|_| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                })?;
+                matches!(site.kind(), HirExprKind::Closure(closure) if closure.body() == owner)
+            }
+            _ => false,
+        };
+        let expected = if wrapped {
+            boundary
+                .boundary_type()
+                .and_then(|ty| carrier.wrapped_success(ty))
+        } else {
+            expectation
+                .complete_type()
+                .filter(|ty| !carrier.has_boundary_family(ty))
+        };
+        if let Some(expected) = expected
+            && types
+                .annotation_mismatch(owner, expected, carrier.success())
+                .map_err(AnalyzerExpressionError::fatal)?
+                .is_some()
+        {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
+        let expected = expected.cloned();
         Ok(PreparedExpressionFact::from(
             PreparedOwnerBoundExpression::new(
                 PreparedExpressionShell::value(
@@ -1640,7 +1668,7 @@ impl Analyzer<'_, '_, '_> {
                         }),
                     operand.effects().clone(),
                 ),
-                PreparedOwnerBoundResolution::try_expression(carrier, boundary),
+                PreparedOwnerBoundResolution::try_expression(carrier, boundary, expected),
             ),
         ))
     }
@@ -2692,6 +2720,7 @@ impl Analyzer<'_, '_, '_> {
         if delivery.is_some_and(|(delivers_success, _)| !delivers_success) {
             tail_type = expected_success.cloned().unwrap_or(TypeKind::Never);
         }
+        let mut residual_relation = CarrierResidualRelation::Directional;
         let ty = match block.kind() {
             HirComputationBlockKind::Result => {
                 let expected_error = match expected {
@@ -2701,16 +2730,44 @@ impl Analyzer<'_, '_, '_> {
                 let error_expectation = expectation.project_checked(owner, expected_error)?;
                 let residuals = self.try_residuals_for_block(owner);
                 let error = if let Some(expected) = error_expectation.complete_type() {
-                    if residuals.iter().all(|residual| expected.accepts(residual)) {
-                        expected.clone()
-                    } else {
-                        return Err(AnalyzerExpressionError::rejected(owner));
+                    let types = self
+                        .source_type_preparation(context.work())
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                    for residual in residuals {
+                        if types
+                            .annotation_mismatch(owner, expected, residual)
+                            .map_err(AnalyzerExpressionError::fatal)?
+                            .is_some()
+                        {
+                            return Err(AnalyzerExpressionError::rejected(owner));
+                        }
                     }
-                } else if residuals.is_empty() {
-                    TypeKind::Never
+                    expected.clone()
                 } else {
-                    common_type(residuals.iter().copied(), None)
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
+                    residual_relation = CarrierResidualRelation::Unified;
+                    let mut work = context.work();
+                    residuals
+                        .into_iter()
+                        .try_fold(TypeKind::Never, |joined, residual| {
+                            if let Some(join) = common_type([&joined, residual], None) {
+                                return Ok(join);
+                            }
+                            let deferred = joined
+                                .may_equal_after_effect_closure(residual, &mut work)
+                                .map_err(|error| {
+                                    AnalyzerExpressionError::fatal(
+                                        FinalSemanticAnalysisError::source_type_projection(
+                                            owner.into(),
+                                            error,
+                                        ),
+                                    )
+                                })?;
+                            if deferred {
+                                Ok(joined)
+                            } else {
+                                Err(AnalyzerExpressionError::rejected(owner))
+                            }
+                        })?
                 };
                 TypeKind::Result {
                     ok: Box::new(tail_type.clone()),
@@ -2725,7 +2782,8 @@ impl Analyzer<'_, '_, '_> {
             },
         };
         if let Some((_, delivery)) = delivery {
-            let carrier = crate::final_analysis::CheckedCarrierBlock::new(ty, delivery);
+            let carrier =
+                crate::final_analysis::CheckedCarrierBlock::new(ty, delivery, residual_relation);
             Ok(
                 structural_expression(carrier.result_type(), CheckedTypeSelection::Inferred)
                     .with_carrier_block(carrier),
@@ -3070,9 +3128,10 @@ impl Analyzer<'_, '_, '_> {
                     };
                     let contextual_value = if let Some((value, expected)) = thread_return {
                         let checked = self.evaluate_expression(context, value, Some(&expected))?;
-                        if !checked.value_type().is_some_and(|ty| expected.accepts(ty)) {
-                            return Err(AnalyzerExpressionError::rejected(value));
-                        }
+                        let actual = checked
+                            .value_type()
+                            .ok_or_else(|| AnalyzerExpressionError::rejected(value))?;
+                        self.check_authored_contextual_type(context, value, &expected, actual)?;
                         Some(value)
                     } else if let (Some((application, expected)), HirStmtKind::Out { value, .. }) =
                         (out_expectation, statement.kind())
@@ -3172,10 +3231,11 @@ impl Analyzer<'_, '_, '_> {
 
     fn resolve_prepared_try_boundary(
         &self,
+        types: &SourceTypePreparation<'_>,
         module: &HirModule,
         owner: ExprId,
         mut scope: ScopeId,
-        carrier: &CheckedTryCarrier,
+        carrier: &CheckedTryCarrier<PreparedEffects>,
     ) -> Result<PreparedTryBoundary, AnalyzerExpressionError> {
         if carrier.is_infallible() {
             return Ok(PreparedTryBoundary::Infallible);
@@ -3218,14 +3278,12 @@ impl Analyzer<'_, '_, '_> {
                             .rev()
                             .find(|context| context.owner == *expression)
                             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                        let matches = match (carrier, &context.result) {
-                            (
-                                CheckedTryCarrier::Result { residual, .. },
-                                TypeKind::Result { error, .. },
-                            ) => error.accepts(residual),
-                            (CheckedTryCarrier::Option { .. }, TypeKind::Option(_)) => true,
-                            _ => false,
-                        };
+                        Self::check_prepared_try_boundary_type(
+                            types,
+                            owner,
+                            carrier,
+                            &context.result,
+                        )?;
                         let boundary = if matches!(expression_kind, HirExprKind::Thread(_)) {
                             PreparedTryBoundary::Thread {
                                 lookup_owner: context.owner,
@@ -3237,9 +3295,7 @@ impl Analyzer<'_, '_, '_> {
                                 boundary_type: context.result.clone(),
                             }
                         };
-                        return matches
-                            .then_some(boundary)
-                            .ok_or_else(|| AnalyzerExpressionError::rejected(owner));
+                        return Ok(boundary);
                     }
                 }
                 HirScopeOwner::Item(item) => {
@@ -3261,22 +3317,13 @@ impl Analyzer<'_, '_, '_> {
                             .result
                             .as_ref()
                             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                        let matches = match (carrier, boundary) {
-                            (
-                                CheckedTryCarrier::Result { residual, .. },
-                                TypeKind::Result { error, .. },
-                            ) => error.accepts(residual),
-                            (CheckedTryCarrier::Option { .. }, TypeKind::Option(_)) => true,
-                            _ => false,
-                        };
-                        return matches
-                            .then_some(PreparedTryBoundary::ImplicitFunctionSite {
-                                lookup_owner: context.owner,
-                                boundary_type: boundary.clone(),
-                            })
-                            .ok_or_else(|| AnalyzerExpressionError::rejected(owner));
+                        Self::check_prepared_try_boundary_type(types, owner, carrier, boundary)?;
+                        return Ok(PreparedTryBoundary::ImplicitFunctionSite {
+                            lookup_owner: context.owner,
+                            boundary_type: boundary.clone(),
+                        });
                     }
-                    return self.resolve_item_try_boundary(module, owner, *item, carrier);
+                    return self.resolve_item_try_boundary(types, module, owner, *item, carrier);
                 }
                 HirScopeOwner::Module(_) | HirScopeOwner::Stmt(_) => {}
             }
@@ -3287,91 +3334,136 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
+    fn check_prepared_try_boundary_type(
+        types: &SourceTypePreparation<'_>,
+        owner: ExprId,
+        carrier: &CheckedTryCarrier<PreparedEffects>,
+        boundary: &TypeKind<PreparedEffects>,
+    ) -> Result<(), AnalyzerExpressionError> {
+        if !carrier.has_boundary_family(boundary) {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        }
+        if let Some((expected, actual)) = carrier.residual_types(boundary)
+            && types
+                .annotation_mismatch(owner, expected, actual)
+                .map_err(AnalyzerExpressionError::fatal)?
+                .is_some()
+        {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        }
+        Ok(())
+    }
+
+    fn check_authored_contextual_type(
+        &self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expected: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
+    ) -> Result<(), AnalyzerExpressionError> {
+        let types = self
+            .source_type_preparation(context.work())
+            .map_err(AnalyzerExpressionError::fatal)?;
+        if types
+            .annotation_mismatch(owner, expected, actual)
+            .map_err(AnalyzerExpressionError::fatal)?
+            .is_some()
+        {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        }
+        Ok(())
+    }
+
     fn resolve_item_try_boundary(
         &self,
+        types: &SourceTypePreparation<'_>,
         module: &HirModule,
         owner: ExprId,
         item: super::ItemId,
-        carrier: &CheckedTryCarrier,
+        carrier: &CheckedTryCarrier<PreparedEffects>,
     ) -> Result<PreparedTryBoundary, AnalyzerExpressionError> {
+        use arcweft_lang_hir::{
+            item::HirImplMember, project::HirSemanticPathRoot, source_index::HirCallableSourceOwner,
+        };
+        let location = self
+            .topology
+            .semantic_path(owner.into())
+            .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
+            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        let HirSemanticPathRoot::Declaration(declaration) = location.root() else {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        };
+        let symbol = self
+            .symbols
+            .callable(declaration)
+            .filter(|symbol| symbol.source_item() == item)
+            .ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidCallableOwner)
+            })?;
         let item_kind = module
             .resolve_item(item)
             .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
             .kind();
-        let return_type = match item_kind {
-            HirItemKind::Function(function) => function.return_type(),
-            HirItemKind::Flow(flow) => flow.result().authored_type(),
+        let return_type = match (symbol.source_owner(), item_kind) {
+            (HirCallableSourceOwner::Item, HirItemKind::Function(function)) => {
+                function.return_type()
+            }
+            (HirCallableSourceOwner::Item, HirItemKind::Flow(flow)) => {
+                flow.result().authored_type()
+            }
+            (
+                HirCallableSourceOwner::ImplFunction { member },
+                HirItemKind::Impl(implementation),
+            ) => {
+                let Some(HirImplMember::Function(function)) =
+                    implementation.members().get(usize::from(member))
+                else {
+                    return Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::InvalidCallableOwner,
+                    ));
+                };
+                function.return_type()
+            }
             _ => None,
         }
         .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-        let boundary = self.types.get(&return_type).ok_or_else(|| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::TypeResolutionFailed {
-                owner: return_type,
-            })
-        })?;
-        let matches = match (carrier, boundary) {
-            (CheckedTryCarrier::Result { residual, .. }, TypeKind::Result { error, .. }) => {
-                error.accepts(residual)
-            }
-            (CheckedTryCarrier::Option { .. }, TypeKind::Option(_)) => true,
-            _ => false,
-        };
-        if let (CheckedTryCarrier::Result { residual, .. }, TypeKind::Result { error, .. }) =
-            (carrier, boundary)
-            && !matches
-        {
-            return Err(Self::try_error_mismatch(
-                module,
-                owner,
-                return_type,
-                residual,
-                error,
-            )?);
+        let boundary = types
+            .annotation(owner, return_type)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        if !carrier.has_boundary_family(&boundary) {
+            return Err(AnalyzerExpressionError::rejected(owner));
         }
-        let declaration = self
-            .symbols
-            .callable_symbols()
-            .find(|symbol| symbol.source_item() == item)
-            .map(|symbol| symbol.declaration().clone())
-            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-        matches
-            .then_some(PreparedTryBoundary::Callable {
-                declaration,
-                boundary_type: boundary.clone(),
-            })
-            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))
-    }
-
-    fn try_error_mismatch(
-        module: &HirModule,
-        owner: ExprId,
-        return_type: arcweft_lang_hir::identity::TypeId,
-        operand_error: &TypeKind<crate::types::PreparedEffects>,
-        return_error: &TypeKind<crate::types::PreparedEffects>,
-    ) -> Result<AnalyzerExpressionError, AnalyzerExpressionError> {
-        Ok(AnalyzerExpressionError::fatal(
-            FinalSemanticAnalysisError::PropagationErrorMismatch {
-                owner,
-                operand_error: Box::new(operand_error.clone()),
-                return_error: Box::new(return_error.clone()),
-                operator_source: source_span_for_role(
-                    module,
-                    HirSourceQuery::Expr {
-                        owner,
-                        role: arcweft_lang_hir::source_index::HirExprSourceRole::Operator,
-                    },
-                )
-                .map_err(AnalyzerExpressionError::fatal)?,
-                return_source: source_span_for_role(
-                    module,
-                    HirSourceQuery::Type {
-                        owner: return_type,
-                        role: HirTypeSourceRole::Whole,
-                    },
-                )
-                .map_err(AnalyzerExpressionError::fatal)?,
-            },
-        ))
+        let sites = PreparedTryDiagnosticSites {
+            operator: source_span_for_role(
+                module,
+                HirSourceQuery::Expr {
+                    owner,
+                    role: arcweft_lang_hir::source_index::HirExprSourceRole::Operator,
+                },
+            )
+            .map_err(AnalyzerExpressionError::fatal)?,
+            result: source_span_for_role(
+                module,
+                HirSourceQuery::Type {
+                    owner: return_type,
+                    role: HirTypeSourceRole::Whole,
+                },
+            )
+            .map_err(AnalyzerExpressionError::fatal)?,
+        };
+        if let Some((expected, actual)) = carrier.residual_types(&boundary)
+            && let Some((expected, actual)) = types
+                .annotation_mismatch(owner, expected, actual)
+                .map_err(AnalyzerExpressionError::fatal)?
+        {
+            return Err(AnalyzerExpressionError::fatal(
+                sites.mismatch(owner, expected, actual),
+            ));
+        }
+        Ok(PreparedTryBoundary::Callable {
+            declaration: declaration.clone(),
+            sites: Box::new(sites),
+        })
     }
     fn check_closure_expression_kind(
         &mut self,
@@ -3484,7 +3576,7 @@ impl Analyzer<'_, '_, '_> {
                 let result = if let Some(carrier) = wrapped_try {
                     body_expected
                         .cloned()
-                        .filter(|result| carrier.accepts_wrapped_success(result))
+                        .filter(|result| carrier.has_boundary_family(result))
                         .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
                 } else {
                     if body.value_type().is_none()
@@ -3523,17 +3615,14 @@ impl Analyzer<'_, '_, '_> {
                 } else {
                     self.completed_body_result(module, closure.body(), result, completion)?
                 };
-                let ty = TypeKind::function_with_effects(
+                let ty = TypeKind::function_with_canonical_effects(
                     parameters,
                     result,
                     self.prepared_expression_body_effects(closure.body(), &body)
                         .map_err(AnalyzerExpressionError::fatal)?,
                 );
-                if expectation
-                    .complete_type()
-                    .is_some_and(|expected| !expected.accepts(&ty))
-                {
-                    return Err(AnalyzerExpressionError::rejected(owner));
+                if let Some(expected) = expectation.complete_type() {
+                    self.check_authored_contextual_type(context, owner, expected, &ty)?;
                 }
                 let checked_closure = CheckedClosure::seal(
                     Arc::clone(&self.topology),
@@ -3764,8 +3853,8 @@ impl Analyzer<'_, '_, '_> {
                 TypeKind::Never
             };
             let result = self.completed_body_result(module, owner, body_type, completion)?;
-            if expected.is_some_and(|expected| !expected.accepts(&result)) {
-                return Err(AnalyzerExpressionError::rejected(owner));
+            if let Some(expected) = expected {
+                self.check_authored_contextual_type(context, owner, expected, &result)?;
             }
             Ok(result)
         })();
