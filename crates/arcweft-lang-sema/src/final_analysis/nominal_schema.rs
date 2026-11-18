@@ -1694,6 +1694,9 @@ pub(super) fn seal_nominal_draft(
     let runtime_nominals = seal
         .validate_final_inventory(final_runtime_inventory)?
         .finish();
+    // Nominal type projection is complete. The report seals declaration
+    // interfaces with exclusive access to the original callable catalog.
+    drop(callables);
     Ok(draft.seal(
         project,
         symbols,
