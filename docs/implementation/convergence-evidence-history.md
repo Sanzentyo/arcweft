@@ -19484,3 +19484,16 @@ Source `f62720f0a6918c52cafc0be3941169e6fb9eeada` は、直接経路と結合さ
 追加のCompiler 3 targetは変更前後で同じ396 IDと成否だった。`callable_execution` は322成功・54失敗、`project_function_instances` は12/12成功、`scope_propagation` は8/8成功。変更前の比較では対象7ファイルのGit blobを使用し、実行後に復元して変更後のSHA256と照合した。両Sourceのlocked Sema全feature checkは通常ライブラリ成功、lib testは終了101・817エラー・33警告で、前回とコード・ファイル別の内訳が同じ。両SourceのライブラリClippy、fmt、構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存graphは起点を含め22 package。公開した7 source blobを検証入力と照合し、`target` は10598235246 bytesだった。
 
 [Compilerの変更前後の全ID、次の停止箇所、検証原本と公開照合](acceptance-evidence/task-terminal-effect-read-validation.raw.zip) は44 entry、1808714 bytes、SHA256 `33c6afa99e3c6d4e3589107cf99f121b0c9fd598bcd98b74524764564df6a8f0`。各原本の長さとハッシュを照合した。
+
+<a id="bound-effect-definitions"></a>
+## 2026-11-19 — 作用の束縛と残余プログラムの生成を分離
+
+基点 `e2548c9e505bfb9b44850483503c3e3213b8b70e`。Source `60f53f347c2f294537e06618745ba09d73de74ee` は、条件付き最小値を束縛した定義をそのまま終端へ渡す。束縛直後に用途のないラベル集合と残余プログラムを生成していた処理を削除した。束縛対象の関数ID、所有グラフ、元の制約と到達する定義を検査し、終端で実際のNamed本体・Future入力・照会対象から作用を確定する。残余式の量化範囲を検査する既存unit fixtureは、同じ束縛済み定義を明示的にコンパイルする。
+
+基点の2件を一時計測し、両方とも候補共有4,096単位の後で次の1単位を拒否した。retained Mapの終端作用は準備1,037単位と確定1,549単位、遅延コールバックの結合した終端作用は確定1,994単位を局所カウンターに計上した。計測差分は除去してから実装・検証した。
+
+最終Compilerの2 targetは前回と同じ152 IDで150成功・2失敗・0スキップ。遅延コールバックは作用述語の出典検査まで進み、retained Mapは実体化の予約を通過して選択後の元の束縛値の保持まで進んだ。両方とも候補共有の作業上限で型検査を終えた。captured Mapは引き続き成功した。追加の3 targetは前回と同じ396 IDで342成功・54失敗。 `callable_execution` は322成功・54失敗、`project_function_instances` は12/12成功、`scope_propagation` は8/8成功。
+
+途中版の全feature Sema checkは、残余式を直接取得していた既存fixtureで追加コンパイルエラー1件を検出した。fixtureを明示的なコンパイルに切り替えた最終版のlibrary checkは成功し、lib testは終了101・817エラー・33警告。発生ファイルとエラーコードの組ごとに、前回の内訳とすべて一致した。fixture実行、全推移的逆依存テスト、workspace全target check、Native／Web最終受入は未実行。同じproduction入力の全featureライブラリClippy、最終版のfmt、差分検査と構造ゲートは終了0。構造阻害0件。Cargo全feature逆依存は起点込み22 package。公開した4 blobを入力と照合した。 `target` は10596417208 bytesだった。
+
+[基点計測、Compilerの全ID比較、停止位置、途中のエラーと最終検証、公開照合](acceptance-evidence/task-bound-effect-definitions.raw.zip) は36 entry、1329994 bytes、SHA256 `977ba5cfbd1a7ccd08b89970a02e59624eeb59e9364e1c1df9449bf244735e8d`。各原本の長さとハッシュを照合した。
