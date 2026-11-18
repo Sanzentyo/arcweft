@@ -18916,3 +18916,17 @@ Matchの分岐とChoiceの入れ子パスを、準備済みの式が持つ情報
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。最終入力のlibraryは **287エラー・25警告**、lib testは **1,162エラー・37警告**。前回公開入力との一次診断比較は1,194件から1,178件、新規0件。文の最終検査の4件を含む16件が解消した。途中入力のlibraryは287エラー・27警告、lib testは1,164エラー・39警告で、入力ハッシュと各ログを収録した。Semaのfmtと構造ゲートは終了0、blocking違反0件。文の反復子と局所初期化を含むSemaの型移行は継続中。変更回帰、nextest、Clippy、doctest、推移的逆依存のテスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは345,816,183 bytesで、約300 GBを目安とするcleanは未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-statement-storage-operands.raw.zip) は24 entry、253,259 bytes、SHA256 `e1aa40b32747d465ddb3a0eeaa85e9dd9ab9542cc14d02609f4572c6da194a03`。各entryの長さとSHA256を再照合した。旧履歴 2,940,667 bytesのSHA256 `eb8b17c81d41ed17d62812f8d84101e2c238cc369de968d87cec93bcae2128b2` をprefixとして保持した。
+
+
+<a id="typed-iteration-transport"></a>
+## 2026-11-18 — forの要素型と反復情報の作用を最終文検査まで保持
+
+Source `a3c3ee7a5a750e85c5fa0595112d6e9823faf044`。比較元は `ab41abe2fb09b39795123275763febcc3fb60711` のRust inputと、同じソースの `4665c5227c270ac2eb0f00ea8d4c775f3b2f3fee` で完了した `statement-storage-operands.dev02-check.log`。公開したmainと、20 Rust pathおよび仕様資料1件のblobを照合した。
+
+組み込み反復の要素型は候補トランザクションと束縛で元の作用項を保持する。trait witness選択は元のread viewで反復元の型を読み、準備された宣言本体の作用を含めた型で対象を照合する。選択した宣言ID・関連型は候補とともに保持する。文の型を確定対象のrootへ含め、C2で元の文のスコープから正準化する。最終文検査で反復元・反復子・次値の検査済みの型を照合する。選択に必要な宣言本体やFutureが未準備の場合の依存準備と、実際のforの実行検証は継続課題とする。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。dev01は終了101でlibrary 283エラー・25警告、lib test 1,158エラー・37警告。nominal inventoryのエラー型と、パターン種付け前の借用範囲を修正した。dev02は終了101でlibrary 278エラー・25警告、lib test 1,153エラー・37警告。比較元の正規化した一次診断1,178件に対し1,169件で、9件削除、追加0件。パッケージのfmt checkと `just structure-audit-gate` は終了0。
+
+入れ子の関数型の作用が元の宣言本体で決まる回帰fixtureを追加した。Sema全体のコンパイルが未完了のため、そのfixture、nextest、推移的逆依存、Clippy、workspaceおよびNative／AWBCは未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-typed-iteration-transport.raw.zip) は25 entry、263,826 bytes、SHA256 `753c26f00aee2e151cde782e883be9c8b09a255beb632b7a0f4e0fb1a7e4d2fe`。各entryの長さとSHA256を再照合した。更新前の履歴2,943,050 bytesのSHA256 `b79f9a580e96f0edd7e10481d8f12231925e3ef018094eb5df6e00679f1c6d6e` をprefixとして保持した。
