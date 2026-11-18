@@ -19340,3 +19340,15 @@ Source `26c7c10699e8a0d4d3e0e169e738c50450620d20`。基点は `a949ebabce9bdf18f
 全featureのlocked Sema checkはライブラリ成功、lib testは終了101・829エラー・33警告。エラーコードと発生ファイルの内訳は `cc1843b84444daa2a7acacac64f9bc618ed28470` と一致。fmt、差分チェック、構造ゲートは終了0。構造ゲートの阻害は0件。Semaユニットテスト、全workspace check／Clippy、Tier 2、最終Native／AWBC・Native／Web受入は未実行。
 
 [検証原本・比較・LLDB・公開照合](acceptance-evidence/task-canonical-effect-copy.raw.zip) は17 entry、424221 bytes、SHA256 `efe2631f6b2304912da10771f11e2c7cb0ca01546a6f3f88d659997ecd700edd`。各原本の長さとSHA256を照合した。既存履歴3,024,554 bytesをそのまま保持した。
+
+
+<a id="admitted-effect-context"></a>
+## 2026-11-19 — 作用述語の投影に取り込み済みの環境を使う
+
+Source `c00930d5e32404136931015dc7b7809ef459d3a7`。基点は `63140fd3fb46c31f2db1bbc637844f16e537280c`。候補初期化・アプリケーション追加・継続の復元が取り込んだrigid宣言を元の作用環境に保持し、Rの投影時はその環境に対して結果を照合する。未使用のrigid宣言もΓに残る。登録された実アプリケーションを投影し、外部参照・取り消された作用項を引き続き拒否する。テストの呼出しを新しい戻り値に移行した。5 Rustファイルで物理行の純減69、公開blob 5件を入力と照合した。
+
+Compilerの2 targetは同じ152 IDで149成功・3失敗・0スキップ。遅延コールバックとretained Mapは元の作用制約の正準式による再検証で停止した。captured Mapは候補の初期化を通過し、選択済み呼出し照合の型投影で候補コンテキストの作業上限に達した。3件とも型検査中で実行・復元には進んでいない。
+
+全featureのlocked Sema checkは通常ライブラリ成功、lib testは終了101・829エラー・33警告で従前と同じコード・発生ファイルの内訳だった。途中の833エラーには置換前のメソッドを呼ぶテスト4件を含み、全4件を移行した。fmt、差分チェック、構造ゲートは終了0、構造阻害0件。Semaのユニットテストや全体受入は未実行。
+
+[検証原本・LLDB・診断比較・公開照合](acceptance-evidence/task-admitted-effect-context.raw.zip) は21 entry、791314 bytes、SHA256 `fced865943b9110438c50bdeb5f43c00f092d1cf0796a1d68642324a1a09e0b8`。最終検証とデバッガ実行で本番ソースのハッシュが一致することを確かめた。既存履歴の前置部分はバイト単位で照合した。
