@@ -19376,3 +19376,15 @@ Source `94239cc4c72e6c3a3cf85fbcb689d842938537ad`。基点は `a1ee72b7652ebea49
 Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ、captured Mapも成功。遅延コールバックは元の作用制約の独立照合中に作業上限に達した。retained Mapは仮セルの構築を通過し、ヘッダ投影の `Compilation::member` で作用を変換する際に作業上限に達した。locked Sema全feature checkは通常ライブラリ成功、lib testは終了101・829エラー・33警告で、発生ファイルとコードは同じ。fmt、差分チェック、構造ゲートは終了0、構造阻害0件。Semaのユニットテスト、Clippyと全体受入はこのソースでは未実行。
 
 [検証原本・LLDB・公開照合](acceptance-evidence/task-observe-solved-effect-cells.raw.zip) は16 entry、418899 bytes、SHA256 `f822f375d07392df64a0f8f69ed7d8d7a52c2fc442f1773d0192032883b6ed25`。各原本の長さとSHA256を照合し、既存履歴をそのまま保持した。
+
+
+<a id="compose-typed-effect-members"></a>
+## 2026-11-19 — 作用式を実引数の決定グラフへ直接置換
+
+Source `d37143bd7c52334905006460559c9ca640ddb084`。基点は `0b7cfcd1072a24846ed10c7f6501c0846264a115`。Coreは元の決定グラフを一度たどり、出現する変数を対象スコープの変数、または借用した決定グラフへ置換する。同じ変数の解決は一度で、置換先を再帰的に置換しない。公開の同時置換も同じ処理を使い、Semaの一時変数と中間決定グラフを除いた。6 Rustファイル、物理行の純増49。公開blob 6件を検証入力と照合した。
+
+Core単体は2,359件すべて成功。旧2,358 IDの結果に差分はなく、追加1件は同じ変数が複数ノードに現れる場合の解決回数と置換後の真理値を検査した。Compilerの2 targetは同一152 IDで150成功・2失敗・0スキップ。captured Mapは引き続き成功した。遅延コールバックは元の作用制約の独立照合を通過し、最終式の型投影で上限に達した。retained Mapは作用の変数置換を通過し、最終式の関数ヘッダにおける作用観測の正負クラスを構成する途中で同じ候補共有の作業上限に達した。
+
+locked Sema全feature checkは通常ライブラリ成功、lib testは終了101・829エラー・33警告で、発生ファイルとコードの内訳は前回と一致。全featureのCore・SemaライブラリClippy、fmt、差分チェック、構造ゲートは終了0、構造阻害0件。Semaユニットテスト、全逆依存nextest、workspace check／Clippy、最終受入は未実行。
+
+[検証原本・全ID比較・LLDB・公開照合](acceptance-evidence/task-compose-typed-effect-members.raw.zip) は21 entry、937918 bytes、SHA256 `8c9bc5dca748996e489727d75c7a64d36a930a161e2ee4629747357cb7d1f415`。各原本の長さとハッシュを照合し、既存履歴をそのまま保持した。
