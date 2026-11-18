@@ -32,19 +32,18 @@ use super::{
     ExprId as SemaExprId, FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysis,
     FinalSemanticAnalysisError, HirAnalysisProjectView, HirModuleId, SemanticFactFamily, TypeKind,
     prepared::PreparedResolvedExpression,
+    type_seal::{PublicationTypeEffects, PublicationTypes},
 };
 use crate::callable::{
     CheckedCallArgumentPassing, CheckedCallArgumentSlotSource, CheckedCallSemanticOperandSource,
     CheckedCallSite, CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
     validate_selected_application,
 };
-use crate::effect_row::prepared::PrincipalEffectClosure;
 use crate::record_field::CheckedRecordFieldSemanticId;
 use crate::semantic_coordinate::{
     CheckedExpressionChildRole, CheckedExpressionEdgeAuthority, CheckedNestedPathSegmentV1,
     CheckedNestedPathV1,
 };
-use crate::types::TypeProjectionControl;
 
 mod model;
 
@@ -426,6 +425,19 @@ impl CheckedSelectedExpressionGraph {
         self.graph.topology()
     }
 
+    pub(super) fn capture_sources(
+        &self,
+    ) -> impl Iterator<Item = arcweft_lang_hir::identity::LocalId> + '_ {
+        self.topology()
+            .modules()
+            .iter()
+            .flat_map(|module| module.captures().rows())
+            .filter_map(|capture| {
+                self.contains_owner(SyntheticOwner::Capture(capture.capture()))
+                    .then(|| capture.local())
+            })
+    }
+
     pub(super) fn into_selected_call_inventories(
         self,
     ) -> BTreeMap<ExprId, HirSelectedCallExpressionInventory> {
@@ -729,11 +741,11 @@ impl CheckedStructuralEdgeDraft {
         modules: &BTreeMap<HirModuleId, &HirModule>,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
         callables: &CheckedCallableCatalog,
-        type_effects: &PrincipalEffectClosure,
-        work: &mut impl TypeProjectionControl<Error = FinalSemanticAnalysisError>,
+        type_effects: PublicationTypeEffects<'_, '_>,
     ) -> Result<Self, FinalSemanticAnalysisError> {
         let mut facts = BTreeMap::new();
         let mut call_owners = BTreeSet::new();
+        let mut types = PublicationTypes::new(callables, selected.topology(), type_effects);
         for owner in selected.owners() {
             let selected_edges = selected.expression_edges(owner);
             let edges = selected_edges
@@ -773,7 +785,7 @@ impl CheckedStructuralEdgeDraft {
                     let mut declaration_ordinals = BTreeSet::new();
                     let mut ordered = true;
                     for (ordinal, field) in prepared.fields().iter().enumerate() {
-                        work.visit_binding()?;
+                        types.visit_binding()?;
                         ordered &= u32::try_from(ordinal).ok() == Some(field.source_ordinal())
                             && declaration_ordinals.insert(field.declaration_ordinal());
                     }
@@ -784,37 +796,10 @@ impl CheckedStructuralEdgeDraft {
                         );
                         continue;
                     }
-                    let source = callables
-                        .constraint_source_owner(selected.topology(), owner)
-                        .map_err(|error| FinalSemanticAnalysisError::SourceTypeRetention {
-                            owner: owner.into(),
-                            error: super::SourceTypeRetentionFailure::Owner(error),
-                        })?;
-                    let binder =
-                        source
-                            .declaration_formals_with_control(work)
-                            .map_err(|error| {
-                                FinalSemanticAnalysisError::source_type_projection(
-                                    owner.into(),
-                                    error,
-                                )
-                            })?;
-                    let scope = binder.template_scope();
+                    let mut source = types.source(owner)?;
                     let mut digest = |ty: &TypeKind<crate::types::PreparedEffects>| {
-                        ty.project_canonical_effects(scope, type_effects, work)
-                            .map_err(|error| {
-                                FinalSemanticAnalysisError::source_type_effect_projection(
-                                    owner.into(),
-                                    error,
-                                )
-                            })?
-                            .semantic_identity_digest_in_scope_with_control(scope, work)
-                            .map_err(|error| {
-                                FinalSemanticAnalysisError::source_type_projection(
-                                    owner.into(),
-                                    error,
-                                )
-                            })
+                        let ty = source.canonical(ty)?;
+                        source.digest(&ty)
                     };
                     let nominal = digest(prepared.nominal().ty())?;
                     let mut slots = Vec::with_capacity(prepared.fields().len());

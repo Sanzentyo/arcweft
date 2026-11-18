@@ -129,6 +129,14 @@ pub(crate) struct CheckedImplicitCallableIdentityEvidence {
 }
 
 impl CheckedImplicitCallableIdentityEvidence {
+    pub(in crate::final_analysis) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(&self.parameter)?;
+        visitor(&self.result)
+    }
+
     pub(crate) fn issue(
         topology: Arc<HirProjectEvaluationTopology>,
         lookup_owner: ExprId,

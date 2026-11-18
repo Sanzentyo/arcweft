@@ -50,13 +50,6 @@ impl PreparedAssignmentStatement {
     pub(crate) fn into_parts(self) -> (ExprId, ExprId, TypeKind<crate::types::PreparedEffects>) {
         (self.target, self.value, self.target_type)
     }
-
-    fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<crate::types::PreparedEffects>) -> Result<(), E>,
-    ) -> Result<(), E> {
-        visitor(&self.target_type)
-    }
 }
 
 /// Affine analyzer output consumed exactly once by the exhaustive all-31
@@ -82,21 +75,31 @@ pub(crate) enum PreparedStatementPayload {
 }
 
 impl PreparedStatementPayload {
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<crate::types::PreparedEffects>) -> Result<(), E>,
+    pub(crate) fn visit_prepared_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<crate::types::PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::Assignment(value) => value.visit_types(visitor),
+            Self::Assignment(value) => visitor(&value.target_type),
             Self::RegistryWrite(value) => visitor(&value.value_type),
-            Self::Iteration(value) => value.visit_types(visitor),
-            Self::HirOwned
+            Self::Iteration(_)
+            | Self::HirOwned
             | Self::Return(_)
             | Self::Assertion(_)
             | Self::Suspension(_)
             | Self::Yield
             | Self::EvaluatedEffect(_)
             | Self::SealedEvaluatedEffectReference(_) => Ok(()),
+        }
+    }
+
+    pub(crate) fn visit_canonical_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Iteration(value) => value.visit_types(visitor),
+            _ => Ok(()),
         }
     }
 }

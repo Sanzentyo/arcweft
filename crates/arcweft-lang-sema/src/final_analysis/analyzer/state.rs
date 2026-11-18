@@ -395,6 +395,10 @@ pub(super) struct PatternTypeObservations<'a> {
 }
 
 impl PatternTypeObservations<'_> {
+    pub(super) fn locals(&self) -> &BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>> {
+        self.locals
+    }
+
     pub(super) fn local(&self, owner: LocalId) -> Option<&TypeKind<crate::types::PreparedEffects>> {
         self.locals.get(&owner)
     }

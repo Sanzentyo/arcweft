@@ -21,16 +21,22 @@ impl<'a> PreparedTypeEffectRoots<'a> {
         predicates: impl IntoIterator<Item = &'a PreparedEffectPredicate>,
         control: &mut C,
     ) -> Result<Self, TypeProjectionError<C::Error>> {
-        let mut result = Self {
-            rows: Vec::new(),
-            predicates: Vec::new(),
-        };
+        let mut result = Self::default();
         for predicate in predicates {
             control
                 .visit_node(TypeProjectionNodeKind::Effect, 1)
                 .map_err(TypeProjectionError::Control)?;
             result.predicates.push(predicate);
         }
+        result.extend(types, control)?;
+        Ok(result)
+    }
+
+    pub(crate) fn extend<C: TypeProjectionControl>(
+        &mut self,
+        types: impl IntoIterator<Item = &'a TypeKind<PreparedEffects>>,
+        control: &mut C,
+    ) -> Result<(), TypeProjectionError<C::Error>> {
         let mut pending = Vec::new();
         for ty in types {
             control
@@ -46,11 +52,11 @@ impl<'a> PreparedTypeEffectRoots<'a> {
                     control
                         .visit_node(TypeProjectionNodeKind::Effect, depth)
                         .map_err(TypeProjectionError::Control)?;
-                    result.rows.push(effects);
+                    self.rows.push(effects);
                     control
                         .visit_node(TypeProjectionNodeKind::Effect, depth)
                         .map_err(TypeProjectionError::Control)?;
-                    result.predicates.push(predicate);
+                    self.predicates.push(predicate);
                 }
                 let next_depth = depth
                     .checked_add(1)
@@ -63,7 +69,7 @@ impl<'a> PreparedTypeEffectRoots<'a> {
                 }
             }
         }
-        Ok(result)
+        Ok(())
     }
 
     pub(crate) fn rows(&self) -> &[&'a PreparedEffectRow] {

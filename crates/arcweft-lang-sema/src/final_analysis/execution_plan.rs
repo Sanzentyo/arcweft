@@ -5,26 +5,18 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{ExprId, FinalSemanticAnalysisError, PreparedExpressionFact, StmtId};
+use super::{CheckedExpression, ExprId, FinalSemanticAnalysisError, StmtId};
 use crate::checked_rich_text::CheckedDialogueToken;
 
 #[cfg(test)]
 mod tests;
 
 pub(super) fn seal(
-    expressions: BTreeMap<ExprId, PreparedExpressionFact>,
+    mut expressions: BTreeMap<ExprId, CheckedExpression>,
     calls: &BTreeMap<ExprId, crate::callable::CallTargetFacts>,
     statements: &BTreeMap<StmtId, super::PreparedStatementPayload>,
     dialogue_lines: &arcweft_lang_hir::project::AcceptedDialogueLineInventory,
-) -> Result<BTreeMap<ExprId, PreparedExpressionFact>, FinalSemanticAnalysisError> {
-    let mut expressions = expressions
-        .into_iter()
-        .map(|(owner, fact)| {
-            fact.into_complete()
-                .map(|checked| (owner, checked))
-                .map_err(|_| FinalSemanticAnalysisError::UnsealedPreparedC2Owner)
-        })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
+) -> Result<BTreeMap<ExprId, CheckedExpression>, FinalSemanticAnalysisError> {
     // All field receivers are sealed before publishing local-rooted paths.
     // Dense expression IDs do not imply a dependency ordering.
     let places = expressions
@@ -150,10 +142,7 @@ pub(super) fn seal(
                 None if effect_roles.is_empty() => None,
                 None => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
             };
-            Ok((
-                owner,
-                super::PreparedExpressionFact::Resolved(checked.with_execution_plan(plan)),
-            ))
+            Ok((owner, checked.with_execution_plan(plan)))
         })
         .collect::<Result<BTreeMap<_, _>, FinalSemanticAnalysisError>>()?;
     if !roles.is_empty() {

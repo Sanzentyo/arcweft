@@ -97,6 +97,7 @@ mod statement_effects;
 mod statement_seal;
 mod transcript_writer;
 mod type_rules;
+mod type_seal;
 mod validation;
 
 pub use crate::callable::CharacterDialoguePatchContext;

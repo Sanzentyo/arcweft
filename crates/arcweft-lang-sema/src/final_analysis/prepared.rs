@@ -146,6 +146,24 @@ impl PreparedTypedExpressionResult {
         }
         Ok(())
     }
+
+    pub(super) fn seal(
+        self,
+        owner: ExprId,
+        types: &mut super::type_seal::PublicationSourceTypes<'_, '_>,
+    ) -> Result<super::CheckedTypedExpressionResult, super::FinalSemanticAnalysisError> {
+        let source = types.canonical(&self.source)?;
+        let value = super::CheckedTypedExpressionResult::new(source, self.type_selection);
+        let Some(specialized) = self.specialization else {
+            return Ok(value);
+        };
+        if types.canonical(&specialized.ty)? != *specialized.witness.specialized_type() {
+            return Err(super::FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        value
+            .with_function_specialization(owner, specialized.witness)
+            .map_err(|_| super::FinalSemanticAnalysisError::WrongPayloadFamily)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -156,6 +174,26 @@ pub(crate) enum PreparedExpressionResult {
 }
 
 impl PreparedExpressionResult {
+    pub(super) fn seal(
+        self,
+        owner: ExprId,
+        types: &mut super::type_seal::PublicationSourceTypes<'_, '_>,
+    ) -> Result<super::CheckedExpressionResult, super::FinalSemanticAnalysisError> {
+        use super::{CheckedExpressionResult, CheckedNonValueExpressionResult};
+        Ok(match self {
+            Self::Value(value) => CheckedExpressionResult::Value(value.seal(owner, types)?),
+            Self::Unavailable => CheckedExpressionResult::Unavailable,
+            Self::NonValue(result) => CheckedExpressionResult::NonValue(match result {
+                PreparedNonValueExpressionResult::ContentEmission(identity) => {
+                    CheckedNonValueExpressionResult::ContentEmission(identity)
+                }
+                PreparedNonValueExpressionResult::RegistryAddress(owner) => {
+                    CheckedNonValueExpressionResult::RegistryAddress(owner)
+                }
+            }),
+        })
+    }
+
     fn function_specialization(&self) -> Option<&Arc<CheckedFunctionSpecialization>> {
         match self {
             Self::Value(value) => value.function_specialization(),
@@ -220,6 +258,18 @@ pub(crate) struct PreparedExpressionShell {
 }
 
 impl PreparedExpressionShell {
+    pub(super) fn seal_value(
+        self,
+        owner: ExprId,
+        types: &mut super::type_seal::PublicationSourceTypes<'_, '_>,
+    ) -> Result<(super::CheckedTypedExpressionResult, EffectSet), super::FinalSemanticAnalysisError>
+    {
+        let (value, effects) = self
+            .into_value_parts()
+            .ok_or(super::FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        Ok((value.seal(owner, types)?, effects))
+    }
+
     pub(crate) const fn value(
         ty: TypeKind<PreparedEffects>,
         type_selection: CheckedTypeSelection,
@@ -1248,6 +1298,28 @@ impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact 
 }
 
 impl PreparedExpressionFact {
+    pub(super) fn visit_canonical_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Resolved(value) => value.visit_canonical_metadata_types(visitor),
+            Self::CompileTimeScalar(value) => value.original().visit_canonical_types(visitor),
+            Self::OwnerBound(value) => {
+                if let Some(body) = self.implicit_body_expression() {
+                    body.visit_canonical_types(visitor)?;
+                }
+                if let PreparedOwnerBoundResolution::ImplicitNominalBody { identity, .. } =
+                    value.resolution()
+                {
+                    identity.visit_types(visitor)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
     pub(super) fn project_record_body(&self) -> Option<&PreparedProjectRecordExpression> {
         match self.implicit_body_expression().unwrap_or(self) {
             Self::ProjectRecord(record) => Some(record),

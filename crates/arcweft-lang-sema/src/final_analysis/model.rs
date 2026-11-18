@@ -2874,6 +2874,48 @@ impl<R> ExpressionData<R> {
     }
 }
 impl PreparedResolvedExpression {
+    pub(super) fn seal(
+        self,
+        owner: ExprId,
+        types: &mut super::type_seal::PublicationSourceTypes<'_, '_>,
+    ) -> Result<CheckedExpression, super::FinalSemanticAnalysisError> {
+        let ExpressionData {
+            result,
+            effects,
+            resolution,
+            mutable_place,
+            execution,
+            evaluated_effect,
+            match_fact,
+            carrier_block,
+            nested_path_evidence,
+        } = *self.data;
+        let result = result.seal(owner, types)?;
+        Ok(CheckedExpression {
+            data: Box::new(ExpressionData {
+                result,
+                effects,
+                resolution,
+                mutable_place,
+                execution,
+                evaluated_effect,
+                match_fact,
+                carrier_block,
+                nested_path_evidence,
+            }),
+        })
+    }
+
+    pub(super) fn visit_canonical_metadata_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        if let Some(carrier) = self.data.carrier_block() {
+            visitor(carrier.carrier_type())?;
+        }
+        self.data.resolution.visit_types(visitor)
+    }
+
     pub(crate) const fn value_type(&self) -> Option<&TypeKind<crate::types::PreparedEffects>> {
         self.data.result.value_type()
     }
@@ -3126,6 +3168,16 @@ impl PreparedResolvedExpression {
 }
 
 impl CheckedExpression {
+    pub(super) fn into_resolution(self) -> CheckedExpressionResolution {
+        self.data.resolution
+    }
+
+    pub(super) fn runtime_value_type(&self) -> Option<&TypeKind> {
+        self.execution_plan()
+            .filter(|plan| plan.value() == CheckedRuntimeValueDisposition::Retain)
+            .and_then(|_| self.value_type())
+    }
+
     pub(crate) fn registry_address(address: Arc<CheckedRegistryAddress>) -> Self {
         Self {
             data: Box::new(ExpressionData {
@@ -3557,6 +3609,16 @@ pub(crate) struct PreparedResolvedPattern {
 }
 
 impl PreparedResolvedPattern {
+    pub(super) fn seal(
+        self,
+        types: &mut super::type_seal::PublicationSourceTypes<'_, '_>,
+    ) -> Result<CheckedPattern, super::FinalSemanticAnalysisError> {
+        Ok(CheckedPattern::new(
+            types.canonical(&self.data.ty)?,
+            self.data.resolution,
+        ))
+    }
+
     pub(crate) const fn new(
         ty: TypeKind<crate::types::PreparedEffects>,
         resolution: CheckedPatternResolution,
@@ -3599,16 +3661,25 @@ impl CheckedPattern {
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
     ) -> Result<(), E> {
         visitor(self.ty())?;
-        match self.resolution() {
-            CheckedPatternResolution::Entity(item) => item.visit_types(visitor),
-            CheckedPatternResolution::ImportedProjectEntity(entity) => visitor(&entity.ty()),
-            CheckedPatternResolution::PresentationAddress(identity) => {
+        self.resolution().visit_types(visitor)
+    }
+}
+
+impl CheckedPatternResolution {
+    pub(super) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Entity(item) => item.visit_types(visitor),
+            Self::ImportedProjectEntity(entity) => visitor(&entity.ty()),
+            Self::PresentationAddress(identity) => {
                 visitor(&TypeKind::presentation_address_reference(identity.kind()))
             }
-            CheckedPatternResolution::Record(record) => record.visit_types(visitor),
-            CheckedPatternResolution::Variant(variant) => variant.visit_types(visitor),
-            CheckedPatternResolution::TypedBinding(binding) => visitor(binding.annotation()),
-            CheckedPatternResolution::Structural | CheckedPatternResolution::Literal(_) => Ok(()),
+            Self::Record(record) => record.visit_types(visitor),
+            Self::Variant(variant) => variant.visit_types(visitor),
+            Self::TypedBinding(binding) => visitor(binding.annotation()),
+            Self::Structural | Self::Literal(_) => Ok(()),
         }
     }
 }

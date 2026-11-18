@@ -1529,8 +1529,8 @@ pub(crate) struct FinalSemanticAnalysisPostEntryDraft {
     pub(super) type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
     pub(super) locals: BTreeMap<LocalId, CheckedBinding>,
     pub(super) captures: BTreeMap<CaptureId, CheckedBinding>,
-    pub(super) expressions: BTreeMap<ExprId, super::PreparedExpressionFact>,
-    pub(super) patterns: BTreeMap<PatternId, super::PreparedPatternFact>,
+    pub(super) expressions: BTreeMap<ExprId, CheckedExpression>,
+    pub(super) patterns: BTreeMap<PatternId, CheckedPattern>,
     pub(super) statements: BTreeMap<StmtId, super::PreparedStatementPayload>,
     pub(super) items: BTreeMap<ItemId, CheckedItem>,
     pub(super) calls: BTreeMap<ExprId, CallTargetFacts>,
@@ -1549,10 +1549,18 @@ pub(crate) struct FinalSemanticAnalysisPostEntryDraft {
 impl FinalSemanticAnalysisDraftParts {
     pub(crate) fn into_post_entry(
         self,
-    ) -> (
-        super::PreparedEntryIngressSeal,
-        FinalSemanticAnalysisPostEntryDraft,
-    ) {
+        expressions: BTreeMap<ExprId, CheckedExpression>,
+        patterns: BTreeMap<PatternId, CheckedPattern>,
+    ) -> Result<
+        (
+            super::PreparedEntryIngressSeal,
+            FinalSemanticAnalysisPostEntryDraft,
+        ),
+        FinalSemanticAnalysisError,
+    > {
+        if !self.expressions.is_empty() || !self.patterns.is_empty() {
+            return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
+        }
         let FinalSemanticAnalysisDraftParts {
             checked_callables,
             accepted_roots,
@@ -1560,8 +1568,8 @@ impl FinalSemanticAnalysisDraftParts {
             type_resolutions,
             locals,
             captures,
-            expressions,
-            patterns,
+            expressions: _,
+            patterns: _,
             statements,
             items,
             calls,
@@ -1575,7 +1583,7 @@ impl FinalSemanticAnalysisDraftParts {
             executable_suspensions,
         } = self;
         let (entry_ingress, statement_ingress) = ingress.into_phase_seals();
-        (
+        Ok((
             entry_ingress,
             FinalSemanticAnalysisPostEntryDraft {
                 checked_callables,
@@ -1598,7 +1606,7 @@ impl FinalSemanticAnalysisDraftParts {
                 physical_candidate_argument_evaluations,
                 executable_suspensions,
             },
-        )
+        ))
     }
 }
 
@@ -1621,8 +1629,8 @@ impl FinalSemanticAnalysisPostEntryDraft {
             type_resolutions,
             locals,
             captures,
-            expressions: prepared_expressions,
-            patterns: prepared_patterns,
+            expressions,
+            patterns,
             statements: prepared_statements,
             items,
             calls,
@@ -1636,12 +1644,10 @@ impl FinalSemanticAnalysisPostEntryDraft {
             executable_suspensions,
         } = self;
         control.check()?;
-        let expressions = collect_sealed_expressions(prepared_expressions)?;
         fx_definitions
             .validate_applications(&expressions)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
         let checked_fx_definitions = fx_definitions;
-        let patterns = collect_sealed_patterns(prepared_patterns)?;
         let evaluation_topology = Arc::clone(accepted_roots.topology());
         let modules = project_generation_modules(project);
         let dialogue_lines = selected_expressions.dialogue_lines().clone();
@@ -2385,8 +2391,10 @@ impl FinalSemanticAnalysis {
             &modules,
             &expressions,
             &checked_callables,
-            &type_effects,
-            &mut work,
+            super::type_seal::PublicationTypeEffects {
+                principal: &type_effects,
+                work: &mut work,
+            },
         )?)?;
         input.set_selected_expressions(selected_expressions)?;
         Self::try_new_with_control_and_type_resolutions_and_catalog(
@@ -2401,6 +2409,10 @@ impl FinalSemanticAnalysis {
             super::CheckedFxDefinitionCatalog::default(),
             FinalSemanticAnalysisAuthority::Fixture,
             control,
+            super::type_seal::PublicationTypeEffects {
+                principal: &type_effects,
+                work: &mut work,
+            },
         )
         .map_err(FinalSemanticProjectError::into_semantic_fixture_error)
     }
@@ -2421,6 +2433,7 @@ impl FinalSemanticAnalysis {
         fx_definitions: super::CheckedFxDefinitionCatalog,
         authority: FinalSemanticAnalysisAuthority,
         control: FinalSemanticAnalysisControl<'_>,
+        type_effects: super::type_seal::PublicationTypeEffects<'_, '_>,
     ) -> Result<Self, FinalSemanticProjectError> {
         control.check()?;
         let observed = project
@@ -2509,6 +2522,7 @@ impl FinalSemanticAnalysis {
             semantic_shapes,
             authority,
             control,
+            type_effects,
         )
     }
 
@@ -2903,33 +2917,6 @@ impl FinalSemanticAnalysis {
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
-}
-
-fn collect_sealed_expressions(
-    prepared: BTreeMap<ExprId, super::PreparedExpressionFact>,
-) -> Result<BTreeMap<ExprId, CheckedExpression>, FinalSemanticAnalysisError> {
-    prepared
-        .into_iter()
-        .map(|(owner, fact)| {
-            let super::PreparedExpressionFact::Resolved(fact) = fact else {
-                return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
-            };
-            Ok((owner, fact))
-        })
-        .collect()
-}
-
-fn collect_sealed_patterns(
-    prepared: BTreeMap<PatternId, super::PreparedPatternFact>,
-) -> Result<BTreeMap<PatternId, CheckedPattern>, FinalSemanticAnalysisError> {
-    prepared
-        .into_iter()
-        .map(|(owner, fact)| {
-            fact.into_complete()
-                .map(|fact| (owner, fact))
-                .map_err(|_| FinalSemanticAnalysisError::UnsealedPreparedC2Owner)
-        })
-        .collect()
 }
 
 fn project_generation_modules(

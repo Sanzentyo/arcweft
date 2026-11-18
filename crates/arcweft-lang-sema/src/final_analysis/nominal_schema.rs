@@ -52,6 +52,7 @@ use arcweft_lang_hir::{
 use arcweft_lang_syntax::ast::module_path::ModuleSegment;
 
 use super::report::{FinalSemanticAnalysisDraft, FinalSemanticAnalysisPostEntryDraft};
+use super::type_seal::{PublicationSourceTypes, PublicationTypeEffects, PublicationTypes};
 use crate::{
     final_analysis::{
         CheckedExpression, CheckedExpressionRecordField, CheckedExpressionResolution,
@@ -466,32 +467,54 @@ impl NominalProjectionRequestSet {
         view: crate::types::ScopedTypeView<'_>,
         nominal: &crate::types::ProjectNominalType,
     ) -> Result<(), NominalSchemaProjectionError> {
-        let declaration = symbols.nominal(nominal.declaration()).ok_or_else(|| {
-            NominalSchemaProjectionError::MissingDeclaration {
-                nominal: nominal.declaration().qualified_name(),
-            }
-        })?;
-        if declaration.type_parameters().len() != nominal.arguments().len() {
-            return Err(NominalSchemaProjectionError::WrongArity {
-                nominal: nominal.declaration().qualified_name(),
-                expected: declaration.type_parameters().len(),
-                actual: nominal.arguments().len(),
-            });
-        }
-        let (identity, scope) = match view.value().semantic_identity_digest() {
-            Ok(identity) => (identity, crate::types::GenericScope::default()),
-            Err(_) => (view.semantic_identity_digest()?, view.scope().clone()),
-        };
-        self.insert_checked(
-            &CheckedProjectNominal::new(
-                nominal.declaration().clone(),
-                declaration.owner(),
-                identity,
-                nominal.arguments().to_vec(),
-            )
-            .with_scope(scope),
-        )
+        self.insert_checked(&checked_project_nominal(symbols, view, nominal)?)
     }
+}
+
+fn checked_project_nominal(
+    symbols: &ProjectSymbolTable,
+    view: crate::types::ScopedTypeView<'_>,
+    nominal: &crate::types::ProjectNominalType,
+) -> Result<CheckedProjectNominal, NominalSchemaProjectionError> {
+    let declaration = symbols.nominal(nominal.declaration()).ok_or_else(|| {
+        NominalSchemaProjectionError::MissingDeclaration {
+            nominal: nominal.declaration().qualified_name(),
+        }
+    })?;
+    if declaration.type_parameters().len() != nominal.arguments().len() {
+        return Err(NominalSchemaProjectionError::WrongArity {
+            nominal: nominal.declaration().qualified_name(),
+            expected: declaration.type_parameters().len(),
+            actual: nominal.arguments().len(),
+        });
+    }
+    let (identity, scope) = match view.value().semantic_identity_digest() {
+        Ok(identity) => (identity, crate::types::GenericScope::default()),
+        Err(_) => (view.semantic_identity_digest()?, view.scope().clone()),
+    };
+    Ok(CheckedProjectNominal::new(
+        nominal.declaration().clone(),
+        declaration.owner(),
+        identity,
+        nominal.arguments().to_vec(),
+    )
+    .with_scope(scope))
+}
+
+fn seal_project_nominal(
+    prepared: &super::prepared::PreparedProjectNominal,
+    symbols: &ProjectSymbolTable,
+    source: &mut PublicationSourceTypes<'_, '_>,
+) -> Result<CheckedProjectNominal, FinalSemanticAnalysisError> {
+    let ty = source.canonical(prepared.ty())?;
+    let TypeKind::ProjectNominal(nominal) = &ty else {
+        return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
+    };
+    Ok(checked_project_nominal(
+        symbols,
+        source.scope().type_view(&ty),
+        nominal,
+    )?)
 }
 
 impl RuntimeNominalProjectionRequestInventory {
@@ -535,7 +558,8 @@ impl RuntimeNominalProjectionRequestInventory {
         draft: &FinalSemanticAnalysisDraft,
         symbols: &ProjectSymbolTable,
         type_roots: &HirExpressionTypeRootProjection,
-    ) -> Result<Self, NominalSchemaProjectionError> {
+        types: &mut PublicationTypes<'_, '_>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
         let mut inventory = Self::default();
         for (owner, ty) in &draft.types {
             if !type_roots.is_non_runtime(*owner) {
@@ -550,16 +574,36 @@ impl RuntimeNominalProjectionRequestInventory {
         for binding in draft.locals.values().chain(draft.captures.values()) {
             binding.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
         }
-        for fact in draft.expressions.values() {
+        for (owner, fact) in &draft.expressions {
             if let Some(ty) = fact.runtime_value_type() {
-                inventory.visit_type(symbols, ty)?;
+                let mut source = types.source(*owner)?;
+                let ty = source.canonical(ty)?;
+                let ty = &ty;
+                inventory.visit_scoped_type(symbols, source.scope().type_view(ty))?;
+                inventory.requests.include_declaration_expressions(
+                    symbols,
+                    &draft.checked_callables,
+                    draft.selected_expressions.topology(),
+                    [(*owner, ty)],
+                )?;
             }
         }
-        for fact in draft.patterns.values() {
-            fact.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        for (owner, fact) in &draft.patterns {
+            let mut source = types.source(*owner)?;
+            fact.visit_types(&mut |ty| {
+                let ty = source.canonical(ty)?;
+                inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
+                Ok::<_, FinalSemanticAnalysisError>(())
+            })?;
         }
-        for statement in draft.statements.values() {
-            statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        for (owner, statement) in &draft.statements {
+            statement.visit_canonical_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+            statement.visit_prepared_types(&mut |ty| {
+                let mut source = types.source(*owner)?;
+                let ty = source.canonical(ty)?;
+                inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
+                Ok::<_, FinalSemanticAnalysisError>(())
+            })?;
         }
         for item in draft.items.values() {
             item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
@@ -567,15 +611,6 @@ impl RuntimeNominalProjectionRequestInventory {
         draft
             .checked_callables
             .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))?;
-        inventory.requests.include_declaration_expressions(
-            symbols,
-            &draft.checked_callables,
-            draft.selected_expressions.topology(),
-            draft
-                .expressions
-                .iter()
-                .filter_map(|(owner, fact)| fact.runtime_value_type().map(|ty| (*owner, ty))),
-        )?;
         Ok(inventory)
     }
 
@@ -586,7 +621,8 @@ impl RuntimeNominalProjectionRequestInventory {
         draft: &FinalSemanticAnalysisPostEntryDraft,
         symbols: &ProjectSymbolTable,
         type_roots: &HirExpressionTypeRootProjection,
-    ) -> Result<Self, NominalSchemaProjectionError> {
+        types: &mut PublicationTypes<'_, '_>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
         let mut inventory = Self::default();
         for (owner, ty) in &draft.types {
             if !type_roots.is_non_runtime(*owner) {
@@ -601,16 +637,33 @@ impl RuntimeNominalProjectionRequestInventory {
         for binding in draft.locals.values().chain(draft.captures.values()) {
             binding.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
         }
-        for fact in draft.expressions.values() {
+        for (owner, fact) in &draft.expressions {
             if let Some(ty) = fact.runtime_value_type() {
-                inventory.visit_type(symbols, ty)?;
+                let source = types.source(*owner)?;
+                inventory.visit_scoped_type(symbols, source.scope().type_view(ty))?;
+                inventory.requests.include_declaration_expressions(
+                    symbols,
+                    &draft.checked_callables,
+                    draft.selected_expressions.topology(),
+                    [(*owner, ty)],
+                )?;
             }
         }
-        for fact in draft.patterns.values() {
-            fact.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        for (owner, fact) in &draft.patterns {
+            let source = types.source(*owner)?;
+            fact.visit_types(&mut |ty| {
+                inventory.visit_scoped_type(symbols, source.scope().type_view(ty))?;
+                Ok::<_, FinalSemanticAnalysisError>(())
+            })?;
         }
-        for statement in draft.statements.values() {
-            statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        for (owner, statement) in &draft.statements {
+            statement.visit_canonical_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+            statement.visit_prepared_types(&mut |ty| {
+                let mut source = types.source(*owner)?;
+                let ty = source.canonical(ty)?;
+                inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
+                Ok::<_, FinalSemanticAnalysisError>(())
+            })?;
         }
         for item in draft.items.values() {
             item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
@@ -618,15 +671,6 @@ impl RuntimeNominalProjectionRequestInventory {
         draft
             .checked_callables
             .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))?;
-        inventory.requests.include_declaration_expressions(
-            symbols,
-            &draft.checked_callables,
-            draft.selected_expressions.topology(),
-            draft
-                .expressions
-                .iter()
-                .filter_map(|(owner, fact)| fact.runtime_value_type().map(|ty| (*owner, ty))),
-        )?;
         Ok(inventory)
     }
 }
@@ -723,18 +767,20 @@ impl SemanticNominalRequestInventory {
     fn from_prepared(
         draft: &FinalSemanticAnalysisDraft,
         symbols: &ProjectSymbolTable,
-    ) -> Result<Self, NominalSchemaProjectionError> {
+        types: &mut PublicationTypes<'_, '_>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
         let mut inventory = Self::default();
-        collect_prepared_semantic_nominals(draft, symbols, &mut inventory)?;
+        collect_prepared_semantic_nominals(draft, symbols, &mut inventory, types)?;
         Ok(inventory)
     }
 
     fn from_post_entry(
         draft: &FinalSemanticAnalysisPostEntryDraft,
         symbols: &ProjectSymbolTable,
-    ) -> Result<Self, NominalSchemaProjectionError> {
+        types: &mut PublicationTypes<'_, '_>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
         let mut inventory = Self::default();
-        collect_post_entry_semantic_nominals(draft, symbols, &mut inventory)?;
+        collect_post_entry_semantic_nominals(draft, symbols, &mut inventory, types)?;
         Ok(inventory)
     }
 }
@@ -743,7 +789,8 @@ fn collect_prepared_semantic_nominals(
     draft: &FinalSemanticAnalysisDraft,
     symbols: &ProjectSymbolTable,
     inventory: &mut SemanticNominalRequestInventory,
-) -> Result<(), NominalSchemaProjectionError> {
+    types: &mut PublicationTypes<'_, '_>,
+) -> Result<(), FinalSemanticAnalysisError> {
     for ty in draft.types.values() {
         inventory.visit_type(symbols, ty)?;
     }
@@ -753,14 +800,55 @@ fn collect_prepared_semantic_nominals(
     for binding in draft.locals.values().chain(draft.captures.values()) {
         binding.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
     }
-    for fact in draft.expressions.values() {
-        fact.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+    for (owner, fact) in &draft.expressions {
+        let mut source = types.source(*owner)?;
+        fact.visit_types(&mut |ty| {
+            let ty = source.canonical(ty)?;
+            inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
+            Ok::<_, FinalSemanticAnalysisError>(())
+        })?;
+        fact.visit_canonical_types(&mut |ty| {
+            inventory.visit_scoped_type(symbols, source.scope().type_view(ty))
+        })?;
+        if let Some(ty) = fact.runtime_value_type() {
+            let ty = source.canonical(ty)?;
+            inventory.requests.include_declaration_expressions(
+                symbols,
+                &draft.checked_callables,
+                draft.selected_expressions.topology(),
+                [(*owner, &ty)],
+            )?;
+        }
     }
-    for fact in draft.patterns.values() {
-        fact.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+    for (owner, fact) in &draft.patterns {
+        let mut source = types.source(*owner)?;
+        match fact {
+            PreparedPatternFact::Resolved(value) => value.resolution().visit_types(&mut |ty| {
+                inventory.visit_scoped_type(symbols, source.scope().type_view(ty))
+            })?,
+            PreparedPatternFact::TypedBinding(value) => {
+                let checked = value.seal(&draft.types, &mut source)?;
+                checked.visit_types(&mut |ty| {
+                    inventory.visit_scoped_type(symbols, source.scope().type_view(ty))
+                })?;
+                continue;
+            }
+            PreparedPatternFact::Record(_) | PreparedPatternFact::Variant(_) => {}
+        }
+        fact.visit_types(&mut |ty| {
+            let ty = source.canonical(ty)?;
+            inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
+            Ok::<_, FinalSemanticAnalysisError>(())
+        })?;
     }
-    for statement in draft.statements.values() {
-        statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+    for (owner, statement) in &draft.statements {
+        statement.visit_canonical_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        statement.visit_prepared_types(&mut |ty| {
+            let mut source = types.source(*owner)?;
+            let ty = source.canonical(ty)?;
+            inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
+            Ok::<_, FinalSemanticAnalysisError>(())
+        })?;
     }
     for item in draft.items.values() {
         item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
@@ -780,22 +868,15 @@ fn collect_prepared_semantic_nominals(
     draft
         .checked_callables
         .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))?;
-    inventory.requests.include_declaration_expressions(
-        symbols,
-        &draft.checked_callables,
-        draft.selected_expressions.topology(),
-        draft
-            .expressions
-            .iter()
-            .filter_map(|(owner, fact)| fact.runtime_value_type().map(|ty| (*owner, ty))),
-    )
+    Ok(())
 }
 
 fn collect_post_entry_semantic_nominals(
     draft: &FinalSemanticAnalysisPostEntryDraft,
     symbols: &ProjectSymbolTable,
     inventory: &mut SemanticNominalRequestInventory,
-) -> Result<(), NominalSchemaProjectionError> {
+    types: &mut PublicationTypes<'_, '_>,
+) -> Result<(), FinalSemanticAnalysisError> {
     for ty in draft.types.values() {
         inventory.visit_type(symbols, ty)?;
     }
@@ -805,14 +886,36 @@ fn collect_post_entry_semantic_nominals(
     for binding in draft.locals.values().chain(draft.captures.values()) {
         binding.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
     }
-    for fact in draft.expressions.values() {
-        fact.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+    for (owner, fact) in &draft.expressions {
+        let source = types.source(*owner)?;
+        fact.visit_types(&mut |ty| {
+            inventory.visit_scoped_type(symbols, source.scope().type_view(ty))?;
+            Ok::<_, FinalSemanticAnalysisError>(())
+        })?;
+        if let Some(ty) = fact.runtime_value_type() {
+            inventory.requests.include_declaration_expressions(
+                symbols,
+                &draft.checked_callables,
+                draft.selected_expressions.topology(),
+                [(*owner, ty)],
+            )?;
+        }
     }
-    for fact in draft.patterns.values() {
-        fact.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+    for (owner, fact) in &draft.patterns {
+        let source = types.source(*owner)?;
+        fact.visit_types(&mut |ty| {
+            inventory.visit_scoped_type(symbols, source.scope().type_view(ty))?;
+            Ok::<_, FinalSemanticAnalysisError>(())
+        })?;
     }
-    for statement in draft.statements.values() {
-        statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+    for (owner, statement) in &draft.statements {
+        statement.visit_canonical_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        statement.visit_prepared_types(&mut |ty| {
+            let mut source = types.source(*owner)?;
+            let ty = source.canonical(ty)?;
+            inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
+            Ok::<_, FinalSemanticAnalysisError>(())
+        })?;
     }
     for item in draft.items.values() {
         item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
@@ -832,15 +935,7 @@ fn collect_post_entry_semantic_nominals(
     draft
         .checked_callables
         .visit_parameter_contracts(&mut |ty| inventory.visit_type(symbols, ty))?;
-    inventory.requests.include_declaration_expressions(
-        symbols,
-        &draft.checked_callables,
-        draft.selected_expressions.topology(),
-        draft
-            .expressions
-            .iter()
-            .filter_map(|(owner, fact)| fact.runtime_value_type().map(|ty| (*owner, ty))),
-    )
+    Ok(())
 }
 
 /// Immutable complete runtime-nominal catalog published by final analysis.
@@ -1407,11 +1502,16 @@ pub(super) fn seal_nominal_draft(
     semantic_shapes: super::AcceptedSemanticShapeCatalog,
     authority: super::report::FinalSemanticAnalysisAuthority,
     control: FinalSemanticAnalysisControl<'_>,
+    type_effects: PublicationTypeEffects<'_, '_>,
 ) -> Result<FinalSemanticAnalysis, FinalSemanticProjectError> {
+    let callables = Arc::clone(&draft.checked_callables);
+    let topology = Arc::clone(draft.selected_expressions.topology());
+    let mut types = PublicationTypes::new(&callables, &topology, type_effects);
     let type_roots = project
         .type_root_projection()
         .map_err(NominalSchemaProjectionError::TypeRootProjection)?;
-    let mut semantic_inventory = SemanticNominalRequestInventory::from_prepared(&draft, symbols)?;
+    let mut semantic_inventory =
+        SemanticNominalRequestInventory::from_prepared(&draft, symbols, &mut types)?;
     semantic_inventory.include_projected_semantic_types(
         &type_roots,
         &draft.types,
@@ -1425,8 +1525,12 @@ pub(super) fn seal_nominal_draft(
         &draft.types,
         control,
     )?;
-    let runtime_inventory =
-        RuntimeNominalProjectionRequestInventory::from_prepared(&draft, symbols, &type_roots)?;
+    let runtime_inventory = RuntimeNominalProjectionRequestInventory::from_prepared(
+        &draft,
+        symbols,
+        &type_roots,
+        &mut types,
+    )?;
     let mut parts = draft.into_parts();
     let context = RuntimeNominalProjectionContext::new(
         match &authority {
@@ -1455,21 +1559,33 @@ pub(super) fn seal_nominal_draft(
             &seal,
             &coordinates,
             &parts.structural_edges,
+            symbols,
+            &mut types,
         )?
     };
     let mut record_fields = BTreeMap::new();
-    parts.expressions = prepared_expressions
-        .into_iter()
-        .map(|(owner, fact)| {
-            let sealed_record = sealed_record_expressions.remove(&owner);
-            let (fact, fields) =
-                seal_prepared_expression(owner, fact, &seal, &project_nominals, sealed_record)?;
-            if let Some(fields) = fields {
-                record_fields.insert(owner, fields);
-            }
-            Ok((owner, fact))
-        })
-        .collect::<Result<_, FinalSemanticAnalysisError>>()?;
+    let mut entries = BTreeMap::new();
+    let mut expressions = BTreeMap::new();
+    for (owner, fact) in prepared_expressions {
+        if let PreparedExpressionFact::Entry(entry) = fact {
+            entries.insert(owner, entry);
+            continue;
+        }
+        let sealed_record = sealed_record_expressions.remove(&owner);
+        let (fact, fields) = seal_prepared_expression(
+            owner,
+            fact,
+            &seal,
+            &project_nominals,
+            sealed_record,
+            symbols,
+            &mut types.source(owner)?,
+        )?;
+        if let Some(fields) = fields {
+            record_fields.insert(owner, fields);
+        }
+        expressions.insert(owner, fact);
+    }
     if !sealed_record_expressions.is_empty() {
         return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
     }
@@ -1481,9 +1597,16 @@ pub(super) fn seal_nominal_draft(
     let mut sealed_record_patterns = {
         let coordinates =
             SemanticCoordinateIndex::new(parts.accepted_roots.as_ref(), &parts.structural_edges);
-        preseal_record_patterns(&prepared_patterns, &parts.locals, &seal, &coordinates)?
+        preseal_record_patterns(
+            &prepared_patterns,
+            &parts.locals,
+            &seal,
+            &coordinates,
+            symbols,
+            &mut types,
+        )?
     };
-    parts.patterns = prepared_patterns
+    let patterns = prepared_patterns
         .into_iter()
         .map(|(owner, fact)| {
             seal_prepared_pattern(
@@ -1491,6 +1614,8 @@ pub(super) fn seal_nominal_draft(
                 fact,
                 &project_nominals,
                 sealed_record_patterns.remove(&owner),
+                &parts.types,
+                &mut types.source(owner)?,
             )
             .map(|fact| (owner, fact))
         })
@@ -1498,7 +1623,7 @@ pub(super) fn seal_nominal_draft(
     if !sealed_record_patterns.is_empty() {
         return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
     }
-    let (entry_ingress, mut draft) = parts.into_post_entry();
+    let (entry_ingress, mut draft) = parts.into_post_entry(expressions, patterns)?;
     let checked_entries = {
         let authority = crate::entry::PreparedEntrySemanticAuthority::new(
             &draft.types,
@@ -1510,13 +1635,17 @@ pub(super) fn seal_nominal_draft(
         crate::entry::check_prepared_project_entries(project, symbols, &authority, entry_ingress)
             .map_err(|diagnostics| FinalSemanticProjectError::Entry(diagnostics.into()))?
     };
-    draft.expressions = draft
-        .expressions
-        .into_iter()
-        .map(|(owner, fact)| {
-            seal_prepared_entry_expression(fact, &checked_entries).map(|fact| (owner, fact))
-        })
-        .collect::<Result<_, _>>()?;
+    for (owner, entry) in entries {
+        let checked = seal_prepared_entry_expression(
+            owner,
+            *entry,
+            &checked_entries,
+            &mut types.source(owner)?,
+        )?;
+        if draft.expressions.insert(owner, checked).is_some() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
+        }
+    }
     let prepared_expressions = std::mem::take(&mut draft.expressions);
     draft.expressions = super::execution_plan::seal(
         prepared_expressions,
@@ -1524,10 +1653,14 @@ pub(super) fn seal_nominal_draft(
         &draft.statements,
         draft.selected_expressions.dialogue_lines(),
     )?;
-    let final_runtime_inventory =
-        RuntimeNominalProjectionRequestInventory::from_post_entry(&draft, symbols, &type_roots)?;
+    let final_runtime_inventory = RuntimeNominalProjectionRequestInventory::from_post_entry(
+        &draft,
+        symbols,
+        &type_roots,
+        &mut types,
+    )?;
     let mut final_semantic_inventory =
-        SemanticNominalRequestInventory::from_post_entry(&draft, symbols)?;
+        SemanticNominalRequestInventory::from_post_entry(&draft, symbols, &mut types)?;
     final_semantic_inventory.include_projected_semantic_types(
         &type_roots,
         &draft.types,
@@ -1552,12 +1685,11 @@ pub(super) fn seal_nominal_draft(
 }
 
 fn seal_prepared_entry_expression(
-    fact: PreparedExpressionFact,
+    owner: arcweft_lang_hir::identity::ExprId,
+    prepared: super::prepared::PreparedEntryExpression,
     checked_entries: &crate::entry::CheckedEntryCatalog,
-) -> Result<PreparedExpressionFact, FinalSemanticAnalysisError> {
-    let PreparedExpressionFact::Entry(prepared) = fact else {
-        return Ok(fact);
-    };
+    types: &mut PublicationSourceTypes<'_, '_>,
+) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
     let (reference, shell, value_type) = prepared.into_parts();
     let binding = checked_entries
         .get_public(reference.diagnostic_public_id())
@@ -1565,21 +1697,18 @@ fn seal_prepared_entry_expression(
     let reference =
         crate::final_analysis::CheckedEntryReference::seal(reference, value_type, binding)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-    let (value, effects) = shell
-        .into_value_parts()
-        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+    let (value, effects) = shell.seal_value(owner, types)?;
     Ok(CheckedExpression::typed_value(
         value,
         effects,
         CheckedExpressionResolution::Value(crate::final_analysis::CheckedValueResolution::Entry(
             reference,
         )),
-    )
-    .into())
+    ))
 }
 
 struct SealedProjectRecordExpression {
-    nominal: SemanticTypeDigest,
+    nominal: CheckedProjectNominal,
     fields: Box<[CheckedExpressionRecordField]>,
 }
 
@@ -1589,6 +1718,8 @@ fn preseal_project_record_expressions(
     context: &RuntimeNominalProjectionSeal,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
     structural_edges: &super::match_edges::CheckedStructuralEdgeDraft,
+    symbols: &ProjectSymbolTable,
+    types: &mut PublicationTypes<'_, '_>,
 ) -> Result<
     BTreeMap<arcweft_lang_hir::identity::ExprId, SealedProjectRecordExpression>,
     FinalSemanticAnalysisError,
@@ -1596,31 +1727,24 @@ fn preseal_project_record_expressions(
     expressions
         .iter()
         .filter_map(|(owner, fact)| {
-            let fact = fact.implicit_body_expression().unwrap_or(fact);
-            let PreparedExpressionFact::ProjectRecord(prepared) = fact else {
-                return None;
-            };
+            let prepared = fact.project_record_body()?;
             Some((|| {
+                let nominal =
+                    seal_project_nominal(prepared.nominal(), symbols, &mut types.source(*owner)?)?;
                 let generics = crate::types::StableGenericReferenceUseCollector::collect_in_scope(
-                    &prepared.nominal().ty(),
-                    &crate::types::GenericScope::default(),
+                    &nominal.ty(),
+                    nominal.scope(),
                 )
                 .map_err(NominalSchemaProjectionError::from)?;
                 let projection = if generics.types().is_empty() && generics.consts().is_empty() {
-                    Some(context.get_cached(prepared.nominal())?)
+                    Some(context.get_cached(&nominal)?)
                 } else {
                     None
                 };
                 if projection.is_some_and(|projection| {
                     projection.kind() != RuntimeProjectNominalKind::Record
                         || projection.record_fields().len() != prepared.fields().len()
-                }) || prepared
-                    .shell()
-                    .value_type()
-                    .map(TypeKind::semantic_identity_digest)
-                    .transpose()?
-                    != Some(prepared.nominal().identity())
-                {
+                }) {
                     return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
                 }
                 let mut fields = Vec::with_capacity(prepared.fields().len());
@@ -1630,7 +1754,9 @@ fn preseal_project_record_expressions(
                     if field.source_ordinal() != expected_source_ordinal {
                         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                     }
-                    let field_type_digest = field.field_type().semantic_identity_digest()?;
+                    let mut source_types = types.source(*owner)?;
+                    let field_type = source_types.canonical(field.field_type())?;
+                    let field_type_digest = source_types.digest(&field_type)?;
                     let runtime_field = RuntimeRecordFieldId::try_from_zero_based_ordinal(
                         usize::try_from(field.declaration_ordinal())
                             .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?,
@@ -1651,7 +1777,7 @@ fn preseal_project_record_expressions(
                                 .get(&source)
                                 .and_then(PreparedExpressionFact::value_type)
                                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                            if source_type.semantic_identity_digest()? != field_type_digest {
+                            if types.source(source)?.canonical(source_type)? != field_type {
                                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                             }
                             CheckedRecordValueSource::Expression(
@@ -1666,7 +1792,7 @@ fn preseal_project_record_expressions(
                             let checked = locals
                                 .get(&source)
                                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                            if checked.ty().semantic_identity_digest()? != field_type_digest {
+                            if checked.ty() != &field_type {
                                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                             }
                             CheckedRecordValueSource::Binding(
@@ -1684,6 +1810,14 @@ fn preseal_project_record_expressions(
                     if slot.declaration_ordinal() != field.declaration_ordinal()
                         || slot.field_type() != field_type_digest
                         || slot.source() != field.source()
+                        || slot.semantic_id()
+                            != CheckedRecordFieldSemanticId::Project(
+                                AcceptedRecordFieldSemanticId::issue(
+                                    nominal.identity(),
+                                    field.declaration_ordinal(),
+                                    field_type_digest,
+                                ),
+                            )
                     {
                         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                     }
@@ -1695,7 +1829,7 @@ fn preseal_project_record_expressions(
                 Ok((
                     *owner,
                     SealedProjectRecordExpression {
-                        nominal: prepared.nominal().identity(),
+                        nominal,
                         fields: fields.into_boxed_slice(),
                     },
                 ))
@@ -1710,9 +1844,11 @@ fn seal_prepared_expression(
     context: &RuntimeNominalProjectionSeal,
     project_nominals: &super::nominal_semantic::ProjectNominalSemanticCatalog,
     sealed_record: Option<SealedProjectRecordExpression>,
+    symbols: &ProjectSymbolTable,
+    types: &mut PublicationSourceTypes<'_, '_>,
 ) -> Result<
     (
-        PreparedExpressionFact,
+        CheckedExpression,
         Option<Box<[CheckedExpressionRecordField]>>,
     ),
     FinalSemanticAnalysisError,
@@ -1737,16 +1873,13 @@ fn seal_prepared_expression(
                 context,
                 project_nominals,
                 sealed_record,
+                symbols,
+                types,
             )?;
-            let body = body
-                .into_complete()
-                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             let callable = Arc::unwrap_or_clone(identity)
                 .finalize(super::CheckedImplicitCallableBody::Plain(body))?;
-            let (value, effects) = shell
-                .into_value_parts()
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if value.source_type().semantic_identity_digest()? != callable.function_type() {
+            let (value, effects) = shell.seal_value(owner, types)?;
+            if types.digest(value.source_type())? != callable.function_type() {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
             Ok((
@@ -1754,8 +1887,7 @@ fn seal_prepared_expression(
                     value,
                     effects,
                     CheckedExpressionResolution::ImplicitCallable(Box::new(callable)),
-                )
-                .into(),
+                ),
                 fields,
             ))
         }
@@ -1767,30 +1899,40 @@ fn seal_prepared_expression(
                 context,
                 project_nominals,
                 sealed_record,
+                symbols,
+                types,
             )?;
             if record_fields.is_some() {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            let prepared =
-                super::PreparedCompileTimeScalarExpression::try_new(shell, scalar, original)
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            Ok((PreparedExpressionFact::from(prepared), None))
+            let (value, effects) = shell.seal_value(owner, types)?;
+            let resolution = CheckedExpressionResolution::CompileTimeScalar(
+                super::model::CheckedCompileTimeScalarExpression::new(
+                    scalar,
+                    original.into_resolution(),
+                ),
+            );
+            Ok((
+                CheckedExpression::typed_value(value, effects, resolution),
+                None,
+            ))
         }
         PreparedExpressionFact::Variant(prepared) => {
-            let (shell, owner, selected_ordinal) = prepared.into_parts();
-            let owner = seal_variant_owner(owner, project_nominals)?;
-            let resolution = CheckedVariantResolution::try_new(owner, selected_ordinal)
+            let (shell, variant, selected_ordinal) = prepared.into_parts();
+            let variant = variant.try_map_types(&mut |ty| types.canonical(ty))?;
+            let (value, effects) = shell.seal_value(owner, types)?;
+            if value.source_type() != &variant.ty() {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            let variant = seal_variant_owner(variant, project_nominals)?;
+            let resolution = CheckedVariantResolution::try_new(variant, selected_ordinal)
                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-            let (value, effects) = shell
-                .into_value_parts()
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             Ok((
                 CheckedExpression::typed_value(
                     value,
                     effects,
                     CheckedExpressionResolution::Variant(resolution),
-                )
-                .into(),
+                ),
                 None,
             ))
         }
@@ -1799,10 +1941,9 @@ fn seal_prepared_expression(
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
             let (shell, nominal) = prepared.into_parts();
+            let nominal = seal_project_nominal(&nominal, symbols, types)?;
             let type_value = project_nominals.issue_type_value(&nominal)?;
-            let (value, effects) = shell
-                .into_value_parts()
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            let (value, effects) = shell.seal_value(owner, types)?;
             if value.type_selection() != CheckedTypeSelection::Expected
                 || !effects.is_empty()
                 || value.source_type() != &type_value.ty()
@@ -1815,8 +1956,7 @@ fn seal_prepared_expression(
                     value,
                     effects,
                     CheckedExpressionResolution::TypeValue(type_value),
-                )
-                .into(),
+                ),
                 None,
             ))
         }
@@ -1826,11 +1966,7 @@ fn seal_prepared_expression(
             }
             let (shell, receiver, fields) = prepared.into_parts();
             let mut selections = Vec::with_capacity(fields.len());
-            let last_type = fields
-                .last()
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
-                .field_type
-                .clone();
+            let mut last_type = None;
             for field in fields {
                 let super::prepared::PreparedProjectFieldSelection {
                     nominal,
@@ -1838,7 +1974,9 @@ fn seal_prepared_expression(
                     field_type,
                     diagnostic_name,
                 } = field;
-                let field_type_digest = field_type.semantic_identity_digest()?;
+                let nominal = seal_project_nominal(&nominal, symbols, types)?;
+                let field_type = types.canonical(&field_type)?;
+                let field_type_digest = types.digest(&field_type)?;
                 let semantic_field = project_nominals
                     .get(nominal.identity())
                     .filter(|definition| definition.nominal() == &nominal)
@@ -1862,7 +2000,7 @@ fn seal_prepared_expression(
                 .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?;
                 let generics = crate::types::StableGenericReferenceUseCollector::collect_in_scope(
                     &nominal.ty(),
-                    &crate::types::GenericScope::default(),
+                    nominal.scope(),
                 )
                 .map_err(NominalSchemaProjectionError::from)?;
                 if generics.types().is_empty() && generics.consts().is_empty() {
@@ -1892,11 +2030,10 @@ fn seal_prepared_expression(
                 )
                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
                 selections.push(selection);
+                last_type = Some(field_type);
             }
-            let (value, effects) = shell
-                .into_value_parts()
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if value.source_type() != &last_type {
+            let (value, effects) = shell.seal_value(owner, types)?;
+            if last_type.as_ref() != Some(value.source_type()) {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
             let access = match receiver {
@@ -1928,34 +2065,30 @@ fn seal_prepared_expression(
                     crate::final_analysis::CheckedSelectResolution::Field(access),
                 ),
             );
-            Ok((checked.into(), None))
+            Ok((checked, None))
         }
         PreparedExpressionFact::ProjectRecord(prepared) => {
-            let (shell, nominal, prepared_fields) = prepared.into_parts();
+            let (shell, _, prepared_fields) = prepared.into_parts();
             let sealed_record = sealed_record
-                .filter(|sealed| {
-                    sealed.nominal == nominal.identity()
-                        && sealed.fields.len() == prepared_fields.len()
-                })
+                .filter(|sealed| sealed.fields.len() == prepared_fields.len())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            let (value, effects) = shell
-                .into_value_parts()
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if value.source_type().semantic_identity_digest()? != nominal.identity() {
+            let (value, effects) = shell.seal_value(owner, types)?;
+            if value.source_type() != &sealed_record.nominal.ty() {
                 return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
             }
             Ok((
                 CheckedExpression::typed_value(
                     value,
                     effects,
-                    CheckedExpressionResolution::Nominal(nominal),
-                )
-                .into(),
+                    CheckedExpressionResolution::Nominal(sealed_record.nominal),
+                ),
                 Some(sealed_record.fields),
             ))
         }
-        fact if sealed_record.is_none() => Ok((fact, None)),
-        _ => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+        PreparedExpressionFact::Resolved(prepared) if sealed_record.is_none() => {
+            Ok((prepared.seal(owner, types)?, None))
+        }
+        _ => Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner),
     }
 }
 
@@ -1964,13 +2097,13 @@ struct SealedRecordPatternField {
     declaration_ordinal: u32,
     runtime_field: Option<RuntimeRecordFieldId>,
     semantic_id: CheckedRecordFieldSemanticId,
-    field_type: SemanticTypeDigest,
+    ty: TypeKind,
     source: CheckedRecordPatternSource,
 }
 
 enum SealedRecordPatternOwner {
     Project {
-        nominal: SemanticTypeDigest,
+        nominal: CheckedProjectNominal,
         layout: TypeLayoutHash,
         field_count: u32,
     },
@@ -1994,6 +2127,8 @@ fn preseal_record_patterns(
     locals: &BTreeMap<arcweft_lang_hir::identity::LocalId, super::CheckedBinding>,
     context: &RuntimeNominalProjectionSeal,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
+    symbols: &ProjectSymbolTable,
+    types: &mut PublicationTypes<'_, '_>,
 ) -> Result<
     BTreeMap<arcweft_lang_hir::identity::PatternId, SealedRecordPattern>,
     FinalSemanticAnalysisError,
@@ -2005,18 +2140,17 @@ fn preseal_record_patterns(
                 return None;
             };
             Some((|| {
-                if prepared.ty().semantic_identity_digest()? != prepared.owner().semantic_type()? {
-                    return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
-                }
                 let (sealed_owner, projection) = match prepared.owner() {
                     PreparedRecordPatternOwner::Project(nominal) => {
-                        let projection = context.get_cached(nominal)?;
+                        let nominal =
+                            seal_project_nominal(nominal, symbols, &mut types.source(*owner)?)?;
+                        let projection = context.get_cached(&nominal)?;
                         if projection.kind() != RuntimeProjectNominalKind::Record {
                             return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
                         }
                         (
                             SealedRecordPatternOwner::Project {
-                                nominal: nominal.identity(),
+                                nominal,
                                 layout: projection.layout(),
                                 field_count: u32::try_from(projection.record_fields().len())
                                     .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
@@ -2034,6 +2168,12 @@ fn preseal_record_patterns(
                         payload,
                         field_count,
                     } => {
+                        let mut source = types.source(*owner)?;
+                        let payload_type = TypeKind::VariantPayload(Box::new(payload.clone()));
+                        let TypeKind::VariantPayload(payload) = source.canonical(&payload_type)?
+                        else {
+                            return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
+                        };
                         let fields = payload
                             .shape()
                             .record_fields()
@@ -2054,7 +2194,9 @@ fn preseal_record_patterns(
                 };
                 let mut fields = Vec::with_capacity(prepared.fields().len());
                 for field in prepared.fields() {
-                    let field_type = field.field_type().semantic_identity_digest()?;
+                    let mut source_types = types.source(*owner)?;
+                    let ty = source_types.canonical(field.field_type())?;
+                    let field_type = source_types.digest(&ty)?;
                     let declaration_ordinal = field.coordinate().declaration_ordinal();
                     let field_index = usize::try_from(declaration_ordinal)
                         .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
@@ -2068,7 +2210,7 @@ fn preseal_record_patterns(
                                 Some(projected.runtime_field()),
                                 CheckedRecordFieldSemanticId::Project(
                                     AcceptedRecordFieldSemanticId::issue(
-                                        *nominal,
+                                        nominal.identity(),
                                         declaration_ordinal,
                                         field_type,
                                     ),
@@ -2082,7 +2224,7 @@ fn preseal_record_patterns(
                                 .get(field_index)
                                 .filter(|expected| {
                                     expected.ordinal() == declaration_ordinal
-                                        && expected.ty() == field.field_type()
+                                        && expected.ty() == &ty
                                 })
                                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
                             (
@@ -2097,7 +2239,7 @@ fn preseal_record_patterns(
                                 .and_then(|fields| fields.get(field_index))
                                 .filter(|expected| {
                                     expected.ordinal() == declaration_ordinal
-                                        && expected.ty() == field.field_type()
+                                        && expected.ty() == &ty
                                 })
                                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
                             (
@@ -2114,7 +2256,7 @@ fn preseal_record_patterns(
                             let checked = patterns
                                 .get(&source)
                                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                            if checked.ty().semantic_identity_digest()? != field_type {
+                            if types.source(source)?.canonical(checked.ty())? != ty {
                                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                             }
                             CheckedRecordPatternSource::pattern(
@@ -2131,7 +2273,7 @@ fn preseal_record_patterns(
                             let checked = locals
                                 .get(&source)
                                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                            if checked.ty().semantic_identity_digest()? != field_type {
+                            if checked.ty() != &ty {
                                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                             }
                             CheckedRecordPatternSource::from_binding(
@@ -2148,7 +2290,7 @@ fn preseal_record_patterns(
                         declaration_ordinal,
                         runtime_field,
                         semantic_id,
-                        field_type,
+                        ty,
                         source,
                     });
                 }
@@ -2156,9 +2298,10 @@ fn preseal_record_patterns(
                     PreparedRecordPatternRest::Absent => CheckedRecordPatternRest::Absent,
                     PreparedRecordPatternRest::Ignore => CheckedRecordPatternRest::Ignore,
                     PreparedRecordPatternRest::Binding(source) => {
+                        let ty = types.source(*owner)?.canonical(prepared.ty())?;
                         locals
                             .get(&source)
-                            .filter(|binding| binding.ty() == prepared.ty())
+                            .filter(|binding| binding.ty() == &ty)
                             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                         CheckedRecordPatternRest::Binding(
                             CheckedRecordBindingSource::from_evidence(
@@ -2187,14 +2330,24 @@ fn seal_prepared_pattern(
     fact: PreparedPatternFact,
     project_nominals: &super::nominal_semantic::ProjectNominalSemanticCatalog,
     sealed_record: Option<SealedRecordPattern>,
-) -> Result<PreparedPatternFact, FinalSemanticAnalysisError> {
+    resolved_types: &BTreeMap<TypeId, TypeKind>,
+    types: &mut PublicationSourceTypes<'_, '_>,
+) -> Result<CheckedPattern, FinalSemanticAnalysisError> {
     match fact {
         PreparedPatternFact::Variant(prepared) => {
             let (ty, owner, selected_ordinal) = prepared.into_parts();
+            let ty = types.canonical(&ty)?;
+            let owner = owner.try_map_types(&mut |ty| types.canonical(ty))?;
+            if ty != owner.ty() {
+                return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
+            }
             let owner = seal_variant_owner(owner, project_nominals)?;
             let resolution = CheckedVariantResolution::try_new(owner, selected_ordinal)
                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-            Ok(CheckedPattern::new(ty, CheckedPatternResolution::Variant(resolution)).into())
+            Ok(CheckedPattern::new(
+                ty,
+                CheckedPatternResolution::Variant(resolution),
+            ))
         }
         PreparedPatternFact::Record(prepared) => {
             let (ty, prepared_owner, prepared_fields, prepared_rest) = prepared.into_parts();
@@ -2207,9 +2360,8 @@ fn seal_prepared_pattern(
                 .into_iter()
                 .zip(sealed_record.fields.into_vec())
             {
-                let (source_ordinal, identity, field_type, source) = field.into_parts();
+                let (source_ordinal, identity, _, source) = field.into_parts();
                 let declaration_ordinal = identity.declaration_ordinal();
-                let field_type_digest = field_type.semantic_identity_digest()?;
                 let source_matches = match source {
                     PreparedRecordPatternSource::Pattern(source) => {
                         sealed.source.raw_pattern() == Some(source)
@@ -2222,7 +2374,6 @@ fn seal_prepared_pattern(
                 if !source_matches
                     || source_ordinal != sealed.source_ordinal
                     || declaration_ordinal != sealed.declaration_ordinal
-                    || field_type_digest != sealed.field_type
                 {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
@@ -2231,21 +2382,19 @@ fn seal_prepared_pattern(
                     declaration_ordinal,
                     sealed.runtime_field,
                     sealed.semantic_id,
-                    field_type,
+                    sealed.ty,
                     sealed.source,
                 )?);
             }
             let owner = match (prepared_owner, sealed_record.owner) {
                 (
-                    PreparedRecordPatternOwner::Project(nominal),
+                    PreparedRecordPatternOwner::Project(_),
                     SealedRecordPatternOwner::Project {
-                        nominal: sealed_nominal,
+                        nominal,
                         layout,
                         field_count,
                     },
-                ) if nominal.identity() == sealed_nominal => {
-                    CheckedRecordPatternOwner::project(nominal, layout, field_count)
-                }
+                ) => CheckedRecordPatternOwner::project(nominal, layout, field_count),
                 (
                     PreparedRecordPatternOwner::Environment { record },
                     SealedRecordPatternOwner::Environment {
@@ -2254,20 +2403,21 @@ fn seal_prepared_pattern(
                 ) if record == sealed_record => CheckedRecordPatternOwner::environment(record),
                 (
                     PreparedRecordPatternOwner::VariantPayload {
-                        payload,
+                        payload: _,
                         field_count,
                     },
                     SealedRecordPatternOwner::VariantPayload {
                         payload: sealed_payload,
                         field_count: sealed_field_count,
                     },
-                ) if payload == sealed_payload.to_type() && field_count == sealed_field_count => {
+                ) if field_count == sealed_field_count => {
                     CheckedRecordPatternOwner::variant_payload(sealed_payload)
                         .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?
                 }
                 _ => return Err(FinalSemanticAnalysisError::InvalidNominalOwner),
             };
-            if ty.semantic_identity_digest()? != owner.semantic_type() {
+            let ty = types.canonical(&ty)?;
+            if types.digest(&ty)? != owner.semantic_type() {
                 return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
             }
             let rest_matches = match (&prepared_rest, &sealed_record.rest) {
@@ -2285,9 +2435,15 @@ fn seal_prepared_pattern(
             let record =
                 CheckedRecordPattern::try_new(owner, fields.into_boxed_slice(), sealed_record.rest)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            Ok(CheckedPattern::new(ty, CheckedPatternResolution::Record(record)).into())
+            Ok(CheckedPattern::new(
+                ty,
+                CheckedPatternResolution::Record(record),
+            ))
         }
-        fact if sealed_record.is_none() => Ok(fact),
+        PreparedPatternFact::TypedBinding(binding) if sealed_record.is_none() => {
+            binding.seal(resolved_types, types)
+        }
+        PreparedPatternFact::Resolved(pattern) if sealed_record.is_none() => pattern.seal(types),
         _ => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
     }
 }

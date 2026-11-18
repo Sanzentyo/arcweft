@@ -696,36 +696,6 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             })
             .flat_map(|parameter| parameter.locals().iter().copied())
             .collect::<BTreeSet<_>>();
-        for (owner, ty) in self.facts.locals() {
-            if !selected_expressions.contains_owner(SyntheticOwner::Local(*owner)) {
-                continue;
-            }
-            let role = if dialogue_view_parameters.contains(owner) {
-                CheckedBindingRole::DialogueViewParameter
-            } else {
-                CheckedBindingRole::Ordinary
-            };
-            input.push_local(*owner, CheckedBinding::with_role(ty.clone(), role));
-        }
-        for module in self.topology.modules() {
-            for capture in module.captures().rows() {
-                if !selected_expressions.contains_owner(SyntheticOwner::Capture(capture.capture()))
-                {
-                    continue;
-                }
-                let ty = self.facts.locals().get(&capture.local()).cloned().ok_or(
-                    FinalSemanticAnalysisError::LocalTypeUnavailable {
-                        owner: capture.local(),
-                    },
-                )?;
-                let role = if dialogue_view_parameters.contains(&capture.local()) {
-                    CheckedBindingRole::DialogueViewParameter
-                } else {
-                    CheckedBindingRole::Ordinary
-                };
-                input.push_capture(capture.capture(), CheckedBinding::with_role(ty, role));
-            }
-        }
         self.analyze_patterns(&mut input, &selected_expressions)?;
         self.analyze_statements(&mut input, &selected_expressions)?;
         mutation.apply_prepared_input(&mut input)?;
@@ -755,6 +725,55 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             &selected_expressions,
             &mut closure_work,
         )?;
+        {
+            let mut types = super::type_seal::PublicationTypes::new(
+                &checked_callables,
+                &self.topology,
+                super::type_seal::PublicationTypeEffects {
+                    principal: &type_effects,
+                    work: &mut closure_work,
+                },
+            );
+            let capture_sources = selected_expressions
+                .capture_sources()
+                .collect::<BTreeSet<_>>();
+            let mut bindings = BTreeMap::new();
+            for (owner, ty) in self.facts.locals() {
+                if !selected_expressions.contains_owner(SyntheticOwner::Local(*owner))
+                    && !capture_sources.contains(owner)
+                {
+                    continue;
+                }
+                let role = if dialogue_view_parameters.contains(owner) {
+                    CheckedBindingRole::DialogueViewParameter
+                } else {
+                    CheckedBindingRole::Ordinary
+                };
+                let ty = types.source(*owner)?.canonical(ty)?;
+                bindings.insert(*owner, CheckedBinding::with_role(ty, role));
+            }
+            for module in self.topology.modules() {
+                for capture in module.captures().rows() {
+                    if !selected_expressions
+                        .contains_owner(SyntheticOwner::Capture(capture.capture()))
+                    {
+                        continue;
+                    }
+                    let binding = bindings.get(&capture.local()).ok_or(
+                        FinalSemanticAnalysisError::LocalTypeUnavailable {
+                            owner: capture.local(),
+                        },
+                    )?;
+                    types.visit_binding()?;
+                    input.push_capture(capture.capture(), binding.clone());
+                }
+            }
+            for (owner, binding) in bindings {
+                if selected_expressions.contains_owner(SyntheticOwner::Local(owner)) {
+                    input.push_local(owner, binding);
+                }
+            }
+        }
         self.display_conformances = Some(display::DisplayConformanceCatalog::build(
             self,
             &checked_callables,
@@ -805,8 +824,10 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             &self.modules,
             self.facts.expressions(),
             &checked_callables,
-            &type_effects,
-            &mut closure_work,
+            super::type_seal::PublicationTypeEffects {
+                principal: &type_effects,
+                work: &mut closure_work,
+            },
         )?;
         let semantic_coordinates =
             SemanticCoordinateIndex::new(accepted_roots.as_ref(), &structural_edges);
@@ -941,6 +962,10 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
             super::report::FinalSemanticAnalysisAuthority::Registered(self.catalogs.world.clone()),
             self.control,
+            super::type_seal::PublicationTypeEffects {
+                principal: &type_effects,
+                work: &mut closure_work,
+            },
         )?;
         Ok(report.with_display_conformances(
             self.display_conformances
@@ -1074,7 +1099,6 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
 mod call_seal;
 #[path = "analyzer/callable_effect_graph.rs"]
 mod callable_effect_graph;
-#[cfg(test)]
 pub(super) use callable_effect_graph::CallableEffectClosureWork;
 #[path = "analyzer/callable_values.rs"]
 mod callable_values;

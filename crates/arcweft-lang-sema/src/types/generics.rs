@@ -96,6 +96,15 @@ impl<'a, T> ScopedView<'a, T> {
     }
 }
 
+impl GenericScope {
+    pub(crate) const fn type_view<'a, D: TypeEffectDomain>(
+        &'a self,
+        value: &'a TypeKind<D>,
+    ) -> ScopedTypeView<'a, D> {
+        ScopedTypeView::sealed(value, self)
+    }
+}
+
 impl ScopedTypeView<'_> {
     pub fn semantic_identity_digest(self) -> Result<SemanticTypeDigest, GenericScopeError> {
         self.value.semantic_identity_digest_in_scope(self.scope)

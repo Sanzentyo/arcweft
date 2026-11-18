@@ -756,32 +756,43 @@ impl Analyzer<'_, '_, '_> {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }
-        let record_types = input
-            .expressions
-            .iter()
-            .filter_map(|(_, fact)| fact.project_record_body())
-            .flat_map(|record| {
-                std::iter::once(record.nominal().ty())
-                    .chain(record.fields().iter().map(|field| field.field_type()))
-            });
-        let observed = crate::types::PreparedTypeEffectRoots::collect(
-            record_types,
-            std::iter::empty(),
-            closure_work,
-        )
-        .map_err(|error| match error {
-            crate::types::TypeProjectionError::Control(error) => error,
-            crate::types::TypeProjectionError::Instantiation(error) => {
-                crate::final_analysis::NominalSchemaProjectionError::from(error).into()
+        let (effect_declarations, type_observations) = self
+            .facts
+            .pattern_preparation_parts()
+            .map_err(FinalSemanticAnalysisError::from)?;
+        let mut observed = crate::types::PreparedTypeEffectRoots::default();
+        let mut observe = |owner, ty| {
+            observed
+                .extend([ty], closure_work)
+                .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))
+        };
+        for (owner, fact) in &input.expressions {
+            fact.visit_types(&mut |ty| observe((*owner).into(), ty))?;
+        }
+        for (owner, fact) in &input.patterns {
+            fact.visit_types(&mut |ty| observe((*owner).into(), ty))?;
+        }
+        for (owner, fact) in &input.statements {
+            fact.visit_prepared_types(&mut |ty| observe((*owner).into(), ty))?;
+        }
+        for (owner, ty) in type_observations.locals() {
+            if selected.contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Local(*owner)) {
+                observe((*owner).into(), ty)?;
             }
-        })?;
+        }
+        for owner in selected.capture_sources() {
+            if !selected.contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Local(owner)) {
+                let ty = type_observations
+                    .local(owner)
+                    .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner })?;
+                observe(owner.into(), ty)?;
+            }
+        }
         let type_effects = graph.close_effect_rows(
             &mut rows,
             &bounded_call_effect_rows,
             &staged.builder,
-            self.facts
-                .effect_declarations_mut()
-                .map_err(FinalSemanticAnalysisError::from)?,
+            effect_declarations,
             &observed,
             closure_work,
         )?;
