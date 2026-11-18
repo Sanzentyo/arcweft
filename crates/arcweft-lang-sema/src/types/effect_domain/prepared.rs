@@ -14,7 +14,7 @@ pub(crate) use validation::PreparedTypeRetentionFailure;
 mod canonical;
 mod lifting;
 mod type_arguments;
-pub(crate) use type_arguments::PreparedTypeArguments;
+pub(crate) use type_arguments::{PreparedNominalArgumentInference, PreparedTypeArguments};
 mod roots;
 pub(crate) use roots::PreparedTypeEffectRoots;
 
@@ -99,7 +99,9 @@ pub(crate) enum PreparedTypeEffectProjectionFailure<E: std::error::Error + 'stat
 }
 
 impl<E: std::error::Error + 'static> PreparedTypeEffectProjectionFailure<E> {
-    fn from_projection(error: TypeProjectionError<E>) -> TypeProjectionError<Self> {
+    pub(in crate::types) fn from_projection(
+        error: TypeProjectionError<E>,
+    ) -> TypeProjectionError<Self> {
         match error {
             TypeProjectionError::Instantiation(error) => TypeProjectionError::Instantiation(error),
             TypeProjectionError::Control(error) => {
@@ -108,7 +110,7 @@ impl<E: std::error::Error + 'static> PreparedTypeEffectProjectionFailure<E> {
         }
     }
 
-    fn from_effect(
+    pub(in crate::types) fn from_effect(
         failure: PreparedEffectFailure<TypeProjectionError<E>>,
     ) -> TypeProjectionError<Self> {
         match failure {

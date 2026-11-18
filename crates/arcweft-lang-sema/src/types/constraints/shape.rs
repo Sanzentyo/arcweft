@@ -353,41 +353,45 @@ impl<'a, D: TypeEffectDomain> TypeConstraintShape<'a, D> {
         }
     }
 
-    pub(crate) fn same_header(self, other: Self) -> bool {
+    pub(crate) fn same_header<T: TypeEffectDomain>(
+        self,
+        other: TypeConstraintShape<'_, T>,
+    ) -> bool {
+        use TypeConstraintShape as Shape;
         match (self, other) {
-            (Self::Payload(left), Self::Payload(right)) => left.has_same_header(right),
-            (Self::Leaf(left), Self::Leaf(right)) => left == right,
-            (Self::Never, Self::Never) | (Self::Unresolved(_), Self::Unresolved(_)) => true,
-            (Self::Generic(left), Self::Generic(right)) => left == right,
-            (Self::Unary { kind: left, .. }, Self::Unary { kind: right, .. }) => left == right,
-            (Self::Iterator { family: left, .. }, Self::Iterator { family: right, .. }) => {
+            (Self::Payload(left), Shape::Payload(right)) => left.has_same_header(right),
+            (Self::Leaf(left), Shape::Leaf(right)) => left == right,
+            (Self::Never, Shape::Never) | (Self::Unresolved(_), Shape::Unresolved(_)) => true,
+            (Self::Generic(left), Shape::Generic(right)) => left == right,
+            (Self::Unary { kind: left, .. }, Shape::Unary { kind: right, .. }) => left == right,
+            (Self::Iterator { family: left, .. }, Shape::Iterator { family: right, .. }) => {
                 left == right
             }
-            (Self::Array { len: left, .. }, Self::Array { len: right, .. }) => left == right,
-            (Self::Ref(left), Self::Ref(right)) => {
+            (Self::Array { len: left, .. }, Shape::Array { len: right, .. }) => left == right,
+            (Self::Ref(left), Shape::Ref(right)) => {
                 left.kind() == right.kind() && left.value().is_some() == right.value().is_some()
             }
-            (Self::Map { kind: left, .. }, Self::Map { kind: right, .. }) => left == right,
+            (Self::Map { kind: left, .. }, Shape::Map { kind: right, .. }) => left == right,
             (
                 Self::Borrow {
                     kind: left_kind,
                     lifetime: left_lifetime,
                     ..
                 },
-                Self::Borrow {
+                Shape::Borrow {
                     kind: right_kind,
                     lifetime: right_lifetime,
                     ..
                 },
             ) => left_kind == right_kind && left_lifetime == right_lifetime,
-            (Self::Pair { kind: left, .. }, Self::Pair { kind: right, .. }) => left == right,
+            (Self::Pair { kind: left, .. }, Shape::Pair { kind: right, .. }) => left == right,
             (
                 Self::Function {
                     binder: left_binder,
                     params: left,
                     ..
                 },
-                Self::Function {
+                Shape::Function {
                     binder: right_binder,
                     params: right,
                     ..
@@ -398,14 +402,13 @@ impl<'a, D: TypeEffectDomain> TypeConstraintShape<'a, D> {
                     nominal: left,
                     arguments: left_arguments,
                 },
-                Self::Nominal {
+                Shape::Nominal {
                     nominal: right,
                     arguments: right_arguments,
                 },
             ) => left.same_owner(right) && left_arguments.len() == right_arguments.len(),
-            (Self::Tuple(left), Self::Tuple(right)) | (Self::Choice(left), Self::Choice(right)) => {
-                left.len() == right.len()
-            }
+            (Self::Tuple(left), Shape::Tuple(right))
+            | (Self::Choice(left), Shape::Choice(right)) => left.len() == right.len(),
             _ => false,
         }
     }
@@ -628,15 +631,15 @@ pub(crate) enum NominalShape<'a, D: TypeEffectDomain = CanonicalEffects> {
 }
 
 impl<D: TypeEffectDomain> NominalShape<'_, D> {
-    pub(crate) fn same_owner(self, other: Self) -> bool {
+    pub(crate) fn same_owner<T: TypeEffectDomain>(self, other: NominalShape<'_, T>) -> bool {
         match (self, other) {
-            (Self::Project(left), Self::Project(right)) => {
+            (Self::Project(left), NominalShape::Project(right)) => {
                 left.declaration() == right.declaration()
             }
-            (Self::Accepted(left), Self::Accepted(right)) => {
+            (Self::Accepted(left), NominalShape::Accepted(right)) => {
                 left.declaration() == right.declaration()
             }
-            (Self::Open(left), Self::Open(right)) => {
+            (Self::Open(left), NominalShape::Open(right)) => {
                 left.rule() == right.rule() && left.path() == right.path()
             }
             _ => false,

@@ -69,6 +69,130 @@ fn row(reference: crate::types::GenericEffectReference) -> PreparedEffectRow {
 }
 
 #[test]
+fn record_inference_keeps_the_original_unfinished_callback_argument() {
+    let fixture = crate::final_analysis::tests::fixture("struct Holder<T> { value: T }", None);
+    let declaration = fixture.symbols.nominal_symbols().next().unwrap();
+    let formal = GenericTypeParameterId::new(
+        GenericParameterOwnerId::Nominal(declaration.id().clone()),
+        0,
+    );
+    let template = TypeKind::generic_parameter(formal);
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = Meter::new(1_000_000);
+    let caller = GenericScope::default();
+    let signature = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut Setup)
+        .unwrap();
+    let effects = graph.application(&signature, vec![], &mut Setup).unwrap();
+    let callback = TypeKind::Function {
+        binder: GenericBinder::EMPTY,
+        predicate: PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        params: vec![TypeKind::I64],
+        return_type: Box::new(TypeKind::I64),
+        effects,
+    };
+    let mut inference =
+        PreparedNominalArgumentInference::new(declaration, &caller, &mut work).unwrap();
+    assert!(
+        inference
+            .project_field(&template, &mut graph, &mut work)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        inference
+            .observe_field(&template, &callback, &mut graph, &mut work)
+            .unwrap()
+    );
+    let projected = inference
+        .project_field(&template, &mut graph, &mut work)
+        .unwrap()
+        .unwrap();
+    let nominal = inference.into_nominal().unwrap();
+    assert_eq!(nominal.arguments(), std::slice::from_ref(&callback));
+
+    let solved_row = EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap());
+    graph
+        .prepare_body(
+            &signature,
+            PreparedEffectRow::Canonical(solved_row.clone()),
+            vec![],
+            &mut Setup,
+        )
+        .unwrap();
+    let principal = graph.solve_principal(&mut Setup).unwrap();
+    let expected = TypeKind::function_with_effects([TypeKind::I64], TypeKind::I64, solved_row);
+    assert_eq!(
+        projected
+            .project_canonical_effects(&caller, &principal, &mut work)
+            .unwrap(),
+        expected
+    );
+    assert_eq!(
+        nominal.arguments()[0]
+            .project_canonical_effects(&caller, &principal, &mut work)
+            .unwrap(),
+        expected
+    );
+}
+
+#[test]
+fn record_argument_inference_distinguishes_outer_and_inner_binders() {
+    let fixture = crate::final_analysis::tests::fixture("struct Holder<T> { value: T }", None);
+    let declaration = fixture.symbols.nominal_symbols().next().unwrap();
+    let formal = GenericTypeParameterId::new(
+        GenericParameterOwnerId::Nominal(declaration.id().clone()),
+        0,
+    );
+    let binder = GenericBinder::new(1, 0, 0);
+    let caller = GenericScope::default().with_binder(binder);
+    let inner = caller.with_binder(binder);
+    let template = TypeKind::function_with_binder(
+        binder,
+        [],
+        TypeKind::generic_parameter(formal),
+        EffectRow::unknown(),
+    );
+    let arrow = |depth| TypeKind::Function {
+        binder,
+        predicate: PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        params: vec![],
+        return_type: Box::new(TypeKind::GenericParam(inner.bound_type(depth, 0).unwrap())),
+        effects: PreparedEffectRow::Canonical(EffectRow::unknown()),
+    };
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = Meter::new(1_000_000);
+    let mut inference =
+        PreparedNominalArgumentInference::new(declaration, &caller, &mut work).unwrap();
+    assert!(
+        !inference
+            .observe_field(&template, &arrow(0), &mut graph, &mut work)
+            .unwrap()
+    );
+    assert!(
+        inference
+            .project_field(&template, &mut graph, &mut work)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        inference
+            .observe_field(&template, &arrow(1), &mut graph, &mut work)
+            .unwrap()
+    );
+    assert_eq!(
+        inference
+            .project_field(&template, &mut graph, &mut work)
+            .unwrap(),
+        Some(arrow(1))
+    );
+    assert_eq!(
+        inference.into_nominal().unwrap().arguments(),
+        &[TypeKind::GenericParam(caller.bound_type(0, 0).unwrap())]
+    );
+}
+
+#[test]
 fn application_is_simultaneous_and_preserves_rigid_template_binders() {
     let t = parameter(0);
     let u = parameter(1);

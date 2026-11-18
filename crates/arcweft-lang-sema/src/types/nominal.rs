@@ -350,10 +350,7 @@ impl<E: TypeEffectDomain> ProjectNominalType<E> {
         declaration: &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclaration,
         control: &mut C,
     ) -> Result<super::GenericDeclarationBinder, super::TypeProjectionError<C::Error>> {
-        use super::{
-            GenericDeclarationBinder, GenericScope, GenericTypeReference, TypeInstantiationError,
-            TypeProjectionError,
-        };
+        use super::{GenericDeclarationBinder, TypeInstantiationError, TypeProjectionError};
         control.check().map_err(TypeProjectionError::Control)?;
         if self.declaration() != declaration.id() {
             return Err(TypeInstantiationError::NominalDeclarationMismatch.into());
@@ -365,31 +362,7 @@ impl<E: TypeEffectDomain> ProjectNominalType<E> {
             }
             .into());
         }
-        control
-            .visit_binding()
-            .map_err(TypeProjectionError::Control)?;
-        for _ in declaration.type_parameters() {
-            control
-                .visit_binding()
-                .map_err(TypeProjectionError::Control)?;
-        }
-        let parameters = declaration
-            .type_parameters()
-            .iter()
-            .map(|parameter| {
-                GenericTypeReference::from(GenericTypeParameterId::new(
-                    GenericParameterOwnerId::Nominal(declaration.id().clone()),
-                    parameter.ordinal(),
-                ))
-            })
-            .collect();
-        GenericDeclarationBinder::new(
-            GenericScope::default(),
-            parameters,
-            Box::new([]),
-            Box::new([]),
-        )
-        .map_err(Into::into)
+        GenericDeclarationBinder::for_project_nominal(declaration, control)
     }
 
     /// Creates a checked instantiation of a project nominal declaration.
@@ -411,6 +384,41 @@ impl<E: TypeEffectDomain> ProjectNominalType<E> {
     /// Checked type arguments in authored order.
     pub fn arguments(&self) -> &[TypeKind<E>] {
         &self.arguments
+    }
+}
+
+impl super::GenericDeclarationBinder {
+    pub(crate) fn for_project_nominal<C: super::TypeProjectionControl>(
+        declaration: &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclaration,
+        control: &mut C,
+    ) -> Result<Self, super::TypeProjectionError<C::Error>> {
+        use super::{GenericScope, GenericTypeReference, TypeProjectionError};
+        control.check().map_err(TypeProjectionError::Control)?;
+        control
+            .visit_binding()
+            .map_err(TypeProjectionError::Control)?;
+        for _ in declaration.type_parameters() {
+            control
+                .visit_binding()
+                .map_err(TypeProjectionError::Control)?;
+        }
+        let parameters = declaration
+            .type_parameters()
+            .iter()
+            .map(|parameter| {
+                GenericTypeReference::from(GenericTypeParameterId::new(
+                    GenericParameterOwnerId::Nominal(declaration.id().clone()),
+                    parameter.ordinal(),
+                ))
+            })
+            .collect();
+        Self::new(
+            GenericScope::default(),
+            parameters,
+            Box::new([]),
+            Box::new([]),
+        )
+        .map_err(Into::into)
     }
 }
 

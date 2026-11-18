@@ -9,6 +9,9 @@ use crate::types::{
 };
 use std::collections::BTreeMap;
 
+mod inference;
+pub(crate) use inference::PreparedNominalArgumentInference;
+
 #[cfg(test)]
 mod tests;
 
@@ -18,13 +21,27 @@ mod tests;
 pub(crate) struct PreparedTypeArguments<'a> {
     declaration: &'a GenericDeclarationBinder,
     argument_scope: &'a GenericScope,
-    bindings: BTreeMap<&'a GenericTypeReference, &'a TypeKind<PreparedEffects>>,
+    bindings: BTreeMap<&'a GenericTypeReference, Option<&'a TypeKind<PreparedEffects>>>,
 }
 
 impl<'a> PreparedTypeArguments<'a> {
     pub(crate) fn new<C: TypeProjectionControl>(
         declaration: &'a GenericDeclarationBinder,
         arguments: &'a [TypeKind<PreparedEffects>],
+        argument_scope: &'a GenericScope,
+        control: &mut C,
+    ) -> Result<Self, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
+        Self::index(
+            declaration,
+            arguments.iter().map(Some),
+            argument_scope,
+            control,
+        )
+    }
+
+    fn index<C: TypeProjectionControl>(
+        declaration: &'a GenericDeclarationBinder,
+        arguments: impl ExactSizeIterator<Item = Option<&'a TypeKind<PreparedEffects>>>,
         argument_scope: &'a GenericScope,
         control: &mut C,
     ) -> Result<Self, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
@@ -92,7 +109,7 @@ impl<'a> PreparedTypeArguments<'a> {
 struct Arguments<'a, 'g, C> {
     template_scope: &'a GenericScope,
     argument_scope: &'a GenericScope,
-    bindings: &'a BTreeMap<&'a GenericTypeReference, &'a TypeKind<PreparedEffects>>,
+    bindings: &'a BTreeMap<&'a GenericTypeReference, Option<&'a TypeKind<PreparedEffects>>>,
     edit: &'a mut PreparedEffectTermEdit<'g>,
     control: &'a mut C,
 }
@@ -129,6 +146,8 @@ impl<C: TypeProjectionControl> ScopedTypeProjection<CanonicalEffects, PreparedEf
         if let Some(key) = reference.template_key(self.template_scope, source)? {
             self.visit_binding().map_err(TypeProjectionError::Control)?;
             if let Some(argument) = self.bindings.get(&key) {
+                let argument =
+                    argument.ok_or(TypeInstantiationError::UnboundType { parameter: key })?;
                 // The argument owns its incoming scope. The lift never looks
                 // up declaration keys in this value a second time.
                 return argument.lift_under_in(

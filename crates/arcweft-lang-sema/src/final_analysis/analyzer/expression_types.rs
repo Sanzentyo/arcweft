@@ -19,6 +19,24 @@ pub(super) struct SourceTypePreparation<'a> {
 }
 
 impl<'a> SourceTypePreparation<'a> {
+    pub(super) fn nominal_argument_inference(
+        &self,
+        owner: super::ExprId,
+        declaration: &super::ProjectNominalDeclaration,
+    ) -> Result<crate::types::PreparedNominalArgumentInference, super::FinalSemanticAnalysisError>
+    {
+        use super::FinalSemanticAnalysisError;
+        use crate::types::PreparedNominalArgumentInference;
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let formals = self
+            .owner(owner, &mut work)?
+            .declaration_formals_with_control(&mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        PreparedNominalArgumentInference::new(declaration, formals.template_scope(), &mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))
+    }
+
     pub(super) fn generic_uses(
         &self,
         owner: super::ExprId,

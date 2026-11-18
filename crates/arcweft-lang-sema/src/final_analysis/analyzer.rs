@@ -86,7 +86,7 @@ use crate::{
     semantic_coordinate::{AcceptedSemanticRootCatalog, SemanticCoordinateIndex},
     types::{
         ArrayLength, CharacterDialogueCharacterType, EntityKind, GenericParameterOwnerId,
-        GenericTypeParameterId, ProjectNominalType, TypeKind, TypeParameterSubstitutions,
+        GenericTypeParameterId, ProjectNominalType, TypeKind,
     },
 };
 

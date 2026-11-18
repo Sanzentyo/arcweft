@@ -3,11 +3,14 @@
 use super::super::expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError};
 use super::{
     Analyzer, AnalyzerExpressionExpectation, BTreeSet, CheckedTypeSelection, ExprId,
-    FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId, HirRecordField,
-    ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType, TypeKind,
-    TypeParameterSubstitutions,
+    FinalSemanticAnalysisError, HirRecordField, ProjectNominalBody, ProjectNominalDeclaration,
+    ProjectNominalType, TypeKind,
 };
 use crate::final_analysis::{PreparedProjectRecordExpressionField, PreparedRecordValueSource};
+use crate::types::{
+    PreparedEffects, PreparedNominalArgumentInference, PreparedTypeCompatibility,
+    TypeProjectionError,
+};
 
 impl Analyzer<'_, '_, '_> {
     pub(super) fn check_project_record_fields(
@@ -19,7 +22,7 @@ impl Analyzer<'_, '_, '_> {
         expectation: &AnalyzerExpressionExpectation<'_>,
     ) -> Result<
         (
-            TypeKind,
+            ProjectNominalType<PreparedEffects>,
             CheckedTypeSelection,
             Box<[PreparedProjectRecordExpressionField]>,
         ),
@@ -33,23 +36,54 @@ impl Analyzer<'_, '_, '_> {
         }
 
         let expected_nominal = expected_project_record_nominal(owner, declaration, expectation)?;
-        let (parameter_ids, mut substitutions) =
-            prepare_record_substitutions(owner, declaration, expected_nominal, |argument| {
-                let prepared = self
-                    .retain_source_value_type(context, owner, argument)
-                    .map_err(AnalyzerExpressionError::fatal)?;
-                let projected = self.project_expression_expectation(
-                    context,
-                    owner,
-                    expectation,
-                    Some(&prepared),
-                )?;
-                Ok(matches!(
-                    projected,
+        let source_types = self
+            .source_type_preparation(context.work())
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let mut inference = source_types
+            .nominal_argument_inference(owner, declaration)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        if let ExpectedProjectRecordNominal::Complete(nominal)
+        | ExpectedProjectRecordNominal::Parametric(nominal) = expected_nominal
+        {
+            if nominal.arguments().len() != declaration.type_parameters().len() {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                ));
+            }
+            let effects = self
+                .facts
+                .effect_declarations()
+                .map_err(AnalyzerExpressionError::fact)?;
+            for (position, argument) in nominal.arguments().iter().enumerate() {
+                if matches!(
+                    expected_nominal,
+                    ExpectedProjectRecordNominal::Parametric(_)
+                ) && !matches!(
+                    self.project_expression_expectation(
+                        context,
+                        owner,
+                        expectation,
+                        Some(argument)
+                    )?,
                     AnalyzerExpressionExpectation::Complete(_)
-                ))
-            })?;
+                ) {
+                    continue;
+                }
+                let argument = source_types
+                    .retain_prepared(owner, argument, effects.read())
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                inference.seed(position, argument).map_err(|error| {
+                    AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::source_type_projection(
+                            owner.into(),
+                            TypeProjectionError::Instantiation(error),
+                        ),
+                    )
+                })?;
+            }
+        }
 
+        drop(source_types);
         let mut seen = BTreeSet::new();
         let mut fields = Vec::with_capacity(authored.len());
         for (source_ordinal, field) in authored.iter().enumerate() {
@@ -61,7 +95,7 @@ impl Analyzer<'_, '_, '_> {
                 owner,
                 field,
                 declared,
-                &mut substitutions,
+                &mut inference,
                 &mut seen,
             )?;
             fields.push(PreparedProjectRecordExpressionField::new(
@@ -78,22 +112,10 @@ impl Analyzer<'_, '_, '_> {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
 
-        let arguments = if let ExpectedProjectRecordNominal::Complete(nominal) = expected_nominal {
-            nominal.arguments().to_vec()
-        } else {
-            parameter_ids
-                .into_iter()
-                .map(|parameter| {
-                    let generic = TypeKind::generic_parameter(parameter);
-                    let resolved = substitutions.apply(&generic);
-                    (resolved != generic)
-                        .then_some(resolved)
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))
-                })
-                .collect::<Result<Vec<_>, _>>()?
-        };
         Ok((
-            TypeKind::ProjectNominal(ProjectNominalType::new(declaration.id().clone(), arguments)),
+            inference
+                .into_nominal()
+                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?,
             if matches!(expected_nominal, ExpectedProjectRecordNominal::Complete(_)) {
                 CheckedTypeSelection::Expected
             } else {
@@ -109,9 +131,10 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         field: &HirRecordField,
         declared: &[arcweft_lang_hir::symbol::nominal::ProjectNominalField],
-        substitutions: &mut TypeParameterSubstitutions,
+        inference: &mut PreparedNominalArgumentInference,
         seen: &mut BTreeSet<String>,
-    ) -> Result<(u32, TypeKind, PreparedRecordValueSource), AnalyzerExpressionError> {
+    ) -> Result<(u32, TypeKind<PreparedEffects>, PreparedRecordValueSource), AnalyzerExpressionError>
+    {
         let name = field.name().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
         })?;
@@ -126,30 +149,22 @@ impl Analyzer<'_, '_, '_> {
         let declaration_ordinal = u32::try_from(declaration_ordinal).map_err(|_| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::AccountingOverflow)
         })?;
-        let declared_ty = self
-            .types
-            .get(&declared_field.ty())
-            .cloned()
-            .ok_or_else(|| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::TypeResolutionFailed {
-                    owner: declared_field.ty(),
-                })
-            })?;
-        let field_expected = substitutions.apply_bound(&declared_ty);
+        let annotation = declared_field.ty();
+        let field_expected =
+            self.project_record_field_type(context, owner, annotation, inference)?;
+        let value_fact;
         let (source, actual) = match field {
-            HirRecordField::Explicit { value, .. } => (
-                PreparedRecordValueSource::Expression(*value),
-                self.evaluate_expression(context, *value, field_expected.as_ref())?
-                    .value_type()
-                    .cloned()
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *value },
-                        )
-                    })?,
-            ),
+            HirRecordField::Explicit { value, .. } => {
+                value_fact = self.evaluate_expression(context, *value, field_expected.as_ref())?;
+                let actual = value_fact.value_type().ok_or_else(|| {
+                    AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *value },
+                    )
+                })?;
+                (PreparedRecordValueSource::Expression(*value), actual)
+            }
             HirRecordField::Shorthand { local, .. } => {
-                let actual = self.facts.locals().get(local).cloned().ok_or_else(|| {
+                let actual = self.facts.locals().get(local).ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
                         FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local },
                     )
@@ -165,30 +180,99 @@ impl Analyzer<'_, '_, '_> {
                 ));
             }
         };
-        if !substitutions.observe(&declared_ty, &actual) {
+        let mut work = context.work();
+        let retained;
+        let (expected, actual) = if let Some(expected) = field_expected {
+            (expected, actual)
+        } else {
+            let effects = self
+                .facts
+                .effect_declarations()
+                .map_err(AnalyzerExpressionError::fact)?;
+            retained = self
+                .source_type_preparation(context.work())
+                .and_then(|source_types| {
+                    source_types.retain_prepared(owner, actual, effects.read())
+                })
+                .map_err(AnalyzerExpressionError::fatal)?;
+            let template = self.types.get(&annotation).ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::TypeResolutionFailed {
+                    owner: annotation,
+                })
+            })?;
+            let (graph, _) = self
+                .facts
+                .effect_declarations_mut()
+                .map_err(AnalyzerExpressionError::fact)?
+                .relation();
+            if !inference
+                .observe_field(template, &retained, graph, &mut work)
+                .map_err(|error| {
+                    AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::source_type_effect_projection(
+                            owner.into(),
+                            error,
+                        ),
+                    )
+                })?
+            {
+                return Err(AnalyzerExpressionError::rejected(owner));
+            }
+            let expected = self
+                .project_record_field_type(context, owner, annotation, inference)?
+                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+            (expected, &retained)
+        };
+        // Publication compares the projected field and the original source
+        // again with their completed effect rows.
+        if expected
+            .check_prepared_compatibility(actual, &mut work)
+            .map_err(AnalyzerExpressionError::fatal)?
+            == PreparedTypeCompatibility::Rejected
+        {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
-        let resolved_declared = substitutions
-            .apply_bound(&declared_ty)
-            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-        if !resolved_declared.accepts(&actual) {
-            return Err(AnalyzerExpressionError::rejected(owner));
-        }
-        Ok((declaration_ordinal, resolved_declared, source))
+        Ok((declaration_ordinal, expected, source))
+    }
+
+    fn project_record_field_type(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        annotation: arcweft_lang_hir::identity::TypeId,
+        inference: &PreparedNominalArgumentInference,
+    ) -> Result<Option<TypeKind<PreparedEffects>>, AnalyzerExpressionError> {
+        let template = self.types.get(&annotation).ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::TypeResolutionFailed {
+                owner: annotation,
+            })
+        })?;
+        let (graph, _) = self
+            .facts
+            .effect_declarations_mut()
+            .map_err(AnalyzerExpressionError::fact)?
+            .relation();
+        inference
+            .project_field(template, graph, &mut context.work())
+            .map_err(|error| {
+                AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::source_type_effect_projection(owner.into(), error),
+                )
+            })
     }
 }
 
 #[derive(Clone, Copy)]
 enum ExpectedProjectRecordNominal<'a> {
     None,
-    Complete(&'a ProjectNominalType),
-    Parametric(&'a ProjectNominalType),
+    Complete(&'a ProjectNominalType<PreparedEffects>),
+    Parametric(&'a ProjectNominalType<PreparedEffects>),
 }
 
 fn expected_project_record_nominal<'a>(
     owner: ExprId,
     declaration: &ProjectNominalDeclaration,
-    expectation: &'a AnalyzerExpressionExpectation<'a>,
+    expectation: &AnalyzerExpressionExpectation<'a>,
 ) -> Result<ExpectedProjectRecordNominal<'a>, AnalyzerExpressionError> {
     match expectation {
         AnalyzerExpressionExpectation::Complete(TypeKind::ProjectNominal(nominal))
@@ -218,50 +302,4 @@ fn expected_project_record_nominal<'a>(
             Ok(ExpectedProjectRecordNominal::None)
         }
     }
-}
-
-fn prepare_record_substitutions(
-    owner: ExprId,
-    declaration: &ProjectNominalDeclaration,
-    expected: ExpectedProjectRecordNominal<'_>,
-    mut argument_is_complete: impl FnMut(&TypeKind) -> Result<bool, AnalyzerExpressionError>,
-) -> Result<(Vec<GenericTypeParameterId>, TypeParameterSubstitutions), AnalyzerExpressionError> {
-    let nominal = match expected {
-        ExpectedProjectRecordNominal::None => None,
-        ExpectedProjectRecordNominal::Complete(nominal)
-        | ExpectedProjectRecordNominal::Parametric(nominal) => Some(nominal),
-    };
-    if nominal
-        .is_some_and(|nominal| nominal.arguments().len() != declaration.type_parameters().len())
-    {
-        return Err(AnalyzerExpressionError::fatal(
-            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-        ));
-    }
-    let parameters = declaration
-        .type_parameters()
-        .iter()
-        .map(|parameter| {
-            GenericTypeParameterId::new(
-                GenericParameterOwnerId::Nominal(declaration.id().clone()),
-                parameter.ordinal(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let mut substitutions = TypeParameterSubstitutions::default();
-    if let Some(nominal) = nominal {
-        for (parameter, argument) in parameters.iter().zip(nominal.arguments()) {
-            if matches!(expected, ExpectedProjectRecordNominal::Parametric(_))
-                && !argument_is_complete(argument)?
-            {
-                continue;
-            }
-            if !substitutions.observe(&TypeKind::generic_parameter(parameter.clone()), argument) {
-                return Err(AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-                ));
-            }
-        }
-    }
-    Ok((parameters, substitutions))
 }

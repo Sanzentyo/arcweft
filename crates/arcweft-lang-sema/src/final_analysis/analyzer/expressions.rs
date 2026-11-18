@@ -25,18 +25,18 @@ use super::{
     CheckedDialogueEffectTrigger, CheckedExpressionResolution, CheckedProjectItem,
     CheckedStageLook, CheckedTrigger, CheckedTryCarrier, CheckedTypeSelection,
     CheckedValueResolution, CheckedViewCall, EffectId, EffectSet, EntityKind, ExprId,
-    FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
-    HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument, HirChoiceCompactAction,
-    HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef, HirIntegerLiteral,
-    HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment, HirPostfixBracket,
-    HirPostfixBracketCandidates, HirRecordField, HirScopeKind, HirScopeOwner, HirSelectedMember,
-    HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeSourceRole, HirUnaryOp,
-    LocalLookup, PostfixBracketResolution, PreparedDialogueApplication, PreparedDialogueEffectPlan,
-    PreparedDialogueEffectSite, PreparedExpressionFact, PreparedExpressionShell,
-    PreparedImplicitCallableBody, PreparedOwnerBoundExpression, PreparedOwnerBoundResolution,
-    PreparedResolvedExpression, PreparedTryBoundary, ProjectNominalBody, ProjectNominalDeclaration,
-    ProjectNominalType, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId, ScopeId,
-    SourceSpan, TypeKind, TypeParameterSubstitutions,
+    FinalSemanticAnalysisError, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
+    HirChoiceCompactAction, HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef,
+    HirIntegerLiteral, HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment,
+    HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField, HirScopeKind, HirScopeOwner,
+    HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind,
+    HirTypeSourceRole, HirUnaryOp, LocalLookup, PostfixBracketResolution,
+    PreparedDialogueApplication, PreparedDialogueEffectPlan, PreparedDialogueEffectSite,
+    PreparedExpressionFact, PreparedExpressionShell, PreparedImplicitCallableBody,
+    PreparedOwnerBoundExpression, PreparedOwnerBoundResolution, PreparedResolvedExpression,
+    PreparedTryBoundary, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
+    ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId, ScopeId, SourceSpan,
+    TypeKind,
     calls::checked_character_dialogue_target,
     expression_types::{
         SourceTypePreparation, common_type, expected_item, indexed_item, literal_type,
@@ -1761,24 +1761,24 @@ impl Analyzer<'_, '_, '_> {
         fields: &[HirRecordField],
         expectation: &AnalyzerExpressionExpectation<'_>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
-        let (ty, type_selection, fields) =
+        let (nominal, type_selection, fields) =
             self.check_project_record_fields(context, owner, declaration, fields, expectation)?;
-        self.with_declared_project_nominal(context.work(), owner, &ty, |nominal, projection| {
-            let nominal = crate::final_analysis::prepared::PreparedProjectNominal::new(nominal);
-            let shell_type = projection.retain(nominal.ty())?;
-            Ok(PreparedExpressionFact::from(
-                crate::final_analysis::PreparedProjectRecordExpression::new(
-                    super::PreparedExpressionShell::value(
-                        shell_type,
-                        type_selection,
-                        EffectSet::new(),
-                    ),
-                    nominal,
-                    fields,
-                ),
-            ))
-        })
-        .map_err(AnalyzerExpressionError::fatal)
+        let nominal = crate::final_analysis::prepared::PreparedProjectNominal::new(nominal);
+        let effects = self
+            .facts
+            .effect_declarations()
+            .map_err(AnalyzerExpressionError::fact)?;
+        let shell_type = self
+            .source_type_preparation(context.work())
+            .and_then(|source| source.retain_prepared(owner, nominal.ty(), effects.read()))
+            .map_err(AnalyzerExpressionError::fatal)?;
+        Ok(PreparedExpressionFact::from(
+            crate::final_analysis::PreparedProjectRecordExpression::new(
+                PreparedExpressionShell::value(shell_type, type_selection, EffectSet::new()),
+                nominal,
+                fields,
+            ),
+        ))
     }
 
     fn prepare_entry_reference(
@@ -6366,9 +6366,9 @@ mod expectation_tests {
         },
     };
     use crate::types::{
-        GenericEffectParameterId, GenericEffectReference, GenericScope, PreparedGenericUseFailure,
-        TypeGenericReferenceUseCollector, TypeGenericReferenceUseInventory,
-        constraints::ConstraintGenericParameterId,
+        GenericEffectParameterId, GenericEffectReference, GenericParameterOwnerId, GenericScope,
+        GenericTypeParameterId, PreparedGenericUseFailure, TypeGenericReferenceUseCollector,
+        TypeGenericReferenceUseInventory, constraints::ConstraintGenericParameterId,
     };
 
     struct Work(u64);

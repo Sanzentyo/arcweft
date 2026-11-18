@@ -15,8 +15,8 @@ mod tests;
 mod prepared;
 pub(crate) use prepared::PreparedTypeEffectRoots;
 pub(crate) use prepared::{
-    PreparedEffects, PreparedTypeArguments, PreparedTypeEffectProjectionFailure,
-    PreparedTypeRetentionFailure,
+    PreparedEffects, PreparedNominalArgumentInference, PreparedTypeArguments,
+    PreparedTypeEffectProjectionFailure, PreparedTypeRetentionFailure,
 };
 
 mod sealed {

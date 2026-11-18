@@ -207,7 +207,10 @@ impl<D: TypeEffectDomain> VariantPayloadType<D> {
         children
     }
 
-    pub(in crate::types) fn has_same_header(&self, other: &Self) -> bool {
+    pub(in crate::types) fn has_same_header<T: TypeEffectDomain>(
+        &self,
+        other: &VariantPayloadType<T>,
+    ) -> bool {
         self.owner_family == other.owner_family
             && self.case_ordinal == other.case_ordinal
             && self.shape.semantic_shape_tag() == other.shape.semantic_shape_tag()

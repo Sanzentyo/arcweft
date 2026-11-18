@@ -15,7 +15,7 @@ use super::{
 mod application;
 pub(crate) mod context;
 mod hints;
-mod lexical;
+pub(in crate::types) mod lexical;
 mod normalization;
 pub(in crate::types) use normalization::{ConstraintClosedEffects, project_closed_operand};
 mod original_context;

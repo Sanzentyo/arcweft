@@ -11,19 +11,19 @@ use crate::{
     },
     effects::EffectSet,
     types::{
-        TypeProjectionControl, TypeProjectionNodeKind, projection_control::EffectProjectionControl,
-        structural_projection::ScopedTypeProjection,
+        PreparedTypeEffectProjectionFailure, TypeProjectionControl, TypeProjectionNodeKind,
+        projection_control::EffectProjectionControl, structural_projection::ScopedTypeProjection,
     },
 };
 
 #[cfg(test)]
 mod tests;
 
-struct Transport<'s, 'g, 'a, 'c, A: TypeConstraintAccounting, D: ConstraintDomain> {
+struct Transport<'s, 'g, 'a, C> {
     original: &'s ConstraintLexicalScope,
     target: &'s ConstraintLexicalScope,
     edit: &'a mut PreparedEffectTermEdit<'g>,
-    context: &'a mut TypeConstraintContext<'c, A, D>,
+    context: &'a mut C,
 }
 
 fn effect_failure(
@@ -37,23 +37,27 @@ fn effect_failure(
     }
 }
 
-impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeProjectionControl
-    for Transport<'_, '_, '_, '_, A, D>
-{
-    type Error = TypeConstraintError;
+impl<C: TypeProjectionControl> TypeProjectionControl for Transport<'_, '_, '_, C> {
+    type Error = PreparedTypeEffectProjectionFailure<C::Error>;
     fn check(&mut self) -> Result<(), Self::Error> {
-        TypeProjectionControl::check(self.context)
+        self.context
+            .check()
+            .map_err(PreparedTypeEffectProjectionFailure::Control)
     }
     fn visit_node(&mut self, kind: TypeProjectionNodeKind, depth: u64) -> Result<(), Self::Error> {
-        TypeProjectionControl::visit_node(self.context, kind, depth)
+        self.context
+            .visit_node(kind, depth)
+            .map_err(PreparedTypeEffectProjectionFailure::Control)
     }
     fn visit_binding(&mut self) -> Result<(), Self::Error> {
-        TypeProjectionControl::visit_binding(self.context)
+        self.context
+            .visit_binding()
+            .map_err(PreparedTypeEffectProjectionFailure::Control)
     }
 }
 
-impl<A: TypeConstraintAccounting, D: ConstraintDomain>
-    ScopedTypeProjection<PreparedEffects, PreparedEffects> for Transport<'_, '_, '_, '_, A, D>
+impl<C: TypeProjectionControl> ScopedTypeProjection<PreparedEffects, PreparedEffects>
+    for Transport<'_, '_, '_, C>
 {
     fn project_type_reference(
         &mut self,
@@ -65,6 +69,7 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain>
         self.target
             .type_reference(self.original, source, target, reference, self.context)
             .map(TypeKind::GenericParam)
+            .map_err(PreparedTypeEffectProjectionFailure::from_projection)
     }
     fn project_length(
         &mut self,
@@ -77,7 +82,8 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain>
             ArrayLength::Generic(reference) => self
                 .target
                 .const_reference(self.original, source, target, reference, self.context)
-                .map(ArrayLength::Generic),
+                .map(ArrayLength::Generic)
+                .map_err(PreparedTypeEffectProjectionFailure::from_projection),
             ArrayLength::Const(_) => Ok(length.clone()),
             ArrayLength::Error(_) | ArrayLength::Inferred => {
                 Err(TypeInstantiationError::UnresolvedType.into())
@@ -109,7 +115,7 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain>
                     ))))
                 },
             )
-            .map_err(effect_failure)
+            .map_err(PreparedTypeEffectProjectionFailure::from_effect)
     }
     fn project_predicate(
         &mut self,
@@ -136,11 +142,36 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain>
                     ))))
                 },
             )
-            .map_err(effect_failure)
+            .map_err(PreparedTypeEffectProjectionFailure::from_effect)
     }
 }
 
 impl ConstraintLexicalScope {
+    pub(in crate::types) fn transport_type_in<C: TypeProjectionControl>(
+        &self,
+        original: &Self,
+        value: &TypeKind<PreparedEffects>,
+        edit: &mut PreparedEffectTermEdit<'_>,
+        context: &mut C,
+    ) -> Result<
+        TypeKind<PreparedEffects>,
+        TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>,
+    > {
+        value
+            .project_structure(
+                original.shape(),
+                self.shape(),
+                1,
+                &mut Transport {
+                    original,
+                    target: self,
+                    edit,
+                    context,
+                },
+            )
+            .inspect_err(|_| edit.invalidate())
+    }
+
     /// One edit spans every nested field. Failure rolls back new terms while
     /// retaining spent work and the actual input/function identities.
     pub(in crate::types::constraints) fn transport_type<
@@ -154,18 +185,19 @@ impl ConstraintLexicalScope {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind<PreparedEffects>, TypeProjectionError<TypeConstraintError>> {
         let mut edit = graph.edit_terms();
-        let result = value.project_structure(
-            original.shape(),
-            self.shape(),
-            1,
-            &mut Transport {
-                original,
-                target: self,
-                edit: &mut edit,
-                context,
-            },
-        );
-        let value = result?;
+        let value = self
+            .transport_type_in(original, value, &mut edit, context)
+            .map_err(|error| match error {
+                TypeProjectionError::Instantiation(error) => {
+                    TypeProjectionError::Instantiation(error)
+                }
+                TypeProjectionError::Control(PreparedTypeEffectProjectionFailure::Control(
+                    error,
+                )) => TypeProjectionError::Control(error),
+                TypeProjectionError::Control(PreparedTypeEffectProjectionFailure::Effects(
+                    error,
+                )) => effect_failure(error),
+            })?;
         edit.commit()
             .map_err(|error| effect_failure(error.into()))?;
         Ok(value)

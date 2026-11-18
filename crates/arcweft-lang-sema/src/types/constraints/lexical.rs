@@ -21,7 +21,7 @@ struct LexicalFrame;
 /// Shape alone is not provenance. Clones retain the actual opening of every
 /// ambient frame; entering another equally shaped binder mints another frame.
 #[derive(Clone, Default)]
-pub(super) struct ConstraintLexicalScope {
+pub(in crate::types) struct ConstraintLexicalScope {
     shape: GenericScope,
     frames: Vec<Arc<LexicalFrame>>,
 }
@@ -49,6 +49,26 @@ impl std::fmt::Debug for ConstraintLexicalScope {
 }
 
 impl ConstraintLexicalScope {
+    pub(in crate::types) fn from_source_shape<C: TypeProjectionControl>(
+        shape: &GenericScope,
+        control: &mut C,
+    ) -> Result<Self, TypeProjectionError<C::Error>> {
+        for _ in shape.binders() {
+            control
+                .visit_binding()
+                .map_err(TypeProjectionError::Control)?;
+        }
+        let frames = shape
+            .binders()
+            .iter()
+            .map(|_| Arc::new(LexicalFrame))
+            .collect();
+        Ok(Self {
+            shape: shape.clone(),
+            frames,
+        })
+    }
+
     pub(super) fn transport_row<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         original: &Self,
@@ -173,11 +193,11 @@ impl ConstraintLexicalScope {
         })
     }
 
-    pub(super) fn shape(&self) -> &GenericScope {
+    pub(in crate::types) fn shape(&self) -> &GenericScope {
         &self.shape
     }
 
-    pub(super) fn with_binder(&self, binder: GenericBinder) -> Self {
+    pub(in crate::types) fn with_binder(&self, binder: GenericBinder) -> Self {
         let mut scope = self.clone();
         if !binder.is_empty() {
             scope.shape = self.shape.with_binder(binder);
