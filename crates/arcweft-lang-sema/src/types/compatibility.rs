@@ -1,8 +1,8 @@
 use core::convert::Infallible;
 
 use crate::{
-    effect_row::{DecisionControl, DecisionWork, EffectRow},
-    types::{ArrayLength, TypeKind},
+    effect_row::{DecisionControl, DecisionWork},
+    types::{ArrayLength, TypeEffectDomain, TypeKind},
 };
 
 mod binding_effects;
@@ -11,8 +11,12 @@ mod binding_effects;
 // go through this module's `SelectedCall` engine.
 pub(super) mod binding_plan;
 mod cross_shape;
+mod effects;
 mod header;
 mod leaf;
+
+use effects::CompatibilityEffects;
+pub(crate) use effects::PreparedTypeCompatibility;
 
 #[cfg(test)]
 mod nominal_tests;
@@ -279,16 +283,17 @@ impl TypeKind {
     }
 }
 
-fn accepts_node<C>(
-    expected: &TypeKind,
-    actual: &TypeKind,
+fn accepts_node<D, C>(
+    expected: &TypeKind<D>,
+    actual: &TypeKind<D>,
     policy: TypeCompatibilityPolicy,
     control: &mut C,
     meter: bool,
     structural: bool,
 ) -> Result<bool, TypeCompatibilityFailure<C::Error>>
 where
-    C: TypeCompatibilityControl,
+    D: TypeEffectDomain,
+    C: CompatibilityEffects<D>,
 {
     // Projection subjects use the same engine in a structural subrelation:
     // local headers still charge here, but Recovery widening is disabled.
@@ -299,13 +304,13 @@ where
     }
 
     if policy.rejects_recovery() {
-        if let Some(kind) = forbidden_here(expected) {
+        if let Some(kind) = forbidden_here::<_, C>(expected) {
             return Err(TypeCompatibilityFailure::Forbidden {
                 side: TypeCompatibilitySide::Expected,
                 kind,
             });
         }
-        if let Some(kind) = forbidden_here(actual) {
+        if let Some(kind) = forbidden_here::<_, C>(actual) {
             return Err(TypeCompatibilityFailure::Forbidden {
                 side: TypeCompatibilitySide::Actual,
                 kind,
@@ -740,30 +745,30 @@ where
             },
         ) => {
             if expected_binder != actual_binder
-                || !expected_predicate
-                    .equal_with(
-                        actual_predicate,
-                        &mut EffectCompatibilityControl {
-                            control,
-                            expected,
-                            actual,
-                            meter,
-                        },
-                    )
-                    .map_err(TypeCompatibilityFailure::Control)?
-                || expected_params.len() != actual_params.len()
-                || if structural {
-                    expected_effects != actual_effects
-                } else {
-                    !effect_rows_compatible(
-                        expected_effects,
-                        actual_effects,
+                || !C::predicates_equal(
+                    expected_predicate,
+                    actual_predicate,
+                    &mut EffectCompatibilityControl {
+                        control,
                         expected,
                         actual,
-                        control,
                         meter,
-                    )?
-                }
+                    },
+                )
+                .map_err(TypeCompatibilityFailure::Control)?
+                || expected_params.len() != actual_params.len()
+                || !C::rows_compatible(
+                    expected_effects,
+                    actual_effects,
+                    structural,
+                    &mut EffectCompatibilityControl {
+                        control,
+                        expected,
+                        actual,
+                        meter,
+                    },
+                )
+                .map_err(TypeCompatibilityFailure::Control)?
             {
                 return Ok(false);
             }
@@ -806,16 +811,17 @@ where
     }
 }
 
-fn nominal_types_compatible<C>(
-    expected: &TypeKind,
-    actual: &TypeKind,
+fn nominal_types_compatible<D, C>(
+    expected: &TypeKind<D>,
+    actual: &TypeKind<D>,
     policy: TypeCompatibilityPolicy,
     control: &mut C,
     meter: bool,
     structural: bool,
 ) -> Result<Option<bool>, TypeCompatibilityFailure<C::Error>>
 where
-    C: TypeCompatibilityControl,
+    D: TypeEffectDomain,
+    C: CompatibilityEffects<D>,
 {
     let result = match (expected, actual) {
         (TypeKind::ProjectNominal(expected), TypeKind::ProjectNominal(actual)) => Some(
@@ -857,16 +863,17 @@ where
     Ok(result)
 }
 
-fn nominal_arguments_compatible<C>(
-    expected: &[TypeKind],
-    actual: &[TypeKind],
+fn nominal_arguments_compatible<D, C>(
+    expected: &[TypeKind<D>],
+    actual: &[TypeKind<D>],
     policy: TypeCompatibilityPolicy,
     control: &mut C,
     meter: bool,
     structural: bool,
 ) -> Result<bool, TypeCompatibilityFailure<C::Error>>
 where
-    C: TypeCompatibilityControl,
+    D: TypeEffectDomain,
+    C: CompatibilityEffects<D>,
 {
     if expected.len() != actual.len() {
         return Ok(false);
@@ -881,40 +888,16 @@ where
     Ok(true)
 }
 
-fn effect_rows_compatible<C: TypeCompatibilityControl>(
-    expected_row: &EffectRow,
-    actual_row: &EffectRow,
-    expected: &TypeKind,
-    actual: &TypeKind,
-    control: &mut C,
-    meter: bool,
-) -> Result<bool, TypeCompatibilityFailure<C::Error>> {
-    // Strict policies have already rejected unknown annotations in their
-    // complete-tree validation. Recovery preserves the original diagnostic.
-    if !expected_row.is_known() || !actual_row.is_known() {
-        return Ok(true);
-    }
-    actual_row
-        .is_covered_by(
-            expected_row,
-            &mut EffectCompatibilityControl {
-                control,
-                expected,
-                actual,
-                meter,
-            },
-        )
-        .map_err(TypeCompatibilityFailure::Control)
-}
-
-struct EffectCompatibilityControl<'a, C> {
+struct EffectCompatibilityControl<'a, D: TypeEffectDomain, C> {
     control: &'a mut C,
-    expected: &'a TypeKind,
-    actual: &'a TypeKind,
+    expected: &'a TypeKind<D>,
+    actual: &'a TypeKind<D>,
     meter: bool,
 }
 
-impl<C: TypeCompatibilityControl> DecisionControl for EffectCompatibilityControl<'_, C> {
+impl<D: TypeEffectDomain, C: TypeCompatibilityControl<D>> DecisionControl
+    for EffectCompatibilityControl<'_, D, C>
+{
     type Error = C::Error;
 
     fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
@@ -925,15 +908,16 @@ impl<C: TypeCompatibilityControl> DecisionControl for EffectCompatibilityControl
     }
 }
 
-fn is_agent_value_type<C>(
-    ty: &TypeKind,
+fn is_agent_value_type<D, C>(
+    ty: &TypeKind<D>,
     policy: TypeCompatibilityPolicy,
     control: &mut C,
     already_entered: bool,
     meter: bool,
 ) -> Result<bool, TypeCompatibilityFailure<C::Error>>
 where
-    C: TypeCompatibilityControl,
+    D: TypeEffectDomain,
+    C: CompatibilityEffects<D>,
 {
     if !already_entered && meter {
         control
@@ -941,7 +925,7 @@ where
             .map_err(TypeCompatibilityFailure::Control)?;
     }
     if !already_entered && policy.rejects_recovery() {
-        if let Some(kind) = forbidden_here(ty) {
+        if let Some(kind) = forbidden_here::<_, C>(ty) {
             return Err(TypeCompatibilityFailure::Forbidden {
                 side: TypeCompatibilitySide::Actual,
                 kind,
@@ -973,15 +957,16 @@ where
     }
 }
 
-fn choice_has_unique_injection<C>(
-    alternatives: &[TypeKind],
-    actual: &TypeKind,
+fn choice_has_unique_injection<D, C>(
+    alternatives: &[TypeKind<D>],
+    actual: &TypeKind<D>,
     policy: TypeCompatibilityPolicy,
     control: &mut C,
     meter: bool,
 ) -> Result<bool, TypeCompatibilityFailure<C::Error>>
 where
-    C: TypeCompatibilityControl,
+    D: TypeEffectDomain,
+    C: CompatibilityEffects<D>,
 {
     let mut matches = 0_u8;
     for alternative in alternatives {
@@ -1008,7 +993,9 @@ where
     }
 }
 
-fn forbidden_here(ty: &TypeKind) -> Option<TypeCompatibilityForbidden> {
+fn forbidden_here<D: TypeEffectDomain, C: CompatibilityEffects<D>>(
+    ty: &TypeKind<D>,
+) -> Option<TypeCompatibilityForbidden> {
     match ty {
         TypeKind::Error(_) => Some(TypeCompatibilityForbidden::Error),
         TypeKind::Projection { .. } => Some(TypeCompatibilityForbidden::Projection),
@@ -1018,7 +1005,7 @@ fn forbidden_here(ty: &TypeKind) -> Option<TypeCompatibilityForbidden> {
             ArrayLength::Inferred => Some(TypeCompatibilityForbidden::ArrayLengthInferred),
             ArrayLength::Const(_) | ArrayLength::Generic(_) => None,
         },
-        TypeKind::Function { effects, .. } if !effects.is_known() => {
+        TypeKind::Function { effects, .. } if C::row_is_unknown(effects) => {
             Some(TypeCompatibilityForbidden::UnknownEffectTail)
         }
         _ => None,
@@ -1036,7 +1023,7 @@ where
     control
         .enter(ty, ty)
         .map_err(TypeCompatibilityFailure::Control)?;
-    if let Some(kind) = forbidden_here(ty) {
+    if let Some(kind) = forbidden_here::<_, C>(ty) {
         return Ok(Some(kind));
     }
 

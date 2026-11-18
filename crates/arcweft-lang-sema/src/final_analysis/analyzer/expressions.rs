@@ -1216,7 +1216,7 @@ impl Analyzer<'_, '_, '_> {
             body_effects,
         );
         if let Some(expected) = expectation.complete_type() {
-            self.check_authored_contextual_type(context, owner, expected, &ty)?;
+            self.check_prepared_contextual_type(context, owner, expected, &ty)?;
         }
         let body = PreparedImplicitCallableBody::new(body, value_results)
             .map_err(AnalyzerExpressionError::fatal)?;
@@ -1458,9 +1458,11 @@ impl Analyzer<'_, '_, '_> {
                 if let Some(expected) = expectation.complete_type() {
                     let mismatch = self
                         .source_type_preparation(context.work())
-                        .and_then(|types| types.annotation_mismatch(owner, expected, &pipe.value))
+                        .and_then(|types| {
+                            types.contextual_type_mismatch(owner, expected, &pipe.value)
+                        })
                         .map_err(AnalyzerExpressionError::fatal)?;
-                    if mismatch.is_some() {
+                    if mismatch {
                         return Err(AnalyzerExpressionError::rejected(owner));
                     }
                 }
@@ -1522,7 +1524,7 @@ impl Analyzer<'_, '_, '_> {
                 let reference = reference.as_resolved().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
                 })?;
-                self.prepare_entry_reference(module, owner, reference, expected)
+                self.prepare_entry_reference(context, module, owner, reference, expected)
                     .map(Some)
             }
             HirExprKind::ShortVariant(_) => self.prepare_variant_expression_kind(
@@ -1648,9 +1650,8 @@ impl Analyzer<'_, '_, '_> {
         };
         if let Some(expected) = expected
             && types
-                .annotation_mismatch(owner, expected, carrier.success())
+                .contextual_type_mismatch(owner, expected, carrier.success())
                 .map_err(AnalyzerExpressionError::fatal)?
-                .is_some()
         {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
@@ -1701,6 +1702,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn prepare_entry_reference(
         &self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         reference: &HirIdRef,
@@ -1777,9 +1779,7 @@ impl Analyzer<'_, '_, '_> {
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
                 )
             })?;
-            if !expected.accepts(actual) {
-                return Err(AnalyzerExpressionError::rejected(owner));
-            }
+            self.check_prepared_contextual_type(context, owner, expected, actual)?;
         }
         Ok(PreparedExpressionFact::from(prepared))
     }
@@ -2761,9 +2761,8 @@ impl Analyzer<'_, '_, '_> {
                         .map_err(AnalyzerExpressionError::fatal)?;
                     for residual in residuals {
                         if types
-                            .annotation_mismatch(owner, expected, residual)
+                            .contextual_type_mismatch(owner, expected, residual)
                             .map_err(AnalyzerExpressionError::fatal)?
-                            .is_some()
                         {
                             return Err(AnalyzerExpressionError::rejected(owner));
                         }
@@ -3157,7 +3156,7 @@ impl Analyzer<'_, '_, '_> {
                         let actual = checked
                             .value_type()
                             .ok_or_else(|| AnalyzerExpressionError::rejected(value))?;
-                        self.check_authored_contextual_type(context, value, &expected, actual)?;
+                        self.check_prepared_contextual_type(context, value, &expected, actual)?;
                         Some(value)
                     } else if let (Some((application, expected)), HirStmtKind::Out { value, .. }) =
                         (out_expectation, statement.kind())
@@ -3371,16 +3370,15 @@ impl Analyzer<'_, '_, '_> {
         }
         if let Some((expected, actual)) = carrier.residual_types(boundary)
             && types
-                .annotation_mismatch(owner, expected, actual)
+                .contextual_type_mismatch(owner, expected, actual)
                 .map_err(AnalyzerExpressionError::fatal)?
-                .is_some()
         {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
         Ok(())
     }
 
-    fn check_authored_contextual_type(
+    fn check_prepared_contextual_type(
         &self,
         context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
@@ -3391,9 +3389,8 @@ impl Analyzer<'_, '_, '_> {
             .source_type_preparation(context.work())
             .map_err(AnalyzerExpressionError::fatal)?;
         if types
-            .annotation_mismatch(owner, expected, actual)
+            .contextual_type_mismatch(owner, expected, actual)
             .map_err(AnalyzerExpressionError::fatal)?
-            .is_some()
         {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
@@ -3478,13 +3475,23 @@ impl Analyzer<'_, '_, '_> {
             .map_err(AnalyzerExpressionError::fatal)?,
         };
         if let Some((expected, actual)) = carrier.residual_types(&boundary)
-            && let Some((expected, actual)) = types
-                .annotation_mismatch(owner, expected, actual)
+            && types
+                .contextual_type_mismatch(owner, expected, actual)
                 .map_err(AnalyzerExpressionError::fatal)?
         {
-            return Err(AnalyzerExpressionError::fatal(
-                sites.mismatch(owner, expected, actual),
-            ));
+            if let (Some(expected), Some(actual)) = (
+                types
+                    .project_annotations(owner, expected)
+                    .map_err(AnalyzerExpressionError::fatal)?,
+                types
+                    .project_annotations(owner, actual)
+                    .map_err(AnalyzerExpressionError::fatal)?,
+            ) {
+                return Err(AnalyzerExpressionError::fatal(
+                    sites.mismatch(owner, expected, actual),
+                ));
+            }
+            return Err(AnalyzerExpressionError::rejected(owner));
         }
         Ok(PreparedTryBoundary::Callable {
             declaration: declaration.clone(),
@@ -3654,7 +3661,7 @@ impl Analyzer<'_, '_, '_> {
                         .map_err(AnalyzerExpressionError::fatal)?,
                 );
                 if let Some(expected) = expectation.complete_type() {
-                    self.check_authored_contextual_type(context, owner, expected, &ty)?;
+                    self.check_prepared_contextual_type(context, owner, expected, &ty)?;
                 }
                 let checked_closure = CheckedClosure::seal(
                     Arc::clone(&self.topology),
@@ -3886,7 +3893,7 @@ impl Analyzer<'_, '_, '_> {
             };
             let result = self.completed_body_result(module, owner, body_type, completion)?;
             if let Some(expected) = expected {
-                self.check_authored_contextual_type(context, owner, expected, &result)?;
+                self.check_prepared_contextual_type(context, owner, expected, &result)?;
             }
             Ok(result)
         })();
@@ -5551,13 +5558,9 @@ impl Analyzer<'_, '_, '_> {
                 {
                     let asset = arcweft_id::AssetId::try_from(public_id)
                         .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
-                    let ty = TypeKind::entity_ref(EntityKind::Asset);
-                    if matches!(
-                        expectation,
-                        AnalyzerExpressionExpectation::Complete(expected)
-                            if !expected.accepts(&ty)
-                    ) {
-                        return Err(AnalyzerExpressionError::rejected(owner).into());
+                    let ty = TypeKind::Ref(crate::types::EntityType::new(EntityKind::Asset, None));
+                    if let AnalyzerExpressionExpectation::Complete(expected) = expectation {
+                        self.check_prepared_contextual_type(context, owner, expected, &ty)?;
                     }
                     return Ok(Some(
                         crate::final_analysis::prepared::PreparedResolvedExpression::value(
@@ -5576,7 +5579,7 @@ impl Analyzer<'_, '_, '_> {
                         if entity.kind() == &EntityKind::DialogueLine
                 ) {
                     return self
-                        .check_dialogue_line_reference(module, owner, reference, expected)
+                        .check_dialogue_line_reference(context, module, owner, reference, expected)
                         .map(Some)
                         .map_err(E::from);
                 }
@@ -5768,6 +5771,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn check_dialogue_line_reference(
         &self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         reference: &HirIdRef,
@@ -5817,9 +5821,12 @@ impl Analyzer<'_, '_, '_> {
         // preparation only the typed `say.*` identity can be checked; the
         // selected-line seal validates that the reference names an accepted
         // line without consulting a pre-sema catalog.
-        let ty = TypeKind::entity_ref(EntityKind::DialogueLine);
-        if expected.is_some_and(|expected| !expected.accepts(&ty)) {
-            return Err(AnalyzerExpressionError::rejected(owner));
+        let ty = TypeKind::Ref(crate::types::EntityType::new(
+            EntityKind::DialogueLine,
+            None,
+        ));
+        if let Some(expected) = expected {
+            self.check_prepared_contextual_type(context, owner, expected, &ty)?;
         }
         Ok(
             crate::final_analysis::prepared::PreparedResolvedExpression::value(

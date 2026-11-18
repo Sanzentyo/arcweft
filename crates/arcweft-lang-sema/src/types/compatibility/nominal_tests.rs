@@ -1,5 +1,5 @@
 use super::*;
-use crate::{effects::EffectSet, types::AcceptedNominalType};
+use crate::{effect_row::EffectRow, effects::EffectSet, types::AcceptedNominalType};
 
 fn envelope(argument: TypeKind) -> TypeKind {
     TypeKind::AcceptedNominal(AcceptedNominalType::new(

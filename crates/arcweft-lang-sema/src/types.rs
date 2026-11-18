@@ -31,8 +31,8 @@ mod variant_payload;
 pub use arcweft_core::character_nominal::{CharacterNominalFamily, CharacterNominalType};
 pub use arcweft_dialogue::{CharacterDialogueCharacterType, CharacterDialogueType};
 pub(crate) use compatibility::{
-    NoopTypeCompatibilityControl, TypeCompatibilityControl, TypeCompatibilityFailure,
-    TypeCompatibilityForbidden, TypeCompatibilityPolicy,
+    NoopTypeCompatibilityControl, PreparedTypeCompatibility, TypeCompatibilityControl,
+    TypeCompatibilityFailure, TypeCompatibilityForbidden, TypeCompatibilityPolicy,
 };
 pub(crate) use constraints::ConstraintAcceptance;
 #[cfg(test)]

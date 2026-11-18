@@ -16,7 +16,10 @@ use crate::{
         TypeConstraintAbort, TypeConstraintError, TypeConstraintInvariant,
         TypeConstraintProjectionInvariant,
     },
-    types::{TypeCompatibilityControl, TypeKind, TypeProjectionControl, TypeProjectionNodeKind},
+    types::{
+        TypeCompatibilityControl, TypeEffectDomain, TypeKind, TypeProjectionControl,
+        TypeProjectionNodeKind,
+    },
 };
 
 trait DeclarationWork {
@@ -132,10 +135,10 @@ impl TypeProjectionControl for AnalyzerPreparationWork<'_> {
     }
 }
 
-impl TypeCompatibilityControl for AnalyzerPreparationWork<'_> {
+impl<D: TypeEffectDomain> TypeCompatibilityControl<D> for AnalyzerPreparationWork<'_> {
     type Error = FinalSemanticAnalysisError;
 
-    fn enter(&mut self, _: &TypeKind, _: &TypeKind) -> Result<(), Self::Error> {
+    fn enter(&mut self, _: &TypeKind<D>, _: &TypeKind<D>) -> Result<(), Self::Error> {
         self.charge(DecisionWork::Visit)
     }
 }
