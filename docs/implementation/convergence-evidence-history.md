@@ -19305,3 +19305,16 @@ Source `061f4e121c220c0b9a79e42671e32cf4026eebf9`。基点は `9e7318c642c171858
 Compilerの同じ2 target・152 IDのnextestは149成功・3失敗・0スキップ。遅延コールバックは確定済み作用式の構築を通過し、独立した `CanonicalReplay` における宣言本体の読取りで作業上限に達した。captured Mapは新しい型制約の適用範囲で作業上限に達した。Map復元は両テストとも型検査で失敗した。fmtと構造ゲートは終了0。Compilerの2 target以外の逆依存テスト、Semaユニットテスト、Clippy、workspace最終受入、Native／Web最終受入は未実行。CARGO_INCREMENTAL=0。
 
 [検証原本・LLDB・全ID比較・公開照合](acceptance-evidence/task-solved-effect-application.raw.zip) は 16 entry、52697 bytes、SHA256 `94033cbc4b96ba809d580322dbfbce213037228581fc38001a1f3c077912cb50`。各entryの長さとSHA256を再照合した。既存履歴 3018173 bytesのSHA256 `b3e803d778d33fe266f3e840e83c6d1b2c682d9caa7e02be40bec958c1bd7da2` をprefixとして保持した。
+
+<a id="retain-original-constraint"></a>
+## 2026-11-19 — 最終照合に準備済みの作用制約を渡す
+
+Source `fc9391728cdbeabfa262d7ea4d0e54e464cbe88d`。基点は `649750493c511846c9ef36563f2d78d8d8cd2659`。比較元のCompiler統合テストは `061f4e121c220c0b9a79e42671e32cf4026eebf9`。公開後に11件のRust blobと検証入力のSHA256を照合した。
+
+基点に一時の計測を追加し、指定3テストを実行した。3失敗・他の8件を選択外とした。遅延コールバックは候補1件が12単位から4,096単位まで進んで停止した。Mapは6候補あり、3番目はretained Mapで127単位から4,096単位まで進み、captured Mapで105単位から4,045単位まで進んだ。captured Mapは5番目の候補の準備で上限に達した。256単位ごとのスタック標本には元の制約の準備、依存関係の取り込み、主作用解の計算、正準化が含まれる。標本は各処理の正確な消費量を表さない。
+
+単独の呼び出しと複数の候補を束ねる場合に、準備済み関係と元の作用制約を一緒に束縛する。関係に含まれる正確な制約オブジェクトを照合する。最終の主作用解は同じ制約を独立した正準式で一度確認し、後段はそのオブジェクトの一致を使う。別の制約には個別の検証が必要で、fixtureの検査は従来どおり追加の制約を確かめる。最終照合が拘束するΓと元の制約の出典は準備時に確定する。
+
+Compilerの同じ2 target・152 IDは149成功・3失敗・0スキップ。遅延コールバックは正準式での元の制約の照合中、captured Mapは適用の述語準備中、retained Mapは準備済み型の正準化中に作業上限に達した。計測用差分を取り除いて検証した。fmtと構造ゲートは終了0。Semaのlocked全feature checkはライブラリのコンパイル成功、lib testは終了101・863エラー・33警告。過去の全feature checkと比較したエラーコードと発生ファイルの組は、マクロの呼出し元へ正規化した上で一致した。Semaユニットテスト、追加の逆依存テスト、Clippy、workspaceおよびNative／Webの最終受入は未実行。CARGO_INCREMENTAL=0。targetは7,981,944,323 bytes。
+
+[検証原本・候補別の計測・診断JSON・公開照合](acceptance-evidence/task-retain-original-constraint.raw.zip) は 31 entry、736635 bytes、SHA256 `27dd690c6bb61a78a9bac7dbf9ca8a5bfb6332fe170edae03d65f7772b5597cb`。各entryの長さとSHA256を再照合した。既存履歴 3020009 bytesのSHA256 `93f929a75ef53c1929c3004847e98ad1452f3c84955dc7a1ffd90a0817b16c8e` をprefixとして保持した。
