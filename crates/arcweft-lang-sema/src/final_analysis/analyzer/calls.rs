@@ -5214,6 +5214,21 @@ impl Analyzer<'_, '_, '_> {
             }
         };
         let enclosing = self.enclosing_constraint_scope(module, owner, expected_result_scope)?;
+        let staged = self.staged_callables.as_ref().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
+        })?;
+        let application_result = self
+            .facts
+            .prepared_calls_mut()
+            .map_err(AnalyzerExpressionError::fact)?
+            .prepare_application_result(
+                &staged.builder,
+                &prepared_candidate,
+                inputs.mapping(),
+                &mut context.work(),
+            )
+            .map_err(FinalSemanticAnalysisError::from)
+            .map_err(AnalyzerExpressionError::fatal)?;
         let constraint_set = validate_and_prepare_call_constraints(
             self.facts
                 .prepared_calls()
@@ -5237,6 +5252,8 @@ impl Analyzer<'_, '_, '_> {
             site,
         )
         .map_err(|failure| terminal_call_constraint_failure(owner, failure))?;
+        let output =
+            constraint_set.prepare_output_projections(owner, application_result, context)?;
         let child_recipe = parent_source.as_ref().map(|_| PreparedCallCandidateRecipe {
             candidate: Arc::clone(&candidate),
             group: current_group,
@@ -5255,6 +5272,7 @@ impl Analyzer<'_, '_, '_> {
                 attempt.cloned(),
                 parent_source,
                 constraint_set,
+                output,
             )
             .map(|contribution| PreparedCallCandidateExecution::Deferred {
                 pending: contribution.pending,
@@ -5268,6 +5286,7 @@ impl Analyzer<'_, '_, '_> {
                 pass,
                 attempt.cloned(),
                 constraint_set,
+                output,
             )
             .map(PreparedCallCandidateExecution::Root),
         };

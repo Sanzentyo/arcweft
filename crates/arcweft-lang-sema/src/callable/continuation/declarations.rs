@@ -13,6 +13,8 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum PreparedCallableValueTypeFailure<E: std::error::Error + 'static> {
     #[error(transparent)]
+    Authority(#[from] CallConstraintInvariant),
+    #[error(transparent)]
     Effect(#[from] PreparedEffectFailure<E>),
     #[error(transparent)]
     Projection(
@@ -21,6 +23,13 @@ pub(crate) enum PreparedCallableValueTypeFailure<E: std::error::Error + 'static>
             crate::callable::schema::PreparedCallableFunctionTypeFailure<E>,
         >,
     ),
+}
+
+/// Value results enter inference with their live effect terms. Content has no
+/// type projection and retains its typed operation identity.
+pub(crate) enum PreparedApplicationResult {
+    Value(TypeKind<crate::types::PreparedEffects>),
+    ContentEmission(crate::callable::ContentCallableIdentity),
 }
 
 pub(crate) struct PreparedCallableEffectDeclarations {
@@ -72,6 +81,30 @@ impl PreparedCallableEffectDeclarations {
         C: crate::types::TypeProjectionControl
             + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
     {
+        self.prepare_declared_arrow(
+            owner,
+            schema,
+            CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO),
+            None,
+            control,
+        )
+    }
+
+    fn prepare_declared_arrow<C>(
+        &mut self,
+        owner: &CheckedCallableId,
+        schema: &CallableSignatureSchema,
+        position: CallableParameterCoordinate,
+        result: Option<&crate::callable::CallableResultSchema>,
+        control: &mut C,
+    ) -> Result<
+        TypeKind<crate::types::PreparedEffects>,
+        PreparedCallableValueTypeFailure<<C as crate::types::TypeProjectionControl>::Error>,
+    >
+    where
+        C: crate::types::TypeProjectionControl
+            + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
+    {
         use crate::effect_row::prepared::PreparedEffectRow;
         let header = self
             .declarations
@@ -101,11 +134,10 @@ impl PreparedCallableEffectDeclarations {
             let row = self
                 .graph
                 .application(header.scheme(), arguments, control)?;
-            Ok(schema.prepare_function_type_from_position(
-                crate::callable::CallableParameterCoordinate::group_start(
-                    crate::callable::CallableGroupIndex::ZERO,
-                ),
+            Ok(schema.prepare_function_type_with_result_from_position(
+                position,
                 &row,
+                result,
                 &self.graph,
                 control,
             )?)
@@ -136,13 +168,35 @@ impl PreparedCallableEffectDeclarations {
         C: crate::types::TypeProjectionControl
             + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
     {
+        self.prepare_known_arrow(
+            schema,
+            CallableParameterCoordinate::group_start(CallableGroupIndex::ZERO),
+            row,
+            result,
+            control,
+        )
+    }
+
+    fn prepare_known_arrow<C>(
+        &self,
+        schema: &CallableSignatureSchema,
+        position: CallableParameterCoordinate,
+        row: &crate::effect_row::EffectRow,
+        result: Option<&crate::callable::CallableResultSchema>,
+        control: &mut C,
+    ) -> Result<
+        TypeKind<crate::types::PreparedEffects>,
+        PreparedCallableValueTypeFailure<<C as crate::types::TypeProjectionControl>::Error>,
+    >
+    where
+        C: crate::types::TypeProjectionControl
+            + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
+    {
         let row = row
             .try_clone_with_control(control)
             .map_err(PreparedEffectFailure::Control)?;
         Ok(schema.prepare_function_type_with_result_from_position(
-            crate::callable::CallableParameterCoordinate::group_start(
-                crate::callable::CallableGroupIndex::ZERO,
-            ),
+            position,
             &crate::effect_row::prepared::PreparedEffectRow::Canonical(row),
             result,
             &self.graph,
@@ -202,6 +256,86 @@ impl PreparedCallableEffectDeclarations {
 }
 
 impl<P, U> PreparedCallGraph<P, U> {
+    pub(crate) fn prepare_application_result<C>(
+        &mut self,
+        builder: &crate::callable::CheckedCallableCatalogBuilder,
+        candidate: &super::super::PreparedResolvedCallable,
+        mapping: &crate::callable::PreparedCallArgumentMapping,
+        control: &mut C,
+    ) -> Result<
+        PreparedApplicationResult,
+        PreparedCallableValueTypeFailure<<C as crate::types::TypeProjectionControl>::Error>,
+    >
+    where
+        C: crate::types::TypeProjectionControl
+            + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
+    {
+        use crate::callable::{
+            CallableResultSchema, CallableTerminalEffectProjection, CheckedCallResolverAuthority,
+            EffectPermission,
+        };
+
+        let transition = candidate.application_transition(mapping)?;
+        let terminal = CheckedCallResolverAuthority::preparing(builder, self.effects.view())
+            .terminal_effects_for(candidate)
+            .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
+        let schema = candidate.schema();
+        let Some(next) = transition.remaining_position() else {
+            let result = terminal
+                .inferred_result_schema()
+                .unwrap_or_else(|| schema.result_schema());
+            return Ok(match result {
+                CallableResultSchema::Value(value) => PreparedApplicationResult::Value(
+                    value
+                        .prepare_effects(schema.generic_inventory().template_scope(), control)
+                        .map_err(
+                            super::super::schema::PreparedCallableFunctionTypeFailure::Projection,
+                        )
+                        .map_err(
+                            super::super::schema::CallableFunctionTypeProjectionError::Projection,
+                        )?,
+                ),
+                CallableResultSchema::ContentEmission(identity) => {
+                    PreparedApplicationResult::ContentEmission(*identity)
+                }
+            });
+        };
+        let declarations = self
+            .declarations
+            .as_mut()
+            .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)?;
+        // The authored interface decides whether the arrow calls a scheme.
+        // A cached body result can refine the result type without replacing
+        // the declaration's live terminal effect term.
+        if let Some(owner) = candidate.checked() {
+            let pending = builder
+                .pending_by_id(owner)
+                .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
+            if pending.body_contract().is_some_and(|contract| {
+                matches!(contract.permission(), EffectPermission::UnboundedInference)
+            }) {
+                let value = declarations.prepare_declared_arrow(
+                    owner,
+                    schema,
+                    next,
+                    terminal.inferred_result_schema(),
+                    control,
+                )?;
+                return Ok(PreparedApplicationResult::Value(value));
+            }
+        }
+        let value = match terminal {
+            CallableTerminalEffectProjection::Known {
+                effects,
+                result_schema,
+            } => declarations.prepare_known_arrow(schema, next, effects, result_schema, control)?,
+            CallableTerminalEffectProjection::Pending(owner) => {
+                declarations.prepare_declared_arrow(owner, schema, next, None, control)?
+            }
+        };
+        Ok(PreparedApplicationResult::Value(value))
+    }
+
     pub(crate) fn effect_declarations(
         &self,
     ) -> Result<&PreparedCallableEffectDeclarations, CallConstraintInvariant> {

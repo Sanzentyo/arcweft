@@ -298,6 +298,130 @@ mod tests {
     }
 
     #[test]
+    fn inferred_application_result_keeps_the_declaration_term_after_row_caching() {
+        use crate::callable::{
+            CallableInstantiation, PRODUCTION_CALLABLE_LIMITS, PreparedApplicationResult,
+            PreparedCallGraph, PreparedCallableEffectDeclarations,
+            PreparedCallableEffectProjectionSite, PreparedCatalogCallee, PreparedResolvedCallable,
+            ResolverWork, map_call_arguments,
+        };
+        use crate::effect_row::prepared::PreparedEffectRow;
+        use crate::types::TypeKind;
+        use arcweft_lang_hir::expr::HirExprKind;
+
+        let world = fixture(
+            "fn staged(first: i64)(second: i64) -> i64 { first + second }\n\
+             fn caller() { let _ = staged(1i64); }",
+            None,
+        );
+        let analysis = analyze(&world).unwrap();
+        let builder = builder(&analysis);
+        let source = builder
+            .constraint_source_owner(analysis.hir_topology(), expression(&analysis, "staged"))
+            .unwrap();
+        let SourceContract::Declaration { id, record } = &source.contract else {
+            panic!("staged declaration");
+        };
+        let candidate = PreparedResolvedCallable::try_from_checked_record(
+            id.clone(),
+            Arc::clone(record),
+            PreparedCatalogCallee::Direct {
+                project_binding: None,
+            },
+            CallableInstantiation::None,
+            Vec::new(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .unwrap();
+        let project = world.project.analysis_view().unwrap();
+        let (owner, module, call) = analysis
+            .hir_topology()
+            .expression_owners()
+            .find_map(|owner| {
+                let (_, module) = project
+                    .modules()
+                    .find(|(_, module)| module.module_id() == owner.module())?;
+                match module.resolve_expr(owner).ok()?.kind() {
+                    HirExprKind::Call(call) => Some((owner, module, call)),
+                    _ => None,
+                }
+            })
+            .unwrap();
+        let schema = candidate.schema();
+        let mapping = map_call_arguments(
+            module,
+            schema,
+            candidate.id(),
+            candidate.position(),
+            call.arguments(),
+            None,
+        )
+        .unwrap();
+        let cancellation = std::sync::atomic::AtomicBool::new(false);
+        let mut resolver = ResolverWork::new(1);
+        let mut control = resolver
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .unwrap();
+        let declarations =
+            PreparedCallableEffectDeclarations::declare([(id, schema)], &mut control).unwrap();
+        let mut graph = PreparedCallGraph::<(), ()>::default();
+        graph.initialize_effect_declarations(declarations).unwrap();
+
+        let pending = graph
+            .prepare_application_result(&builder, &candidate, &mapping, &mut control)
+            .unwrap();
+        let exposed = analysis
+            .checked_callables()
+            .callable(id)
+            .unwrap()
+            .exposed_row();
+        let checkpoint = graph.begin_delta(&mut control).unwrap();
+        let cache = graph
+            .request_effect_projection(
+                PreparedCallableEffectProjectionSite::CallableValue(owner),
+                &candidate,
+            )
+            .unwrap();
+        graph
+            .complete_effect_projection(&cache, id, exposed.clone(), None)
+            .unwrap();
+        graph.commit_delta(checkpoint).unwrap();
+        let cached = graph
+            .prepare_application_result(&builder, &candidate, &mapping, &mut control)
+            .unwrap();
+
+        let (effects_graph, headers) = graph.effect_declarations_mut().unwrap().relation();
+        let header = headers.get(id).unwrap().validate_schema(schema).unwrap();
+        effects_graph
+            .prepare_body(
+                header.scheme(),
+                PreparedEffectRow::Canonical(exposed.clone()),
+                Vec::new(),
+                &mut control,
+            )
+            .unwrap();
+        let closed = effects_graph.solve_principal(&mut control).unwrap();
+        for result in [pending, cached] {
+            let PreparedApplicationResult::Value(TypeKind::Function {
+                params,
+                return_type,
+                effects,
+                ..
+            }) = result
+            else {
+                panic!("remaining invocation arrow");
+            };
+            assert_eq!(params, [TypeKind::I64]);
+            assert_eq!(*return_type, TypeKind::I64);
+            assert!(matches!(effects, PreparedEffectRow::Term(_)));
+            assert_eq!(
+                &closed.resolve_row(&effects, &mut control).unwrap(),
+                exposed
+            );
+        }
+    }
+
+    #[test]
     fn source_type_retention_keeps_caller_formals_nested_rows_and_original_aborts() {
         use crate::effect_row::prepared::PreparedEffectRow;
         use crate::types::constraints::{TypeConstraintAbort, TypeConstraintError};

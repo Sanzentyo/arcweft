@@ -110,9 +110,9 @@ pub(crate) use constraints::{
 };
 pub(crate) use continuation::{
     CallConstraintInvariant, CallableConstraintApplication, EnclosingGenericParameterScope,
-    PreparedCallContinuationAuthority, PreparedCallContinuationRef, PreparedCallGraph,
-    PreparedCallGraphCheckpoint, PreparedCallGraphDelta, PreparedCallGraphIngress,
-    PreparedCallGraphMutationFailure, PreparedCallGraphReplayMismatch,
+    PreparedApplicationResult, PreparedCallContinuationAuthority, PreparedCallContinuationRef,
+    PreparedCallGraph, PreparedCallGraphCheckpoint, PreparedCallGraphDelta,
+    PreparedCallGraphIngress, PreparedCallGraphMutationFailure, PreparedCallGraphReplayMismatch,
     PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
     PreparedCallGraphSelectedNode, PreparedCallGraphSiteState, PreparedCallPrefixPayload,
     PreparedCallPrefixReplayMismatch, PreparedCallResultRef, PreparedCallSiteDelivery,

@@ -41,7 +41,7 @@ pub(crate) use application_owner::CallableConstraintApplication;
 mod declarations;
 mod effects;
 pub(crate) use declarations::{
-    PreparedCallableEffectDeclarations, PreparedCallableValueTypeFailure,
+    PreparedApplicationResult, PreparedCallableEffectDeclarations, PreparedCallableValueTypeFailure,
 };
 mod specialization;
 #[cfg(test)]

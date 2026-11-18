@@ -26,7 +26,7 @@ use crate::{
         CandidateConstraintSourceContext, CheckedCallArgumentSlotSource,
         CheckedCallResolverAuthority, CheckedCallSite, CheckedSemanticValueEvidence,
         DetachedPreparedResolvedCallable, EnclosingGenericParameterScope,
-        ObservedSemanticValueEvidence, ParameterExpectedTypeProjection,
+        ObservedSemanticValueEvidence, ParameterExpectedTypeProjection, PreparedApplicationResult,
         PreparedArgumentSourceProjection, PreparedCallCalleeConstraintInputs, PreparedCallGraph,
         PreparedCallInputs, PreparedCallPrefixPayload, PreparedCallSemanticOperandOwner,
         PreparedCallSemanticOperandRole, PreparedCallableApplication,
@@ -36,7 +36,7 @@ use crate::{
         PreparedSourceConstraintGroup, VariantPayloadRequirement,
     },
     types::{
-        GenericTypeReference, TypeKind,
+        GenericTypeReference, PreparedEffects, TypeKind,
         constraints::{
             ConstraintAcceptance, ConstraintDomain, ExpectedHint, MaterializationOutcome,
             MaterializedSourceRequest, PreparedConstraintSourceProjection,
@@ -3083,8 +3083,13 @@ impl PreparedCallResultConstraint {
 
 struct PreparedCallProjectionRequest {
     key: AnalyzerCallProjection,
-    value: TypeKind,
+    value: TypeKind<PreparedEffects>,
     closure: crate::types::constraints::TypeConstraintProjectionClosure,
+}
+
+pub(super) struct PreparedCallOutputProjections {
+    requests: Vec<PreparedCallProjectionRequest>,
+    content: Option<crate::callable::ContentCallableIdentity>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3232,9 +3237,61 @@ pub(crate) struct PreparedCallConstraintSet {
     type_application_constraints: Box<[PreparedCallTypeConstraint]>,
     receiver_constraints: Box<[PreparedCallTypeConstraint]>,
     result_constraint: Option<PreparedCallResultConstraint>,
-    result_schema: CallableResultSchema,
-    projection_requests: Box<[PreparedCallProjectionRequest]>,
+    result_closure: crate::types::constraints::TypeConstraintProjectionClosure,
+    future_parameters: Vec<GenericTypeReference>,
     initialization: PreparedCallConstraintInitialization,
+}
+
+impl PreparedCallConstraintSet {
+    pub(super) fn prepare_output_projections(
+        &self,
+        application: ExprId,
+        result: PreparedApplicationResult,
+        context: &AnalyzerExpressionContext<'_>,
+    ) -> Result<PreparedCallOutputProjections, AnalyzerExpressionError> {
+        use crate::types::constraints::TypeConstraintProjectionClosure;
+
+        let scope = self.candidate.schema().generic_inventory().template_scope();
+        let mut work = context.work();
+        let mut requests = Vec::new();
+        for constraint in &self.base_constraints {
+            let value = constraint
+                .pattern
+                .prepare_effects(scope, &mut work)
+                .map_err(|error| {
+                    AnalyzerExpressionError::fatal(
+                        crate::final_analysis::FinalSemanticAnalysisError::source_type_projection(
+                            application.into(),
+                            error,
+                        ),
+                    )
+                })?;
+            requests.push(PreparedCallProjectionRequest {
+                key: AnalyzerCallProjection::BaseInstantiation,
+                value,
+                closure: self.result_closure,
+            });
+        }
+        let content = match result {
+            PreparedApplicationResult::Value(value) => {
+                requests.push(PreparedCallProjectionRequest {
+                    key: AnalyzerCallProjection::Result,
+                    value,
+                    closure: self.result_closure,
+                });
+                None
+            }
+            PreparedApplicationResult::ContentEmission(operation) => Some(operation),
+        };
+        requests.extend(self.future_parameters.iter().cloned().map(|parameter| {
+            PreparedCallProjectionRequest {
+                key: AnalyzerCallProjection::Future(parameter.clone()),
+                value: TypeKind::GenericParam(parameter),
+                closure: TypeConstraintProjectionClosure::AllowFutureEligible,
+            }
+        }));
+        Ok(PreparedCallOutputProjections { requests, content })
+    }
 }
 
 struct PreparedCalleeProjectionOwners(Vec<Arc<CandidateSemanticProjection>>);
@@ -5489,15 +5546,15 @@ pub(crate) fn validate_and_prepare_call_constraints(
         }
     }
 
-    let result_schema = candidate
-        .project_application_result(transition, terminal_effects)
-        .and_then(|result| result.into_ready())
-        .map_err(|error| {
-            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-        })?;
     let mut next_application_constraints = Vec::new();
     let result_constraint = if expected_result.is_some() || expected_application_callee.is_some() {
-        let CallableResultSchema::Value(mut pattern) = result_schema.clone() else {
+        let CallableResultSchema::Value(mut pattern) = candidate
+            .project_application_result(transition, terminal_effects)
+            .and_then(|result| result.into_ready())
+            .map_err(|error| {
+                CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
+            })?
+        else {
             return Err(CallAnalysisFailure::Invariant(
                 CallAnalysisInvariant::Constraint(
                     CallConstraintInvariant::PreparedFunctionTypeMismatch,
@@ -5575,35 +5632,6 @@ pub(crate) fn validate_and_prepare_call_constraints(
     } else {
         crate::types::constraints::TypeConstraintProjectionClosure::Closed
     };
-    let mut projection_requests = base_constraints
-        .iter()
-        .map(|constraint| PreparedCallProjectionRequest {
-            key: AnalyzerCallProjection::BaseInstantiation,
-            value: constraint.pattern.clone(),
-            closure: result_closure,
-        })
-        .collect::<Vec<_>>();
-    if let CallableResultSchema::Value(result_projection) = &result_schema {
-        projection_requests.push(PreparedCallProjectionRequest {
-            key: AnalyzerCallProjection::Result,
-            value: result_projection.clone(),
-            closure: result_closure,
-        });
-    } else if expected_result.is_some() || expected_application_callee.is_some() {
-        return Err(CallAnalysisFailure::Invariant(
-            CallAnalysisInvariant::Constraint(
-                CallConstraintInvariant::PreparedFunctionTypeMismatch,
-            ),
-        ));
-    }
-    projection_requests.extend(future_parameters.into_iter().map(|parameter| {
-        PreparedCallProjectionRequest {
-            key: AnalyzerCallProjection::Future(parameter.clone()),
-            value: TypeKind::GenericParam(parameter),
-            closure:
-                crate::types::constraints::TypeConstraintProjectionClosure::AllowFutureEligible,
-        }
-    }));
     Ok(PreparedCallConstraintSet {
         original: original.clone(),
         enclosing: enclosing.clone(),
@@ -5621,8 +5649,8 @@ pub(crate) fn validate_and_prepare_call_constraints(
         type_application_constraints,
         receiver_constraints: receiver_constraints.into_boxed_slice(),
         result_constraint,
-        result_schema,
-        projection_requests: projection_requests.into_boxed_slice(),
+        result_closure,
+        future_parameters,
         initialization,
     })
 }
@@ -5916,6 +5944,7 @@ pub(crate) fn run_prepared_candidate(
     pass: CandidateEvaluationPass,
     attempt: Option<PhysicalCallAttemptId>,
     set: PreparedCallConstraintSet,
+    output: PreparedCallOutputProjections,
 ) -> Result<RanCandidateTransaction, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
     let PreparedCallConstraintSet {
         original,
@@ -5934,10 +5963,10 @@ pub(crate) fn run_prepared_candidate(
         type_application_constraints,
         receiver_constraints,
         result_constraint,
-        result_schema,
-        projection_requests,
         initialization,
+        ..
     } = set;
+    let PreparedCallOutputProjections { requests, content } = output;
     let PreparedCallConstraintInitialization::Root(initialization) = initialization else {
         return Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::SourceProtocol(
@@ -5971,7 +6000,7 @@ pub(crate) fn run_prepared_candidate(
         attempt,
         &mut prepared_child_calls,
     );
-    let mut expected_projection_keys = projection_requests
+    let mut expected_projection_keys = requests
         .iter()
         .map(|request| request.key.clone())
         .collect::<Vec<_>>();
@@ -6024,7 +6053,7 @@ pub(crate) fn run_prepared_candidate(
                 for group in source_groups {
                     driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
                 }
-                for request in projection_requests {
+                for request in requests {
                     driver.request_projection(request.key, &request.value, request.closure);
                 }
                 if let Some(PreparedCallResultConstraint::FunctionUse(constraint)) =
@@ -6163,11 +6192,9 @@ pub(crate) fn run_prepared_candidate(
         }
     };
     let current_group = candidate.call_group();
-    let result = match result_schema {
-        CallableResultSchema::ContentEmission(operation) => {
-            Ok(CallableResultSchema::ContentEmission(operation))
-        }
-        CallableResultSchema::Value(_) => (|| {
+    let result = match content {
+        Some(operation) => Ok(CallableResultSchema::ContentEmission(operation)),
+        None => (|| {
             let projection = solved
                 .component
                 .selected()
@@ -6808,6 +6835,7 @@ pub(crate) fn run_prepared_child_candidate(
         AnalyzerCallConstraintDomain,
     >,
     set: PreparedCallConstraintSet,
+    output: PreparedCallOutputProjections,
 ) -> Result<PreparedChildCandidateRun, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
     let PreparedCallConstraintSet {
         original,
@@ -6826,10 +6854,10 @@ pub(crate) fn run_prepared_child_candidate(
         type_application_constraints,
         receiver_constraints,
         result_constraint,
-        result_schema,
-        projection_requests,
         initialization,
+        ..
     } = set;
+    let PreparedCallOutputProjections { requests, content } = output;
     let PreparedCallConstraintInitialization::Child(initialization) = initialization else {
         return Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::SourceProtocol(
@@ -6837,11 +6865,7 @@ pub(crate) fn run_prepared_child_candidate(
             )),
         ));
     };
-    if !matches!(result_schema, CallableResultSchema::Value(_))
-        || !projection_requests
-            .iter()
-            .any(|request| request.key == AnalyzerCallProjection::Result)
-    {
+    if content.is_some() {
         return Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Projection(
                 crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,
@@ -6922,7 +6946,7 @@ pub(crate) fn run_prepared_child_candidate(
                         );
                     }
                 }
-                for request in projection_requests {
+                for request in requests {
                     driver.request_projection(request.key, &request.value, request.closure);
                 }
                 driver.defer_child_result(AnalyzerCallProjection::Result)
