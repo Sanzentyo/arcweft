@@ -22,7 +22,7 @@ pub(crate) struct NoConstraintClient;
 
 /// Domain identities owned by the caller of the lower transaction.
 ///
-/// Probe branch identities require equality. Affine preparation and sealed
+/// Probe branch identities are small cloneable descriptors. Affine preparation and sealed
 /// callback values carry evidence owned by the client, which decides replay
 /// equivalence in its actual context. Lower storage does not require those
 /// values to implement `Eq`, `Copy`, `Clone` or `Ord` to let a frontier fork.
@@ -33,7 +33,7 @@ pub(crate) trait ConstraintDomain: Sized + 'static {
     type EvidenceRule: Eq;
     type ObservedEvidence: Eq;
     type CheckedEvidence: Eq;
-    type ProbeSemanticBranch: Eq;
+    type ProbeSemanticBranch: Clone + Eq;
     type SourceValue: ConstraintSourceValueOwner<Self>;
     /// Affine source facts transferred by the callback's successful close.
     /// They are retained evidence, not a completed type/equivalence certificate.
@@ -790,6 +790,7 @@ pub(crate) enum MaterializationOutcome<S, V, C> {
 pub(crate) struct MaterializedSourceRequest<'h, D: ConstraintDomain> {
     component: &'h super::CompletedConstraintComponent<D>,
     source: &'h super::ClosedConstraintProbe<D>,
+    preparation: &'h D::ProbePreparation,
 }
 
 /// The exact child application result that supplied a parent source's actual
@@ -850,21 +851,23 @@ impl<D: ConstraintDomain> super::CompletedConstraintComponent<D> {
 
 impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
     pub(crate) fn preparation(&self) -> &'h D::ProbePreparation {
-        self.source.preparation()
+        self.preparation
     }
 
     pub(crate) fn retained_value(&self) -> Option<&'h D::SourceValue> {
         self.source.retained_value()
     }
 
-    pub(super) fn from_component(
+    pub(super) fn for_source(
         component: &'h super::CompletedConstraintComponent<D>,
-        ordinal: usize,
-    ) -> Option<Self> {
-        Some(Self {
+        source: &'h super::ClosedConstraintProbe<D>,
+        preparation: &'h D::ProbePreparation,
+    ) -> Self {
+        Self {
             component,
-            source: component.sources().all().get(ordinal)?,
-        })
+            source,
+            preparation,
+        }
     }
 
     pub(crate) const fn component(&self) -> &'h super::CompletedConstraintComponent<D> {

@@ -1975,6 +1975,22 @@ impl SemanticFactState {
         &self,
         projection: CandidateSemanticProjection,
     ) -> Result<(), CandidateFactTransactionViolation> {
+        self.require_candidate_projection_owner(&projection)?;
+        self.prepared_calls()?
+            .validate_delta(&projection.data.graph_delta)
+            .map_err(|violation| {
+                CandidateFactTransactionViolation::PreparedCallGraph(violation.into())
+            })?;
+        drop(projection);
+        Ok(())
+    }
+
+    /// A materialization callback borrows the original probe's facts before
+    /// using them. The same ledger and epoch must own that preparation.
+    pub(super) fn require_candidate_projection_owner(
+        &self,
+        projection: &CandidateSemanticProjection,
+    ) -> Result<(), CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
         if !Arc::ptr_eq(&self.issuer, &projection.data.authority.issuer) {
             return Err(CandidateFactTransactionViolation::ForeignProjection);
@@ -1982,12 +1998,6 @@ impl SemanticFactState {
         if projection.data.authority.epoch != self.epoch {
             return Err(CandidateFactTransactionViolation::ProjectionAuthorityMismatch);
         }
-        self.prepared_calls()?
-            .validate_delta(&projection.data.graph_delta)
-            .map_err(|violation| {
-                CandidateFactTransactionViolation::PreparedCallGraph(violation.into())
-            })?;
-        drop(projection);
         Ok(())
     }
 

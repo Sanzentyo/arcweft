@@ -3,7 +3,7 @@ use crate::effect_row::prepared::{PreparedEffectPredicate, PreparedEffectUnknown
 use crate::types::constraints::transaction::operand::ConstraintEffectPhase;
 use crate::types::constraints::{
     ConstraintAcceptance, ConstraintSourceReceipt, ConstraintSourceValueOwner,
-    MaterializedSourceRequest, OriginalProducerContext, TypeConstraintSourceProtocolInvariant,
+    OriginalProducerContext, TypeConstraintSourceProtocolInvariant,
 };
 use crate::types::{
     GenericBinder,
@@ -317,7 +317,11 @@ fn a_closed_member_contains_canonical_sources_and_keeps_original_c_unchanged() {
             input()
         )
     );
-    let request = MaterializedSourceRequest::from_component(&solved.component, 0).unwrap();
+    let request = solved
+        .source_preparations
+        .requests(&solved.component)
+        .next()
+        .unwrap();
     let expected_row = EffectRow::open(
         EffectSet::from_labels(["named.body", "future.actual", "allowed.extra"]).unwrap(),
         input(),

@@ -215,7 +215,7 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
         assert!(retained.upgrade().is_some());
         let path = transaction.test_single_path();
         let effects = pure_component_effects(path, &mut graph, &mut context);
-        let component = super::super::CompletedConstraintComponent::from_closed_original(
+        let input = MaterializationInput::from_closed_original(
             path,
             path.root_id(),
             path,
@@ -224,12 +224,9 @@ fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_sou
             &mut context,
         )
         .unwrap();
-        let mut materialization = ConstraintMaterialization::from_component(
-            component,
-            &transaction.effect_owner,
-            &mut context,
-        )
-        .unwrap();
+        let graph_owner = graph.owner(&mut context).unwrap();
+        let mut materialization =
+            ConstraintMaterialization::from_component(input, &graph_owner, &mut context).unwrap();
         drop(transaction);
         let mut ticket = materialization
             .next_materialization_ticket(&mut context)
@@ -458,7 +455,7 @@ fn source_equation_operands_keep_their_receipts_when_closed_and_transported() {
     let receipt = before.source_receipt().unwrap().clone();
     let original = before.original_context().clone();
     let effects = pure_component_effects(&path, &mut graph, &mut context);
-    let closed = path
+    let (closed, _) = path
         .lineage
         .close_trace(&path, &effects, graph.read(), &mut context)
         .unwrap();
@@ -643,7 +640,7 @@ fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport
     assert_eq!(before.result_origin().unwrap().application(), child_id);
     assert!(before.source_receipt().unwrap().matches(&receipt));
     let effects = pure_component_effects(&path, &mut graph, &mut context);
-    let closed = path
+    let (closed, _) = path
         .lineage
         .close_trace(&path, &effects, graph.read(), &mut context)
         .unwrap();

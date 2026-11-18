@@ -3941,7 +3941,7 @@ fn deferred_cycle_is_reported_only_after_close() {
     ));
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 struct PreparedBranch(&'static str);
 
 #[derive(Clone, Eq, PartialEq)]

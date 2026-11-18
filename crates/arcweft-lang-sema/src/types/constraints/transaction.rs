@@ -35,7 +35,8 @@ use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
 mod completed_component;
 mod materialization;
-pub(crate) use materialization::ConstraintMaterialization;
+pub(crate) use materialization::{ConstraintMaterialization, RetainedSourcePreparations};
+use materialization::{MaterializationInput, SourcePreparation};
 mod operand;
 pub(in crate::types::constraints) use operand::ConstraintAliasStep;
 pub(in crate::types) use operand::{
@@ -880,7 +881,7 @@ pub(crate) enum ProbeSubmission<D: ConstraintDomain> {
 pub(crate) struct MaterializationTicket<D: ConstraintDomain> {
     identity: MaterializationTicketIdentity,
     correlation: MaterializationCorrelationOrdinal,
-    component: super::CompletedConstraintComponent<D>,
+    input: MaterializationInput<D>,
     phase: MaterializationTicketPhase,
 }
 
@@ -931,10 +932,7 @@ impl<D: ConstraintDomain> MaterializationTicket<D> {
     pub(crate) fn requests(
         &self,
     ) -> impl ExactSizeIterator<Item = MaterializedSourceRequest<'_, D>> + '_ {
-        (0..self.component.sources().all().len()).map(|ordinal| {
-            MaterializedSourceRequest::from_component(&self.component, ordinal)
-                .expect("component source ordinal")
-        })
+        self.input.preparations.requests(&self.input.component)
     }
 
     pub(crate) fn bind_callback(
@@ -947,6 +945,7 @@ impl<D: ConstraintDomain> MaterializationTicket<D> {
         Ok(MaterializationCallbackBinding {
             identity: self.identity.clone(),
             sources: self
+                .input
                 .component
                 .sources()
                 .all()
@@ -967,6 +966,7 @@ impl<D: ConstraintDomain> MaterializationTicket<D> {
             return Err(TypeConstraintSourceProtocolInvariant::Ticket);
         }
         let expected = self
+            .input
             .component
             .sources()
             .all()
@@ -1072,7 +1072,7 @@ pub(crate) enum ProbeStart {
 
 enum MaterializedRecord<D: ConstraintDomain> {
     Sealed {
-        component: super::CompletedConstraintComponent<D>,
+        input: MaterializationInput<D>,
         value: D::SealedBranchValue,
     },
     Rejected {
@@ -2327,30 +2327,30 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         self.first_cycle = None;
         acyclic.sort_by(path_correlation_cmp::<D>);
 
-        let mut groups: Vec<Vec<super::CompletedConstraintComponent<D>>> = Vec::new();
+        let mut groups: Vec<Vec<MaterializationInput<D>>> = Vec::new();
         for mut path in acyclic {
-            let component =
-                match Self::complete_component(&mut path, self.application, graph, context) {
-                    Ok(component) => component,
-                    Err(TypeConstraintError::Rejected(rejection)) => {
-                        completion_rejection.get_or_insert(rejection);
-                        continue;
-                    }
-                    Err(error) => return Err(error),
-                };
+            let input = match Self::complete_component(&mut path, self.application, graph, context)
+            {
+                Ok(component) => component,
+                Err(TypeConstraintError::Rejected(rejection)) => {
+                    completion_rejection.get_or_insert(rejection);
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             let mut group_index = None;
             for (index, group) in groups.iter().enumerate() {
                 if let Some(first) = group.first()
-                    && first.equal_with(&component, context)?
+                    && first.component.equal_with(&input.component, context)?
                 {
                     group_index = Some(index);
                     break;
                 }
             }
             if let Some(index) = group_index {
-                groups[index].push(component);
+                groups[index].push(input);
             } else {
-                groups.push(vec![component]);
+                groups.push(vec![input]);
             }
         }
         if groups.is_empty()
@@ -2358,8 +2358,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         {
             return Err(rejection.into());
         }
-        for component in groups.into_iter().flatten() {
-            self.materialization.push_component(component, context)?;
+        for input in groups.into_iter().flatten() {
+            self.materialization.push_component(input, context)?;
         }
         Ok(())
     }
@@ -2389,9 +2389,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         selected: ConstraintApplicationId,
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<super::CompletedConstraintComponent<D>, TypeConstraintError> {
+    ) -> Result<MaterializationInput<D>, TypeConstraintError> {
         let effects = super::normalization::ConstraintClosedEffects::for_path(path, context)?;
-        super::CompletedConstraintComponent::from_closed_original(
+        MaterializationInput::from_closed_original(
             path,
             selected,
             path,
@@ -2670,15 +2670,22 @@ impl<D: ConstraintDomain> ConstraintSourceLineage<D> {
         effects: &Arc<ConstraintClosedEffects<D>>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Box<[ClosedConstraintProbe<D>]>, TypeConstraintError> {
+    ) -> Result<(Box<[ClosedConstraintProbe<D>]>, Box<[SourcePreparation<D>]>), TypeConstraintError>
+    {
         effects.require_branch(branch)?;
         let mut closed = Vec::new();
+        let mut preparations = Vec::new();
         for probe in &self.probe_trace {
             context.enter_node()?;
             context.enter_node()?;
             closed.push(probe.clone().close(branch, effects, graph, context)?);
+            context.enter_node()?;
+            preparations.push(SourcePreparation::new(
+                probe.source(),
+                Arc::clone(&probe.branch),
+            ));
         }
-        Ok(closed.into_boxed_slice())
+        Ok((closed.into_boxed_slice(), preparations.into_boxed_slice()))
     }
 }
 

@@ -112,7 +112,7 @@ pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
     original: OriginalProducerContext,
     retained_value: Option<Arc<D::SourceValue>>,
     source_ordinal: PreparedSourceOrdinal,
-    branch: Arc<SourceProbeObservation<D>>,
+    branch: D::ProbeSemanticBranch,
     selection: ClosedSourceSelection<D>,
     prepared_source_projection: PreparedConstraintSourceProjection,
     actual: ConstraintOperand<D, TypeKind>,
@@ -353,13 +353,14 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
                 ));
             }
         };
+        context.enter_node()?;
         Ok(ClosedConstraintProbe {
             completion: Arc::clone(effects),
             source: self.source,
             original,
             retained_value,
             source_ordinal: self.source_ordinal,
-            branch: self.branch,
+            branch: self.branch.branch().clone(),
             selection,
             prepared_source_projection: self.prepared_source_projection,
             actual,
@@ -456,12 +457,6 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
         }
     }
 
-    pub(crate) fn preparation(&self) -> &D::ProbePreparation {
-        self.branch
-            .preparation()
-            .expect("a completed source trace owns its callback's closed preparation")
-    }
-
     /// Application identity is compared by the owning trace. A replay has a
     /// fresh opening, but must preserve this source's schema and observation.
     fn same_observation(&self, other: &Self) -> bool {
@@ -489,7 +484,7 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
         self.source_ordinal
     }
     pub(in crate::types::constraints) fn branch(&self) -> &D::ProbeSemanticBranch {
-        self.branch.branch()
+        &self.branch
     }
     pub(crate) fn actual(&self) -> &TypeKind {
         self.actual.value()
@@ -615,7 +610,7 @@ impl<D: ConstraintDomain> Clone for ClosedConstraintProbe<D> {
             original: self.original.clone(),
             retained_value: self.retained_value.as_ref().map(Arc::clone),
             source_ordinal: self.source_ordinal,
-            branch: Arc::clone(&self.branch),
+            branch: self.branch.clone(),
             selection: self.selection.clone(),
             prepared_source_projection: self.prepared_source_projection,
             actual: self.actual.clone(),

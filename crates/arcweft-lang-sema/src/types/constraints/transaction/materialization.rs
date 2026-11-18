@@ -2,6 +2,84 @@
 
 use super::*;
 
+/// The original callback close remains available while its canonical source
+/// and branch are being selected. The semantic component never owns it.
+pub(crate) struct RetainedSourcePreparations<D: ConstraintDomain> {
+    rows: Box<[SourcePreparation<D>]>,
+}
+
+pub(super) struct SourcePreparation<D: ConstraintDomain> {
+    source: ConstraintSourceId<D::Source>,
+    observation: Arc<SourceProbeObservation<D>>,
+}
+
+impl<D: ConstraintDomain> SourcePreparation<D> {
+    pub(super) fn new(
+        source: ConstraintSourceId<D::Source>,
+        observation: Arc<SourceProbeObservation<D>>,
+    ) -> Self {
+        Self {
+            source,
+            observation,
+        }
+    }
+
+    fn preparation(&self) -> &D::ProbePreparation {
+        self.observation
+            .preparation()
+            .expect("closing the source already required the original callback preparation")
+    }
+}
+
+pub(super) struct MaterializationInput<D: ConstraintDomain> {
+    pub(super) component: super::super::CompletedConstraintComponent<D>,
+    pub(super) preparations: RetainedSourcePreparations<D>,
+}
+
+impl<D: ConstraintDomain> MaterializationInput<D> {
+    pub(super) fn new<A: TypeConstraintAccounting>(
+        component: super::super::CompletedConstraintComponent<D>,
+        rows: Box<[SourcePreparation<D>]>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError> {
+        if component.sources().all().len() != rows.len() {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Outcome,
+            ));
+        }
+        for (source, row) in component.sources().all().iter().zip(&rows) {
+            context.enter_node()?;
+            if source.source() != row.source {
+                return Err(protocol_error(
+                    TypeConstraintSourceProtocolInvariant::WrongSource,
+                ));
+            }
+        }
+        Ok(Self {
+            component,
+            preparations: RetainedSourcePreparations { rows },
+        })
+    }
+}
+
+impl<D: ConstraintDomain> RetainedSourcePreparations<D> {
+    pub(super) fn requests<'h>(
+        &'h self,
+        component: &'h super::super::CompletedConstraintComponent<D>,
+    ) -> impl ExactSizeIterator<Item = MaterializedSourceRequest<'h, D>> + 'h {
+        debug_assert_eq!(self.rows.len(), component.sources().all().len());
+        component
+            .sources()
+            .all()
+            .iter()
+            .zip(self.rows.iter())
+            .map(|(source, row)| {
+                debug_assert!(source.source() == row.source);
+                MaterializedSourceRequest::for_source(component, source, row.preparation())
+            })
+    }
+}
+
 pub(crate) struct ConstraintMaterialization<D: ConstraintDomain> {
     graph_owner: crate::effect_row::prepared::PreparedEffectGraphOwner,
     next_correlation_ordinal: u32,
@@ -36,13 +114,13 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
     pub(in crate::types::constraints::transaction) fn from_component<
         A: TypeConstraintAccounting,
     >(
-        component: super::super::CompletedConstraintComponent<D>,
+        input: MaterializationInput<D>,
         graph_owner: &crate::effect_row::prepared::PreparedEffectGraphOwner,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError> {
         context.enter_node()?;
         let mut owner = Self::new(graph_owner.clone(), context)?;
-        owner.push_component(component, context)?;
+        owner.push_component(input, context)?;
         Ok(owner)
     }
 
@@ -61,13 +139,13 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
         A: TypeConstraintAccounting,
     >(
         &mut self,
-        component: super::super::CompletedConstraintComponent<D>,
+        input: MaterializationInput<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         context.enter_node()?;
-        if component.sources().all().is_empty() {
+        if input.component.sources().all().is_empty() {
             self.materialized.push(MaterializedRecord::Sealed {
-                component,
+                input,
                 value: D::empty_sealed_branch(),
             });
             return Ok(());
@@ -87,7 +165,7 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
                 ordinal: self.next_materialization_ticket_ordinal,
             },
             correlation: MaterializationCorrelationOrdinal(self.next_correlation_ordinal),
-            component,
+            input,
             phase: MaterializationTicketPhase::Ready,
         };
         self.materialization.push_back(ticket);
@@ -246,17 +324,16 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
         }
         self.active_materialization = None;
         let MaterializationTicket {
-            correlation,
-            component,
-            ..
+            correlation, input, ..
         } = ticket;
         match closed.submission {
             ClosedMaterializationSubmission::Sealed(value) => {
                 self.materialized
-                    .push(MaterializedRecord::Sealed { component, value });
+                    .push(MaterializedRecord::Sealed { input, value });
             }
             ClosedMaterializationSubmission::Rejected { source, cause } => {
-                let source_ordinal = unique_request_ordinal(component.sources().all(), source)?;
+                let source_ordinal =
+                    unique_request_ordinal(input.component.sources().all(), source)?;
                 self.materialized.push(MaterializedRecord::Rejected {
                     source_ordinal,
                     correlation,
@@ -271,7 +348,7 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
                     ));
                 }
                 let source_ordinal =
-                    unique_request_ordinal(component.sources().all(), *error.source())?;
+                    unique_request_ordinal(input.component.sources().all(), *error.source())?;
                 self.materialized.push(MaterializedRecord::Fatal {
                     source_ordinal,
                     correlation,
@@ -328,29 +405,30 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
                 source, phase, cause,
             )));
         }
-        let mut candidates: Vec<(
-            super::super::CompletedConstraintComponent<D>,
-            D::SealedBranchValue,
-        )> = Vec::new();
+        let mut candidates: Vec<SolvedCandidate<D>> = Vec::new();
         let mut rejected = Vec::new();
         for record in core::mem::take(&mut self.materialized) {
             match record {
-                MaterializedRecord::Sealed { component, value } => {
+                MaterializedRecord::Sealed { input, value } => {
                     let mut duplicate = false;
-                    for (existing_component, existing_value) in &candidates {
-                        if existing_component.equal_with(&component, context)? {
+                    for existing in &candidates {
+                        if existing.component.equal_with(&input.component, context)? {
                             // The opaque owner observes the same running reservation.
                             // Dispatch itself is bounded even for an empty payload;
                             // any controlled traversal consumes that reservation too.
                             context.enter_node()?;
-                            if compare(existing_value, &value, context.accounting_mut())? {
+                            if compare(&existing.sealed_branch, &value, context.accounting_mut())? {
                                 duplicate = true;
                                 break;
                             }
                         }
                     }
                     if !duplicate {
-                        candidates.push((component, value));
+                        candidates.push(SolvedCandidate {
+                            component: input.component,
+                            sealed_branch: value,
+                            source_preparations: input.preparations,
+                        });
                     }
                 }
                 MaterializedRecord::Rejected {
@@ -390,23 +468,12 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
                 ),
             ));
         }
-        let Some((component, sealed_branch)) = candidates.pop() else {
+        let Some(first) = candidates.pop() else {
             return Err(TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch).into());
         };
-        let first = SolvedCandidate {
-            component,
-            sealed_branch,
-        };
-        let remaining = candidates
-            .into_iter()
-            .map(|(component, sealed_branch)| SolvedCandidate {
-                component,
-                sealed_branch,
-            })
-            .collect();
         context.check_cancelled()?;
         Ok(super::super::CompletedCandidateAlternatives::new(
-            first, remaining,
+            first, candidates,
         ))
     }
 }

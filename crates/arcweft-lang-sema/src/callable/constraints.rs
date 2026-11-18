@@ -1152,7 +1152,7 @@ pub(crate) mod tests {
             .expect("test initialization gate")
     }
 
-    #[derive(Eq, PartialEq)]
+    #[derive(Clone, Eq, PartialEq)]
     struct Branch;
 
     #[derive(Eq, PartialEq)]

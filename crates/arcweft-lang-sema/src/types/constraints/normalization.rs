@@ -274,11 +274,22 @@ impl<A, P> KeyedConstraintProjection<A, P> {
     }
 }
 
-#[derive(Eq, PartialEq)]
 pub(crate) struct SolvedCandidate<D: ConstraintDomain> {
     pub(crate) component: super::CompletedConstraintComponent<D>,
     pub(crate) sealed_branch: D::SealedBranchValue,
+    pub(crate) source_preparations: super::transaction::RetainedSourcePreparations<D>,
 }
+
+impl<D: ConstraintDomain> PartialEq for SolvedCandidate<D>
+where
+    D::SealedBranchValue: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.component == other.component && self.sealed_branch == other.sealed_branch
+    }
+}
+
+impl<D: ConstraintDomain> Eq for SolvedCandidate<D> where D::SealedBranchValue: Eq {}
 
 impl<D: ConstraintDomain> fmt::Debug for SolvedCandidate<D> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

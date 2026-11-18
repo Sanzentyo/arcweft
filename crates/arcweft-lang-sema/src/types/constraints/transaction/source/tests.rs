@@ -2,6 +2,7 @@ use crate::types::constraints::test_support::ConstraintTestSetup;
 use std::sync::atomic::AtomicBool;
 
 use super::*;
+use crate::types::constraints::transaction::materialization::MaterializationInput;
 use crate::types::constraints::transaction::{ProbeSubmission, TypeConstraintTransaction};
 use crate::{
     effect_row::EffectRow,
@@ -65,14 +66,20 @@ mod retained_preparation {
     #[test]
     fn forked_and_suspended_paths_share_the_original_non_clone_preparation() {
         let cancellation = AtomicBool::new(false);
+        let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
         let (mut context, parameters) = ConstraintTestSetup::<_, Domain>::new(
             TypeConstraintLimits::new(4096, 2048, 128, 64),
             &cancellation,
         )
         .into_parts();
-        let mut transaction =
-            TypeConstraintTransaction::initialize_fixture(&mut context, (), parameters, None)
-                .unwrap();
+        let mut transaction = TypeConstraintTransaction::initialize_fixture(
+            &mut context,
+            &mut graph,
+            (),
+            parameters,
+            None,
+        )
+        .unwrap();
         transaction
             .begin_prepared_probe(
                 &mut context,
@@ -83,7 +90,10 @@ mod retained_preparation {
                 super::super::super::ConstraintAcceptance::PatternAcceptsActual,
             )
             .unwrap();
-        let mut ticket = transaction.next_probe(&mut context).unwrap().unwrap();
+        let mut ticket = transaction
+            .next_probe(&mut context, &mut graph)
+            .unwrap()
+            .unwrap();
         let mut left = ticket
             .fork(&mut context)
             .unwrap()
@@ -101,13 +111,20 @@ mod retained_preparation {
         transaction
             .submit_probe(
                 &mut context,
+                &mut graph,
                 ticket.input(),
                 ProbeSubmission::Accepted(contribution),
             )
             .unwrap();
-        assert!(transaction.next_probe(&mut context).unwrap().is_none());
+        assert!(
+            transaction
+                .next_probe(&mut context, &mut graph)
+                .unwrap()
+                .is_none()
+        );
         transaction.request_projection(
             &mut context,
+            &mut graph,
             (),
             &TypeKind::Unit,
             TypeConstraintProjectionClosure::Closed,
@@ -116,42 +133,100 @@ mod retained_preparation {
         assert_eq!(drops.load(Ordering::Relaxed), 0);
         let resumed = suspended.resume();
         assert_eq!(resumed.frontier.len(), 2);
-        let mut closed = Vec::new();
+        let graph_owner = graph.owner(&mut context).unwrap();
+        let mut materialization =
+            crate::types::constraints::transaction::ConstraintMaterialization::new(
+                graph_owner,
+                &mut context,
+            )
+            .unwrap();
         for path in &resumed.frontier {
-            closed.push(
-                path.lineage.probe_trace[0]
-                    .clone()
-                    .close(
-                        &path,
-                        &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
-                        &mut context,
-                    )
-                    .unwrap(),
-            );
+            let scoped = path
+                .prepare_effect_constraint(&mut graph, &mut context)
+                .unwrap();
+            let frozen = graph
+                .read()
+                .freeze_scoped(&[], &[], &[&scoped], &mut context)
+                .unwrap();
+            let original = graph
+                .bind_original_scoped(&frozen, &mut context)
+                .unwrap()
+                .freeze(graph.read(), &mut context)
+                .unwrap();
+            let effects =
+                ConstraintClosedEffects::for_path(path, &original, &[], &mut graph, &mut context)
+                    .unwrap();
+            let input = MaterializationInput::from_closed_original(
+                path,
+                path.root_id(),
+                path,
+                &effects,
+                graph.read(),
+                &mut context,
+            )
+            .unwrap();
+            materialization.push_component(input, &mut context).unwrap();
         }
-        assert_eq!(closed[0].preparation().value, 913);
-        assert!(std::ptr::eq(
-            closed[0].preparation(),
-            closed[1].preparation()
-        ));
-        assert_ne!(closed[0].actual(), closed[1].actual());
         drop(resumed);
+        let mut observations = Vec::new();
+        while let Some(mut ticket) = materialization
+            .next_materialization_ticket(&mut context)
+            .unwrap()
+        {
+            let request = ticket.requests().next().unwrap();
+            assert_eq!(request.preparation().value, 913);
+            observations.push((
+                std::ptr::from_ref(request.preparation()),
+                request.actual().clone(),
+            ));
+            ticket.bind_callback().unwrap();
+            let submission = ticket
+                .bind_closed_submission(
+                    crate::types::constraints::ClosedMaterializationSubmission::Sealed(()),
+                )
+                .unwrap();
+            materialization
+                .submit_closed_materialization(ticket, submission)
+                .unwrap();
+        }
+        assert_eq!(observations.len(), 2);
+        assert_eq!(observations[0].0, observations[1].0);
+        assert_ne!(observations[0].1, observations[1].1);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
-        drop(closed);
+        let selected = materialization
+            .finish(&mut context, |_, _, _| Ok(true))
+            .unwrap()
+            .into_index_with(0, |_| Ok::<_, std::convert::Infallible>(()))
+            .unwrap()
+            .unwrap();
+        let crate::types::constraints::SolvedCandidate {
+            component,
+            source_preparations,
+            ..
+        } = selected;
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
+        drop(source_preparations);
         assert_eq!(drops.load(Ordering::Relaxed), 1);
+        assert_eq!(component.sources().all()[0].actual(), &observations[1].1);
     }
 
     #[test]
     fn cancelled_preparation_admission_keeps_the_affine_input_unpublished() {
         let cancellation = AtomicBool::new(false);
+        let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
         let (mut context, parameters) = ConstraintTestSetup::<_, Domain>::new(
             TypeConstraintLimits::new(4096, 2048, 128, 64),
             &cancellation,
         )
         .into_parts();
-        let mut transaction =
-            TypeConstraintTransaction::initialize_fixture(&mut context, (), parameters, None)
-                .unwrap();
+        let mut transaction = TypeConstraintTransaction::initialize_fixture(
+            &mut context,
+            &mut graph,
+            (),
+            parameters,
+            None,
+        )
+        .unwrap();
         transaction
             .begin_prepared_probe(
                 &mut context,
@@ -162,7 +237,10 @@ mod retained_preparation {
                 super::super::super::ConstraintAcceptance::PatternAcceptsActual,
             )
             .unwrap();
-        let mut ticket = transaction.next_probe(&mut context).unwrap().unwrap();
+        let mut ticket = transaction
+            .next_probe(&mut context, &mut graph)
+            .unwrap()
+            .unwrap();
         let drops = Arc::new(AtomicUsize::new(0));
         let contribution = ticket
             .observe(SourceProbeResult::unchecked(TypeKind::I32, ()))
@@ -175,6 +253,7 @@ mod retained_preparation {
         assert!(matches!(
             transaction.submit_probe(
                 &mut context,
+                &mut graph,
                 ticket.input(),
                 ProbeSubmission::Accepted(contribution)
             ),

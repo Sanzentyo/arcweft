@@ -336,7 +336,7 @@ impl AnalyzerCallSourceFailureCause {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AnalyzerCallProbeSemanticBranch {
     pub(crate) source: AnalyzerCallConstraintSource,
     pub(crate) child_choice: Option<AnalyzerNestedCallChoice>,
@@ -2652,6 +2652,14 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             self.materialization_checkpoint_check(source_id, checkpoint)?;
             self.active_source_check(source_id, SourcePhase::Materialize)
                 .map_err(crate::callable::SourceCallbackFailure::invariant)?;
+            self.analyzer
+                .facts
+                .require_candidate_projection_owner(request.preparation())
+                .map_err(|violation| {
+                    crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                    )
+                })?;
             self.admit_physical_source(source_id, SourcePhase::Materialize, work)?;
             let expected =
                 source
@@ -3862,6 +3870,7 @@ impl RanCandidateTransaction {
         let crate::types::constraints::SolvedCandidate {
             component,
             sealed_branch,
+            source_preparations: _,
         } = solved;
         let component =
             CompletedCallApplicationEvidence::new(Arc::new(component), application_owner)?;

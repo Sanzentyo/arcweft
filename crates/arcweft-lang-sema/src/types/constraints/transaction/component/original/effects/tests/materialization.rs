@@ -1,12 +1,13 @@
 use super::*;
+use crate::types::constraints::transaction::materialization::MaterializationInput;
 use crate::types::constraints::transaction::{
     ActiveConstraintProbe, ConstraintMaterialization, ConstraintSourceId,
     PreparedConstraintSourceProjection, PreparedSourceOrdinal, SourceProbeObservation,
     StoredSourceSelection,
 };
 use crate::types::constraints::{
-    ClosedMaterializationSubmission, CompletedConstraintComponent, SolvedCandidate,
-    TypeConstraintFailure, TypeConstraintFailureInvariant, TypeConstraintSourceProtocolInvariant,
+    ClosedMaterializationSubmission, SolvedCandidate, TypeConstraintFailure,
+    TypeConstraintFailureInvariant, TypeConstraintSourceProtocolInvariant,
 };
 
 fn original_pair(
@@ -167,7 +168,7 @@ fn an_ignored_invalid_submission_cannot_publish_an_earlier_sealed_candidate() {
         ConstraintMaterialization::new(forest.original.effect_owner.clone(), &mut context).unwrap();
     for member in members {
         let source = forest.original.original_path(member).unwrap();
-        let component = CompletedConstraintComponent::from_closed_original(
+        let input = MaterializationInput::from_closed_original(
             source,
             source.root_id(),
             &joint.branch,
@@ -176,7 +177,7 @@ fn an_ignored_invalid_submission_cannot_publish_an_earlier_sealed_candidate() {
             &mut context,
         )
         .unwrap();
-        owner.push_component(component, &mut context).unwrap();
+        owner.push_component(input, &mut context).unwrap();
     }
     let retained = graph.retained_terms();
     let mut a = owner

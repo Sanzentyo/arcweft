@@ -1,6 +1,7 @@
 //! Failure-atomic final validation of the already prepared original forest.
 
 use super::*;
+use crate::types::constraints::transaction::materialization::MaterializationInput;
 
 enum OriginalProductClosure<D: ConstraintDomain> {
     ExistingRejection,
@@ -77,11 +78,11 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                             for member in product.members.iter() {
                                 context.enter_node()?;
                                 let source = self.original.original_path(*member)?;
-                                let component = crate::types::constraints::CompletedConstraintComponent::from_closed_original(
+                                let input = MaterializationInput::from_closed_original(
                                     source, source.root_id(), &prepared.branch, &effects, graph.read(), context,
                                 ).map_err(|error| reject(OriginalProductCheck::MemberCompletion(*member), error))?;
                                 context.enter_node()?;
-                                let materialization = crate::types::constraints::transaction::ConstraintMaterialization::from_component(component, &self.original.effect_owner, context)
+                                let materialization = crate::types::constraints::transaction::ConstraintMaterialization::from_component(input, &self.original.effect_owner, context)
                                     .map_err(|error| reject(OriginalProductCheck::MemberCompletion(*member), error))?;
                                 completed.push(CompletedOriginalMember { member: *member, materialization });
                             }

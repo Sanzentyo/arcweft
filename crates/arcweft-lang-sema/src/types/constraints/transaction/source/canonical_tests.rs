@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::constraints::transaction::materialization::MaterializationInput;
 use crate::{
     effect_row::{
         EffectPredicate, EffectRow,
@@ -149,7 +150,7 @@ fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
         value_expected: Some(context.fixture_operand(expected_function)),
         actual: actual_operand,
     });
-    let sources = path
+    let (sources, _) = path
         .lineage
         .close_trace(&path, &effects, graph.read(), &mut context)
         .unwrap();
@@ -199,7 +200,7 @@ fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
         ))
     ));
     closed.require_completion(&effects).unwrap();
-    let component = crate::types::constraints::CompletedConstraintComponent::from_closed_original(
+    let component = MaterializationInput::from_closed_original(
         &path,
         application,
         &path,
@@ -207,7 +208,8 @@ fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
         graph.read(),
         &mut context,
     )
-    .unwrap();
+    .unwrap()
+    .component;
     assert_eq!(component.sources().all()[0].actual(), closed.actual());
     assert_eq!(
         component.sources().all()[0].final_expected(),

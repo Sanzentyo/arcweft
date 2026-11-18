@@ -4,7 +4,7 @@ use super::*;
 use crate::effect_row::prepared::PreparedEffectReadView;
 use crate::types::constraints::CompletedConstraintComponent;
 
-impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
+impl<D: ConstraintDomain> MaterializationInput<D> {
     pub(in crate::types::constraints::transaction) fn from_closed_original<
         A: TypeConstraintAccounting,
         L,
@@ -49,7 +49,7 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
                 .applications
                 .require_application(request.application)?;
         }
-        let closed_sources = source
+        let (closed_sources, preparations) = source
             .lineage
             .close_trace(branch, effects, graph, context)?;
         for equation in &source.equations {
@@ -99,7 +99,7 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
                 super::super::CompletedConstraintApplication::new(solution, projections),
             );
         }
-        Ok(Self::new(
+        let component = CompletedConstraintComponent::new(
             selected_domain,
             completed,
             ClosedConstraintSourceTrace::new(
@@ -107,7 +107,8 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
                 Arc::clone(&branch.applications),
                 closed_sources,
             ),
-        ))
+        );
+        Self::new(component, preparations, context)
     }
 
     fn finish_projections<A: TypeConstraintAccounting, L>(
