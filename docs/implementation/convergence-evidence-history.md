@@ -19186,3 +19186,15 @@ Source `49b9cb8cbc13a47dd7e41f14bfe6318388ffa371`。変更の基点は `3e5e2d05
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` でdev01からdev04まで実行した。jobs／profileの上書きはなし。すべて終了101。dev01はlibrary 34エラー、lib test 899エラー。dev02とdev03はlibrary 29エラー、lib test 894エラー。今回追加したregistry読取りの借用とHIRのパターン束縛の取得方法を修正した。公開したdev04はlibrary 27エラー・21警告、lib test 892エラー・33警告。正規化した一次診断は914件から893件に減り、新規0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Sema回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,243,777 bytesで、約300 GBを目安とする `cargo clean` は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-binding-patterns.raw.zip) は 36 entry、384612 bytes、SHA256 `4cf6c8f89f811e264a16e012fc93d673db5943074d19f78fd78a6b8a922d8499`。各entryの長さとSHA256を再照合した。更新前の履歴2993508 bytesのSHA256 `86ba1919f7cecd433768031078d5d53bec93982be359985228db058d5bedaaf9`をprefixとして保持した。
+
+
+<a id="prepared-declaration-results"></a>
+## 2026-11-18 — 宣言の戻り値とView既定値の型を元の作用関係で照合
+
+Source `476bf2f2d767bbc18c2b62a28d3ea32e3e4b5f86`。変更の基点は `fff9225a49620747a383c0b7578096a5bce45663`。比較元は `49b9cb8cbc13a47dd7e41f14bfe6318388ffa371` の `prepared-binding-patterns.dev04-check.log`。公開したmainと5件のRust入力のblobを照合した。
+
+関数本体の結果注釈を元の式スコープの準備済み型に投影し、戻り値と既存の型適合検査を行う。戻り値の関数型で作用が省略されている場合、既存の継続解析が選ぶ到達可能な全体値を使って注釈を補完する。各値の補完結果が同じときに宣言結果を決める。候補準備のために行った正準型の観測は、選択された本体と最終作用解から独立に再計算して確認する。Viewの既定値が宣言の省略作用を選ぶ関係では、元の宣言スコープで実値・期待型を準備し、作業上限付きの共通制約トランザクションで照合する。到達可能な二つのreturnが同じ作用を保持するケースと、途中のreturnで異なる作用が出るケースをSema回帰に追加した。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` でdev01とdev02に実行。jobs／profileの上書きはなし。両方とも終了101、library 21エラー、lib test 886エラー。公開したdev02はlibrary 20警告、lib test 32警告。正規化した一次診断は893件から887件に減り、新規0件。変更したRustファイルに一次診断は残っていない。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Sema回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,171,531 bytesで、約300 GBを目安とする `cargo clean` は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-declaration-results.raw.zip) は 24 entry、198866 bytes、SHA256 `cad297855ae28536879273e7e75ab64c818ba3a552a1549f18ccb369aa45a439`。各entryの長さとSHA256を再照合した。更新前の履歴2996140 bytesのSHA256 `bf4e6a03fbd9fd585b50003915c887a7c7c11a5914fce17c1f69cce928f86af4`をprefixとして保持した。
