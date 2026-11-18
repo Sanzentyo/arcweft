@@ -329,6 +329,7 @@ pub(crate) struct PreparedEffectGraph {
     active_scope: Option<scope::ActiveEffectScope>,
     checkpoints: Vec<u64>,
     state: transaction::PreparedEffectStateId,
+    state_ancestors: Vec<transaction::PreparedEffectStateId>,
     next_state: u64,
     journal: Vec<transaction::EffectMutation>,
 }
@@ -346,6 +347,7 @@ impl Default for PreparedEffectGraph {
             active_scope: None,
             checkpoints: Vec::new(),
             state: transaction::PreparedEffectStateId::INITIAL,
+            state_ancestors: Vec::new(),
             next_state: 1,
             journal: Vec::new(),
         }
@@ -464,10 +466,11 @@ impl PreparedEffectGraph {
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
         let id = self.next_row;
-        self.next_row = id
+        let next = id
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
-        self.changed()?;
+        self.changed(control)?;
+        self.next_row = next;
         self.record_mutation(transaction::EffectMutation::Row(id));
         self.relation.rows.insert(id, Arc::new(term));
         Ok(PreparedEffectRow::Term(PreparedEffectRowRef(
@@ -556,7 +559,7 @@ impl PreparedEffectGraph {
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
         let header = Arc::clone(&previous.header);
-        self.changed()?;
+        self.changed(control)?;
         self.publish_function(
             scheme.0.ordinal,
             Arc::new(Function::Scheme(Scheme {
@@ -589,10 +592,11 @@ impl PreparedEffectGraph {
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
         let id = self.next_predicate;
-        self.next_predicate = id
+        let next = id
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
-        self.changed()?;
+        self.changed(control)?;
+        self.next_predicate = next;
         self.record_mutation(transaction::EffectMutation::Predicate(id));
         self.relation.predicates.insert(id, Arc::new(term));
         Ok(PreparedEffectPredicate::Term(PreparedEffectPredicateRef(
@@ -666,10 +670,11 @@ impl PreparedEffectGraph {
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
         let id = self.next_choice;
-        self.next_choice = id
+        let next = id
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
-        self.changed()?;
+        self.changed(control)?;
+        self.next_choice = next;
         self.record_mutation(transaction::EffectMutation::Choice(id));
         self.relation.choices.insert(id);
         Ok(PreparedEffectChoice(self.reference(id)))

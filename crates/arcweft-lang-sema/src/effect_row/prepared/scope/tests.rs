@@ -110,6 +110,133 @@ fn assert_base(graph: &PreparedEffectGraph, state: PreparedEffectStateId) {
 }
 
 #[test]
+fn selected_sources_at_different_live_bases_compose_without_reading_siblings() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let first = prepare_source(&mut graph);
+    let first_reads = graph.read_scope([&first.delta], &mut work).unwrap();
+    graph.choice(&mut work).unwrap();
+    let second = prepare_source(&mut graph);
+    let second_reads = graph.read_scope([&second.delta], &mut work).unwrap();
+    let sibling = prepare_source(&mut graph);
+    let base = graph.state;
+
+    let reads = graph
+        .compose_read_scopes([&second_reads, &first_reads, &first_reads], &mut work)
+        .unwrap();
+    let view = graph.read_scoped(&reads, &mut work).unwrap();
+    view.validate_query_roots(
+        &[&first.row, &second.row],
+        &[&first.predicate, &second.predicate],
+        &mut work,
+    )
+    .unwrap();
+    assert_eq!(
+        view.validate_retained_row(&sibling.row),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+    assert_eq!(reads.data.layers.len(), 2);
+    let (derived, derived_reads) = graph
+        .compute_in_read_scope(&reads, &mut work, |graph, work| {
+            graph.union(vec![first.row.clone(), second.row.clone()], work)
+        })
+        .unwrap();
+    graph
+        .read_scoped(&derived_reads, &mut work)
+        .unwrap()
+        .validate_query_roots(&[&derived], &[], &mut work)
+        .unwrap();
+    assert_eq!(
+        graph.read().validate_retained_row(&derived),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+    assert_eq!(graph.state, base);
+    assert!(matches!(
+        graph
+            .restore_delta(first.delta, &mut work)
+            .unwrap_err()
+            .into_parts()
+            .0,
+        PreparedEffectFailure::Invariant(PreparedEffectInvariant::DeltaBase)
+    ));
+    assert_eq!(
+        graph.read().validate_retained_row(&second.row),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+}
+
+#[test]
+fn a_nested_base_requires_its_actual_enclosing_layer() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let base = graph.state;
+    let mut parent = graph.checkpoint(&mut work).unwrap();
+    let scheme = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+        .unwrap();
+    let mut child = graph.checkpoint(&mut work).unwrap();
+    graph
+        .prepare_body(&scheme, literal(&["child.body"]), vec![], &mut work)
+        .unwrap();
+    let row = graph.application(&scheme, vec![], &mut work).unwrap();
+    let child_delta = graph.extract_delta(&mut child, &mut work).unwrap();
+    let child_reads = graph.read_scope([&child_delta], &mut work).unwrap();
+    let parent_delta = graph.extract_delta(&mut parent, &mut work).unwrap();
+    let parent_reads = graph.read_scope([&parent_delta], &mut work).unwrap();
+
+    assert!(matches!(
+        graph.compose_read_scopes([&child_reads], &mut work),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::DeltaBase
+        ))
+    ));
+    let joined = graph
+        .compose_read_scopes([&child_reads, &parent_reads], &mut work)
+        .unwrap();
+    let view = graph.read_scoped(&joined, &mut work).unwrap();
+    view.validate_query_roots(&[&row], &[], &mut work).unwrap();
+    assert!(matches!(
+        view.scheme(&scheme).unwrap().state,
+        SchemeState::BodyPrepared { .. }
+    ));
+    assert_base(&graph, base);
+}
+
+#[test]
+fn an_ancestral_read_scope_cannot_override_a_conflicting_live_body() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let scheme = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+        .unwrap();
+    let mut checkpoint = graph.checkpoint(&mut work).unwrap();
+    graph
+        .prepare_body(&scheme, literal(&["detached.body"]), vec![], &mut work)
+        .unwrap();
+    let delta = graph.extract_delta(&mut checkpoint, &mut work).unwrap();
+    let reads = graph.read_scope([&delta], &mut work).unwrap();
+    graph
+        .prepare_body(&scheme, literal(&["live.body"]), vec![], &mut work)
+        .unwrap();
+    let base = graph.state;
+    assert!(matches!(
+        graph.compose_read_scopes([&reads], &mut work),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ReadScopeConflict
+        ))
+    ));
+    assert_eq!(graph.state, base);
+    assert_eq!(
+        graph
+            .solve_principal(&mut work)
+            .unwrap()
+            .scheme(&scheme)
+            .unwrap(),
+        &EffectRow::closed(EffectSet::from_labels(["live.body"]).unwrap())
+    );
+}
+
+#[test]
 fn a_closed_read_scope_keeps_source_terms_after_the_permit_is_dropped() {
     let mut graph = PreparedEffectGraph::default();
     let mut work = budget();

@@ -147,10 +147,11 @@ impl PreparedEffectGraph {
     ) -> Result<u64, PreparedEffectFailure<C::Error>> {
         work.charge(DecisionWork::Node)?;
         let id = self.next_function;
-        self.next_function = id
+        let next = id
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
-        self.changed()?;
+        self.changed(work.0)?;
+        self.next_function = next;
         self.publish_function(id, Arc::new(function));
         Ok(id)
     }

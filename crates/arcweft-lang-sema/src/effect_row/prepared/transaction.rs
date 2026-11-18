@@ -9,7 +9,7 @@ use super::{
 mod replay;
 pub(crate) use replay::{PreparedEffectReplayMismatch, PreparedEffectReplayRoot};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct PreparedEffectStateId(u64);
 
 impl PreparedEffectStateId {
@@ -34,6 +34,7 @@ pub(crate) struct PreparedEffectCheckpoint {
     obligation_limit: usize,
     journal_start: usize,
     state: PreparedEffectStateId,
+    ancestor_limit: usize,
     ordinal: u64,
 }
 
@@ -50,7 +51,8 @@ pub(crate) struct PreparedEffectDelta {
 pub(in crate::effect_row::prepared) struct PreparedEffectDeltaData {
     pub(in crate::effect_row::prepared) issuer: Arc<PreparedEffectIssuer>,
     pub(in crate::effect_row::prepared) base: PreparedEffectStateId,
-    result: PreparedEffectStateId,
+    pub(super) result: PreparedEffectStateId,
+    pub(super) ancestors: Vec<PreparedEffectStateId>,
     pub(in crate::effect_row::prepared) ordinal: u64,
     pub(in crate::effect_row::prepared) inputs: Option<Arc<[u64]>>,
     pub(in crate::effect_row::prepared) functions: BTreeMap<u64, Arc<Function>>,
@@ -89,6 +91,7 @@ impl<E> PreparedEffectRestoreBatchFailure<E> {
 struct PreparedEffectPublication {
     scope: super::PreparedEffectReadScope,
     result: PreparedEffectStateId,
+    ancestors: Vec<PreparedEffectStateId>,
     next_state: u64,
 }
 
@@ -107,14 +110,25 @@ impl PreparedEffectGraph {
 
     /// The stamp identifies mutable preparation state, never semantic equality.
     /// Rolling back restores the old state; the allocator never reuses a stamp.
-    pub(super) fn changed(&mut self) -> Result<(), PreparedEffectInvariant> {
+    pub(super) fn changed<C: DecisionControl>(
+        &mut self,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
         let next = self
             .next_state
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
+        control
+            .charge(DecisionWork::Node)
+            .map_err(PreparedEffectFailure::Control)?;
+        self.state_ancestors.push(self.state);
         self.state = PreparedEffectStateId(self.next_state);
         self.next_state = next;
         Ok(())
+    }
+
+    pub(super) fn retains_state(&self, state: PreparedEffectStateId) -> bool {
+        state == self.state || self.state_ancestors.binary_search(&state).is_ok()
     }
 
     pub(super) fn record_mutation(&mut self, insertion: EffectMutation) {
@@ -156,6 +170,7 @@ impl PreparedEffectGraph {
             obligation_limit: self.relation.obligations.len(),
             journal_start: self.journal.len(),
             state: self.state,
+            ancestor_limit: self.state_ancestors.len(),
             ordinal,
         })
     }
@@ -215,6 +230,7 @@ impl PreparedEffectGraph {
             }
         }
         self.state = checkpoint.state;
+        self.state_ancestors.truncate(checkpoint.ancestor_limit);
         self.checkpoints.pop();
         if self.checkpoints.is_empty() {
             self.journal.clear();
@@ -274,10 +290,16 @@ impl PreparedEffectGraph {
         let next_delta = ordinal
             .checked_add(1)
             .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
+        for _ in &self.state_ancestors[checkpoint.ancestor_limit..] {
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
+        }
         let mut delta = PreparedEffectDeltaData {
             issuer: Arc::clone(&self.relation.issuer),
             base: checkpoint.state,
             result: self.state,
+            ancestors: self.state_ancestors.split_off(checkpoint.ancestor_limit),
             ordinal,
             inputs: self
                 .active_scope
@@ -412,7 +434,7 @@ impl PreparedEffectGraph {
         }
         let scope = self.read_scope(inputs.clone(), control)?;
         let mut permits = BTreeSet::new();
-        let mut result = None;
+        let mut last = None;
         for delta in inputs {
             control
                 .charge(DecisionWork::Node)
@@ -420,7 +442,7 @@ impl PreparedEffectGraph {
             if !permits.insert(delta.data.ordinal) {
                 return Err(PreparedEffectInvariant::ReadScopeConflict.into());
             }
-            result = Some(delta.data.result);
+            last = Some(&delta.data);
         }
         if permits.is_empty() || permits.len() != scope.data.layers.len() {
             return Err(PreparedEffectInvariant::ReadScopeDependencies.into());
@@ -445,11 +467,21 @@ impl PreparedEffectGraph {
                 .charge(DecisionWork::Node)
                 .map_err(PreparedEffectFailure::Control)?;
         }
-        let (result, next_state) = if permits.len() == 1 {
-            (result.expect("one publication permit"), self.next_state)
+        let (result, ancestors, next_state) = if permits.len() == 1 {
+            let delta = last.expect("one publication permit");
+            for _ in &delta.ancestors {
+                control
+                    .charge(DecisionWork::Node)
+                    .map_err(PreparedEffectFailure::Control)?;
+            }
+            (delta.result, delta.ancestors.clone(), self.next_state)
         } else {
+            control
+                .charge(DecisionWork::Node)
+                .map_err(PreparedEffectFailure::Control)?;
             (
                 PreparedEffectStateId(self.next_state),
+                vec![self.state],
                 self.next_state
                     .checked_add(1)
                     .ok_or(PreparedEffectInvariant::OrdinalExhausted)?,
@@ -458,6 +490,7 @@ impl PreparedEffectGraph {
         Ok(PreparedEffectPublication {
             scope,
             result,
+            ancestors,
             next_state,
         })
     }
@@ -499,6 +532,7 @@ impl PreparedEffectGraph {
                 .values()
                 .flat_map(|layer| layer.obligations.iter().map(Arc::clone)),
         );
+        self.state_ancestors.extend(publication.ancestors);
         self.state = publication.result;
         self.next_state = publication.next_state;
     }

@@ -365,6 +365,7 @@ pub(crate) struct ConstraintSourceLineage<D: ConstraintDomain> {
     pub(super) scope: super::lexical::ConstraintLexicalScope,
     pub(super) probe_trace: Vec<ActiveConstraintProbe<D>>,
     pub(super) projections: Vec<Arc<ProjectionRequest<D>>>,
+    effect_reads: Option<crate::effect_row::prepared::PreparedEffectReadScope>,
 }
 
 impl<D: ConstraintDomain> Clone for ConstraintSourceLineage<D> {
@@ -375,7 +376,20 @@ impl<D: ConstraintDomain> Clone for ConstraintSourceLineage<D> {
             scope: self.scope.clone(),
             probe_trace: self.probe_trace.clone(),
             projections: self.projections.clone(),
+            effect_reads: self.effect_reads.clone(),
         }
+    }
+}
+
+impl<D: ConstraintDomain> ConstraintSourceLineage<D> {
+    fn probe_effect_reads(
+        &self,
+    ) -> impl Iterator<Item = &crate::effect_row::prepared::PreparedEffectReadScope> {
+        self.effect_reads.iter().chain(
+            self.probe_trace
+                .iter()
+                .filter_map(|probe| probe.branch.preparation().and_then(D::probe_effect_reads)),
+        )
     }
 }
 
@@ -406,6 +420,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
                 scope,
                 probe_trace: Vec::new(),
                 projections: Vec::new(),
+                effect_reads: None,
             },
             applications: Arc::new(ConstraintApplicationInventory::single(
                 application,
@@ -591,7 +606,6 @@ impl<D: ConstraintDomain> ClosedSourceProbeContribution<D> {
         let Some(scope) = D::probe_effect_reads(&self.preparation) else {
             return Ok(());
         };
-        let read = graph.read_scoped(scope, context)?;
         for alternative in &self.alternatives {
             let value = match alternative.result.term() {
                 SourceProbeTerm::AdmittedValue(value) => value.value(),
@@ -622,6 +636,15 @@ impl<D: ConstraintDomain> ClosedSourceProbeContribution<D> {
                             TypeConstraintInvariant::Instantiation(error).into()
                         }
                     })?;
+            let reads = graph.compose_read_scopes(
+                alternative
+                    .path
+                    .lineage
+                    .probe_effect_reads()
+                    .chain(std::iter::once(scope)),
+                context,
+            )?;
+            let read = graph.read_scoped(&reads, context)?;
             read.validate_query_roots(roots.rows(), roots.predicates(), context)?;
         }
         Ok(())
@@ -2198,6 +2221,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     };
                     path.lineage.probe_trace.push(probe);
 
+                    let reads = {
+                        let mut scopes = path.lineage.probe_effect_reads().peekable();
+                        if scopes.peek().is_some() {
+                            Some(graph.compose_read_scopes(scopes, context)?)
+                        } else {
+                            None
+                        }
+                    };
                     let related = if pattern.is_some() {
                         let equation = path
                             .equations
@@ -2205,16 +2236,28 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             .expect("a checked source retains its equation");
                         let expected = equation.pattern.clone();
                         let actual = equation.actual.clone();
-                        relate_selected_call(
-                            graph,
-                            &expected.view(),
-                            &actual.view(),
-                            path,
-                            context,
-                            input.acceptance,
-                        )
+                        let relate = |graph: &mut crate::effect_row::prepared::PreparedEffectGraph, context: &mut TypeConstraintContext<'_, A, D>| {
+                            relate_selected_call(graph, &expected.view(), &actual.view(), path, context, input.acceptance)
+                        };
+                        if let Some(reads) = &reads {
+                            graph
+                                .compute_in_read_scope(reads, context, relate)
+                                .and_then(|(mut paths, reads)| {
+                                    for path in &mut paths {
+                                        context.enter_node()?;
+                                        path.lineage.effect_reads = Some(reads.clone());
+                                    }
+                                    Ok(paths)
+                                })
+                        } else {
+                            relate(graph, context)
+                        }
                     } else {
-                        validate_type(&actual, path.projection_view(), graph.read(), context)
+                        let read = match &reads {
+                            Some(reads) => graph.read_scoped(reads, context)?,
+                            None => graph.read(),
+                        };
+                        validate_type(&actual, path.projection_view(), read, context)
                             .map(|()| vec![path])
                     };
                     match related {

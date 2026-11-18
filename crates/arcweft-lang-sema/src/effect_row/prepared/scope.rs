@@ -35,14 +35,21 @@ impl PreparedEffectReadScope {
         graph: &PreparedEffectGraph,
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        control
-            .charge(DecisionWork::Visit)
-            .map_err(PreparedEffectFailure::Control)?;
-        if !Arc::ptr_eq(&self.data.issuer, &graph.relation.issuer) {
-            return Err(PreparedEffectInvariant::ForeignIssuer.into());
-        }
+        self.validate_issuer(graph, &mut Work(control))?;
         if self.data.base != graph.state {
             return Err(PreparedEffectInvariant::DeltaBase.into());
+        }
+        Ok(())
+    }
+
+    fn validate_issuer<C: DecisionControl>(
+        &self,
+        graph: &PreparedEffectGraph,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        work.charge(DecisionWork::Visit)?;
+        if !Arc::ptr_eq(&self.data.issuer, &graph.relation.issuer) {
+            return Err(PreparedEffectInvariant::ForeignIssuer.into());
         }
         Ok(())
     }
@@ -77,106 +84,118 @@ impl PreparedEffectGraph {
         inputs: impl IntoIterator<Item = &'a PreparedEffectDelta>,
         control: &mut C,
     ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
-        let mut layers = BTreeMap::<u64, Arc<PreparedEffectDeltaData>>::new();
+        let mut layers = BTreeMap::new();
+        let mut work = Work(control);
         for input in inputs {
-            self.validate_delta(input, control)?;
+            self.validate_delta(input, work.0)?;
             if let Some(dependencies) = &input.dependencies {
-                dependencies.validate(self, control)?;
-                for (&id, layer) in &dependencies.data.layers {
-                    control
-                        .charge(DecisionWork::Visit)
-                        .map_err(PreparedEffectFailure::Control)?;
-                    if let Some(previous) = layers.get(&id) {
-                        if !Arc::ptr_eq(previous, layer) {
-                            return Err(PreparedEffectInvariant::ReadScopeConflict.into());
-                        }
-                    } else {
-                        control
-                            .charge(DecisionWork::Node)
-                            .map_err(PreparedEffectFailure::Control)?;
-                        layers.insert(id, Arc::clone(layer));
-                    }
+                for layer in dependencies.data.layers.values() {
+                    retain_layer(&mut layers, layer, &mut work)?;
                 }
             }
-            let id = input.data.ordinal;
-            if let Some(previous) = layers.get(&id) {
-                if !Arc::ptr_eq(previous, &input.data) {
-                    return Err(PreparedEffectInvariant::ReadScopeConflict.into());
-                }
-            } else {
-                control
-                    .charge(DecisionWork::Node)
-                    .map_err(PreparedEffectFailure::Control)?;
-                layers.insert(id, Arc::clone(&input.data));
+            retain_layer(&mut layers, &input.data, &mut work)?;
+        }
+        self.assemble_read_scope(layers, &mut work)
+    }
+
+    /// Read only through selected layers whose bases still have an ancestry
+    /// witness. An enclosing extracted layer can witness the bases of nested
+    /// probes. Joining reads never reissues the permits to publish the layers.
+    pub(crate) fn compose_read_scopes<'a, C: DecisionControl>(
+        &self,
+        scopes: impl IntoIterator<Item = &'a PreparedEffectReadScope>,
+        control: &mut C,
+    ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
+        let mut work = Work(control);
+        let mut layers = BTreeMap::new();
+        let mut bases = BTreeSet::new();
+        for scope in scopes {
+            scope.validate_issuer(self, &mut work)?;
+            work.charge(DecisionWork::Node)?;
+            bases.insert(scope.data.base);
+            for layer in scope.data.layers.values() {
+                retain_layer(&mut layers, layer, &mut work)?;
             }
         }
+        let mut states = BTreeSet::new();
+        for (_, layer) in ordered_layers(&layers, &mut work)? {
+            if !self.retains_state(layer.base) && !states.contains(&layer.base) {
+                return Err(PreparedEffectInvariant::DeltaBase.into());
+            }
+            for &state in layer.ancestors.iter().chain(std::iter::once(&layer.result)) {
+                work.charge(DecisionWork::Node)?;
+                states.insert(state);
+            }
+        }
+        for base in bases {
+            work.charge(DecisionWork::Visit)?;
+            if !self.retains_state(base) && !states.contains(&base) {
+                return Err(PreparedEffectInvariant::DeltaBase.into());
+            }
+        }
+        self.assemble_read_scope(layers, &mut work)
+    }
+
+    fn assemble_read_scope<C: DecisionControl>(
+        &self,
+        layers: BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
+        work: &mut Work<'_, C>,
+    ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
         let mut functions = BTreeMap::<u64, Arc<Function>>::new();
         let mut origins = BTreeMap::<u64, u64>::new();
         let mut rows = BTreeMap::new();
         let mut predicates = BTreeMap::new();
         let mut choices = BTreeSet::new();
         let mut ids = Vec::new();
-        for (&origin, layer) in &layers {
-            control
-                .charge(DecisionWork::Node)
-                .map_err(PreparedEffectFailure::Control)?;
+        for &origin in layers.keys() {
+            work.charge(DecisionWork::Node)?;
             ids.push(origin);
+        }
+        for ((_, origin), layer) in ordered_layers(&layers, work)? {
             for (&id, function) in &layer.functions {
-                control
-                    .charge(DecisionWork::Visit)
-                    .map_err(PreparedEffectFailure::Control)?;
+                work.charge(DecisionWork::Visit)?;
                 if let Some(previous) = functions.get(&id) {
-                    let precedes = layer
-                        .inputs
-                        .as_ref()
-                        .is_some_and(|inputs| inputs.binary_search(&origins[&id]).is_ok());
-                    let update = matches!((previous.as_ref(), function.as_ref()),
-                        (Function::Scheme(Scheme { header: before, state: SchemeState::Declared }),
-                         Function::Scheme(Scheme { header: after, state: SchemeState::BodyPrepared { .. } })) if Arc::ptr_eq(before, after));
-                    if !precedes || !update {
+                    if Arc::ptr_eq(previous, function) {
+                        continue;
+                    }
+                    let previous_layer = &layers[&origins[&id]];
+                    let precedes = layer.inputs.as_ref().is_some_and(|inputs| {
+                        inputs.binary_search(&previous_layer.ordinal).is_ok()
+                    }) || (previous_layer.base < layer.base
+                        && (previous_layer.result == layer.base
+                            || previous_layer.ancestors.binary_search(&layer.base).is_ok()));
+                    if !precedes || !prepared_body_of(previous, function) {
                         return Err(PreparedEffectInvariant::ReadScopeConflict.into());
                     }
                 }
-                control
-                    .charge(DecisionWork::Node)
-                    .map_err(PreparedEffectFailure::Control)?;
-                control
-                    .charge(DecisionWork::Node)
-                    .map_err(PreparedEffectFailure::Control)?;
+                work.charge(DecisionWork::Node)?;
+                work.charge(DecisionWork::Node)?;
                 functions.insert(id, Arc::clone(function));
                 origins.insert(id, origin);
             }
             for (&id, value) in &layer.rows {
-                control
-                    .charge(DecisionWork::Node)
-                    .map_err(PreparedEffectFailure::Control)?;
-                if rows.insert(id, Arc::clone(value)).is_some() {
-                    return Err(PreparedEffectInvariant::ReadScopeConflict.into());
-                }
+                retain_definition(&mut rows, id, value, work)?;
             }
             for (&id, value) in &layer.predicates {
-                control
-                    .charge(DecisionWork::Node)
-                    .map_err(PreparedEffectFailure::Control)?;
-                if predicates.insert(id, Arc::clone(value)).is_some() {
-                    return Err(PreparedEffectInvariant::ReadScopeConflict.into());
-                }
+                retain_definition(&mut predicates, id, value, work)?;
             }
             for &id in &layer.choices {
-                control
-                    .charge(DecisionWork::Node)
-                    .map_err(PreparedEffectFailure::Control)?;
-                if !choices.insert(id) {
+                work.charge(DecisionWork::Node)?;
+                choices.insert(id);
+            }
+        }
+        for (&id, detached) in &mut functions {
+            work.charge(DecisionWork::Visit)?;
+            if let Some(live) = self.relation.functions.get(&id) {
+                if prepared_body_of(detached, live) {
+                    *detached = Arc::clone(live);
+                } else if !Arc::ptr_eq(live, detached) && !prepared_body_of(live, detached) {
                     return Err(PreparedEffectInvariant::ReadScopeConflict.into());
                 }
             }
         }
-        control
-            .charge(DecisionWork::Node)
-            .map_err(PreparedEffectFailure::Control)?;
-        control
-            .charge(DecisionWork::Node)
-            .map_err(PreparedEffectFailure::Control)?;
+        work.charge(DecisionWork::Node)?;
+        work.charge(DecisionWork::Node)?;
         Ok(PreparedEffectReadScope {
             data: Arc::new(ReadScopeData {
                 issuer: Arc::clone(&self.relation.issuer),
@@ -210,6 +229,76 @@ impl PreparedEffectGraph {
             checkpoint: Some(checkpoint),
         })
     }
+
+    /// Run branch-local algebra against its selected reads. The result gets
+    /// a read scope for its derived terms. The temporary edit's permit ends here.
+    pub(crate) fn compute_in_read_scope<C, T, E>(
+        &mut self,
+        input: &PreparedEffectReadScope,
+        control: &mut C,
+        compute: impl FnOnce(&mut Self, &mut C) -> Result<T, E>,
+    ) -> Result<(T, PreparedEffectReadScope), E>
+    where
+        C: DecisionControl,
+        E: From<PreparedEffectFailure<C::Error>>,
+    {
+        let edit = self.edit_scope(input, control)?;
+        let output = compute(&mut *edit.graph, control)?;
+        let delta = edit.finish(control)?;
+        let reads = if delta.data.base == delta.data.result {
+            input.clone()
+        } else {
+            self.read_scope([&delta], control)?
+        };
+        Ok((output, reads))
+    }
+}
+
+fn ordered_layers<'a, C: DecisionControl>(
+    layers: &'a BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
+    work: &mut Work<'_, C>,
+) -> Result<
+    BTreeMap<(PreparedEffectStateId, u64), &'a PreparedEffectDeltaData>,
+    PreparedEffectFailure<C::Error>,
+> {
+    let mut ordered = BTreeMap::new();
+    for (&id, layer) in layers {
+        work.charge(DecisionWork::Node)?;
+        ordered.insert((layer.base, id), layer.as_ref());
+    }
+    Ok(ordered)
+}
+
+fn retain_layer<C: DecisionControl>(
+    layers: &mut BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
+    layer: &Arc<PreparedEffectDeltaData>,
+    work: &mut Work<'_, C>,
+) -> Result<(), PreparedEffectFailure<C::Error>> {
+    retain_definition(layers, layer.ordinal, layer, work)
+}
+
+fn retain_definition<T, C: DecisionControl>(
+    definitions: &mut BTreeMap<u64, Arc<T>>,
+    id: u64,
+    value: &Arc<T>,
+    work: &mut Work<'_, C>,
+) -> Result<(), PreparedEffectFailure<C::Error>> {
+    work.charge(DecisionWork::Visit)?;
+    if let Some(previous) = definitions.get(&id) {
+        if !Arc::ptr_eq(previous, value) {
+            return Err(PreparedEffectInvariant::ReadScopeConflict.into());
+        }
+    } else {
+        work.charge(DecisionWork::Node)?;
+        definitions.insert(id, Arc::clone(value));
+    }
+    Ok(())
+}
+
+fn prepared_body_of(declaration: &Function, prepared: &Function) -> bool {
+    matches!((declaration, prepared),
+        (Function::Scheme(Scheme { header: before, state: SchemeState::Declared }),
+         Function::Scheme(Scheme { header: after, state: SchemeState::BodyPrepared { .. } })) if Arc::ptr_eq(before, after))
 }
 
 /// The edit exposes algebra operations, not the mutable graph or its checkpoint

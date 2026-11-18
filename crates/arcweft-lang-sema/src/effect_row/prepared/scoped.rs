@@ -45,7 +45,7 @@ impl PreparedEffectGraph {
         self.validate_predicate(&domain)?;
         self.validate_predicate(&predicate)?;
         work.charge(DecisionWork::Node)?;
-        self.changed()?;
+        self.changed(work.0)?;
         self.relation.obligations.push(Arc::new(ScopedObligation {
             parameters: parameters.into_boxed_slice(),
             domain,
