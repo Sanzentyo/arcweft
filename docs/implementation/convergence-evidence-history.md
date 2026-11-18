@@ -18653,3 +18653,18 @@ Analyzerで閉じた値を投影する独立呼出しは、元のfrontierを引�
 10 Rust path、234追加／13削除。作用グラフが読取り範囲を発行する。既存の解析台帳は準備結果に読取り範囲を保持し、既存の型制約が元の型から必要な作用項を検査する。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-original-probe-effect-reads-checkpoint.raw.zip) は23 entry、283,309 bytes、SHA256 `d343932bbd977730b3c5ab5abcfcef00dc1bf95903dca1163606e6dd769e1f3b`。各entryの長さとSHA256を再照合した。旧履歴2,891,129 bytesのSHA256 `81eea5a56bcd64b5cbc18749ff77a7780c63a2e27d847dbe51dffe47e9fe83a1` をprefixとして保持した。
+
+<a id="branch-effect-scope-composition-checkpoint"></a>
+## 2026-11-18 — 候補が選んだ作用差分を合成する
+
+基点 `758ef40cdd0a799363a6fe72928ba23a0d720be1`。Source `76325cabed9cc4c5490b0b715e0d6140fd1eca37` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した7入力のblobを照合した。
+
+作用グラフは、liveの履歴と取得済み差分が含む状態の来歴を保持する。候補の読取り範囲を合成するとき、各差分の基点がliveの祖先か、選択した外側の差分内にあることを確認する。同じ宣言を更新する場合は元のheaderと本体への遷移を照合する。読み取り範囲の合成で、公開に必要な基点の一致と元の差分の要件は維持する。
+
+引数の確認時は、過去に受理した引数と今回の準備から作用項を読む。型制約の照合が生成した作用項は一時的なグラフ操作から取り出し、同じ候補が読む範囲に保持する。候補の検査が失敗した場合は一時的な書き込みを取り消す。期待型の準備、すべての投影と最終確定への接続、選択した準備差分の公開と再評価の除去は残る。
+
+異なるlive基点の範囲を合成しても別候補の作用項が見えない例、外側の差分がなければ子の基点を使えない例、別の本体への上書きを拒否する例を追加した。合成した範囲から新しい作用項を作り、元のliveグラフに載らないことも検査する。いずれも未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。照合処理を接続した公開入力dev02はlibrary **416エラー・25警告**、lib test **1,332エラー・44警告**。変更pathを一次位置とする1件は旧経路の完了引数不足。Semaのfmtと構造gateは終了0、blocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,075,897 bytesでcleanは未実行。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-branch-effect-scope-composition-checkpoint.raw.zip) は22 entry、283,176 bytes、SHA256 `375c5f68e47aa474d0b9dddfe8ef3528c5e6d1a3cd85808679e29e0d5f9f6dcc`。各entryの長さとSHA256を再照合した。旧履歴2,893,806 bytesのSHA256 `d11134596ede38a354deb1801819e081b3cbdb9d55a3005b26751931421c8d50` をprefixとして保持した。
