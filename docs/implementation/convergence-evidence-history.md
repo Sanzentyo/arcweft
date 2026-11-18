@@ -18563,3 +18563,18 @@ checked／uncheckedの両方で別の観測receiptを拒否し、元のトラン
 3 Rust path、546追加／288削除。Semaの `final_analysis/analyzer/state.rs` は145822 bytes、3,825物理LOC（旧3,571、うち新しい全体の埋込テスト854 LOC）。候補の発行元、事前検査、journal、rollbackを同じ台帳に置き、別の台帳やcrate依存を追加しなかった。内容の照合規則は内容所有型の既存replace／insertと共有した。正規の不変条件エラーに書込み競合を追加し、契約の版を維持した。現状一覧に現行の適用先を反映し、以前のグラフ単体の変更と検証は前節に保持した。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-candidate-fact-batch-restore-checkpoint.raw.zip) は16 entry、155,747 bytes、SHA256 `9ea82109765e435445c8a1b2c9acd32daf290b4e1403f604873755c7ac607c89`。各entryの長さとSHA256を再照合した。旧履歴2,873,659 bytesのSHA256 `cd8baeca3ea14c2e008ede07f5456329cc30a118ccc7727d142eb71b93081ddf` をprefixとして保持した。
+
+<a id="physical-observation-completion-checkpoint"></a>
+## 2026-11-18 — 元の物理引数観測に選択済みの確定型を接続する
+
+基点 `8158dae20daecad2b33640c6ebdc7af118b34b83`。Source `bedf7d25eac70c8200c3c1846fcd622e4eb3cf89` を既存mainへ通常commitし、非force push後にmainのfull SHAと検証済み11入力の公開blobを照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+直接の引数観測を記録するとき、元のsource receiptを照合し、元Γと実作用グラフでprepared型を検査して保持する。同じ試行・スロットに独立した観測が届く場合はそれぞれの発行元を保持し、既存の物理スロットの計数を維持する。呼出しの最終sealは選択した閉じたcomponentから元の観測を受け取り、全件を照合してから既に確定した型を共有する。照合には型の値と独立した元の観測IDを使う。曖昧な候補のprepared観測は診断に残る。子result経由の観測、選んだ元のsource差分の本番適用、再評価の除去は継続する。
+
+既存fixtureに、数値spreadの各物理スロットで元の型と確定型の両方が読めること、曖昧な文脈依存引数の二候補にそれぞれ元の型だけが残ることを追加した。文脈依存の開いた作用パラメータは、元のrelational termをgraphが読める間に検査し、観測した関数の純粋な閉じた作用行の検査も維持した。fixtureの実行は未確認。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は3回とも終了101。最終固定入力dev03はlibrary **416エラー・25警告**、lib test **1,338エラー・44警告**。基点より各4エラー減った。変更pathを一次位置とする診断82件を原本に保持した。観測の会計、元の値、解析台帳を一次位置とするエラーは0件。owner fmtと構造gateは終了0、構造gateのblocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,078,643 bytesでcleanは未実行。
+
+11 Rust path、431追加／59削除、物理372 LOC増。所有レビューに全pathのbytes・物理LOC・埋込テストLOCを記録した。会計側は観測と照合に必要な値だけを持ち、元のsourceと確定型の対応は既存componentが発行する。解析台帳はtraceを、call sealは選択済み型の供給を、それぞれ既存の境界内で担当する。テスト用のlive照合は既存の作用グラフの読取り側に置いた。Cargo依存と版に差分はない。現状一覧は物理観測の接続と未達を更新し、以前の検証・公開SHAを履歴に保持した。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-physical-observation-completion-checkpoint.raw.zip) は30 entry、425,732 bytes、SHA256 `47c5a26d966ffde25dc53e6507e3b30837de880aa7a73a1b8663a9382bad3883`。各entryの長さとSHA256を再照合した。旧履歴2,876,733 bytesのSHA256 `ffabae80c0c866c34aac96aea17344274a4bf0e4894a52904e499b8860a8868b` をprefixとして保持した。
