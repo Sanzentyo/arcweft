@@ -810,6 +810,12 @@ impl ConstraintDomain for AnalyzerCallConstraintDomain {
     type SourceErrorCause = AnalyzerCallSourceFailureCause;
     type ClientInvariant = AnalyzerCallClientInvariant;
 
+    fn probe_effect_reads(
+        preparation: &Self::ProbePreparation,
+    ) -> Option<&crate::effect_row::prepared::PreparedEffectReadScope> {
+        preparation.probe_effect_reads()
+    }
+
     fn evidence_accepts(rule: &Self::EvidenceRule, checked: &Self::ObservedEvidence) -> bool {
         rule.accepts(checked)
     }
@@ -2574,7 +2580,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 .map(|()| None)
                 .map_err(|failure| self.close_fact_failure(failure, coordinate.clone()))
         };
-        let preparation = close?;
+        let mut preparation = close?;
         if !identity_ok {
             return Err(crate::callable::SourceCheckpointFailure::Protocol(
                 crate::types::constraints::TypeConstraintSourceProtocolInvariant::Checkpoint,
@@ -2584,6 +2590,24 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             return Err(crate::callable::SourceCheckpointFailure::Protocol(
                 crate::types::constraints::TypeConstraintSourceProtocolInvariant::WrongSource,
             ));
+        }
+        if let Some(prepared) = &mut preparation {
+            self.analyzer
+                .facts
+                .retain_probe_effect_reads(prepared, work)
+                .map_err(|error| match error {
+                    super::super::state::CandidateFactMutationFailure::Control(error) => {
+                        crate::callable::SourceCheckpointFailure::Constraint(error)
+                    }
+                    super::super::state::CandidateFactMutationFailure::Invariant(violation) => {
+                        crate::callable::SourceCheckpointFailure::client(
+                            AnalyzerCallClientInvariant::fact_transaction(
+                                checkpoint.source.local(),
+                                violation,
+                            ),
+                        )
+                    }
+                })?;
         }
         Ok(preparation)
     }
@@ -7664,6 +7688,13 @@ mod tests {
         )
         .unwrap();
         let context = analyzer.published_expression_context();
+        let declarations =
+            crate::callable::PreparedCallableEffectDeclarations::declare([], &mut context.work())
+                .unwrap();
+        analyzer
+            .facts
+            .initialize_effect_declarations(declarations)
+            .unwrap();
         let mut children = Vec::new();
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
@@ -7726,6 +7757,7 @@ mod tests {
                     let preparation =
                         preparation.expect("accepted close retains the original facts");
                     assert_eq!(preparation.expression_update(owner), Some(Some(&original)));
+                    assert!(preparation.probe_effect_reads().is_some());
                     preparation
                         .effect_view(client.analyzer.facts.prepared_calls().unwrap())
                         .unwrap();

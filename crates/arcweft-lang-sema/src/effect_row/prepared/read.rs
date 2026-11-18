@@ -47,6 +47,23 @@ impl PreparedEffectGraph {
             dependencies: delta.dependencies.as_ref(),
         })
     }
+
+    /// Borrow a validated set of detached definitions without a mutation or
+    /// publication permit. The live base stays borrowed for the entire read.
+    pub(crate) fn read_scoped<'a, C: DecisionControl>(
+        &'a self,
+        scope: &'a PreparedEffectReadScope,
+        control: &mut C,
+    ) -> Result<PreparedEffectReadView<'a>, PreparedEffectFailure<C::Error>> {
+        if self.active_scope.is_some() {
+            return Err(PreparedEffectInvariant::ReadScopeActive.into());
+        }
+        scope.validate(self, control)?;
+        Ok(PreparedEffectReadView {
+            dependencies: Some(scope),
+            ..self.read()
+        })
+    }
 }
 
 impl PreparedEffectDefinitions {

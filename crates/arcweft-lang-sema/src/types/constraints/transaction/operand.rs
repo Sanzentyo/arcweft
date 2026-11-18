@@ -97,15 +97,10 @@ impl<D: ConstraintDomain> Clone for ResolvedConstraintResult<D> {
 }
 
 impl<D: ConstraintDomain> ResolvedConstraintResult<D> {
-    pub(super) fn resolve<A: TypeConstraintAccounting>(
-        result: ConstraintResultProjection<D>,
-        path: &ConstraintPath<D>,
-        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(TypeKind<PreparedEffects>, Self), TypeConstraintError> {
-        let owner = path
-            .applications
-            .require_application_owner(result.application)?;
+    pub(super) fn request<'a>(
+        result: &ConstraintResultProjection<D>,
+        path: &'a ConstraintPath<D>,
+    ) -> Result<&'a Arc<ProjectionRequest<D>>, TypeConstraintError> {
         let mut requests = path.lineage.projections.iter().filter(|request| {
             request.application == result.application && request.key == result.key
         });
@@ -117,6 +112,19 @@ impl<D: ConstraintDomain> ResolvedConstraintResult<D> {
                 TypeConstraintSourceProtocolInvariant::Outcome,
             ));
         }
+        Ok(request)
+    }
+
+    pub(super) fn resolve<A: TypeConstraintAccounting>(
+        result: ConstraintResultProjection<D>,
+        path: &ConstraintPath<D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(TypeKind<PreparedEffects>, Self), TypeConstraintError> {
+        let owner = path
+            .applications
+            .require_application_owner(result.application)?;
+        let request = Self::request(&result, path)?;
         let target = Arc::new(context.capture_lexical_scope()?);
         let value = if request.value.scope() == target.as_ref() {
             context.enter_node()?;

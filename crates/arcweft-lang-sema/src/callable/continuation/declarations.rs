@@ -59,6 +59,14 @@ impl PreparedCallableEffectDeclarations {
         self.graph.read()
     }
 
+    pub(super) fn retain_probe_effect_reads<C: DecisionControl>(
+        &self,
+        delta: &PreparedRelationDelta,
+        control: &mut C,
+    ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
+        self.graph.read_scope([delta], control)
+    }
+
     pub(super) fn validate_checkpoint(
         &self,
         checkpoint: &crate::effect_row::prepared::PreparedEffectCheckpoint,

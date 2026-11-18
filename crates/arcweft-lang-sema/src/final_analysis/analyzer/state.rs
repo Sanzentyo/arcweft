@@ -411,6 +411,12 @@ pub(super) struct CandidateSemanticProjection {
 }
 
 impl CandidateSemanticProjection {
+    pub(super) fn probe_effect_reads(
+        &self,
+    ) -> Option<&crate::effect_row::prepared::PreparedEffectReadScope> {
+        self.data.probe_effect_reads.as_ref()
+    }
+
     /// Absence, a projected deletion, and a retained expression are distinct.
     /// The borrowed fact is original preparation, not a closed type witness.
     pub(super) fn expression_update(
@@ -434,6 +440,7 @@ impl CandidateSemanticProjection {
 struct CandidateSemanticProjectionData {
     authority: CandidateProjectionAuthority,
     graph_delta: PreparedCallGraphDelta<AnalyzerPreparedCallPrefix, AnalyzerPreparedUnselectedCall>,
+    probe_effect_reads: Option<crate::effect_row::prepared::PreparedEffectReadScope>,
     facts: CandidateProjectionFacts,
 }
 
@@ -1872,6 +1879,7 @@ impl SemanticFactState {
                 epoch: self.epoch,
             },
             graph_delta,
+            probe_effect_reads: None,
             facts: CandidateProjectionFacts {
                 locals: owners
                     .locals
@@ -1953,9 +1961,10 @@ impl SemanticFactState {
                 let CandidateSemanticProjectionData {
                     authority,
                     graph_delta,
+                    probe_effect_reads,
                     facts,
                 } = *projection.data;
-                (graph_delta, (authority, facts))
+                (graph_delta, (authority, probe_effect_reads, facts))
             })
             .unzip();
         if let Err(failure) = self
@@ -1968,10 +1977,11 @@ impl SemanticFactState {
             let projections = graph_deltas
                 .into_iter()
                 .zip(updates)
-                .map(|(graph_delta, (authority, facts))| {
+                .map(|(graph_delta, (authority, probe_effect_reads, facts))| {
                     CandidateSemanticProjectionData {
                         authority,
                         graph_delta,
+                        probe_effect_reads,
                         facts,
                     }
                     .into()
@@ -1982,7 +1992,7 @@ impl SemanticFactState {
                 projection: projections,
             });
         }
-        for (_, facts) in updates {
+        for (_, _, facts) in updates {
             self.apply_projection_entries(facts);
         }
         Ok(())
@@ -2148,6 +2158,22 @@ impl SemanticFactState {
         if projection.data.authority.epoch != self.epoch {
             return Err(CandidateFactTransactionViolation::ProjectionAuthorityMismatch);
         }
+        Ok(())
+    }
+
+    pub(super) fn retain_probe_effect_reads<C: DecisionControl>(
+        &self,
+        projection: &mut CandidateSemanticProjection,
+        control: &mut C,
+    ) -> Result<(), CandidateFactMutationFailure<C::Error>> {
+        self.require_candidate_projection_owner(projection)?;
+        if projection.data.probe_effect_reads.is_some() {
+            return Err(CandidateFactTransactionViolation::ProjectionAuthorityMismatch.into());
+        }
+        let effects = self
+            .prepared_calls()?
+            .retain_probe_effect_reads(&projection.data.graph_delta, control)?;
+        projection.data.probe_effect_reads = Some(effects);
         Ok(())
     }
 

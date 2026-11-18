@@ -110,6 +110,44 @@ fn assert_base(graph: &PreparedEffectGraph, state: PreparedEffectStateId) {
 }
 
 #[test]
+fn a_closed_read_scope_keeps_source_terms_after_the_permit_is_dropped() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let source = prepare_source(&mut graph);
+    let base = graph.state;
+    let scope = graph.read_scope([&source.delta], &mut work).unwrap();
+    drop(source.delta);
+
+    let read = graph.read_scoped(&scope, &mut work).unwrap();
+    read.validate_query_roots(&[&source.row], &[&source.predicate], &mut work)
+        .unwrap();
+    assert_eq!(
+        graph.read().validate_retained_row(&source.row),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+    assert_base(&graph, base);
+
+    let foreign = PreparedEffectGraph::default();
+    assert!(matches!(
+        foreign.read_scoped(&scope, &mut work),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ForeignIssuer
+        ))
+    ));
+    let mut checkpoint = graph.checkpoint(&mut work).unwrap();
+    graph.choice(&mut work).unwrap();
+    assert!(matches!(
+        graph.read_scoped(&scope, &mut work),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::DeltaBase
+        ))
+    ));
+    graph.rollback(&mut checkpoint).unwrap();
+    assert!(graph.read_scoped(&scope, &mut work).is_ok());
+    assert_base(&graph, base);
+}
+
+#[test]
 fn scoped_edit_reads_original_sources_and_publishes_only_with_every_affine_permit() {
     let mut graph = PreparedEffectGraph::default();
     let mut work = budget();

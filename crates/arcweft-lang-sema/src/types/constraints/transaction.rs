@@ -583,6 +583,50 @@ pub(crate) struct ClosedSourceProbeContribution<D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> ClosedSourceProbeContribution<D> {
+    fn validate_effect_reads<A: TypeConstraintAccounting>(
+        &self,
+        graph: &crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        let Some(scope) = D::probe_effect_reads(&self.preparation) else {
+            return Ok(());
+        };
+        let read = graph.read_scoped(scope, context)?;
+        for alternative in &self.alternatives {
+            let value = match alternative.result.term() {
+                SourceProbeTerm::AdmittedValue(value) => value.value(),
+                SourceProbeTerm::Result(result) => {
+                    ResolvedConstraintResult::request(result, &alternative.path)?
+                        .value
+                        .value()
+                }
+                SourceProbeTerm::Value(_) => {
+                    return Err(protocol_error(
+                        TypeConstraintSourceProtocolInvariant::Outcome,
+                    ));
+                }
+                #[cfg(test)]
+                SourceProbeTerm::Type(value) => value,
+            };
+            if matches!(
+                value.constraint_shape(),
+                super::TypeConstraintShape::Leaf(_) | super::TypeConstraintShape::Never
+            ) {
+                continue;
+            }
+            let roots =
+                crate::types::effect_domain::PreparedTypeEffectRoots::collect([value], [], context)
+                    .map_err(|error| match error {
+                        crate::types::TypeProjectionError::Control(error) => error,
+                        crate::types::TypeProjectionError::Instantiation(error) => {
+                            TypeConstraintInvariant::Instantiation(error).into()
+                        }
+                    })?;
+            read.validate_query_roots(roots.rows(), roots.predicates(), context)?;
+        }
+        Ok(())
+    }
+
     fn bind_preparation<A: TypeConstraintAccounting>(
         self,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -1999,6 +2043,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 operation.rejections.push(cause);
             }
             ProbeSubmission::Accepted(contribution) => {
+                contribution.validate_effect_reads(graph, context)?;
                 let contribution = contribution.bind_preparation(context)?;
                 operation.active_input = None;
                 for ObservedProbeAlternative { mut path, result } in contribution.alternatives {

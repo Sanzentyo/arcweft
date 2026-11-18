@@ -43,6 +43,14 @@ pub(crate) trait ConstraintDomain: Sized + 'static {
     type SourceErrorCause;
     type ClientInvariant;
 
+    /// A source callback may have detached effect definitions along with its
+    /// preparation. Those definitions are read authority, not a write permit.
+    fn probe_effect_reads(
+        _preparation: &Self::ProbePreparation,
+    ) -> Option<&crate::effect_row::prepared::PreparedEffectReadScope> {
+        None
+    }
+
     /// Select a prepared rule from source observation, before stable evidence
     /// is issued at completion.
     fn evidence_accepts(rule: &Self::EvidenceRule, observed: &Self::ObservedEvidence) -> bool;
@@ -648,6 +656,9 @@ pub(crate) enum SourceProbeTerm<D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> SourceProbeResult<D> {
+    pub(super) fn term(&self) -> &SourceProbeTerm<D> {
+        &self.actual
+    }
     pub(crate) fn unchecked_value(
         actual: Arc<D::SourceValue>,
         canonical_branch: D::ProbeSemanticBranch,

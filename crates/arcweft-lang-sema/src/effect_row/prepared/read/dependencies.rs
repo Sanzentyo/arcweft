@@ -14,6 +14,25 @@ pub(in crate::effect_row::prepared) enum Dependency<'a> {
     Predicate(&'a PreparedEffectPredicate),
 }
 
+impl PreparedEffectReadView<'_> {
+    pub(crate) fn validate_query_roots<C: DecisionControl>(
+        self,
+        rows: &[&PreparedEffectRow],
+        predicates: &[&PreparedEffectPredicate],
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        let mut reachable = Reachable::new(self, SchemeDependencies::Headers);
+        for row in rows {
+            reachable.push(Dependency::Row(row), control)?;
+        }
+        for predicate in predicates {
+            reachable.push(Dependency::Predicate(predicate), control)?;
+        }
+        reachable.collect(control)?;
+        Ok(())
+    }
+}
+
 pub(in crate::effect_row::prepared) struct Reachable<'a> {
     view: PreparedEffectReadView<'a>,
     schemes: SchemeDependencies,
