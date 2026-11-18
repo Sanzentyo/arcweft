@@ -758,7 +758,7 @@ impl Analyzer<'_, '_, '_> {
         }
         let (effect_declarations, type_observations) = self
             .facts
-            .pattern_preparation_parts()
+            .effect_declarations_and_type_observations()
             .map_err(FinalSemanticAnalysisError::from)?;
         let mut observed = crate::types::PreparedTypeEffectRoots::default();
         let mut observe = |owner, ty| {
@@ -768,6 +768,14 @@ impl Analyzer<'_, '_, '_> {
         };
         for (owner, fact) in &input.expressions {
             fact.visit_types(&mut |ty| observe((*owner).into(), ty))?;
+        }
+        for decision in type_observations.decisions() {
+            if selected.contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Expr(
+                decision.owner,
+            )) {
+                observe(decision.owner.into(), &decision.expected)?;
+                observe(decision.owner.into(), &decision.actual)?;
+            }
         }
         for (owner, fact) in &input.patterns {
             fact.visit_types(&mut |ty| observe((*owner).into(), ty))?;

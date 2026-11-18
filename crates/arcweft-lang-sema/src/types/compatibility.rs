@@ -91,10 +91,10 @@ pub(crate) trait TypeCompatibilityControl<D: super::TypeEffectDomain = super::Ca
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct NoopTypeCompatibilityControl;
 
-impl TypeCompatibilityControl for NoopTypeCompatibilityControl {
+impl<D: TypeEffectDomain> TypeCompatibilityControl<D> for NoopTypeCompatibilityControl {
     type Error = Infallible;
 
-    fn enter(&mut self, _expected: &TypeKind, _actual: &TypeKind) -> Result<(), Self::Error> {
+    fn enter(&mut self, _expected: &TypeKind<D>, _actual: &TypeKind<D>) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -111,10 +111,28 @@ impl<E: super::TypeEffectDomain> TypeKind<E> {
     /// Recovery checking for a boolean condition depends only on the value
     /// shape. Every alternative of a choice must itself be a condition.
     pub(crate) fn accepts_as_condition(&self) -> bool {
+        match self.accepts_as_condition_with(&mut NoopTypeCompatibilityControl) {
+            Ok(accepted) => accepted,
+            Err(error) => match error {},
+        }
+    }
+
+    pub(crate) fn accepts_as_condition_with<C: TypeCompatibilityControl<E>>(
+        &self,
+        work: &mut C,
+    ) -> Result<bool, C::Error> {
+        work.enter(&Self::Bool, self)?;
         match self {
-            Self::Bool | Self::Never | Self::Error(_) => true,
-            Self::Choice(alternatives) => alternatives.iter().all(Self::accepts_as_condition),
-            _ => false,
+            Self::Bool | Self::Never | Self::Error(_) => Ok(true),
+            Self::Choice(alternatives) => {
+                for value in alternatives {
+                    if !value.accepts_as_condition_with(work)? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            _ => Ok(false),
         }
     }
 }
@@ -238,14 +256,24 @@ impl TypeKind {
     /// Strict callers must use [`Self::accepts_with`] and name their policy;
     /// this method deliberately cannot silently publish strict success.
     pub(crate) fn accepts(&self, actual: &Self) -> bool {
-        if matches!(self, Self::Bool) {
-            return actual.accepts_as_condition();
-        }
-        let mut control = NoopTypeCompatibilityControl;
-        match self.accepts_with(actual, TypeCompatibilityPolicy::Recovery, &mut control) {
+        match self.accepts_recovery_with(actual, &mut NoopTypeCompatibilityControl) {
             Ok(accepted) => accepted,
-            Err(TypeCompatibilityFailure::Forbidden { .. }) => false,
-            Err(TypeCompatibilityFailure::Control(error)) => match error {},
+            Err(error) => match error {},
+        }
+    }
+
+    pub(crate) fn accepts_recovery_with<C: TypeCompatibilityControl>(
+        &self,
+        actual: &Self,
+        work: &mut C,
+    ) -> Result<bool, C::Error> {
+        if matches!(self, Self::Bool) {
+            return actual.accepts_as_condition_with(work);
+        }
+        match self.accepts_with(actual, TypeCompatibilityPolicy::Recovery, work) {
+            Ok(accepted) => Ok(accepted),
+            Err(TypeCompatibilityFailure::Forbidden { .. }) => Ok(false),
+            Err(TypeCompatibilityFailure::Control(error)) => Err(error),
         }
     }
 

@@ -31,7 +31,7 @@ impl Analyzer<'_, '_, '_> {
         operation: impl FnOnce(
             PatternSeedContext<'_>,
             &mut crate::effect_row::prepared::PreparedEffectGraph,
-            &super::state::PatternTypeObservations<'_>,
+            &super::state::PreparedTypeObservations<'_>,
         ) -> Result<T, FinalSemanticAnalysisError>,
     ) -> Result<T, FinalSemanticAnalysisError> {
         let context = PatternSeedContext {
@@ -49,7 +49,7 @@ impl Analyzer<'_, '_, '_> {
                 work,
             ),
         };
-        let (declarations, observed) = self.facts.pattern_preparation_parts()?;
+        let (declarations, observed) = self.facts.effect_declarations_and_type_observations()?;
         let (graph, _) = declarations.relation();
         operation(context, graph, &observed)
     }

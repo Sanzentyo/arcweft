@@ -518,6 +518,26 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
         )))
     }
 
+    pub(in crate::types::constraints) fn recheck_retained_declaration_compatibility<C>(
+        &self,
+        expected: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
+        control: &mut C,
+    ) -> Result<Option<bool>, TypeConstraintError>
+    where
+        C: TypeProjectionControl<Error = TypeConstraintError>
+            + crate::types::TypeCompatibilityControl<Error = TypeConstraintError>,
+    {
+        let scope = self.original.declaration_formals().template_scope();
+        let Some(expected) = self.canonicalize_retained_type(expected, scope, control)? else {
+            return Ok(None);
+        };
+        let Some(actual) = self.canonicalize_retained_type(actual, scope, control)? else {
+            return Ok(None);
+        };
+        Ok(Some(expected.accepts_recovery_with(&actual, control)?))
+    }
+
     fn canonicalize_retained_type<C: TypeProjectionControl<Error = TypeConstraintError>>(
         &self,
         ty: &TypeKind<PreparedEffects>,

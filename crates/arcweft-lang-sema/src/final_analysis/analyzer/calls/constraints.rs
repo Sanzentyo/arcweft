@@ -1962,7 +1962,12 @@ impl<'a, 'project, 'catalog, 'control>
             if let arcweft_lang_hir::expr::HirExprKind::Call(call) = expression.kind()
                 && self
                     .analyzer
-                    .implicit_callable_selection(module, expression_owner, &expectation)
+                    .implicit_callable_selection(
+                        &child_context,
+                        module,
+                        expression_owner,
+                        &expectation,
+                    )
                     .map_err(|error| AnalyzerCallCheckFailure::expression(source_id, phase, error))?
                     .is_none()
             {

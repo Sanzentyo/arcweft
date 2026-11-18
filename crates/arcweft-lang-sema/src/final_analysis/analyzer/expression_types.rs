@@ -192,6 +192,27 @@ impl<'a> SourceTypePreparation<'a> {
         ))
     }
 
+    pub(super) fn observe_compatibility_inputs(
+        &self,
+        owner: super::ExprId,
+        expected: &TypeKind<crate::types::PreparedEffects>,
+        actual: &TypeKind<crate::types::PreparedEffects>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    ) -> Result<(TypeKind, TypeKind), super::FinalSemanticAnalysisError> {
+        use super::FinalSemanticAnalysisError;
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let formals = self
+            .owner(owner, &mut work)?
+            .declaration_formals_with_control(&mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        expected
+            .observe_compatibility_inputs(actual, formals.template_scope(), graph, &mut work)
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_type_effect_projection(owner, error)
+            })
+    }
+
     /// A signature that comes entirely from authored annotations needs no
     /// solution from the live relation.
     pub(super) fn project_annotations(

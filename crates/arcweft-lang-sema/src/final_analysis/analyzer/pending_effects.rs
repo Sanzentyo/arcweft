@@ -19,6 +19,7 @@ use crate::{
             PreparedDeclarationExecutionEffectInput, prepare_declaration_execution_effects,
         },
     },
+    types::{PreparedEffects, PreparedTypeCompatibility, TypeKind},
 };
 
 use super::{
@@ -32,20 +33,127 @@ use super::{
     },
     expression_error::AnalyzerExpressionError,
     items::{inferred_callable_result_schema, result_schema_has_omitted_function_rows},
+    state::{CandidateFactTransactionAction, CandidateFactTransactionOutcome},
 };
 
+/// A branch of expression preparation whose result depended on live effects.
+/// The source's original operands stay in the candidate fact transaction and
+/// are compared again using its completed relation and the publication C.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct PreparedSourceTypeDecision {
+    pub(super) owner: super::ExprId,
+    pub(super) expected: TypeKind<PreparedEffects>,
+    pub(super) actual: TypeKind<PreparedEffects>,
+    pub(super) accepted: bool,
+}
+
+pub(super) enum SourceTypeDecisionUse {
+    RequireAcceptance,
+    SelectImplicitCallable,
+}
+
 impl Analyzer<'_, '_, '_> {
+    pub(super) fn source_type_accepts(
+        &mut self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
+        owner: super::ExprId,
+        expected: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
+        use_at: SourceTypeDecisionUse,
+    ) -> Result<bool, AnalyzerExpressionError> {
+        let mut work = context.work();
+        if matches!(expected, TypeKind::Bool) {
+            return actual
+                .accepts_as_condition_with(&mut work)
+                .map_err(AnalyzerExpressionError::fatal);
+        }
+        match expected
+            .check_prepared_compatibility(actual, &mut work)
+            .map_err(AnalyzerExpressionError::fatal)?
+        {
+            PreparedTypeCompatibility::Accepted => return Ok(true),
+            PreparedTypeCompatibility::Rejected => return Ok(false),
+            PreparedTypeCompatibility::NeedsEffectObservation => {}
+        }
+        let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+            work.clone(),
+            |this, _, _| {
+                let (expect_observed, actual_observed) = this
+                    .observe_source_with_dependencies(context, owner, |source, graph| {
+                        source.observe_compatibility_inputs(owner, expected, actual, graph)
+                    })
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                let accepted = expect_observed
+                    .accepts_recovery_with(&actual_observed, &mut work)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                if !accepted && matches!(use_at, SourceTypeDecisionUse::RequireAcceptance) {
+                    return Ok(CandidateFactTransactionAction::Rollback(false));
+                }
+                let graph = this
+                    .facts
+                    .effect_declarations()
+                    .map_err(AnalyzerExpressionError::fact)?
+                    .read();
+                let source = this
+                    .source_type_preparation(work)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                let decision = PreparedSourceTypeDecision {
+                    owner,
+                    expected: source
+                        .retain_prepared(owner, expected, graph)
+                        .map_err(AnalyzerExpressionError::fatal)?,
+                    actual: source
+                        .retain_prepared(owner, actual, graph)
+                        .map_err(AnalyzerExpressionError::fatal)?,
+                    accepted,
+                };
+                source
+                    .visit_binding()
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                drop(source);
+                this.facts
+                    .record_source_type_decision(decision)
+                    .map_err(AnalyzerExpressionError::fact)?;
+                Ok(CandidateFactTransactionAction::Commit(accepted))
+            },
+        )?;
+        match outcome {
+            CandidateFactTransactionOutcome::Committed(accepted)
+            | CandidateFactTransactionOutcome::RolledBack(accepted) => Ok(accepted),
+            CandidateFactTransactionOutcome::Extracted { .. } => {
+                Err(AnalyzerExpressionError::fact(
+                    super::CandidateFactTransactionViolation::ProjectionUnavailable,
+                ))
+            }
+        }
+    }
+
     pub(super) fn observe_source_type_with_dependencies(
         &mut self,
         context: &super::expression_error::AnalyzerExpressionContext<'_>,
         owner: arcweft_lang_hir::identity::ExprId,
         ty: &crate::types::TypeKind<crate::types::PreparedEffects>,
     ) -> Result<crate::types::TypeKind, FinalSemanticAnalysisError> {
+        self.observe_source_with_dependencies(context, owner, |source, graph| {
+            source.observe_canonical(owner, ty, graph)
+        })
+    }
+
+    fn observe_source_with_dependencies<T>(
+        &mut self,
+        context: &super::expression_error::AnalyzerExpressionContext<'_>,
+        owner: super::ExprId,
+        mut observe: impl FnMut(
+            super::expression_types::SourceTypePreparation<'_>,
+            crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        ) -> Result<T, FinalSemanticAnalysisError>,
+    ) -> Result<T, FinalSemanticAnalysisError> {
         loop {
             let declarations = self.facts.effect_declarations()?;
-            let result = self
-                .source_type_preparation(context.work())?
-                .observe_canonical(owner, ty, declarations.read());
+            let result = observe(
+                self.source_type_preparation(context.work())?,
+                declarations.read(),
+            );
             match result {
                 Ok(observed) => return Ok(observed),
                 Err(error) => {

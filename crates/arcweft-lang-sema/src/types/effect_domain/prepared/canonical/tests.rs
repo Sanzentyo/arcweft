@@ -101,6 +101,57 @@ fn a_nested_type_observation_waits_for_its_named_body() {
 }
 
 #[test]
+fn compatibility_inputs_wait_for_both_reachable_bodies() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut operand = || {
+        let declared = graph
+            .declare(vec![], EffectPredicate::unconstrained(), &mut Setup)
+            .unwrap();
+        let effects = graph.application(&declared, vec![], &mut Setup).unwrap();
+        (
+            declared,
+            arrow(
+                effects,
+                PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            ),
+        )
+    };
+    let (expected_declaration, expected) = operand();
+    let (actual_declaration, actual) = operand();
+    graph
+        .prepare_body(
+            &expected_declaration,
+            literal(&["iterator.expected"]),
+            vec![],
+            &mut Setup,
+        )
+        .unwrap();
+    let scope = GenericScope::default();
+
+    assert!(matches!(
+        expected.observe_compatibility_inputs(&actual, &scope, graph.read(), &mut Meter::new()),
+        Err(TypeProjectionError::Control(PreparedTypeEffectProjectionFailure::Effects(
+            PreparedEffectFailure::ObservationNeedsBody(scheme)
+        ))) if scheme == actual_declaration
+    ));
+
+    graph
+        .prepare_body(
+            &actual_declaration,
+            literal(&["iterator.actual"]),
+            vec![],
+            &mut Setup,
+        )
+        .unwrap();
+    let unchanged = graph.retained_terms();
+    let (expected, actual) = expected
+        .observe_compatibility_inputs(&actual, &scope, graph.read(), &mut Meter::new())
+        .unwrap();
+    assert!(!expected.accepts(&actual));
+    assert_eq!(graph.retained_terms(), unchanged);
+}
+
+#[test]
 fn equal_residual_shapes_can_carry_distinct_effect_terms_until_closure() {
     let mut graph = PreparedEffectGraph::default();
     let first = graph

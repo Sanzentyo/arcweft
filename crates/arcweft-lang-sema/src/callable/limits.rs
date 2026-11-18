@@ -511,6 +511,18 @@ impl crate::types::TypeProjectionControl for CandidateConstraintWorkSession<'_> 
     }
 }
 
+impl crate::types::TypeCompatibilityControl for CandidateConstraintWorkSession<'_> {
+    type Error = TypeConstraintError;
+
+    fn enter(
+        &mut self,
+        _: &crate::types::TypeKind,
+        _: &crate::types::TypeKind,
+    ) -> Result<(), Self::Error> {
+        self.state.charge(crate::effect_row::DecisionWork::Visit)
+    }
+}
+
 impl TypeConstraintAccounting for CandidateConstraintWorkSession<'_> {
     fn charge_constraint(
         &mut self,

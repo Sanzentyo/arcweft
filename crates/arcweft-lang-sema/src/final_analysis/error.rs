@@ -659,6 +659,13 @@ pub enum FinalSemanticAnalysisError {
     },
     #[error("semantic expression {owner:?} has no admissible final type")]
     ExpressionTypeUnavailable { owner: ExprId },
+    #[error(
+        "contextual type decision for expression {owner:?} changed after closing effects (original acceptance: {originally_accepted})"
+    )]
+    SourceTypeDecisionChanged {
+        owner: ExprId,
+        originally_accepted: bool,
+    },
     #[error("callable result branches must produce one compatible type")]
     IncompatibleCallableResults {
         owner: ExprId,

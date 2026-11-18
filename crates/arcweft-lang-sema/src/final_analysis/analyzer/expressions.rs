@@ -15,6 +15,7 @@ mod style;
 
 use std::{rc::Rc, sync::Arc};
 
+use super::pending_effects::SourceTypeDecisionUse;
 use super::{
     Analyzer, ArrayLength, BTreeSet, BorrowKind, CandidateSemanticProjection, CheckedAwait,
     CheckedAwaitPendingObserver, CheckedChoice, CheckedChoiceGoto, CheckedChoicePlan,
@@ -196,6 +197,18 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
             .filter(|ty| matches!(ty, TypeKind::Function { binder, .. } if binder.is_empty()))
     }
 
+    pub(super) fn specialization_target(
+        &self,
+        source: Option<&TypeKind<PreparedEffects>>,
+    ) -> Option<&'a TypeKind<PreparedEffects>> {
+        if self.defers_function_value_use()
+            || !matches!(source, Some(TypeKind::Function { binder, .. }) if !binder.is_empty())
+        {
+            return None;
+        }
+        self.function_value_target()
+    }
+
     pub(super) const fn defers_function_value_use(&self) -> bool {
         matches!(self, Self::FunctionValueSource(_))
     }
@@ -330,27 +343,44 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         }
     }
 
-    fn accepts_cached(&self, checked: &super::PreparedExpressionFact) -> bool {
+    fn accepts_cached_with<E>(
+        &self,
+        checked: &super::PreparedExpressionFact,
+        accepts: &mut impl FnMut(
+            &TypeKind<PreparedEffects>,
+            &TypeKind<PreparedEffects>,
+        ) -> Result<bool, E>,
+    ) -> Result<bool, E> {
         match self {
-            Self::ApplicationCallee(expected) => checked.value_type().is_some_and(|actual| {
-                expected
-                    .for_candidate(actual)
-                    .is_some_and(|expected| expected.accepts(actual))
-            }),
-            Self::PublicIdReference { expected, .. } => expected.accepts_cached(checked),
+            Self::ApplicationCallee(expected) => {
+                let Some(actual) = checked.value_type() else {
+                    return Ok(false);
+                };
+                let Some(expected) = expected.for_candidate(actual) else {
+                    return Ok(false);
+                };
+                accepts(&expected, actual)
+            }
+            Self::PublicIdReference { expected, .. } => {
+                expected.accepts_cached_with(checked, accepts)
+            }
             Self::FunctionValueSource(expected) => {
-                matches!(checked.value_type(), Some(TypeKind::Function { binder, .. }) if !binder.is_empty())
-                    || expected.accepts_cached(checked)
+                if matches!(checked.value_type(), Some(TypeKind::Function { binder, .. }) if !binder.is_empty())
+                {
+                    return Ok(true);
+                }
+                expected.accepts_cached_with(checked, accepts)
             }
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
-            | Self::EnumConstructorHead(expected) => checked
-                .value_type()
-                .is_some_and(|actual| expected.accepts(actual)),
+            | Self::EnumConstructorHead(expected) => match checked.value_type() {
+                Some(actual) => accepts(expected, actual),
+                None => Ok(false),
+            },
             Self::Parametric { expected, .. } => {
-                checked.reusable_for_parametric_expectation(expected)
+                Ok(checked.reusable_for_parametric_expectation(expected))
             }
-            Self::Unconstrained => true,
+            Self::Unconstrained => Ok(true),
         }
     }
 
@@ -645,34 +675,53 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
         expectation: AnalyzerExpressionExpectation<'_>,
-        checked: PreparedExpressionFact,
+        mut checked: PreparedExpressionFact,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
-        let previous = checked.clone();
-        let checked = self.specialize_checked_function_value(
-            owner,
-            checked,
-            &expectation,
-            &mut context.work(),
-        )?;
-        if checked != previous {
+        let accepts = |analyzer: &mut Self, checked: &PreparedExpressionFact| {
+            expectation.accepts_cached_with(checked, &mut |expected, actual| {
+                analyzer.source_type_accepts(
+                    context,
+                    owner,
+                    expected,
+                    actual,
+                    SourceTypeDecisionUse::RequireAcceptance,
+                )
+            })
+        };
+        let accepted = if expectation
+            .specialization_target(checked.value_type())
+            .is_some()
+        {
             let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
                 context.work(),
                 |this, _, _| {
+                    let specialized = this.specialize_checked_function_value(
+                        owner,
+                        checked,
+                        &expectation,
+                        &mut context.work(),
+                    )?;
+                    if !accepts(this, &specialized)? {
+                        return Err(AnalyzerExpressionError::rejected(owner));
+                    }
                     this.facts
-                        .replace_contextual_expression(owner, checked.clone())
+                        .replace_contextual_expression(owner, specialized.clone())
                         .map_err(|_| {
                             AnalyzerExpressionError::fact(
                                 super::CandidateFactTransactionViolation::ProjectionUnavailable,
                             )
                         })?;
-                    Ok(CandidateFactTransactionAction::Commit(()))
+                    Ok(CandidateFactTransactionAction::Commit(specialized))
                 },
             )?;
-            outcome
+            checked = outcome
                 .into_committed()
                 .map_err(AnalyzerExpressionError::fact)?;
-        }
-        if expectation.accepts_cached(&checked) {
+            true
+        } else {
+            accepts(self, &checked)?
+        };
+        if accepted {
             self.record_implicit_capture_fact(owner, &checked)
                 .map_err(AnalyzerExpressionError::fatal)?;
             self.record_implicit_capture_descendants(owner)
@@ -773,7 +822,7 @@ impl Analyzer<'_, '_, '_> {
         {
             return Ok(checked.into());
         }
-        match self.implicit_callable_selection(module, owner, expectation)? {
+        match self.implicit_callable_selection(context, module, owner, expectation)? {
             Some(ImplicitCallableSelection::Required(placeholders)) => {
                 return self.check_implicit_callable_expression(
                     context,
@@ -850,7 +899,8 @@ impl Analyzer<'_, '_, '_> {
     }
 
     pub(super) fn implicit_callable_selection(
-        &self,
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         expectation: &AnalyzerExpressionExpectation<'_>,
@@ -883,13 +933,37 @@ impl Analyzer<'_, '_, '_> {
                 .implicit_callable_region(context.owner)
                 .is_ok_and(|region| region.contains_expression(owner))
         }) && enclosing.owner != owner
-            && !(expression_uses
+        {
+            let starts_nested = if expression_uses
                 .row(owner)
                 .is_some_and(|row| row.is_bare_argument_placeholder())
-                && matches!(expectation.contextual_shape(), Some(expected @ TypeKind::Function { params, .. })
-                    if params.len() == 1 && !expected.accepts(&enclosing.parameter)))
-        {
-            return Ok(None);
+                && let Some(expected @ TypeKind::Function { params, .. }) =
+                    expectation.contextual_shape()
+                && params.len() == 1
+            {
+                let declarations = self
+                    .facts
+                    .effect_declarations()
+                    .map_err(AnalyzerExpressionError::fact)?;
+                let parameter = self
+                    .source_type_preparation(context.work())
+                    .and_then(|types| {
+                        types.retain_prepared(owner, &enclosing.parameter, declarations.read())
+                    })
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                !self.source_type_accepts(
+                    context,
+                    owner,
+                    expected,
+                    &parameter,
+                    SourceTypeDecisionUse::SelectImplicitCallable,
+                )?
+            } else {
+                false
+            };
+            if !starts_nested {
+                return Ok(None);
+            }
         }
         Ok(Some(if required {
             ImplicitCallableSelection::Required(placeholders)
@@ -1078,11 +1152,8 @@ impl Analyzer<'_, '_, '_> {
             expression.kind(),
             HirExprKind::Placeholder(HirPlaceholderKind::PartialApplication)
         ) {
-            if body_expectation
-                .complete_type()
-                .is_some_and(|expected| !expected.accepts(&parameter))
-            {
-                return Err(AnalyzerExpressionError::rejected(owner).into());
+            if let Some(expected) = body_expectation.complete_type() {
+                self.require_source_type(context, owner, expected, &parameter)?;
             }
             (
                 PreparedExpressionFact::from(PreparedOwnerBoundExpression::new(
@@ -1477,28 +1548,33 @@ impl Analyzer<'_, '_, '_> {
                 Ok(Some(PreparedExpressionFact::from(prepared)))
             }
             HirExprKind::Placeholder(HirPlaceholderKind::PartialApplication) => {
-                let context = self
+                let enclosing = self
                     .implicit_callable_stack
                     .iter()
                     .rev()
                     .find(|context| context.placeholders.contains(&owner))
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                if expectation
-                    .complete_type()
-                    .is_some_and(|expected| !expected.accepts(&context.parameter))
-                {
-                    return Err(AnalyzerExpressionError::rejected(owner));
+                let implicit_owner = enclosing.owner;
+                let declarations = self
+                    .facts
+                    .effect_declarations()
+                    .map_err(AnalyzerExpressionError::fact)?;
+                let parameter = self
+                    .source_type_preparation(context.work())
+                    .and_then(|types| {
+                        types.retain_prepared(owner, &enclosing.parameter, declarations.read())
+                    })
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                if let Some(expected) = expectation.complete_type() {
+                    self.require_source_type(context, owner, expected, &parameter)?;
                 }
                 let prepared = PreparedOwnerBoundExpression::new(
                     PreparedExpressionShell::value(
-                        context.parameter.clone(),
+                        parameter.clone(),
                         CheckedTypeSelection::Expected,
                         EffectSet::new(),
                     ),
-                    PreparedOwnerBoundResolution::implicit_parameter(
-                        context.owner,
-                        context.parameter.clone(),
-                    ),
+                    PreparedOwnerBoundResolution::implicit_parameter(implicit_owner, parameter),
                 );
                 Ok(Some(PreparedExpressionFact::from(prepared)))
             }
@@ -2219,10 +2295,10 @@ impl Analyzer<'_, '_, '_> {
                     .collect::<Result<Vec<_>, _>>()?;
                 let item = common_type(child_types, item_expectation.contextual_shape())
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                checked_bracket_sequence_expression(
+                self.checked_bracket_sequence_expression(
+                    context,
                     owner,
-                    expected,
-                    expectation.complete_type(),
+                    expectation,
                     item,
                     sequence.elements().len(),
                     if expected.is_some() {
@@ -2251,10 +2327,10 @@ impl Analyzer<'_, '_, '_> {
                         ));
                     }
                 }
-                checked_bracket_sequence_expression(
+                self.checked_bracket_sequence_expression(
+                    context,
                     owner,
-                    expected,
-                    expectation.complete_type(),
+                    expectation,
                     item,
                     sequence.elements().len(),
                     if sequence.common_suffix().is_some() {
@@ -2292,11 +2368,8 @@ impl Analyzer<'_, '_, '_> {
                     item: Box::new(value_type),
                     len: ArrayLength::Const(length),
                 };
-                if expectation
-                    .complete_type()
-                    .is_some_and(|expected| !expected.accepts(&ty))
-                {
-                    return Err(AnalyzerExpressionError::rejected(owner));
+                if let Some(expected) = expectation.complete_type() {
+                    self.require_source_type(context, owner, expected, &ty)?;
                 }
                 Ok(structural_expression(
                     ty,
@@ -2350,6 +2423,29 @@ impl Analyzer<'_, '_, '_> {
         }
         .map(Some)
     }
+    fn checked_bracket_sequence_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+        item: TypeKind<PreparedEffects>,
+        element_count: usize,
+        selection: CheckedTypeSelection,
+    ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
+        let ty = if matches!(expectation.contextual_shape(), Some(TypeKind::Array { .. })) {
+            TypeKind::Array {
+                item: Box::new(item),
+                len: ArrayLength::Const(element_count),
+            }
+        } else {
+            TypeKind::Vec(Box::new(item))
+        };
+        if let Some(expected) = expectation.complete_type() {
+            self.require_source_type(context, owner, expected, &ty)?;
+        }
+        Ok(structural_expression(ty, selection))
+    }
+
     fn check_binary_expression_kind(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
@@ -3174,9 +3270,10 @@ impl Analyzer<'_, '_, '_> {
                             if let Some(expected) = expected {
                                 let checked =
                                     self.evaluate_expression(context, *value, Some(expected))?;
-                                if !checked.value_type().is_some_and(|ty| expected.accepts(ty)) {
-                                    return Err(AnalyzerExpressionError::rejected(*value));
-                                }
+                                let actual = checked
+                                    .value_type()
+                                    .ok_or_else(|| AnalyzerExpressionError::rejected(*value))?;
+                                self.require_source_type(context, *value, expected, actual)?;
                                 Some(*value)
                             } else {
                                 None
@@ -3378,6 +3475,25 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
+    fn require_source_type(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expected: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
+    ) -> Result<(), AnalyzerExpressionError> {
+        if !self.source_type_accepts(
+            context,
+            owner,
+            expected,
+            actual,
+            SourceTypeDecisionUse::RequireAcceptance,
+        )? {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        }
+        Ok(())
+    }
+
     fn check_prepared_contextual_type(
         &self,
         context: &AnalyzerExpressionContext<'_>,
@@ -3541,14 +3657,12 @@ impl Analyzer<'_, '_, '_> {
                         contextual_function.map(|(params, _)| &params[index]),
                     )?;
                     let parameter_ty = match (annotated, contextual.contextual_shape()) {
-                        (Some(annotated), _)
-                            if contextual
-                                .complete_type()
-                                .is_some_and(|expected| !expected.accepts(&annotated)) =>
-                        {
-                            return Err(AnalyzerExpressionError::rejected(owner));
+                        (Some(annotated), _) => {
+                            if let Some(expected) = contextual.complete_type() {
+                                self.require_source_type(context, owner, expected, &annotated)?;
+                            }
+                            annotated
                         }
-                        (Some(annotated), _) => annotated,
                         (None, Some(contextual)) => contextual.clone(),
                         (None, None) => self
                             .pattern_type_hint(context, module, parameter.pattern())
@@ -3579,9 +3693,8 @@ impl Analyzer<'_, '_, '_> {
                 )?;
                 if let (Some(declared), Some(contextual)) =
                     (declared_result.as_ref(), contextual_result.complete_type())
-                    && !contextual.accepts(declared)
                 {
-                    return Err(AnalyzerExpressionError::rejected(owner));
+                    self.require_source_type(context, owner, contextual, declared)?;
                 }
                 let body_expectation = declared_result
                     .as_ref()
@@ -4022,11 +4135,8 @@ impl Analyzer<'_, '_, '_> {
             common_type(outputs.iter(), expectation.complete_type())
                 .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
         };
-        if expectation
-            .complete_type()
-            .is_some_and(|expected| !expected.accepts(&ty))
-        {
-            return Err(AnalyzerExpressionError::rejected(owner));
+        if let Some(expected) = expectation.complete_type() {
+            self.require_source_type(context, owner, expected, &ty)?;
         }
         self.validate_choice_owned_plan_patterns(expression, choice)?;
         let plan = choice
@@ -6271,28 +6381,6 @@ fn structural_expression(
     )
 }
 
-fn checked_bracket_sequence_expression(
-    owner: ExprId,
-    contextual_shape: Option<&TypeKind<crate::types::PreparedEffects>>,
-    complete_type: Option<&TypeKind<crate::types::PreparedEffects>>,
-    item: TypeKind<crate::types::PreparedEffects>,
-    element_count: usize,
-    selection: CheckedTypeSelection,
-) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
-    let ty = if matches!(contextual_shape, Some(TypeKind::Array { .. })) {
-        TypeKind::Array {
-            item: Box::new(item),
-            len: ArrayLength::Const(element_count),
-        }
-    } else {
-        TypeKind::Vec(Box::new(item))
-    };
-    if complete_type.is_some_and(|expected| !expected.accepts(&ty)) {
-        return Err(AnalyzerExpressionError::rejected(owner));
-    }
-    Ok(structural_expression(ty, selection))
-}
-
 fn array_repeat_length(length: &PreparedExpressionFact) -> Option<usize> {
     let CheckedExpressionResolution::Literal(HirLiteral::Integer(HirIntegerLiteral::Value {
         magnitude,
@@ -6510,8 +6598,17 @@ mod expectation_tests {
             expectation(&first, &[parameter.clone().into()]).expect("first expectation");
         let second_expectation =
             expectation(&second, &[parameter.into()]).expect("second expectation");
-        assert!(first_expectation.accepts_cached(&checked));
-        assert!(!second_expectation.accepts_cached(&checked));
+        let mut accepts = |_: &TypeKind<PreparedEffects>, _: &TypeKind<PreparedEffects>| {
+            panic!("parametric cache reuse must inspect the original selection")
+        };
+        assert_eq!(
+            first_expectation.accepts_cached_with::<()>(&checked, &mut accepts),
+            Ok(true)
+        );
+        assert_eq!(
+            second_expectation.accepts_cached_with::<()>(&checked, &mut accepts),
+            Ok(false)
+        );
 
         let inferred: super::PreparedExpressionFact =
             crate::final_analysis::prepared::PreparedResolvedExpression::value(
@@ -6521,6 +6618,9 @@ mod expectation_tests {
                 CheckedExpressionResolution::Structural,
             )
             .into();
-        assert!(second_expectation.accepts_cached(&inferred));
+        assert_eq!(
+            second_expectation.accepts_cached_with::<()>(&inferred, &mut accepts),
+            Ok(true)
+        );
     }
 }

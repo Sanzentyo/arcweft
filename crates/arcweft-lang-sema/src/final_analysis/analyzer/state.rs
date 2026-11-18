@@ -9,6 +9,7 @@ use super::calls::{
     AnalyzerPreparedUnselectedCall, CompletedPhysicalCallSource,
 };
 use super::expression_error::PhysicalCallAttemptId;
+use super::pending_effects::PreparedSourceTypeDecision;
 use super::statements::PreparedIteration;
 use super::{
     BTreeMap, BTreeSet, CallTargetFacts, CandidateFactTransactionViolation, ExprId, LocalId,
@@ -27,7 +28,7 @@ use crate::{
         accounting::PhysicalSourceType, prepared::PreparedExpressionTypeUpdates,
     },
     types::{
-        PreparedEffects, TypeProjectionControl, TypeProjectionNodeKind,
+        PreparedEffects, TypeCompatibilityControl, TypeProjectionControl, TypeProjectionNodeKind,
         constraints::{RetainedSourceCompletion, TypeConstraintError},
     },
 };
@@ -311,7 +312,10 @@ impl<E> CandidateFactCloseFailure<E> {
 struct CandidateFactCheckpointId(u64);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct CandidateFactJournalCursor(usize);
+struct CandidateFactJournalCursor {
+    mutations: usize,
+    source_type_decisions: usize,
+}
 
 #[derive(Clone, Copy)]
 struct ActiveCandidateCheckpoint {
@@ -369,6 +373,7 @@ pub(super) struct SemanticFactState {
     locals: BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
     patterns: BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
     expressions: BTreeMap<ExprId, PreparedExpressionFact>,
+    source_type_decisions: Vec<PreparedSourceTypeDecision>,
     checked_content: PreparedCheckedContentCatalog,
     expression_stack: BTreeSet<ExprId>,
     iteration_facts: BTreeMap<ExprId, PreparedIteration>,
@@ -388,14 +393,18 @@ pub(super) struct SemanticFactState {
     epoch: u64,
 }
 
-/// Borrowed observations while the original effect graph is being prepared.
-/// These tables remain the sole owners of local and pattern result types.
-pub(super) struct PatternTypeObservations<'a> {
+/// Borrowed source types used while the original effect graph closes.
+pub(super) struct PreparedTypeObservations<'a> {
     locals: &'a BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>>,
     patterns: &'a BTreeMap<PatternId, TypeKind<crate::types::PreparedEffects>>,
+    decisions: &'a [PreparedSourceTypeDecision],
 }
 
-impl PatternTypeObservations<'_> {
+impl PreparedTypeObservations<'_> {
+    pub(super) fn decisions(&self) -> impl Iterator<Item = &PreparedSourceTypeDecision> {
+        self.decisions.iter()
+    }
+
     pub(super) fn locals(&self) -> &BTreeMap<LocalId, TypeKind<crate::types::PreparedEffects>> {
         self.locals
     }
@@ -469,6 +478,10 @@ impl CandidateSemanticProjection {
         for iteration in facts.iterations.values().flatten() {
             iteration.visit_types(visit)?;
         }
+        for decision in &facts.source_type_decisions {
+            visit(&decision.expected)?;
+            visit(&decision.actual)?;
+        }
         Ok(())
     }
 
@@ -501,12 +514,16 @@ impl CandidateSemanticProjection {
         .then_some(fact)
     }
 
-    pub(super) fn prepare_retained_types<C: TypeProjectionControl<Error = TypeConstraintError>>(
+    pub(super) fn prepare_retained_types<C>(
         &self,
         owner: ExprId,
         completion: RetainedSourceCompletion<'_, AnalyzerCallConstraintDomain>,
         control: &mut C,
-    ) -> Result<Option<RetainedProbeTypes>, TypeConstraintError> {
+    ) -> Result<Option<RetainedProbeTypes>, TypeConstraintError>
+    where
+        C: TypeProjectionControl<Error = TypeConstraintError>
+            + TypeCompatibilityControl<crate::types::CanonicalEffects, Error = TypeConstraintError>,
+    {
         let Some(source) =
             EnclosingGenericParameterScope::original_source_owner(completion.original())
         else {
@@ -514,6 +531,18 @@ impl CandidateSemanticProjection {
         };
         let mut updates = RetainedProbeTypes::default();
         let facts = &self.data.facts;
+        for decision in &facts.source_type_decisions {
+            control.visit_binding()?;
+            if !source.admits_owner(decision.owner.into())
+                || completion.recheck_declaration_compatibility(
+                    &decision.expected,
+                    &decision.actual,
+                    control,
+                )? != Some(decision.accepted)
+            {
+                return Ok(None);
+            }
+        }
         for (fact_owner, ty) in facts
             .locals
             .iter()
@@ -599,6 +628,7 @@ struct CandidateProjectionFacts {
     locals: BTreeMap<LocalId, Option<TypeKind<crate::types::PreparedEffects>>>,
     patterns: BTreeMap<PatternId, Option<TypeKind<crate::types::PreparedEffects>>>,
     expressions: BTreeMap<ExprId, Option<PreparedExpressionFact>>,
+    source_type_decisions: Vec<PreparedSourceTypeDecision>,
     checked_content: BTreeMap<
         arcweft_lang_hir::dialogue_application::HirDialogueContentId,
         Option<PreparedCheckedRichTextCheck>,
@@ -834,7 +864,9 @@ impl SemanticFactState {
         if left.data.facts.patterns != right.data.facts.patterns {
             return Some(CandidateSemanticReplayMismatch::Patterns);
         }
-        if left.data.facts.expressions != right.data.facts.expressions {
+        if left.data.facts.expressions != right.data.facts.expressions
+            || left.data.facts.source_type_decisions != right.data.facts.source_type_decisions
+        {
             return Some(CandidateSemanticReplayMismatch::Expressions);
         }
         if left.data.facts.checked_content != right.data.facts.checked_content {
@@ -901,6 +933,7 @@ impl SemanticFactState {
             locals: BTreeMap::new(),
             patterns: BTreeMap::new(),
             expressions: BTreeMap::new(),
+            source_type_decisions: Vec::new(),
             checked_content: PreparedCheckedContentCatalog::default(),
             expression_stack: BTreeSet::new(),
             iteration_facts: BTreeMap::new(),
@@ -937,7 +970,7 @@ impl SemanticFactState {
             .find(|active| active.id == checkpoint.id)
             .ok_or(CandidateFactTransactionViolation::StaleCheckpoint)?;
         if checkpoint.journal_start != active.journal_start
-            || checkpoint.journal_start.0 > self.candidate_journal.len()
+            || !self.contains_cursor(checkpoint.journal_start)
         {
             return Err(CandidateFactTransactionViolation::JournalCursorMismatch);
         }
@@ -1071,7 +1104,7 @@ impl SemanticFactState {
         if checkpoint.epoch != self.epoch {
             return Err(CandidateFactTransactionViolation::StaleCheckpoint);
         }
-        if checkpoint.journal_start.0 > self.candidate_journal.len() {
+        if !self.contains_cursor(checkpoint.journal_start) {
             return Err(CandidateFactTransactionViolation::JournalCursorMismatch);
         }
         if !self.candidate_checkpoints.last().is_some_and(|active| {
@@ -1105,7 +1138,7 @@ impl SemanticFactState {
         owner: ExprId,
     ) -> Result<Option<PreparedExpressionFact>, CandidateFactTransactionViolation> {
         self.validate_candidate_authority(authority)?;
-        let start = authority.visibility.0;
+        let start = authority.visibility.mutations;
         let touched = self.candidate_journal[start..].iter().any(|mutation| {
             matches!(mutation, SemanticFactMutation::Expression { owner: candidate, .. } if *candidate == owner)
         });
@@ -1133,9 +1166,9 @@ impl SemanticFactState {
                     && active.journal_start == authority.checkpoint.journal_start
             })
             .ok_or(CandidateFactTransactionViolation::StaleCheckpoint)?;
-        if authority.checkpoint.journal_start.0 > self.candidate_journal.len()
-            || authority.visibility.0 < active.journal_start.0
-            || authority.visibility.0 > self.candidate_journal.len()
+        if !self.contains_cursor(authority.checkpoint.journal_start)
+            || authority.visibility.mutations < active.journal_start.mutations
+            || !self.contains_cursor(authority.visibility)
         {
             return Err(CandidateFactTransactionViolation::JournalCursorMismatch);
         }
@@ -1219,12 +1252,12 @@ impl SemanticFactState {
             .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
     }
 
-    pub(super) fn pattern_preparation_parts(
+    pub(super) fn effect_declarations_and_type_observations(
         &mut self,
     ) -> Result<
         (
             &mut crate::callable::PreparedCallableEffectDeclarations,
-            PatternTypeObservations<'_>,
+            PreparedTypeObservations<'_>,
         ),
         CandidateFactTransactionViolation,
     > {
@@ -1239,9 +1272,10 @@ impl SemanticFactState {
             .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))?;
         Ok((
             declarations,
-            PatternTypeObservations {
+            PreparedTypeObservations {
                 locals: &self.locals,
                 patterns: &self.patterns,
+                decisions: &self.source_type_decisions,
             },
         ))
     }
@@ -1359,6 +1393,24 @@ impl SemanticFactState {
 
     pub(super) const fn expressions(&self) -> &BTreeMap<ExprId, PreparedExpressionFact> {
         &self.expressions
+    }
+
+    pub(super) fn source_type_decisions(
+        &self,
+    ) -> impl Iterator<Item = &PreparedSourceTypeDecision> {
+        self.source_type_decisions.iter()
+    }
+
+    pub(super) fn record_source_type_decision(
+        &mut self,
+        decision: PreparedSourceTypeDecision,
+    ) -> Result<(), CandidateFactTransactionViolation> {
+        self.ensure_healthy()?;
+        if self.candidate_checkpoints.is_empty() {
+            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+        }
+        self.source_type_decisions.push(decision);
+        Ok(())
     }
 
     pub(super) fn take_dialogue_application(
@@ -1906,7 +1958,10 @@ impl SemanticFactState {
         let checkpoint = CandidateFactCheckpoint {
             issuer: Arc::clone(&self.issuer),
             id,
-            journal_start: CandidateFactJournalCursor(self.candidate_journal.len()),
+            journal_start: CandidateFactJournalCursor {
+                mutations: self.candidate_journal.len(),
+                source_type_decisions: self.source_type_decisions.len(),
+            },
             epoch: self.epoch,
             graph,
         };
@@ -2029,6 +2084,15 @@ impl SemanticFactState {
                 checkpoint: Box::new(checkpoint),
             });
         }
+        let decision_start = checkpoint.journal_start.source_type_decisions;
+        for _ in &self.source_type_decisions[decision_start..] {
+            if let Err(error) = control.charge(DecisionWork::Node) {
+                return Err(CandidateFactCloseFailure {
+                    violation: CandidateFactMutationFailure::Control(error),
+                    checkpoint: Box::new(checkpoint),
+                });
+            }
+        }
         let CandidateFactCheckpoint {
             issuer,
             id,
@@ -2083,6 +2147,7 @@ impl SemanticFactState {
             graph_delta,
             probe_effect_reads: None,
             facts: CandidateProjectionFacts {
+                source_type_decisions: self.source_type_decisions.split_off(decision_start),
                 locals: owners
                     .locals
                     .into_iter()
@@ -2227,6 +2292,11 @@ impl SemanticFactState {
                 .charge(DecisionWork::Node)
                 .map_err(CandidateFactMutationFailure::Control)?;
             let facts = &projection.data.facts;
+            for _ in &facts.source_type_decisions {
+                control
+                    .charge(DecisionWork::Node)
+                    .map_err(CandidateFactMutationFailure::Control)?;
+            }
             if projections.len() > 1 {
                 Self::admit_projection_writes(&mut writes.locals, facts.locals.keys(), control)?;
                 Self::admit_projection_writes(
@@ -2893,6 +2963,11 @@ impl SemanticFactState {
         }
     }
 
+    fn contains_cursor(&self, cursor: CandidateFactJournalCursor) -> bool {
+        cursor.mutations <= self.candidate_journal.len()
+            && cursor.source_type_decisions <= self.source_type_decisions.len()
+    }
+
     fn validate_checkpoint(
         &self,
         checkpoint: &CandidateFactCheckpoint,
@@ -2908,7 +2983,7 @@ impl SemanticFactState {
             Some(active) if active.id == checkpoint.id => {
                 if active.journal_start != checkpoint.journal_start
                     || checkpoint.epoch != self.epoch
-                    || checkpoint.journal_start.0 > self.candidate_journal.len()
+                    || !self.contains_cursor(checkpoint.journal_start)
                 {
                     Err(CandidateFactTransactionViolation::JournalCursorMismatch)
                 } else {
@@ -2970,7 +3045,7 @@ impl SemanticFactState {
             .candidate_checkpoints
             .first()
             .map(|active| active.journal_start);
-        let recoverable = oldest.is_none_or(|cursor| cursor.0 <= self.candidate_journal.len());
+        let recoverable = oldest.is_none_or(|cursor| self.contains_cursor(cursor));
         if let Some(cursor) = oldest.filter(|_| recoverable) {
             self.rollback_journal(cursor);
         }
@@ -2996,7 +3071,7 @@ impl SemanticFactState {
         journal_start: CandidateFactJournalCursor,
     ) -> CandidateProjectionOwners {
         let mut owners = CandidateProjectionOwners::default();
-        for mutation in &self.candidate_journal[journal_start.0..] {
+        for mutation in &self.candidate_journal[journal_start.mutations..] {
             match mutation {
                 SemanticFactMutation::Local { owner, .. } => {
                     owners.locals.insert(*owner);
@@ -3022,7 +3097,9 @@ impl SemanticFactState {
     }
 
     fn rollback_journal(&mut self, journal_start: CandidateFactJournalCursor) {
-        let mut mutations = self.candidate_journal.split_off(journal_start.0);
+        self.source_type_decisions
+            .truncate(journal_start.source_type_decisions);
+        let mut mutations = self.candidate_journal.split_off(journal_start.mutations);
         while let Some(mutation) = mutations.pop() {
             match mutation {
                 SemanticFactMutation::Local { owner, previous } => {
@@ -3083,6 +3160,7 @@ impl SemanticFactState {
             locals,
             patterns,
             expressions,
+            source_type_decisions,
             checked_content,
             iterations,
             mut implicit_capture_uses,
@@ -3102,6 +3180,7 @@ impl SemanticFactState {
         for (owner, value) in expressions {
             self.apply_expression(owner, value);
         }
+        self.source_type_decisions.extend(source_type_decisions);
         for (content, value) in checked_content {
             self.apply_checked_content(content, value);
         }
@@ -4140,6 +4219,71 @@ mod tests {
             .rollback_candidate_transaction(outer)
             .expect("rollback outer");
         assert!(state.pending_implicit_capture_uses().is_empty());
+    }
+
+    #[test]
+    fn observed_source_decisions_travel_with_their_candidate_projection() {
+        let (owner, _, _) = call_identity();
+        let mut state = SemanticFactState::new();
+        let outer = state
+            .begin_candidate_transaction(&mut work())
+            .expect("outer");
+        state
+            .record_source_type_decision(PreparedSourceTypeDecision {
+                owner,
+                expected: TypeKind::I64,
+                actual: TypeKind::I64,
+                accepted: true,
+            })
+            .expect("outer decision");
+
+        let child = state
+            .begin_candidate_transaction(&mut work())
+            .expect("probe");
+        state
+            .record_source_type_decision(PreparedSourceTypeDecision {
+                owner,
+                expected: TypeKind::I64,
+                actual: TypeKind::String,
+                accepted: false,
+            })
+            .expect("child decision");
+        let projection = state
+            .extract_and_rollback(child, &mut work())
+            .expect("extract child");
+        assert_eq!(
+            state
+                .source_type_decisions()
+                .map(|decision| decision.accepted)
+                .collect::<Vec<_>>(),
+            [true]
+        );
+        let mut observed = Vec::new();
+        projection
+            .visit_effect_types(&mut |ty| {
+                observed.push(ty);
+                Ok::<_, core::convert::Infallible>(())
+            })
+            .unwrap();
+        assert_eq!(observed, [&TypeKind::I64, &TypeKind::String]);
+
+        let authority = state
+            .transaction_authority(&outer)
+            .expect("outer authority");
+        state
+            .apply_candidate_projection(&authority, projection, &mut work())
+            .expect("apply child");
+        assert_eq!(
+            state
+                .source_type_decisions()
+                .map(|decision| decision.accepted)
+                .collect::<Vec<_>>(),
+            [true, false]
+        );
+        state
+            .rollback_candidate_transaction(outer)
+            .expect("rollback outer");
+        assert_eq!(state.source_type_decisions().count(), 0);
     }
 
     #[test]

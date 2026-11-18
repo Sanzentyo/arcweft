@@ -14,7 +14,8 @@ use crate::{
     effect_row::{DecisionControl, DecisionWork, EffectRow},
     final_analysis::statement_effects::PreparedExecutionEffectCatalog,
     types::{
-        PreparedTypeEffectRoots, TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind,
+        PreparedTypeEffectRoots, TypeCompatibilityControl, TypeKind, TypeProjectionControl,
+        TypeProjectionError, TypeProjectionNodeKind,
     },
 };
 
@@ -937,6 +938,14 @@ impl TypeProjectionControl for CallableEffectClosureWork<'_> {
     }
 
     fn visit_binding(&mut self) -> Result<(), Self::Error> {
+        self.charge(DecisionWork::Visit)
+    }
+}
+
+impl TypeCompatibilityControl for CallableEffectClosureWork<'_> {
+    type Error = FinalSemanticAnalysisError;
+
+    fn enter(&mut self, _: &TypeKind, _: &TypeKind) -> Result<(), Self::Error> {
         self.charge(DecisionWork::Visit)
     }
 }

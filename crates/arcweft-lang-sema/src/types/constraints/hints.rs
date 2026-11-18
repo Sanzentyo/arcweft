@@ -845,6 +845,20 @@ impl<D: ConstraintDomain> RetainedSourceCompletion<'_, D> {
         self.source.project_retained_declaration_type(ty, control)
     }
 
+    pub(crate) fn recheck_declaration_compatibility<C>(
+        &self,
+        expected: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
+        control: &mut C,
+    ) -> Result<Option<bool>, TypeConstraintError>
+    where
+        C: TypeProjectionControl<Error = TypeConstraintError>
+            + crate::types::TypeCompatibilityControl<Error = TypeConstraintError>,
+    {
+        self.source
+            .recheck_retained_declaration_compatibility(expected, actual, control)
+    }
+
     pub(crate) fn into_value(self) -> RetainedSourceType {
         self.value
     }

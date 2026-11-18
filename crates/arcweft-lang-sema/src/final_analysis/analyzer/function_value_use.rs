@@ -7,7 +7,7 @@ use super::calls::{
 use super::expression_error::AnalyzerExpressionError;
 use super::expressions::AnalyzerExpressionExpectation;
 use super::preparation_work::AnalyzerPreparationWork;
-use super::{Analyzer, ExprId, ResolverWork, TypeKind};
+use super::{Analyzer, ExprId, ResolverWork};
 use crate::callable::{
     CallConstraintInvariant, CallableConstraintApplication, FunctionSpecializationFailure,
     FunctionSpecializationSealFailure,
@@ -67,18 +67,12 @@ impl Analyzer<'_, '_, '_> {
         expectation: &AnalyzerExpressionExpectation<'_>,
         work: &mut AnalyzerPreparationWork<'_>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
-        if expectation.defers_function_value_use() {
-            return Ok(checked);
-        }
-        let Some(expected) = expectation.function_value_target() else {
+        let Some(source) = checked.value_type() else {
             return Ok(checked);
         };
-        let Some(source @ TypeKind::Function { binder, .. }) = checked.value_type() else {
+        let Some(expected) = expectation.specialization_target(Some(source)) else {
             return Ok(checked);
         };
-        if binder.is_empty() {
-            return Ok(checked);
-        }
         let module = self
             .module(owner.module())
             .map_err(AnalyzerExpressionError::fatal)?;

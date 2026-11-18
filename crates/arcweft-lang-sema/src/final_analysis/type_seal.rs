@@ -91,6 +91,16 @@ impl PublicationSourceTypes<'_, '_> {
             })
     }
 
+    pub(super) fn check_observed_recovery(
+        &mut self,
+        expected: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
+    ) -> Result<bool, FinalSemanticAnalysisError> {
+        let expected = self.canonical(expected)?;
+        let actual = self.canonical(actual)?;
+        expected.accepts_recovery_with(&actual, self.work)
+    }
+
     /// A completed call can issue a new type for its expression after the
     /// principal relation has closed. Retaining it adds no open effect terms.
     pub(super) fn retain_closed(

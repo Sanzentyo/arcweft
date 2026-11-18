@@ -121,6 +121,29 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, CanonicalEf
     }
 }
 
+fn observe_type_roots<'a, C: TypeProjectionControl>(
+    types: impl IntoIterator<Item = &'a TypeKind<PreparedEffects>>,
+    graph: PreparedEffectReadView<'_>,
+    control: &mut C,
+) -> Result<
+    Option<PrincipalEffectClosure>,
+    TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>,
+> {
+    let roots = PreparedTypeEffectRoots::collect(types, std::iter::empty(), control)
+        .map_err(PreparedTypeEffectProjectionFailure::from_projection)?;
+    if !roots.has_terms() {
+        return Ok(None);
+    }
+    graph
+        .observe_principal(
+            roots.rows(),
+            roots.predicates(),
+            &mut EffectProjectionControl { control, depth: 1 },
+        )
+        .map(Some)
+        .map_err(|error| PreparedTypeEffectProjectionFailure::from_effect(error).into())
+}
+
 impl TypeKind<PreparedEffects> {
     /// Observe authored annotations without interpreting any live graph term.
     /// A caller must retain the original type when the comparison needs C.
@@ -147,22 +170,26 @@ impl TypeKind<PreparedEffects> {
         graph: PreparedEffectReadView<'_>,
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
-        let roots = PreparedTypeEffectRoots::collect([self], std::iter::empty(), control)
-            .map_err(PreparedTypeEffectProjectionFailure::from_projection)?;
-        let principal = if roots.has_terms() {
-            Some(
-                graph
-                    .observe_principal(
-                        roots.rows(),
-                        roots.predicates(),
-                        &mut EffectProjectionControl { control, depth: 1 },
-                    )
-                    .map_err(PreparedTypeEffectProjectionFailure::from_effect)?,
-            )
-        } else {
-            None
-        };
+        let principal = observe_type_roots([self], graph, control)?;
         self.project_effects_with_principal(scope, principal.as_ref(), control)
+    }
+
+    /// Observe both sides in one principal. Preparing a dependency needed by
+    /// either side requires retrying the pair from the same graph revision.
+    pub(crate) fn observe_compatibility_inputs<C: TypeProjectionControl>(
+        &self,
+        actual: &Self,
+        scope: &GenericScope,
+        graph: PreparedEffectReadView<'_>,
+        control: &mut C,
+    ) -> Result<
+        (TypeKind, TypeKind),
+        TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>,
+    > {
+        let principal = observe_type_roots([self, actual], graph, control)?;
+        let expected = self.project_effects_with_principal(scope, principal.as_ref(), control)?;
+        let actual = actual.project_effects_with_principal(scope, principal.as_ref(), control)?;
+        Ok((expected, actual))
     }
 
     /// Close the immutable original C against actual inputs, then project each
