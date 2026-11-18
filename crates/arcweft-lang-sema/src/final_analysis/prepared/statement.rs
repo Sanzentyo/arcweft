@@ -11,7 +11,7 @@ use crate::{
         CheckedAssertionDisposition, CheckedEvaluatedEffectReference, CheckedIteration,
         CheckedSuspensionStatement,
     },
-    types::{SemanticTypeDigest, TypeKind},
+    types::{CanonicalEffects, PreparedEffects, SemanticTypeDigest, TypeEffectDomain, TypeKind},
 };
 
 use super::PreparedEvaluatedEffect;
@@ -58,7 +58,7 @@ impl PreparedAssignmentStatement {
 /// `HirOwned` merely proves that no earlier specialized pass owns the payload;
 /// only the late exhaustive HIR match may select its final meaning.
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) enum PreparedStatementPayload {
+pub(crate) enum PreparedStatementPayload<D: TypeEffectDomain = PreparedEffects> {
     HirOwned,
     /// Issued by the late statement producer before the effect fold enters
     /// latent bodies, while the complete callable fact inventory is available.
@@ -66,14 +66,14 @@ pub(crate) enum PreparedStatementPayload {
     Assignment(PreparedAssignmentStatement),
     RegistryWrite(PreparedRegistryWrite),
     Assertion(CheckedAssertionDisposition),
-    Iteration(Box<CheckedIteration>),
+    Iteration(Box<CheckedIteration<D>>),
     Suspension(Box<CheckedSuspensionStatement>),
     Yield,
     EvaluatedEffect(PreparedEvaluatedEffect),
     SealedEvaluatedEffectReference(CheckedEvaluatedEffectReference),
 }
 
-impl PreparedStatementPayload {
+impl<D: TypeEffectDomain> PreparedStatementPayload<D> {
     /// A place target or a storage operand remains a runtime type root even
     /// when it does not own an ordinary expression evaluation.
     pub(in crate::final_analysis) fn storage_type_source(&self) -> Option<ExprId> {
@@ -84,14 +84,38 @@ impl PreparedStatementPayload {
         }
     }
 
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    pub(crate) fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<D>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
             Self::Iteration(value) => value.visit_types(visitor),
             _ => Ok(()),
         }
+    }
+}
+
+impl PreparedStatementPayload {
+    pub(in crate::final_analysis) fn seal_types<E>(
+        self,
+        map: impl FnMut(TypeKind<PreparedEffects>) -> Result<TypeKind, E>,
+    ) -> Result<PreparedStatementPayload<CanonicalEffects>, E> {
+        Ok(match self {
+            Self::HirOwned => PreparedStatementPayload::HirOwned,
+            Self::Return(value) => PreparedStatementPayload::Return(value),
+            Self::Assignment(value) => PreparedStatementPayload::Assignment(value),
+            Self::RegistryWrite(value) => PreparedStatementPayload::RegistryWrite(value),
+            Self::Assertion(value) => PreparedStatementPayload::Assertion(value),
+            Self::Iteration(value) => {
+                PreparedStatementPayload::Iteration(Box::new(value.try_map_types(map)?))
+            }
+            Self::Suspension(value) => PreparedStatementPayload::Suspension(value),
+            Self::Yield => PreparedStatementPayload::Yield,
+            Self::EvaluatedEffect(value) => PreparedStatementPayload::EvaluatedEffect(value),
+            Self::SealedEvaluatedEffectReference(value) => {
+                PreparedStatementPayload::SealedEvaluatedEffectReference(value)
+            }
+        })
     }
 }
 

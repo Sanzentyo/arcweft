@@ -112,9 +112,9 @@ pub trait IntoIterator {
 }
 ```
 
-Built-in iteration facts cover `Range<T>`, `Seq<T>`, `Stream<T, E>`, `Vec<T>`, `Array<T, N>`, and `Slice<T>`. `Range` advances through runtime iterator state without materializing its elements. See [built-in iteration selection](../../crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_types.rs#L91).
+Built-in iteration facts cover `Range<T>`, `Seq<T>`, `Stream<T, E>`, `Vec<T>`, `Array<T, N>`, and `Slice<T>`. `Range` advances through runtime iterator state without materializing its elements. See [built-in iteration selection](../../crates/arcweft-lang-sema/src/final_analysis/model/statement.rs#L30).
 
-For other source types, the checker resolves an `IntoIterator` conformance and then an `Iterator` conformance for its associated `IntoIter` type. If no `IntoIterator` conformance exists, an `Iterator` conformance on the source itself serves as identity `IntoIterator`, with `IntoIter = Self`. Typed witness evidence is carried into lowering and runtime execution. See [trait-witness selection](../../crates/arcweft-lang-sema/src/final_analysis/analyzer/statements.rs#L82).
+For other source types, the checker resolves an `IntoIterator` conformance and then an `Iterator` conformance for its associated `IntoIter` type. If no `IntoIterator` conformance exists, an `Iterator` conformance on the source itself serves as identity `IntoIterator`, with `IntoIter = Self`. Typed witness evidence is carried into lowering and runtime execution. See [trait-witness selection](../../crates/arcweft-lang-sema/src/final_analysis/analyzer/statements.rs#L87).
 
 ```arcw
 let labels =

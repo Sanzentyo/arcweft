@@ -9,9 +9,10 @@ use super::calls::{
     AnalyzerPreparedUnselectedCall, CompletedPhysicalCallSource,
 };
 use super::expression_error::PhysicalCallAttemptId;
+use super::statements::PreparedIteration;
 use super::{
-    BTreeMap, BTreeSet, CallTargetFacts, CandidateFactTransactionViolation, CheckedIteration,
-    ExprId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation, TypeKind,
+    BTreeMap, BTreeSet, CallTargetFacts, CandidateFactTransactionViolation, ExprId, LocalId,
+    PatternId, PhysicalCandidateArgumentEvaluation, TypeKind,
 };
 use crate::callable::{
     CheckedCallSite, EnclosingGenericParameterScope, PreparedCallContinuationRef,
@@ -370,7 +371,7 @@ pub(super) struct SemanticFactState {
     expressions: BTreeMap<ExprId, PreparedExpressionFact>,
     checked_content: PreparedCheckedContentCatalog,
     expression_stack: BTreeSet<ExprId>,
-    iteration_facts: BTreeMap<ExprId, CheckedIteration>,
+    iteration_facts: BTreeMap<ExprId, PreparedIteration>,
     implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, LocalId>,
     /// Rollback/extraction bookkeeping only. Selected input coordinates issue
     /// semantic source order after inference; probe event order never does.
@@ -464,6 +465,9 @@ impl CandidateSemanticProjection {
         }
         for fact in facts.expressions.values().flatten() {
             fact.visit_types(visit)?;
+        }
+        for iteration in facts.iterations.values().flatten() {
+            iteration.visit_types(visit)?;
         }
         Ok(())
     }
@@ -599,7 +603,7 @@ struct CandidateProjectionFacts {
         arcweft_lang_hir::dialogue_application::HirDialogueContentId,
         Option<PreparedCheckedRichTextCheck>,
     >,
-    iterations: BTreeMap<ExprId, Option<CheckedIteration>>,
+    iterations: BTreeMap<ExprId, Option<PreparedIteration>>,
     implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, Option<LocalId>>,
     implicit_capture_journal_order: Box<[ImplicitCaptureUseKey]>,
     physical_candidate_argument_evaluations: PhysicalCandidateEvaluationTranscript,
@@ -881,7 +885,7 @@ enum SemanticFactMutation {
     },
     Iteration {
         owner: ExprId,
-        previous: Option<Box<CheckedIteration>>,
+        previous: Option<Box<PreparedIteration>>,
     },
     ImplicitCaptureUse {
         key: ImplicitCaptureUseKey,
@@ -1516,7 +1520,7 @@ impl SemanticFactState {
         self.checked_content.is_empty()
     }
 
-    pub(super) const fn iteration_facts(&self) -> &BTreeMap<ExprId, CheckedIteration> {
+    pub(super) const fn iteration_facts(&self) -> &BTreeMap<ExprId, PreparedIteration> {
         &self.iteration_facts
     }
 
@@ -1525,7 +1529,7 @@ impl SemanticFactState {
     /// iteration row is copied into the affine statement payload.
     pub(super) fn take_iteration_facts_for_statements(
         &mut self,
-    ) -> Result<BTreeMap<ExprId, CheckedIteration>, CandidateFactTransactionViolation> {
+    ) -> Result<BTreeMap<ExprId, PreparedIteration>, CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
         Ok(std::mem::take(&mut self.iteration_facts))
     }
@@ -2505,13 +2509,13 @@ impl SemanticFactState {
     pub(super) fn set_iteration_fact(
         &mut self,
         owner: ExprId,
-        value: CheckedIteration,
+        value: PreparedIteration,
     ) -> Result<bool, CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
         Ok(self.set_iteration_fact_unchecked(owner, value))
     }
 
-    fn set_iteration_fact_unchecked(&mut self, owner: ExprId, value: CheckedIteration) -> bool {
+    fn set_iteration_fact_unchecked(&mut self, owner: ExprId, value: PreparedIteration) -> bool {
         let previous = self.iteration_facts.insert(owner, value);
         let replaced = previous.is_some();
         if !self.candidate_checkpoints.is_empty() {
@@ -3135,7 +3139,7 @@ impl SemanticFactState {
         }
     }
 
-    fn apply_iteration(&mut self, owner: ExprId, value: Option<CheckedIteration>) {
+    fn apply_iteration(&mut self, owner: ExprId, value: Option<PreparedIteration>) {
         if let Some(value) = value {
             self.set_iteration_fact_unchecked(owner, value);
         } else {

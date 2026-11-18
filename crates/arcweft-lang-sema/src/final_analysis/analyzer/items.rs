@@ -772,6 +772,9 @@ impl Analyzer<'_, '_, '_> {
         for (owner, fact) in &input.patterns {
             fact.visit_types(&mut |ty| observe((*owner).into(), ty))?;
         }
+        for (owner, fact) in &input.statements {
+            fact.visit_types(&mut |ty| observe((*owner).into(), ty))?;
+        }
         for (owner, ty) in type_observations.locals() {
             if selected.contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Local(*owner)) {
                 observe((*owner).into(), ty)?;

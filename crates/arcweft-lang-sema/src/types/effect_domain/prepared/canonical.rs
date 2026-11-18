@@ -1,7 +1,7 @@
 //! Canonical algebra projection without a selected-call or checked-type seal.
 
 use super::*;
-use crate::effect_row::prepared::PrincipalEffectClosure;
+use crate::effect_row::prepared::{PreparedEffectInvariant, PrincipalEffectClosure};
 use crate::effect_row::prepared::{
     PreparedEffectReadView, PreparedEffectUnknownRef, ScopedEffectCompletion,
 };
@@ -25,9 +25,24 @@ impl OriginalTypeEffectProjection {
 }
 
 struct Canonicalization<'a, C> {
-    principal: &'a PrincipalEffectClosure,
+    principal: Option<&'a PrincipalEffectClosure>,
     control: &'a mut C,
     depth: u64,
+}
+
+impl<'a, C: TypeProjectionControl> Canonicalization<'a, C> {
+    fn principal(
+        &self,
+    ) -> Result<
+        &'a PrincipalEffectClosure,
+        TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>,
+    > {
+        self.principal.ok_or_else(|| {
+            PreparedTypeEffectProjectionFailure::from_effect(
+                PreparedEffectInvariant::UnclosedCell.into(),
+            )
+        })
+    }
 }
 
 impl<C: TypeProjectionControl> TypeProjectionControl for Canonicalization<'_, C> {
@@ -69,7 +84,7 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, CanonicalEf
                 Ok(row.clone())
             }
             PreparedEffectRow::Term(_) => self
-                .principal
+                .principal()?
                 .resolve_row(
                     row,
                     &mut EffectProjectionControl {
@@ -93,7 +108,7 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, CanonicalEf
                 Ok(predicate.clone())
             }
             PreparedEffectPredicate::Term(_) => self
-                .principal
+                .principal()?
                 .resolve_predicate(
                     predicate,
                     &mut EffectProjectionControl {
@@ -107,6 +122,39 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, CanonicalEf
 }
 
 impl TypeKind<PreparedEffects> {
+    /// Observe this type against the current original relation. Consumers of
+    /// the observation must check it again at publication, after C is closed.
+    pub(crate) fn observe_canonical_effects<C: TypeProjectionControl>(
+        &self,
+        scope: &GenericScope,
+        graph: PreparedEffectReadView<'_>,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
+        let roots = PreparedTypeEffectRoots::collect([self], std::iter::empty(), control)
+            .map_err(PreparedTypeEffectProjectionFailure::from_projection)?;
+        let principal = if roots.has_terms() {
+            Some(
+                graph
+                    .observe_principal(
+                        roots.rows(),
+                        roots.predicates(),
+                        &mut EffectProjectionControl { control, depth: 1 },
+                    )
+                    .map_err(PreparedTypeEffectProjectionFailure::from_effect)?,
+            )
+        } else {
+            None
+        };
+        self.project_effect_domain(
+            scope,
+            &mut Canonicalization {
+                principal: principal.as_ref(),
+                control,
+                depth: 1,
+            },
+        )
+    }
+
     /// Close the immutable original C against actual inputs, then project each
     /// complete field through the common scoped type fold. Query fields extend
     /// reachability only; they never constrain inference to make a use succeed.
@@ -159,7 +207,7 @@ impl TypeKind<PreparedEffects> {
         self.project_effect_domain(
             scope,
             &mut Canonicalization {
-                principal,
+                principal: Some(principal),
                 control,
                 depth: 1,
             },

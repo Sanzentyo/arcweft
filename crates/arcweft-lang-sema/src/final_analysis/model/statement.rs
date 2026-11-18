@@ -8,7 +8,7 @@ use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 use crate::{
     effects::EffectSet,
     semantic_coordinate::{CheckedControlTransferTarget, StableCheckedDialogueMarkCoordinate},
-    types::TypeKind,
+    types::{CanonicalEffects, IteratorStateKind, TypeEffectDomain, TypeKind},
 };
 
 use super::{CheckedEvaluatedEffectReference, CheckedExecutableCapture, CheckedPlace};
@@ -24,6 +24,34 @@ pub enum CheckedIteratorFamily {
     Vec,
     Array,
     Slice,
+}
+
+impl CheckedIteratorFamily {
+    pub(crate) fn source_item<D: TypeEffectDomain>(
+        source: &TypeKind<D>,
+    ) -> Option<(Self, &TypeKind<D>)> {
+        let (family, item) = match source {
+            TypeKind::Range(item) => (Self::Range, item),
+            TypeKind::Seq(item) => (Self::Seq, item),
+            TypeKind::Stream { item, .. } => (Self::Stream, item),
+            TypeKind::Vec(item) => (Self::Vec, item),
+            TypeKind::Array { item, .. } => (Self::Array, item),
+            TypeKind::Slice(item) => (Self::Slice, item),
+            _ => return None,
+        };
+        Some((family, item))
+    }
+
+    const fn state_kind(self) -> IteratorStateKind {
+        match self {
+            Self::Range => IteratorStateKind::Range,
+            Self::Seq => IteratorStateKind::Seq,
+            Self::Stream => IteratorStateKind::Stream,
+            Self::Vec => IteratorStateKind::Vec,
+            Self::Array => IteratorStateKind::Array,
+            Self::Slice => IteratorStateKind::Slice,
+        }
+    }
 }
 
 /// Generation-bound identity of the selected trait authority.
@@ -77,21 +105,21 @@ impl CheckedTraitConformance {
 
 /// Checked iteration dispatch for one final-HIR `for` statement.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedIteration {
+pub enum CheckedIteration<D: TypeEffectDomain = CanonicalEffects> {
     Builtin {
         family: CheckedIteratorFamily,
-        item: TypeKind,
+        item: TypeKind<D>,
     },
     Witness {
-        source: TypeKind,
-        item: TypeKind,
-        into_iter: TypeKind,
+        source: TypeKind<D>,
+        item: TypeKind<D>,
+        into_iter: TypeKind<D>,
         into_iterator: CheckedTraitConformance,
         iterator: CheckedTraitConformance,
     },
     IteratorWitness {
-        source: TypeKind,
-        item: TypeKind,
+        source: TypeKind<D>,
+        item: TypeKind<D>,
         iterator: CheckedTraitConformance,
     },
 }
@@ -140,10 +168,79 @@ impl CheckedIteration {
         };
         rows.into_iter().flatten()
     }
+}
 
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+impl<D: TypeEffectDomain> CheckedIteration<D> {
+    pub(crate) const fn item_type(&self) -> &TypeKind<D> {
+        match self {
+            Self::Builtin { item, .. }
+            | Self::Witness { item, .. }
+            | Self::IteratorWitness { item, .. } => item,
+        }
+    }
+
+    pub(crate) fn iterator_type(&self) -> TypeKind<D> {
+        match self {
+            Self::Builtin { family, item } => TypeKind::IteratorState {
+                family: family.state_kind(),
+                item: Box::new(item.clone()),
+            },
+            Self::Witness { into_iter, .. } => into_iter.clone(),
+            Self::IteratorWitness { source, .. } => source.clone(),
+        }
+    }
+
+    pub(crate) fn matches_source(&self, source: &TypeKind<D>) -> bool {
+        match self {
+            Self::Builtin { family, item } => {
+                CheckedIteratorFamily::source_item(source) == Some((*family, item))
+            }
+            Self::Witness {
+                source: expected, ..
+            }
+            | Self::IteratorWitness {
+                source: expected, ..
+            } => source == expected,
+        }
+    }
+
+    pub(crate) fn try_map_types<T: TypeEffectDomain, E>(
+        self,
+        mut map: impl FnMut(TypeKind<D>) -> Result<TypeKind<T>, E>,
+    ) -> Result<CheckedIteration<T>, E> {
+        Ok(match self {
+            Self::Builtin { family, item } => CheckedIteration::Builtin {
+                family,
+                item: map(item)?,
+            },
+            Self::Witness {
+                source,
+                item,
+                into_iter,
+                into_iterator,
+                iterator,
+            } => CheckedIteration::Witness {
+                source: map(source)?,
+                item: map(item)?,
+                into_iter: map(into_iter)?,
+                into_iterator,
+                iterator,
+            },
+            Self::IteratorWitness {
+                source,
+                item,
+                iterator,
+            } => CheckedIteration::IteratorWitness {
+                source: map(source)?,
+                item: map(item)?,
+                iterator,
+            },
+        })
+    }
+
+    pub(crate) fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<D>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
             Self::Builtin { item, .. } => visitor(item),

@@ -4039,7 +4039,16 @@ fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInp
                 PreparedStatementPayload::SealedEvaluatedEffectReference(*effect)
             }
             CheckedStatementPayload::Iteration(iteration) => {
-                PreparedStatementPayload::Iteration(iteration.clone())
+                let iteration = iteration
+                    .clone()
+                    .try_map_types(|ty| {
+                        ty.prepare_effects(
+                            &crate::types::GenericScope::default(),
+                            &mut crate::types::UnmeteredTypeProjection,
+                        )
+                    })
+                    .expect("fixture iteration has a closed lexical scope");
+                PreparedStatementPayload::Iteration(Box::new(iteration))
             }
             CheckedStatementPayload::Suspension(suspension) => {
                 PreparedStatementPayload::Suspension(suspension.clone())

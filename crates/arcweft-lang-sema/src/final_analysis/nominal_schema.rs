@@ -596,8 +596,13 @@ impl RuntimeNominalProjectionRequestInventory {
                 Ok::<_, FinalSemanticAnalysisError>(())
             })?;
         }
-        for statement in draft.statements.values() {
-            statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        for (owner, statement) in &draft.statements {
+            statement.visit_types(&mut |ty| {
+                let mut source = types.source(*owner)?;
+                let ty = source.canonical(ty)?;
+                inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
+                Ok::<_, FinalSemanticAnalysisError>(())
+            })?;
             if let Some(owner) = statement.storage_type_source() {
                 let ty = draft
                     .expressions
@@ -848,8 +853,13 @@ fn collect_prepared_semantic_nominals(
             Ok::<_, FinalSemanticAnalysisError>(())
         })?;
     }
-    for statement in draft.statements.values() {
-        statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+    for (owner, statement) in &draft.statements {
+        statement.visit_types(&mut |ty| {
+            let mut source = types.source(*owner)?;
+            let ty = source.canonical(ty)?;
+            inventory.visit_scoped_type(symbols, source.scope().type_view(&ty))?;
+            Ok::<_, FinalSemanticAnalysisError>(())
+        })?;
     }
     for item in draft.items.values() {
         item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
@@ -1618,7 +1628,14 @@ pub(super) fn seal_nominal_draft(
     if !sealed_record_patterns.is_empty() {
         return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
     }
-    let (entry_ingress, mut draft) = parts.into_post_entry(expressions, patterns)?;
+    let statements = std::mem::take(&mut parts.statements)
+        .into_iter()
+        .map(|(owner, fact)| {
+            fact.seal_types(|ty| types.source(owner)?.canonical(&ty))
+                .map(|fact| (owner, fact))
+        })
+        .collect::<Result<_, _>>()?;
+    let (entry_ingress, mut draft) = parts.into_post_entry(expressions, patterns, statements)?;
     let checked_entries = {
         let authority = crate::entry::PreparedEntrySemanticAuthority::new(
             &draft.types,

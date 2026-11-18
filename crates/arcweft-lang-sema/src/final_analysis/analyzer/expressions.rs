@@ -3663,9 +3663,9 @@ impl Analyzer<'_, '_, '_> {
                 let ty = match synthetic {
                     arcweft_lang_hir::expr::HirForSyntheticExpr::Iterator { .. } => {
                         let iteration = self
-                            .select_iteration(input_type)
+                            .select_iteration(context, synthetic.input(), input_type)
                             .map_err(AnalyzerExpressionError::fatal)?;
-                        let ty = super::statements::iteration_iterator(&iteration);
+                        let ty = iteration.iterator_type();
                         let replaced = self
                             .facts
                             .set_iteration_fact(owner, iteration)
@@ -3691,7 +3691,7 @@ impl Analyzer<'_, '_, '_> {
                             .iteration_facts()
                             .get(&synthetic.input())
                             .ok_or_else(|| AnalyzerExpressionError::rejected(synthetic.input()))?;
-                        super::statements::iteration_item(iteration).clone()
+                        iteration.item_type().clone()
                     }
                 };
                 Ok(structural_expression(ty, CheckedTypeSelection::Inferred))

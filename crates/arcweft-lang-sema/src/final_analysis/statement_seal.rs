@@ -17,15 +17,15 @@ use arcweft_lang_hir::{
     project::{HirAnalysisProjectView, HirControlTransferKind},
     source_index::{HirExprSourceRole, HirSourceQuery},
     stmt::{
-        HirCancelTrigger, HirSelectBranchHead, HirSelectStmt, HirSourceLocaleValue, HirStmtKind,
-        HirTrigger, HirUnsafeAuditIdentity, HirUnsafeLifetimeBody,
+        HirCancelTrigger, HirForStmt, HirSelectBranchHead, HirSelectStmt, HirSourceLocaleValue,
+        HirStmtKind, HirTrigger, HirUnsafeAuditIdentity, HirUnsafeLifetimeBody,
     },
 };
 
 use crate::{
     callable::{CheckedCallableCatalog, CheckedCallableDeclaration},
     semantic_coordinate::{CheckedSemanticPathStep, SemanticCoordinateIndex},
-    types::TypeKind,
+    types::{CanonicalEffects, TypeKind},
 };
 
 use super::{
@@ -39,7 +39,7 @@ use super::{
 
 /// Move-only all-statement producer used by the final effect transaction.
 pub(crate) struct CheckedStatementSeal<'a, 'project, 'coordinate> {
-    prepared: BTreeMap<StmtId, PreparedStatementPayload>,
+    prepared: BTreeMap<StmtId, PreparedStatementPayload<CanonicalEffects>>,
     includes: BTreeMap<StmtId, super::PreparedIncludeFlowProof>,
     scrutinees: BTreeMap<StmtId, PreparedStatementScrutineeProof>,
     locals: &'a BTreeMap<LocalId, CheckedBinding>,
@@ -56,7 +56,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         reason = "the affine statement producer joins complete generation-bound inventories before folding latent bodies"
     )]
     pub(crate) fn new(
-        prepared: BTreeMap<StmtId, PreparedStatementPayload>,
+        prepared: BTreeMap<StmtId, PreparedStatementPayload<CanonicalEffects>>,
         ingress: PreparedStatementIngressSeal,
         locals: &'a BTreeMap<LocalId, CheckedBinding>,
         callables: &'a CheckedCallableCatalog,
@@ -104,7 +104,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
     fn take_prepared(
         &mut self,
         owner: StmtId,
-    ) -> Result<PreparedStatementPayload, FinalSemanticAnalysisError> {
+    ) -> Result<PreparedStatementPayload<CanonicalEffects>, FinalSemanticAnalysisError> {
         self.prepared
             .remove(&owner)
             .ok_or(FinalSemanticAnalysisError::MissingFact {
@@ -171,23 +171,28 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
     fn iteration(
         &mut self,
         owner: StmtId,
+        statement: &HirForStmt,
+        expressions: &BTreeMap<ExprId, CheckedExpression>,
     ) -> Result<CheckedStatementPayload, FinalSemanticAnalysisError> {
-        match self.take_prepared(owner)? {
-            PreparedStatementPayload::Iteration(iteration) => {
-                Ok(CheckedStatementPayload::Iteration(iteration))
-            }
-            PreparedStatementPayload::HirOwned
-            | PreparedStatementPayload::Return(_)
-            | PreparedStatementPayload::Assignment(_)
-            | PreparedStatementPayload::RegistryWrite(_)
-            | PreparedStatementPayload::Assertion(_)
-            | PreparedStatementPayload::Suspension(_)
-            | PreparedStatementPayload::Yield
-            | PreparedStatementPayload::EvaluatedEffect(_)
-            | PreparedStatementPayload::SealedEvaluatedEffectReference(_) => {
-                Err(FinalSemanticAnalysisError::WrongPayloadFamily)
-            }
+        let PreparedStatementPayload::Iteration(iteration) = self.take_prepared(owner)? else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        let value_type = |owner| {
+            expressions
+                .get(&owner)
+                .and_then(CheckedExpression::value_type)
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })
+        };
+        let source = value_type(statement.source())?;
+        let iterator = value_type(statement.iterator())?;
+        let next_value = value_type(statement.next_value())?;
+        if !iteration.matches_source(source)
+            || *iterator != iteration.iterator_type()
+            || next_value != iteration.item_type()
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
+        Ok(CheckedStatementPayload::Iteration(iteration))
     }
 
     fn suspension(
@@ -836,7 +841,7 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
             HirStmtKind::Match(_) => self.structural(owner),
             HirStmtKind::While(_) => self.structural(owner),
             HirStmtKind::WhileLet(_) => self.structural(owner),
-            HirStmtKind::For(_) => self.iteration(owner),
+            HirStmtKind::For(statement) => self.iteration(owner, statement, expressions),
             HirStmtKind::Close { .. } => self.structural(owner),
             HirStmtKind::Select(select) => self.select(owner, select),
             HirStmtKind::SourceLocale(locale) => {

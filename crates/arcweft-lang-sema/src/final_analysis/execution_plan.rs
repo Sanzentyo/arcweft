@@ -14,7 +14,7 @@ mod tests;
 pub(super) fn seal(
     mut expressions: BTreeMap<ExprId, CheckedExpression>,
     calls: &BTreeMap<ExprId, crate::callable::CallTargetFacts>,
-    statements: &BTreeMap<StmtId, super::PreparedStatementPayload>,
+    statements: &BTreeMap<StmtId, super::PreparedStatementPayload<crate::types::CanonicalEffects>>,
     dialogue_lines: &arcweft_lang_hir::project::AcceptedDialogueLineInventory,
 ) -> Result<BTreeMap<ExprId, CheckedExpression>, FinalSemanticAnalysisError> {
     // All field receivers are sealed before publishing local-rooted paths.

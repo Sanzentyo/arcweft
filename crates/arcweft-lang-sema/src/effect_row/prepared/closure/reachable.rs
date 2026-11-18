@@ -1,7 +1,22 @@
 //! Close the actual dependency component and every original C.
 
+use super::super::read::SnapshotSource;
 use super::super::read::dependencies::{Dependency, Reachable, SchemeDependencies};
 use super::*;
+
+impl PreparedEffectReadView<'_> {
+    /// Observe the current original relation from the active read scope.
+    /// Query roots add reachability without adding constraints or publishing facts.
+    pub(crate) fn observe_principal<C: DecisionControl>(
+        self,
+        rows: &[&PreparedEffectRow],
+        predicates: &[&PreparedEffectPredicate],
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
+        self.snapshot(rows, predicates, &[], SnapshotSource::Observation, control)?
+            .solve_with_bindings(BTreeMap::new(), control)
+    }
+}
 
 impl PreparedEffectGraph {
     /// Include dependencies observed by published types alongside the named

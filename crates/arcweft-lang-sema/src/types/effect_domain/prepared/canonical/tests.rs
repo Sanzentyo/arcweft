@@ -59,6 +59,48 @@ fn literal(labels: &[&str]) -> PreparedEffectRow {
 }
 
 #[test]
+fn a_nested_type_observation_waits_for_its_named_body() {
+    let mut graph = PreparedEffectGraph::default();
+    let named = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut Setup)
+        .unwrap();
+    let unrelated = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut Setup)
+        .unwrap();
+    let callback = arrow(
+        graph.application(&named, vec![], &mut Setup).unwrap(),
+        PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+    );
+    let source = TypeKind::Vec(Box::new(callback));
+    let scope = GenericScope::default();
+    assert!(matches!(
+        source.observe_canonical_effects(&scope, graph.read(), &mut Meter::new()),
+        Err(TypeProjectionError::Control(
+            PreparedTypeEffectProjectionFailure::Effects(PreparedEffectFailure::Invariant(
+                PreparedEffectInvariant::SchemeState
+            ))
+        ))
+    ));
+
+    let row = literal(&["iterator.actual"]);
+    graph.prepare_body(&named, row, vec![], &mut Setup).unwrap();
+    let TypeKind::Vec(item) = source
+        .observe_canonical_effects(&scope, graph.read(), &mut Meter::new())
+        .unwrap()
+    else {
+        panic!("expected the observed vector");
+    };
+    let TypeKind::Function { effects, .. } = *item else {
+        panic!("expected the nested callback");
+    };
+    assert_eq!(
+        effects,
+        EffectRow::closed(EffectSet::from_labels(["iterator.actual"]).unwrap())
+    );
+    assert!(graph.declaration(&unrelated, &mut Setup).is_ok());
+}
+
+#[test]
 fn original_type_projection_waits_for_actual_bodies_and_retains_its_verified_relation() {
     let scope = GenericScope::default();
     let mut graph = PreparedEffectGraph::default();

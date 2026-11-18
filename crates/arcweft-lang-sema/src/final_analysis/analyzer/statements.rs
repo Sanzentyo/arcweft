@@ -16,9 +16,14 @@ use super::{
     HirStmtKind, HirTypeKind, ItemId, ModuleSegment, PatternId, PreparedAssignmentStatement,
     PreparedExpressionFact, PreparedStatementPayload, ProjectSymbolTable, ScopeId, SourceSpan,
     TypeId, TypeKind, TypeSourceEvidence,
-    expression_types::builtin_iteration,
+    expression_error::AnalyzerExpressionContext,
     items::{SourceCallableShell, checked_catalog_error},
 };
+
+use crate::types::PreparedEffects;
+
+pub(super) type PreparedIteration = CheckedIteration<PreparedEffects>;
+
 impl Analyzer<'_, '_, '_> {
     pub(super) fn prepare_declaration_statement_effects(
         &self,
@@ -81,15 +86,23 @@ impl Analyzer<'_, '_, '_> {
 
     pub(super) fn select_iteration(
         &self,
-        source: &TypeKind,
-    ) -> Result<CheckedIteration, FinalSemanticAnalysisError> {
-        if let Some((family, _, item)) = builtin_iteration(source) {
-            return Ok(CheckedIteration::Builtin { family, item });
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        source: &TypeKind<PreparedEffects>,
+    ) -> Result<PreparedIteration, FinalSemanticAnalysisError> {
+        let types = self.source_type_preparation(context.work())?;
+        let graph = self.facts.effect_declarations()?.read();
+        if let Some((family, item)) = CheckedIteratorFamily::source_item(source) {
+            return Ok(CheckedIteration::Builtin {
+                family,
+                item: types.retain_prepared(owner, item, graph)?,
+            });
         }
 
+        let source = types.observe_canonical(owner, source, graph)?;
         if let Some(into_iterator) = self.standard_iterator_impl(
             "IntoIterator",
-            source,
+            &source,
             "into_iter",
             &CheckedTraitIdentity::StandardIntoIterator,
         )? {
@@ -115,9 +128,9 @@ impl Analyzer<'_, '_, '_> {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
             return Ok(CheckedIteration::Witness {
-                source: source.clone(),
-                item,
-                into_iter,
+                source: types.retain(owner, &source)?,
+                item: types.retain(owner, &item)?,
+                into_iter: types.retain(owner, &into_iter)?,
                 into_iterator: into_iterator.conformance,
                 iterator: iterator.conformance,
             });
@@ -126,7 +139,7 @@ impl Analyzer<'_, '_, '_> {
         let iterator = self
             .standard_iterator_impl(
                 "Iterator",
-                source,
+                &source,
                 "next",
                 &CheckedTraitIdentity::StandardIterator,
             )?
@@ -137,8 +150,8 @@ impl Analyzer<'_, '_, '_> {
             .cloned()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         Ok(CheckedIteration::IteratorWitness {
-            source: source.clone(),
-            item,
+            source: types.retain(owner, &source)?,
+            item: types.retain(owner, &item)?,
             iterator: iterator.conformance,
         })
     }
@@ -247,58 +260,18 @@ impl Analyzer<'_, '_, '_> {
         owner: super::StmtId,
         scope: ScopeId,
         statement: &HirStmtKind,
-        iteration_facts: &mut BTreeMap<ExprId, CheckedIteration>,
+        iteration_facts: &mut BTreeMap<ExprId, PreparedIteration>,
     ) -> Result<PreparedStatementPayload, FinalSemanticAnalysisError> {
         let prepared = match statement {
             HirStmtKind::Assertion { mode, .. } => self
                 .checked_assertion_role(module, owner, scope, *mode)
                 .map(PreparedStatementPayload::Assertion),
             HirStmtKind::For(statement) => {
-                let source = self.facts.expressions().get(&statement.source()).ok_or(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                        owner: statement.source(),
-                    },
-                )?;
                 let iteration = iteration_facts.remove(&statement.iterator()).ok_or(
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                         owner: statement.iterator(),
                     },
                 )?;
-                let item = iteration_item(&iteration);
-                let source_type = source.value_type().ok_or(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                        owner: statement.source(),
-                    },
-                )?;
-                if !iteration_accepts_source(&iteration, source_type) {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                }
-                let iterator = self.facts.expressions().get(&statement.iterator()).ok_or(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                        owner: statement.iterator(),
-                    },
-                )?;
-                let expected_iterator = iteration_iterator(&iteration);
-                let next_value = self
-                    .facts
-                    .expressions()
-                    .get(&statement.next_value())
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                        owner: statement.next_value(),
-                    })?;
-                let iterator_type = iterator.value_type().ok_or(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                        owner: statement.iterator(),
-                    },
-                )?;
-                let next_value_type = next_value.value_type().ok_or(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                        owner: statement.next_value(),
-                    },
-                )?;
-                if iterator_type != &expected_iterator || next_value_type != item {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                }
                 Ok(PreparedStatementPayload::Iteration(Box::new(iteration)))
             }
             HirStmtKind::LifetimeSet { target, value } => {
@@ -538,48 +511,6 @@ impl Analyzer<'_, '_, '_> {
 struct SelectedStandardIteratorImpl {
     conformance: CheckedTraitConformance,
     associated: BTreeMap<String, TypeKind>,
-}
-
-pub(super) fn iteration_item(iteration: &CheckedIteration) -> &TypeKind {
-    match iteration {
-        CheckedIteration::Builtin { item, .. }
-        | CheckedIteration::Witness { item, .. }
-        | CheckedIteration::IteratorWitness { item, .. } => item,
-    }
-}
-
-pub(super) fn iteration_iterator(iteration: &CheckedIteration) -> TypeKind {
-    match iteration {
-        CheckedIteration::Builtin { family, item } => TypeKind::IteratorState {
-            family: match family {
-                CheckedIteratorFamily::Range => crate::types::IteratorStateKind::Range,
-                CheckedIteratorFamily::Seq => crate::types::IteratorStateKind::Seq,
-                CheckedIteratorFamily::Stream => crate::types::IteratorStateKind::Stream,
-                CheckedIteratorFamily::Vec => crate::types::IteratorStateKind::Vec,
-                CheckedIteratorFamily::Array => crate::types::IteratorStateKind::Array,
-                CheckedIteratorFamily::Slice => crate::types::IteratorStateKind::Slice,
-            },
-            item: Box::new(item.clone()),
-        },
-        CheckedIteration::Witness { into_iter, .. } => into_iter.clone(),
-        CheckedIteration::IteratorWitness { source, .. } => source.clone(),
-    }
-}
-
-fn iteration_accepts_source(iteration: &CheckedIteration, source: &TypeKind) -> bool {
-    match iteration {
-        CheckedIteration::Builtin { family, item } => {
-            builtin_iteration(source).is_some_and(|(actual_family, _, actual_item)| {
-                actual_family == *family && actual_item == *item
-            })
-        }
-        CheckedIteration::Witness {
-            source: expected, ..
-        }
-        | CheckedIteration::IteratorWitness {
-            source: expected, ..
-        } => expected == source,
-    }
 }
 
 pub(super) fn function_effect_contract(

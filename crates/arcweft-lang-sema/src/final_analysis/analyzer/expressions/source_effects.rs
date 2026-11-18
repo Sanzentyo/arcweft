@@ -2,9 +2,10 @@
 
 use std::{cell::RefCell, collections::BTreeMap};
 
+use super::super::statements::PreparedIteration;
 use super::{Analyzer, ExprId, FinalSemanticAnalysisError, PreparedExpressionFact};
 use crate::final_analysis::{
-    CheckedIteration, PreparedStatementPayload,
+    PreparedStatementPayload,
     statement_effects::{PreparedExpressionEffectSource, prepare_expression_body_effects},
 };
 use arcweft_lang_hir::{identity::StmtId, project::HirExpressionEvaluationEdge};
@@ -14,7 +15,7 @@ struct ExpressionBodyEffectSource<'a, 'project, 'symbols, 'control> {
     current: (ExprId, &'a PreparedExpressionFact),
     // The query consumes only this borrowed prerequisite inventory. Final
     // statement sealing retains the original affine iteration facts.
-    iterations: RefCell<BTreeMap<ExprId, CheckedIteration>>,
+    iterations: RefCell<BTreeMap<ExprId, PreparedIteration>>,
 }
 
 impl PreparedExpressionEffectSource for ExpressionBodyEffectSource<'_, '_, '_, '_> {

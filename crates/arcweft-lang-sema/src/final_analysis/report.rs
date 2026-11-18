@@ -1531,7 +1531,8 @@ pub(crate) struct FinalSemanticAnalysisPostEntryDraft {
     pub(super) captures: BTreeMap<CaptureId, CheckedBinding>,
     pub(super) expressions: BTreeMap<ExprId, CheckedExpression>,
     pub(super) patterns: BTreeMap<PatternId, CheckedPattern>,
-    pub(super) statements: BTreeMap<StmtId, super::PreparedStatementPayload>,
+    pub(super) statements:
+        BTreeMap<StmtId, super::PreparedStatementPayload<crate::types::CanonicalEffects>>,
     pub(super) items: BTreeMap<ItemId, CheckedItem>,
     pub(super) calls: BTreeMap<ExprId, CallTargetFacts>,
     pub(super) callable_joins: super::match_edges::PreparedCallableJoins,
@@ -1551,6 +1552,10 @@ impl FinalSemanticAnalysisDraftParts {
         self,
         expressions: BTreeMap<ExprId, CheckedExpression>,
         patterns: BTreeMap<PatternId, CheckedPattern>,
+        statements: BTreeMap<
+            StmtId,
+            super::PreparedStatementPayload<crate::types::CanonicalEffects>,
+        >,
     ) -> Result<
         (
             super::PreparedEntryIngressSeal,
@@ -1558,7 +1563,8 @@ impl FinalSemanticAnalysisDraftParts {
         ),
         FinalSemanticAnalysisError,
     > {
-        if !self.expressions.is_empty() || !self.patterns.is_empty() {
+        if !self.expressions.is_empty() || !self.patterns.is_empty() || !self.statements.is_empty()
+        {
             return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
         }
         let FinalSemanticAnalysisDraftParts {
@@ -1570,7 +1576,7 @@ impl FinalSemanticAnalysisDraftParts {
             captures,
             expressions: _,
             patterns: _,
-            statements,
+            statements: _,
             items,
             calls,
             callable_joins,

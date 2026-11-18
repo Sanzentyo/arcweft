@@ -1,9 +1,8 @@
-//! Expression type projection and builtin iteration helpers.
+//! Expression type projection and source type preparation.
 
 use super::{
-    CheckedIteratorFamily, CheckedTypeSelection, CheckedValueResolution, HirFloatLiteral,
-    HirFloatWidth, HirIntegerLiteral, HirLiteral, IteratorStateKind, RegisteredSemanticWorld,
-    TypeKind,
+    CheckedTypeSelection, CheckedValueResolution, HirFloatLiteral, HirFloatWidth,
+    HirIntegerLiteral, HirLiteral, RegisteredSemanticWorld, TypeKind,
 };
 use crate::final_analysis::type_rules::{integer_suffix_type, is_integer};
 use crate::types::{CompileTimeScalarKind, TypeEffectDomain};
@@ -107,6 +106,25 @@ impl<'a> SourceTypePreparation<'a> {
         ty.retain_effects(formals.template_scope(), graph, &mut work)
             .map_err(|error| {
                 FinalSemanticAnalysisError::source_prepared_type_retention(owner, error)
+            })
+    }
+
+    pub(super) fn observe_canonical(
+        &self,
+        owner: impl Into<arcweft_lang_hir::project::HirSemanticPathOwnerId>,
+        ty: &TypeKind<crate::types::PreparedEffects>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    ) -> Result<TypeKind, super::FinalSemanticAnalysisError> {
+        use super::FinalSemanticAnalysisError;
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let formals = self
+            .owner(owner, &mut work)?
+            .declaration_formals_with_control(&mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        ty.observe_canonical_effects(formals.template_scope(), graph, &mut work)
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_type_effect_projection(owner, error)
             })
     }
 
@@ -531,49 +549,6 @@ pub(super) fn indexed_item(
         TypeKind::String => Some(TypeKind::Char),
         _ => None,
     }
-}
-
-pub(super) fn builtin_iteration(
-    ty: &TypeKind<crate::types::PreparedEffects>,
-) -> Option<(
-    CheckedIteratorFamily,
-    IteratorStateKind,
-    TypeKind<crate::types::PreparedEffects>,
-)> {
-    let (family, state, item) = match ty {
-        TypeKind::Range(item) => (
-            CheckedIteratorFamily::Range,
-            IteratorStateKind::Range,
-            item.as_ref(),
-        ),
-        TypeKind::Seq(item) => (
-            CheckedIteratorFamily::Seq,
-            IteratorStateKind::Seq,
-            item.as_ref(),
-        ),
-        TypeKind::Stream { item, .. } => (
-            CheckedIteratorFamily::Stream,
-            IteratorStateKind::Stream,
-            item.as_ref(),
-        ),
-        TypeKind::Vec(item) => (
-            CheckedIteratorFamily::Vec,
-            IteratorStateKind::Vec,
-            item.as_ref(),
-        ),
-        TypeKind::Array { item, .. } => (
-            CheckedIteratorFamily::Array,
-            IteratorStateKind::Array,
-            item.as_ref(),
-        ),
-        TypeKind::Slice(item) => (
-            CheckedIteratorFamily::Slice,
-            IteratorStateKind::Slice,
-            item.as_ref(),
-        ),
-        _ => return None,
-    };
-    Some((family, state, item.clone()))
 }
 
 pub(super) fn value_resolution_type(

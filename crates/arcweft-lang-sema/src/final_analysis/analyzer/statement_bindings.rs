@@ -145,10 +145,19 @@ impl Analyzer<'_, '_, '_> {
                     .iteration_facts()
                     .get(&statement.iterator())
                     .ok_or_else(|| AnalyzerExpressionError::rejected(statement.iterator()))?;
-                let item = super::statements::iteration_item(iteration).clone();
-                let item = self
-                    .retain_source_value_type(context, statement.pattern(), &item)
-                    .map_err(AnalyzerExpressionError::fatal)?;
+                let item = {
+                    let types = self
+                        .source_type_preparation(context.work())
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                    let graph = self
+                        .facts
+                        .effect_declarations()
+                        .map_err(AnalyzerExpressionError::fact)?
+                        .read();
+                    types
+                        .retain_prepared(statement.pattern(), iteration.item_type(), graph)
+                        .map_err(AnalyzerExpressionError::fatal)?
+                };
                 let module = self
                     .module(owner.module())
                     .map_err(AnalyzerExpressionError::fatal)?;
