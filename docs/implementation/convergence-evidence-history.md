@@ -18520,3 +18520,18 @@ checked／uncheckedの両方で別の観測receiptを拒否し、元のトラン
 16 Rust path、327追加／140削除、物理187 LOC増。Cargo manifest・公開契約・版に差分はない。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-materialization-preparation-ownership-checkpoint.raw.zip) は38 entry、707,481 bytes、SHA256 `e1a4bf8b63647f0413b34da3af1f041612a9bc63bcfa1935f9e096d0b8557a93`。各entryの長さとSHA256を再読取で照合した。旧履歴2,865,450 bytesのSHA256 `4c854df610e835a4770daff555ed6df5d75a57ce97e52a3b3de4b810801f4558` をprefixとして保持した。
+
+<a id="selected-source-preparation-transfer-checkpoint"></a>
+## 2026-11-18 — 選択した観測時の準備結果を一括で取り出す
+
+基点 `2bf4153dd4e364cc93436d9313c57d4ef370087e`。Source `f74493cfe78e9ff06b4b780ca90977b7c808e346` を既存mainへ通常commitし、非force push後のmainと7入力の公開blobをSHA256で照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+選択済みの準備を移す前に、各sourceの観測と共有準備の両方について単独所有を検査し、作業予算を確保する。共有が残る場合とキャンセル・予算エラーの場合は、どの準備も消費せず元の一式を返す。成功時は元の値をsource順に移す。Analyzerは選択した一式を呼出し適用の直前まで保持し、取り出した準備を同じ解析ledgerで検証して解放する。現行の公開経路は再評価で得た差分を適用する。実original productのdispatch、選択した元のグラフ差分の公開処理での適用、body一回準備は未達である。
+
+既存の非Clone fixtureを拡張した。元の経路が残る場合とキャンセル時に準備を保持し、再試行で正確な準備を一度だけ取得する。元のeffect graphのbaseを復元し、取り出した差分でNamedの作用項を同一の参照として読めることを検査する。fixtureは未実行。
+
+必須の `cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。固定入力の最終dev02はlibrary **420エラー・25警告**、lib test **1,405エラー・44警告**。変更pathを一次位置とする診断65件を原本に保持した。2回のowner fmtは終了0。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Web最終受入は未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,413,193 bytesで、既存成果物を再利用した。
+
+7 Rust path、234追加／14削除、物理220 LOC増。Cargo manifest・公開契約・版に差分はない。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-selected-source-preparation-transfer-checkpoint.raw.zip) は20 entry、284,535 bytes、SHA256 `be281d20690e261b068c201603c03e8a051f7ec5fb002f76168bf816d753a814`。各entryの長さとSHA256を再読取で照合した。旧履歴2,868,365 bytesのSHA256 `a4757d334884c0d955b581f4a929b1aa8159629231560fe736b6698e87cdfd39` をprefixとして保持した。
