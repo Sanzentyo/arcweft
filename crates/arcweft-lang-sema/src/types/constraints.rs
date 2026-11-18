@@ -47,8 +47,8 @@ pub(crate) use hints::{
     CompletedResultProjectionView, ConstraintDomain, ConstraintSourceContainerPolicy,
     ConstraintSourceValueOwner, ExpectedHint, MaterializationOutcome, MaterializedSourceRequest,
     PreparedConstraintSourceProjection, PreparedSourceAlternative, PreparedSourceConstraint,
-    ProjectedExpectedHint, SourceAlternativeHint, SourceError, SourcePhase, SourceProbeOutcome,
-    SourceProbeResult, SourceProbeSelection,
+    ProjectedExpectedHint, RetainedSourceType, SourceAlternativeHint, SourceError, SourcePhase,
+    SourceProbeOutcome, SourceProbeResult, SourceProbeSelection,
 };
 pub(super) use normalization::completed_types_equal;
 #[cfg(test)]

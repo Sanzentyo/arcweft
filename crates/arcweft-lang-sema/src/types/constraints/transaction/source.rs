@@ -1,10 +1,15 @@
 //! Source trace transitions from probing to normalized materialization evidence.
 
-use std::sync::{Arc, OnceLock};
+use std::{
+    borrow::Cow,
+    sync::{Arc, OnceLock},
+};
 
+use crate::effect_row::prepared::PreparedEffectFailure;
 use crate::types::{PreparedEffects, TypeKind, TypeProjectionControl};
 
 use super::super::context::{TypeConstraintAccounting, TypeConstraintContext};
+use super::super::hints::RetainedSourceType;
 use super::super::normalization::{ConstraintClosedEffects, close_type_operand};
 use super::{ConstraintApplicationId, ConstraintApplicationInventory};
 use super::{ConstraintInferenceBranch, ConstraintOperand};
@@ -433,31 +438,62 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
         operand: &ConstraintOperand<D, TypeKind>,
         control: &mut C,
     ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
-        let gamma = self.original.gamma();
-        if gamma == operand.scope() {
-            return Ok(operand.value().prepare_effects(gamma.shape(), control)?);
-        }
-        let value = gamma.transport_canonical_type(operand.scope(), operand.value(), control)?;
-        Ok(value.prepare_effects(gamma.shape(), control)?)
+        let value = self.closed_at_occurrence(operand, control)?;
+        Ok(value.prepare_effects(self.original.occurrence_scope(), control)?)
     }
 
-    pub(in crate::types::constraints) fn retained_value_is_closed<
+    fn closed_at_occurrence<'a, C: TypeProjectionControl<Error = TypeConstraintError>>(
+        &self,
+        operand: &'a ConstraintOperand<D, TypeKind>,
+        control: &mut C,
+    ) -> Result<Cow<'a, TypeKind>, TypeConstraintError> {
+        let gamma = self.original.gamma();
+        if gamma == operand.scope() {
+            return Ok(Cow::Borrowed(operand.value()));
+        }
+        Ok(Cow::Owned(gamma.transport_canonical_type(
+            operand.scope(),
+            operand.value(),
+            control,
+        )?))
+    }
+
+    pub(in crate::types::constraints) fn complete_retained_type<
         C: TypeProjectionControl<Error = TypeConstraintError>,
     >(
         &self,
         expected: Option<&TypeKind<PreparedEffects>>,
         control: &mut C,
-    ) -> Result<bool, TypeConstraintError> {
+    ) -> Result<Option<RetainedSourceType>, TypeConstraintError> {
         let Some(retained) = self.retained_value() else {
-            return Ok(false);
+            return Ok(None);
         };
         let Some(receipt) = retained.probe_receipt() else {
-            return Ok(false);
+            return Ok(None);
         };
         if !receipt.matches_closed_expectation(self.selection().alternative(), expected) {
-            return Ok(false);
+            return Ok(None);
         }
-        Ok(retained.value_type() == &self.prepare_closed_operand(&self.actual, control)?)
+        let scope = self.original.occurrence_scope();
+        let actual = self.closed_at_occurrence(&self.actual, control)?;
+        let prepared = actual.prepare_effects(scope, control)?;
+        if retained.value_type() == &prepared {
+            return Ok(Some(RetainedSourceType(None)));
+        }
+        let observed = match self
+            .completion
+            .canonicalize(retained.value_type(), scope, control)
+        {
+            Ok(observed) => observed,
+            // A source that needs more than an effect projection is checked
+            // under the completed expectation by the ordinary callback.
+            Err(TypeConstraintError::Invariant(TypeConstraintInvariant::PreparedEffect(
+                PreparedEffectFailure::ObservationNotTotal
+                | PreparedEffectFailure::NonPointwiseObservation,
+            ))) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        Ok((actual.as_ref() == &observed).then_some(RetainedSourceType(Some(prepared))))
     }
 
     /// Rechecks carry their exact source and original Γ. Resolve any retained

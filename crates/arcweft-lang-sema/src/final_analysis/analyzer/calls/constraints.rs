@@ -43,10 +43,10 @@ use crate::{
             ConstraintAcceptance, ConstraintDomain, ExpectedHint, MaterializationOutcome,
             MaterializedSourceRequest, PreparedConstraintSourceProjection,
             PreparedSourceAlternative, PreparedSourceConstraint, ProjectedExpectedHint,
-            SourceError, SourcePhase, SourceProbeOutcome, SourceProbeResult, TypeConstraintAbort,
-            TypeConstraintError, TypeConstraintFailure, TypeConstraintFailureInvariant,
-            TypeConstraintInitializationFailure, TypeConstraintInvariant,
-            TypeConstraintProjectionClosure,
+            RetainedSourceType, SourceError, SourcePhase, SourceProbeOutcome, SourceProbeResult,
+            TypeConstraintAbort, TypeConstraintError, TypeConstraintFailure,
+            TypeConstraintFailureInvariant, TypeConstraintInitializationFailure,
+            TypeConstraintInvariant, TypeConstraintProjectionClosure,
         },
     },
 };
@@ -596,7 +596,7 @@ pub(in crate::final_analysis::analyzer) enum AnalyzerCallSealedBranch {
     Materialized {
         projection: CandidateSemanticProjection,
         nested_calls: Box<[super::PreparedSelectedNestedCall]>,
-        original_values: BTreeSet<AnalyzerCallConstraintSourceId>,
+        original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedSourceType>,
     },
 }
 
@@ -646,7 +646,7 @@ impl AnalyzerCallSealedBranch {
             })?;
         let mut pending = std::mem::take(original_values);
         for row in owned {
-            if pending.remove(&row.source) {
+            if let Some(completed) = pending.remove(&row.source) {
                 let source = row.source.local();
                 let owner = source.expression_owner().ok_or_else(|| {
                     TypeConstraintFailure::client_invariant(
@@ -659,7 +659,7 @@ impl AnalyzerCallSealedBranch {
                 work.visit_binding()
                     .map_err(|error| work_failure(row.source, error))?;
                 facts
-                    .move_isolated_expression(projection, row.preparation, owner)
+                    .move_isolated_expression(projection, row.preparation, owner, Some(completed))
                     .map_err(|error| {
                         TypeConstraintFailure::client_invariant(
                             AnalyzerCallClientInvariant::fact_transaction(source, error),
@@ -747,7 +747,7 @@ impl AnalyzerCallSealedBranch {
 #[derive(Debug)]
 pub(crate) struct AnalyzerCallPreparedSealedBranch {
     nested_calls: Vec<super::PreparedSelectedNestedCall>,
-    original_values: BTreeSet<AnalyzerCallConstraintSourceId>,
+    original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedSourceType>,
 }
 
 pub(crate) struct PreparedChildCandidateRun {
@@ -2900,7 +2900,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             ));
         }
 
-        let mut original_values = BTreeSet::new();
+        let mut original_values = BTreeMap::new();
         for request in requests {
             let source_id = *request.source();
             let source = source_id.local();
@@ -2981,13 +2981,13 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         .retained_value()
                         .and_then(AnalyzerObservedSourceValue::expression_fact)
                         == Some(original)
-                    && request
-                        .retained_value_is_closed(expected.as_ref(), work)
+                    && let Some(completed) = request
+                        .complete_retained_type(expected.as_ref(), work)
                         .map_err(|error| materialized_source_failure(source, error))?
                 {
                     work.visit_binding()
                         .map_err(|error| materialized_source_failure(source, error))?;
-                    original_values.insert(source_id);
+                    original_values.insert(source_id, completed);
                     continue;
                 }
                 Some((expected, source_admission))
@@ -8093,7 +8093,7 @@ mod tests {
                         .extract_callback_fact_scope(target, &mut work)
                         .unwrap();
                     facts
-                        .move_isolated_expression(&mut target, preparation, owner)
+                        .move_isolated_expression(&mut target, preparation, owner, None)
                         .unwrap();
                     let transferred = target.expression_update(owner).unwrap().unwrap();
                     assert!(std::ptr::eq(

@@ -2895,6 +2895,13 @@ impl PreparedResolvedExpression {
     pub(crate) const fn result(&self) -> &super::prepared::PreparedExpressionResult {
         &self.data.result
     }
+
+    pub(crate) fn replace_plain_value_type(
+        &mut self,
+        ty: TypeKind<crate::types::PreparedEffects>,
+    ) -> bool {
+        self.data.result.replace_plain_value_type(ty)
+    }
     pub(crate) const fn type_selection(&self) -> Option<CheckedTypeSelection> {
         self.data.result.type_selection()
     }

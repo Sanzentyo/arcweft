@@ -46,6 +46,33 @@ mod retained_preparation {
         }
     }
     struct Domain;
+
+    struct ObservedValue {
+        original: OriginalProducerContext,
+        receipt: crate::types::constraints::ConstraintSourceReceipt<Domain>,
+        ty: TypeKind<PreparedEffects>,
+    }
+
+    impl ConstraintSourceValueOwner<Domain> for ObservedValue {
+        fn source(&self) -> ConstraintSourceId<()> {
+            self.receipt.source()
+        }
+
+        fn original_context(&self) -> &OriginalProducerContext {
+            &self.original
+        }
+
+        fn probe_receipt(
+            &self,
+        ) -> Option<&crate::types::constraints::ConstraintSourceReceipt<Domain>> {
+            Some(&self.receipt)
+        }
+
+        fn value_type(&self) -> &TypeKind<PreparedEffects> {
+            &self.ty
+        }
+    }
+
     impl ConstraintDomain for Domain {
         type Application = ();
         type Source = ();
@@ -54,7 +81,7 @@ mod retained_preparation {
         type ObservedEvidence = ();
         type CheckedEvidence = ();
         type ProbeSemanticBranch = ();
-        type SourceValue = std::convert::Infallible;
+        type SourceValue = ObservedValue;
         type ProbePreparation = Facts;
         type SealedBranchValue = ();
         type Projection = ();
@@ -83,6 +110,109 @@ mod retained_preparation {
         }
         fn client_invariant_source((): &()) {}
         fn empty_sealed_branch() {}
+    }
+
+    #[test]
+    fn an_original_value_uses_its_closed_effects_under_the_same_expectation() {
+        let cancellation = AtomicBool::new(false);
+        let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+        let (mut context, parameters) = ConstraintTestSetup::<_, Domain>::new(
+            TypeConstraintLimits::new(4096, 2048, 128, 64),
+            &cancellation,
+        )
+        .into_parts();
+        let mut transaction = TypeConstraintTransaction::initialize_fixture(
+            &mut context,
+            &mut graph,
+            (),
+            parameters,
+            None,
+        )
+        .unwrap();
+        let named = graph
+            .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+            .unwrap();
+        let body = EffectRow::closed(EffectSet::from_labels(["probe.once"]).unwrap());
+        graph
+            .prepare_body(
+                &named,
+                PreparedEffectRow::Canonical(body.clone()),
+                vec![],
+                &mut context,
+            )
+            .unwrap();
+        let row = graph.application(&named, vec![], &mut context).unwrap();
+        let arrow = |effects| {
+            TypeKind::function_with_contract(
+                GenericBinder::EMPTY,
+                PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+                [],
+                TypeKind::I64,
+                effects,
+            )
+        };
+
+        transaction
+            .begin_prepared_probe(
+                &mut context,
+                super::super::super::PreparedSourceConstraint::unchecked(
+                    (),
+                    PreparedConstraintSourceProjection::Scalar,
+                ),
+                super::super::super::ConstraintAcceptance::PatternAcceptsActual,
+            )
+            .unwrap();
+        let mut ticket = transaction
+            .next_probe(&mut context, &mut graph)
+            .unwrap()
+            .unwrap();
+        let actual = Arc::new(ObservedValue {
+            original: ticket.original_context().unwrap().clone(),
+            receipt: ticket.receipt(),
+            ty: arrow(row.clone()),
+        });
+        let observed = ticket
+            .observe(SourceProbeResult::unchecked_value(Arc::clone(&actual), ()))
+            .unwrap();
+        let contribution = observed.close_preparation(Facts {
+            value: 1,
+            drops: Arc::new(AtomicUsize::new(0)),
+            relation: None,
+            reads: None,
+            query: None,
+        });
+        transaction
+            .submit_probe(
+                &mut context,
+                &mut graph,
+                ticket.input(),
+                ProbeSubmission::Accepted(contribution),
+            )
+            .unwrap();
+        assert!(
+            transaction
+                .next_probe(&mut context, &mut graph)
+                .unwrap()
+                .is_none()
+        );
+        let ticket = transaction
+            .next_materialization_ticket(&mut context, &mut graph)
+            .unwrap()
+            .unwrap();
+        let request = ticket.requests().next().unwrap();
+        let completed = request
+            .complete_retained_type(None, &mut context)
+            .unwrap()
+            .unwrap();
+        let canonical = arrow(PreparedEffectRow::Canonical(body));
+        assert_eq!(completed.into_replacement(), Some(canonical.clone()));
+        assert_eq!(actual.ty, arrow(row));
+        assert_eq!(
+            request
+                .complete_retained_type(Some(&canonical), &mut context)
+                .unwrap(),
+            None
+        );
     }
 
     #[test]

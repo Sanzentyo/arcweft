@@ -473,8 +473,7 @@ impl CandidateSemanticProjection {
                 .is_empty()
             && !self.data.graph_delta.has_writes()
             && fact.checked_call_site(owner).is_none()
-            && resolved.value_type().is_some()
-            && resolved.source_value_type() == resolved.value_type())
+            && resolved.result().is_plain_value())
         .then_some(fact)
     }
 
@@ -2255,6 +2254,7 @@ impl SemanticFactState {
         target: &mut CandidateSemanticProjection,
         mut source: CandidateSemanticProjection,
         owner: ExprId,
+        completed: Option<crate::types::constraints::RetainedSourceType>,
     ) -> Result<(), CandidateFactTransactionViolation> {
         self.require_candidate_projection_owner(target)?;
         self.require_candidate_projection_owner(&source)?;
@@ -2268,14 +2268,17 @@ impl SemanticFactState {
         }
         match target.data.facts.expressions.entry(owner) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(
-                    source
-                        .data
-                        .facts
-                        .expressions
-                        .remove(&owner)
-                        .expect("validated original expression"),
-                );
+                let Some(Some(PreparedExpressionFact::Resolved(mut expression))) =
+                    source.data.facts.expressions.remove(&owner)
+                else {
+                    return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+                };
+                if let Some(ty) = completed.and_then(|result| result.into_replacement())
+                    && !expression.replace_plain_value_type(ty)
+                {
+                    return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+                }
+                entry.insert(Some(expression.into()));
                 Ok(())
             }
             std::collections::btree_map::Entry::Occupied(_) => {

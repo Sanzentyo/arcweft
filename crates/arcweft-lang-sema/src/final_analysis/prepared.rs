@@ -182,6 +182,23 @@ impl PreparedExpressionResult {
         }
     }
 
+    pub(crate) const fn is_plain_value(&self) -> bool {
+        matches!(self, Self::Value(value) if value.specialization.is_none())
+    }
+
+    pub(super) fn replace_plain_value_type(&mut self, ty: TypeKind<PreparedEffects>) -> bool {
+        let Self::Value(PreparedTypedExpressionResult {
+            source,
+            specialization: None,
+            ..
+        }) = self
+        else {
+            return false;
+        };
+        *source = ty;
+        true
+    }
+
     pub(super) fn attach_function_use<C: TypeProjectionControl>(
         &mut self,
         owner: ExprId,
