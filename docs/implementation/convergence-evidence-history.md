@@ -19066,3 +19066,17 @@ Source `a7e0b2f34b8a205192c2aae1f9fa1f74ce853f2c`。変更の基点は `1d043de9
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。全試行の終了は101、libraryは24警告、lib testは36警告。dev01はlibrary 130エラー、lib test 1,005エラー。dev02はlibrary 130エラー、lib test 1,005エラー。dev03はlibrary 131エラー、lib test 1,006エラー。dev04はlibrary 130エラー、lib test 1,005エラー。dev03で方程式の宣言表をクロージャに移動していたため、再検証に同じ表を渡せなかった。dev04で共有参照に変更した。正規化した一次診断は前回1,012件、今回は1,012件。追加0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,402,506 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-call-effect-observation-dependencies.raw.zip) は38 entry、434900 bytes、SHA256 `66fd7b0398347bd0e987fbeff1f7d69c87af10bb089862441ebc44b220c5fe4c`。各entryの長さとSHA256を再照合した。更新前の履歴2968025 bytesのSHA256 `f50743bda03315f7f4857d542aa69ffea31682e7fe344a4c53a34bd0e1f4a39d`をprefixとして保持した。
+
+
+<a id="prepared-contextual-generic-uses"></a>
+## 2026-11-18 — 準備済み期待型が使うジェネリック参照を収集する
+
+Source `038b8c4432d0bdf15c5fe2d44cbd200161360864`。変更の基点は `48126e289bb5b45ec6043e6ab0397dea01a2cfca`。比較元は `a7e0b2f34b8a205192c2aae1f9fa1f74ce853f2c` の `call-effect-observation-dependencies.dev04-check.log`。公開したmainと9件のRust入力のblobを照合した。
+
+正準型と準備済み型は同じ型構造を訪問する。準備済み型は元の作用グラフを借用し、宣言適用では呼び出し側の実引数を訪問する。宣言側の仮引数はその宣言のスコープに属する。呼出し候補の期待型は制約側が発行したパラメーターの貸与証拠と照合する。子式へ渡す期待型は、その型が使う参照だけを親の集合から選び、元の作業予算で作用グラフの自由参照を読む。Viewの既定値は宣言の型を準備済み型で保持し、実行を許可する前の既定値検査が確定型を検証する。
+
+未準備の宣言本体を指す作用項を含む子式について、実引数の作用参照を保持すること、宣言側の仮引数を除外すること、予算を使い切った収集が失敗することを検査する回帰を追加した。宣言本体に戻る作用観測の循環、未確定Future入力、汎用の準備済み型互換性は継続する。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。全試行は終了101。libraryは24警告、lib testは36警告。dev01はlibrary 129エラー、lib test 996エラー。dev02はlibrary 121エラー、lib test 986エラー。正規化した一次診断は前回1,012件、今回は993件。19件を解消し、新規は0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,262,210 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-contextual-generic-uses.raw.zip) は24 entry、224985 bytes、SHA256 `0ac77740cd9cfddaa4d5ddffe27f63898723ba422c439a02db1a303b1502d1f3`。各entryの長さとSHA256を再照合した。更新前の履歴2970937 bytesのSHA256 `3b7e335d54241ac6aead014e0dceff6e5c532c22d3aa8f78cb116b0c697d8c0a`をprefixとして保持した。
