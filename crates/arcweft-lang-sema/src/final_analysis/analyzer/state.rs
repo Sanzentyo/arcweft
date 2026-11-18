@@ -1927,11 +1927,12 @@ impl SemanticFactState {
             .prepared_calls
             .as_mut()
             .expect("prepared graph presence was validated above")
-            .restore_delta(&target.checkpoint.graph, graph_delta, control)
+            .restore_deltas(&target.checkpoint.graph, vec![graph_delta], control)
         {
             Ok(()) => {}
             Err(failure) => {
-                let (violation, graph_delta) = failure.into_parts();
+                let (violation, mut graph_deltas) = failure.into_parts();
+                let graph_delta = graph_deltas.pop().expect("original graph delta");
                 return Err(CandidateProjectionApplyFailure {
                     violation: violation.into(),
                     projection: CandidateSemanticProjection::from(

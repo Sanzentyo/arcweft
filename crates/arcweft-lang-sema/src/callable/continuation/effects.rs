@@ -8,7 +8,7 @@ use crate::{
         CallableCandidateId, CallableGroupIndex, CallableResultSchema,
         CallableSignatureSchemaDigest, CheckedCallableId, PreparedResolvedCallable,
     },
-    effect_row::EffectRow,
+    effect_row::{DecisionControl, DecisionWork, EffectRow},
 };
 
 /// The actual producer that needs a declaration's latent callable type.
@@ -271,6 +271,56 @@ impl PreparedCallableEffectRows {
                 .any(|id| self.requests.contains_key(id) || delta.baseline.contains(id))
         {
             return Err(CallConstraintInvariant::MissingOrStalePreparedNode);
+        }
+        Ok(())
+    }
+
+    pub(super) fn validate_restore_batch<'a, C: DecisionControl>(
+        &self,
+        deltas: impl Iterator<Item = &'a PreparedEffectDelta> + Clone,
+        control: &mut C,
+    ) -> Result<(), super::PreparedCallGraphMutationFailure<C::Error>> {
+        use super::PreparedCallGraphMutationFailure::Control;
+
+        let mut requests = BTreeSet::new();
+        let mut callables = BTreeSet::new();
+        for delta in deltas.clone() {
+            for (&id, request) in &delta.requests {
+                control.charge(DecisionWork::Visit).map_err(Control)?;
+                control.charge(DecisionWork::Node).map_err(Control)?;
+                control.charge(DecisionWork::Node).map_err(Control)?;
+                if self.requests.contains_key(&id)
+                    || delta.baseline.contains(&id)
+                    || !requests.insert(id)
+                {
+                    return Err(CallConstraintInvariant::MissingOrStalePreparedNode.into());
+                }
+                if !callables.insert(&request.checked) {
+                    return Err(CallConstraintInvariant::PendingCallableEffectProjection {
+                        checked: Box::new(request.checked.clone()),
+                        group: request.group,
+                    }
+                    .into());
+                }
+            }
+        }
+        for id in deltas.flat_map(|delta| &delta.baseline) {
+            control.charge(DecisionWork::Visit).map_err(Control)?;
+            if !self.requests.contains_key(id) && !requests.contains(id) {
+                return Err(CallConstraintInvariant::MissingOrStalePreparedNode.into());
+            }
+        }
+        if !callables.is_empty() {
+            for request in self.requests.values() {
+                control.charge(DecisionWork::Visit).map_err(Control)?;
+                if callables.contains(&request.checked) {
+                    return Err(CallConstraintInvariant::PendingCallableEffectProjection {
+                        checked: Box::new(request.checked.clone()),
+                        group: request.group,
+                    }
+                    .into());
+                }
+            }
         }
         Ok(())
     }

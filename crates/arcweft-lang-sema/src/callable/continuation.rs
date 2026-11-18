@@ -17,7 +17,9 @@ use thiserror::Error;
 use crate::effect_row::prepared::{
     PreparedEffectCheckpoint, PreparedEffectDelta as PreparedRelationDelta, PreparedEffectFailure,
 };
-use crate::effect_row::{DecisionControl, EffectConstraintEligibility, EffectConstraintVariable};
+use crate::effect_row::{
+    DecisionControl, DecisionWork, EffectConstraintEligibility, EffectConstraintVariable,
+};
 
 #[cfg(test)]
 use crate::types::{GenericConstParameterId, GenericTypeParameterId};
@@ -1030,11 +1032,10 @@ impl<E> PreparedCallGraphCloseFailure<E> {
     }
 }
 
-/// A restore failure retains the move-only delta so the enclosing fact
-/// transaction can poison/rollback it without dropping semantic evidence.
+/// A restore failure retains the original move-only deltas in input order.
 pub(crate) struct PreparedCallGraphRestoreFailure<P, U = (), E = std::convert::Infallible> {
     violation: PreparedCallGraphMutationFailure<E>,
-    delta: Box<PreparedCallGraphDelta<P, U>>,
+    deltas: Vec<PreparedCallGraphDelta<P, U>>,
 }
 
 impl<P, U, E: std::fmt::Debug> std::fmt::Debug for PreparedCallGraphRestoreFailure<P, U, E> {
@@ -1051,9 +1052,9 @@ impl<P, U, E> PreparedCallGraphRestoreFailure<P, U, E> {
         self,
     ) -> (
         PreparedCallGraphMutationFailure<E>,
-        PreparedCallGraphDelta<P, U>,
+        Vec<PreparedCallGraphDelta<P, U>>,
     ) {
-        (self.violation, *self.delta)
+        (self.violation, self.deltas)
     }
 }
 
@@ -1790,144 +1791,145 @@ impl<P, U> PreparedCallGraph<P, U> {
         })
     }
 
-    pub(crate) fn restore_delta<C: DecisionControl>(
+    /// Publishes the original graph and relation permits together. All
+    /// relation permits must share the live base and include their read-scope
+    /// dependencies. Call-node prerequisites use their original issued IDs.
+    pub(crate) fn restore_deltas<C: DecisionControl>(
         &mut self,
         target: &PreparedCallGraphCheckpoint,
-        mut delta: PreparedCallGraphDelta<P, U>,
+        mut deltas: Vec<PreparedCallGraphDelta<P, U>>,
         control: &mut C,
     ) -> Result<(), PreparedCallGraphRestoreFailure<P, U, C::Error>> {
-        macro_rules! restore_error {
-            ($violation:expr) => {
-                return Err(PreparedCallGraphRestoreFailure {
-                    violation: ($violation).into(),
-                    delta: Box::new(delta),
-                });
-            };
-        }
-        if let Err(violation) = self.close_position(target) {
-            restore_error!(violation);
-        }
-        let Some(target_active) = self.active_deltas.last() else {
-            restore_error!(CallConstraintInvariant::PreparedGraphDeltaStale);
+        let next_node = match self.preflight_restore_deltas(target, &deltas, control) {
+            Ok(next_node) => next_node,
+            Err(violation) => return Err(PreparedCallGraphRestoreFailure { violation, deltas }),
         };
-        if let Err(violation) = self.preflight_active_delta(target_active) {
-            restore_error!(violation);
-        }
-        if !Arc::ptr_eq(&self.issuer, &delta.issuer) {
-            restore_error!(CallConstraintInvariant::ForeignPreparedIssuer);
-        }
-        if let Err(violation) = self.effects.validate_restore(&delta.effects) {
-            restore_error!(violation);
-        }
-        let touched_nodes = &delta.touched_nodes;
-        let touched_sites = &delta.touched_sites;
-        if touched_nodes.len() != delta.nodes.len()
-            || touched_sites.len() != delta.nodes.len()
-            || touched_nodes
-                .iter()
-                .any(|node| !delta.nodes.contains_key(node))
-            || touched_sites
-                .iter()
-                .any(|site| !delta.nodes.values().any(|node| node.site == *site))
-        {
-            restore_error!(CallConstraintInvariant::MissingOrStalePreparedNode);
-        }
-        if delta
-            .baseline_nodes
-            .iter()
-            .any(|node| delta.nodes.contains_key(node))
-        {
-            restore_error!(CallConstraintInvariant::MissingOrStalePreparedNode);
-        }
-        let mut referenced_baseline_nodes = BTreeSet::new();
-        for (node, value) in &delta.nodes {
-            // Node, site, and the active parent's two mutation indexes are
-            // admitted together before either relation publishes a change.
-            for work in [
-                crate::effect_row::DecisionWork::Visit,
-                crate::effect_row::DecisionWork::Node,
-                crate::effect_row::DecisionWork::Node,
-                crate::effect_row::DecisionWork::Node,
-                crate::effect_row::DecisionWork::Node,
-            ] {
-                if let Err(error) = control.charge(work) {
-                    restore_error!(PreparedCallGraphMutationFailure::Control(error));
-                }
-            }
-            if self.nodes.contains_key(node) || self.sites.contains_key(&value.site) {
-                restore_error!(CallConstraintInvariant::PreparedGraphDuplicateSite);
-            }
-            let mut previous = None;
-            for dependency in value.dependencies.iter() {
-                if let Err(error) = control.charge(crate::effect_row::DecisionWork::Visit) {
-                    restore_error!(PreparedCallGraphMutationFailure::Control(error));
-                }
-                if !Arc::ptr_eq(&self.issuer, &dependency.0.issuer)
-                    || previous.is_some_and(|previous| previous >= dependency.0.node)
-                    || dependency.0.node >= *node
-                    || (!delta.nodes.contains_key(&dependency.0.node)
-                        && (!delta.baseline_nodes.contains(&dependency.0.node)
-                            || !self.nodes.contains_key(&dependency.0.node)))
-                {
-                    restore_error!(
-                        if previous.is_some_and(|previous| previous >= dependency.0.node)
-                            || dependency.0.node >= *node
-                        {
-                            CallConstraintInvariant::InvalidPreparedDependencyOrder
-                        } else {
-                            CallConstraintInvariant::MissingOrStalePreparedNode
-                        }
-                    );
-                }
-                if !delta.nodes.contains_key(&dependency.0.node) {
-                    if !referenced_baseline_nodes.contains(&dependency.0.node)
-                        && let Err(error) = control.charge(crate::effect_row::DecisionWork::Node)
-                    {
-                        restore_error!(PreparedCallGraphMutationFailure::Control(error));
-                    }
-                    referenced_baseline_nodes.insert(dependency.0.node);
-                }
-                previous = Some(dependency.0.node);
-            }
-        }
-        if referenced_baseline_nodes != delta.baseline_nodes {
-            restore_error!(CallConstraintInvariant::MissingOrStalePreparedNode);
-        }
-        let mut next_node = self.next_node;
-        for node in delta.nodes.keys() {
-            let Some(after) = node.0.checked_add(1) else {
-                restore_error!(CallConstraintInvariant::InvalidPreparedDependencyOrder);
-            };
-            next_node = next_node.max(after);
-        }
-        match (&mut self.declarations, delta.relation.take()) {
-            (Some(declarations), Some(relation)) => {
-                if let Err(failure) = declarations.relation().0.restore_delta(relation, control) {
-                    let (error, relation) = failure.into_parts();
+        if let Some(declarations) = &mut self.declarations {
+            let relations = deltas
+                .iter_mut()
+                .map(|delta| delta.relation.take().expect("relation preflight"))
+                .collect();
+            if let Err(failure) = declarations.relation().0.restore_deltas(relations, control) {
+                let (error, relations) = failure.into_parts();
+                for (delta, relation) in deltas.iter_mut().zip(relations) {
                     delta.relation = Some(relation);
-                    restore_error!(PreparedCallGraphMutationFailure::effect(error));
                 }
-            }
-            (None, None) => {}
-            (_, relation) => {
-                delta.relation = relation;
-                restore_error!(CallConstraintInvariant::InvalidPreparedNodeState);
+                return Err(PreparedCallGraphRestoreFailure {
+                    violation: PreparedCallGraphMutationFailure::effect(error),
+                    deltas,
+                });
             }
         }
         self.next_node = next_node;
-        let touched_nodes = std::mem::take(&mut delta.touched_nodes);
-        let touched_sites = std::mem::take(&mut delta.touched_sites);
-        let nodes = std::mem::take(&mut delta.nodes);
-        for (node, value) in nodes {
-            self.sites.insert(value.site, node);
-            self.nodes.insert(node, value);
+        let active = self
+            .active_deltas
+            .last_mut()
+            .expect("active target preflight");
+        for delta in deltas {
+            for (node, value) in delta.nodes {
+                self.sites.insert(value.site, node);
+                self.nodes.insert(node, value);
+            }
+            active.touched_nodes.extend(delta.touched_nodes);
+            active.touched_sites.extend(delta.touched_sites);
+            self.effects.restore(delta.effects);
         }
-        if let Some(parent) = self.active_deltas.last_mut() {
-            parent.touched_nodes.extend(touched_nodes);
-            parent.touched_sites.extend(touched_sites);
-        }
-        self.effects.restore(delta.effects);
         Ok(())
+    }
+
+    fn preflight_restore_deltas<C: DecisionControl>(
+        &self,
+        target: &PreparedCallGraphCheckpoint,
+        deltas: &[PreparedCallGraphDelta<P, U>],
+        control: &mut C,
+    ) -> Result<u64, PreparedCallGraphMutationFailure<C::Error>> {
+        use PreparedCallGraphMutationFailure::Control;
+
+        self.preflight_active_delta(self.active_for_checkpoint(target)?)?;
+        if deltas.is_empty() {
+            return Err(CallConstraintInvariant::InvalidPreparedNodeState.into());
+        }
+        let mut next_node = self.next_node;
+        let mut nodes = BTreeSet::new();
+        let mut sites = BTreeSet::new();
+        for delta in deltas {
+            control.charge(DecisionWork::Visit).map_err(Control)?;
+            if !Arc::ptr_eq(&self.issuer, &delta.issuer) {
+                return Err(CallConstraintInvariant::ForeignPreparedIssuer.into());
+            }
+            if self.declarations.is_some() != delta.relation.is_some() {
+                return Err(CallConstraintInvariant::InvalidPreparedNodeState.into());
+            }
+            if delta.touched_nodes.len() != delta.nodes.len()
+                || delta.touched_sites.len() != delta.nodes.len()
+            {
+                return Err(CallConstraintInvariant::MissingOrStalePreparedNode.into());
+            }
+            if delta.relation.is_some() {
+                control.charge(DecisionWork::Node).map_err(Control)?;
+            }
+            for (&node, value) in &delta.nodes {
+                control.charge(DecisionWork::Visit).map_err(Control)?;
+                if !delta.touched_nodes.contains(&node)
+                    || !delta.touched_sites.contains(&value.site)
+                {
+                    return Err(CallConstraintInvariant::MissingOrStalePreparedNode.into());
+                }
+                // The two scratch indexes, two live indexes, and two active
+                // journal indexes are admitted before relation publication.
+                for _ in 0..6 {
+                    control.charge(DecisionWork::Node).map_err(Control)?;
+                }
+                if self.nodes.contains_key(&node)
+                    || self.sites.contains_key(&value.site)
+                    || !nodes.insert(node)
+                    || !sites.insert(value.site)
+                {
+                    return Err(CallConstraintInvariant::PreparedGraphDuplicateSite.into());
+                }
+                let after = node
+                    .0
+                    .checked_add(1)
+                    .ok_or(CallConstraintInvariant::InvalidPreparedDependencyOrder)?;
+                next_node = next_node.max(after);
+            }
+        }
+        for delta in deltas {
+            let mut referenced_baseline = BTreeSet::new();
+            for (&node, value) in &delta.nodes {
+                let mut previous = None;
+                for reference in &value.dependencies {
+                    control.charge(DecisionWork::Visit).map_err(Control)?;
+                    let dependency = reference.0.node;
+                    if previous.is_some_and(|previous| previous >= dependency) || dependency >= node
+                    {
+                        return Err(CallConstraintInvariant::InvalidPreparedDependencyOrder.into());
+                    }
+                    if !Arc::ptr_eq(&self.issuer, &reference.0.issuer) {
+                        return Err(CallConstraintInvariant::MissingOrStalePreparedNode.into());
+                    }
+                    if !delta.nodes.contains_key(&dependency) {
+                        if !delta.baseline_nodes.contains(&dependency)
+                            || (!self.nodes.contains_key(&dependency)
+                                && !nodes.contains(&dependency))
+                        {
+                            return Err(CallConstraintInvariant::MissingOrStalePreparedNode.into());
+                        }
+                        if !referenced_baseline.contains(&dependency) {
+                            control.charge(DecisionWork::Node).map_err(Control)?;
+                            referenced_baseline.insert(dependency);
+                        }
+                    }
+                    previous = Some(dependency);
+                }
+            }
+            if referenced_baseline != delta.baseline_nodes {
+                return Err(CallConstraintInvariant::MissingOrStalePreparedNode.into());
+            }
+        }
+        self.effects
+            .validate_restore_batch(deltas.iter().map(|delta| &delta.effects), control)?;
+        Ok(next_node)
     }
 
     fn validate_dependencies(
