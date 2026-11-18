@@ -19198,3 +19198,15 @@ Source `476bf2f2d767bbc18c2b62a28d3ea32e3e4b5f86`。変更の基点は `fff9225a
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` でdev01とdev02に実行。jobs／profileの上書きはなし。両方とも終了101、library 21エラー、lib test 886エラー。公開したdev02はlibrary 20警告、lib test 32警告。正規化した一次診断は893件から887件に減り、新規0件。変更したRustファイルに一次診断は残っていない。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Sema回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,171,531 bytesで、約300 GBを目安とする `cargo clean` は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-declaration-results.raw.zip) は 24 entry、198866 bytes、SHA256 `cad297855ae28536879273e7e75ab64c818ba3a552a1549f18ccb369aa45a439`。各entryの長さとSHA256を再照合した。更新前の履歴2996140 bytesのSHA256 `bf4e6a03fbd9fd585b50003915c887a7c7c11a5914fce17c1f69cce928f86af4`をprefixとして保持した。
+
+
+<a id="prepared-view-fx-values"></a>
+## 2026-11-18 — Fx定義の定数とView値プログラムを準備済み型で照合
+
+Source `511022c1fb9f0d60d6df79acf23f9c215621105c`。変更の基点は `f0fa3d8db24fcb18da12b4fa33461476c422016e`。比較元は `476bf2f2d767bbc18c2b62a28d3ea32e3e4b5f86` の `prepared-declaration-results.dev02-check.log`。公開したmainと2件のRust入力のblobを照合した。
+
+Fx定義の既定値と字句スコープの定数式は、式の出典に結び付けた準備済み期待型で検査する。定数抽出には同じ宣言型を使う。Viewの値プログラムは準備済み型から既存の実行時型を判定する。リテラルから定数を抽出する箇所では、作用解を必要としない型投影を経由し、長さや角度などを元の型から判定する。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行。jobs／profileの上書きはなし。終了101、library 16エラー・20警告、lib test 881エラー・32警告。正規化した一次診断は887件から882件に減り、新規0件。変更したRustファイルの一次診断は0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。FxとViewの実行テスト、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,108,160 bytesで、約300 GBを目安とする `cargo clean` の条件には達していなかった。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-view-fx-values.raw.zip) は 18 entry、104969 bytes、SHA256 `d5ea647e4213e05232b363098719e7195fb24013cbeb4a80a62ae359710a47d6`。各entryの長さとSHA256を再照合した。更新前の履歴2998572 bytesのSHA256 `d1460b00dc5b2758a94fcf04d68d2dea388ae440bcd67cfd971ab288ceeecbb5`をprefixとして保持した。
