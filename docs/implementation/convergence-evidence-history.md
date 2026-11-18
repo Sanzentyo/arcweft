@@ -18490,3 +18490,18 @@ Supersedes: 関数値の特殊化がcanonicalなcallable schemaの生成とseman
 9 Rust path、321追加／94削除、物理227 LOC増。Cargo manifest・公開契約・版の変更はない。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-prepared-function-use-checkpoint.raw.zip) は26 entry、434,447 bytes、SHA256 `802d5bfcf6d3b897b1418a2073dcc7119eeb60d8b88bdb490c6f21d7e62d5c28`。各entryの長さとSHA256を再読取で照合した。旧履歴2,860,070 bytesの SHA256 `f538549936442055c56db4f91e8582bf34cd35ca68d10b41ec4e0a5a8341094d` をprefixとして保持した。
+
+<a id="retained-source-value-checkpoint"></a>
+## 2026-11-18 — 観測時の値の所有者を呼出し確定まで保持する
+
+基点 `46e3910a4d88feffc6dab8e70e61fe146e1feb1f`。Source `9b683e6a515b2cd0b6eaef0f03704f396f1b82f0` を既存mainへ通常commitし、非force push後のmainと16入力の公開blobをSHA256で照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+観測値の型付きownerを制約domainの関連型にした。lowerは受理済みoperandを閉じるときに観測receiptを照合し、確定requestから同じ値ownerを借用できるようにした。事前に準備済みの受け手とDialogue／TextProxy操作の値は、確定時も正確に同じ割当を指すことを検証する。閉じた型・source projection・guardの証拠は同じcomponentで照合する。子呼出し結果は従来どおり型付きのprojectionを使う。一般の式準備と作用グラフ差分を選択後に移送する経路、body一回準備、実original productのdispatchは未達である。
+
+checked／uncheckedの両方で別の観測receiptを拒否し、元のトランザクションを破棄したあとも確定requestが正確な観測ownerを返すよう既存fixtureを拡張した。元の参照、import権限、外側frame、資源上限の既存テストは実際のprepared relationに接続した。fixtureは未実行。
+
+必須の `cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。dev01はlibrary 420／lib test 1,426エラー。既存の子application fixtureにprepared graph引数を追加した最終dev02はlibrary **420エラー・25警告**、lib test **1,416エラー・44警告**。最終差分のRust pathに出た一次診断515件を原本に保持した。2回のowner fmtは終了0。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Web最終受入は未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,431,381 bytesで、今回は既存の成果物を再利用した。
+
+16 Rust path、259追加／109削除、物理150 LOC増。Cargo manifest・公開契約・版に差分はない。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-retained-source-value-checkpoint.raw.zip) は20 entry、296,113 bytes、SHA256 `146131cafc58d3f645f10c44750930f7c80660456b7bbdae82d22787ce3cbe24`。各entryの長さとSHA256を再読取で照合した。旧履歴2,862,791 bytesのSHA256 `af249a48f1dccb9c4c9388b50503a53ed3fc09f78d24cdd159b3913213293b33` をprefixとして保持した。
