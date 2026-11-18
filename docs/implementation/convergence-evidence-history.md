@@ -19094,3 +19094,17 @@ Source `4f5591433f8bd6adc95a14fc700dac9dd16e3de2`。変更の基点は `afc16bb1
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。各試行の終了は101。dev01はlibrary 114エラー、lib test 979エラー。dev02はlibrary 110エラー、lib test 977エラー。dev03はlibrary 116エラー、lib test 983エラー。dev04はlibrary 116エラー、lib test 981エラー。正規化した一次診断は前回993件、今回は988件。比較元にない診断種別と所有ファイルの組は0件。一次診断の出力回数は前回比5件減。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,232,568 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-expression-compatibility.raw.zip) は36 entry、414308 bytes、SHA256 `4ab87a1ed175d770ce57ee2f0bf51a303c40c006995d3408aab1764ae082b173`。各entryの長さとSHA256を再照合した。更新前の履歴2973593 bytesのSHA256 `70a3acc67e641f06c4eaad6a0537423e38c2c131d981da52e184fe46a39f4ad5`をprefixとして保持した。
+
+
+<a id="contextual-type-decision-seal"></a>
+## 2026-11-18 — 文脈に依存する型判定を候補と公開時に再照合
+
+Source `7c84b332097997df6accc09329acded78e1dd996`。変更の基点は `15c714a776da2af0f73014a7fd613f3bc4de9be4`。比較元は `4f5591433f8bd6adc95a14fc700dac9dd16e3de2` の `prepared-expression-compatibility.dev04-check.log`。公開したmainと18件のRust入力のblobを照合した。
+
+作用の観測が必要な型の比較では、比較する両方の型を一つの作用グラフから観測する。本体依存が見つかると、依存本体の準備後に両方を再観測する。作用に依存する判定は元の準備済み型と判定結果を候補差分に保持し、取り消し時に同じチェックポイントへ戻す。キャッシュした関数値の特殊化は、対応する式の置換と型判定を同じトランザクションで扱う。候補の再利用では元の制約の確定結果で照合し、再利用できない場合は通常の確定経路に進む。選択された式が使った比較入力をC2の作用確定へ渡し、公開前に判定の一致を検査する。
+
+式キャッシュ、暗黙関数の選択、クロージャの引数・結果注釈、配列とリスト、outとchoiceの型をこの経路に接続した。両方の作用本体が必要なケースと、候補差分の抽出・再適用・外側の取り消しで比較記録が移送されるケースの回帰を追加した。候補の確定後も点ごとに型を観測できない場合や、未確定のFuture入力・宣言本体の循環は引き続き実際の受入で確認する。dev01で候補作業の互換性制御と借用境界の不足が見つかった。dev03では候補の関数値チェックが使う既存メソッドの不足を検出した。両方を後続試行で修正し、公開ソースの結果はdev04に記録した。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。各試行の終了は101。dev01はlibrary 113エラー、lib test 978エラー。dev02はlibrary 105エラー、lib test 970エラー。dev03はlibrary 106エラー、lib test 971エラー。dev04はlibrary 105エラー、lib test 970エラー。正規化した一次診断は前回988件、今回は977件。前回比11件減、新規0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,172,404 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-contextual-type-decision-seal.raw.zip) は42 entry、437317 bytes、SHA256 `690d6b89fe79a62c2c45edcf429a26869a462ca8be16fe7cb60cb9fd36b359a1`。各entryの長さとSHA256を再照合した。更新前の履歴2976683 bytesのSHA256 `c207d5643fc49d8b32a8c107657167bf0eeb772401b9cbe46a13e4fd4f3844c1`をprefixとして保持した。
