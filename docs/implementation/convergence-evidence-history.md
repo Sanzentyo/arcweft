@@ -18970,3 +18970,17 @@ Source `f65697fbc63ff66ff9cf5e9f580d5a0808ec86ce`。変更の基点は `c12d7450
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。dev01は終了101でlibrary 190エラー・25警告、lib test 1,065エラー・37警告。終了後の入力ハッシュ照合が失敗したため、原本を保持して公開入力の比較から除外した。dev02は終了101でlibrary 190エラー・25警告、lib test 1,063エラー・37警告。contextual receiverでの元の式解決の取得と、TextProxyのnominal型および型値の正準化を修正した。dev03は終了101でlibrary 188エラー・25警告、lib test 1,063エラー・37警告。正規化した一次診断は1,089件から1,076件に減った。13件削除、追加0件。Semaのfmt checkと `just structure-audit-gate` は終了0。Semaのnextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-call-source-projection.raw.zip) は33 entry、340720 bytes、SHA256 `8f416c3cfdd3dfed84acee2736ebc703d603168e10560ac1c07e2188345ce015`。各entryの長さとSHA256を再照合した。更新前の履歴2950542 bytesのSHA256 `0e24915d29adf5164d95f209394d9ce291d996c257d17b2fdc7e0e8cc9b7ba61`をprefixとして保持した。
+
+
+<a id="call-result-publication"></a>
+## 2026-11-18 — 呼出し式・選択結果・引数観測を原子的に公開
+
+Source `bc32b1b8bf138b0a261c8d39f3e44658c6bbcf3c`。変更の基点は `a2d3b94c17edb4dd791f3e1e6627c6cbc0d4709c`。比較元は `f65697fbc63ff66ff9cf5e9f580d5a0808ec86ce` の `call-source-projection.dev03-check.log`。公開したmainと7件のRust入力のblobを照合した。
+
+選ばれた呼出しの値・継続・content emissionを同じ確定経路で処理する。確定型と元の型が一致する場合は元の作用項を保持し、結果が変わる場合は選択済み適用が発行した型を元の所有スコープで保持する。関数の特殊化証拠は元の式と確定した関数型に結び付け、暗黙関数は外側の関数型を保って本体の呼出しを更新する。variant headの宣言とcaseを照合してpayloadを投影し、対話結果とcontent emissionの所属も確認する。状態への反映前に式の存在、呼出しサイト、物理引数観測の出典を事前照合し、式・呼出しfact・観測結果を同じ確定処理で公開する。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。dev01は終了101でlibrary 176エラー・25警告、lib test 1,051エラー・37警告。variant headの型の受け渡しを修正した。dev02とdev03は終了101でそれぞれlibrary 175エラー・25警告、lib test 1,050エラー・37警告。最終入力では一次診断1,076件から1,058件、18件削除、追加0件。`call_seal.rs`の一次診断は0件。変更ファイル中の`prepared.rs`には既存3件があり、Entryの型と型ダイジェストの準備側に残る。Semaのfmt checkと `just structure-audit-gate` は終了0。
+
+取消と不一致サイトの拒否で公開状態を保ち、正しい入力で再試行できる回帰fixtureを追加した。Semaのコンパイルが未完了のため、fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-call-result-publication.raw.zip) は32 entry、341807 bytes、SHA256 `e97006c6986a76efff2539c27d11755264ad88627e28975d777e83735a8211eb`。各entryの長さとSHA256を再照合した。更新前の履歴2952826 bytesのSHA256 `78501a5e0d1bab74f15d20315a477f775e049b25e6e5705f6dde67e33ef3d668`をprefixとして保持した。
