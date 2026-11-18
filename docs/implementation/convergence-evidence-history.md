@@ -18958,3 +18958,15 @@ Tryは準備済みの成功値型と残余型を保持する。実装メソッ�
 二つ目の実装メソッドを指すTry境界と、別々の作用項が同じ残余型に確定する回帰fixtureを追加した。Sema全体のコンパイルが未完了のため、fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-try-carriers.raw.zip) は32 entry、362,675 bytes、SHA256 `9d6bc6e647a1331a4a143bd52c226b222e61570046f7fa82a687e9ea08982a1f`。各entryの長さとSHA256を再照合した。更新前の履歴2,947,954 bytesのSHA256 `c86ffc0e8ffca1df89994d9200a6fab0318e28267d0ed90d2726bdb0fcd9752c` をprefixとして保持した。
+
+
+<a id="call-source-projection"></a>
+## 2026-11-18 — 呼出し候補と実行オペランドの型を元のスコープで照合
+
+Source `f65697fbc63ff66ff9cf5e9f580d5a0808ec86ce`。変更の基点は `c12d74505f2ac20d5661ea8a7da4bc439076d746`。比較元は `42833e2ee8d72c4652a03cc3f1bd62d882c9c786` の `prepared-try-carriers.dev03-check.log`。公開したmainと2件のRust入力のblobを照合した。
+
+独立した関数値と局所関数の候補を確定するとき、関数型と捕捉した束縛型を、元の所有スコープと共通の作用解で正準化する。receiver、対話対象、semantic-only の引数と型値は、同じ作用解で確定した型を選択済みの制約と照合する。呼出しの依存順とABIスロットの扱いは従来の確定処理に従う。採用したcallee、variant head、呼出し結果を準備済みの式へ反映する箇所にコンパイル診断が残る。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。dev01は終了101でlibrary 190エラー・25警告、lib test 1,065エラー・37警告。終了後の入力ハッシュ照合が失敗したため、原本を保持して公開入力の比較から除外した。dev02は終了101でlibrary 190エラー・25警告、lib test 1,063エラー・37警告。contextual receiverでの元の式解決の取得と、TextProxyのnominal型および型値の正準化を修正した。dev03は終了101でlibrary 188エラー・25警告、lib test 1,063エラー・37警告。正規化した一次診断は1,089件から1,076件に減った。13件削除、追加0件。Semaのfmt checkと `just structure-audit-gate` は終了0。Semaのnextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-call-source-projection.raw.zip) は33 entry、340720 bytes、SHA256 `8f416c3cfdd3dfed84acee2736ebc703d603168e10560ac1c07e2188345ce015`。各entryの長さとSHA256を再照合した。更新前の履歴2950542 bytesのSHA256 `0e24915d29adf5164d95f209394d9ce291d996c257d17b2fdc7e0e8cc9b7ba61`をprefixとして保持した。
