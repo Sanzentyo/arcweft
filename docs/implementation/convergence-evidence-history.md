@@ -19400,3 +19400,15 @@ Source `2d04adc686e7aaa6089aec85914c1bede11dae8e`。比較元のRustは `d37143b
 locked Sema全feature checkは通常ライブラリ成功、lib testは終了101・829エラー・33警告で、発生ファイルとコードは前回と一致。Sema全featureのライブラリClippy、fmt、差分チェックと構造ゲートは終了0、構造阻害0件。Coreは変更しておらず、単体2,359件の実測は[先行Source](#compose-typed-effect-members)に保持する。Semaユニットテスト、workspace全target、全逆依存と最終受入は未実行。
 
 [検証原本・途中結果・LLDB・公開照合](acceptance-evidence/task-deterministic-header-validation.raw.zip) は24 entry、900778 bytes、SHA256 `ae9865fc48f4fac538d4ac287ebdbaa2eeb332be40b5f3f6c5f5a3f66f4df762`。各原本の長さとハッシュを照合し、既存履歴をそのまま保持した。
+
+
+<a id="final-canonical-inspection"></a>
+## 2026-11-19 — 最終照合の型を正準型として直接投影
+
+Source `4a2f0a89ed9dfc00fe9735d1a3a32ebdb0be29ae`。基点は `7e7238b91ef0a134abb835cd3d56d46275ba3292`。既存の束縛・参照検査の走査で、完了済み作用からヘッダを投影し、その場で正準型を作る。型変数の代入は元の束縛と展開先の実スコープを照合する。注釈の補完は正準型のまま式の出現スコープへ運ぶ。出典付きオペランドの投影と公開用の証拠は従来の所有型で処理する。6 Rustファイル、物理行の純増56、公開blob 6件を照合した。
+
+Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ。captured Mapは引き続き成功。遅延コールバックは最終式の作用行の組み立てで上限に達した。retained Mapは最終式の型照合を通過し、適用結果を確定する際の `CompletedGenericContext::reify_type` の出典付き型の検査で候補共有の作業上限に達した。2件は型検査で止まる。
+
+locked Sema全feature checkは通常ライブラリ成功、lib testは終了101・823エラー・33警告。前回から `closed_effects.rs` のE0277が3件、E0599が2件、`effect_admission.rs` のE0599が1件減った。fmt、差分チェック、構造ゲートは終了0、構造阻害0件。hostの全featureのCargo graphはSemaを含む22パッケージ。Semaユニット、Clippy、全逆依存と最終受入はこのSourceで未実行。
+
+[検証原本・LLDB・Cargo graph・公開照合](acceptance-evidence/task-final-canonical-inspection.raw.zip) は19 entry、417582 bytes、SHA256 `72b2b788dd5cef8b27ab7e366b76aacbf1ecc7c7565a3a497c9bf2bc54d49c59`。各原本の長さとハッシュを照合し、既存履歴をそのまま保持した。
