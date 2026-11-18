@@ -19026,3 +19026,15 @@ Source `b05c36455138e3ffeebe4b0d24aa6f77406ad2e8`。変更の基点は `daa881c7
 receiverの入れ子の関数型に効果のグラフ項を持たせ、観測型が確定した後も元の項を保持する回帰fixtureを追加した。Sema全体のコンパイルが未完了で、fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-retained-call-receiver.raw.zip) は40 entry、440466 bytes、SHA256 `2dfe22bc3a37b0aaddb021a0e69216e12dbe50d084563d86ecc2455cce4bb7a8`。各entryの長さとSHA256を再照合した。更新前の履歴2960600 bytesのSHA256 `97ea8a190a6a4cfaf4c3a10f0e7e77f5aefe521a507641514825b558c54f448a`をprefixとして保持した。
+
+
+<a id="retained-function-callee"></a>
+## 2026-11-18 — 関数値calleeの作用項を候補制約まで保持する
+
+Source `f57f04e556c21db4a3fb84ac40a3729927a67932`。変更の基点は `f997cb19cc8feb255b8c8e2fd0ce3c1e8e7faefd`。比較元は `b05c36455138e3ffeebe4b0d24aa6f77406ad2e8` の `retained-call-receiver.dev04-check.log`。公開したmainと9件のRust入力のblobを照合した。
+
+関数値と値receiverは、同じ型で元の式座標・候補探索時の正準型・制約に渡す準備済み型を保持する。関数値の基底候補の実値制約は、callee自身の作用項を使う。局所・独立した式・宣言値・段階適用の候補では、従来の出典と量化の境界を使う。C2で同一の式座標と準備済み型を検査し、確定した作用関係から候補探索時の型を再照合する。callee／receiverの作用関係を観測できる前に候補が必要な場合の依存解決と、特殊化の実行検証は継続する。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。全試行の終了は101、libraryは25警告、lib testは37警告。dev01はlibrary 133エラー、lib test 1,008エラー。dev02はlibrary 133エラー、lib test 1,008エラー。dev03はlibrary 133エラー、lib test 1,008エラー。一次診断は1,020件から1,015件に減った。5件を解消し、新規は0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、変更範囲の実行テスト、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,417,538 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-retained-function-callee.raw.zip) は32 entry、327496 bytes、SHA256 `0ec6ac8a92d959fd85151bd7e9f0a57520ccfa7a1f5488ef9a7ccf21dd8e00b7`。各entryの長さとSHA256を再照合した。更新前の履歴2963156 bytesのSHA256 `67f171aa3f4444556098305df202ca338e17e0b9289cafe9510fea087bce8cc1`をprefixとして保持した。
