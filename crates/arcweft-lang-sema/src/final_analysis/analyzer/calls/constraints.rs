@@ -2988,7 +2988,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 if source_admission.is_none()
                     && let Some(owner) = source.expression_owner()
                     && unique_expressions.get(&owner) == Some(&true)
-                    && let Some(original) = request.preparation().retained_resolved_value(owner)
+                    && let Some(original) = request.preparation().retained_expression_value(owner)
                     && request
                         .retained_value()
                         .and_then(AnalyzerObservedSourceValue::expression_fact)
@@ -8099,7 +8099,7 @@ mod tests {
                     let facts = &mut client.analyzer.facts;
                     let original_type = std::ptr::from_ref(
                         preparation
-                            .retained_resolved_value(owner)
+                            .retained_expression_value(owner)
                             .unwrap()
                             .value_type()
                             .unwrap(),

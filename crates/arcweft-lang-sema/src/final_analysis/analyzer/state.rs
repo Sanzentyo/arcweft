@@ -23,7 +23,7 @@ use crate::{
     effect_row::{DecisionControl, DecisionWork},
     final_analysis::{
         PreparedContentApplication, PreparedDialogueApplication, PreparedExpressionFact,
-        accounting::PhysicalSourceType,
+        accounting::PhysicalSourceType, prepared::PreparedExpressionTypeUpdates,
     },
     types::{
         PreparedEffects, TypeProjectionControl, TypeProjectionNodeKind,
@@ -425,13 +425,16 @@ pub(super) struct CandidateSemanticProjection {
     data: Box<CandidateSemanticProjectionData>,
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub(super) struct RetainedProbeTypes(BTreeMap<HirSemanticPathOwnerId, TypeKind<PreparedEffects>>);
+#[derive(Debug, Default, Eq, PartialEq)]
+pub(super) struct RetainedProbeTypes {
+    bindings: BTreeMap<HirSemanticPathOwnerId, TypeKind<PreparedEffects>>,
+    expressions: BTreeMap<ExprId, PreparedExpressionTypeUpdates>,
+}
 
 #[cfg(test)]
 impl RetainedProbeTypes {
     pub(super) fn unchanged_for_test() -> Self {
-        Self(BTreeMap::new())
+        Self::default()
     }
 }
 
@@ -470,13 +473,12 @@ impl CandidateSemanticProjection {
         self.data.facts.expressions.get(&owner).map(Option::as_ref)
     }
 
-    pub(super) fn retained_resolved_value(&self, owner: ExprId) -> Option<&PreparedExpressionFact> {
+    pub(super) fn retained_expression_value(
+        &self,
+        owner: ExprId,
+    ) -> Option<&PreparedExpressionFact> {
         let facts = &self.data.facts;
-        let Some(Some(fact @ PreparedExpressionFact::Resolved(resolved))) =
-            self.expression_update(owner)
-        else {
-            return None;
-        };
+        let fact = self.expression_update(owner).flatten()?;
         (facts.checked_content.is_empty()
             && facts.iterations.is_empty()
             && facts.implicit_capture_uses.is_empty()
@@ -487,7 +489,7 @@ impl CandidateSemanticProjection {
                 .is_empty()
             && self.data.graph_delta.is_isolated_expression_delta()
             && fact.checked_call_site(owner).is_none()
-            && resolved.result().is_plain_value())
+            && fact.supports_primary_type_update())
         .then_some(fact)
     }
 
@@ -502,7 +504,7 @@ impl CandidateSemanticProjection {
         else {
             return Ok(None);
         };
-        let mut updates = BTreeMap::new();
+        let mut updates = RetainedProbeTypes::default();
         let facts = &self.data.facts;
         for (fact_owner, ty) in facts
             .locals
@@ -525,7 +527,7 @@ impl CandidateSemanticProjection {
                 };
                 if let Some(replacement) = projected.into_replacement() {
                     control.visit_binding()?;
-                    updates.insert(fact_owner, replacement);
+                    updates.bindings.insert(fact_owner, replacement);
                 }
             }
         }
@@ -538,49 +540,33 @@ impl CandidateSemanticProjection {
             let Some(fact) = fact else {
                 continue;
             };
-            if expression == owner {
+            if expression == owner && matches!(fact, PreparedExpressionFact::Resolved(_)) {
                 continue;
             }
             if fact.checked_call_site(expression).is_some() {
                 return Ok(None);
             }
-            match fact {
-                PreparedExpressionFact::Resolved(resolved)
-                    if resolved.result().is_plain_value() =>
-                {
-                    let Some(projected) = completion.project_declaration_type(
-                        resolved.value_type().expect("plain value type"),
-                        control,
-                    )?
-                    else {
-                        return Ok(None);
-                    };
-                    if let Some(replacement) = projected.into_replacement() {
-                        control.visit_binding()?;
-                        updates.insert(fact_owner, replacement);
-                    }
-                }
-                // These carriers already own additional typed metadata. Keep
-                // them when each slot agrees with its declaration projection.
-                fact => {
-                    let mut agrees = true;
-                    fact.visit_types(&mut |ty| {
-                        agrees &= completion
-                            .project_declaration_type(ty, control)?
-                            .is_some_and(|ty| ty.into_replacement().is_none());
-                        Ok::<_, TypeConstraintError>(())
-                    })?;
-                    if !agrees {
-                        return Ok(None);
-                    }
-                }
+            let Some(update) = fact.prepare_type_updates(&completion, control)? else {
+                return Ok(None);
+            };
+            if expression == owner || !update.is_empty() {
+                control.visit_binding()?;
+                updates.expressions.insert(expression, update);
             }
         }
-        if let Some(replacement) = completion.into_value().into_replacement() {
+        let result = completion.into_value().into_replacement();
+        if let Some(update) = updates.expressions.get(&owner) {
+            if !update.matches_result(result.as_ref()) {
+                return Ok(None);
+            }
+        } else if let Some(replacement) = result {
             control.visit_binding()?;
-            updates.insert(owner.into(), replacement);
+            updates.expressions.insert(
+                owner,
+                PreparedExpressionTypeUpdates::resolved_type(replacement),
+            );
         }
-        Ok(Some(RetainedProbeTypes(updates)))
+        Ok(Some(updates))
     }
 
     pub(super) fn effect_view<'a>(
@@ -2376,11 +2362,11 @@ impl SemanticFactState {
         self.prepared_calls()?
             .validate_delta(&original.data.graph_delta)
             .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))?;
-        if original.retained_resolved_value(owner).is_none() {
+        if original.retained_expression_value(owner).is_none() {
             return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
         }
         let source = &mut original.data.facts;
-        for (owner, ty) in completed.0 {
+        for (owner, ty) in completed.bindings {
             match owner {
                 HirSemanticPathOwnerId::Local(owner) => {
                     let Some(Some(value)) = source.locals.get_mut(&owner) else {
@@ -2394,17 +2380,15 @@ impl SemanticFactState {
                     };
                     *value = ty;
                 }
-                HirSemanticPathOwnerId::Expression(owner) => {
-                    let Some(Some(PreparedExpressionFact::Resolved(value))) =
-                        source.expressions.get_mut(&owner)
-                    else {
-                        return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
-                    };
-                    if !value.replace_plain_value_type(ty) {
-                        return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
-                    }
-                }
                 _ => return Err(CandidateFactTransactionViolation::ProjectionUnavailable),
+            }
+        }
+        for (owner, update) in completed.expressions {
+            let Some(Some(value)) = source.expressions.get_mut(&owner) else {
+                return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+            };
+            if !value.apply_type_updates(update) {
+                return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
             }
         }
         if original.data.graph_delta.has_writes() {
@@ -3592,7 +3576,7 @@ mod tests {
                 &mut child,
                 parent,
                 parent_expression,
-                RetainedProbeTypes(BTreeMap::new()),
+                RetainedProbeTypes::unchanged_for_test(),
             )
             .unwrap()
             .expect("the effect writes keep their original projection");

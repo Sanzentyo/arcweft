@@ -95,6 +95,20 @@ impl<D: TypeEffectDomain> VariantPayloadTypeShape<D> {
         }
     }
 
+    pub const fn tuple_fields(&self) -> Option<&[TypeKind<D>]> {
+        match self {
+            Self::Tuple(fields) => Some(fields),
+            Self::Record(_) => None,
+        }
+    }
+
+    pub const fn record_fields(&self) -> Option<&[VariantPayloadRecordTypeField<D>]> {
+        match self {
+            Self::Record(fields) => Some(fields),
+            Self::Tuple(_) => None,
+        }
+    }
+
     pub(crate) fn visit_types<'a, E>(
         &'a self,
         visitor: &mut impl FnMut(&'a TypeKind<D>) -> Result<(), E>,
@@ -284,20 +298,6 @@ impl VariantPayloadTypeShape {
                     .map(|field| (field.diagnostic_name.clone(), field.ty.clone())),
                 scope,
             ),
-        }
-    }
-
-    pub const fn tuple_fields(&self) -> Option<&[TypeKind]> {
-        match self {
-            Self::Tuple(fields) => Some(fields),
-            Self::Record(_) => None,
-        }
-    }
-
-    pub const fn record_fields(&self) -> Option<&[VariantPayloadRecordTypeField]> {
-        match self {
-            Self::Record(fields) => Some(fields),
-            Self::Tuple(_) => None,
         }
     }
 }

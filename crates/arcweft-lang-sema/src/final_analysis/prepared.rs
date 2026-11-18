@@ -1,6 +1,7 @@
 //! Private, consumable semantic facts that require the project-wide C2 seal.
 
 pub(crate) use super::model::PreparedResolvedExpression;
+mod type_updates;
 mod typed_binding;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
@@ -9,6 +10,7 @@ use arcweft_lang_hir::{
     symbol::CallableDeclarationKey,
 };
 use std::{borrow::Cow, sync::Arc};
+pub(super) use type_updates::PreparedExpressionTypeUpdates;
 pub(crate) use typed_binding::PreparedTypedBindingPattern;
 
 #[cfg(test)]
@@ -184,19 +186,6 @@ impl PreparedExpressionResult {
 
     pub(crate) const fn is_plain_value(&self) -> bool {
         matches!(self, Self::Value(value) if value.specialization.is_none())
-    }
-
-    pub(super) fn replace_plain_value_type(&mut self, ty: TypeKind<PreparedEffects>) -> bool {
-        let Self::Value(PreparedTypedExpressionResult {
-            source,
-            specialization: None,
-            ..
-        }) = self
-        else {
-            return false;
-        };
-        *source = ty;
-        true
     }
 
     pub(super) fn attach_function_use<C: TypeProjectionControl>(
@@ -1958,9 +1947,7 @@ impl PreparedRecordPatternOwner {
     pub(crate) fn variant_payload(
         payload: crate::types::VariantPayloadType<PreparedEffects>,
     ) -> Option<Self> {
-        let crate::types::VariantPayloadTypeShape::Record(fields) = payload.shape() else {
-            return None;
-        };
+        let fields = payload.shape().record_fields()?;
         let field_count = u32::try_from(fields.len()).ok()?;
         Some(Self::VariantPayload {
             payload,
