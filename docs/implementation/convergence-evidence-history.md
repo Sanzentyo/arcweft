@@ -18608,3 +18608,18 @@ checked／uncheckedの両方で別の観測receiptを拒否し、元のトラン
 6 Rust path、230追加／179削除。作用グラフの同じsnapshot処理で元の関数IDと制約を保持し、bindingと最終検証で異なる入力を受け取る。Cargo依存と契約の版に差分はない。Generic Matchの受入・公開状況は現状一覧の既存行に保持した。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-reachable-source-effect-closure-checkpoint.raw.zip) は16 entry、149,879 bytes、SHA256 `d757acda2c82ce3beb93eda946cafb5796c9b3dc1c16f544a59415660a652b06`。各entryの長さとSHA256を再照合した。旧履歴2,883,090 bytesのSHA256 `0e3fe433a4c28570de3f4f2e2a03d949b64238a57eb11a58dda990453afc9a2c` をprefixとして保持した。
+
+<a id="original-product-future-inputs-checkpoint"></a>
+## 2026-11-18 — original productへ必要なFutureの実値を渡す
+
+基点 `e4a087b93e151fc38219473fffdbc6c6c5e0eddb`。Source `368144208c733643a1491d379bf8be6e1a36d787` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した11入力のblobを照合した。
+
+original productの作用snapshotは、選択したapplicationが導入した推論関数と、元の項・制約から到達する関数を保持する。グラフ上にあるだけの別候補のFutureまで全候補が要求していたため、全未知数を含める操作はfixtureに限定した。確定処理は一式の実値について同じグラフの発行元、Future eligibility、重複と形式引数の範囲を確認する。各productはこの一式から自身の依存範囲に属する実値を使う。必要な実値が欠けた場合は元のforestを返し、同じ準備から再試行できる。Analyzerの旧eager経路からこのforestへの切り替えは未達。
+
+独立した二候補が同じ入力一式からそれぞれの実値を読む回帰を追加した。別候補のFutureがすでに存在する状態で、必要なFutureの未指定を検出し、実値を渡すと元のforestを確定する条件を既存fixtureに追加した。両fixtureは未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。dev01の検証完了前にforestの発行元検査を追加したため、公開入力は再実行したdev02で照合した。libraryは **416エラー・25警告**、lib testは **1,332エラー・44警告**。変更11 pathを一次位置とするエラーは0件。Semaのfmtと構造gateは終了0、blocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,058,199 bytesでcleanは未実行。
+
+11 Rust path、246追加／34削除。候補の入力範囲は元のapplicationと元の制約が決め、発行元の照合とFuture実値の検証は既存の作用グラフが担当する。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-original-product-future-inputs-checkpoint.raw.zip) は22 entry、282,545 bytes、SHA256 `913a52eb95c21dfa54c2ac6e2d39b20b829b946d8f27ca5a228e4b6dcd0a9f43`。各entryの長さとSHA256を再照合した。旧履歴2,886,008 bytesのSHA256 `ec72218837360cef08cc2d96efc19a4b90f766d14c60731950d69a34d5280b3c` をprefixとして保持した。
