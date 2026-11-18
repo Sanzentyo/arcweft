@@ -19248,3 +19248,16 @@ Source `2a63be5a39861dd4a7cd1e673a31a5a52ac3b036`。変更の基点は `74adb33a
 `cargo nextest run --locked -p arcweft-compiler --test evaluated_effects --test generic_continuation_snapshot --no-fail-fast`、`CARGO_INCREMENTAL=0`、jobs／profileの上書きなし。前回と同じ152 IDを実行し、1成功・151失敗から148成功・4失敗に変わった。`CheckedCallableCatalog` は136件から0件。残る内訳はライフタイム付き関数値の部分適用（`DeltaBase`）、遅延コールバック（`SchemeState`）、保存復元を扱うMapの2件（`CallResolutionFailed`）。4件はいずれも型検査で停止した。fmtと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaユニットテスト対象の全feature checkは前のSourceに記録し、このSourceでの主な実測はCompilerの2統合テスト対象。残りの逆依存テスト、Clippy、workspace最終受入、Native／Webは未実行。targetは 7,204,705,821 bytesだった。
 
 [検証原本・LLDB・全テストID比較・公開照合](acceptance-evidence/task-nominal-publication-catalog-ownership.raw.zip) は 17 entry、58755 bytes、SHA256 `3702a1199bea92dfe22b74b085f337b015f8fbf6be3c386216e17c5ebaa0484e`。各entryの長さとSHA256を再照合した。更新前の履歴3006003 bytesのSHA256 `70f954b828be75f22dde710f7b02f7b881be45be9ed21ee2da4fa1c681d484df`をprefixとして保持した。
+
+<a id="correlated-effect-prerequisites"></a>
+## 2026-11-19 — 入れ子の呼出し候補が参照する作用グラフを保持
+
+Source `b263320443c2cc6ff1828e18e097ea7e537585dc`。基点は `fce9f5623e265a13905bd976d7ca5735233142f7`。比較元のCompiler統合テストは `2a63be5a39861dd4a7cd1e673a31a5a52ac3b036`。公開後に5件のRust blobと実行入力のSHA256を照合した。
+
+部分適用の `DeltaBase` は、作用グラフの現在状態45で基点70の読取り差分を合成したときに発生した。入れ子候補とcalleeの事前評価を切り離す際、各候補経路に元の読取り層を合成する。候補採用後は対応する公開権限を取り出し、元のfact・call graph差分を既存の一括適用に渡す。待機中の制約が候補別の読取りを所有し、呼出しグラフが差分の出典を照合する。Analyzerの候補処理とfact台帳に、選択時と棄却時の公開権限の処理を置いた。大きなcalls、constraints、state各ファイルの変更はその処理の単位でまとまる。5 Rustファイルで物理行の純増97。
+
+同じ152テストIDを `cargo nextest run --locked -p arcweft-compiler --test evaluated_effects --test generic_continuation_snapshot --no-fail-fast` で実行し、149成功・3失敗・0スキップ。前回の148成功をすべて維持し、ライフタイム付き関数値の部分適用がNativeとAWBCで成功した。遅延コールバックは `SchemeState`、Map復元2件は `CallResolutionFailed` で型検査が停止する。Mapのデバッガ記録は、コールバックの本体作用を集計するときの呼出し作用行の投影を示す。fmtと `just structure-audit-gate` は終了0。Cargo graphでSemaを含む22 packageを確認した。Compilerの上記2 target以外の逆依存テスト、Clippy、workspace最終受入、Native／Web最終受入は未実行。
+
+試験入力dev01では、実引数から到達する宣言の本体を同じ候補で準備した。遅延コールバックは宣言本体の主作用解を計算するときに `ReadScopeActive` で停止した。本体準備を追加した差分を試験入力として保存し、公開Sourceから外した。dev01の全feature Sema checkはライブラリを検査し、テスト対象は終了101、863エラー・33警告。正規化した一次診断は比較元と一致。dev01の初回nextestはデバッガ調査と再リンクが重なって `LNK1104` で停止し、デバッガ終了後の同一入力再実行で149成功・3失敗を観測した。公開Sourceの検証はdev02。検証は `CARGO_INCREMENTAL=0`、jobs／profileの上書きなし。targetは7,206,742,763 bytesで、今回の `cargo clean` は0回。以降は約300 GBを実行の目安とする。
+
+[検証原本・試験入力・全テストID比較・公開照合](acceptance-evidence/task-correlated-effect-prerequisites.raw.zip) は 32 entry、258130 bytes、SHA256 `2a0520c9ec052839364b49a5efbfb198b77bd1d2cbef4031ca2df48b9d58b225`。各entryの長さとSHA256を再照合した。既存履歴 3008412 bytesのSHA256 `e6572797b88305bf0ddf11beb0e6925a2dbceebe90093eec70d2f2fcdf4c0e33` をprefixとして保持した。
