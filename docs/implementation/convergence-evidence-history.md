@@ -18550,3 +18550,16 @@ checked／uncheckedの両方で別の観測receiptを拒否し、元のトラン
 4 Rust path、292追加／136削除、物理156 LOC増。Cargo manifest・公開契約・版に差分はない。現状一覧の終端効果行から途中の処理経路の重複説明を整理した。各移行時点の範囲・結果とSHAは過去節にあり、現在の接続と未達箇所は一覧で追える。Generic Matchの受入・公開行を同一バイトで保持した。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-prepared-call-graph-batch-restore-checkpoint.raw.zip) は14 entry、149,739 bytes、SHA256 `ecd1f70011ae87d06b3b8db9adacef6dff53656c166d9336e23821bdd680d313`。各entryの長さとSHA256を再読取で照合した。旧履歴2,870,929 bytesのSHA256 `8199e5b342f2cb31daf4d984408a28c6e28c72fba331887a2dd1bb508b86b2ec` をprefixとして保持した。
+
+<a id="candidate-fact-batch-restore-checkpoint"></a>
+## 2026-11-18 — 元の候補差分を解析台帳とグラフに一括適用する
+
+基点 `5c6cbbfa82d5d23e161b7377545b6f2dfda8d14d`。Source `ad2c6bdf1d5429232956e84aa396104bf2ac6dd1` を既存mainへ通常commitし、非force push後にmainのfull SHAと検証した3入力の公開blobを照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+解析台帳が全差分の発行元、epoch、書込みキー、捕捉、内容ID、各観測の式と呼出しノードの対応を事前検査する。グラフ側が同じ基点に対する全差分を受理してから、台帳の更新を入力順に同じcheckpointへ記録する。失敗時はグラフ差分と台帳の値を維持した全投影を入力順で返す。同じローカルへの二重書込みを拒否するケースと、グラフ側の予算切れ後に同じ二件で再試行し、rollbackで元の台帳に戻るケースを追加した。既存の単件適用もこのentryを使う。観測段階で選択準備の作用差分が同じ基点と必要なread scopeを持つようにする接続、実original productの本番dispatch、再評価の除去は未達。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。libraryは420エラー・25警告、lib testは1,342エラー・44警告。基点で記録した1,404テスト用エラーから62減った。変更ファイルを一次位置とする残り3診断は、観測時のprepared型を現在canonical型を要求する物理評価記録へ渡す箇所に出た。追加fixture・nextest・Clippy・doctest・推移的逆依存・workspace・Native／AWBC・Native／Webは未実行。owner fmtは終了0。構造gateは終了0、blocking違反0件。Cargoの既定feature解決は98 workspace member、Semaの直接fan-in／fan-outは12／19。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,102,886 bytesでcleanは未実行。
+
+3 Rust path、546追加／288削除。Semaの `final_analysis/analyzer/state.rs` は145822 bytes、3,825物理LOC（旧3,571、うち新しい全体の埋込テスト854 LOC）。候補の発行元、事前検査、journal、rollbackを同じ台帳に置き、別の台帳やcrate依存を追加しなかった。内容の照合規則は内容所有型の既存replace／insertと共有した。正規の不変条件エラーに書込み競合を追加し、契約の版を維持した。現状一覧に現行の適用先を反映し、以前のグラフ単体の変更と検証は前節に保持した。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-candidate-fact-batch-restore-checkpoint.raw.zip) は16 entry、155,747 bytes、SHA256 `9ea82109765e435445c8a1b2c9acd32daf290b4e1403f604873755c7ac607c89`。各entryの長さとSHA256を再照合した。旧履歴2,873,659 bytesのSHA256 `cd8baeca3ea14c2e008ede07f5456329cc30a118ccc7727d142eb71b93081ddf` をprefixとして保持した。
