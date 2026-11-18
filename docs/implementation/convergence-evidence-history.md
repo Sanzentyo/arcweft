@@ -18793,3 +18793,14 @@ Matchの分岐とChoiceの入れ子パスを、準備済みの式が持つ情報
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は3回とも終了101。公開入力はlibrary **394エラー・25警告**、lib test **1,276エラー・37警告**。一次診断は1,320件から1,312件に減少。パスと型名表記を正規化したヘッダの組を比較すると新種0件、消滅4種。残存診断の出現回数の差も原本に保持した。Semaのfmtと構造gateは終了0、blocking違反0件。回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,800,943 bytesで、約300 GBを目安とするcleanは未実行。Generic Matchは受入・公開済み。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-alias-binding.raw.zip) は29 entry、396,686 bytes、SHA256 `c1970b3890fcaf69abb401e5a563fa7326a04962236ef2f43b1c66c3334c6992`。各entryの長さとSHA256を再照合した。旧履歴2,916,781 bytesのSHA256 `0297d746cd2e3663d858ea64397748bd15ed97b2f4bfec07aacdb014e070c484` をprefixとして保持した。
+
+<a id="prepared-binding-effects"></a>
+## 2026-11-18 — 束縛の省略作用を準備済み型から補完する
+
+基点 `f316c664aeb9303880d9c2b86dc16a6f71940fdd`。Source `d5f8a748be1dca0bbdf3c90e9ef3eeecb8efef19` を既存mainへcommitし、非force push後にリモートのfull SHAと4入力のblobを照合した。
+
+確定型と準備済み型は同じ型構造の走査で省略作用行を補完する。準備済み型にある作用項は元の参照を引き継ぎ、明示した作用行と述語を保持する。ローカル型・パターン型の更新では、補完した型と更新値の完全一致を確かめ、全件の検証後に反映する。初期化式を解析する際は注釈を元の式のスコープで準備する。入れ子の省略行への作用項の移送、明示項の差し替え拒否、作業予算での停止を回帰に追加した。初期化式の最終束縛判定と型付きパターンの一般の互換性判定には準備済み型と確定型の境界の移行が残る。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。公開入力はlibrary **391エラー・25警告**、lib test **1,273エラー・37警告**。前回公開入力から一次診断3件が消滅し、追加0件。Semaのfmtと構造gateは終了0、blocking違反0件。回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,790,695 bytesで、約300 GBを目安とするcleanは未実行。Generic Matchは受入・公開済み。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-binding-effects.raw.zip) は23 entry、270,260 bytes、SHA256 `601e4609359d1ff1194f6385569e6c384ec93703d3d13b0b48598b2c166f6cad`。各entryの長さとSHA256を再照合した。旧履歴2,918,966 bytesのSHA256 `fff0aca0b49da83124a20c5f842dc84037f3531a70982f1aac9e2ef2d50b7265` をprefixとして保持した。
