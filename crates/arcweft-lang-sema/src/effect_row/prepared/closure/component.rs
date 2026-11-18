@@ -92,8 +92,13 @@ fn compile_relation<C: DecisionControl>(
                 work,
             )?,
             ResidualNode::ForAllFiniteRows { scope, body } => {
-                let scoped = relation_scope(&mut scopes, graph, layout, *scope, work)?;
-                values[body.index()].forall(&scoped.compiler.formals(work)?, work)?
+                let body = &values[body.index()];
+                if scope.parameters(graph).is_empty() {
+                    work.copy_decision(body)?
+                } else {
+                    let scoped = relation_scope(&mut scopes, graph, layout, *scope, work)?;
+                    body.forall(&scoped.compiler.formals(work)?, work)?
+                }
             }
             ResidualNode::SourcePredicate(source) => {
                 let scoped = relation_scope(&mut scopes, graph, layout, source.scope(), work)?;

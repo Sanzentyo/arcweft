@@ -32,7 +32,7 @@ fn freeze(graph: &PreparedEffectGraph) -> Arc<ScopedEffectCompletion> {
 }
 
 fn publish(graph: &mut PreparedEffectGraph, binding: &PreparedEffectScopedBinding) {
-    for constraint in &binding.constraints {
+    for constraint in std::iter::once(&binding.principal).chain(&binding.agreements) {
         let obligation = &constraint.obligation;
         graph
             .add_scoped_obligation(
@@ -78,7 +78,7 @@ fn a_source_without_outputs_keeps_its_principal_condition_as_a_candidate_fact() 
             .unwrap();
         let binding = graph.bind_original_scoped(&source, &mut budget()).unwrap();
         assert!(Arc::ptr_eq(&binding.relation.relation.completion, &source));
-        assert_eq!(binding.constraints.len(), 1);
+        assert!(binding.agreements.is_empty());
         assert!(graph.relation.functions.is_empty());
         // Candidate facts have not constrained a sibling or the live graph.
         assert!(graph.relation.obligations.is_empty());
@@ -90,6 +90,54 @@ fn a_source_without_outputs_keeps_its_principal_condition_as_a_candidate_fact() 
             Err(error) => panic!("unexpected binding result: {error:?}"),
         }
     }
+}
+
+#[test]
+fn freezing_an_input_only_relation_retains_its_original_constraint_once() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let future = unknown(&mut graph, true, vec![]);
+    let value = graph
+        .unknown_application(&future, vec![], &mut work)
+        .unwrap();
+    let expected =
+        EffectRow::closed(crate::effects::EffectSet::from_labels(["log.write"]).unwrap());
+    let condition = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            value,
+            PreparedEffectRow::Canonical(expected.clone()),
+            &mut work,
+        )
+        .unwrap();
+    let constraint = graph
+        .read()
+        .scoped_constraint(&[], &truth(), &condition, &mut work)
+        .unwrap();
+    let original = graph
+        .read()
+        .freeze_scoped(&[], &[], &[&constraint], &mut work)
+        .unwrap();
+    let bound = graph
+        .bind_original_scoped(&original, &mut work)
+        .unwrap()
+        .freeze(graph.read(), &mut work)
+        .unwrap();
+
+    let [retained] = bound.definitions().obligations.as_slice() else {
+        panic!("the original obligation is retained once");
+    };
+    assert!(Arc::ptr_eq(retained, &constraint.obligation));
+    assert!(
+        bound
+            .close_original(graph.read(), &[], &[], &[(&future, &expected)], &mut work)
+            .is_ok()
+    );
+    let empty = EffectRow::closed(crate::effects::EffectSet::new());
+    assert!(matches!(
+        bound.close_original(graph.read(), &[], &[], &[(&future, &empty)], &mut work),
+        Err(PreparedEffectFailure::Unsatisfiable)
+    ));
 }
 
 #[test]
@@ -121,9 +169,9 @@ fn every_declared_argument_is_quantified_even_when_the_source_never_applies_it()
     let binding = graph
         .bind_original_scoped(&freeze(&graph), &mut budget())
         .unwrap();
-    assert_eq!(binding.constraints.len(), 2);
+    assert_eq!(binding.agreements.len(), 1);
     assert_eq!(
-        binding.constraints[1].obligation.parameters.as_ref(),
+        binding.agreements[0].obligation.parameters.as_ref(),
         &parameters
     );
     publish(&mut graph, &binding);

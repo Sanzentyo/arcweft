@@ -11,7 +11,8 @@ mod tests;
 #[derive(Debug)]
 pub(crate) struct PreparedEffectScopedBinding {
     relation: PreparedEffectImportedRelation,
-    constraints: Box<[PreparedEffectScopedConstraint]>,
+    principal: PreparedEffectScopedConstraint,
+    agreements: Box<[PreparedEffectScopedConstraint]>,
 }
 
 /// The source definitions with its local functions tied to the conditional
@@ -58,7 +59,12 @@ impl PreparedEffectScopedBinding {
         self.relation.relation.validate(graph, control)?;
         let original = &self.relation.relation.completion;
         let mut constraints = Vec::new();
-        for constraint in &self.constraints {
+        // The snapshot already contains the entire original relation. With no
+        // local functions or choices, its principal predicate is that same
+        // relation on the original inputs, including all source obligations.
+        let principal = (!original.program.lower.is_empty() || !original.graph.choices.is_empty())
+            .then_some(&self.principal);
+        for constraint in principal.into_iter().chain(&self.agreements) {
             control
                 .charge(DecisionWork::Node)
                 .map_err(PreparedEffectFailure::Control)?;
@@ -149,17 +155,17 @@ impl PreparedEffectGraph {
             inputs.push((future, future));
         }
         let relation = self.import_scoped_relation(completion, &inputs, control)?;
-        let principal = self.imported_principal(&relation, control)?;
-        let mut constraints = Vec::new();
+        let guard = self.imported_principal(&relation, control)?;
         control
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
-        constraints.push(self.read().scoped_constraint(
+        let principal = self.read().scoped_constraint(
             &[],
             &PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
-            &principal,
+            &guard,
             control,
-        )?);
+        )?;
+        let mut agreements = Vec::new();
         for local in locals {
             let mut parameters = Vec::new();
             let mut arguments = Vec::new();
@@ -203,7 +209,7 @@ impl PreparedEffectGraph {
             // Γ inferred from occurrences. Its formal keys may name captured
             // inference parameters; they are quantified arguments here, never
             // ambient raw inference row inputs admitted by scoped_constraint.
-            constraints.push(PreparedEffectScopedConstraint {
+            agreements.push(PreparedEffectScopedConstraint {
                 owner: relation.owner.clone(),
                 obligation: Arc::new(ScopedObligation {
                     parameters: parameters.into_boxed_slice(),
@@ -214,7 +220,8 @@ impl PreparedEffectGraph {
         }
         Ok(PreparedEffectScopedBinding {
             relation,
-            constraints: constraints.into_boxed_slice(),
+            principal,
+            agreements: agreements.into_boxed_slice(),
         })
     }
 }
