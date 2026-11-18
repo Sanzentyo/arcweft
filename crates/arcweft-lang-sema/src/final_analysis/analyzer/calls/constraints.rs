@@ -43,7 +43,7 @@ use crate::{
             MaterializedSourceRequest, PreparedConstraintSourceProjection,
             PreparedSourceAlternative, PreparedSourceConstraint, ProjectedExpectedHint,
             SourceError, SourcePhase, SourceProbeOutcome, SourceProbeResult, TypeConstraintAbort,
-            TypeConstraintFailure, TypeConstraintFailureInvariant,
+            TypeConstraintError, TypeConstraintFailure, TypeConstraintFailureInvariant,
             TypeConstraintInitializationFailure, TypeConstraintInvariant,
             TypeConstraintProjectionClosure,
         },
@@ -927,8 +927,18 @@ impl AnalyzerCallObservedSource {
         }
     }
 
-    fn actual_type(&self) -> Option<&TypeKind> {
-        self.actual.as_ref().map(|value| value.actual())
+    fn canonical_materialized_type<C: TypeProjectionControl<Error = TypeConstraintError>>(
+        &self,
+        request: &MaterializedSourceRequest<'_, AnalyzerCallConstraintDomain>,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        let actual = self
+            .actual
+            .as_deref()
+            .ok_or(TypeConstraintInvariant::SourceProtocol(
+                crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+            ))?;
+        request.canonicalize_observed_type(actual, control)
     }
 
     fn child(
@@ -947,16 +957,22 @@ impl AnalyzerCallObservedSource {
     }
 }
 
-fn validate_materialized_source_request(
+fn validate_materialized_source_request<C: TypeProjectionControl<Error = TypeConstraintError>>(
     request: &MaterializedSourceRequest<'_, AnalyzerCallConstraintDomain>,
     checked: &AnalyzerCallObservedSource,
-) -> Result<(), TypeConstraintInvariant> {
-    validate_materialized_source_value(request, checked.actual_type(), &checked.evidence)
+    control: &mut C,
+) -> Result<(), TypeConstraintError> {
+    let actual = checked.canonical_materialized_type(request, control)?;
+    Ok(validate_materialized_source_value(
+        request,
+        &actual,
+        &checked.evidence,
+    )?)
 }
 
 fn validate_materialized_source_value(
     request: &MaterializedSourceRequest<'_, AnalyzerCallConstraintDomain>,
-    actual: Option<&TypeKind>,
+    actual: &TypeKind,
     evidence: &ObservedSemanticValueEvidence,
 ) -> Result<(), TypeConstraintInvariant> {
     let source = *request.source();
@@ -965,11 +981,6 @@ fn validate_materialized_source_value(
             crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
         ));
     }
-    let Some(actual) = actual else {
-        return Err(TypeConstraintInvariant::SourceProtocol(
-            crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
-        ));
-    };
     if actual != request.actual() || !request.source_projection().matches_actual(actual) {
         return Err(TypeConstraintInvariant::Projection(
             crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
@@ -989,6 +1000,25 @@ fn validate_materialized_source_value(
         ));
     }
     Ok(())
+}
+
+fn materialized_source_failure(
+    source: AnalyzerCallConstraintSource,
+    error: TypeConstraintError,
+) -> crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain> {
+    let invariant = match error {
+        TypeConstraintError::Abort(abort) => {
+            return crate::callable::SourceCallbackFailure::Abort(abort);
+        }
+        TypeConstraintError::Invariant(invariant) => invariant,
+        TypeConstraintError::Rejected(rejected) => TypeConstraintInvariant::Projection(
+            crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(rejected),
+        ),
+    };
+    crate::callable::SourceCallbackFailure::invariant(AnalyzerCallClientInvariant::constraint(
+        source,
+        CallConstraintInvariant::Lower(invariant),
+    ))
 }
 
 /// A source value that was already checked while the callee or a
@@ -1284,7 +1314,7 @@ impl<'a, 'project, 'catalog, 'control>
     fn retain_physical_observed_type(
         &mut self,
         source_id: AnalyzerCallConstraintSourceId,
-        actual: &TypeKind,
+        actual: &TypeKind<PreparedEffects>,
     ) -> Result<(), crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>> {
         let source = source_id.local();
         let Some(physical) = source.physical_argument() else {
@@ -2700,8 +2730,11 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             }
                         })?;
                     let owner = specialization.owner();
+                    let observed_type = observed
+                        .canonical_materialized_type(&request, work)
+                        .map_err(|error| materialized_source_failure(source, error))?;
                     if source.expression_owner() != Some(owner)
-                        || observed.actual_type() != Some(specialization.source_type())
+                        || &observed_type != specialization.source_type()
                     {
                         return Err(crate::callable::SourceCallbackFailure::invariant(
                             AnalyzerCallClientInvariant::constraint(
@@ -2752,11 +2785,14 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 })?;
                 validate_materialized_source_value(
                     &request,
-                    Some(&actual),
+                    &actual,
                     &ObservedSemanticValueEvidence::NoVariantCase,
                 )
+                .map_err(TypeConstraintError::from)
             } else {
-                let expected = request.expected();
+                let expected = request
+                    .prepare_expected(work)
+                    .map_err(|error| materialized_source_failure(source, error))?;
                 let source_admission = request.alternative().and_then(|alternative| {
                     application_context
                         .map_or(&self.source_admissions, |recipe| {
@@ -2767,7 +2803,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 });
                 let checked = match self.check_source(
                     source_id,
-                    AnalyzerExpressionExpectation::from_complete(expected),
+                    AnalyzerExpressionExpectation::from_complete(expected.as_ref()),
                     source_admission.as_ref(),
                     application_context,
                     SourcePhase::Materialize,
@@ -2794,16 +2830,9 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         return Err(crate::callable::SourceCallbackFailure::invariant(invariant));
                     }
                 };
-                validate_materialized_source_request(&request, &checked)
+                validate_materialized_source_request(&request, &checked, work)
             };
-            if let Err(invariant) = validation {
-                return Err(crate::callable::SourceCallbackFailure::invariant(
-                    AnalyzerCallClientInvariant::constraint(
-                        source,
-                        CallConstraintInvariant::Lower(invariant),
-                    ),
-                ));
-            }
+            validation.map_err(|error| materialized_source_failure(source, error))?;
         }
         Ok(MaterializationOutcome::Sealed(
             AnalyzerCallPreparedSealedBranch { nested_calls },
@@ -7048,8 +7077,10 @@ mod tests {
                 &cancellation,
             )
             .into_parts();
+            let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
             let mut transaction = TypeConstraintTransaction::initialize_fixture(
                 &mut context,
+                &mut graph,
                 CallableConstraintApplication::Call(owner),
                 parameters,
                 None,
@@ -7073,7 +7104,7 @@ mod tests {
                 )
                 .expect("source probe");
             let mut probe = transaction
-                .next_probe(&mut context)
+                .next_probe(&mut context, &mut graph)
                 .expect("project source")
                 .expect("one source");
             let contribution = probe
@@ -7097,23 +7128,32 @@ mod tests {
             transaction
                 .submit_probe(
                     &mut context,
+                    &mut graph,
                     probe.input(),
                     ProbeSubmission::Accepted(contribution.close_preparation(preparation)),
                 )
                 .expect("admitted observation");
             assert!(
                 transaction
-                    .next_probe(&mut context)
+                    .next_probe(&mut context, &mut graph)
                     .expect("close probe")
                     .is_none()
             );
             transaction
-                .next_materialization_ticket(&mut context)
+                .next_materialization_ticket(&mut context, &mut graph)
                 .expect("completed component")
                 .expect("one materialization")
         };
 
         let ticket = materialization(source);
+        let (mut control, _) = ConstraintTestSetup::<
+            LocalConstraintAccounting<'_>,
+            AnalyzerCallConstraintDomain,
+        >::new(
+            TypeConstraintLimits::new(1_024, 512, 128, 64),
+            &cancellation,
+        )
+        .into_parts();
         let request = ticket.requests().next().expect("completed source request");
         let checked = AnalyzerCallObservedSource {
             actual: Some(AnalyzerObservedSourceValue::fixture(
@@ -7132,7 +7172,7 @@ mod tests {
                 .is_some()
         );
         assert_eq!(
-            validate_materialized_source_request(&request, &checked),
+            validate_materialized_source_request(&request, &checked, &mut control),
             Ok(())
         );
 
@@ -7146,10 +7186,12 @@ mod tests {
             prepared_children: Vec::new(),
         };
         assert!(matches!(
-            validate_materialized_source_request(&request, &wrong_actual),
-            Err(TypeConstraintInvariant::Projection(
-                crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
-                    crate::types::constraints::TypeConstraintRejection::Mismatch,
+            validate_materialized_source_request(&request, &wrong_actual, &mut control),
+            Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::Projection(
+                    crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
+                        crate::types::constraints::TypeConstraintRejection::Mismatch,
+                    )
                 )
             ))
         ));
@@ -7168,10 +7210,10 @@ mod tests {
             prepared_children: Vec::new(),
         };
         assert!(matches!(
-            validate_materialized_source_request(&request, &wrong_evidence),
-            Err(TypeConstraintInvariant::SourceProtocol(
+            validate_materialized_source_request(&request, &wrong_evidence, &mut control),
+            Err(TypeConstraintError::Invariant(TypeConstraintInvariant::SourceProtocol(
                 crate::types::constraints::TypeConstraintSourceProtocolInvariant::InvalidEvidence
-            ))
+            )))
         ));
 
         let wrong_branch_ticket = materialization(AnalyzerCallConstraintSource::BaseInstantiation);
@@ -7180,7 +7222,19 @@ mod tests {
             .next()
             .expect("source request");
         assert!(matches!(
-            validate_materialized_source_request(&wrong_branch, &checked),
+            validate_materialized_source_request(&wrong_branch, &checked, &mut control),
+            Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::SourceProtocol(
+                    crate::types::constraints::TypeConstraintSourceProtocolInvariant::WrongSource
+                )
+            ))
+        ));
+        assert!(matches!(
+            validate_materialized_source_value(
+                &wrong_branch,
+                &TypeKind::I32,
+                &ObservedSemanticValueEvidence::NoVariantCase,
+            ),
             Err(TypeConstraintInvariant::SourceProtocol(
                 crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome
             ))
@@ -7414,7 +7468,13 @@ mod tests {
                     None,
                 )
                 .unwrap_or_else(|_| panic!("evaluate the real source expression"));
-            assert_eq!(observed.actual_type(), Some(&TypeKind::I64));
+            assert_eq!(
+                observed
+                    .actual
+                    .as_deref()
+                    .map(AnalyzerObservedSourceValue::actual),
+                Some(&TypeKind::I64)
+            );
             let original = client
                 .analyzer
                 .facts

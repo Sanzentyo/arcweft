@@ -10,7 +10,8 @@ use super::{
 };
 use crate::types::{
     ArrayLength, GenericBinder, GenericConstReference, GenericEffectReference, GenericScope,
-    GenericTypeReference, TypeInstantiationError, TypeKind, TypeProjectionError,
+    GenericTypeReference, TypeInstantiationError, TypeKind, TypeProjectionControl,
+    TypeProjectionError,
 };
 
 mod prepared;
@@ -69,14 +70,14 @@ impl ConstraintLexicalScope {
         })
     }
 
-    pub(super) fn type_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    pub(super) fn type_reference<C: TypeProjectionControl>(
         &self,
         original: &Self,
         source: &GenericScope,
         target: &GenericScope,
         reference: &GenericTypeReference,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<GenericTypeReference, TypeProjectionError<TypeConstraintError>> {
+        context: &mut C,
+    ) -> Result<GenericTypeReference, TypeProjectionError<C::Error>> {
         match reference {
             GenericTypeReference::Bound(bound) => {
                 source.bound_type(bound.depth(), bound.slot())?;
@@ -89,14 +90,14 @@ impl ConstraintLexicalScope {
         }
     }
 
-    pub(super) fn const_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    pub(super) fn const_reference<C: TypeProjectionControl>(
         &self,
         original: &Self,
         source: &GenericScope,
         target: &GenericScope,
         reference: &GenericConstReference,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<GenericConstReference, TypeProjectionError<TypeConstraintError>> {
+        context: &mut C,
+    ) -> Result<GenericConstReference, TypeProjectionError<C::Error>> {
         match reference {
             GenericConstReference::Bound(bound) => {
                 source.bound_const(bound.depth(), bound.slot())?;
@@ -109,14 +110,14 @@ impl ConstraintLexicalScope {
         }
     }
 
-    pub(super) fn effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    pub(super) fn effect_reference<C: TypeProjectionControl>(
         &self,
         original: &Self,
         source: &GenericScope,
         target: &GenericScope,
         reference: &GenericEffectReference,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<GenericEffectReference, TypeProjectionError<TypeConstraintError>> {
+        context: &mut C,
+    ) -> Result<GenericEffectReference, TypeProjectionError<C::Error>> {
         match reference {
             GenericEffectReference::Bound(bound) => {
                 source.bound_effect(bound.depth(), bound.slot())?;
@@ -227,13 +228,13 @@ impl ConstraintLexicalScope {
         Ok(())
     }
 
-    fn depth<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn depth<C: TypeProjectionControl>(
         &self,
         original: &Self,
         occurrence: &GenericScope,
         depth: u32,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<u32, TypeProjectionError<TypeConstraintError>> {
+        context: &mut C,
+    ) -> Result<u32, TypeProjectionError<C::Error>> {
         let nested = occurrence
             .binders()
             .len()
@@ -286,12 +287,12 @@ impl ConstraintLexicalScope {
         Err(TypeInstantiationError::SpecializationScopeMismatch.into())
     }
 
-    pub(super) fn transport_canonical_type<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    pub(super) fn transport_canonical_type<C: TypeProjectionControl>(
         &self,
         original: &Self,
         ty: &TypeKind,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<TypeKind, TypeProjectionError<TypeConstraintError>> {
+        context: &mut C,
+    ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
         super::solution::map_term_with_control(
             ty,
             original.shape(),

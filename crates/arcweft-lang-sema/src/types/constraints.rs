@@ -427,6 +427,17 @@ pub(crate) enum TypeConstraintError {
     Invariant(TypeConstraintInvariant),
 }
 
+impl From<super::TypeProjectionError<TypeConstraintError>> for TypeConstraintError {
+    fn from(error: super::TypeProjectionError<TypeConstraintError>) -> Self {
+        match error {
+            super::TypeProjectionError::Instantiation(error) => {
+                TypeConstraintInvariant::Instantiation(error).into()
+            }
+            super::TypeProjectionError::Control(error) => error,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum TypeConstraintInitializationFailure {
     #[error("constraint initialization aborted: {0}")]

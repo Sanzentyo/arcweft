@@ -5,7 +5,7 @@
 //! evidence; the lower owner derives every checked projection and expected
 //! type from the prepared source constraint.
 
-use crate::types::{CanonicalEffects, PreparedEffects, TypeEffectDomain};
+use crate::types::{CanonicalEffects, PreparedEffects, TypeEffectDomain, TypeProjectionControl};
 
 use super::ConstraintSourceId;
 
@@ -870,8 +870,25 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
         self.source.source_ref()
     }
 
-    pub(crate) fn expected(&self) -> Option<&'h TypeKind<PreparedEffects>> {
+    pub(crate) fn expected(&self) -> Option<&'h TypeKind> {
         self.source.final_expected()
+    }
+
+    pub(crate) fn prepare_expected<C: TypeProjectionControl<Error = TypeConstraintError>>(
+        &self,
+        control: &mut C,
+    ) -> Result<Option<TypeKind<PreparedEffects>>, TypeConstraintError> {
+        self.source.prepare_expected(control)
+    }
+
+    pub(crate) fn canonicalize_observed_type<
+        C: TypeProjectionControl<Error = TypeConstraintError>,
+    >(
+        &self,
+        observed: &dyn ConstraintSourceValueOwner<D>,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        self.source.canonicalize_observed_type(observed, control)
     }
 
     pub(crate) const fn alternative(&self) -> Option<D::AlternativeIndex> {
@@ -882,13 +899,11 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
         self.source.selection().evidence()
     }
 
-    pub(crate) fn actual(&self) -> &'h TypeKind<PreparedEffects> {
+    pub(crate) fn actual(&self) -> &'h TypeKind {
         self.source.actual()
     }
 
-    pub(crate) const fn source_projection(
-        &self,
-    ) -> &'h CheckedConstraintSourceProjection<PreparedEffects> {
+    pub(crate) const fn source_projection(&self) -> &'h CheckedConstraintSourceProjection {
         self.source.source_projection()
     }
 

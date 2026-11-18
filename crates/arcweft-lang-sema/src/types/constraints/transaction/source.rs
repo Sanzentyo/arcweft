@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, OnceLock};
 
-use crate::types::TypeKind;
+use crate::types::{PreparedEffects, TypeKind, TypeProjectionControl};
 
 use super::super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::super::normalization::{ConstraintClosedEffects, close_type_operand};
@@ -13,11 +13,12 @@ use super::{ConstraintInferenceBranch, ConstraintOperand};
 mod canonical_tests;
 #[cfg(test)]
 mod tests;
+use super::super::{ConstraintSourceValueOwner, OriginalProducerContext};
 use super::{
     CheckedConstraintSourceProjection, ConstraintDomain, ConstraintResultProjection,
     ConstraintSourceId, PreparedConstraintSourceProjection, PreparedSourceOrdinal,
-    StoredSourceSelection, TypeConstraintError, TypeConstraintSourceProtocolInvariant,
-    protocol_error,
+    StoredSourceSelection, TypeConstraintError, TypeConstraintInvariant,
+    TypeConstraintSourceProtocolInvariant, protocol_error,
 };
 
 /// The original branch allocation also owns its closed source preparation.
@@ -108,6 +109,7 @@ pub(in crate::types::constraints) struct ActiveConstraintProbe<D: ConstraintDoma
 pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
     completion: Arc<ConstraintClosedEffects<D>>,
     source: ConstraintSourceId<D::Source>,
+    original: OriginalProducerContext,
     source_ordinal: PreparedSourceOrdinal,
     branch: Arc<SourceProbeObservation<D>>,
     selection: ClosedSourceSelection<D>,
@@ -141,6 +143,7 @@ impl<D: ConstraintDomain> ClosedConstraintSourceTrace<D> {
             if self.domain_application(left.source.application())
                 != other.domain_application(right.source.application())
                 || left.source.local() != right.source.local()
+                || left.original != right.original
                 || left.source_ordinal.ordinal != right.source_ordinal.ordinal
                 || left.branch != right.branch
                 || !self.same_result_origin(left, other, right)
@@ -302,6 +305,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
                 TypeConstraintSourceProtocolInvariant::Outcome,
             ));
         }
+        let original = self.actual.source_original(self.source)?.clone();
         let projected = close_type_operand(self.actual.view(), path, effects, graph, context)?;
         let prepared_projection = CheckedConstraintSourceProjection::derive(
             self.prepared_source_projection,
@@ -349,6 +353,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
         Ok(ClosedConstraintProbe {
             completion: Arc::clone(effects),
             source: self.source,
+            original,
             source_ordinal: self.source_ordinal,
             branch: self.branch,
             selection,
@@ -360,6 +365,64 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
 }
 
 impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
+    /// The expression checker operates in the source's Γ. Move the closed
+    /// requirement back to those frames before embedding it as prepared rows.
+    pub(in crate::types::constraints) fn prepare_expected<
+        C: TypeProjectionControl<Error = TypeConstraintError>,
+    >(
+        &self,
+        control: &mut C,
+    ) -> Result<Option<TypeKind<PreparedEffects>>, TypeConstraintError> {
+        let Some(expected) = self.expected_operand() else {
+            return Ok(None);
+        };
+        let gamma = self.original.gamma();
+        if gamma == expected.scope() {
+            return Ok(Some(
+                expected.value().prepare_effects(gamma.shape(), control)?,
+            ));
+        }
+        let value = gamma.transport_canonical_type(expected.scope(), expected.value(), control)?;
+        Ok(Some(value.prepare_effects(gamma.shape(), control)?))
+    }
+
+    /// Rechecks carry their exact source and original Γ. Resolve any retained
+    /// effect terms through the frozen principal, then compare in the frames
+    /// of the completed source. This operation cannot add terms to the graph.
+    pub(in crate::types::constraints) fn canonicalize_observed_type<
+        C: TypeProjectionControl<Error = TypeConstraintError>,
+    >(
+        &self,
+        observed: &dyn ConstraintSourceValueOwner<D>,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        control.check()?;
+        if observed.source() != self.source {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::WrongSource,
+            ));
+        }
+        if observed.probe_receipt().is_some() {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::WrongPhase,
+            ));
+        }
+        if observed.original_context() != &self.original {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
+        }
+        let gamma = self.original.gamma();
+        let canonical =
+            self.completion
+                .canonicalize(observed.value_type(), gamma.shape(), control)?;
+        if self.actual.scope() == gamma {
+            return Ok(canonical);
+        }
+        Ok(self
+            .actual
+            .scope()
+            .transport_canonical_type(gamma, &canonical, control)?)
+    }
+
     pub(in crate::types::constraints::transaction) fn require_completion(
         &self,
         owner: &Arc<ConstraintClosedEffects<D>>,
@@ -400,6 +463,7 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
 
     fn same_observation_except_origin(&self, other: &Self) -> bool {
         self.source.local() == other.source.local()
+            && self.original == other.original
             && self.source_ordinal.ordinal == other.source_ordinal.ordinal
             && self.branch == other.branch
             && self.selection == other.selection
@@ -540,6 +604,7 @@ impl<D: ConstraintDomain> Clone for ClosedConstraintProbe<D> {
         Self {
             completion: Arc::clone(&self.completion),
             source: self.source,
+            original: self.original.clone(),
             source_ordinal: self.source_ordinal,
             branch: Arc::clone(&self.branch),
             selection: self.selection.clone(),

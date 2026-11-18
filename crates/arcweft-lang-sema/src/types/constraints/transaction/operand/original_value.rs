@@ -203,9 +203,8 @@ impl<'graph> ConstraintEffectPhase<'graph> {
             original,
             context,
         };
-        let value = value
-            .project_structure(original.scope(), target.shape(), 1, &mut projection)
-            .map_err(original_projection_error)?;
+        let value =
+            value.project_structure(original.scope(), target.shape(), 1, &mut projection)?;
         projection.edit.commit().map_err(|error| {
             TypeConstraintError::Invariant(
                 crate::types::constraints::TypeConstraintInvariant::PreparedEffect(
@@ -332,17 +331,6 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain>
                 },
             )
             .map_err(TypeProjectionError::from)
-    }
-}
-
-fn original_projection_error(
-    error: TypeProjectionError<TypeConstraintError>,
-) -> TypeConstraintError {
-    match error {
-        TypeProjectionError::Control(error) => error,
-        TypeProjectionError::Instantiation(error) => {
-            crate::types::constraints::TypeConstraintInvariant::Instantiation(error).into()
-        }
     }
 }
 

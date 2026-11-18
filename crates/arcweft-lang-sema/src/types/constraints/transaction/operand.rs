@@ -343,6 +343,22 @@ impl<D: ConstraintDomain> ConstraintOperand<D, TypeKind> {
 }
 
 impl<D: ConstraintDomain> ConstraintOperand<D> {
+    pub(super) fn source_original(
+        &self,
+        source: super::ConstraintSourceId<D::Source>,
+    ) -> Result<&OriginalProducerContext, TypeConstraintError> {
+        match self.origin.as_ref() {
+            ConstraintOperandOrigin::Source {
+                original, receipt, ..
+            } if receipt.source() == source => Ok(original),
+            #[cfg(test)]
+            ConstraintOperandOrigin::Original(original) => Ok(original),
+            _ => Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::WrongSource,
+            )),
+        }
+    }
+
     /// Open once while this projection still owns a live graph edit. Final
     /// readers retain this exact value and its real occurrence frames.
     pub(in crate::types::constraints::transaction) fn open_template<A: TypeConstraintAccounting>(

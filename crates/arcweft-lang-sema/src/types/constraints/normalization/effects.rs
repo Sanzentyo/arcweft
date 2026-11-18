@@ -15,7 +15,7 @@ use crate::effect_row::prepared::{
     PreparedEffectScopedConstraint, PreparedEffectUnknownRef, PrincipalEffectClosure,
 };
 use crate::effect_row::{EffectConstraintEnvironment, EffectPredicate, EffectRow};
-use crate::types::{GenericEffectReference, PreparedEffects};
+use crate::types::{GenericEffectReference, PreparedEffects, TypeProjectionControl};
 
 mod scoped;
 
@@ -388,11 +388,13 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         self.substitution.get(key).map(|binding| &binding.value)
     }
 
-    pub(in crate::types::constraints) fn canonicalize<A: TypeConstraintAccounting>(
+    pub(in crate::types::constraints) fn canonicalize<
+        C: TypeProjectionControl<Error = TypeConstraintError>,
+    >(
         &self,
         ty: &crate::types::TypeKind<PreparedEffects>,
         scope: &crate::types::GenericScope,
-        context: &mut TypeConstraintContext<'_, A, D>,
+        context: &mut C,
     ) -> Result<crate::types::TypeKind, TypeConstraintError> {
         use crate::types::{PreparedTypeEffectProjectionFailure, TypeProjectionError};
         ty.project_canonical_effects(scope, &self.context.principal, context)

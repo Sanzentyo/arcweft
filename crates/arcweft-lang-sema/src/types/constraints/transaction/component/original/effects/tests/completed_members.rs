@@ -1,7 +1,10 @@
 use super::*;
 use crate::effect_row::prepared::{PreparedEffectPredicate, PreparedEffectUnknownEligibility};
 use crate::types::constraints::transaction::operand::ConstraintEffectPhase;
-use crate::types::constraints::{ConstraintAcceptance, TypeConstraintSourceProtocolInvariant};
+use crate::types::constraints::{
+    ConstraintAcceptance, ConstraintSourceReceipt, ConstraintSourceValueOwner,
+    MaterializedSourceRequest, OriginalProducerContext, TypeConstraintSourceProtocolInvariant,
+};
 use crate::types::{
     GenericBinder,
     constraints::transaction::{
@@ -46,6 +49,30 @@ fn function(row: PreparedEffectRow) -> TypeKind<PreparedEffects> {
         TypeKind::I64,
         row,
     )
+}
+
+struct MaterializationObservedValue {
+    source: ConstraintSourceId<()>,
+    original: OriginalProducerContext,
+    value: TypeKind<PreparedEffects>,
+}
+
+impl ConstraintSourceValueOwner<NoConstraintClient> for MaterializationObservedValue {
+    fn source(&self) -> ConstraintSourceId<()> {
+        self.source
+    }
+
+    fn original_context(&self) -> &OriginalProducerContext {
+        &self.original
+    }
+
+    fn probe_receipt(&self) -> Option<&ConstraintSourceReceipt<NoConstraintClient>> {
+        None
+    }
+
+    fn value_type(&self) -> &TypeKind<PreparedEffects> {
+        &self.value
+    }
 }
 
 fn materialize(
@@ -214,6 +241,7 @@ fn a_closed_member_contains_canonical_sources_and_keeps_original_c_unchanged() {
         false,
     );
     let path = path_mut(&mut component, member);
+    let original_producer = path.lineage.original.clone();
     let actual = operand(&actual, path, &mut graph, &mut context);
     let expected = operand(&expected, path, &mut graph, &mut context);
     let before_actual = actual.clone();
@@ -289,7 +317,26 @@ fn a_closed_member_contains_canonical_sources_and_keeps_original_c_unchanged() {
             input()
         )
     );
-    assert!(sources[0].final_expected().is_some());
+    let request = MaterializedSourceRequest::from_component(&solved.component, 0).unwrap();
+    let expected_row = EffectRow::open(
+        EffectSet::from_labels(["named.body", "future.actual", "allowed.extra"]).unwrap(),
+        input(),
+    );
+    assert_eq!(
+        request.prepare_expected(&mut context).unwrap(),
+        Some(function(PreparedEffectRow::Canonical(expected_row)))
+    );
+    let observed = MaterializationObservedValue {
+        source: *request.source(),
+        original: original_producer,
+        value: before_actual.value().clone(),
+    };
+    assert_eq!(
+        request
+            .canonicalize_observed_type(&observed, &mut context)
+            .unwrap(),
+        *request.actual()
+    );
     assert_eq!(
         solved.component.selected().projections()[0]
             .to_quantified_type()
