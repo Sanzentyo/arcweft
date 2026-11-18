@@ -51,6 +51,15 @@ pub(crate) trait ConstraintDomain: Sized + 'static {
         None
     }
 
+    /// The actual facts retained by this probe can query the original relation.
+    /// These types contribute reachability without contributing equations.
+    fn visit_probe_effect_types<'p, E>(
+        _preparation: &'p Self::ProbePreparation,
+        _visit: &mut impl FnMut(&'p TypeKind<PreparedEffects>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        Ok(())
+    }
+
     /// Select a prepared rule from source observation, before stable evidence
     /// is issued at completion.
     fn evidence_accepts(rule: &Self::EvidenceRule, observed: &Self::ObservedEvidence) -> bool;

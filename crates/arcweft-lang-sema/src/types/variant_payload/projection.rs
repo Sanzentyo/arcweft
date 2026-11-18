@@ -95,9 +95,9 @@ impl<D: TypeEffectDomain> VariantPayloadTypeShape<D> {
         }
     }
 
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<D>) -> Result<(), E>,
+    pub(crate) fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<D>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
             Self::Tuple(fields) => fields.iter().try_for_each(visitor),

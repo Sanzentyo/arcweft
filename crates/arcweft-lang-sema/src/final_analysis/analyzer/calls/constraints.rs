@@ -898,6 +898,13 @@ impl ConstraintDomain for AnalyzerCallConstraintDomain {
         preparation.probe_effect_reads()
     }
 
+    fn visit_probe_effect_types<'p, E>(
+        preparation: &'p Self::ProbePreparation,
+        visit: &mut impl FnMut(&'p TypeKind<PreparedEffects>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        preparation.visit_effect_types(visit)
+    }
+
     fn evidence_accepts(rule: &Self::EvidenceRule, checked: &Self::ObservedEvidence) -> bool {
         rule.accepts(checked)
     }

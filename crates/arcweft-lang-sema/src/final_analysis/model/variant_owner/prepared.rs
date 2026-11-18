@@ -250,11 +250,11 @@ impl<D: TypeEffectDomain> PreparedVariantOwnerSeed<D> {
         }))
     }
 
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<D>) -> Result<(), E>,
+    /// The enclosing expression or pattern already owns the variant type.
+    pub(crate) fn visit_payload_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<D>) -> Result<(), E>,
     ) -> Result<(), E> {
-        visitor(&self.ty())?;
         self.cases.iter().try_for_each(|case| {
             case.payload
                 .as_ref()

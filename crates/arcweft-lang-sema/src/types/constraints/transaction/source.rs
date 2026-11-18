@@ -297,11 +297,18 @@ pub(crate) enum ClosedSourceSelection<D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
-    pub(in crate::types::constraints::transaction) fn original_query_types(
-        &self,
-    ) -> impl Iterator<Item = &TypeKind<crate::types::PreparedEffects>> {
-        std::iter::once(self.actual.value())
-            .chain(self.value_expected.as_ref().map(ConstraintOperand::value))
+    pub(in crate::types::constraints::transaction) fn visit_original_effect_types<'a, E>(
+        &'a self,
+        visit: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visit(self.actual.value())?;
+        if let Some(expected) = &self.value_expected {
+            visit(expected.value())?;
+        }
+        if let Some(preparation) = self.branch.preparation() {
+            D::visit_probe_effect_types(preparation, visit)?;
+        }
+        Ok(())
     }
 
     pub(super) const fn source(&self) -> ConstraintSourceId<D::Source> {

@@ -24,10 +24,11 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             }
         }
         for source in &self.lineage.probe_trace {
-            for ty in source.original_query_types() {
+            source.visit_original_effect_types(&mut |ty| {
                 context.enter_node()?;
                 types.push(ty);
-            }
+                Ok::<_, TypeConstraintError>(())
+            })?;
         }
         for equation in &self.equations {
             context.enter_node()?;

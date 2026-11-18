@@ -134,9 +134,9 @@ impl PreparedTypedExpressionResult {
             .map(|specialization| &specialization.witness)
     }
 
-    pub(super) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
+    fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         visitor(self.source_type())?;
         if let Some(specialization) = &self.specialization {
@@ -192,6 +192,16 @@ impl PreparedExpressionResult {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
         };
         value.attach_function_use(owner, witness, control)
+    }
+
+    pub(super) fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Value(value) => value.visit_types(visitor),
+            Self::NonValue(_) | Self::Unavailable => Ok(()),
+        }
     }
 }
 
@@ -257,14 +267,11 @@ impl PreparedExpressionShell {
         self.result.source_value_type()
     }
 
-    fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
+    fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
-        if let PreparedExpressionResult::Value(value) = &self.result {
-            value.visit_types(visitor)?;
-        }
-        Ok(())
+        self.result.visit_types(visitor)
     }
 }
 
@@ -666,9 +673,9 @@ impl PreparedOwnerBoundExpression {
         }
     }
 
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
+    pub(crate) fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.shell.visit_types(visitor)?;
         match self.resolution() {
@@ -689,7 +696,6 @@ impl PreparedOwnerBoundExpression {
             }
             PreparedOwnerBoundResolution::PipeLeft(_) => Ok(()),
             PreparedOwnerBoundResolution::Try(tried) => {
-                tried.carrier().visit_types(visitor)?;
                 if let Some(boundary_type) = tried.boundary().boundary_type() {
                     visitor(boundary_type)?;
                 }
@@ -865,9 +871,9 @@ impl PreparedProjectNominal {
         self.nominal().declaration()
     }
 
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
+    pub(crate) fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         visitor(&self.ty)
     }
@@ -946,9 +952,9 @@ impl PreparedProjectFieldExpression {
         self.fields = fields;
         self
     }
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
+    pub(crate) fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.shell.visit_types(visitor)?;
         for field in &self.fields {
@@ -1742,38 +1748,32 @@ impl PreparedExpressionFact {
         }
     }
 
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
+    /// Visit the types that can still carry terms of the original effect graph.
+    pub(crate) fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::Resolved(value) => value.visit_types(visitor),
+            Self::Resolved(value) => value.result().visit_types(visitor),
             Self::OwnerBound(value) => value.visit_types(visitor),
             Self::CompileTimeScalar(value) => {
                 value.shell().visit_types(visitor)?;
                 value.original().visit_types(visitor)
             }
             Self::DialogueApplication(value) => {
-                value.target().visit_types(visitor)?;
-                if let Some(patch) = value.application_patch() {
-                    patch.visit_types(visitor)?;
-                }
+                value.shell().visit_types(visitor)?;
                 visitor(value.line_result())
             }
             Self::ContentApplication(value) => value.shell().visit_types(visitor),
             Self::Method(value) => value.shell().visit_types(visitor),
             Self::Entry(value) => value.shell().visit_types(visitor),
             Self::Variant(value) => {
-                if let Some(ty) = value.shell().value_type() {
-                    visitor(ty)?;
-                }
-                value.owner().visit_types(visitor)
+                value.shell().visit_types(visitor)?;
+                value.owner().visit_payload_types(visitor)
             }
             Self::ProjectField(value) => value.visit_types(visitor),
             Self::ProjectRecord(value) => {
-                if let Some(ty) = value.shell().value_type() {
-                    visitor(ty)?;
-                }
+                value.shell().visit_types(visitor)?;
                 value.nominal().visit_types(visitor)?;
                 for field in value.fields() {
                     visitor(field.field_type())?;
@@ -1781,9 +1781,7 @@ impl PreparedExpressionFact {
                 Ok(())
             }
             Self::ProjectNominalTypeValue(value) => {
-                if let Some(ty) = value.shell().value_type() {
-                    visitor(ty)?;
-                }
+                value.shell().visit_types(visitor)?;
                 value.nominal().visit_types(visitor)
             }
         }
@@ -1943,7 +1941,9 @@ impl PreparedRecordPatternOwner {
     pub(crate) fn variant_payload(
         payload: crate::types::VariantPayloadType<PreparedEffects>,
     ) -> Option<Self> {
-        let fields = payload.shape().record_fields()?;
+        let crate::types::VariantPayloadTypeShape::Record(fields) = payload.shape() else {
+            return None;
+        };
         let field_count = u32::try_from(fields.len()).ok()?;
         Some(Self::VariantPayload {
             payload,
@@ -2041,21 +2041,22 @@ impl PreparedPatternFact {
         }
     }
 
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
+    pub(crate) fn visit_types<'a, E>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
+        visitor(self.ty())?;
         match self {
-            Self::Resolved(value) => value.visit_types(visitor),
-            Self::TypedBinding(value) => visitor(value.ty()),
-            Self::Variant(value) => {
-                visitor(value.ty())?;
-                value.owner().visit_types(visitor)
-            }
+            Self::Resolved(_) | Self::TypedBinding(_) => Ok(()),
+            Self::Variant(value) => value.owner().visit_payload_types(visitor),
             Self::Record(value) => {
-                visitor(value.ty())?;
-                if let Some(nominal) = value.owner().project_nominal() {
-                    nominal.visit_types(visitor)?;
+                match value.owner() {
+                    PreparedRecordPatternOwner::Project(nominal) => nominal.visit_types(visitor)?,
+                    PreparedRecordPatternOwner::VariantPayload { payload, .. } => {
+                        visitor(payload.owner_type())?;
+                        payload.shape().visit_types(visitor)?;
+                    }
+                    PreparedRecordPatternOwner::Environment { .. } => {}
                 }
                 for field in value.fields() {
                     visitor(field.field_type())?;

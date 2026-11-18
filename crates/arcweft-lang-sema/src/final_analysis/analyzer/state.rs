@@ -425,6 +425,25 @@ impl CandidateSemanticProjection {
         self.data.probe_effect_reads.as_ref()
     }
 
+    pub(super) fn visit_effect_types<'p, E>(
+        &'p self,
+        visit: &mut impl FnMut(&'p TypeKind<crate::types::PreparedEffects>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let facts = &self.data.facts;
+        for ty in facts
+            .locals
+            .values()
+            .chain(facts.patterns.values())
+            .flatten()
+        {
+            visit(ty)?;
+        }
+        for fact in facts.expressions.values().flatten() {
+            fact.visit_types(visit)?;
+        }
+        Ok(())
+    }
+
     /// Absence, a projected deletion, and a retained expression are distinct.
     /// The borrowed fact is original preparation, not a closed type witness.
     pub(super) fn expression_update(

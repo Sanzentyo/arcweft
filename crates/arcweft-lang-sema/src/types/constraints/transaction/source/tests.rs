@@ -25,7 +25,10 @@ mod retained_preparation {
     use super::*;
     use crate::effect_row::{
         EffectPredicate,
-        prepared::{PreparedEffectDelta, PreparedEffectRow},
+        prepared::{
+            PreparedEffectDelta, PreparedEffectPredicate, PreparedEffectReadScope,
+            PreparedEffectRow,
+        },
     };
     use crate::types::constraints::{SourceProbeResult, TypeConstraintProjectionClosure};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -34,6 +37,8 @@ mod retained_preparation {
         value: u32,
         drops: Arc<AtomicUsize>,
         relation: Option<PreparedEffectDelta>,
+        reads: Option<PreparedEffectReadScope>,
+        query: Option<TypeKind<PreparedEffects>>,
     }
     impl Drop for Facts {
         fn drop(&mut self) {
@@ -55,6 +60,18 @@ mod retained_preparation {
         type Projection = ();
         type SourceErrorCause = ();
         type ClientInvariant = ();
+
+        fn probe_effect_reads(preparation: &Facts) -> Option<&PreparedEffectReadScope> {
+            preparation.reads.as_ref()
+        }
+
+        fn visit_probe_effect_types<'p, E>(
+            preparation: &'p Facts,
+            visit: &mut impl FnMut(&'p TypeKind<PreparedEffects>) -> Result<(), E>,
+        ) -> Result<(), E> {
+            preparation.query.as_ref().map_or(Ok(()), visit)
+        }
+
         fn evidence_accepts((): &(), (): &()) -> bool {
             true
         }
@@ -116,23 +133,34 @@ mod retained_preparation {
         let row = graph
             .application(&original_function, Vec::new(), &mut context)
             .unwrap();
+        let body = EffectRow::closed(EffectSet::from_labels(["probe.once"]).unwrap());
         graph
             .prepare_body(
                 &original_function,
-                PreparedEffectRow::Canonical(EffectRow::closed(
-                    EffectSet::from_labels(["probe.once"]).unwrap(),
-                )),
+                PreparedEffectRow::Canonical(body.clone()),
                 Vec::new(),
                 &mut context,
             )
             .unwrap();
         let relation = graph.extract_delta(&mut callback, &mut context).unwrap();
+        let reads = graph.read_scope([&relation], &mut context).unwrap();
         assert!(graph.read().retain_row(&row, &mut context).is_err());
+        // The actual argument and its expected type have no effect terms.
+        // A local or nested expression in its preparation can still query C.
+        let query = TypeKind::function_with_contract(
+            GenericBinder::EMPTY,
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            [],
+            TypeKind::I64,
+            row.clone(),
+        );
         let drops = Arc::new(AtomicUsize::new(0));
         let contribution = left.close_preparation(Facts {
             value: 913,
             drops: Arc::clone(&drops),
             relation: Some(relation),
+            reads: Some(reads),
+            query: Some(query),
         });
         transaction
             .submit_probe(
@@ -167,30 +195,44 @@ mod retained_preparation {
             )
             .unwrap();
         for path in &resumed.frontier {
-            let scoped = path
-                .prepare_effect_constraint(&mut graph, &mut context)
+            let (input, _) = context
+                .with_effect_reads(
+                    &mut graph,
+                    path.lineage.probe_effect_reads(),
+                    |context, graph| {
+                        let original = path.bind_original_path_effects(graph, context)?;
+                        let effects = ConstraintClosedEffects::for_path(
+                            path,
+                            &original,
+                            &[],
+                            graph,
+                            context,
+                        )?;
+                        let query = path.lineage.probe_trace[0]
+                            .branch
+                            .preparation()
+                            .unwrap()
+                            .query
+                            .as_ref()
+                            .unwrap();
+                        let projected =
+                            effects.canonicalize(query, path.lineage.scope.shape(), context)?;
+                        let TypeKind::Function { effects: row, .. } = projected else {
+                            panic!("expected a canonical function type");
+                        };
+                        assert_eq!(row, body);
+                        MaterializationInput::from_closed_original(
+                            path,
+                            path.root_id(),
+                            path,
+                            &effects,
+                            graph.read(),
+                            context,
+                        )
+                    },
+                )
                 .unwrap();
-            let frozen = graph
-                .read()
-                .freeze_scoped(&[], &[], &[&scoped], &mut context)
-                .unwrap();
-            let original = graph
-                .bind_original_scoped(&frozen, &mut context)
-                .unwrap()
-                .freeze(graph.read(), &mut context)
-                .unwrap();
-            let effects =
-                ConstraintClosedEffects::for_path(path, &original, &[], &mut graph, &mut context)
-                    .unwrap();
-            let input = MaterializationInput::from_closed_original(
-                path,
-                path.root_id(),
-                path,
-                &effects,
-                graph.read(),
-                &mut context,
-            )
-            .unwrap();
+            assert!(graph.read().retain_row(&row, &mut context).is_err());
             materialization.push_component(input, &mut context).unwrap();
         }
         let mut observations = Vec::new();
@@ -320,6 +362,8 @@ mod retained_preparation {
                 value: 7,
                 drops: Arc::clone(&drops),
                 relation: None,
+                reads: None,
+                query: None,
             });
         cancellation.store(true, Ordering::Release);
         assert!(matches!(
