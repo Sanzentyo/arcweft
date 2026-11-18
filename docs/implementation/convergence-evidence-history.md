@@ -19573,3 +19573,16 @@ Source `3fbff4766da09d4df45a0fd907bc197b323568f1` では、宣言の関数値に
 全featureのSema checkはライブラリの生成に成功。テスト対象は終了101・817エラー・33警告で、前回とコード・ファイル別の内訳が一致した。Sema単体テスト、全推移的逆依存のテスト、workspace全targetのcheck／Clippy、Native／Web最終受入は未実行。SemaライブラリClippy・fmt・差分検査・構造ゲートは成功し、構造阻害0件。全featureのCargo逆依存は起点込み22 package。公開7 blobを照合した。`target` は10598734199 bytesだった。
 
 [LLDBの計測、Compilerの全ID比較、最終検証と公開照合](acceptance-evidence/task-declared-function-value-binder.raw.zip) は41 entry、949459 bytes、SHA256 `562a946d62e98c11ae1b869eb9f3650cd065088c281d2f9f686a7697f199bffd`。各原本の長さとハッシュを照合した。
+
+<a id="reuse-input-effect-relation"></a>
+## 2026-11-19 — 入力だけを持つ作用関係の重複評価を除去
+
+基点 `5e3354abf4d5b9210a187ba52e88a15ea279b667` の Compiler 20失敗を再実行した。後段の作用が未確定の代表例では、部分適用時点のグラフに引数なしの Future が残り、宣言された `invoke` の引数として戻り値型にも届いていた。元の作用関係の制約に加え、ローカル関数も選択変数も持たない同じ関係の主条件を再度導入していた。戻り値スキーマの2経路への計測は診断を観測しなかった。Map・retained Map・traversal・再帰コールバックの4代表例では、別途LLDBで候補全体の作業上限を返す箇所を確認した。
+
+Source `48b3bbea3e666f78baf54ab25a51f049522409e1` は、同じ入力と元の作用制約を持つ束縛済みスナップショットで、ローカル関数と選択変数の両方がない場合に主条件の再評価を省く。ローカル関数または選択変数がある場合は主条件と最小解の一致を引き続き確認する。全称量化の対象が空なら、作業量を計上して直下の決定図を再利用する。最終検証では実際の後段作用を引き続き要求する。元の制約が1回だけ保持され、`log.write` を受理し、空の入力を拒否する単体テストを追加した。
+
+主要Compiler 152件は全件成功、追加396件は376成功・20失敗。両方でIDおよび合否の差分は0件。`UnresolvedFuture` は6件。LLDBで、Map、retained Map、traversalの3例は上限に達する箇所が変わり、再帰コールバックは引き続きインポートされた作用関係のコンパイル中に上限に達した。作業上限は据え置いた。
+
+全featureのSema checkではライブラリを生成し、単体テスト対象は終了101・817エラー・33警告だった。前回とエラーのコード・ファイル別内訳が一致した。追加した単体テストも未実行。SemaライブラリのClippyは終了0・1,688警告。fmt・差分検査・構造ゲートは終了0、構造阻害0件。Cargoの全feature逆依存は起点込み22 package。全逆依存のテスト、workspace全targetのcheck／Clippy、Native／Web最終受入は未実行。公開されたRust 3 blobを照合した。`target` は `10598918180` bytes。
+
+[計測パッチ・CompilerとSemaの検証原本・公開照合](acceptance-evidence/task-reuse-input-effect-relation.raw.zip) は 40 entry、977748 bytes、SHA256 `72d457c46c423851eecfbc66a44f97fb7096e9a2edcf2748120a1d84e1dcecbf`。各原本の長さとハッシュを照合した。
