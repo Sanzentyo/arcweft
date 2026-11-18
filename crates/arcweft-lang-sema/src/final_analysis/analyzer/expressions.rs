@@ -1777,7 +1777,7 @@ impl Analyzer<'_, '_, '_> {
     }
 
     fn prepare_entry_reference(
-        &self,
+        &mut self,
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
@@ -1825,10 +1825,7 @@ impl Analyzer<'_, '_, '_> {
             CheckedTypeSelection::Inferred
         };
         if let Some(imported) = imported {
-            let ty = imported.ty();
-            if expected.is_some_and(|expected| !expected.accepts(&ty)) {
-                return Err(AnalyzerExpressionError::rejected(owner));
-            }
+            let ty = self.prepare_catalog_entity_type(context, owner, &imported.ty(), expected)?;
             return Ok(PreparedExpressionFact::from(
                 crate::final_analysis::prepared::PreparedResolvedExpression::value(
                     ty,
@@ -1858,6 +1855,22 @@ impl Analyzer<'_, '_, '_> {
             self.check_prepared_contextual_type(context, owner, expected, actual)?;
         }
         Ok(PreparedExpressionFact::from(prepared))
+    }
+
+    fn prepare_catalog_entity_type(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        ty: &TypeKind,
+        expected: Option<&TypeKind<PreparedEffects>>,
+    ) -> Result<TypeKind<PreparedEffects>, AnalyzerExpressionError> {
+        let ty = self
+            .retain_source_value_type(context, owner, ty)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        if let Some(expected) = expected {
+            self.require_source_type(context, owner, expected, &ty)?;
+        }
+        Ok(ty)
     }
 
     fn prepare_project_variant_owner(
@@ -2314,6 +2327,9 @@ impl Analyzer<'_, '_, '_> {
                     .unwrap_or(TypeKind::I32);
                 for (ordinal, element) in sequence.elements().iter().enumerate() {
                     if !nonnegative_integer_magnitude_fits(element.magnitude(), &item) {
+                        let item = self
+                            .observe_source_type_with_dependencies(context, owner, &item)
+                            .map_err(AnalyzerExpressionError::fatal)?;
                         return Err(AnalyzerExpressionError::fatal(
                             FinalSemanticAnalysisError::CompactNumericElementOutOfRange {
                                 owner,
@@ -3195,7 +3211,12 @@ impl Analyzer<'_, '_, '_> {
                     .map_err(AnalyzerExpressionError::fatal)?;
                     let mut requested = BTreeSet::new();
                     for request in requests {
-                        let expected = request.expected();
+                        let expected = request
+                            .expected()
+                            .as_ref()
+                            .map(|ty| self.retain_source_value_type(context, request.owner(), ty))
+                            .transpose()
+                            .map_err(AnalyzerExpressionError::fatal)?;
                         self.evaluate_expression(context, request.owner(), expected.as_ref())?;
                         requested.insert(request.owner());
                     }
@@ -4225,7 +4246,7 @@ impl Analyzer<'_, '_, '_> {
         let ingress = self.catalogs.world.environment().statement_ingress();
         let checked = match trigger {
             HirTrigger::Input(pattern) => {
-                self.require_choice_trigger_pattern(*pattern, ingress.input())?;
+                self.require_choice_trigger_pattern(context, *pattern, ingress.input())?;
                 CheckedTrigger::input()
             }
             HirTrigger::Event(pattern) => {
@@ -4239,19 +4260,13 @@ impl Analyzer<'_, '_, '_> {
             HirTrigger::Signal { target, value } => {
                 let checked = self.evaluate_expression(context, *target, None)?;
                 effects.union_with(checked.effects());
-                let TypeKind::Ref(signal) = checked.value_type().ok_or_else(|| {
+                let target_type = checked.value_type().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
                         FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
                     )
-                })?
-                else {
-                    return Err(AnalyzerExpressionError::rejected(*target));
-                };
-                if signal.kind() != &EntityKind::Signal {
-                    return Err(AnalyzerExpressionError::rejected(*target));
-                }
-                let payload = signal
-                    .observable_payload()
+                })?;
+                let payload = target_type
+                    .signal_reference_payload()
                     .ok_or_else(|| AnalyzerExpressionError::rejected(*target))?;
                 if let Some(pattern) = value {
                     self.seed_choice_trigger_pattern(context, module, *pattern, payload)?;
@@ -4274,17 +4289,18 @@ impl Analyzer<'_, '_, '_> {
             }
             HirTrigger::Select(pattern) => {
                 self.require_choice_trigger_pattern(
+                    context,
                     *pattern,
                     &TypeKind::entity_ref(EntityKind::ChoiceOption),
                 )?;
                 CheckedTrigger::select()
             }
             HirTrigger::Task(pattern) => {
-                self.require_choice_trigger_pattern(*pattern, ingress.task())?;
+                self.require_choice_trigger_pattern(context, *pattern, ingress.task())?;
                 CheckedTrigger::task()
             }
             HirTrigger::Scope(pattern) => {
-                self.require_choice_trigger_pattern(*pattern, ingress.scope())?;
+                self.require_choice_trigger_pattern(context, *pattern, ingress.scope())?;
                 CheckedTrigger::scope()
             }
             HirTrigger::Expression(expression) => {
@@ -4302,10 +4318,15 @@ impl Analyzer<'_, '_, '_> {
 
     fn require_choice_trigger_pattern(
         &self,
+        context: &AnalyzerExpressionContext<'_>,
         pattern: arcweft_lang_hir::identity::PatternId,
-        expected: &TypeKind<crate::types::PreparedEffects>,
+        expected: &TypeKind,
     ) -> Result<(), AnalyzerExpressionError> {
-        (self.facts.patterns().get(&pattern) == Some(expected))
+        let expected = self
+            .source_type_preparation(context.work())
+            .and_then(|types| types.retain(pattern, expected))
+            .map_err(AnalyzerExpressionError::fatal)?;
+        (self.facts.patterns().get(&pattern) == Some(&expected))
             .then_some(())
             .ok_or_else(|| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::PatternTypeUnavailable {
@@ -4352,7 +4373,10 @@ impl Analyzer<'_, '_, '_> {
         expression: &HirExpr,
         choice: &arcweft_lang_hir::expr::HirChoiceExpr,
     ) -> Result<(), AnalyzerExpressionError> {
-        let expected = TypeKind::entity_ref(EntityKind::ChoiceOption);
+        let expected = TypeKind::Ref(crate::types::EntityType::new(
+            EntityKind::ChoiceOption,
+            None,
+        ));
         let edges = expression
             .kind()
             .expression_owned_child_edges()
@@ -4743,92 +4767,13 @@ impl Analyzer<'_, '_, '_> {
                         name,
                     );
                 }
-                TypeKind::Named(type_name) => {
-                    let environment = self.catalogs.world.environment().typecheck_env();
-                    let record = environment
-                        .environment_record(type_name.as_str())
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    checked_environment_field_selection(
-                        environment,
-                        record,
-                        type_name.as_str(),
-                        name,
-                        owner,
-                        select.target(),
-                    )?
-                }
-                TypeKind::AcceptedNominal(nominal) => {
-                    let environment = self.catalogs.world.environment().typecheck_env();
-                    let record = environment
-                        .nominal_catalog()
-                        .exact(nominal.declaration().canonical_path())
-                        .filter(|record| record.id() == nominal.declaration())
-                        .filter(|record| {
-                            matches!(
-                                record.try_instantiate(nominal.arguments().to_vec()),
-                                Ok(ref instantiated) if instantiated == target_type
-                            )
-                        })
-                        .and_then(|record| record.environment_record())
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    let type_name =
-                        crate::types::direct_type_name(nominal.declaration().canonical_path())
-                            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    checked_environment_field_selection(
-                        environment,
-                        record,
-                        type_name,
-                        name,
-                        owner,
-                        select.target(),
-                    )?
-                }
-                _ => {
-                    let environment = self.catalogs.world.environment().typecheck_env();
-                    let semantic_type = target_type
-                        .semantic_identity_digest()
-                        .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
-                    let Some(accepted) = environment
-                        .nominal_catalog()
-                        .environment_record_for_semantic_type(semantic_type)
-                    else {
-                        let member_source = self
-                            .module(owner.module())
-                            .map_err(AnalyzerExpressionError::fatal)?
-                            .source_anchor(HirSourceQuery::Expr {
-                                owner,
-                                role: arcweft_lang_hir::source_index::HirExprSourceRole::SelectedMember,
-                            })
-                            .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
-                            .ok_or_else(|| {
-                                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                            })?;
-                        return Err(AnalyzerExpressionError::Rejected(
-                            super::expression_error::AnalyzerExpressionRejection::UnknownMember {
-                                owner,
-                                receiver: Box::new(target_type.clone()),
-                                member: name.clone(),
-                                member_source,
-                            },
-                        ));
-                    };
-                    let record = accepted
-                        .environment_record()
-                        .filter(|record| {
-                            record.ty() == target_type && record.semantic_type() == semantic_type
-                        })
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    let type_name = crate::types::direct_type_name(accepted.id().canonical_path())
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    checked_environment_field_selection(
-                        environment,
-                        record,
-                        type_name,
-                        name,
-                        owner,
-                        select.target(),
-                    )?
-                }
+                _ => self.prepare_environment_field(
+                    context,
+                    owner,
+                    select.target(),
+                    target_type,
+                    name,
+                )?,
             }
         };
         Ok(
@@ -4840,6 +4785,92 @@ impl Analyzer<'_, '_, '_> {
             )
             .into(),
         )
+    }
+
+    fn prepare_environment_field(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        receiver: ExprId,
+        target: &TypeKind<PreparedEffects>,
+        name: &arcweft_lang_hir::leaf::HirName,
+    ) -> Result<(TypeKind<PreparedEffects>, super::CheckedSelectResolution), AnalyzerExpressionError>
+    {
+        // The catalog owns the semantic lookup key. Final field validation
+        // matches its receiver and result against the types closed for C2.
+        let target = self
+            .observe_source_type_with_dependencies(context, receiver, target)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let environment = self.catalogs.world.environment().typecheck_env();
+        let catalog = environment.nominal_catalog();
+        let (record, type_name) = match &target {
+            TypeKind::Named(name) => (
+                environment
+                    .environment_record(name.as_str())
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?,
+                name.as_str(),
+            ),
+            target_type => {
+                let accepted = if let TypeKind::AcceptedNominal(nominal) = target_type {
+                    catalog
+                        .exact(nominal.declaration().canonical_path())
+                        .filter(|record| record.id() == nominal.declaration())
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
+                } else {
+                    let semantic_type = target_type
+                        .semantic_identity_digest_in_scope_with_control(
+                            &crate::types::GenericScope::default(),
+                            &mut context.work(),
+                        )
+                        .map_err(|error| match error {
+                            crate::types::TypeProjectionError::Control(error) => {
+                                AnalyzerExpressionError::fatal(error)
+                            }
+                            _ => AnalyzerExpressionError::rejected(owner),
+                        })?;
+                    let Some(accepted) =
+                        catalog.environment_record_for_semantic_type(semantic_type)
+                    else {
+                        let member_source = self.module(owner.module())
+                            .map_err(AnalyzerExpressionError::fatal)?
+                            .source_anchor(HirSourceQuery::Expr {
+                                owner,
+                                role: arcweft_lang_hir::source_index::HirExprSourceRole::SelectedMember,
+                            })
+                            .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
+                            .ok_or_else(|| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?;
+                        return Err(AnalyzerExpressionError::Rejected(
+                            super::expression_error::AnalyzerExpressionRejection::UnknownMember {
+                                owner,
+                                receiver: Box::new(target),
+                                member: name.clone(),
+                                member_source,
+                            },
+                        ));
+                    };
+                    accepted
+                };
+                let record = accepted
+                    .environment_record()
+                    .filter(|record| record.ty() == target_type)
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                let type_name = crate::types::direct_type_name(accepted.id().canonical_path())
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                (record, type_name)
+            }
+        };
+        let (ty, resolution) = checked_environment_field_selection(
+            environment,
+            record,
+            type_name,
+            name,
+            owner,
+            receiver,
+        )?;
+        let ty = self
+            .retain_source_value_type(context, owner, ty)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        Ok((ty, resolution))
     }
 
     fn prepare_qualified_variant_select(
@@ -5023,8 +5054,10 @@ impl Analyzer<'_, '_, '_> {
             .world
             .environment()
             .compile_time_scalars()
-            .type_for(crate::registration::CompileTimeScalarTypeRoleId::PublicId)
-            .clone();
+            .type_for(crate::registration::CompileTimeScalarTypeRoleId::PublicId);
+        let ty = self
+            .retain_source_value_type(context, owner, ty)
+            .map_err(AnalyzerExpressionError::fatal)?;
         Ok(
             crate::final_analysis::prepared::PreparedResolvedExpression::value(
                 ty,
@@ -5707,14 +5740,11 @@ impl Analyzer<'_, '_, '_> {
                             )
                         }
                     })?;
-                let ty = item.ty();
-                if matches!(
-                    expectation,
-                    AnalyzerExpressionExpectation::Complete(expected)
-                        if !expected.accepts(&ty)
-                ) {
-                    return Err(AnalyzerExpressionError::rejected(owner).into());
-                }
+                let expected = match expectation {
+                    AnalyzerExpressionExpectation::Complete(ty) => Some(*ty),
+                    _ => None,
+                };
+                let ty = self.prepare_catalog_entity_type(context, owner, &item.ty(), expected)?;
                 Ok(
                     crate::final_analysis::prepared::PreparedResolvedExpression::value(
                         ty,
@@ -5753,9 +5783,11 @@ impl Analyzer<'_, '_, '_> {
                     && let Some(expected) = expected
                     && let Some(item) =
                         self.infer_registry_item(module, location, activation, read.key())?
-                    && !expected.accepts(item)
                 {
-                    return Err(AnalyzerExpressionError::rejected(owner).into());
+                    let actual = self
+                        .retain_source_value_type(context, owner, item)
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                    self.require_source_type(context, owner, expected, &actual)?;
                 }
                 let (ty, selection) = match expected {
                     Some(ty) => (ty.clone(), CheckedTypeSelection::Expected),
@@ -5763,10 +5795,13 @@ impl Analyzer<'_, '_, '_> {
                         let ty = self
                             .infer_registry_item(module, location, activation, read.key())?
                             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                        let ty = self
+                            .retain_source_value_type(context, owner, ty)
+                            .map_err(AnalyzerExpressionError::fatal)?;
                         let ty = if path.optional() {
-                            TypeKind::Option(Box::new(ty.clone()))
+                            TypeKind::Option(Box::new(ty))
                         } else {
-                            ty.clone()
+                            ty
                         };
                         (ty, CheckedTypeSelection::Inferred)
                     }
@@ -5880,7 +5915,7 @@ impl Analyzer<'_, '_, '_> {
     }
 
     fn check_dialogue_line_reference(
-        &self,
+        &mut self,
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
@@ -5906,10 +5941,7 @@ impl Analyzer<'_, '_, '_> {
                 })
             })?;
         if let Some(imported) = imported {
-            let ty = imported.ty();
-            if expected.is_some_and(|expected| !expected.accepts(&ty)) {
-                return Err(AnalyzerExpressionError::rejected(owner));
-            }
+            let ty = self.prepare_catalog_entity_type(context, owner, &imported.ty(), expected)?;
             return Ok(
                 crate::final_analysis::prepared::PreparedResolvedExpression::value(
                     ty,
@@ -6283,24 +6315,18 @@ impl Analyzer<'_, '_, '_> {
     }
 }
 
-fn checked_environment_field_selection(
+fn checked_environment_field_selection<'a>(
     environment: &crate::env::TypeCheckEnv,
-    record: &crate::env::nominal::AcceptedEnvironmentRecordSemantics,
+    record: &'a crate::env::nominal::AcceptedEnvironmentRecordSemantics,
     type_name: &str,
     name: &arcweft_lang_hir::leaf::HirName,
     owner: ExprId,
     receiver: ExprId,
-) -> Result<
-    (
-        TypeKind<crate::types::PreparedEffects>,
-        super::CheckedSelectResolution,
-    ),
-    AnalyzerExpressionError,
-> {
+) -> Result<(&'a TypeKind, super::CheckedSelectResolution), AnalyzerExpressionError> {
     let field = record
         .field(name.as_str())
         .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-    let ty = field.ty().clone();
+    let ty = field.ty();
     let selection = crate::final_analysis::CheckedFieldSelection::try_new(
         record.semantic_type(),
         crate::record_field::CheckedRecordFieldSemanticId::Environment(field.semantic_id()),

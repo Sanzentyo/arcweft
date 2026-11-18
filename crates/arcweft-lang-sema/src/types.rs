@@ -556,6 +556,10 @@ impl ProgressField {
 
     #[must_use]
     pub fn ty(self) -> TypeKind {
+        self.value_type()
+    }
+
+    fn value_type<D: TypeEffectDomain>(self) -> TypeKind<D> {
         match self {
             Self::Ratio => TypeKind::F32,
             Self::Label => TypeKind::Option(Box::new(TypeKind::String)),
@@ -1304,12 +1308,10 @@ impl<E: TypeEffectDomain> EntityType<E> {
     pub fn value(&self) -> Option<&TypeKind<E>> {
         self.value.as_deref()
     }
-}
 
-impl EntityType {
     /// Observable element from the exact accepted Signal/Metric carrier.
     /// A same-spelled foreign nominal cannot impersonate a standard carrier.
-    pub fn observable_payload(&self) -> Option<&TypeKind> {
+    pub fn observable_payload(&self) -> Option<&TypeKind<E>> {
         match self.kind() {
             EntityKind::Signal => Some(self.value()?.signal_observable()?.payload()),
             EntityKind::Metric => self.value(),
@@ -1317,7 +1319,7 @@ impl EntityType {
         }
     }
 
-    pub fn watch_payload(&self) -> Option<&TypeKind> {
+    pub fn watch_payload(&self) -> Option<&TypeKind<E>> {
         if self.kind() != &EntityKind::Signal {
             return None;
         }
@@ -1365,15 +1367,6 @@ impl TypeKind {
     #[must_use]
     pub fn generic_parameter(parameter: GenericTypeParameterId) -> Self {
         Self::GenericParam(GenericTypeReference::Free(parameter))
-    }
-
-    /// Resolves a field only when this type is the standard Progress owner.
-    #[must_use]
-    pub fn progress_field(&self, name: &str) -> Option<(ProgressField, TypeKind)> {
-        if !matches!(self, Self::Progress) {
-            return None;
-        }
-        ProgressField::from_name(name).map(|field| (field, field.ty()))
     }
 
     pub const ACTION_EVENT_TYPE_NAME: &'static str = "ActionEvent";
@@ -2029,17 +2022,17 @@ pub enum HandleState {
 /// Borrowed interpretation of the finite Signal declaration carrier domain.
 /// The original accepted type remains the stored entity type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SignalObservableType<'a> {
-    Watch(&'a TypeKind),
+pub enum SignalObservableType<'a, D: TypeEffectDomain = CanonicalEffects> {
+    Watch(&'a TypeKind<D>),
     Stream {
-        item: &'a TypeKind,
-        error: &'a TypeKind,
+        item: &'a TypeKind<D>,
+        error: &'a TypeKind<D>,
     },
-    Sample(&'a TypeKind),
+    Sample(&'a TypeKind<D>),
 }
 
-impl<'a> SignalObservableType<'a> {
-    pub const fn payload(self) -> &'a TypeKind {
+impl<'a, D: TypeEffectDomain> SignalObservableType<'a, D> {
+    pub const fn payload(self) -> &'a TypeKind<D> {
         match self {
             Self::Watch(payload) | Self::Sample(payload) => payload,
             Self::Stream { item, .. } => item,
@@ -2047,8 +2040,27 @@ impl<'a> SignalObservableType<'a> {
     }
 }
 
-impl TypeKind {
-    pub fn signal_observable(&self) -> Option<SignalObservableType<'_>> {
+impl<D: TypeEffectDomain> TypeKind<D> {
+    /// Resolves a field only when this type is the standard Progress owner.
+    #[must_use]
+    pub fn progress_field(&self, name: &str) -> Option<(ProgressField, Self)> {
+        if !matches!(self, Self::Progress) {
+            return None;
+        }
+        ProgressField::from_name(name).map(|field| (field, field.value_type()))
+    }
+
+    pub(crate) fn signal_reference_payload(&self) -> Option<&Self> {
+        let Self::Ref(entity) = self else {
+            return None;
+        };
+        if entity.kind() != &EntityKind::Signal {
+            return None;
+        }
+        entity.observable_payload()
+    }
+
+    pub fn signal_observable(&self) -> Option<SignalObservableType<'_, D>> {
         match self {
             Self::Stream { item, error } => Some(SignalObservableType::Stream { item, error }),
             Self::AcceptedNominal(carrier) => {

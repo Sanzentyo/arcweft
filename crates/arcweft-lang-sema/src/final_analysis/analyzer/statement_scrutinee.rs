@@ -126,14 +126,8 @@ impl<'a> StatementScrutineeTypeAuthority<'a> {
         if role != StatementScrutineeRole::TriggerSignal {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        let TypeKind::Ref(signal) = target else {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        };
-        if signal.kind() != &EntityKind::Signal {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
-        signal
-            .observable_payload()
+        target
+            .signal_reference_payload()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
     }
 
@@ -573,29 +567,20 @@ pub(super) fn seed_dynamic_scrutinee(
             trigger: HirTrigger::Signal { target, value },
             ..
         } => {
-            let payload = {
-                let target_type = facts
-                    .expressions()
-                    .get(target)
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                        owner: *target,
-                    })?
-                    .value_type()
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                        owner: *target,
-                    })?;
-                let TypeKind::Ref(signal) = target_type else {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                };
-                if signal.kind() != &EntityKind::Signal {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                }
-                signal
-                    .observable_payload()
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
-                    .clone()
-            };
+            let target_type = facts
+                .expressions()
+                .get(target)
+                .and_then(crate::final_analysis::PreparedExpressionFact::value_type)
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target })?;
+            let payload = target_type
+                .signal_reference_payload()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             if let Some(pattern) = value {
+                let payload = source.retain_prepared(
+                    *pattern,
+                    payload,
+                    facts.effect_declarations()?.read(),
+                )?;
                 seed_prepared(
                     module,
                     source,

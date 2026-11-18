@@ -289,6 +289,40 @@ fn preparation_domain_preserves_every_nested_arrow_contract() {
 }
 
 #[test]
+fn signal_payload_borrows_the_original_prepared_callback() {
+    use crate::effect_row::prepared::{PreparedEffectGraph, PreparedEffectPredicate};
+
+    let mut graph = PreparedEffectGraph::default();
+    let scheme = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut Decisions)
+        .unwrap();
+    let effects = graph.application(&scheme, vec![], &mut Decisions).unwrap();
+    let callback = TypeKind::<PreparedEffects>::Function {
+        binder: GenericBinder::EMPTY,
+        predicate: PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        params: vec![TypeKind::I64],
+        return_type: Box::new(TypeKind::Bool),
+        effects: effects.clone(),
+    };
+    let signal = EntityType::new(
+        EntityKind::Signal,
+        Some(TypeKind::AcceptedNominal(AcceptedNominalType::new(
+            crate::env::nominal::standard_nominal_id("Watch"),
+            vec![callback],
+        ))),
+    );
+    let TypeKind::AcceptedNominal(watch) = signal.value().unwrap() else {
+        panic!("expected the standard Watch carrier")
+    };
+    let payload = signal.watch_payload().unwrap();
+    assert!(std::ptr::eq(payload, &watch.arguments()[0]));
+    assert!(std::ptr::eq(payload, signal.observable_payload().unwrap()));
+    assert!(
+        matches!(payload, TypeKind::Function { effects: retained, .. } if retained == &effects)
+    );
+}
+
+#[test]
 fn preparation_domain_distinguishes_omitted_annotations_from_live_scheme_terms() {
     use crate::effect_row::prepared::{
         PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,

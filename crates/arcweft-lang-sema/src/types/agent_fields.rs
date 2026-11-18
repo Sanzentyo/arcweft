@@ -4,9 +4,9 @@ use arcweft_core::{
     value::{RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue},
 };
 
-use super::{AgentBuiltinType, MapKind, TypeKind};
+use super::{AgentBuiltinType, MapKind, TypeEffectDomain, TypeKind};
 
-impl TypeKind {
+impl<D: TypeEffectDomain> TypeKind<D> {
     /// Resolves one accepted Agent protocol field into its closed coordinate
     /// and exact semantic result. Downstream stages retain the coordinate.
     pub(crate) fn agent_field_type(&self, field: &str) -> Option<(RuntimeAgentField, Self)> {
@@ -15,7 +15,10 @@ impl TypeKind {
     }
 }
 
-fn agent_field_coordinate(owner: &TypeKind, field: &str) -> Option<RuntimeAgentField> {
+fn agent_field_coordinate<D: TypeEffectDomain>(
+    owner: &TypeKind<D>,
+    field: &str,
+) -> Option<RuntimeAgentField> {
     match owner {
         TypeKind::Observation => observation_field(field),
         TypeKind::ObservedObject => observed_object_field(field),
@@ -234,7 +237,7 @@ fn project_graph_summary_field(field: &str) -> Option<RuntimeAgentField> {
     })
 }
 
-fn semantic_field_result(result: RuntimeAgentFieldResult) -> TypeKind {
+fn semantic_field_result<D: TypeEffectDomain>(result: RuntimeAgentFieldResult) -> TypeKind<D> {
     match result {
         RuntimeAgentFieldResult::Required(value) => semantic_field_value(value),
         RuntimeAgentFieldResult::Optional(value) => {
@@ -243,7 +246,7 @@ fn semantic_field_result(result: RuntimeAgentFieldResult) -> TypeKind {
     }
 }
 
-fn semantic_field_value(value: RuntimeAgentFieldValue) -> TypeKind {
+fn semantic_field_value<D: TypeEffectDomain>(value: RuntimeAgentFieldValue) -> TypeKind<D> {
     match value {
         RuntimeAgentFieldValue::Bool => TypeKind::Bool,
         RuntimeAgentFieldValue::String => TypeKind::String,
@@ -273,7 +276,7 @@ fn semantic_field_value(value: RuntimeAgentFieldValue) -> TypeKind {
     }
 }
 
-fn agent_type(operational: RuntimeAgentOperationalType) -> TypeKind {
+fn agent_type<D: TypeEffectDomain>(operational: RuntimeAgentOperationalType) -> TypeKind<D> {
     match operational {
         RuntimeAgentOperationalType::ObservedObjectId => {
             TypeKind::AgentBuiltin(AgentBuiltinType::ObservedObjectId)
@@ -310,23 +313,28 @@ mod tests {
 
     #[test]
     fn agent_runtime_records_publish_exact_coordinates_and_types() {
+        check_field_types::<crate::types::CanonicalEffects>();
+        check_field_types::<crate::types::PreparedEffects>();
+    }
+
+    fn check_field_types<D: TypeEffectDomain>() {
         assert_eq!(
-            TypeKind::ActionResult.agent_field_type("accepted"),
+            TypeKind::<D>::ActionResult.agent_field_type("accepted"),
             Some((RuntimeAgentField::ActionResultAccepted, TypeKind::Bool))
         );
         assert_eq!(
-            TypeKind::AgentResource.agent_field_type("body"),
+            TypeKind::<D>::AgentResource.agent_field_type("body"),
             Some((RuntimeAgentField::ResourceBody, TypeKind::AgentResourceBody))
         );
         assert_eq!(
-            TypeKind::ObservedObject.agent_field_type("parent_id"),
+            TypeKind::<D>::ObservedObject.agent_field_type("parent_id"),
             Some((
                 RuntimeAgentField::ObservedObjectParentId,
                 TypeKind::Option(Box::new(TypeKind::String))
             ))
         );
         assert_eq!(
-            TypeKind::AgentProjectGraphSymbol.agent_field_type("flow_control"),
+            TypeKind::<D>::AgentProjectGraphSymbol.agent_field_type("flow_control"),
             Some((
                 RuntimeAgentField::ProjectGraphSymbolFlowControl,
                 TypeKind::Option(Box::new(TypeKind::AgentBuiltin(
@@ -335,9 +343,12 @@ mod tests {
             ))
         );
         assert_eq!(
-            TypeKind::AgentProjectGraphSymbol.agent_field_type("has_flow_control"),
+            TypeKind::<D>::AgentProjectGraphSymbol.agent_field_type("has_flow_control"),
             None
         );
-        assert_eq!(TypeKind::ActionResult.agent_field_type("missing"), None);
+        assert_eq!(
+            TypeKind::<D>::ActionResult.agent_field_type("missing"),
+            None
+        );
     }
 }
