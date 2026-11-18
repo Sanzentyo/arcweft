@@ -18883,3 +18883,14 @@ Matchの分岐とChoiceの入れ子パスを、準備済みの式が持つ情報
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。library **380エラー・25警告**、lib test **1,261エラー・37警告**。前回公開入力との一次診断比較は1,299件から1,295件。型名の修飾差を正規化した比較で新規0件、準備済みvariant payloadのアクセサーに関する4件が解消した。Semaのfmtと構造ゲートは終了0、blocking違反0件。変更回帰、nextest、Clippy、doctest、推移的逆依存のテスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,734,813 bytesで、約300 GBを目安とするcleanは未実行。Generic Matchの受入・公開は[現状一覧](current-status.md)に集約する。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-retained-nominal-expression-types.raw.zip) は18 entry、146,741 bytes、SHA256 `576b55dfbeebcda00e1c4194fa4c8ad83750ef6171fafe1906fb3dc9fa34a1c6`。各entryの長さとSHA256を再照合した。旧履歴 2,933,771 bytesのSHA256 `9d48b50d6d87e938d6e162b786baf9a54ab09370ac1cc9b639666e9d01507e88` をprefixとして保持した。
+
+<a id="record-coordinate-effects"></a>
+## 2026-11-18 — レコード構造エッジの意味座標を宣言本体と同じ作用確定から発行する
+
+基点 `cd1d167f474d65a91a0de3c7b3689554de08599b`。Source `985fa7200f7b74d06b1e45a3e8fb4ae669082cfc` を既存mainへcommitし、非force push後にリモートのfull SHAと12入力のblobを照合した。
+
+選択済みのレコード式が持つnominal型とフィールド型を、既存の作用グラフの観測対象に加えた。型からしか参照されない作用行と述語にも到達し、元の制約を保持したまま実際の宣言本体で解く。作用の確定結果は元グラフをロールバックした後も参照できる。構造エッジは出典の宣言とスコープを照合し、同じ作業予算で型を正準化してフィールドの意味IDを発行する。観測だけで参照される本体が未準備なら拒否し、準備後は元の制約を変えずに行と偽の述語を読めることを確認する回帰を追加した。プロジェクトのnominal catalogと実行側に渡すC2 sealの移行は継続中。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。library **378エラー・25警告**、lib test **1,259エラー・37警告**。前回公開入力との一次診断比較は1,295件から1,293件、新規0件。準備済み型のままレコードの意味IDを参照していた2件が解消した。Semaのfmtと構造ゲートは終了0、blocking違反0件。追加した回帰、nextest、Clippy、doctest、推移的逆依存のテスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,730,579 bytesで、約300 GBを目安とするcleanは未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-record-coordinate-effects.raw.zip) は18 entry、149,760 bytes、SHA256 `aa73d4f9caa9241263c0db64780746b37c9abdec628e86f6ca2b7dd7dbea70b6`。各entryの長さとSHA256を再照合した。旧履歴 2,936,163 bytesのSHA256 `6e7c121094bcd8fb24914628c65876c43920f3f40085aea550a92e57c9574be7` をprefixとして保持した。
