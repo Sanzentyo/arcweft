@@ -19148,3 +19148,15 @@ Source `596843302c7ccb3e6ceff43f413c5c9ecca3bb39`。変更の基点は `64c5c8a7
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。各試行は終了101。dev01はlibrary 214エラー、lib test 1,108エラー。nominal型のメソッドを誤ったimplへ移していたため修正した。dev02はlibrary 76エラー、lib test 942エラー。レコード準備時の借用範囲と回帰テストの関数型の組み立てをdev03で修正した。公開したdev03はlibrary 73エラー・24警告、lib test 938エラー・36警告。正規化した一次診断は948件から942件に減少し、新規0件。削減した6件の主診断はいずれも旧レコード検査の型不一致。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Sema回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,634,343 bytes で、約300 GBを目安とする `cargo clean` は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-record-arguments.raw.zip) は 30 entry、324881 bytes、SHA256 `ea9c8ad6547432daac79d81f073dd18bc75a0b3d4a83efc17a7f114449e7d92b`。各entryの長さとSHA256を再照合した。更新前の履歴2985565 bytesのSHA256 `f4741f56a00a91a2026f9b91055d48f02face9633f61e0b554a863c45fa31877`をprefixとして保持した。
+
+
+<a id="prepared-content-seal"></a>
+## 2026-11-18 — 付随コンテンツと実行効果を元の式の型で確定
+
+Source `a61f2061f7ab07eeb52081bd19f0245fb18e75cf`。変更の基点は `b949a25cbb23c151443de68e86a2c688c8ff7fe0`。比較元は `596843302c7ccb3e6ceff43f413c5c9ecca3bb39` の `prepared-record-arguments.dev03-check.log`。公開したmainと3件のRust入力のblobを照合した。
+
+付随コンテンツでは、値参照と通常呼出しの結果を準備済み型のまま保持し、Objectと言語のcontent emissionを同じ準備済み結果の分類で検査する。公開時は元の式のスコープと確定した作用関係を使い、選択された呼出し結果や登録済みDialogueContent型との一致を検査する。補間の表示証拠は元の補間式の確定型から取得する。通常の実行効果は元の式と選択済み操作の結果型が一致したときに結合する。registryのdropは元の読取り式を使い、パイプ経由なら左辺を確定する。明示のdrop方針は選択済みのオペランド型と元の値を照合する。DialogueLine用の公開表現は型確定後に作る。台詞outから呼出し候補に渡す型の移行は継続する。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。dev01はlibrary 59エラー、lib test 924 エラーで終了101。最終コンテンツを作る分岐で利用不可の準備済み結果の拒否を明記した。公開したdev02はlibrary 58エラー・23警告、lib test 923エラー・35警告で終了101。正規化した一次診断は942件から924件に減り、新規0件。付随コンテンツ側7件と実行効果側11件を解消した。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのテスト、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは 774,502,961 bytesで、約300 GBを目安とする `cargo clean` は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-content-seal.raw.zip) は 24 entry、205033 bytes、SHA256 `389d7ae7f0f5da01bb5afd2c1e1b84213c7836ea4a9ea5f8aa06ee92b6ee15cf`。各entryの長さとSHA256を再照合した。更新前の履歴2988374 bytesのSHA256 `9d6ae6a0507ca06883d50750706c1902dc2fcd8ed88a081183c471cd99572043`をprefixとして保持した。
