@@ -22,6 +22,30 @@ pub(crate) struct PendingResultConstraint<D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> PendingChildConstraint<D> {
+    /// Detaching an enclosing producer transfers its original effect reads to
+    /// each suspended child path before the parent's live state disappears.
+    pub(crate) fn retain_effect_reads<C: crate::effect_row::DecisionControl>(
+        &mut self,
+        graph: &crate::effect_row::prepared::PreparedEffectGraph,
+        reads: &PreparedEffectReadScope,
+        control: &mut C,
+    ) -> Result<(), crate::effect_row::prepared::PreparedEffectFailure<C::Error>> {
+        let scopes = self
+            .alternatives
+            .iter()
+            .map(|alternative| {
+                graph.compose_read_scopes(
+                    alternative.path.lineage.probe_effect_reads().chain([reads]),
+                    control,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for (alternative, scope) in self.alternatives.iter_mut().zip(scopes) {
+            alternative.path.lineage.effect_reads = Some(scope);
+        }
+        Ok(())
+    }
+
     pub(crate) fn into_results<A: TypeConstraintAccounting>(
         self,
         receipt: &ConstraintSourceReceipt<D>,

@@ -311,6 +311,25 @@ impl PreparedCallableEffectDeclarations {
 }
 
 impl<P, U> PreparedCallGraph<P, U> {
+    pub(crate) fn retain_child_effect_reads<
+        D: crate::types::constraints::ConstraintDomain,
+        C: DecisionControl,
+    >(
+        &self,
+        delta: &PreparedCallGraphDelta<P, U>,
+        pending: &mut crate::types::constraints::PendingChildConstraint<D>,
+        control: &mut C,
+    ) -> Result<(), PreparedCallGraphMutationFailure<C::Error>> {
+        let reads = self.retain_probe_effect_reads(delta, control)?;
+        let declarations = self
+            .declarations
+            .as_ref()
+            .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)?;
+        pending
+            .retain_effect_reads(&declarations.graph, &reads, control)
+            .map_err(PreparedCallGraphMutationFailure::effect)
+    }
+
     pub(crate) fn prepare_declaration_value<C>(
         &mut self,
         builder: &CheckedCallableCatalogBuilder,

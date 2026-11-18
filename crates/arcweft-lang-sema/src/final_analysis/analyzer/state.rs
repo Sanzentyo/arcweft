@@ -2526,6 +2526,30 @@ impl SemanticFactState {
         Ok(())
     }
 
+    pub(super) fn retain_child_effect_reads(
+        &self,
+        projection: &CandidateSemanticProjection,
+        pending: &mut crate::types::constraints::PendingChildConstraint<
+            super::calls::AnalyzerCallConstraintDomain,
+        >,
+        control: &mut super::preparation_work::AnalyzerPreparationWork<'_>,
+    ) -> Result<(), super::expression_error::AnalyzerExpressionError> {
+        use super::expression_error::AnalyzerExpressionError;
+        self.require_candidate_projection_owner(projection)
+            .map_err(AnalyzerExpressionError::fact)?;
+        self.prepared_calls()
+            .map_err(AnalyzerExpressionError::fact)?
+            .retain_child_effect_reads(&projection.data.graph_delta, pending, control)
+            .map_err(|error| match CandidateFactMutationFailure::from(error) {
+                CandidateFactMutationFailure::Control(error) => {
+                    AnalyzerExpressionError::fatal(error)
+                }
+                CandidateFactMutationFailure::Invariant(violation) => {
+                    AnalyzerExpressionError::fact(violation)
+                }
+            })
+    }
+
     pub(super) fn set_local_type(
         &mut self,
         owner: LocalId,

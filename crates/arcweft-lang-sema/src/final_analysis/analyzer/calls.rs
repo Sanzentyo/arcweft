@@ -300,7 +300,7 @@ pub(super) struct PreparedCorrelatedCallRecipe {
     callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs,
     inputs: crate::callable::PreparedCallInputs,
     source_preparation: constraints::AnalyzerCallApplicationSources,
-    callee_prerequisites: Option<Arc<super::state::CandidateSemanticProjection>>,
+    prerequisites: Vec<Arc<super::state::CandidateSemanticProjection>>,
     considered: Box<[Arc<PreparedResolvedCallable>]>,
     function_value_origin: Option<Arc<PreparedFunctionValueOriginEvidence>>,
     dialogue_context: CharacterDialoguePatchContext,
@@ -329,13 +329,16 @@ impl PreparedCorrelatedCallRecipe {
             && self.callee_inputs == other.callee_inputs
             && self.inputs == other.inputs
             && self.source_preparation == other.source_preparation
-            && match (&self.callee_prerequisites, &other.callee_prerequisites) {
-                (Some(left), Some(right)) => facts
-                    .projection_replay_mismatch(left, right, mode)
-                    .is_none(),
-                (None, None) => true,
-                _ => false,
-            }
+            && self.prerequisites.len() == other.prerequisites.len()
+            && self
+                .prerequisites
+                .iter()
+                .zip(&other.prerequisites)
+                .all(|(left, right)| {
+                    facts
+                        .projection_replay_mismatch(left, right, mode)
+                        .is_none()
+                })
             && self.considered == other.considered
             && self.function_value_origin == other.function_value_origin
             && self.dialogue_context == other.dialogue_context
@@ -1145,7 +1148,7 @@ impl Analyzer<'_, '_, '_> {
         )?;
         match outcome {
             CandidateFactTransactionOutcome::Extracted {
-                value: (pending, mut recipes),
+                value: (mut pending, mut recipes),
                 projection,
             } => {
                 if recipes.is_empty() {
@@ -1155,8 +1158,18 @@ impl Analyzer<'_, '_, '_> {
                 }
                 let projection = Arc::new(projection);
                 for recipe in &mut recipes {
-                    recipe.callee_prerequisites = Some(Arc::clone(&projection));
+                    recipe.prerequisites.insert(0, Arc::clone(&projection));
                 }
+                let pending_child = pending.as_mut().ok_or_else(|| {
+                    AnalyzerExpressionError::fact(
+                        CandidateFactTransactionViolation::ProjectionUnavailable,
+                    )
+                })?;
+                self.facts.retain_child_effect_reads(
+                    &projection,
+                    pending_child,
+                    &mut context.work(),
+                )?;
                 Ok((pending, recipes))
             }
             CandidateFactTransactionOutcome::RolledBack(prepared) => Ok(prepared),
@@ -1350,12 +1363,9 @@ impl Analyzer<'_, '_, '_> {
                             .map_err(CandidateFactOperationFailure::from)
                     },
                 )?;
-            let outcome = match prepared {
+            let (outcome, projection) = match prepared {
                 CandidateFactTransactionOutcome::Extracted { value, projection } => {
-                    self.facts
-                        .discard_candidate_projection(projection)
-                        .map_err(AnalyzerExpressionError::fact)?;
-                    value
+                    (value, projection)
                 }
                 CandidateFactTransactionOutcome::Committed(_)
                 | CandidateFactTransactionOutcome::RolledBack { .. } => {
@@ -1366,7 +1376,7 @@ impl Analyzer<'_, '_, '_> {
             };
             if let PreparedChildCandidateRunOutcome::Deferred {
                 candidate: selected,
-                pending: candidate_pending,
+                pending: mut candidate_pending,
                 rank_seed,
                 recipe,
                 descendants,
@@ -1386,7 +1396,23 @@ impl Analyzer<'_, '_, '_> {
                         )),
                     });
                 }
-                candidates.push((selected, candidate_pending, rank_seed, recipe, descendants));
+                self.facts.retain_child_effect_reads(
+                    &projection,
+                    &mut candidate_pending,
+                    &mut source_context.work(),
+                )?;
+                candidates.push((
+                    selected,
+                    candidate_pending,
+                    rank_seed,
+                    recipe,
+                    descendants,
+                    projection,
+                ));
+            } else {
+                self.facts
+                    .discard_candidate_projection(projection)
+                    .map_err(AnalyzerExpressionError::fact)?;
             }
         }
         if candidates.is_empty() {
@@ -1404,7 +1430,8 @@ impl Analyzer<'_, '_, '_> {
             >,
         > = None;
         let mut recipes = Vec::with_capacity(candidates.len());
-        for (candidate, candidate_pending, rank_seed, recipe, descendants) in candidates {
+        for (candidate, candidate_pending, rank_seed, recipe, descendants, projection) in candidates
+        {
             let choice = constraints::AnalyzerNestedCallChoice::new(
                 source.owner,
                 source.site,
@@ -1430,7 +1457,7 @@ impl Analyzer<'_, '_, '_> {
                 callee_inputs: recipe.callee_inputs,
                 inputs: recipe.inputs,
                 source_preparation: recipe.source_preparation,
-                callee_prerequisites: None,
+                prerequisites: vec![Arc::new(projection)],
                 considered: resolution.considered.clone().into_boxed_slice(),
                 function_value_origin: function_value_origin.clone(),
                 dialogue_context: resolution.dialogue_context,
@@ -3250,7 +3277,7 @@ impl Analyzer<'_, '_, '_> {
             Ok(result) => result,
             Err(error) => {
                 let (_, _, _, _, branch, _) = transaction.into_parts();
-                self.discard_nested_call_callee_prerequisites_from_branch(owner, branch)
+                self.discard_nested_call_prerequisites_from_branch(owner, branch)
                     .map_err(CandidateFactOperationFailure::Expression)?;
                 self.facts
                     .discard_candidate_projection(outer_projection)
@@ -3280,18 +3307,22 @@ impl Analyzer<'_, '_, '_> {
             preparation_work
                 .visit_binding()
                 .map_err(AnalyzerExpressionError::fatal)?;
-            let prerequisites = nested
-                .recipe
-                .callee_prerequisites
-                .take()
-                .and_then(Arc::into_inner)
-                .ok_or_else(|| AnalyzerExpressionError::Call {
-                    owner: nested.recipe.owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        crate::callable::CallConstraintInvariant::MalformedMapperSeal,
-                    )),
-                })?;
-            projections.push(prerequisites);
+            if nested.recipe.prerequisites.is_empty() {
+                return Err(AnalyzerExpressionError::fact(
+                    CandidateFactTransactionViolation::ProjectionUnavailable,
+                )
+                .into());
+            }
+            for prerequisite in std::mem::take(&mut nested.recipe.prerequisites) {
+                let projection =
+                    Arc::into_inner(prerequisite).ok_or_else(|| AnalyzerExpressionError::Call {
+                        owner: nested.recipe.owner,
+                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                        )),
+                    })?;
+                projections.push(projection);
+            }
         }
         self.facts
             .apply_candidate_projections(transaction_authority, projections, &mut preparation_work)
@@ -3410,7 +3441,7 @@ impl Analyzer<'_, '_, '_> {
             Ok(result) => result,
             Err(error) => {
                 let (_, _, _, _, branch, _) = transaction.into_parts();
-                self.discard_nested_call_callee_prerequisites_from_branch(owner, branch)
+                self.discard_nested_call_prerequisites_from_branch(owner, branch)
                     .map_err(CandidateFactOperationFailure::Expression)?;
                 return Err(CandidateFactOperationFailure::Expression(
                     AnalyzerExpressionError::Call {
@@ -3799,7 +3830,7 @@ impl Analyzer<'_, '_, '_> {
             ..
         } = branch
         {
-            self.discard_nested_call_callee_prerequisites(owner, nested_calls)?;
+            self.discard_nested_call_prerequisites(owner, nested_calls)?;
             projections.extend(materialized);
         }
         self.facts
@@ -3813,39 +3844,37 @@ impl Analyzer<'_, '_, '_> {
         projection: PreparedCandidateSemanticProjection,
     ) -> Result<(), AnalyzerExpressionError> {
         let PreparedCandidateSemanticProjection { outer, branch } = projection;
-        self.discard_nested_call_callee_prerequisites_from_branch(owner, branch)?;
+        self.discard_nested_call_prerequisites_from_branch(owner, branch)?;
         self.facts
             .discard_candidate_projection(outer)
             .map_err(AnalyzerExpressionError::fact)?;
         Ok(())
     }
 
-    fn discard_nested_call_callee_prerequisites(
+    fn discard_nested_call_prerequisites(
         &self,
         owner: ExprId,
         nested_calls: Box<[PreparedSelectedNestedCall]>,
     ) -> Result<(), AnalyzerExpressionError> {
         fn collect(
-            owner: ExprId,
             recipe: &mut PreparedCorrelatedCallRecipe,
             projections: &mut Vec<Arc<super::state::CandidateSemanticProjection>>,
         ) -> Result<(), AnalyzerExpressionError> {
-            let projection = recipe.callee_prerequisites.take().ok_or_else(|| {
-                AnalyzerExpressionError::Call {
-                    owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        crate::callable::CallConstraintInvariant::MalformedMapperSeal,
-                    )),
+            if recipe.prerequisites.is_empty() {
+                return Err(AnalyzerExpressionError::fact(
+                    CandidateFactTransactionViolation::ProjectionUnavailable,
+                ));
+            }
+            for projection in std::mem::take(&mut recipe.prerequisites) {
+                if !projections
+                    .iter()
+                    .any(|existing| Arc::ptr_eq(existing, &projection))
+                {
+                    projections.push(projection);
                 }
-            })?;
-            if !projections
-                .iter()
-                .any(|existing| Arc::ptr_eq(existing, &projection))
-            {
-                projections.push(projection);
             }
             for descendant in &mut recipe.descendants {
-                collect(owner, descendant, projections)?;
+                collect(descendant, projections)?;
             }
             recipe.descendants.clear();
             Ok(())
@@ -3853,7 +3882,7 @@ impl Analyzer<'_, '_, '_> {
 
         let mut projections = Vec::new();
         for mut selected in nested_calls.into_vec() {
-            collect(owner, &mut selected.recipe, &mut projections)?;
+            collect(&mut selected.recipe, &mut projections)?;
         }
         for shared in projections {
             let projection =
@@ -3870,7 +3899,7 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    fn discard_nested_call_callee_prerequisites_from_branch(
+    fn discard_nested_call_prerequisites_from_branch(
         &self,
         owner: ExprId,
         branch: constraints::AnalyzerCallSealedBranch,
@@ -3881,7 +3910,7 @@ impl Analyzer<'_, '_, '_> {
             ..
         } = branch
         {
-            self.discard_nested_call_callee_prerequisites(owner, nested_calls)?;
+            self.discard_nested_call_prerequisites(owner, nested_calls)?;
             self.facts
                 .discard_candidate_projections(projections)
                 .map_err(AnalyzerExpressionError::fact)?;

@@ -1721,7 +1721,7 @@ impl<'a, 'project, 'catalog, 'control>
                 let AnalyzerCallObservedSource {
                     prepared_children, ..
                 } = checked;
-                let owners = PreparedCalleeProjectionOwners::for_source(&prepared_children, source)
+                let owners = PreparedNestedProjectionOwners::for_source(&prepared_children, source)
                     .map_err(SourceCallbackFailure::invariant)?;
                 drop(prepared_children);
                 owners
@@ -3940,12 +3940,12 @@ impl PreparedCallConstraintSet {
     }
 }
 
-struct PreparedCalleeProjectionOwners {
+struct PreparedNestedProjectionOwners {
     projections: Vec<Arc<CandidateSemanticProjection>>,
     source: AnalyzerCallConstraintSource,
 }
 
-impl PreparedCalleeProjectionOwners {
+impl PreparedNestedProjectionOwners {
     fn from_recipes(
         recipes: &[super::PreparedCorrelatedCallRecipe],
     ) -> Result<Self, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
@@ -3961,15 +3961,16 @@ impl PreparedCalleeProjectionOwners {
             recipe: &super::PreparedCorrelatedCallRecipe,
             projections: &mut Vec<Arc<CandidateSemanticProjection>>,
         ) -> Result<(), CallConstraintInvariant> {
-            let projection = recipe
-                .callee_prerequisites
-                .as_ref()
-                .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
-            if !projections
-                .iter()
-                .any(|existing| Arc::ptr_eq(existing, projection))
-            {
-                projections.push(Arc::clone(projection));
+            if recipe.prerequisites.is_empty() {
+                return Err(CallConstraintInvariant::MalformedMapperSeal);
+            }
+            for projection in &recipe.prerequisites {
+                if !projections
+                    .iter()
+                    .any(|existing| Arc::ptr_eq(existing, projection))
+                {
+                    projections.push(Arc::clone(projection));
+                }
             }
             for descendant in &recipe.descendants {
                 collect(descendant, projections)?;
@@ -4026,9 +4027,9 @@ impl PreparedCalleeProjectionOwners {
             let retained = nested_calls.iter().any(|selected| {
                 selected
                     .recipe
-                    .callee_prerequisites
-                    .as_ref()
-                    .is_some_and(|projection| Arc::ptr_eq(&shared, projection))
+                    .prerequisites
+                    .iter()
+                    .any(|projection| Arc::ptr_eq(&shared, projection))
             });
             if retained {
                 drop(shared);
@@ -6617,24 +6618,24 @@ pub(crate) fn run_prepared_candidate(
     let alternatives = match alternatives {
         Ok(alternatives) => alternatives,
         Err(failure) => {
-            let callee_owners =
-                PreparedCalleeProjectionOwners::from_recipes(&prepared_child_calls)?;
+            let nested_owners =
+                PreparedNestedProjectionOwners::from_recipes(&prepared_child_calls)?;
             drop(prepared_child_calls);
-            callee_owners.discard_all(analyzer)?;
+            nested_owners.discard_all(analyzer)?;
             return Err(failure);
         }
     };
     let alternatives = match alternatives {
         Ok(alternatives) => alternatives,
         Err(failure) => {
-            let callee_owners =
-                PreparedCalleeProjectionOwners::from_recipes(&prepared_child_calls)?;
+            let nested_owners =
+                PreparedNestedProjectionOwners::from_recipes(&prepared_child_calls)?;
             drop(prepared_child_calls);
-            callee_owners.discard_all(analyzer)?;
+            nested_owners.discard_all(analyzer)?;
             return Err(failure);
         }
     };
-    let callee_owners = PreparedCalleeProjectionOwners::from_recipes(&prepared_child_calls)?;
+    let nested_owners = PreparedNestedProjectionOwners::from_recipes(&prepared_child_calls)?;
     drop(prepared_child_calls);
     expected_projection_keys.sort();
     let validation = (|| {
@@ -6659,9 +6660,9 @@ pub(crate) fn run_prepared_candidate(
     })();
     if let Err(failure) = validation {
         let candidate_cleanup = discard_completed_candidate_alternatives(analyzer, alternatives);
-        let callee_cleanup = callee_owners.discard_all(analyzer);
+        let nested_cleanup = nested_owners.discard_all(analyzer);
         candidate_cleanup?;
-        callee_cleanup?;
+        nested_cleanup?;
         return Err(failure);
     }
     let selected_index =
@@ -6670,9 +6671,9 @@ pub(crate) fn run_prepared_candidate(
             Err(failure) => {
                 let candidate_cleanup =
                     discard_completed_candidate_alternatives(analyzer, alternatives);
-                let callee_cleanup = callee_owners.discard_all(analyzer);
+                let nested_cleanup = nested_owners.discard_all(analyzer);
                 candidate_cleanup?;
-                callee_cleanup?;
+                nested_cleanup?;
                 return Err(failure);
             }
         };
@@ -6701,7 +6702,7 @@ pub(crate) fn run_prepared_candidate(
     let solved = match solved {
         Ok(solved) => solved,
         Err(failure) => {
-            callee_owners.discard_all(analyzer)?;
+            nested_owners.discard_all(analyzer)?;
             return Err(failure);
         }
     };
@@ -6738,7 +6739,7 @@ pub(crate) fn run_prepared_candidate(
         Ok(result) => result,
         Err(failure) => {
             drop(solved);
-            callee_owners.discard_all(analyzer)?;
+            nested_owners.discard_all(analyzer)?;
             return Err(failure);
         }
     };
@@ -6753,14 +6754,14 @@ pub(crate) fn run_prepared_candidate(
         &mut context.work(),
     ) {
         drop(sealed_branch);
-        callee_owners.discard_all(analyzer)?;
+        nested_owners.discard_all(analyzer)?;
         return Err(error);
     }
     let selected_nested_calls = match &sealed_branch {
         AnalyzerCallSealedBranch::Empty => &[][..],
         AnalyzerCallSealedBranch::Materialized { nested_calls, .. } => nested_calls,
     };
-    callee_owners.retain_selected(analyzer, selected_nested_calls)?;
+    nested_owners.retain_selected(analyzer, selected_nested_calls)?;
     Ok(RanCandidateTransaction {
         data: Box::new(RanCandidateTransactionData {
             application,
