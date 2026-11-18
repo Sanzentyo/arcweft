@@ -18535,3 +18535,18 @@ checked／uncheckedの両方で別の観測receiptを拒否し、元のトラン
 7 Rust path、234追加／14削除、物理220 LOC増。Cargo manifest・公開契約・版に差分はない。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-selected-source-preparation-transfer-checkpoint.raw.zip) は20 entry、284,535 bytes、SHA256 `be281d20690e261b068c201603c03e8a051f7ec5fb002f76168bf816d753a814`。各entryの長さとSHA256を再読取で照合した。旧履歴2,868,365 bytesのSHA256 `a4757d334884c0d955b581f4a929b1aa8159629231560fe736b6698e87cdfd39` をprefixとして保持した。
+
+<a id="prepared-call-graph-batch-restore-checkpoint"></a>
+## 2026-11-18 — 元の呼出しグラフ差分を一括適用する
+
+基点 `106202d8a8a6df102bc07aab673e6ab6c175e68e`。Source `9412c833d1ab05ba928ec214bfcea2e99236ff73` を既存mainへ通常commitし、非force push後に公開mainのfull SHAと検証時の4入力のblobをSHA256で照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+呼出しグラフ所有型が全差分の発行元・site／node・依存・推論要求を事前検査する。作用グラフ所有型が同じlive baseと全read-scope依存を照合し、元のpermitを一括適用する。成功した場合に呼出しグラフの変更と作用を一つのcheckpointに記録する。失敗の場合は元の全差分を入力順で返す。現行analyzerは再評価で得た一件の差分を共通経路に渡す。選択した元のsource差分をこの経路に渡す接続は未達。
+
+独立した実Named作用項を持つ2差分を使い、作用側の予算切れで全差分が保持され、再試行とrollbackができることを検査するfixtureを追加した。別々のcall siteが同じ作用宣言の本体を書いた場合に、全差分が拒否されるfixtureも追加した。どちらも実行には至っていない。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。固定入力dev01はlibrary **420エラー・25警告**、lib test **1,404エラー・44警告**。変更pathを一次位置とする65診断は既存analyzer stateの箇所に出た。owner fmtと差分checkは終了0。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Web最終受入は未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,414,797 bytesで既存成果物を再利用した。
+
+4 Rust path、292追加／136削除、物理156 LOC増。Cargo manifest・公開契約・版に差分はない。現状一覧の終端効果行から途中の処理経路の重複説明を整理した。各移行時点の範囲・結果とSHAは過去節にあり、現在の接続と未達箇所は一覧で追える。Generic Matchの受入・公開行を同一バイトで保持した。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-prepared-call-graph-batch-restore-checkpoint.raw.zip) は14 entry、149,739 bytes、SHA256 `ecd1f70011ae87d06b3b8db9adacef6dff53656c166d9336e23821bdd680d313`。各entryの長さとSHA256を再読取で照合した。旧履歴2,870,929 bytesのSHA256 `8199e5b342f2cb31daf4d984408a28c6e28c72fba331887a2dd1bb508b86b2ec` をprefixとして保持した。
