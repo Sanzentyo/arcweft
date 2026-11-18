@@ -25,7 +25,7 @@ use crate::{
         FinalSemanticAnalysisError, PreparedExpressionFact,
     },
     semantic_coordinate::{CheckedSemanticPath, SemanticCoordinateIndex},
-    types::{CompileTimeFxType, TypeKind},
+    types::{CompileTimeFxType, TypeEffectDomain, TypeKind},
 };
 
 use super::{
@@ -537,7 +537,7 @@ fn canonicalize_view_value_inputs(
     Some((canonical, instructions))
 }
 
-fn view_runtime_type(ty: &TypeKind) -> Option<FxRuntimeType> {
+fn view_runtime_type<D: TypeEffectDomain>(ty: &TypeKind<D>) -> Option<FxRuntimeType> {
     use crate::types::CompileTimeScalarKind;
     Some(match ty {
         TypeKind::Bool => FxRuntimeType::Bool,
@@ -604,7 +604,12 @@ impl CheckedValueProgramSealContext for ViewValueProgramSealContext<'_, '_, '_, 
             .expressions()
             .get(&owner)
             .and_then(PreparedExpressionFact::value_type)
-            .cloned()
+            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        let ty = self
+            .analyzer
+            .source_type_preparation(self.analyzer.preparation_work.clone())
+            .and_then(|source| source.project_annotations(owner, ty))
+            .map_err(AnalyzerExpressionError::fatal)?
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
         let value = match self
             .analyzer

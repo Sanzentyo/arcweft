@@ -301,11 +301,16 @@ impl Analyzer<'_, '_, '_> {
             let default = hir_parameter
                 .default()
                 .map(|source| {
-                    self.check_expression_published(source, Some(declared))
-                        .map_err(|_| CheckedFxDefinitionSealError::InvalidValue {
-                            owner: source,
-                            expected: parameter_type.static_type(),
-                        })?;
+                    let invalid = |_| CheckedFxDefinitionSealError::InvalidValue {
+                        owner: source,
+                        expected: parameter_type.static_type(),
+                    };
+                    let context = self.published_expression_context();
+                    let prepared = self
+                        .retain_source_value_type(&context, source, declared)
+                        .map_err(invalid)?;
+                    self.check_expression_published(source, Some(&prepared))
+                        .map_err(invalid)?;
                     let value = self
                         .checked_compile_time_value(module, source, declared)
                         .map_err(|_| CheckedFxDefinitionSealError::InvalidValue {
@@ -1300,8 +1305,13 @@ impl FxDefinitionSealer<'_, '_, '_, '_> {
         let expected_type = self
             .type_for_static(expected)
             .ok_or(CheckedFxDefinitionSealError::InvalidValue { owner, expected })?;
+        let context = self.analyzer.published_expression_context();
+        let prepared = self
+            .analyzer
+            .retain_source_value_type(&context, owner, &expected_type)
+            .map_err(|_| CheckedFxDefinitionSealError::InvalidValue { owner, expected })?;
         self.analyzer
-            .check_expression_published(owner, Some(&expected_type))
+            .check_expression_published(owner, Some(&prepared))
             .map_err(|_| CheckedFxDefinitionSealError::InvalidValue { owner, expected })?;
         let value = self
             .analyzer
