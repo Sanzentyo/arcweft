@@ -48,7 +48,8 @@ pub(crate) use effect_domain::{
 pub(crate) use generic_use::TypeGenericUseCollector;
 pub use generic_use::TypeGenericUseError;
 pub(crate) use generic_use::{
-    StableGenericReferenceUseCollector, TypeGenericReferenceUseCollector,
+    PreparedGenericUseFailure, StableGenericReferenceUseCollector,
+    TypeGenericReferenceUseCollector, TypeGenericReferenceUseInventory,
 };
 pub use generics::{
     BoundConstParameter, BoundEffectParameter, BoundTypeParameter, GenericBinder,

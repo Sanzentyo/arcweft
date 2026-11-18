@@ -212,48 +212,30 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         Self::EnumConstructorHead(expected)
     }
 
-    pub(super) fn parametric(
+    pub(super) fn parametric_with_scope_lease(
         expected: &'a TypeKind<crate::types::PreparedEffects>,
         unbound: &[crate::types::constraints::ConstraintGenericParameterId],
+        scope_lease: crate::types::constraints::ImportedGenericParameterScopeLease,
     ) -> Option<Self> {
-        if unbound.is_empty() || !unbound.windows(2).all(|pair| pair[0] < pair[1]) {
+        if unbound != scope_lease.parameters() {
             return None;
         }
-        let inventory = crate::types::TypeGenericReferenceUseCollector::collect(expected).ok()?;
-        if !unbound.iter().all(|parameter| match parameter {
-            crate::types::constraints::ConstraintGenericParameterId::Type(parameter) => {
-                inventory.types().binary_search(parameter).is_ok()
-            }
-            crate::types::constraints::ConstraintGenericParameterId::Const(parameter) => {
-                inventory.consts().binary_search(parameter).is_ok()
-            }
-            crate::types::constraints::ConstraintGenericParameterId::Effect(variable) => {
-                inventory.effects().binary_search(variable).is_ok()
-            }
-        }) {
+        Self::parametric(expected, unbound, Some(scope_lease))
+    }
+
+    fn parametric(
+        expected: &'a TypeKind<crate::types::PreparedEffects>,
+        unbound: &[crate::types::constraints::ConstraintGenericParameterId],
+        scope_lease: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
+    ) -> Option<Self> {
+        if unbound.is_empty() || !unbound.windows(2).all(|pair| pair[0] < pair[1]) {
             return None;
         }
         Some(Self::Parametric {
             expected,
             unbound: Arc::from(unbound),
-            scope_lease: None,
+            scope_lease,
         })
-    }
-
-    pub(super) fn parametric_with_scope_lease(
-        expected: &'a TypeKind<crate::types::PreparedEffects>,
-        scope_lease: crate::types::constraints::ImportedGenericParameterScopeLease,
-    ) -> Option<Self> {
-        let unbound = scope_lease.parameters();
-        let mut expectation = Self::parametric(expected, unbound)?;
-        if let Self::Parametric {
-            scope_lease: imported,
-            ..
-        } = &mut expectation
-        {
-            *imported = Some(scope_lease);
-        }
-        Some(expectation)
     }
 
     pub(super) fn contextual_shape(&self) -> Option<&'a TypeKind<crate::types::PreparedEffects>> {
@@ -404,16 +386,19 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         }
     }
 
-    fn project<'b>(
+    fn project<'b, E>(
         &self,
         expected: Option<&'b TypeKind<crate::types::PreparedEffects>>,
-    ) -> Result<AnalyzerExpressionExpectation<'b>, crate::types::TypeGenericUseError> {
+        uses: &mut impl FnMut(
+            &TypeKind<crate::types::PreparedEffects>,
+        ) -> Result<crate::types::TypeGenericReferenceUseInventory, E>,
+    ) -> Result<AnalyzerExpressionExpectation<'b>, E> {
         let Some(expected) = expected else {
             return Ok(AnalyzerExpressionExpectation::Unconstrained);
         };
         if let Self::FunctionValueSource(source) = self {
             return source
-                .project(Some(expected))
+                .project(Some(expected), uses)
                 .map(AnalyzerExpressionExpectation::function_value_source);
         }
         if let Self::PublicIdReference {
@@ -422,7 +407,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         } = self
         {
             return source
-                .project(Some(expected))
+                .project(Some(expected), uses)
                 .map(|projected| projected.public_id_reference(*family));
         }
         let Self::Parametric {
@@ -433,20 +418,10 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         else {
             return Ok(AnalyzerExpressionExpectation::Complete(expected));
         };
-        let inventory = crate::types::TypeGenericReferenceUseCollector::collect(expected)?;
+        let inventory = uses(expected)?;
         let projected = unbound
             .iter()
-            .filter(|parameter| match parameter {
-                crate::types::constraints::ConstraintGenericParameterId::Type(parameter) => {
-                    inventory.types().binary_search(parameter).is_ok()
-                }
-                crate::types::constraints::ConstraintGenericParameterId::Const(parameter) => {
-                    inventory.consts().binary_search(parameter).is_ok()
-                }
-                crate::types::constraints::ConstraintGenericParameterId::Effect(variable) => {
-                    inventory.effects().binary_search(variable).is_ok()
-                }
-            })
+            .filter(|parameter| inventory.contains(parameter))
             .cloned()
             .collect::<Vec<_>>();
         if projected.is_empty() {
@@ -459,28 +434,47 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
             })
         }
     }
-
-    pub(super) fn project_checked<'b>(
-        &self,
-        owner: ExprId,
-        expected: Option<&'b TypeKind<crate::types::PreparedEffects>>,
-    ) -> Result<AnalyzerExpressionExpectation<'b>, AnalyzerExpressionError> {
-        self.project(expected).map_err(|_| AnalyzerExpressionError::Call {
-            owner,
-            failure: super::calls::CallAnalysisFailure::Invariant(
-                super::calls::CallAnalysisInvariant::Constraint(
-                    crate::callable::CallConstraintInvariant::Lower(
-                        crate::types::constraints::TypeConstraintInvariant::SourceProtocol(
-                            crate::types::constraints::TypeConstraintSourceProtocolInvariant::InvalidEvidence,
-                        ),
-                    ),
-                ),
-            ),
-        })
-    }
 }
 
 impl Analyzer<'_, '_, '_> {
+    pub(super) fn declaration_parametric_expectation<'b>(
+        &self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expected: &'b TypeKind<crate::types::PreparedEffects>,
+        unbound: &[crate::types::constraints::ConstraintGenericParameterId],
+    ) -> Result<AnalyzerExpressionExpectation<'b>, FinalSemanticAnalysisError> {
+        let uses = self.source_type_preparation(context.work())?.generic_uses(
+            owner,
+            expected,
+            self.facts.effect_declarations()?.read(),
+        )?;
+        if !unbound.iter().all(|parameter| uses.contains(parameter)) {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+        }
+        AnalyzerExpressionExpectation::parametric(expected, unbound, None)
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)
+    }
+
+    pub(super) fn project_expression_expectation<'b>(
+        &self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+        expected: Option<&'b TypeKind<crate::types::PreparedEffects>>,
+    ) -> Result<AnalyzerExpressionExpectation<'b>, AnalyzerExpressionError> {
+        expectation
+            .project(expected, &mut |ty| {
+                let declarations = self.facts.effect_declarations()?;
+                self.source_type_preparation(context.work())?.generic_uses(
+                    owner,
+                    ty,
+                    declarations.read(),
+                )
+            })
+            .map_err(AnalyzerExpressionError::fatal)
+    }
+
     /// An unselected call deliberately has no value type. Body-result validation
     /// may defer that one error to its retained, source-backed call diagnostic.
     pub(super) fn has_unselected_call_diagnostic(
@@ -1078,7 +1072,8 @@ impl Analyzer<'_, '_, '_> {
                 Ok,
             )?;
         let expected_result = contextual.as_ref().map(|(_, result)| result);
-        let body_expectation = expectation.project_checked(owner, expected_result)?;
+        let body_expectation =
+            self.project_expression_expectation(context, owner, expectation, expected_result)?;
         let (body, result, body_effects, value_results) = if matches!(
             expression.kind(),
             HirExprKind::Placeholder(HirPlaceholderKind::PartialApplication)
@@ -2179,8 +2174,12 @@ impl Analyzer<'_, '_, '_> {
                         self.evaluate_expression_with_expectation(
                             context,
                             *child,
-                            expectation
-                                .project_checked(owner, contextual.map(|items| &items[index]))?,
+                            self.project_expression_expectation(
+                                context,
+                                owner,
+                                expectation,
+                                contextual.map(|items| &items[index]),
+                            )?,
                         )
                     })
                     .collect::<Result<Vec<_>, AnalyzerExpressionError>>()?;
@@ -2200,8 +2199,12 @@ impl Analyzer<'_, '_, '_> {
                 ))
             }
             HirExprKind::BracketSequence(sequence) => {
-                let item_expectation =
-                    expectation.project_checked(owner, expected_item(expected))?;
+                let item_expectation = self.project_expression_expectation(
+                    context,
+                    owner,
+                    expectation,
+                    expected_item(expected),
+                )?;
                 let children =
                     self.check_expressions(context, sequence.elements(), &item_expectation)?;
                 let child_types = children
@@ -2267,7 +2270,12 @@ impl Analyzer<'_, '_, '_> {
                 let value = self.evaluate_expression_with_expectation(
                     context,
                     repeat.value(),
-                    expectation.project_checked(owner, expected_item(expected))?,
+                    self.project_expression_expectation(
+                        context,
+                        owner,
+                        expectation,
+                        expected_item(expected),
+                    )?,
                 )?;
                 let length =
                     self.evaluate_expression(context, repeat.length(), Some(&TypeKind::USize))?;
@@ -2300,8 +2308,12 @@ impl Analyzer<'_, '_, '_> {
                 ))
             }
             HirExprKind::Range(range) => {
-                let item_expectation =
-                    expectation.project_checked(owner, expected_item(expected))?;
+                let item_expectation = self.project_expression_expectation(
+                    context,
+                    owner,
+                    expectation,
+                    expected_item(expected),
+                )?;
                 let mut bounds = Vec::new();
                 if let Some(start) = range.start() {
                     bounds.push(self.evaluate_expression_with_expectation(
@@ -2715,7 +2727,7 @@ impl Analyzer<'_, '_, '_> {
             {
                 AnalyzerExpressionExpectation::Unconstrained
             } else {
-                expectation.project_checked(owner, expected_success)?
+                self.project_expression_expectation(context, owner, expectation, expected_success)?
             },
         )?;
         let mut tail_type = tail.value_type().cloned().ok_or_else(|| {
@@ -2736,7 +2748,12 @@ impl Analyzer<'_, '_, '_> {
                     Some(TypeKind::Result { error, .. }) => Some(error.as_ref()),
                     _ => None,
                 };
-                let error_expectation = expectation.project_checked(owner, expected_error)?;
+                let error_expectation = self.project_expression_expectation(
+                    context,
+                    owner,
+                    expectation,
+                    expected_error,
+                )?;
                 let residuals = self.try_residuals_for_block(owner);
                 let error = if let Some(expected) = error_expectation.complete_type() {
                     let types = self
@@ -2985,7 +3002,7 @@ impl Analyzer<'_, '_, '_> {
             match_expr.arms().iter().map(|arm| arm.value()),
         )?;
         let branch_expectation = if let Some(inferred) = inferred.as_ref() {
-            expectation.project_checked(owner, Some(inferred))?
+            self.project_expression_expectation(context, owner, expectation, Some(inferred))?
         } else {
             expectation.clone()
         };
@@ -3510,8 +3527,10 @@ impl Analyzer<'_, '_, '_> {
                         })
                         .transpose()
                         .map_err(AnalyzerExpressionError::fatal)?;
-                    let contextual = expectation.project_checked(
+                    let contextual = self.project_expression_expectation(
+                        context,
                         owner,
+                        expectation,
                         contextual_function.map(|(params, _)| &params[index]),
                     )?;
                     let parameter_ty = match (annotated, contextual.contextual_shape()) {
@@ -3545,8 +3564,12 @@ impl Analyzer<'_, '_, '_> {
                     })
                     .transpose()
                     .map_err(AnalyzerExpressionError::fatal)?;
-                let contextual_result = expectation
-                    .project_checked(owner, contextual_function.map(|(_, result)| result))?;
+                let contextual_result = self.project_expression_expectation(
+                    context,
+                    owner,
+                    expectation,
+                    contextual_function.map(|(_, result)| result),
+                )?;
                 if let (Some(declared), Some(contextual)) =
                     (declared_result.as_ref(), contextual_result.complete_type())
                     && !contextual.accepts(declared)
@@ -6291,6 +6314,53 @@ fn source_span_for_role(
 #[cfg(test)]
 mod expectation_tests {
     use super::*;
+    use crate::effect_row::{
+        DecisionControl, DecisionWork, EffectPredicate, EffectRow,
+        prepared::{
+            PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectReadView, PreparedEffectRow,
+        },
+    };
+    use crate::types::{
+        GenericEffectParameterId, GenericEffectReference, GenericScope, PreparedGenericUseFailure,
+        TypeGenericReferenceUseCollector, TypeGenericReferenceUseInventory,
+        constraints::ConstraintGenericParameterId,
+    };
+
+    struct Work(u64);
+
+    impl DecisionControl for Work {
+        type Error = ();
+
+        fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
+            self.0 = self.0.checked_sub(1).ok_or(())?;
+            Ok(())
+        }
+    }
+
+    fn inventory(
+        ty: &TypeKind<PreparedEffects>,
+        graph: PreparedEffectReadView<'_>,
+        work: &mut Work,
+    ) -> Result<TypeGenericReferenceUseInventory, PreparedGenericUseFailure<()>> {
+        TypeGenericReferenceUseCollector::collect_prepared(
+            ty,
+            &GenericScope::default(),
+            graph,
+            work,
+        )
+    }
+
+    fn expectation<'a>(
+        expected: &'a TypeKind<PreparedEffects>,
+        unbound: &[ConstraintGenericParameterId],
+    ) -> Option<AnalyzerExpressionExpectation<'a>> {
+        let graph = PreparedEffectGraph::default();
+        let uses = inventory(expected, graph.read(), &mut Work(1000)).ok()?;
+        if !unbound.iter().all(|parameter| uses.contains(parameter)) {
+            return None;
+        }
+        AnalyzerExpressionExpectation::parametric(expected, unbound, None)
+    }
 
     fn generic(owner: u64) -> GenericTypeParameterId {
         GenericTypeParameterId::new(
@@ -6300,23 +6370,81 @@ mod expectation_tests {
     }
 
     #[test]
+    fn child_expectation_preserves_effect_arguments_of_unfinished_declaration_terms() {
+        let effect = |ordinal| {
+            GenericEffectReference::Free(GenericEffectParameterId::new(
+                GenericParameterOwnerId::Detached(crate::types::DetachedGenericOwnerId::new(7)),
+                ordinal,
+            ))
+        };
+        let actual = effect(0);
+        let formal = effect(1);
+        let mut graph = PreparedEffectGraph::default();
+        let mut work = Work(1000);
+        let scheme = graph
+            .declare(
+                vec![formal.clone()],
+                EffectPredicate::unconstrained(),
+                &mut work,
+            )
+            .unwrap();
+        let terminal = graph
+            .application(
+                &scheme,
+                vec![PreparedEffectRow::Canonical(EffectRow::open(
+                    EffectSet::new(),
+                    actual.clone(),
+                ))],
+                &mut work,
+            )
+            .unwrap();
+        let callback = TypeKind::Function {
+            binder: crate::types::GenericBinder::EMPTY,
+            predicate: PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+            params: vec![TypeKind::I64],
+            return_type: Box::new(TypeKind::I64),
+            effects: terminal,
+        };
+        let parent = TypeKind::Tuple(vec![callback.clone(), TypeKind::I64]);
+        let parameter = ConstraintGenericParameterId::Effect(actual.clone());
+        let uses = inventory(&parent, graph.read(), &mut work).unwrap();
+        assert_eq!(uses.effects(), &[actual]);
+        assert!(!uses.contains(&ConstraintGenericParameterId::Effect(formal)));
+        let hint = AnalyzerExpressionExpectation::parametric(
+            &parent,
+            std::slice::from_ref(&parameter),
+            None,
+        )
+        .unwrap();
+        let projected = hint
+            .project(Some(&callback), &mut |ty| {
+                inventory(ty, graph.read(), &mut work)
+            })
+            .unwrap();
+        let AnalyzerExpressionExpectation::Parametric { unbound, .. } = projected else {
+            panic!("the callback retains its parent-owned effect parameter");
+        };
+        assert_eq!(unbound.as_ref(), &[parameter]);
+        assert!(matches!(
+            inventory(&parent, graph.read(), &mut Work(0)),
+            Err(PreparedGenericUseFailure::Control(()))
+        ));
+    }
+
+    #[test]
     fn parametric_expectation_seals_sorted_owned_unbound_inventory() {
         let owned = generic(1);
         let foreign = generic(2);
-        let expected = TypeKind::Option(Box::new(TypeKind::generic_parameter(owned.clone())));
+        let expected = TypeKind::Option(Box::new(TypeKind::GenericParam(
+            crate::types::GenericTypeReference::Free(owned.clone()),
+        )));
+        assert!(expectation(&expected, &[owned.clone().into()]).is_some());
         assert!(
-            AnalyzerExpressionExpectation::parametric(&expected, &[owned.clone().into()]).is_some()
-        );
-        assert!(
-            AnalyzerExpressionExpectation::parametric(&expected, &[foreign.into()]).is_none(),
+            expectation(&expected, &[foreign.into()]).is_none(),
             "an unbound identity absent from the shape cannot be admitted"
         );
         assert!(
-            AnalyzerExpressionExpectation::parametric(
-                &expected,
-                &[owned.clone().into(), owned.into()],
-            )
-            .is_none(),
+            expectation(&expected, &[owned.clone().into(), owned.into()],).is_none(),
             "duplicate/unordered unbound rows are not canonical"
         );
     }
@@ -6324,22 +6452,31 @@ mod expectation_tests {
     #[test]
     fn parametric_projection_intersects_children_without_dropping_failures() {
         let parameter = generic(3);
+        let graph = PreparedEffectGraph::default();
         let expected = TypeKind::Tuple(vec![
-            TypeKind::generic_parameter(parameter.clone()),
+            TypeKind::GenericParam(crate::types::GenericTypeReference::Free(parameter.clone())),
             TypeKind::I64,
         ]);
-        let expectation =
-            AnalyzerExpressionExpectation::parametric(&expected, &[parameter.clone().into()])
-                .expect("canonical parametric expectation");
+        let expectation = expectation(&expected, &[parameter.clone().into()])
+            .expect("canonical parametric expectation");
         assert!(matches!(
             expectation
-                .project(Some(&TypeKind::generic_parameter(parameter)))
+                .project(
+                    Some(&TypeKind::GenericParam(
+                        crate::types::GenericTypeReference::Free(parameter)
+                    )),
+                    &mut |ty| inventory(ty, graph.read(), &mut Work(1000))
+                )
                 .expect("valid generic child"),
             AnalyzerExpressionExpectation::Parametric { .. }
         ));
         assert!(matches!(
             expectation
-                .project(Some(&TypeKind::I64))
+                .project(Some(&TypeKind::I64), &mut |ty| inventory(
+                    ty,
+                    graph.read(),
+                    &mut Work(1000)
+                ))
                 .expect("valid concrete child"),
             AnalyzerExpressionExpectation::Complete(TypeKind::I64)
         ));
@@ -6348,8 +6485,12 @@ mod expectation_tests {
     #[test]
     fn expected_dependent_cache_requires_the_same_parametric_semantic_shape() {
         let parameter = generic(4);
-        let first = TypeKind::Option(Box::new(TypeKind::generic_parameter(parameter.clone())));
-        let second = TypeKind::Probe(Box::new(TypeKind::generic_parameter(parameter.clone())));
+        let first = TypeKind::Option(Box::new(TypeKind::GenericParam(
+            crate::types::GenericTypeReference::Free(parameter.clone()),
+        )));
+        let second = TypeKind::Probe(Box::new(TypeKind::GenericParam(
+            crate::types::GenericTypeReference::Free(parameter.clone()),
+        )));
         let checked: super::PreparedExpressionFact =
             crate::final_analysis::prepared::PreparedResolvedExpression::value(
                 first.clone(),
@@ -6359,11 +6500,9 @@ mod expectation_tests {
             )
             .into();
         let first_expectation =
-            AnalyzerExpressionExpectation::parametric(&first, &[parameter.clone().into()])
-                .expect("first expectation");
+            expectation(&first, &[parameter.clone().into()]).expect("first expectation");
         let second_expectation =
-            AnalyzerExpressionExpectation::parametric(&second, &[parameter.into()])
-                .expect("second expectation");
+            expectation(&second, &[parameter.into()]).expect("second expectation");
         assert!(first_expectation.accepts_cached(&checked));
         assert!(!second_expectation.accepts_cached(&checked));
 

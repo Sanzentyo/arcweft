@@ -2598,11 +2598,12 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             {
                                 AnalyzerExpressionExpectation::from_complete(Some(expected))
                             }
-                            ProjectedExpectedHint::Parametric { expected, scope_lease, .. }
+                            ProjectedExpectedHint::Parametric { expected, unbound, scope_lease }
                                 if alternative.source_projection().is_scalar() =>
                             {
                                 AnalyzerExpressionExpectation::parametric_with_scope_lease(
                                     expected,
+                                    unbound,
                                     scope_lease.clone(),
                                 )
                                 .ok_or_else(|| {

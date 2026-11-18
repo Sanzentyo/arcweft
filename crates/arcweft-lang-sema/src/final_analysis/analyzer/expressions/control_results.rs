@@ -120,7 +120,7 @@ impl Analyzer<'_, '_, '_> {
         inferred: Option<&TypeKind<crate::types::PreparedEffects>>,
     ) -> Result<super::PreparedResolvedExpression, AnalyzerExpressionError> {
         let branch_expectation = if let Some(inferred) = inferred {
-            expectation.project_checked(owner, Some(inferred))?
+            self.project_expression_expectation(context, owner, expectation, Some(inferred))?
         } else {
             expectation.clone()
         };

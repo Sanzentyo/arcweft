@@ -19,6 +19,41 @@ pub(super) struct SourceTypePreparation<'a> {
 }
 
 impl<'a> SourceTypePreparation<'a> {
+    pub(super) fn generic_uses(
+        &self,
+        owner: super::ExprId,
+        ty: &TypeKind<crate::types::PreparedEffects>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    ) -> Result<crate::types::TypeGenericReferenceUseInventory, super::FinalSemanticAnalysisError>
+    {
+        use crate::final_analysis::{FinalSemanticAnalysisError, SourceTypeRetentionFailure};
+        use crate::types::{PreparedGenericUseFailure, TypeGenericReferenceUseCollector};
+        let owner = owner.into();
+        let mut work = self.work.clone();
+        let formals = self
+            .owner(owner, &mut work)?
+            .declaration_formals_with_control(&mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        TypeGenericReferenceUseCollector::collect_prepared(
+            ty,
+            formals.template_scope(),
+            graph,
+            &mut work,
+        )
+        .map_err(|error| match error {
+            PreparedGenericUseFailure::Type(error) => {
+                FinalSemanticAnalysisError::SourceTypeRetention {
+                    owner,
+                    error: SourceTypeRetentionFailure::GenericUses(error),
+                }
+            }
+            PreparedGenericUseFailure::Effect(error) => {
+                FinalSemanticAnalysisError::from(error.map_control(|never| match never {}))
+            }
+            PreparedGenericUseFailure::Control(error) => error,
+        })
+    }
+
     pub(super) fn visit_binding(&self) -> Result<(), super::FinalSemanticAnalysisError> {
         use crate::types::TypeProjectionControl;
         self.work.clone().visit_binding()

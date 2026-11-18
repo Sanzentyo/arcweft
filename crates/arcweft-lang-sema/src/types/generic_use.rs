@@ -11,16 +11,25 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
-use crate::effect_row::EffectRow;
+use crate::effect_row::{
+    DecisionControl, DecisionWork, EffectPredicate, EffectRow,
+    prepared::{
+        PreparedEffectFailure, PreparedEffectPredicate, PreparedEffectReadView, PreparedEffectRow,
+    },
+};
 
 use super::{
-    ArrayLength, GenericConstParameterId, GenericConstReference, GenericEffectParameterId,
-    GenericEffectReference, GenericParameterKind, GenericParameterOwnerId, GenericScope,
-    GenericScopeError, GenericTypeParameterId, GenericTypeReference, TypeKind,
+    ArrayLength, CanonicalEffects, GenericConstParameterId, GenericConstReference,
+    GenericEffectParameterId, GenericEffectReference, GenericParameterKind,
+    GenericParameterOwnerId, GenericScope, GenericScopeError, GenericTypeParameterId,
+    GenericTypeReference, PreparedEffects, TypeEffectDomain, TypeKind,
+    constraints::TypeConstraintShape,
 };
 
 pub(crate) type TypeGenericUseCollector = GenericUseCollector<DeclarationUses>;
 pub(crate) type TypeGenericReferenceUseCollector = GenericUseCollector<ReferenceUses>;
+pub(crate) type TypeGenericReferenceUseInventory =
+    TypeGenericUseInventory<GenericTypeReference, GenericConstReference, GenericEffectReference>;
 pub(crate) type StableGenericReferenceUseCollector<P = u32> =
     GenericUseCollector<StableReferenceUses, P>;
 
@@ -245,6 +254,124 @@ pub enum TypeGenericUseError {
     InferableArrayLength,
 }
 
+#[derive(Debug)]
+pub(crate) enum PreparedGenericUseFailure<E> {
+    Type(TypeGenericUseError),
+    Effect(PreparedEffectFailure<std::convert::Infallible>),
+    Control(E),
+}
+
+impl<E> From<TypeGenericUseError> for PreparedGenericUseFailure<E> {
+    fn from(error: TypeGenericUseError) -> Self {
+        Self::Type(error)
+    }
+}
+
+impl<E> From<PreparedEffectFailure<Self>> for PreparedGenericUseFailure<E> {
+    fn from(error: PreparedEffectFailure<Self>) -> Self {
+        match error.split_control() {
+            Ok(error) => error,
+            Err(effect) => Self::Effect(effect),
+        }
+    }
+}
+
+trait GenericUseWalk<D: TypeEffectDomain> {
+    type Error: From<TypeGenericUseError>;
+
+    fn enter(&mut self) -> Result<(), Self::Error>;
+    fn visit_effects(
+        &mut self,
+        row: &D::Row,
+        predicate: &D::Predicate,
+        visit: &mut impl FnMut(&GenericEffectReference) -> Result<(), TypeGenericUseError>,
+    ) -> Result<(), Self::Error>;
+}
+
+struct CanonicalGenericUse;
+
+impl GenericUseWalk<CanonicalEffects> for CanonicalGenericUse {
+    type Error = TypeGenericUseError;
+
+    fn enter(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn visit_effects(
+        &mut self,
+        row: &EffectRow,
+        predicate: &EffectPredicate,
+        visit: &mut impl FnMut(&GenericEffectReference) -> Result<(), TypeGenericUseError>,
+    ) -> Result<(), Self::Error> {
+        for reference in row
+            .formula()
+            .into_iter()
+            .flat_map(|formula| formula.variables())
+            .chain(predicate.variables())
+        {
+            visit(reference)?;
+        }
+        Ok(())
+    }
+}
+
+struct PreparedGenericUse<'a, 'g, C> {
+    graph: PreparedEffectReadView<'g>,
+    control: &'a mut C,
+}
+
+struct GenericUseControl<'a, C>(&'a mut C);
+
+impl<C: DecisionControl> DecisionControl for GenericUseControl<'_, C> {
+    type Error = PreparedGenericUseFailure<C::Error>;
+
+    fn charge(&mut self, work: DecisionWork) -> Result<(), Self::Error> {
+        self.0
+            .charge(work)
+            .map_err(PreparedGenericUseFailure::Control)
+    }
+}
+
+impl<C: DecisionControl> GenericUseWalk<PreparedEffects> for PreparedGenericUse<'_, '_, C> {
+    type Error = PreparedGenericUseFailure<C::Error>;
+
+    fn enter(&mut self) -> Result<(), Self::Error> {
+        GenericUseControl(self.control).charge(DecisionWork::Visit)
+    }
+
+    fn visit_effects(
+        &mut self,
+        row: &PreparedEffectRow,
+        predicate: &PreparedEffectPredicate,
+        visit: &mut impl FnMut(&GenericEffectReference) -> Result<(), TypeGenericUseError>,
+    ) -> Result<(), Self::Error> {
+        let mut control = GenericUseControl(self.control);
+        let mut visit = |reference: &GenericEffectReference, _: &mut GenericUseControl<'_, C>| {
+            visit(reference).map_err(PreparedGenericUseFailure::Type)
+        };
+        self.graph
+            .visit_row_parameters(row, &mut control, &mut visit)?;
+        self.graph
+            .visit_predicate_parameters(predicate, &mut control, &mut visit)?;
+        Ok(())
+    }
+}
+
+impl TypeGenericReferenceUseCollector {
+    /// Walk application-local types in the exact live read scope. The
+    /// occurrence of a declaration application comes from its arguments.
+    pub(crate) fn collect_prepared<C: DecisionControl>(
+        ty: &TypeKind<PreparedEffects>,
+        scope: &GenericScope,
+        graph: PreparedEffectReadView<'_>,
+        control: &mut C,
+    ) -> Result<TypeGenericReferenceUseInventory, PreparedGenericUseFailure<C::Error>> {
+        let mut collector = Self::in_scope(scope);
+        collector.visit_domain(ty, 0, &mut PreparedGenericUse { graph, control })?;
+        Ok(collector.finish())
+    }
+}
+
 /// Distinct, deterministic generic identities found in one or more checked
 /// types.
 ///
@@ -292,7 +419,27 @@ impl<T: Ord, C: Ord, E: Ord, P: Copy> TypeGenericUseInventory<T, C, E, P> {
     }
 }
 
-/// Exhaustive, metered-free visitor for generic occurrences in [`TypeKind`].
+impl TypeGenericReferenceUseInventory {
+    pub(crate) fn contains(
+        &self,
+        parameter: &super::constraints::ConstraintGenericParameterId,
+    ) -> bool {
+        use super::constraints::ConstraintGenericParameterId;
+        match parameter {
+            ConstraintGenericParameterId::Type(parameter) => {
+                self.types().binary_search(parameter).is_ok()
+            }
+            ConstraintGenericParameterId::Const(parameter) => {
+                self.consts().binary_search(parameter).is_ok()
+            }
+            ConstraintGenericParameterId::Effect(parameter) => {
+                self.effects().binary_search(parameter).is_ok()
+            }
+        }
+    }
+}
+
+/// One structural visitor for generic occurrences in [`TypeKind`].
 #[derive(Clone, Debug)]
 pub(crate) struct GenericUseCollector<M: GenericUseDomain, P = u32> {
     scope: GenericScope,
@@ -343,141 +490,25 @@ impl<M: GenericUseDomain, P: Copy + Ord> GenericUseCollector<M, P> {
         }
     }
 
-    /// Visits a type and records `position` as the first-use coordinate for
-    /// every identity first encountered below it.
+    /// Visits a type and records its generic first-use coordinate.
     pub(crate) fn visit_at(
         &mut self,
         ty: &TypeKind,
         position: P,
     ) -> Result<(), TypeGenericUseError> {
-        match ty {
-            TypeKind::Bool
-            | TypeKind::I8
-            | TypeKind::I16
-            | TypeKind::I32
-            | TypeKind::I64
-            | TypeKind::I128
-            | TypeKind::ISize
-            | TypeKind::U8
-            | TypeKind::U16
-            | TypeKind::U32
-            | TypeKind::U64
-            | TypeKind::U128
-            | TypeKind::USize
-            | TypeKind::F32
-            | TypeKind::F64
-            | TypeKind::String
-            | TypeKind::Char
-            | TypeKind::Bytes
-            | TypeKind::TextCluster
-            | TypeKind::Duration
-            | TypeKind::Progress
-            | TypeKind::DenseNumeric(_)
-            | TypeKind::StageApi(_)
-            | TypeKind::LineContext
-            | TypeKind::StageActorHandle(_)
-            | TypeKind::CueHandle
-            | TypeKind::VoiceHandle
-            | TypeKind::StatementIngress(_)
-            | TypeKind::DisplayContext
-            | TypeKind::DisplayError
-            | TypeKind::DebugStatePath
-            | TypeKind::ObservationFieldPath
-            | TypeKind::Predicate
-            | TypeKind::Observation
-            | TypeKind::ObservedObject
-            | TypeKind::AgentBBox
-            | TypeKind::ActionName
-            | TypeKind::ActionTarget
-            | TypeKind::ActionResult
-            | TypeKind::AgentValue
-            | TypeKind::DataFormat
-            | TypeKind::DataValue
-            | TypeKind::DataError
-            | TypeKind::DataErrorKind
-            | TypeKind::DataPath
-            | TypeKind::DataPathSegment
-            | TypeKind::DataMapKind
-            | TypeKind::AgentEntityMetadata
-            | TypeKind::AgentSourceAnchor
-            | TypeKind::AgentProjectGraphNeighborhood
-            | TypeKind::AgentProjectGraphSymbol
-            | TypeKind::AgentProjectGraphEdge
-            | TypeKind::CaptureTarget
-            | TypeKind::CaptureRef
-            | TypeKind::AgentResource
-            | TypeKind::AgentResourceBody
-            | TypeKind::RagContextPack
-            | TypeKind::AgentBuiltin(_)
-            | TypeKind::FocusPatch
-            | TypeKind::CharacterDialogue(_)
-            | TypeKind::PresentationResource(_)
-            | TypeKind::ViewValue
-            | TypeKind::CharacterNominal(_)
-            | TypeKind::Named(_)
-            | TypeKind::Unit
-            | TypeKind::Never
-            | TypeKind::Error(_)
-            | TypeKind::CompileTimeCallable(_)
-            | TypeKind::CompileTimeScalar(_)
-            | TypeKind::CompileTimeStyle(_)
-            | TypeKind::CompileTimeEnum(_)
-            | TypeKind::CompileTimeFx(_) => Ok(()),
-            TypeKind::FixedVector(vector) => self.visit_at(vector.component(), position),
-            TypeKind::Range(inner)
-            | TypeKind::Probe(inner)
-            | TypeKind::Vec(inner)
-            | TypeKind::DataShape(inner)
-            | TypeKind::Slice(inner)
-            | TypeKind::Seq(inner)
-            | TypeKind::Need(inner)
-            | TypeKind::Option(inner)
-            | TypeKind::SlotRef(inner)
-            | TypeKind::ThreadHandle(inner)
-            | TypeKind::Shared(inner)
-            | TypeKind::DialogueLine(inner) => self.visit_at(inner, position),
-            TypeKind::MetaType(inner) => self.visit_at(inner, position),
-            TypeKind::IteratorState { item, .. } => self.visit_at(item, position),
-            TypeKind::Array { item, len } => {
-                self.visit_at(item, position)?;
-                self.visit_array_length(len, position)
-            }
-            TypeKind::Map { key, value, .. } => {
-                self.visit_at(key, position)?;
-                self.visit_at(value, position)
-            }
-            TypeKind::BorrowRef { inner, .. } => self.visit_at(inner, position),
-            TypeKind::Traversal {
-                source: item,
-                mapping: error,
-            }
-            | TypeKind::Stream { item, error }
-            | TypeKind::Parser { item, error }
-            | TypeKind::Result { ok: item, error } => {
-                self.visit_at(item, position)?;
-                self.visit_at(error, position)
-            }
-            TypeKind::Function {
-                binder,
-                predicate,
-                params,
-                return_type,
-                effects,
-            } => {
-                let nested = self.scope.with_binder(*binder);
-                let enclosing = std::mem::replace(&mut self.scope, nested);
-                let result = (|| {
-                    self.visit_effect_row_at(effects, position)?;
-                    self.visit_effect_predicate_at(predicate, position)?;
-                    for parameter in params {
-                        self.visit_at(parameter, position)?;
-                    }
-                    self.visit_at(return_type, position)
-                })();
-                self.scope = enclosing;
-                result
-            }
-            TypeKind::GenericParam(reference) => {
+        self.visit_domain(ty, position, &mut CanonicalGenericUse)
+    }
+
+    fn visit_domain<D: TypeEffectDomain, W: GenericUseWalk<D>>(
+        &mut self,
+        ty: &TypeKind<D>,
+        position: P,
+        walk: &mut W,
+    ) -> Result<(), W::Error> {
+        walk.enter()?;
+        let shape = ty.constraint_shape();
+        match shape {
+            TypeConstraintShape::Generic(reference) => {
                 if let Some(key) = M::type_key(
                     reference,
                     &self.scope,
@@ -488,42 +519,34 @@ impl<M: GenericUseDomain, P: Copy + Ord> GenericUseCollector<M, P> {
                         .and_modify(|first| *first = (*first).min(position))
                         .or_insert(position);
                 }
-                Ok(())
             }
-            TypeKind::Ref(entity) => entity
-                .value()
-                .map_or(Ok(()), |value| self.visit_at(value, position)),
-            TypeKind::ProjectNominal(nominal) => {
-                for argument in nominal.arguments() {
-                    self.visit_at(argument, position)?;
-                }
-                Ok(())
+            TypeConstraintShape::Array { len, .. } => self.visit_array_length(len, position)?,
+            TypeConstraintShape::Function {
+                binder,
+                effects,
+                predicate,
+                ..
+            } => {
+                let nested = self.scope.with_binder(*binder);
+                let enclosing = std::mem::replace(&mut self.scope, nested);
+                let result = (|| {
+                    walk.visit_effects(effects, predicate, &mut |reference| {
+                        self.visit_effect_reference_at(reference, position)
+                    })?;
+                    for child in shape.children() {
+                        self.visit_domain(child, position, walk)?;
+                    }
+                    Ok(())
+                })();
+                self.scope = enclosing;
+                return result;
             }
-            TypeKind::AcceptedNominal(nominal) => {
-                for argument in nominal.arguments() {
-                    self.visit_at(argument, position)?;
-                }
-                Ok(())
-            }
-            TypeKind::OpenNominal(nominal) => {
-                for argument in nominal.arguments() {
-                    self.visit_at(argument, position)?;
-                }
-                Ok(())
-            }
-            TypeKind::Projection { subject, .. } => self.visit_at(subject, position),
-            TypeKind::CharacterPatch(_) => Ok(()),
-            TypeKind::Tuple(items) | TypeKind::Choice(items) => {
-                for item in items {
-                    self.visit_at(item, position)?;
-                }
-                Ok(())
-            }
-            TypeKind::VariantPayload(payload) => {
-                payload.visit_types(&mut |field| self.visit_at(field, position))
-            }
-            TypeKind::Handle { item, .. } => self.visit_at(item, position),
+            _ => {}
         }
+        for child in shape.children() {
+            self.visit_domain(child, position, walk)?;
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -573,19 +596,12 @@ impl<M: GenericUseDomain, P: Copy + Ord> GenericUseCollector<M, P> {
     ) -> Result<(), TypeGenericUseError> {
         // An annotation awaiting inference supplies no references. This
         // inventory does not certify it as a resolved or empty effect row.
-        if let Ok(references) = row.variables() {
-            for reference in references {
-                if let Some(key) = M::effect_key(
-                    reference,
-                    &self.scope,
-                    self.scope.binders().len() - self.incoming_depth,
-                )? {
-                    self.effects
-                        .entry(key)
-                        .and_modify(|first| *first = (*first).min(position))
-                        .or_insert(position);
-                }
-            }
+        for reference in row
+            .formula()
+            .into_iter()
+            .flat_map(|formula| formula.variables())
+        {
+            self.visit_effect_reference_at(reference, position)?;
         }
         Ok(())
     }
@@ -596,16 +612,25 @@ impl<M: GenericUseDomain, P: Copy + Ord> GenericUseCollector<M, P> {
         position: P,
     ) -> Result<(), TypeGenericUseError> {
         for reference in predicate.variables() {
-            if let Some(key) = M::effect_key(
-                reference,
-                &self.scope,
-                self.scope.binders().len() - self.incoming_depth,
-            )? {
-                self.effects
-                    .entry(key)
-                    .and_modify(|first| *first = (*first).min(position))
-                    .or_insert(position);
-            }
+            self.visit_effect_reference_at(reference, position)?;
+        }
+        Ok(())
+    }
+
+    fn visit_effect_reference_at(
+        &mut self,
+        reference: &GenericEffectReference,
+        position: P,
+    ) -> Result<(), TypeGenericUseError> {
+        if let Some(key) = M::effect_key(
+            reference,
+            &self.scope,
+            self.scope.binders().len() - self.incoming_depth,
+        )? {
+            self.effects
+                .entry(key)
+                .and_modify(|first| *first = (*first).min(position))
+                .or_insert(position);
         }
         Ok(())
     }

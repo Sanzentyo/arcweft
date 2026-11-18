@@ -343,6 +343,8 @@ impl FinalSemanticAnalysisError {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum SourceTypeRetentionFailure {
     #[error(transparent)]
+    GenericUses(#[from] crate::types::TypeGenericUseError),
+    #[error(transparent)]
     Owner(#[from] crate::callable::CheckedConstraintSourceOwnerError),
     #[error(transparent)]
     Type(#[from] crate::types::TypeInstantiationError),

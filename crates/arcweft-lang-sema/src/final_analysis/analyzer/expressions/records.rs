@@ -34,7 +34,21 @@ impl Analyzer<'_, '_, '_> {
 
         let expected_nominal = expected_project_record_nominal(owner, declaration, expectation)?;
         let (parameter_ids, mut substitutions) =
-            prepare_record_substitutions(owner, declaration, expectation, expected_nominal)?;
+            prepare_record_substitutions(owner, declaration, expected_nominal, |argument| {
+                let prepared = self
+                    .retain_source_value_type(context, owner, argument)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                let projected = self.project_expression_expectation(
+                    context,
+                    owner,
+                    expectation,
+                    Some(&prepared),
+                )?;
+                Ok(matches!(
+                    projected,
+                    AnalyzerExpressionExpectation::Complete(_)
+                ))
+            })?;
 
         let mut seen = BTreeSet::new();
         let mut fields = Vec::with_capacity(authored.len());
@@ -209,8 +223,8 @@ fn expected_project_record_nominal<'a>(
 fn prepare_record_substitutions(
     owner: ExprId,
     declaration: &ProjectNominalDeclaration,
-    expectation: &AnalyzerExpressionExpectation<'_>,
     expected: ExpectedProjectRecordNominal<'_>,
+    mut argument_is_complete: impl FnMut(&TypeKind) -> Result<bool, AnalyzerExpressionError>,
 ) -> Result<(Vec<GenericTypeParameterId>, TypeParameterSubstitutions), AnalyzerExpressionError> {
     let nominal = match expected {
         ExpectedProjectRecordNominal::None => None,
@@ -238,10 +252,7 @@ fn prepare_record_substitutions(
     if let Some(nominal) = nominal {
         for (parameter, argument) in parameters.iter().zip(nominal.arguments()) {
             if matches!(expected, ExpectedProjectRecordNominal::Parametric(_))
-                && !matches!(
-                    expectation.project_checked(owner, Some(argument))?,
-                    AnalyzerExpressionExpectation::Complete(_)
-                )
+                && !argument_is_complete(argument)?
             {
                 continue;
             }

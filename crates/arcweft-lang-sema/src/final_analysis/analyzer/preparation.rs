@@ -598,7 +598,11 @@ impl Analyzer<'_, '_, '_> {
                     let HirExpressionOwnedChild::Pattern(pattern) = edge.child() else {
                         continue;
                     };
-                    let ty = TypeKind::entity_ref(EntityKind::ChoiceOption);
+                    let ty = self.retain_source_value_type(
+                        context,
+                        pattern,
+                        &TypeKind::entity_ref(EntityKind::ChoiceOption),
+                    )?;
                     let mut locals = BTreeMap::new();
                     let mut patterns = BTreeMap::new();
                     self.with_pattern_seed_context(
@@ -925,11 +929,15 @@ impl Analyzer<'_, '_, '_> {
             self.validate_function_body_interpretation(module, owner, body, expected)?;
         }
         for (owner, expected) in expectations {
-            let checked = self.check_expression_published(owner, Some(&expected))?;
+            let context = self.published_expression_context();
+            let prepared = self.retain_source_value_type(&context, owner, &expected)?;
+            let checked = self.check_expression_published(owner, Some(&prepared))?;
             let checked_type = checked
                 .value_type()
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-            if !expected.accepts(checked_type) {
+            let observed =
+                self.observe_source_type_with_dependencies(&context, owner, checked_type)?;
+            if !expected.accepts(&observed) {
                 return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
             }
         }
@@ -1044,8 +1052,9 @@ impl Analyzer<'_, '_, '_> {
             }
             _ => return Err(FinalSemanticAnalysisError::InvalidCallableOwner),
         }
-        for (owner, expected) in expectations {
+        for (owner, declared) in expectations {
             let context = self.published_expression_context();
+            let expected = self.retain_source_value_type(&context, owner, &declared)?;
             let mut expectation = AnalyzerExpressionExpectation::from_complete(Some(&expected));
             if let Some((_, coordinate)) = default_patterns.get(&owner) {
                 let signature = self
@@ -1073,8 +1082,8 @@ impl Analyzer<'_, '_, '_> {
                 unbound.sort();
                 unbound.dedup();
                 if !unbound.is_empty() {
-                    expectation = AnalyzerExpressionExpectation::parametric(&expected, &unbound)
-                        .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                    expectation = self
+                        .declaration_parametric_expectation(&context, owner, &expected, &unbound)?;
                 }
             }
             let checked = self
@@ -1106,26 +1115,16 @@ impl Analyzer<'_, '_, '_> {
                 }
                 Err(error) => return Err(error),
             };
-            if let Some((pattern, coordinate)) = default_patterns.get(&owner) {
-                let source = self
-                    .staged_callables
-                    .as_ref()
-                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
-                    .builder
-                    .constraint_source_owner(&self.topology, owner)
-                    .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                if !crate::callable::CheckedDeclarationDefault::check_type(
-                    &source,
-                    *coordinate,
-                    &checked_type,
-                    owner,
-                    self.control,
-                )? {
+            if let Some((pattern, _)) = default_patterns.get(&owner) {
+                // The checked default closes the complete declaration's
+                // type relation before granting execution.
+                self.seed_contextual_pattern_locals(&context, module, *pattern, &expected)?;
+            } else {
+                let observed =
+                    self.observe_source_type_with_dependencies(&context, owner, &checked_type)?;
+                if !declared.accepts(&observed) {
                     return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
                 }
-                self.seed_contextual_pattern_locals(&context, module, *pattern, &expected)?;
-            } else if !expected.accepts(&checked_type) {
-                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
             }
         }
         Ok(())
