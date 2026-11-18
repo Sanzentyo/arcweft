@@ -3,8 +3,8 @@
 use std::rc::Rc;
 
 use super::{
-    Analyzer, ExprId, FinalSemanticAnalysisError, HirExprKind, HirStmtKind, PatternId, StmtId,
-    TypeId, TypeKind,
+    Analyzer, ExprId, FinalSemanticAnalysisError, HirExprKind, HirModule, HirStmtKind, PatternId,
+    PreparedExpressionFact, StmtId, TypeId, TypeKind,
     expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError},
 };
 
@@ -97,10 +97,9 @@ impl Analyzer<'_, '_, '_> {
             } => {
                 self.evaluate_initializer_binding(
                     context,
-                    owner,
-                    *pattern,
-                    *initializer,
+                    (owner, *pattern, *initializer),
                     *annotation,
+                    None,
                 )?;
             }
             HirStmtKind::IfLet(statement) => {
@@ -158,13 +157,54 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
+    /// Reuse the original lexical initializer when resolution reaches a
+    /// binding from inside a candidate with a different expression cache.
+    pub(super) fn check_function_alias_binding(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: StmtId,
+        initializer: ExprId,
+    ) -> Result<(), AnalyzerExpressionError> {
+        let statement = module.resolve_stmt(owner).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+        })?;
+        let (HirStmtKind::Let {
+            pattern,
+            annotation,
+            initializer: authored_initializer,
+            ..
+        }
+        | HirStmtKind::LetElse {
+            pattern,
+            annotation,
+            initializer: authored_initializer,
+            ..
+        }) = statement.kind()
+        else {
+            return Err(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::WrongPayloadFamily,
+            ));
+        };
+        if initializer != *authored_initializer {
+            return Err(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::InvalidOwner,
+            ));
+        }
+        self.evaluate_initializer_binding(
+            context,
+            (owner, *pattern, initializer),
+            *annotation,
+            self.facts.expressions().get(&initializer).cloned(),
+        )
+    }
+
     fn evaluate_initializer_binding(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
-        owner: StmtId,
-        pattern: PatternId,
-        initializer: ExprId,
+        (owner, pattern, initializer): (StmtId, PatternId, ExprId),
         annotation: Option<TypeId>,
+        checked_initializer: Option<PreparedExpressionFact>,
     ) -> Result<(), AnalyzerExpressionError> {
         let module = self
             .module(owner.module())
@@ -195,11 +235,14 @@ impl Analyzer<'_, '_, '_> {
             .as_ref()
             .filter(|_| binds_dialogue_result)
             .map(|result| TypeKind::DialogueLine(Box::new(result.clone())));
-        let actual = self.evaluate_expression(
-            context,
-            initializer,
-            dialogue_expectation.as_ref().or(expected.as_ref()),
-        )?;
+        let actual = match checked_initializer {
+            Some(checked) => checked,
+            None => self.evaluate_expression(
+                context,
+                initializer,
+                dialogue_expectation.as_ref().or(expected.as_ref()),
+            )?,
+        };
         let actual_type = actual
             .value_type()
             .ok_or_else(|| AnalyzerExpressionError::rejected(initializer))?;

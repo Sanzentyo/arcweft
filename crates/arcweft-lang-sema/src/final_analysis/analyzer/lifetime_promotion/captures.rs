@@ -457,6 +457,9 @@ impl Analyzer<'_, '_, '_> {
                     }
                     progress = need.resume(requested, fact, module);
                 }
+                Ok(PreparedFunctionValueOriginProgress::CheckBinding(_)) => {
+                    return Err(FinalSemanticAnalysisError::InvalidOwner);
+                }
                 Err(error) => {
                     return Err(self
                         .map_function_value_origin_query_error(expression, error)

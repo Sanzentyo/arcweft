@@ -48,11 +48,12 @@ use arcweft_lang_hir::{
         HirCallArgumentOrdinal, HirCallCallee, HirCallInvocation, HirExpr, HirExprKind,
         HirRecoveredName, HirSelectedMember,
     },
-    identity::{ExprId, HirModuleId, LocalId, TypeId},
+    identity::{ExprId, HirModuleId, LocalId, StmtId, TypeId},
     leaf::{HirPath, HirPathRoot, HirPathSegment, HirPathValue},
     module::HirModule,
     project::{HirLocalValueOrigin, HirProjectEvaluationTopology, HirProjectView},
     source_index::{HirExprSourceRole, HirSourceQuery},
+    stmt::HirStmtKind,
     symbol::{
         CallableDeclarationKey, ProjectSymbolTable, ProjectValueLookup, ProjectValueLookupError,
     },
@@ -63,12 +64,12 @@ use thiserror::Error;
 use crate::{
     effect_model::CallableId,
     final_analysis::{
-        CheckedCaptureAuthorityViolation, CheckedExpression, CheckedExpressionResolution,
-        CheckedValueResolution, PreparedExpressionFact, PreparedOwnerBoundResolution,
+        CheckedCaptureAuthorityViolation, CheckedExpressionResolution, CheckedValueResolution,
+        PreparedExpressionFact, PreparedOwnerBoundResolution,
     },
     nominal::{ResolvedAssociatedTypeReceiver, TypeResolutionReport},
     registration::RegisteredSemanticWorld,
-    types::{TypeKind, VariantPayloadShape},
+    types::{PreparedEffects, TypeKind, VariantPayloadShape},
 };
 
 use super::CharacterDialoguePatchContext;
@@ -1167,7 +1168,7 @@ pub(crate) struct PreparedFunctionValueOriginQuery {
     pending_capture_rows: Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>,
     purpose: PreparedFunctionValueOriginPurpose,
     storage_specialization: Option<ExprId>,
-    selection_binding: Option<(LocalId, TypeKind)>,
+    inferred_initializer_type: Option<TypeKind<PreparedEffects>>,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -1204,17 +1205,64 @@ impl PreparedFunctionValueOriginNeed {
 
 pub(crate) enum PreparedFunctionValueOriginProgress {
     Need(PreparedFunctionValueOriginNeed),
+    CheckBinding(PreparedFunctionValueBindingNeed),
     Ready(PreparedFunctionValueOriginEvidence),
+}
+
+/// An authored interface can change how the local is called. Require the
+/// statement's binding check before using that interface or its initializer.
+pub(crate) struct PreparedFunctionValueBindingNeed {
+    query: PreparedFunctionValueOriginQuery,
+    statement: StmtId,
+    local: LocalId,
+    interface: TypeKind<PreparedEffects>,
+}
+
+impl PreparedFunctionValueBindingNeed {
+    pub(crate) const fn statement(&self) -> StmtId {
+        self.statement
+    }
+
+    pub(crate) const fn local(&self) -> LocalId {
+        self.local
+    }
+
+    pub(crate) const fn initializer(&self) -> ExprId {
+        self.query.current
+    }
+
+    pub(crate) fn resume(
+        self,
+        module: &HirModule,
+        (local, interface): (LocalId, &TypeKind<PreparedEffects>),
+        (owner, initializer): (ExprId, &PreparedExpressionFact),
+    ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
+        self.query.local_origins(module)?;
+        if local != self.local || owner != self.initializer() || interface != &self.interface {
+            return Err(PreparedFunctionValueOriginQueryError::Invalid);
+        }
+        let actual = initializer
+            .value_type()
+            .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+        if actual == interface {
+            self.query.advance_with_fact(module, initializer)
+        } else {
+            Ok(self.query.ready(
+                PreparedFunctionValueOriginProducer::Lexical { local: self.local },
+                Vec::new(),
+            ))
+        }
+    }
 }
 
 impl PreparedFunctionValueOriginQuery {
     fn validated_terminal_capture_rows(
         &self,
         producer: ExprId,
-        fact: &CheckedExpression,
+        resolution: &CheckedExpressionResolution,
     ) -> Result<Box<[super::PreparedCaptureIdentityRow]>, PreparedFunctionValueOriginQueryError>
     {
-        let captures = match fact.resolution() {
+        let captures = match resolution {
             CheckedExpressionResolution::ImplicitCallable(callable) => callable
                 .validate_authority(&self.topology, producer)
                 .map(|captures| {
@@ -1281,7 +1329,7 @@ impl PreparedFunctionValueOriginQuery {
             pending_capture_rows,
             purpose,
             storage_specialization: None,
-            selection_binding: None,
+            inferred_initializer_type: None,
         }
     }
 
@@ -1334,22 +1382,10 @@ impl PreparedFunctionValueOriginQuery {
         module: &HirModule,
         fact: &PreparedExpressionFact,
     ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
-        if let Some((local, interface)) = self.selection_binding.take() {
-            let actual = fact
-                .value_type()
-                .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
-            if actual != &interface {
-                if !interface.accepts(actual) {
-                    return Err(PreparedFunctionValueOriginQueryError::Invalid);
-                }
-                // An authored binding interface can widen the initializer's
-                // function contract. Selection uses that lexical interface;
-                // storage queries continue to retain the actual producer.
-                return Ok(self.ready(
-                    PreparedFunctionValueOriginProducer::Lexical { local },
-                    Vec::new(),
-                ));
-            }
+        if let Some(expected) = self.inferred_initializer_type.take()
+            && fact.value_type() != Some(&expected)
+        {
+            return Err(PreparedFunctionValueOriginQueryError::Invalid);
         }
         // Nominal fields can yield function values before the nominal schema
         // seals their projection. The field expression owns the produced value.
@@ -1397,12 +1433,13 @@ impl PreparedFunctionValueOriginQuery {
             }
             return Err(PreparedFunctionValueOriginQueryError::Invalid);
         }
-        let fact = fact
-            .complete()
-            .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+        let resolution = fact
+            .resolved()
+            .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?
+            .resolution();
         if let CheckedExpressionResolution::Value(CheckedValueResolution::EnvironmentCallable(
             checked,
-        )) = fact.resolution()
+        )) = resolution
         {
             return Ok(self.ready(
                 PreparedFunctionValueOriginProducer::Declaration {
@@ -1418,47 +1455,77 @@ impl PreparedFunctionValueOriginQuery {
                     PreparedFunctionValueOriginProducer::IndependentExpression {
                         producer: self.current,
                     },
-                    self.validated_terminal_capture_rows(self.current, fact)?,
+                    self.validated_terminal_capture_rows(self.current, resolution)?,
                 ));
             }
             if self.storage_specialization.replace(self.current).is_some() {
                 return Err(PreparedFunctionValueOriginQueryError::Invalid);
             }
         }
-        if let Some(site) = fact.resolution().checked_call_site(self.current) {
+        if let Some(site) = resolution.checked_call_site(self.current) {
             return Ok(self.ready(PreparedFunctionValueOriginProducer::Call(site), Vec::new()));
         }
-        let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) =
-            fact.resolution()
+        let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) = resolution
         else {
             return Ok(self.ready(
                 PreparedFunctionValueOriginProducer::IndependentExpression {
                     producer: self.current,
                 },
-                self.validated_terminal_capture_rows(self.current, fact)?,
+                self.validated_terminal_capture_rows(self.current, resolution)?,
             ));
         };
         if !self.visited.insert(*local) {
             return Err(PreparedFunctionValueOriginQueryError::Cycle);
         }
         let local_origins = self.local_origins(module)?;
-        let origin = local_origins
-            .origin(*local)
+        let binding = local_origins
+            .binding(*local)
             .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+        let (origin, statement, pattern) =
+            (binding.origin(), binding.statement(), binding.pattern());
         match origin {
             HirLocalValueOrigin::DirectInitializer(initializer) => {
                 if initializer.module() != module.module_id() {
                     return Err(PreparedFunctionValueOriginQueryError::Invalid);
                 }
-                if self.purpose == PreparedFunctionValueOriginPurpose::Selection {
-                    self.selection_binding = Some((
-                        *local,
-                        fact.value_type()
-                            .cloned()
-                            .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?,
-                    ));
-                }
                 self.current = initializer;
+                if self.purpose == PreparedFunctionValueOriginPurpose::Selection {
+                    let statement =
+                        statement.ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+                    let pattern = pattern.ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+                    let interface = fact
+                        .value_type()
+                        .cloned()
+                        .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+                    let statement_kind = module
+                        .resolve_stmt(statement)
+                        .map_err(|_| PreparedFunctionValueOriginQueryError::Invalid)?
+                        .kind();
+                    let authored = match statement_kind {
+                        HirStmtKind::Let { annotation, .. }
+                        | HirStmtKind::LetElse { annotation, .. } => {
+                            annotation.is_some()
+                                || module
+                                    .resolve_pattern(pattern)
+                                    .map_err(|_| PreparedFunctionValueOriginQueryError::Invalid)?
+                                    .kind()
+                                    .authored_type()
+                                    .is_some()
+                        }
+                        _ => return Err(PreparedFunctionValueOriginQueryError::Invalid),
+                    };
+                    if authored {
+                        return Ok(PreparedFunctionValueOriginProgress::CheckBinding(
+                            PreparedFunctionValueBindingNeed {
+                                query: self,
+                                statement,
+                                local: *local,
+                                interface,
+                            },
+                        ));
+                    }
+                    self.inferred_initializer_type = Some(interface);
+                }
                 Ok(PreparedFunctionValueOriginProgress::Need(
                     PreparedFunctionValueOriginNeed {
                         expression: initializer,

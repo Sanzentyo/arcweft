@@ -4435,6 +4435,37 @@ impl Analyzer<'_, '_, '_> {
                         self.map_function_value_origin_query_error(expression, error)
                     })?;
                 }
+                PreparedFunctionValueOriginProgress::CheckBinding(need) => {
+                    let initializer_owner = need.initializer();
+                    self.check_function_alias_binding(
+                        context,
+                        module,
+                        need.statement(),
+                        initializer_owner,
+                    )?;
+                    let local = need.local();
+                    let interface = self.facts.locals().get(&local).ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local },
+                        )
+                    })?;
+                    let initializer = self
+                        .facts
+                        .expressions()
+                        .get(&initializer_owner)
+                        .ok_or_else(|| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                    owner: initializer_owner,
+                                },
+                            )
+                        })?;
+                    progress = need
+                        .resume(module, (local, interface), (initializer_owner, initializer))
+                        .map_err(|error| {
+                            self.map_function_value_origin_query_error(expression, error)
+                        })?;
+                }
             }
         }
     }

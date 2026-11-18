@@ -1394,6 +1394,9 @@ fn function_value_origin_query_resumes_exact_checked_owner() {
                     .resume(owner, checked, module)
                     .expect("exact checked owner resumes query");
             }
+            crate::callable::PreparedFunctionValueOriginProgress::CheckBinding(_) => {
+                panic!("inferred aliases do not request an authored binding check")
+            }
             crate::callable::PreparedFunctionValueOriginProgress::Ready(evidence) => {
                 assert!(needs >= 2, "the alias chain should cross two local origins");
                 assert!(matches!(
@@ -1431,6 +1434,112 @@ fn function_value_origin_query_resumes_exact_checked_owner() {
 }
 
 #[test]
+fn authored_function_alias_checks_its_binding_before_using_the_initializer() {
+    use crate::callable::{
+        CheckedCallSite, PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
+        PreparedFunctionValueOriginQueryError, prepare_function_value_origin_query,
+    };
+    use crate::types::{GenericScope, UnmeteredTypeProjection};
+    let fixture = crate::final_analysis::tests::fixture(
+        r#"
+fn make(first: i64)(second: i64) -> i64 { second }
+fn caller() {
+    let alias: (i64) -> i64 effects { log.write } = make(1i64)
+    alias(2i64)
+}
+"#,
+        None,
+    );
+    let project = fixture.project.analysis_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root module");
+    let topology = project
+        .accept_symbol_generation(&fixture.symbols)
+        .expect("accepted generation")
+        .into_evaluation_topology()
+        .expect("evaluation topology");
+    let local = module
+        .locals()
+        .find_map(|(owner, local)| (local.name().as_str() == "alias").then_some(owner))
+        .expect("alias local");
+    let use_site = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let HirExprKind::Path(path) = expression.kind() else {
+                return None;
+            };
+            (path.as_resolved()?.lexical_name() == Some("alias")).then_some(owner)
+        })
+        .expect("alias use");
+    let binding = topology
+        .module(module.module_id())
+        .and_then(|module| module.local_origins().binding(local))
+        .expect("alias binding");
+    let initializer = binding.value().expect("direct initializer");
+    let prepared_arrow = |effects| {
+        TypeKind::function_with_effects(
+            [TypeKind::I64],
+            TypeKind::I64,
+            crate::effect_row::EffectRow::closed(effects),
+        )
+        .prepare_effects(&GenericScope::default(), &mut UnmeteredTypeProjection)
+        .expect("prepared arrow")
+    };
+    let narrow = prepared_arrow(EffectSet::new());
+    let wide = prepared_arrow(EffectSet::from_labels(["log.write"]).unwrap());
+    for (interface, checked_interface) in [(&wide, &wide), (&narrow, &narrow), (&wide, &narrow)] {
+        let local_fact = PreparedResolvedExpression::value(
+            interface.clone(),
+            CheckedTypeSelection::Inferred,
+            EffectSet::new(),
+            CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)),
+        );
+        let call_fact = PreparedResolvedExpression::value(
+            narrow.clone(),
+            CheckedTypeSelection::Inferred,
+            EffectSet::new(),
+            CheckedExpressionResolution::Call,
+        )
+        .into();
+        let progress = prepare_function_value_origin_query(
+            Arc::clone(&topology),
+            module,
+            use_site,
+            &BTreeMap::from([(use_site, local_fact.into())]),
+        )
+        .expect("origin query");
+        let PreparedFunctionValueOriginProgress::CheckBinding(need) = progress else {
+            panic!("the authored binding has to be checked first");
+        };
+        assert_eq!(Some(need.statement()), binding.statement());
+        assert_eq!(need.initializer(), initializer);
+        let result = need.resume(
+            module,
+            (local, checked_interface),
+            (initializer, &call_fact),
+        );
+        if interface != checked_interface {
+            assert!(matches!(
+                result,
+                Err(PreparedFunctionValueOriginQueryError::Invalid)
+            ));
+            continue;
+        }
+        let PreparedFunctionValueOriginProgress::Ready(evidence) = result.expect("valid binding")
+        else {
+            panic!("the checked binding resolves the alias");
+        };
+        let expected = if interface == &narrow {
+            PreparedFunctionValueOriginProducer::Call(CheckedCallSite::HirCall(initializer))
+        } else {
+            PreparedFunctionValueOriginProducer::Lexical { local }
+        };
+        assert_eq!(evidence.producer(), &expected);
+    }
+}
+
+#[test]
 fn function_value_origin_query_classifies_independent_parameters_and_cycles() {
     let independent_fixture = crate::final_analysis::tests::fixture(
         "fn caller(callback: (i64) -> i64 effects {}) { callback(1i64); }\n",
@@ -1464,8 +1573,14 @@ fn function_value_origin_query_classifies_independent_parameters_and_cycles() {
                 .then_some(owner)
         })
         .expect("callback path");
-    let independent_checked = CheckedExpression::value(
-        TypeKind::function([TypeKind::I64], TypeKind::I64),
+    let function_type = TypeKind::function([TypeKind::I64], TypeKind::I64)
+        .prepare_effects(
+            &crate::types::GenericScope::default(),
+            &mut crate::types::UnmeteredTypeProjection,
+        )
+        .unwrap();
+    let independent_checked = PreparedResolvedExpression::value(
+        function_type.clone(),
         CheckedTypeSelection::Inferred,
         EffectSet::new(),
         CheckedExpressionResolution::Value(CheckedValueResolution::Local(independent_local)),
@@ -1519,8 +1634,8 @@ fn function_value_origin_query_classifies_independent_parameters_and_cycles() {
             (path.as_resolved().and_then(|path| path.lexical_name()) == Some("x")).then_some(owner)
         })
         .expect("cycle path");
-    let cycle_checked = CheckedExpression::value(
-        TypeKind::function([TypeKind::I64], TypeKind::I64),
+    let cycle_checked = PreparedResolvedExpression::value(
+        function_type,
         CheckedTypeSelection::Inferred,
         EffectSet::new(),
         CheckedExpressionResolution::Value(CheckedValueResolution::Local(cycle_local)),
@@ -1820,6 +1935,17 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
                         )
                         .expect("resume origin query");
                 }
+                crate::callable::PreparedFunctionValueOriginProgress::CheckBinding(need) => {
+                    let local = need.local();
+                    let initializer = need.initializer();
+                    progress = need
+                        .resume(
+                            module,
+                            (local, &analyzer.facts.locals()[&local]),
+                            (initializer, &analyzer.facts.expressions()[&initializer]),
+                        )
+                        .expect("resume with the validated capture alias binding");
+                }
             }
         };
         assert_eq!(evidence.captures().len(), 1);
@@ -1857,10 +1983,10 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
         )
         .expect("foreign query starts before terminal fact");
         loop {
-            match foreign_progress {
+            let result = match foreign_progress {
                 crate::callable::PreparedFunctionValueOriginProgress::Need(need) => {
                     let owner = need.expression();
-                    match need.resume(
+                    need.resume(
                         owner,
                         analyzer
                             .facts
@@ -1868,21 +1994,31 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
                             .get(&owner)
                             .expect("foreign query owner fact"),
                         module,
-                    ) {
-                        Err(
-                            crate::callable::PreparedFunctionValueOriginQueryError::CaptureTopologyMismatch(
-                                crate::final_analysis::CheckedCaptureAuthorityViolation::TopologyMismatch
-                            )
-                        ) => break,
-                        Err(error) => {
-                            panic!("unexpected foreign topology result: {error:?}")
-                        }
-                        Ok(progress) => foreign_progress = progress,
-                    }
+                    )
+                }
+                crate::callable::PreparedFunctionValueOriginProgress::CheckBinding(need) => {
+                    let local = need.local();
+                    let initializer = need.initializer();
+                    need.resume(
+                        module,
+                        (local, &analyzer.facts.locals()[&local]),
+                        (initializer, &analyzer.facts.expressions()[&initializer]),
+                    )
                 }
                 crate::callable::PreparedFunctionValueOriginProgress::Ready(_) => {
                     panic!("foreign topology query unexpectedly succeeded")
                 }
+            };
+            match result {
+                Err(
+                    crate::callable::PreparedFunctionValueOriginQueryError::CaptureTopologyMismatch(
+                        crate::final_analysis::CheckedCaptureAuthorityViolation::TopologyMismatch,
+                    ),
+                ) => break,
+                Err(error) => {
+                    panic!("unexpected foreign topology result: {error:?}")
+                }
+                Ok(progress) => foreign_progress = progress,
             }
         }
 
