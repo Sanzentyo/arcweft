@@ -19436,3 +19436,15 @@ locked Sema全feature checkは通常ライブラリ成功、lib testは終了101
 次の調査箇所は同じ出典付き関数ヘッダの二重走査である。`project_type_fold` はグラフを読んで各作用参照の適格性を検査し、ヘッダを再構築する `ConstraintFunctionHeaderView::admit` は同じ参照の出典を検査する。どちらの検査も必要で、検査結果を同じヘッダの処理内で使う統合は未実装。
 
 [試行差分・検証入力・原本・LLDB](acceptance-evidence/task-canonical-application-experiment.raw.zip) は24 entry、815330 bytes、SHA256 `1f48311337b91e5b841e31b63245f3b3f800af5eb250ce73ab3c96505abf5467`。二回目の差分に初回3ファイルの同じバイト列が含まれることと、各原本の長さとハッシュを照合した。
+
+
+<a id="admit-effect-headers-once"></a>
+## 2026-11-19 — 関数ヘッダの作用参照を一度の走査で検査
+
+Source `2641e728272ccfd021b879cd28c7655cc1507e6c`。共通の型投影が各参照について、選択した枝での適格性と元の行・述語での出典を同時に検査する。再構築は同じ出典上の位置と束縛スコープを持つ検査済みヘッダを受け取る。具体化後の作用参照の出典検査と、互換性関係が独立して行う出典検査を保持した。両条件を同時に破る入力では、最初の参照で出典エラーが先に返る場合がある。最初のビルドでは互換性関係に残る2呼出しがコンパイルできず、専用の検査を復元して解消した。
+
+Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ。captured Mapは引き続き成功。遅延コールバックは `ConstraintSourceLineage::close_trace` 内の作用行コンパイルで候補共有の作業上限に達した。retained Mapは作用行のコンパイルを通過し、`MaterializationInput::finish_projections` からの `CompletedGenericContext::reify_type` で具体化済みオペランドを再検査する際に同じ上限に達した。
+
+locked Sema全feature checkは通常ライブラリ成功。テスト対象は `closed_effects.rs` の古い引数指定2件が減り、終了101・821エラー・33警告。ライブラリClippy、Sema fmt、差分検査、構造ゲートは終了0、構造阻害0件。対象の14 source blobを公開先と照合した。CARGO_INCREMENTAL=0で実行し、`target` は8129999023 bytesだった。
+
+[初回のコンパイル失敗・最終原本・LLDB・公開照合](acceptance-evidence/task-admit-effect-headers-once.raw.zip) は21 entry、876772 bytes、SHA256 `b9c489322ea50c2e2c8c3f412833e2db1c56ad6c3cf7e33d3a6248bb335cd91b`。各原本の長さとハッシュを照合した。
