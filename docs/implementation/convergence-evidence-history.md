@@ -19519,3 +19519,16 @@ Compilerの2 targetは同じ152 IDで151成功・1失敗・0スキップ。遅�
 追加Compilerの3 targetは同じ396 IDで342成功・54失敗。 `callable_execution` は322成功・54失敗、`project_function_instances` は12/12成功、`scope_propagation` は8/8成功。locked Semaの全feature checkはlibrary成功、lib testは終了101・817エラー・33警告。前回とエラーの発生ファイル・コード別の内訳が一致した。Semaのfixture実行、全逆依存テスト、workspace全target check、Native／Web最終受入は未実行。SemaライブラリClippy、fmt、差分検査、構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存は起点込み22 package。公開4 blobを照合した。 `target` は10596535111 bytesだった。
 
 [Compilerの全ID比較、停止位置、途中と最終の検証、公開照合](acceptance-evidence/task-declaration-formal-effect-rows.raw.zip) は26 entry、905211 bytes、SHA256 `1e2c33483d381d58f8f2ca724c2dbe5683e4df33c9239bd89c01b6d987b5ffda`。各原本の長さとハッシュを照合した。
+
+<a id="effect-dependency-worklist"></a>
+## 2026-11-19 — 作用探索で検証済みの依存関係を再利用
+
+基点 `b2d46e3fe757368ea6929f6ffa5b204f446620d1` のretained Mapを計測した。6候補中3番目のArray候補は受理され、作業量は127から4,023へ進んだ。先行2候補と後続1候補は各52単位で、ソースのprobeを開く前に棄却した。5番目が残り21単位を使い切り、6番目は未到達だった。計測差分は完全に戻してから実装した。
+
+Source `bd3059f32934738b29b561ed7aba921e91a85c5b` の作用探索は、参照の発行元を検査してから訪問済み定義を再利用し、依存関係を持たない正準値はキューへ積まない。各入力の訪問と実際のキュー確保を計上する。束縛時も、到達済みの作用行と述語は同じ定義、choiceは元の発行IDで露出していることを確認して再利用する。終端は引き続き実際の宣言本体と新しい依存先を探索する。初回のキュー変更では152件中151成功、retained Mapは後続候補の作用環境におけるパラメータ検査まで進んだ。追加3 targetは343成功・53失敗になり、外部関数値を直接渡す並列処理が成功した。
+
+最終Compilerは同じ152 IDで全件成功した。retained Mapは既存fixtureのまま、保持したmapperとi64を捕捉した元のコールバックを使用した。Nativeは1 step最大1 opで完走した。AWBCは元のコールバックのフレームが存在する状態で公開保存し、別セッションで同じsnapshotを復元して完走した。両executorの戻り値は24。captured Mapと遅延コールバックも成功した。追加の3 targetは同じ396 IDで348成功・48失敗。`callable_execution` は328成功・48失敗、`project_function_instances` は12/12、`scope_propagation` は8/8成功。前回失敗した6 IDが成功した。後段の型が異なる共有prefixは1段と2段の両方でNativeとAWBCの戻り値42を確認した。別のAWBCテストは1 step最大1 opで、停止ステップごとに公開JSONから復元し、戻りイベントが一度だけ出ることを確認した。retained Mapのコールバック生成を一度に限ることとソース評価順、opaque captureをCopyとみなさないこと、外部関数値による並列処理も確認した。
+
+locked Semaの全feature checkはlibrary成功、lib testは終了101・817エラー・33警告。前回と発生ファイル・コード別のエラーの内訳が一致した。Semaのfixture実行、全推移的逆依存テスト、workspace全target check、Native／Web最終受入は未実行。SemaライブラリClippy、fmt、差分検査、構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存は起点込み22 package。公開4 blobを照合した。 `target` は10596566257 bytesだった。
+
+[候補別の計測、Compilerの全ID比較、途中と最終の検証、公開照合](acceptance-evidence/task-effect-dependency-worklist.raw.zip) は42 entry、1811552 bytes、SHA256 `37eaccbc3496aeae6e7b3e436619a80d6bffc5c29dbbd8d220dfc4318a8219f7`。各原本の長さとハッシュを照合した。
