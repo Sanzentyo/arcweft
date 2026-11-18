@@ -499,6 +499,17 @@ impl<D: ConstraintDomain> From<TypeConstraintError> for TypeConstraintFailure<D>
     }
 }
 
+impl<D: ConstraintDomain>
+    From<crate::effect_row::prepared::PreparedEffectFailure<TypeConstraintError>>
+    for TypeConstraintFailure<D>
+{
+    fn from(
+        error: crate::effect_row::prepared::PreparedEffectFailure<TypeConstraintError>,
+    ) -> Self {
+        TypeConstraintError::from(error).into()
+    }
+}
+
 impl<D: ConstraintDomain> From<super::MaterializationImmediateFailure<D>>
     for TypeConstraintFailure<D>
 {

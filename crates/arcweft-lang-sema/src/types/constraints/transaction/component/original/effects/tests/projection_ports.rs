@@ -10,6 +10,96 @@ use crate::{
 };
 
 #[test]
+fn a_result_use_prepares_and_relates_using_its_own_detached_effect_terms() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let declared = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+        .unwrap();
+    let body = EffectRow::closed(EffectSet::from_labels(["result.use"]).unwrap());
+    graph
+        .prepare_body(
+            &declared,
+            PreparedEffectRow::Canonical(body.clone()),
+            vec![],
+            &mut context,
+        )
+        .unwrap();
+    let mut checkpoint = graph.checkpoint(&mut context).unwrap();
+    let row = graph.application(&declared, vec![], &mut context).unwrap();
+    let delta = graph.extract_delta(&mut checkpoint, &mut context).unwrap();
+    let reads = graph.read_scope([&delta], &mut context).unwrap();
+    drop(delta);
+    assert!(graph.read().validate_retained_row(&row).is_err());
+
+    let original = context
+        .original_producer_context(&Arc::new(Source {
+            identity: Arc::new(()),
+            inputs: [input()],
+            domain: EffectPredicate::unconstrained(),
+        }))
+        .unwrap();
+    let owner = context
+        .application_scope(
+            (),
+            TypeConstraintParameterScope::empty(),
+            original.clone(),
+            &mut graph,
+        )
+        .unwrap();
+    let mut path = context
+        .start_path_with_imported(owner, None, original, graph.read())
+        .unwrap();
+    path.lineage.effect_reads = Some(reads);
+    let application = path.root_id();
+    let mut transaction =
+        TypeConstraintTransaction::from_path(&mut context, &mut graph, application, path, None)
+            .unwrap();
+    let arrow = |row| {
+        TypeKind::function_with_contract(GenericBinder::EMPTY, truth(), [], TypeKind::I64, row)
+    };
+    let live_terms = graph.retained_terms();
+    transaction.request_projection(
+        &mut context,
+        &mut graph,
+        (),
+        &arrow(row.clone()),
+        TypeConstraintProjectionClosure::Closed,
+    );
+    let mut prepared = false;
+    transaction
+        .constrain_result_use(
+            &mut context,
+            &mut graph,
+            (),
+            &arrow(PreparedEffectRow::Canonical(body)),
+            |source, reads, _| {
+                let TypeKind::Function { effects, .. } = source.source_type() else {
+                    panic!("the selected result is a function");
+                };
+                reads.validate_retained_row(&row).unwrap();
+                reads.validate_retained_row(effects).unwrap();
+                prepared = true;
+                Ok(None)
+            },
+        )
+        .unwrap();
+    assert!(prepared);
+    assert!(transaction.first_failure.is_none());
+    let selected = transaction.test_single_path();
+    assert_eq!(selected.equations.len(), 1);
+    let reads = selected.lineage.effect_reads.as_ref().unwrap();
+    graph
+        .read_scoped(reads, &mut context)
+        .unwrap()
+        .validate_retained_row(&row)
+        .unwrap();
+    assert!(graph.read().validate_retained_row(&row).is_err());
+    assert_eq!(graph.retained_terms(), live_terms);
+}
+
+#[test]
 fn the_selected_projection_closes_over_detached_reads_and_returns_a_canonical_result() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);

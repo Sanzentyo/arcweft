@@ -59,6 +59,20 @@ impl PreparedCallableEffectDeclarations {
         self.graph.read()
     }
 
+    pub(super) fn with_read_scope<C: DecisionControl, T>(
+        &self,
+        scope: Option<&PreparedEffectReadScope>,
+        control: &mut C,
+        read: impl FnOnce(crate::effect_row::prepared::PreparedEffectReadView<'_>, &mut C) -> T,
+    ) -> Result<T, PreparedEffectFailure<C::Error>> {
+        let Some(scope) = scope else {
+            return Ok(read(self.read(), control));
+        };
+        let scope = self.graph.compose_read_scopes([scope], control)?;
+        let graph = self.graph.read_scoped(&scope, control)?;
+        Ok(read(graph, control))
+    }
+
     pub(super) fn retain_probe_effect_reads<C: DecisionControl>(
         &self,
         delta: &PreparedRelationDelta,

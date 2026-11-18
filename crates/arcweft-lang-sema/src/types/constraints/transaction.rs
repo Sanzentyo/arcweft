@@ -1320,13 +1320,16 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        let result = context.with_effect_transaction(graph, |context, graph| {
-            original.validate_imported_in(&nested.path.applications, context)?;
-            let scope = context.application_scope(application, parameters, original, graph)?;
-            let application = scope.id();
-            context
-                .admit_application(nested.path, scope, graph)
-                .and_then(|path| {
+        let result = (|| {
+            let reads =
+                context.compose_effect_reads(graph, nested.path.lineage.probe_effect_reads())?;
+            let (mut transaction, reads) =
+                context.with_effect_read_scope(graph, reads.as_ref(), |context, graph| {
+                    original.validate_imported_in(&nested.path.applications, context)?;
+                    let scope =
+                        context.application_scope(application, parameters, original, graph)?;
+                    let application = scope.id();
+                    let path = context.admit_application(nested.path, scope, graph)?;
                     Self::from_path_with_parent(
                         context,
                         graph,
@@ -1335,8 +1338,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         inherited.as_ref(),
                         Some(nested.receipt),
                     )
-                })
-        });
+                })?;
+            transaction.frontier[0].lineage.effect_reads = reads;
+            Ok(transaction)
+        })();
         result.map_err(|error| match error {
             TypeConstraintError::Abort(error) => {
                 super::TypeConstraintInitializationFailure::Abort(error)
@@ -2079,119 +2084,141 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 operation.active_input = None;
                 for ObservedProbeAlternative { mut path, result } in contribution.alternatives {
                     let (actual_term, branch, callback_selection) = result.into_parts();
-                    let scope = Arc::new(context.capture_lexical_scope()?);
-                    let actual_operand = resolve_probe_term(
-                        actual_term,
-                        &path,
-                        &scope,
-                        &self.original,
-                        ConstraintSourceReceipt {
-                            input: Arc::clone(&input),
-                        },
+                    let preparation_reads = branch.preparation().and_then(D::probe_effect_reads);
+                    let (accepted, reads) = context.with_effect_reads(
                         graph,
-                        context,
-                    )?;
-                    if let Some(actual) = actual_operand.shared_result_observation() {
-                        context.enter_node()?;
-                        observed_results.push(ResolvedResultProbe {
-                            source: input.source,
-                            actual: Arc::clone(actual),
-                        });
-                    }
-                    let actual = actual_operand.value().clone();
-                    let callback_selection = match callback_selection {
-                        SourceProbeSelection::Unchecked => SourceProbeSelection::Unchecked,
-                        SourceProbeSelection::Checked {
-                            alternative,
-                            evidence,
-                        } => SourceProbeSelection::Checked {
-                            alternative,
-                            evidence,
-                        },
-                    };
-                    if path
-                        .lineage
-                        .probe_trace
-                        .iter()
-                        .any(|probe| probe.source() == input.source)
-                    {
-                        return Err(protocol_error(
-                            TypeConstraintSourceProtocolInvariant::Outcome,
-                        ));
-                    }
-
-                    let selected = if input.prepared.is_unchecked() {
-                        if !matches!(callback_selection, SourceProbeSelection::Unchecked) {
-                            return Err(protocol_error(
-                                TypeConstraintSourceProtocolInvariant::InvalidEvidence,
-                            ));
-                        }
-                        None
-                    } else {
-                        let SourceProbeSelection::Checked {
-                            alternative,
-                            evidence,
-                        } = &callback_selection
-                        else {
-                            return Err(protocol_error(
-                                TypeConstraintSourceProtocolInvariant::UnknownAlternative,
-                            ));
-                        };
-                        match validate_source_selection(
-                            &input.prepared,
-                            *alternative,
-                            Arc::clone(evidence),
-                            &actual,
-                        )? {
-                            Some(selected) => Some(selected),
-                            None => continue,
-                        }
-                    };
-
-                    let (pattern, stored_selection, source_projection, value_expected) =
-                        match selected {
-                            None => {
-                                let Some(source_projection) =
-                                    CheckedConstraintSourceProjection::derive(
-                                        input.prepared.source_projection(),
-                                        &actual,
-                                    )
-                                else {
-                                    continue;
-                                };
-                                (
-                                    None,
-                                    StoredSourceSelection::Unchecked,
-                                    source_projection,
-                                    None,
-                                )
+                        path.lineage.probe_effect_reads().chain(preparation_reads),
+                        |context, graph| -> Result<_, TypeConstraintError> {
+                            let scope = Arc::new(context.capture_lexical_scope()?);
+                            let actual_operand = resolve_probe_term(
+                                actual_term,
+                                &path,
+                                &scope,
+                                &self.original,
+                                ConstraintSourceReceipt {
+                                    input: Arc::clone(&input),
+                                },
+                                graph,
+                                context,
+                            )?;
+                            if let Some(actual) = actual_operand.shared_result_observation() {
+                                context.enter_node()?;
+                                observed_results.push(ResolvedResultProbe {
+                                    source: input.source,
+                                    actual: Arc::clone(actual),
+                                });
                             }
-                            Some((alternative, evidence, value_expected, source_projection)) => {
-                                let value_expected = bind_source_expectation(
-                                    value_expected,
-                                    &self.original,
-                                    self.application,
-                                    &path,
-                                    scope,
-                                    graph,
-                                    context,
-                                )?;
-                                let pattern = source_projection.compose_operand(
-                                    &actual_operand.view(),
-                                    &value_expected.view(),
-                                )?;
-                                (
-                                    Some(pattern),
-                                    StoredSourceSelection::Checked {
+                            let actual = actual_operand.value().clone();
+                            if path
+                                .lineage
+                                .probe_trace
+                                .iter()
+                                .any(|probe| probe.source() == input.source)
+                            {
+                                return Err(protocol_error(
+                                    TypeConstraintSourceProtocolInvariant::Outcome,
+                                ));
+                            }
+
+                            let selected = if input.prepared.is_unchecked() {
+                                if !matches!(callback_selection, SourceProbeSelection::Unchecked) {
+                                    return Err(protocol_error(
+                                        TypeConstraintSourceProtocolInvariant::InvalidEvidence,
+                                    ));
+                                }
+                                None
+                            } else {
+                                let SourceProbeSelection::Checked {
+                                    alternative,
+                                    evidence,
+                                } = &callback_selection
+                                else {
+                                    return Err(protocol_error(
+                                        TypeConstraintSourceProtocolInvariant::UnknownAlternative,
+                                    ));
+                                };
+                                match validate_source_selection(
+                                    &input.prepared,
+                                    *alternative,
+                                    Arc::clone(evidence),
+                                    &actual,
+                                )? {
+                                    Some(selected) => Some(selected),
+                                    None => return Ok(None),
+                                }
+                            };
+
+                            let (pattern, stored_selection, source_projection, value_expected) =
+                                match selected {
+                                    None => {
+                                        let Some(source_projection) =
+                                            CheckedConstraintSourceProjection::derive(
+                                                input.prepared.source_projection(),
+                                                &actual,
+                                            )
+                                        else {
+                                            return Ok(None);
+                                        };
+                                        (
+                                            None,
+                                            StoredSourceSelection::Unchecked,
+                                            source_projection,
+                                            None,
+                                        )
+                                    }
+                                    Some((
                                         alternative,
                                         evidence,
-                                    },
-                                    source_projection,
-                                    Some(value_expected),
-                                )
-                            }
-                        };
+                                        value_expected,
+                                        source_projection,
+                                    )) => {
+                                        let value_expected = bind_source_expectation(
+                                            value_expected,
+                                            &self.original,
+                                            self.application,
+                                            &path,
+                                            scope,
+                                            graph,
+                                            context,
+                                        )?;
+                                        let pattern = source_projection.compose_operand(
+                                            &actual_operand.view(),
+                                            &value_expected.view(),
+                                        )?;
+                                        (
+                                            Some(pattern),
+                                            StoredSourceSelection::Checked {
+                                                alternative,
+                                                evidence,
+                                            },
+                                            source_projection,
+                                            Some(value_expected),
+                                        )
+                                    }
+                                };
 
+                            Ok(Some((
+                                actual_operand,
+                                actual,
+                                pattern,
+                                stored_selection,
+                                source_projection,
+                                value_expected,
+                            )))
+                        },
+                    )?;
+                    let Some((
+                        actual_operand,
+                        actual,
+                        pattern,
+                        stored_selection,
+                        source_projection,
+                        value_expected,
+                    )) = accepted
+                    else {
+                        continue;
+                    };
+                    path.lineage.effect_reads = reads;
                     if let Some(pattern) = &pattern {
                         path.equations.push(PendingEquation {
                             ordinal: input.equation_ordinal.ok_or_else(|| {
@@ -2229,14 +2256,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     };
                     path.lineage.probe_trace.push(probe);
 
-                    let reads = {
-                        let mut scopes = path.lineage.probe_effect_reads().peekable();
-                        if scopes.peek().is_some() {
-                            Some(graph.compose_read_scopes(scopes, context)?)
-                        } else {
-                            None
-                        }
-                    };
+                    let reads = path.lineage.effect_reads.clone();
                     let related = if pattern.is_some() {
                         let equation = path
                             .equations

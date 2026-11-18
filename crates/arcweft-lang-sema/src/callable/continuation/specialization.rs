@@ -2,7 +2,9 @@
 
 use super::*;
 use crate::callable::FunctionSpecializationFailure;
-use crate::effect_row::prepared::{PreparedEffectPredicate, PreparedEffectReadView};
+use crate::effect_row::prepared::{
+    PreparedEffectPredicate, PreparedEffectReadScope, PreparedEffectReadView,
+};
 use crate::types::constraints::{
     ConstraintDomain, ConstraintSourceReceipt, TypeConstraintError,
     context::{TypeConstraintAccounting, TypeConstraintContext},
@@ -43,25 +45,31 @@ impl<P, U> PreparedCallGraph<P, U> {
         application: D::Application,
         source: &TypeKind<PreparedEffects>,
         source_scope: &GenericScope,
+        source_effects: Option<&PreparedEffectReadScope>,
         enclosing: &EnclosingGenericParameterScope,
         limits: &crate::callable::CallableLimits,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<PreparedFunctionSpecialization<D>, FunctionSpecializationFailure<D>> {
         self.validate_constraint_authority(parent)
             .map_err(FunctionSpecializationFailure::Prepared)?;
-        let graph = self
+        let scope = self
             .effect_declarations()
             .map_err(FunctionSpecializationFailure::Prepared)?
-            .read();
+            .with_read_scope(source_effects, context, |graph, context| {
+                parent.prepare_function_specialization(
+                    source,
+                    source_scope,
+                    enclosing,
+                    limits,
+                    graph,
+                    context,
+                )
+            })
+            .map_err(|error| {
+                FunctionSpecializationFailure::Constraint(TypeConstraintError::from(error).into())
+            })??;
         Ok(PreparedFunctionSpecialization {
-            scope: parent.prepare_function_specialization(
-                source,
-                source_scope,
-                enclosing,
-                limits,
-                graph,
-                context,
-            )?,
+            scope,
             receipt,
             application,
         })

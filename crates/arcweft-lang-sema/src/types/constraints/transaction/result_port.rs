@@ -1,5 +1,6 @@
 //! Affine transformation of a pending result on the path that produced it.
 
+use crate::effect_row::prepared::PreparedEffectReadScope;
 use crate::types::PreparedEffects;
 
 use super::{
@@ -34,23 +35,31 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
         }
         self.alternatives
             .into_iter()
-            .map(|alternative| {
+            .map(|mut alternative| {
                 context.enter_node()?;
-                let scope = Arc::new(context.capture_lexical_scope()?);
-                let (opened, result) = super::ResolvedConstraintResult::resolve(
-                    alternative.result.clone(),
-                    &alternative.path,
+                let (source, reads) = context.with_effect_reads(
                     graph,
-                    context,
+                    alternative.path.lineage.probe_effect_reads(),
+                    |context, graph| {
+                        let scope = Arc::new(context.capture_lexical_scope()?);
+                        let (opened, result) = super::ResolvedConstraintResult::resolve(
+                            alternative.result.clone(),
+                            &alternative.path,
+                            graph,
+                            context,
+                        )?;
+                        let source = super::ConstraintOperand::result(opened, scope, result);
+                        seal_type_operand(
+                            source.view(),
+                            alternative.path.projection_view(),
+                            &mut std::collections::BTreeSet::new(),
+                            graph,
+                            context,
+                        )
+                        .map(Arc::new)
+                    },
                 )?;
-                let source = super::ConstraintOperand::result(opened, scope, result);
-                let source = Arc::new(seal_type_operand(
-                    source.view(),
-                    alternative.path.projection_view(),
-                    &mut std::collections::BTreeSet::new(),
-                    graph,
-                    context,
-                )?);
+                alternative.path.lineage.effect_reads = reads;
                 Ok(PendingResultConstraint {
                     receipt: self.receipt.clone(),
                     alternative,
@@ -75,6 +84,10 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
 
     pub(crate) fn source_scope(&self) -> &crate::types::GenericScope {
         self.source.scope().shape()
+    }
+
+    pub(crate) fn source_effect_reads(&self) -> Option<&PreparedEffectReadScope> {
+        self.alternative.path.lineage.effect_reads.as_ref()
     }
 
     /// Only an already registered source result can be consumed. The new
@@ -124,14 +137,21 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
             }
         })?;
         for path in &mut transaction.frontier {
-            let value = super::ConstraintOperand::open_template(
-                template,
-                path,
-                transaction.application,
+            let (value, reads) = context.with_effect_reads(
                 graph,
-                context,
+                path.lineage.probe_effect_reads(),
+                |context, graph| {
+                    super::ConstraintOperand::open_template(
+                        template,
+                        path,
+                        transaction.application,
+                        graph,
+                        context,
+                    )
+                },
             )?;
             context.enter_node()?;
+            path.lineage.effect_reads = reads;
             path.lineage.projections.push(Arc::new(ProjectionRequest {
                 application: transaction.application,
                 key: Arc::new(key.clone()),
@@ -190,73 +210,90 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let mut advanced = Vec::new();
         for mut path in core::mem::take(&mut self.frontier) {
             context.enter_node()?;
-            let scope = Arc::new(context.capture_lexical_scope()?);
-            let (opened, resolved) =
-                super::ResolvedConstraintResult::resolve(origin.clone(), &path, effects, context)?;
-            let original_source =
-                super::ConstraintOperand::result(opened, Arc::clone(&scope), resolved);
-            let source = Arc::new(seal_type_operand(
-                original_source.view(),
-                path.projection_view(),
-                &mut std::collections::BTreeSet::new(),
+            let reads = context.compose_effect_reads(effects, path.lineage.probe_effect_reads())?;
+            let (mut paths, reads) = context.with_effect_read_scope(
                 effects,
-                context,
-            )?);
-            let use_source = ConstraintResultUseSource::for_result(Arc::clone(&source))?;
-            let pattern = match prepare(&use_source, effects.read(), context)? {
-                Some(prepared) => {
-                    let (next, operand) = prepared.instantiate(
-                        &source,
-                        path,
-                        Arc::new(key.clone()),
+                reads.as_ref(),
+                |context, effects| -> Result<_, TypeConstraintFailure<D>> {
+                    let scope = Arc::new(context.capture_lexical_scope()?);
+                    let (opened, resolved) = super::ResolvedConstraintResult::resolve(
+                        origin.clone(),
+                        &path,
                         effects,
                         context,
                     )?;
-                    path = next;
-                    operand
-                }
-                None => original_source,
-            };
-            let timing = super::ConstraintEquationTiming::ResultContext.for_actual(
-                expected,
-                crate::types::ConstraintAcceptance::ActualAcceptsPattern,
-                context,
-            )?;
-            path.equations.push(super::PendingEquation {
-                ordinal: super::ConstraintEquationId {
-                    application: self.application,
-                    ordinal,
+                    let original_source =
+                        super::ConstraintOperand::result(opened, Arc::clone(&scope), resolved);
+                    let source = Arc::new(seal_type_operand(
+                        original_source.view(),
+                        path.projection_view(),
+                        &mut std::collections::BTreeSet::new(),
+                        effects,
+                        context,
+                    )?);
+                    let use_source = ConstraintResultUseSource::for_result(Arc::clone(&source))?;
+                    let pattern = match prepare(&use_source, effects.read(), context)? {
+                        Some(prepared) => {
+                            let (next, operand) = prepared.instantiate(
+                                &source,
+                                path,
+                                Arc::new(key.clone()),
+                                effects,
+                                context,
+                            )?;
+                            path = next;
+                            operand
+                        }
+                        None => original_source,
+                    };
+                    let timing = super::ConstraintEquationTiming::ResultContext.for_actual(
+                        expected,
+                        crate::types::ConstraintAcceptance::ActualAcceptsPattern,
+                        context,
+                    )?;
+                    path.equations.push(super::PendingEquation {
+                        ordinal: super::ConstraintEquationId {
+                            application: self.application,
+                            ordinal,
+                        },
+                        direction: crate::types::ConstraintAcceptance::ActualAcceptsPattern,
+                        pattern: pattern.clone(),
+                        actual: super::ConstraintOperand::from_prepared_original_in(
+                            expected,
+                            scope,
+                            self.original.clone(),
+                            &mut super::operand::ConstraintEffectPhase::new(effects),
+                            context,
+                        )?,
+                        source_ordinal: None,
+                        timing,
+                    });
+                    if timing == super::ConstraintEquationTiming::InferredEffectResult {
+                        return Ok(vec![path]);
+                    }
+                    let actual = path
+                        .equations
+                        .last()
+                        .expect("the result equation is retained")
+                        .actual
+                        .clone();
+                    Ok(super::relate_selected_call(
+                        effects,
+                        &pattern.view(),
+                        &actual.view(),
+                        path,
+                        context,
+                        crate::types::ConstraintAcceptance::ActualAcceptsPattern,
+                    )?)
                 },
-                direction: crate::types::ConstraintAcceptance::ActualAcceptsPattern,
-                pattern: pattern.clone(),
-                actual: super::ConstraintOperand::from_prepared_original_in(
-                    expected,
-                    scope,
-                    self.original.clone(),
-                    &mut super::operand::ConstraintEffectPhase::new(effects),
-                    context,
-                )?,
-                source_ordinal: None,
-                timing,
-            });
-            if timing == super::ConstraintEquationTiming::InferredEffectResult {
-                advanced.push(path);
-                continue;
+            )?;
+            if let Some(reads) = reads {
+                for path in &mut paths {
+                    context.enter_node()?;
+                    path.lineage.effect_reads = Some(reads.clone());
+                }
             }
-            let actual = path
-                .equations
-                .last()
-                .expect("the result equation is retained")
-                .actual
-                .clone();
-            advanced.extend(super::relate_selected_call(
-                effects,
-                &pattern.view(),
-                &actual.view(),
-                path,
-                context,
-                crate::types::ConstraintAcceptance::ActualAcceptsPattern,
-            )?);
+            advanced.extend(paths);
         }
         if advanced.is_empty() {
             self.record_failure(

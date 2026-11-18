@@ -2389,15 +2389,51 @@ where
     where
         E: From<crate::effect_row::prepared::PreparedEffectFailure<TypeConstraintError>>,
     {
+        let scope = self.compose_effect_reads(graph, scopes)?;
+        self.with_effect_read_scope(graph, scope.as_ref(), operation)
+    }
+
+    pub(in crate::types::constraints) fn compose_effect_reads<'r>(
+        &mut self,
+        graph: &crate::effect_row::prepared::PreparedEffectGraph,
+        scopes: impl IntoIterator<Item = &'r crate::effect_row::prepared::PreparedEffectReadScope>,
+    ) -> Result<
+        Option<crate::effect_row::prepared::PreparedEffectReadScope>,
+        crate::effect_row::prepared::PreparedEffectFailure<TypeConstraintError>,
+    > {
         let mut scopes = scopes.into_iter().peekable();
-        if scopes.peek().is_none() {
+        if scopes.peek().is_some() {
+            graph.compose_read_scopes(scopes, self).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub(in crate::types::constraints) fn with_effect_read_scope<T, E>(
+        &mut self,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        scope: Option<&crate::effect_row::prepared::PreparedEffectReadScope>,
+        operation: impl FnOnce(
+            &mut Self,
+            &mut crate::effect_row::prepared::PreparedEffectGraph,
+        ) -> Result<T, E>,
+    ) -> Result<
+        (
+            T,
+            Option<crate::effect_row::prepared::PreparedEffectReadScope>,
+        ),
+        E,
+    >
+    where
+        E: From<crate::effect_row::prepared::PreparedEffectFailure<TypeConstraintError>>,
+    {
+        let Some(reads) = scope else {
             return self
                 .with_effect_transaction(graph, operation)
                 .map(|value| (value, None));
-        }
-        let reads = graph.compose_read_scopes(scopes, self)?;
+        };
         graph
-            .compute_in_read_scope(&reads, self, |graph, context| operation(context, graph))
+            .compute_in_read_scope(reads, self, |graph, context| operation(context, graph))
             .map(|(value, reads)| (value, Some(reads)))
     }
 }
