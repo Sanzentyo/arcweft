@@ -18930,3 +18930,17 @@ Source `a3c3ee7a5a750e85c5fa0595112d6e9823faf044`。比較元は `ab41abe2fb09b3
 入れ子の関数型の作用が元の宣言本体で決まる回帰fixtureを追加した。Sema全体のコンパイルが未完了のため、そのfixture、nextest、推移的逆依存、Clippy、workspaceおよびNative／AWBCは未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-typed-iteration-transport.raw.zip) は25 entry、263,826 bytes、SHA256 `753c26f00aee2e151cde782e883be9c8b09a255beb632b7a0f4e0fb1a7e4d2fe`。各entryの長さとSHA256を再照合した。更新前の履歴2,943,050 bytesのSHA256 `b79f9a580e96f0edd7e10481d8f12231925e3ef018094eb5df6e00679f1c6d6e` をprefixとして保持した。
+
+
+<a id="owner-bound-capture-types"></a>
+## 2026-11-18 — キャプチャ元の型を元の作用解で確定
+
+Source `399af5ff7123c509f70860d5afab276a12ac31ab`。変更の基点は `066613636794eb7ae06bafa47efc4663c2343796`。診断の比較元は同じRust入力の `a3c3ee7a5a750e85c5fa0595112d6e9823faf044` に対応する `typed-iteration-transport.dev02-check.log`。公開したmainと9件のRust入力のblobを照合した。
+
+候補評価で、キャプチャ元の出現箇所と準備済み型を一緒に保持する。関数値の局所参照は特殊化前の型を使う。暗黙関数と対話コールバックの確定時に、元のスコープと宣言本体と共通の作用解からキャプチャ元の型識別子を作り、確定済みの束縛型と出典を照合する。nominal本体を持つ暗黙関数の生成では、確定済みキャプチャをそのまま利用する。暗黙関数の宣言部は実際の式の関数型と引数・結果を照合する。パイプ左辺とTryのselected operandもこの段階で確定する。Tryとcarrier blockの準備側、別の束縛フレームを持つ型、最終適用の確定、実行時の検証は継続課題である。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。dev01は終了101でlibrary 234エラー・25警告、lib test 1,109エラー・37警告。暗黙関数の引数照合で曖昧だった `as_ref` をsliceに限定した。dev02は終了101でlibrary 232エラー・25警告、lib test 1,107エラー・37警告。正規化した一次診断は前回1,169件から1,121件へ減った。48件削除、追加0件。パッケージのfmt checkと `just structure-audit-gate` は終了0。
+
+未準備の宣言本体に由来する作用項を、局所参照のキャプチャ探索で保持する回帰fixtureを追加した。Sema全体のコンパイルが未完了のため、fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-owner-bound-capture-types.raw.zip) は24 entry、249,958 bytes、SHA256 `c5254d760ffb4bfd8060550860048c12a6d5dbccab51a46998a8d825e35c6845`。各entryの長さとSHA256を再照合した。更新前の履歴2,945,434 bytesのSHA256 `182f1f3589d7feafc0a40b4a80f7d0e6b9549397a656f5eb6d65796aba3250ad` をprefixとして保持した。
