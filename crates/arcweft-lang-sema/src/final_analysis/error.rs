@@ -233,6 +233,8 @@ pub enum CandidateFactTransactionViolation {
     ProjectionOutsideTransaction,
     #[error("candidate semantic projection was not retained for publication")]
     ProjectionUnavailable,
+    #[error("candidate semantic projections contain overlapping writes to one fact")]
+    ProjectionWriteConflict,
     #[error("candidate fact ledger is poisoned after an unrecoverable close")]
     Poisoned,
     #[error("candidate fact ledger could not recover to its oldest active frame")]

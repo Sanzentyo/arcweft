@@ -82,7 +82,7 @@ impl PreparedCheckedContentCatalog {
         value: PreparedCheckedRichTextCheck,
     ) -> Result<(), PreparedCheckedRichTextCheck> {
         let content = value.content_id();
-        if value.markers.content != content || self.rows.contains_key(&content) {
+        if !value.belongs_to(content) || self.rows.contains_key(&content) {
             return Err(value);
         }
         self.rows.insert(content, value);
@@ -106,9 +106,7 @@ impl PreparedCheckedContentCatalog {
         value: Option<PreparedCheckedRichTextCheck>,
     ) -> Result<Option<PreparedCheckedRichTextCheck>, PreparedCheckedContentCatalogError> {
         match value {
-            Some(value) if value.content_id() == content && value.markers.content() == content => {
-                Ok(self.rows.insert(content, value))
-            }
+            Some(value) if value.belongs_to(content) => Ok(self.rows.insert(content, value)),
             Some(value) => Err(PreparedCheckedContentCatalogError::KeyMismatch {
                 expected: content,
                 actual: value.content_id(),
@@ -145,6 +143,10 @@ impl PreparedCheckedRichTextCheck {
 
     pub(crate) const fn content_id(&self) -> HirDialogueContentId {
         self.report.content.id
+    }
+
+    pub(crate) fn belongs_to(&self, content: HirDialogueContentId) -> bool {
+        self.content_id() == content && self.markers.content() == content
     }
 
     pub(crate) fn into_parts(

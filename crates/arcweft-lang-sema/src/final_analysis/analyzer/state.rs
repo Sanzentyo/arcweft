@@ -16,6 +16,7 @@ use crate::callable::{
 };
 use crate::{
     checked_rich_text::{PreparedCheckedContentCatalog, PreparedCheckedRichTextCheck},
+    effect_row::{DecisionControl, DecisionWork},
     final_analysis::{
         PreparedContentApplication, PreparedDialogueApplication, PreparedExpressionFact,
     },
@@ -307,9 +308,12 @@ struct ActiveCandidateCheckpoint {
 pub(super) type ImplicitCaptureUseKey = (ExprId, super::super::CheckedLocalUseSite);
 
 #[derive(Debug)]
-pub(super) struct CandidateProjectionApplyFailure<E = std::convert::Infallible> {
+pub(super) struct CandidateProjectionApplyFailure<
+    E = std::convert::Infallible,
+    P = CandidateSemanticProjection,
+> {
     violation: CandidateFactMutationFailure<E>,
-    projection: CandidateSemanticProjection,
+    projection: P,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -319,10 +323,8 @@ pub(super) enum ExpressionFactWriteViolation {
     Candidate(CandidateFactTransactionViolation),
 }
 
-impl<E> CandidateProjectionApplyFailure<E> {
-    pub(super) fn into_parts(
-        self,
-    ) -> (CandidateFactMutationFailure<E>, CandidateSemanticProjection) {
+impl<E, P> CandidateProjectionApplyFailure<E, P> {
+    pub(super) fn into_parts(self) -> (CandidateFactMutationFailure<E>, P) {
         (self.violation, self.projection)
     }
 }
@@ -413,7 +415,7 @@ impl CandidateSemanticProjection {
         &self,
         owner: ExprId,
     ) -> Option<Option<&PreparedExpressionFact>> {
-        self.data.expressions.get(&owner).map(Option::as_ref)
+        self.data.facts.expressions.get(&owner).map(Option::as_ref)
     }
 
     pub(super) fn effect_view<'a>(
@@ -430,6 +432,10 @@ impl CandidateSemanticProjection {
 struct CandidateSemanticProjectionData {
     authority: CandidateProjectionAuthority,
     graph_delta: PreparedCallGraphDelta<AnalyzerPreparedCallPrefix, AnalyzerPreparedUnselectedCall>,
+    facts: CandidateProjectionFacts,
+}
+
+struct CandidateProjectionFacts {
     locals: BTreeMap<LocalId, Option<TypeKind<crate::types::PreparedEffects>>>,
     patterns: BTreeMap<PatternId, Option<TypeKind<crate::types::PreparedEffects>>>,
     expressions: BTreeMap<ExprId, Option<PreparedExpressionFact>>,
@@ -593,19 +599,20 @@ impl std::fmt::Debug for CandidateSemanticProjection {
         formatter
             .debug_struct("CandidateSemanticProjection")
             .field("epoch", &self.data.authority.epoch)
-            .field("locals", &self.data.locals.len())
-            .field("patterns", &self.data.patterns.len())
-            .field("expressions", &self.data.expressions.len())
-            .field("checked_content", &self.data.checked_content.len())
-            .field("iterations", &self.data.iterations.len())
+            .field("locals", &self.data.facts.locals.len())
+            .field("patterns", &self.data.facts.patterns.len())
+            .field("expressions", &self.data.facts.expressions.len())
+            .field("checked_content", &self.data.facts.checked_content.len())
+            .field("iterations", &self.data.facts.iterations.len())
             .field(
                 "implicit_capture_uses",
-                &self.data.implicit_capture_uses.len(),
+                &self.data.facts.implicit_capture_uses.len(),
             )
             .field(
                 "physical_candidate_argument_evaluations",
                 &self
                     .data
+                    .facts
                     .physical_candidate_argument_evaluations
                     .row_count(),
             )
@@ -659,27 +666,27 @@ impl SemanticFactState {
         {
             return Some(CandidateSemanticReplayMismatch::PreparedGraph(mismatch));
         }
-        if left.data.locals != right.data.locals {
+        if left.data.facts.locals != right.data.facts.locals {
             return Some(CandidateSemanticReplayMismatch::Locals);
         }
-        if left.data.patterns != right.data.patterns {
+        if left.data.facts.patterns != right.data.facts.patterns {
             return Some(CandidateSemanticReplayMismatch::Patterns);
         }
-        if left.data.expressions != right.data.expressions {
+        if left.data.facts.expressions != right.data.facts.expressions {
             return Some(CandidateSemanticReplayMismatch::Expressions);
         }
-        if left.data.checked_content != right.data.checked_content {
+        if left.data.facts.checked_content != right.data.facts.checked_content {
             return Some(CandidateSemanticReplayMismatch::CheckedContent);
         }
-        if left.data.iterations != right.data.iterations {
+        if left.data.facts.iterations != right.data.facts.iterations {
             return Some(CandidateSemanticReplayMismatch::Iterations);
         }
-        if left.data.implicit_capture_uses != right.data.implicit_capture_uses {
+        if left.data.facts.implicit_capture_uses != right.data.facts.implicit_capture_uses {
             return Some(CandidateSemanticReplayMismatch::ImplicitCaptureUses);
         }
         if mode == CandidateFactReplayMode::Exact
-            && left.data.physical_candidate_argument_evaluations
-                != right.data.physical_candidate_argument_evaluations
+            && left.data.facts.physical_candidate_argument_evaluations
+                != right.data.facts.physical_candidate_argument_evaluations
         {
             return Some(CandidateSemanticReplayMismatch::PhysicalCandidateEvaluations);
         }
@@ -1790,38 +1797,40 @@ impl SemanticFactState {
                 epoch: self.epoch,
             },
             graph_delta,
-            locals: owners
-                .locals
-                .into_iter()
-                .map(|owner| (owner, self.locals.remove(&owner)))
-                .collect(),
-            patterns: owners
-                .patterns
-                .into_iter()
-                .map(|owner| (owner, self.patterns.remove(&owner)))
-                .collect(),
-            expressions: owners
-                .expressions
-                .into_iter()
-                .map(|owner| (owner, self.expressions.remove(&owner)))
-                .collect(),
-            checked_content: owners
-                .checked_content
-                .into_iter()
-                .map(|content| (content, self.checked_content.take(content)))
-                .collect(),
-            iterations: owners
-                .iterations
-                .into_iter()
-                .map(|owner| (owner, self.iteration_facts.remove(&owner)))
-                .collect(),
-            implicit_capture_uses: owners
-                .implicit_capture_uses
-                .into_iter()
-                .map(|key| (key, self.implicit_capture_uses.remove(&key)))
-                .collect(),
-            implicit_capture_journal_order,
-            physical_candidate_argument_evaluations,
+            facts: CandidateProjectionFacts {
+                locals: owners
+                    .locals
+                    .into_iter()
+                    .map(|owner| (owner, self.locals.remove(&owner)))
+                    .collect(),
+                patterns: owners
+                    .patterns
+                    .into_iter()
+                    .map(|owner| (owner, self.patterns.remove(&owner)))
+                    .collect(),
+                expressions: owners
+                    .expressions
+                    .into_iter()
+                    .map(|owner| (owner, self.expressions.remove(&owner)))
+                    .collect(),
+                checked_content: owners
+                    .checked_content
+                    .into_iter()
+                    .map(|content| (content, self.checked_content.take(content)))
+                    .collect(),
+                iterations: owners
+                    .iterations
+                    .into_iter()
+                    .map(|owner| (owner, self.iteration_facts.remove(&owner)))
+                    .collect(),
+                implicit_capture_uses: owners
+                    .implicit_capture_uses
+                    .into_iter()
+                    .map(|key| (key, self.implicit_capture_uses.remove(&key)))
+                    .collect(),
+                implicit_capture_journal_order,
+                physical_candidate_argument_evaluations,
+            },
         });
         self.rollback_journal(journal_start);
         if self.candidate_checkpoints.is_empty() {
@@ -1830,141 +1839,206 @@ impl SemanticFactState {
         Ok(projection)
     }
 
-    /// Applies a probe projection while another candidate transaction is
-    /// active.  Each transferred value is itself journaled, so an enclosing
-    /// rollback also undoes the application.
-    pub(super) fn apply_candidate_projection<C: crate::effect_row::DecisionControl>(
+    pub(super) fn apply_candidate_projection<C: DecisionControl>(
         &mut self,
         target: &CandidateFactTransactionAuthority<'_>,
         projection: CandidateSemanticProjection,
         control: &mut C,
     ) -> Result<(), CandidateProjectionApplyFailure<C::Error>> {
-        let violation = if let Err(error) = self.ensure_healthy() {
-            Some(error)
-        } else if !Arc::ptr_eq(&self.issuer, &target.checkpoint.issuer) {
-            Some(CandidateFactTransactionViolation::ForeignCheckpoint)
-        } else if target.checkpoint.epoch != self.epoch {
-            Some(CandidateFactTransactionViolation::StaleCheckpoint)
-        } else if target.checkpoint.journal_start.0 > self.candidate_journal.len() {
-            Some(CandidateFactTransactionViolation::JournalCursorMismatch)
-        } else if !self.candidate_checkpoints.last().is_some_and(|active| {
-            active.id == target.checkpoint.id
-                && active.journal_start == target.checkpoint.journal_start
-        }) {
-            Some(CandidateFactTransactionViolation::NonLifoCheckpoint)
-        } else if !Arc::ptr_eq(&self.issuer, &projection.data.authority.issuer) {
-            Some(CandidateFactTransactionViolation::ForeignProjection)
-        } else if projection.data.authority.epoch != target.checkpoint.epoch {
-            Some(CandidateFactTransactionViolation::ProjectionAuthorityMismatch)
-        } else if self.prepared_calls.is_none() {
-            Some(CandidateFactTransactionViolation::PreparedCallGraph(
-                crate::callable::CallConstraintInvariant::PreparedGraphConsumed.into(),
-            ))
-        } else {
-            None
-        };
-        if let Some(violation) = violation {
-            return Err(CandidateProjectionApplyFailure {
-                violation: violation.into(),
-                projection,
-            });
-        }
-        if let Err(violation) = self.preflight_projection_call_graph(
-            &projection.data.graph_delta,
-            &projection.data.expressions,
-        ) {
-            return Err(CandidateProjectionApplyFailure {
-                violation: violation.into(),
-                projection,
-            });
-        }
-        let CandidateSemanticProjectionData {
-            authority,
-            graph_delta,
-            locals,
-            patterns,
-            expressions,
-            checked_content,
-            iterations,
-            implicit_capture_uses,
-            implicit_capture_journal_order,
-            physical_candidate_argument_evaluations,
-        } = *projection.data;
-        if let Some((key, existing, proposed)) =
-            implicit_capture_uses.iter().find_map(|(key, value)| {
-                let local = (*value)?;
-                let existing = self
-                    .implicit_capture_uses
-                    .get(key)
-                    .copied()
-                    .filter(|existing| *existing != local)?;
-                Some((*key, existing, local))
+        self.apply_candidate_projections(target, vec![projection], control)
+            .map_err(|failure| {
+                let (violation, mut projections) = failure.into_parts();
+                CandidateProjectionApplyFailure {
+                    violation,
+                    projection: projections.pop().expect("original singleton projection"),
+                }
             })
+    }
+
+    /// Applies separately extracted projections at one graph base. No fact
+    /// is written until every original graph delta is admitted. The active
+    /// checkpoint can roll back the resulting graph and fact updates together.
+    pub(super) fn apply_candidate_projections<C: DecisionControl>(
+        &mut self,
+        target: &CandidateFactTransactionAuthority<'_>,
+        projections: Vec<CandidateSemanticProjection>,
+        control: &mut C,
+    ) -> Result<(), CandidateProjectionApplyFailure<C::Error, Vec<CandidateSemanticProjection>>>
+    {
+        if let Err(violation) = self.preflight_candidate_projections(target, &projections, control)
         {
             return Err(CandidateProjectionApplyFailure {
-                violation: CandidateFactTransactionViolation::ImplicitCaptureUseConflict {
-                    callable: key.0,
-                    site: key.1,
-                    existing,
-                    proposed,
-                }
-                .into(),
-                projection: CandidateSemanticProjection::from(CandidateSemanticProjectionData {
+                violation,
+                projection: projections,
+            });
+        }
+        let (graph_deltas, updates): (Vec<_>, Vec<_>) = projections
+            .into_iter()
+            .map(|projection| {
+                let CandidateSemanticProjectionData {
                     authority,
                     graph_delta,
-                    locals,
-                    patterns,
-                    expressions,
-                    checked_content,
-                    iterations,
-                    implicit_capture_uses,
-                    implicit_capture_journal_order,
-                    physical_candidate_argument_evaluations,
-                }),
-            });
-        }
-        match self
+                    facts,
+                } = *projection.data;
+                (graph_delta, (authority, facts))
+            })
+            .unzip();
+        if let Err(failure) = self
             .prepared_calls
             .as_mut()
-            .expect("prepared graph presence was validated above")
-            .restore_deltas(&target.checkpoint.graph, vec![graph_delta], control)
+            .expect("prepared graph preflight")
+            .restore_deltas(&target.checkpoint.graph, graph_deltas, control)
         {
-            Ok(()) => {}
-            Err(failure) => {
-                let (violation, mut graph_deltas) = failure.into_parts();
-                let graph_delta = graph_deltas.pop().expect("original graph delta");
-                return Err(CandidateProjectionApplyFailure {
-                    violation: violation.into(),
-                    projection: CandidateSemanticProjection::from(
-                        CandidateSemanticProjectionData {
-                            authority,
-                            graph_delta,
-                            locals,
-                            patterns,
-                            expressions,
-                            checked_content,
-                            iterations,
-                            implicit_capture_uses,
-                            implicit_capture_journal_order,
-                            physical_candidate_argument_evaluations,
-                        },
-                    ),
-                });
+            let (violation, graph_deltas) = failure.into_parts();
+            let projections = graph_deltas
+                .into_iter()
+                .zip(updates)
+                .map(|(graph_delta, (authority, facts))| {
+                    CandidateSemanticProjectionData {
+                        authority,
+                        graph_delta,
+                        facts,
+                    }
+                    .into()
+                })
+                .collect();
+            return Err(CandidateProjectionApplyFailure {
+                violation: violation.into(),
+                projection: projections,
+            });
+        }
+        for (_, facts) in updates {
+            self.apply_projection_entries(facts);
+        }
+        Ok(())
+    }
+
+    fn preflight_candidate_projections<C: DecisionControl>(
+        &self,
+        target: &CandidateFactTransactionAuthority<'_>,
+        projections: &[CandidateSemanticProjection],
+        control: &mut C,
+    ) -> Result<(), CandidateFactMutationFailure<C::Error>> {
+        self.transaction_authority(target.checkpoint)?;
+        if projections.is_empty()
+            || self
+                .active_physical_candidate_argument_evaluations
+                .is_none()
+        {
+            return Err(CandidateFactTransactionViolation::ProjectionOutsideTransaction.into());
+        }
+        let mut writes = CandidateProjectionOwners::default();
+        let mut captures = BTreeMap::new();
+        for projection in projections {
+            self.require_candidate_projection_owner(projection)?;
+            // Reserve the two vectors transferring graph deltas and fact
+            // payloads separately. The original values are still in place.
+            control
+                .charge(DecisionWork::Node)
+                .map_err(CandidateFactMutationFailure::Control)?;
+            control
+                .charge(DecisionWork::Node)
+                .map_err(CandidateFactMutationFailure::Control)?;
+            let facts = &projection.data.facts;
+            if projections.len() > 1 {
+                Self::admit_projection_writes(&mut writes.locals, facts.locals.keys(), control)?;
+                Self::admit_projection_writes(
+                    &mut writes.patterns,
+                    facts.patterns.keys(),
+                    control,
+                )?;
+                Self::admit_projection_writes(
+                    &mut writes.expressions,
+                    facts.expressions.keys(),
+                    control,
+                )?;
+                Self::admit_projection_writes(
+                    &mut writes.checked_content,
+                    facts.checked_content.keys(),
+                    control,
+                )?;
+                Self::admit_projection_writes(
+                    &mut writes.iterations,
+                    facts.iterations.keys(),
+                    control,
+                )?;
+            }
+            for (content, value) in &facts.checked_content {
+                control
+                    .charge(DecisionWork::Visit)
+                    .map_err(CandidateFactMutationFailure::Control)?;
+                if value
+                    .as_ref()
+                    .is_some_and(|value| !value.belongs_to(*content))
+                {
+                    return Err(CandidateFactTransactionViolation::ProjectionUnavailable.into());
+                }
+            }
+            for (&key, &proposed) in &facts.implicit_capture_uses {
+                control
+                    .charge(DecisionWork::Visit)
+                    .map_err(CandidateFactMutationFailure::Control)?;
+                let live = self.implicit_capture_uses.get(&key).copied();
+                if projections.len() > 1 && !captures.contains_key(&key) {
+                    control
+                        .charge(DecisionWork::Node)
+                        .map_err(CandidateFactMutationFailure::Control)?;
+                    captures.insert(key, proposed);
+                }
+                if let Some(existing) = captures.get(&key).copied()
+                    && existing != proposed
+                {
+                    if let (Some(existing), Some(proposed)) = (existing, proposed) {
+                        return Err(
+                            CandidateFactTransactionViolation::ImplicitCaptureUseConflict {
+                                callable: key.0,
+                                site: key.1,
+                                existing,
+                                proposed,
+                            }
+                            .into(),
+                        );
+                    }
+                    return Err(CandidateFactTransactionViolation::ProjectionWriteConflict.into());
+                }
+                if let (Some(existing), Some(proposed)) = (live, proposed)
+                    && existing != proposed
+                {
+                    return Err(
+                        CandidateFactTransactionViolation::ImplicitCaptureUseConflict {
+                            callable: key.0,
+                            site: key.1,
+                            existing,
+                            proposed,
+                        }
+                        .into(),
+                    );
+                }
+                if proposed.is_none()
+                    && live.is_some()
+                    && !self.implicit_capture_journal_order.contains(&key)
+                {
+                    return Err(CandidateFactTransactionViolation::UnrecoverableLedger.into());
+                }
             }
         }
-        self.active_physical_candidate_argument_evaluations
-            .as_mut()
-            .expect("projection target validation proves the physical transcript is live")
-            .merge(physical_candidate_argument_evaluations);
-        self.apply_projection_entries(
-            locals,
-            patterns,
-            expressions,
-            checked_content,
-            iterations,
-            implicit_capture_uses,
-            implicit_capture_journal_order,
-        );
+        self.preflight_projection_call_graph(projections)?;
+        Ok(())
+    }
+
+    fn admit_projection_writes<'a, K: Copy + Ord + 'a, C: DecisionControl>(
+        seen: &mut BTreeSet<K>,
+        keys: impl Iterator<Item = &'a K>,
+        control: &mut C,
+    ) -> Result<(), CandidateFactMutationFailure<C::Error>> {
+        for &key in keys {
+            control
+                .charge(DecisionWork::Node)
+                .map_err(CandidateFactMutationFailure::Control)?;
+            if !seen.insert(key) {
+                return Err(CandidateFactTransactionViolation::ProjectionWriteConflict.into());
+            }
+        }
         Ok(())
     }
 
@@ -2179,13 +2253,39 @@ impl SemanticFactState {
 
     fn preflight_projection_call_graph(
         &self,
-        delta: &PreparedCallGraphDelta<AnalyzerPreparedCallPrefix, AnalyzerPreparedUnselectedCall>,
-        projected_expressions: &BTreeMap<ExprId, Option<PreparedExpressionFact>>,
+        projections: &[CandidateSemanticProjection],
     ) -> Result<(), CandidateFactTransactionViolation> {
         let graph = self.prepared_calls()?;
-        let delta_sites = delta.site_states().map_err(|violation| {
-            CandidateFactTransactionViolation::PreparedCallGraph(violation.into())
-        })?;
+        let mut delta_sites = Vec::new();
+        let mut expression_updates = BTreeMap::new();
+        for projection in projections {
+            let expressions = &projection.data.facts.expressions;
+            for &(site, _) in &*projection
+                .data
+                .graph_delta
+                .site_states()
+                .map_err(|violation| {
+                    CandidateFactTransactionViolation::PreparedCallGraph(violation.into())
+                })?
+            {
+                let owner = site.expression();
+                if expressions
+                    .get(&owner)
+                    .and_then(Option::as_ref)
+                    .and_then(|fact| fact.checked_call_site(owner))
+                    != Some(site)
+                {
+                    return Err(Self::call_graph_mismatch());
+                }
+                delta_sites.push(site);
+            }
+            expression_updates.extend(expressions.iter().map(|(&owner, expression)| {
+                let site = expression
+                    .as_ref()
+                    .and_then(|fact| fact.checked_call_site(owner));
+                (owner, site)
+            }));
+        }
         let graph_sites = graph.sites().collect::<BTreeSet<_>>();
         let expression_sites = self
             .expressions
@@ -2196,20 +2296,9 @@ impl SemanticFactState {
                     .map(|site| (*owner, site))
             })
             .collect::<BTreeMap<_, _>>();
-        let expression_updates = projected_expressions
-            .iter()
-            .map(|(owner, expression)| {
-                (
-                    *owner,
-                    expression
-                        .as_ref()
-                        .and_then(|expression| expression.checked_call_site(*owner)),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
         if projected_call_site_inventories_match(
             graph_sites,
-            delta_sites.iter().map(|(site, _state)| *site),
+            delta_sites,
             expression_sites,
             expression_updates,
         ) {
@@ -2580,19 +2669,21 @@ impl SemanticFactState {
         }
     }
 
-    fn apply_projection_entries(
-        &mut self,
-        locals: BTreeMap<LocalId, Option<TypeKind<crate::types::PreparedEffects>>>,
-        patterns: BTreeMap<PatternId, Option<TypeKind<crate::types::PreparedEffects>>>,
-        expressions: BTreeMap<ExprId, Option<PreparedExpressionFact>>,
-        checked_content: BTreeMap<
-            arcweft_lang_hir::dialogue_application::HirDialogueContentId,
-            Option<PreparedCheckedRichTextCheck>,
-        >,
-        iterations: BTreeMap<ExprId, Option<CheckedIteration>>,
-        implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, Option<LocalId>>,
-        implicit_capture_journal_order: Box<[ImplicitCaptureUseKey]>,
-    ) {
+    fn apply_projection_entries(&mut self, facts: CandidateProjectionFacts) {
+        let CandidateProjectionFacts {
+            locals,
+            patterns,
+            expressions,
+            checked_content,
+            iterations,
+            mut implicit_capture_uses,
+            implicit_capture_journal_order,
+            physical_candidate_argument_evaluations,
+        } = facts;
+        self.active_physical_candidate_argument_evaluations
+            .as_mut()
+            .expect("active transcript preflight")
+            .merge(physical_candidate_argument_evaluations);
         for (owner, value) in locals {
             self.apply_local(owner, value);
         }
@@ -2608,7 +2699,6 @@ impl SemanticFactState {
         for (owner, value) in iterations {
             self.apply_iteration(owner, value);
         }
-        let mut implicit_capture_uses = implicit_capture_uses;
         for key in implicit_capture_journal_order {
             if let Some(value) = implicit_capture_uses.remove(&key) {
                 self.apply_implicit_capture_use(key, value);
@@ -2656,13 +2746,10 @@ impl SemanticFactState {
         content: arcweft_lang_hir::dialogue_application::HirDialogueContentId,
         value: Option<PreparedCheckedRichTextCheck>,
     ) {
-        let previous = match self.checked_content.replace(content, value) {
-            Ok(previous) => previous,
-            Err(_) => {
-                self.poison = Some(CandidateFactTransactionViolation::ProjectionUnavailable);
-                return;
-            }
-        };
+        let previous = self
+            .checked_content
+            .replace(content, value)
+            .expect("checked-content projection preflight");
         if !self.candidate_checkpoints.is_empty() {
             self.candidate_journal
                 .push(SemanticFactMutation::CheckedContent {
@@ -2889,6 +2976,20 @@ mod tests {
         CallConstraintInvariant, CheckedCallSite, PreparedCallContinuationRef, PreparedCallGraph,
     };
 
+    struct ProjectionWork(usize);
+
+    impl DecisionControl for ProjectionWork {
+        type Error = &'static str;
+
+        fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
+            self.0 = self.0.checked_sub(1).ok_or("projection budget exhausted")?;
+            Ok(())
+        }
+    }
+
+    fn work() -> ProjectionWork {
+        ProjectionWork(100_000)
+    }
     fn call_identity() -> (ExprId, LocalId, PatternId) {
         let fixture = crate::final_analysis::tests::fixture(
             concat!(
@@ -2937,6 +3038,92 @@ mod tests {
         let first = locals.next().expect("first local");
         let second = locals.next().expect("second local");
         (first, second)
+    }
+
+    fn local_projection(
+        state: &mut SemanticFactState,
+        local: LocalId,
+        value: TypeKind<crate::types::PreparedEffects>,
+    ) -> CandidateSemanticProjection {
+        let checkpoint = state.begin_candidate_transaction(&mut work()).unwrap();
+        state.set_local_type(local, value).unwrap();
+        state.extract_and_rollback(checkpoint, &mut work()).unwrap()
+    }
+
+    #[test]
+    fn graph_budget_failure_returns_original_fact_batch_for_apply_and_rollback() {
+        let (first, second) = distinct_test_locals();
+        let mut state = SemanticFactState::new();
+        let projections = vec![
+            local_projection(&mut state, first, TypeKind::I64),
+            local_projection(&mut state, second, TypeKind::Unit),
+        ];
+        let target = state.begin_candidate_transaction(&mut work()).unwrap();
+        let authority = state.transaction_authority(&target).unwrap();
+        let mut fact_budget = work();
+        state
+            .preflight_candidate_projections(&authority, &projections, &mut fact_budget)
+            .unwrap();
+        let (error, projections) = state
+            .apply_candidate_projections(
+                &authority,
+                projections,
+                &mut ProjectionWork(work().0 - fact_budget.0),
+            )
+            .unwrap_err()
+            .into_parts();
+        assert!(matches!(error, CandidateFactMutationFailure::Control(_)));
+        assert!(state.locals().is_empty());
+        assert!(state.candidate_journal.is_empty());
+        assert_eq!(
+            projections[0].data.facts.locals.get(&first),
+            Some(&Some(TypeKind::I64))
+        );
+        assert_eq!(
+            projections[1].data.facts.locals.get(&second),
+            Some(&Some(TypeKind::Unit))
+        );
+        state
+            .apply_candidate_projections(&authority, projections, &mut work())
+            .unwrap();
+        assert_eq!(state.locals().get(&first), Some(&TypeKind::I64));
+        assert_eq!(state.locals().get(&second), Some(&TypeKind::Unit));
+        state.rollback_candidate_transaction(target).unwrap();
+        assert!(state.locals().is_empty());
+    }
+
+    #[test]
+    fn competing_fact_writes_leave_the_ledger_and_both_projections_intact() {
+        let (local, _) = distinct_test_locals();
+        let mut state = SemanticFactState::new();
+        let projections = vec![
+            local_projection(&mut state, local, TypeKind::I64),
+            local_projection(&mut state, local, TypeKind::Unit),
+        ];
+        let target = state.begin_candidate_transaction(&mut work()).unwrap();
+        let authority = state.transaction_authority(&target).unwrap();
+        let (error, mut projections) = state
+            .apply_candidate_projections(&authority, projections, &mut work())
+            .unwrap_err()
+            .into_parts();
+        assert!(matches!(
+            error,
+            CandidateFactMutationFailure::Invariant(
+                CandidateFactTransactionViolation::ProjectionWriteConflict
+            )
+        ));
+        assert!(state.locals().is_empty());
+        let second = projections.pop().unwrap();
+        assert_eq!(
+            projections[0].data.facts.locals.get(&local),
+            Some(&Some(TypeKind::I64))
+        );
+        state
+            .apply_candidate_projection(&authority, second, &mut work())
+            .unwrap();
+        assert_eq!(state.locals().get(&local), Some(&TypeKind::Unit));
+        state.rollback_candidate_transaction(target).unwrap();
+        assert!(state.locals().is_empty());
     }
 
     fn graph_sites() -> Vec<CheckedCallSite> {
@@ -3007,7 +3194,7 @@ mod tests {
     fn prepared_call_graph_site_seal_is_exactly_idempotent() {
         let site = graph_sites()[0];
         let mut graph = PreparedCallGraph::<(), u8>::new();
-        let checkpoint = graph.begin_delta().expect("graph checkpoint");
+        let checkpoint = graph.begin_delta(&mut work()).expect("graph checkpoint");
         graph
             .seal_unselected(site, no_graph_dependencies(), 1)
             .expect("first site seal");
@@ -3030,53 +3217,67 @@ mod tests {
         let sites = graph_sites();
         assert!(sites.len() >= 3);
         let mut graph = PreparedCallGraph::<()>::new();
-        let outer = graph.begin_delta().expect("outer graph checkpoint");
+        let outer = graph
+            .begin_delta(&mut work())
+            .expect("outer graph checkpoint");
         graph
             .seal_unselected(sites[0], no_graph_dependencies(), ())
             .expect("outer node");
-        let inner = graph.begin_delta().expect("inner graph checkpoint");
+        let inner = graph
+            .begin_delta(&mut work())
+            .expect("inner graph checkpoint");
         graph
             .seal_unselected(sites[1], no_graph_dependencies(), ())
             .expect("inner node");
         graph.commit_delta(inner).expect("nested commit");
         graph.rollback_delta(outer).expect("outer rollback");
 
-        let source = graph.begin_delta().expect("source checkpoint");
+        let source = graph.begin_delta(&mut work()).expect("source checkpoint");
         graph
             .seal_unselected(sites[0], no_graph_dependencies(), ())
             .expect("source node");
-        let delta = graph.extract_delta(source).expect("extract source");
+        let delta = graph
+            .extract_delta(source, &mut work())
+            .expect("extract source");
 
-        let outer = graph.begin_delta().expect("restore outer checkpoint");
+        let outer = graph
+            .begin_delta(&mut work())
+            .expect("restore outer checkpoint");
         graph
             .seal_unselected(sites[1], no_graph_dependencies(), ())
             .expect("outer baseline node");
         graph
-            .restore_delta(&outer, delta)
+            .restore_deltas(&outer, vec![delta], &mut work())
             .expect("restore into outer");
         graph
             .rollback_delta(outer)
             .expect("rollback restored nodes");
 
-        let source = graph.begin_delta().expect("collision source checkpoint");
+        let source = graph
+            .begin_delta(&mut work())
+            .expect("collision source checkpoint");
         graph
             .seal_unselected(sites[2], no_graph_dependencies(), ())
             .expect("collision source node");
         let delta = graph
-            .extract_delta(source)
+            .extract_delta(source, &mut work())
             .expect("extract collision source");
-        let outer = graph.begin_delta().expect("collision outer checkpoint");
+        let outer = graph
+            .begin_delta(&mut work())
+            .expect("collision outer checkpoint");
         graph
             .seal_unselected(sites[2], no_graph_dependencies(), ())
             .expect("collision node");
         let failure = graph
-            .restore_delta(&outer, delta)
+            .restore_deltas(&outer, vec![delta], &mut work())
             .expect_err("restore preflight must reject duplicate site");
-        let (_, delta) = failure.into_parts();
+        let (_, deltas) = failure.into_parts();
         graph.rollback_delta(outer).expect("rollback collision");
-        let target = graph.begin_delta().expect("retry target checkpoint");
+        let target = graph
+            .begin_delta(&mut work())
+            .expect("retry target checkpoint");
         graph
-            .restore_delta(&target, delta)
+            .restore_deltas(&target, deltas, &mut work())
             .expect("retry exact delta");
         graph.rollback_delta(target).expect("rollback retry target");
     }
@@ -3085,22 +3286,29 @@ mod tests {
     fn prepared_call_graph_restore_requires_exact_active_target() {
         let sites = graph_sites();
         let mut graph = PreparedCallGraph::<()>::new();
-        let source = graph.begin_delta().expect("source checkpoint");
+        let source = graph.begin_delta(&mut work()).expect("source checkpoint");
         graph
             .seal_unselected(sites[0], no_graph_dependencies(), ())
             .expect("source node");
-        let delta = graph.extract_delta(source).expect("extract source");
+        let delta = graph
+            .extract_delta(source, &mut work())
+            .expect("extract source");
 
-        let outer = graph.begin_delta().expect("outer target");
-        let inner = graph.begin_delta().expect("inner target");
+        let outer = graph.begin_delta(&mut work()).expect("outer target");
+        let inner = graph.begin_delta(&mut work()).expect("inner target");
         let failure = graph
-            .restore_delta(&outer, delta)
+            .restore_deltas(&outer, vec![delta], &mut work())
             .expect_err("non-LIFO target must reject restore");
-        let (violation, delta) = failure.into_parts();
-        assert_eq!(violation, CallConstraintInvariant::PreparedGraphDeltaOrder);
+        let (violation, deltas) = failure.into_parts();
+        assert!(matches!(
+            violation,
+            crate::callable::PreparedCallGraphMutationFailure::Invariant(
+                CallConstraintInvariant::PreparedGraphDeltaOrder
+            )
+        ));
         graph.rollback_delta(inner).expect("close inner target");
         graph
-            .restore_delta(&outer, delta)
+            .restore_deltas(&outer, deltas, &mut work())
             .expect("outer target is now exact top");
         graph.rollback_delta(outer).expect("rollback restored node");
     }
@@ -3109,20 +3317,22 @@ mod tests {
     fn non_lifo_checkpoint_failure_returns_the_token_and_preserves_ledger() {
         let mut state = SemanticFactState::new();
         let outer = state
-            .begin_candidate_transaction()
+            .begin_candidate_transaction(&mut work())
             .expect("outer checkpoint");
         let inner = state
-            .begin_candidate_transaction()
+            .begin_candidate_transaction(&mut work())
             .expect("inner checkpoint");
 
         let failure = state
             .commit_candidate_transaction(outer)
             .expect_err("outer checkpoint is not LIFO");
         let (violation, outer) = failure.into_parts();
-        assert_eq!(
+        assert!(matches!(
             violation,
-            CandidateFactTransactionViolation::NonLifoCheckpoint
-        );
+            CandidateFactMutationFailure::Invariant(
+                CandidateFactTransactionViolation::NonLifoCheckpoint
+            )
+        ));
         assert!(state.rollback_candidate_transaction(inner).is_ok());
         assert!(state.rollback_candidate_transaction(outer).is_ok());
     }
@@ -3130,58 +3340,70 @@ mod tests {
     #[test]
     fn foreign_checkpoint_failure_returns_the_token_to_its_issuer() {
         let mut origin = SemanticFactState::new();
-        let checkpoint = origin.begin_candidate_transaction().expect("checkpoint");
+        let checkpoint = origin
+            .begin_candidate_transaction(&mut work())
+            .expect("checkpoint");
         let mut foreign = SemanticFactState::new();
         let failure = foreign
             .rollback_candidate_transaction(checkpoint)
             .expect_err("foreign checkpoint is rejected");
         let (violation, checkpoint) = failure.into_parts();
-        assert_eq!(
+        assert!(matches!(
             violation,
-            CandidateFactTransactionViolation::ForeignCheckpoint
-        );
+            CandidateFactMutationFailure::Invariant(
+                CandidateFactTransactionViolation::ForeignCheckpoint
+            )
+        ));
         assert!(origin.rollback_candidate_transaction(checkpoint).is_ok());
     }
 
     #[test]
     fn stale_checkpoint_is_distinct_from_foreign_and_non_lifo() {
         let mut origin = SemanticFactState::new();
-        let checkpoint = origin.begin_candidate_transaction().expect("checkpoint");
+        let checkpoint = origin
+            .begin_candidate_transaction(&mut work())
+            .expect("checkpoint");
         let mut same_issuer_empty_ledger = SemanticFactState::new();
         same_issuer_empty_ledger.issuer = Arc::clone(&origin.issuer);
         let failure = same_issuer_empty_ledger
             .rollback_candidate_transaction(checkpoint)
             .expect_err("checkpoint is absent from this issuer ledger");
         let (violation, checkpoint) = failure.into_parts();
-        assert_eq!(
+        assert!(matches!(
             violation,
-            CandidateFactTransactionViolation::StaleCheckpoint
-        );
+            CandidateFactMutationFailure::Invariant(
+                CandidateFactTransactionViolation::StaleCheckpoint
+            )
+        ));
         assert!(origin.rollback_candidate_transaction(checkpoint).is_ok());
     }
 
     #[test]
     fn foreign_projection_failure_returns_the_projection_to_its_issuer() {
         let mut origin = SemanticFactState::new();
-        let probe = origin.begin_candidate_transaction().expect("probe");
+        let probe = origin
+            .begin_candidate_transaction(&mut work())
+            .expect("probe");
         let projection = origin
-            .extract_and_rollback(probe)
+            .extract_and_rollback(probe, &mut work())
             .unwrap_or_else(|_| panic!("origin projection extraction"));
         let mut foreign = SemanticFactState::new();
         let foreign_transaction = foreign
-            .begin_candidate_transaction()
+            .begin_candidate_transaction(&mut work())
             .expect("foreign transaction");
         let foreign_authority = foreign
             .transaction_authority(&foreign_transaction)
             .expect("foreign authority");
         let failure = foreign
-            .apply_candidate_projection(&foreign_authority, projection)
+            .apply_candidate_projection(&foreign_authority, projection, &mut work())
             .expect_err("foreign projection is rejected");
         let (violation, projection) = failure.into_parts();
-        assert_eq!(
+        assert!(matches!(
             violation,
-            CandidateFactTransactionViolation::ForeignProjection
-        );
+            CandidateFactMutationFailure::Invariant(
+                CandidateFactTransactionViolation::ForeignProjection
+            )
+        ));
         drop(foreign_authority);
         assert!(
             foreign
@@ -3189,14 +3411,14 @@ mod tests {
                 .is_ok()
         );
         let origin_transaction = origin
-            .begin_candidate_transaction()
+            .begin_candidate_transaction(&mut work())
             .expect("origin transaction");
         let origin_authority = origin
             .transaction_authority(&origin_transaction)
             .expect("origin authority");
         assert!(
             origin
-                .apply_candidate_projection(&origin_authority, projection)
+                .apply_candidate_projection(&origin_authority, projection, &mut work())
                 .is_ok()
         );
         drop(origin_authority);
@@ -3210,17 +3432,21 @@ mod tests {
     #[test]
     fn projection_requires_a_target_authority() {
         let mut state = SemanticFactState::new();
-        let probe = state.begin_candidate_transaction().expect("probe");
+        let probe = state
+            .begin_candidate_transaction(&mut work())
+            .expect("probe");
         let projection = state
-            .extract_and_rollback(probe)
+            .extract_and_rollback(probe, &mut work())
             .unwrap_or_else(|_| panic!("projection extraction"));
-        let transaction = state.begin_candidate_transaction().expect("transaction");
+        let transaction = state
+            .begin_candidate_transaction(&mut work())
+            .expect("transaction");
         let authority = state
             .transaction_authority(&transaction)
             .expect("target authority");
         assert!(
             state
-                .apply_candidate_projection(&authority, projection)
+                .apply_candidate_projection(&authority, projection, &mut work())
                 .is_ok()
         );
         drop(authority);
@@ -3232,8 +3458,10 @@ mod tests {
         let mut state = SemanticFactState::new();
         state.next_checkpoint_id = u64::MAX;
         assert!(matches!(
-            state.begin_candidate_transaction(),
-            Err(CandidateFactTransactionViolation::SequenceExhausted)
+            state.begin_candidate_transaction(&mut work()),
+            Err(CandidateFactMutationFailure::Invariant(
+                CandidateFactTransactionViolation::SequenceExhausted
+            ))
         ));
     }
 
@@ -3243,7 +3471,9 @@ mod tests {
         let callable = call;
         let expression = callable;
         let mut state = SemanticFactState::new();
-        let checkpoint = state.begin_candidate_transaction().expect("checkpoint");
+        let checkpoint = state
+            .begin_candidate_transaction(&mut work())
+            .expect("checkpoint");
 
         state
             .record_implicit_capture_use(callable, expression, local)
@@ -3266,22 +3496,26 @@ mod tests {
         let callable = call;
         let expression = callable;
         let mut state = SemanticFactState::new();
-        let probe = state.begin_candidate_transaction().expect("probe");
+        let probe = state
+            .begin_candidate_transaction(&mut work())
+            .expect("probe");
 
         state
             .record_implicit_capture_use(callable, expression, local)
             .expect("capture-use row");
         let projection = state
-            .extract_and_rollback(probe)
+            .extract_and_rollback(probe, &mut work())
             .expect("extract projection");
         assert!(state.pending_implicit_capture_uses().is_empty());
 
-        let outer = state.begin_candidate_transaction().expect("outer");
+        let outer = state
+            .begin_candidate_transaction(&mut work())
+            .expect("outer");
         let authority = state
             .transaction_authority(&outer)
             .expect("outer authority");
         state
-            .apply_candidate_projection(&authority, projection)
+            .apply_candidate_projection(&authority, projection, &mut work())
             .expect("apply projection");
         drop(authority);
         assert_eq!(
@@ -3301,7 +3535,9 @@ mod tests {
         let callable = call;
         let expression = callable;
         let mut state = SemanticFactState::new();
-        let checkpoint = state.begin_candidate_transaction().expect("checkpoint");
+        let checkpoint = state
+            .begin_candidate_transaction(&mut work())
+            .expect("checkpoint");
 
         state
             .record_implicit_capture_use(callable, expression, local)
@@ -3400,8 +3636,12 @@ mod tests {
             source_ordinal: 1,
         };
         let mut state = SemanticFactState::new();
-        let outer = state.begin_candidate_transaction().expect("outer");
-        let candidate = state.begin_candidate_transaction().expect("candidate");
+        let outer = state
+            .begin_candidate_transaction(&mut work())
+            .expect("outer");
+        let candidate = state
+            .begin_candidate_transaction(&mut work())
+            .expect("candidate");
         state
             .record_implicit_capture_use(callable, second, second_local)
             .unwrap();
@@ -3409,14 +3649,14 @@ mod tests {
             .record_implicit_capture_use(callable, first, first_local)
             .unwrap();
         let projection = state
-            .extract_and_rollback(candidate)
+            .extract_and_rollback(candidate, &mut work())
             .unwrap_or_else(|_| panic!("exact candidate extraction"));
         assert!(state.pending_implicit_capture_uses().is_empty());
         let authority = state
             .transaction_authority(&outer)
             .expect("outer authority");
         state
-            .apply_candidate_projection(&authority, projection)
+            .apply_candidate_projection(&authority, projection, &mut work())
             .unwrap_or_else(|_| panic!("selected projection application"));
         assert_eq!(
             state.pending_implicit_capture_uses(),
@@ -3437,8 +3677,10 @@ mod tests {
     fn replay_rejects_matching_projections_from_another_fact_owner() {
         let mut origin = SemanticFactState::new();
         let [left, right] = std::array::from_fn(|_| {
-            let checkpoint = origin.begin_candidate_transaction().unwrap();
-            origin.extract_and_rollback(checkpoint).unwrap()
+            let checkpoint = origin.begin_candidate_transaction(&mut work()).unwrap();
+            origin
+                .extract_and_rollback(checkpoint, &mut work())
+                .unwrap()
         });
         assert_eq!(
             origin.projection_replay_mismatch(&left, &right, CandidateFactReplayMode::Semantic),
@@ -3450,9 +3692,11 @@ mod tests {
             Some(CandidateSemanticReplayMismatch::Authority)
         );
         // A comparison does not consume or republish either affine payload.
-        let target = origin.begin_candidate_transaction().unwrap();
+        let target = origin.begin_candidate_transaction(&mut work()).unwrap();
         let authority = origin.transaction_authority(&target).unwrap();
-        origin.apply_candidate_projection(&authority, left).unwrap();
+        origin
+            .apply_candidate_projection(&authority, left, &mut work())
+            .unwrap();
         drop(authority);
         origin.rollback_candidate_transaction(target).unwrap();
         assert_eq!(
@@ -3465,8 +3709,10 @@ mod tests {
     fn replay_requires_the_actual_live_prepared_graph_owner() {
         let mut origin = SemanticFactState::new();
         let [left, right] = std::array::from_fn(|_| {
-            let checkpoint = origin.begin_candidate_transaction().unwrap();
-            origin.extract_and_rollback(checkpoint).unwrap()
+            let checkpoint = origin.begin_candidate_transaction(&mut work()).unwrap();
+            origin
+                .extract_and_rollback(checkpoint, &mut work())
+                .unwrap()
         });
         let mut different_graph = SemanticFactState::new();
         different_graph.issuer = Arc::clone(&origin.issuer);
@@ -3496,8 +3742,10 @@ mod tests {
     fn replay_rejects_expired_and_poisoned_generations() {
         let mut expired = SemanticFactState::new();
         let [left, right] = std::array::from_fn(|_| {
-            let checkpoint = expired.begin_candidate_transaction().unwrap();
-            expired.extract_and_rollback(checkpoint).unwrap()
+            let checkpoint = expired.begin_candidate_transaction(&mut work()).unwrap();
+            expired
+                .extract_and_rollback(checkpoint, &mut work())
+                .unwrap()
         });
         expired.epoch += 1;
         assert_eq!(
@@ -3506,8 +3754,10 @@ mod tests {
         );
         let mut poisoned = SemanticFactState::new();
         let [left, right] = std::array::from_fn(|_| {
-            let checkpoint = poisoned.begin_candidate_transaction().unwrap();
-            poisoned.extract_and_rollback(checkpoint).unwrap()
+            let checkpoint = poisoned.begin_candidate_transaction(&mut work()).unwrap();
+            poisoned
+                .extract_and_rollback(checkpoint, &mut work())
+                .unwrap()
         });
         poisoned.poison = Some(CandidateFactTransactionViolation::UnrecoverableLedger);
         assert_eq!(
@@ -3537,10 +3787,14 @@ mod tests {
             second_local,
         );
         let mut state = SemanticFactState::new();
-        let outer = state.begin_candidate_transaction().expect("outer");
+        let outer = state
+            .begin_candidate_transaction(&mut work())
+            .expect("outer");
         let mut projections = Vec::new();
         for rows in [[first, second], [second, first]] {
-            let candidate = state.begin_candidate_transaction().expect("probe");
+            let candidate = state
+                .begin_candidate_transaction(&mut work())
+                .expect("probe");
             for (site, local) in rows {
                 state
                     .record_implicit_capture_use(callable, site, local)
@@ -3548,13 +3802,13 @@ mod tests {
             }
             projections.push(
                 state
-                    .extract_and_rollback(candidate)
+                    .extract_and_rollback(candidate, &mut work())
                     .unwrap_or_else(|_| panic!("probe extraction")),
             );
         }
         assert_ne!(
-            projections[0].data.implicit_capture_journal_order,
-            projections[1].data.implicit_capture_journal_order
+            projections[0].data.facts.implicit_capture_journal_order,
+            projections[1].data.facts.implicit_capture_journal_order
         );
         assert_eq!(
             state.projection_replay_mismatch(
