@@ -18782,3 +18782,14 @@ Matchの分岐とChoiceの入れ子パスを、準備済みの式が持つ情報
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。library **401エラー・25警告**、lib test **1,285エラー・37警告**。前回公開入力との一次診断のパス・ヘッダ比較で追加0件、解消4件。Semaのfmtと構造gateは終了0、blocking違反0件。回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,841,847 bytesで、約300 GBを目安とするcleanは未実行。Generic Matchは受入・公開済み。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-call-storage-prepared-source.raw.zip) は17 entry、144,681 bytes、SHA256 `c7176ca5d92aa4a62fbe6ff2d3fa40d998fb79b2367d00c60dd2ac1482871b76`。各entryの長さとSHA256を再照合した。旧履歴2,914,775 bytesのSHA256 `869b48fe0e306f9e0c3135c981fa45dc987002d8c4b2e4f9ea9e4b5dd2eb374e` をprefixとして保持した。
+
+<a id="prepared-alias-binding"></a>
+## 2026-11-18 — 関数値の別名を準備済みの束縛から解決する
+
+基点 `03756fea64047d204a038b2c5d63be1cc6e4659c`。Source `625b82d8acc6680b71e09072cc949e729dd79e45` を既存mainへcommitし、非force push後にリモートのfull SHAと5入力のblobを照合した。
+
+推論された不変束縛では、別名の準備済みの型を元の初期化式と照合してcallまたはproducerの出所を引き継ぐ。明示注釈付きの束縛では同じ文の既存の束縛検証を要求し、すでに保持済みの初期化式を渡す。型が一致したときは元の出所をたどり、検証済み束縛の型が異なるときはそのローカルの呼出し契約を使う。キャプチャ探索は元のproducerをたどる。回帰は同じ型、広い作用型、要求した型と異なる束縛結果、別名を通したキャプチャを対象とする。既存の束縛検証内部には準備済み型と確定型の不一致が残る。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は3回とも終了101。公開入力はlibrary **394エラー・25警告**、lib test **1,276エラー・37警告**。一次診断は1,320件から1,312件に減少。パスと型名表記を正規化したヘッダの組を比較すると新種0件、消滅4種。残存診断の出現回数の差も原本に保持した。Semaのfmtと構造gateは終了0、blocking違反0件。回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,800,943 bytesで、約300 GBを目安とするcleanは未実行。Generic Matchは受入・公開済み。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-alias-binding.raw.zip) は29 entry、396,686 bytes、SHA256 `c1970b3890fcaf69abb401e5a563fa7326a04962236ef2f43b1c66c3334c6992`。各entryの長さとSHA256を再照合した。旧履歴2,916,781 bytesのSHA256 `0297d746cd2e3663d858ea64397748bd15ed97b2f4bfec07aacdb014e070c484` をprefixとして保持した。
