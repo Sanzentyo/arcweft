@@ -18733,3 +18733,16 @@ Analyzer回帰に、式と作用項を書いた試行を不採用にして直後
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。公開入力はlibrary **416エラー・25警告**、lib test **1,314エラー・44警告**。変更2 pathを一次位置とする7件は、行番号の移動を除くと前回の診断と同じ。Semaのfmtと構造gateは終了0、blocking違反0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,013,419 bytesで、約300 GBを目安とするcleanは未実行。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-isolated-original-probe.raw.zip) は22 entry、278,890 bytes、SHA256 `95932018ff0bb4cda5884cce301082086df7047276c12d5f5514f1c0ccb68898`。各entryの長さとSHA256を再照合した。旧履歴2,905,776 bytesのSHA256 `281f00d9d7925b9b144b54242e68c54c5c6797038b72ce722492d4bfecdef121` をprefixとして保持した。
+
+<a id="retained-closed-source"></a>
+## 2026-11-18 — 確定済みの引数式を元の事実から公開する
+
+基点 `993101adbedd2d9b36c421b867eab20507d6ba7f`。Source `594fa8c17baee397c008d527f3b6a5d58a5ec989` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した9入力のblobを照合した。
+
+元の期待型と実値が確定後の型に一致し、他の台帳・作用グラフの書込みや式の共有を伴わない引数は、通常の候補適用で再評価を省く。候補を採用してから元の式の事実を公開用の差分へ所有権ごと移す。候補用の一時台帳には書き込まず、この経路で追加の物理評価も記録しない。現在はこの条件を満たす式を対象とする。残る本番移行は、型の置換や作用項を伴う元差分、関数特殊化、複数候補選択後の再評価である。
+
+Analyzer回帰に、元の差分に入っていた式の型が同じ割当てのまま公開用の差分へ移る検査を追加した。コンパイル段階で停止し、回帰は未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。初回の追加3診断は分岐のパターンと借用の修正で解消した。公開入力はlibrary **416エラー・25警告**、lib test **1,314エラー・44警告**。変更pathを一次位置とする28件は、行番号の移動を除くと前回の診断と同じ。Semaのfmtと構造gateは終了0、blocking違反0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,021,425 bytesで、約300 GBを目安とするcleanは未実行。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-retained-closed-source.raw.zip) は22 entry、281,123 bytes、SHA256 `ac4d95912d4543662267e0b30026303c18272ac2ff9f5ea9b4a56252c37cbb3b`。各entryの長さとSHA256を再照合した。旧履歴2,908,028 bytesのSHA256 `d7a5e3a80f19d4b2ff4027fa6943d1b304956d1a18d06824f9d7aa2fdca9e46e` をprefixとして保持した。
