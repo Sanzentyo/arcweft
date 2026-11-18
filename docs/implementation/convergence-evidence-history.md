@@ -19328,3 +19328,15 @@ Source `cc1843b84444daa2a7acacac64f9bc618ed28470`。基点は `3aed438f8129dbd60
 `CARGO_INCREMENTAL=0` で `cargo check --locked -p arcweft-lang-sema --tests --all-features --message-format=json` を実行した。通常ライブラリのコンパイル成果物を確認した。lib testは終了101、829エラー・33警告。比較元 `fc9391728cdbeabfa262d7ea4d0e54e464cbe88d` の863件から34件減った。エラーコードと発生ファイルの比較で変化したのは `types/constraints/tests.rs` のE0061のみで、161件から127件になった。残るエラーのためユニットテストは未実行。fmt、差分チェック、構造ゲートは終了0で、構造ゲートの阻害は0件。Compiler統合テストと全workspace受入は再実行していない。
 
 [検証原本・診断JSON・公開照合](acceptance-evidence/task-sema-fixture-graph.raw.zip) は9 entry、379167 bytes、SHA256 `8d8790e31ebd9ca57157b616684c7db37e0e958ea6af39538951453b6a4ffe55`。各原本をZIP内部のハッシュと照合し、公開済みRust blobを検証入力と照合した。既存履歴3,022,767 bytesをそのまま保持した。
+
+
+<a id="canonical-effect-copy"></a>
+## 2026-11-19 — 正準化済み作用式の複製を直接計上
+
+Source `26c7c10699e8a0d4d3e0e169e738c50450620d20`。基点は `a949ebabce9bdf18fd0492782ff1d401754b62a8`。作用グラフの作業管理で根の読取り、複製する決定ノード、ラベルのoverrideを割り当て前に計上する。変数とその順序を保つ複製では、正準化済みの式・決定グラフをそのまま使う。同じ処理を作用項のコンパイル、元プログラムの再検証、Futureの実値、残余関係に適用した。元の作用制約の独立検証と作業上限を維持した。8 Rustファイル、物理行の純増3。公開後の8件のblobを検証入力と照合した。
+
+`CARGO_INCREMENTAL=0`、jobs／profileの上書きなしでCompilerの2 targetをnextest実行した。比較元 `fc9391728cdbeabfa262d7ea4d0e54e464cbe88d` と同じ152 IDで149成功・3失敗・0スキップ。遅延コールバックとretained Mapは元の制約の独立検証で候補共有の作業上限に達した。captured Mapは候補初期化のrigid effect取込みで制約コンテキストの作業上限に達した。3件の失敗は型検査中で、実行・復元へ進んでいない。
+
+全featureのlocked Sema checkはライブラリ成功、lib testは終了101・829エラー・33警告。エラーコードと発生ファイルの内訳は `cc1843b84444daa2a7acacac64f9bc618ed28470` と一致。fmt、差分チェック、構造ゲートは終了0。構造ゲートの阻害は0件。Semaユニットテスト、全workspace check／Clippy、Tier 2、最終Native／AWBC・Native／Web受入は未実行。
+
+[検証原本・比較・LLDB・公開照合](acceptance-evidence/task-canonical-effect-copy.raw.zip) は17 entry、424221 bytes、SHA256 `efe2631f6b2304912da10771f11e2c7cb0ca01546a6f3f88d659997ecd700edd`。各原本の長さとSHA256を照合した。既存履歴3,024,554 bytesをそのまま保持した。
