@@ -18804,3 +18804,16 @@ Matchの分岐とChoiceの入れ子パスを、準備済みの式が持つ情報
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。公開入力はlibrary **391エラー・25警告**、lib test **1,273エラー・37警告**。前回公開入力から一次診断3件が消滅し、追加0件。Semaのfmtと構造gateは終了0、blocking違反0件。回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,790,695 bytesで、約300 GBを目安とするcleanは未実行。Generic Matchは受入・公開済み。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-binding-effects.raw.zip) は23 entry、270,260 bytes、SHA256 `601e4609359d1ff1194f6385569e6c384ec93703d3d13b0b48598b2c166f6cad`。各entryの長さとSHA256を再照合した。旧履歴2,918,966 bytesのSHA256 `fff0aca0b49da83124a20c5f842dc84037f3531a70982f1aac9e2ef2d50b7265` をprefixとして保持した。
+
+<a id="scoped-binding-completion"></a>
+## 2026-11-18 — 呼出し結果の注釈を元の作用と制約予算で確定する
+
+基点 `8cb837d53282acd779c3618bc273580bfa0d9222`。Source `000be671abb4729df4106175c4f1d41d6f47f5b7` を既存mainへcommitし、非force push後にリモートのfull SHAと4入力のblobを照合した。
+
+呼出し結果の注釈は、その制約分岐の元の作用確定結果で型を投影する。結果値は注釈の実際のlexical framesへ移送し、互換性判定と省略作用行の再構築を同じ制約予算で実行する。互換性を終えた時点で予算が尽きれば補完に進まない回帰を追加した。Forの束縛は確定済みの反復要素型をパターンの元スコープで準備し、同じ準備済み型の入口へ渡す。一般の初期化式と型付きパターンの互換性判定には作用が未確定の範囲の移行が残る。
+
+終端効果の現状行を整理した。過去の実装経緯は各時点の履歴に記録済みのため、一覧には現在の接続と具体的な未達範囲を記載する。Generic Matchは受入・公開済み。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。初回で型の形だけを持つスコープを移送に使った誤りを、元のlexical framesを使う形に修正した。公開入力はlibrary **390エラー・25警告**、lib test **1,272エラー・37警告**。前回公開入力から一次診断1件が消滅し、追加0件。Semaのfmtと構造gateは終了0、blocking違反0件。回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,788,883 bytesで、約300 GBを目安とするcleanは未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-scoped-binding-completion.raw.zip) は23 entry、267,192 bytes、SHA256 `c13a23c52f26a688769f708c6ddb0618ba436a2e1a9094bd4165b09de3a6066a`。各entryの長さとSHA256を再照合した。旧履歴2,921,029 bytesのSHA256 `25663f6beaec92511a52acae53c56eee65da3eae19d9a5d38d49875515fe9ee1` をprefixとして保持した。
