@@ -19366,3 +19366,13 @@ Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ。唯�
 Core・Semaの全featureのライブラリClippy、fmt、差分チェック、構造ゲートは終了0、構造阻害0件。locked Sema checkは通常ライブラリ成功、lib testは終了101・829エラー・33警告で、発生ファイル・コードの内訳は同じ。hostの全featureのCargo graphはCoreを含む52パッケージを示した。全逆依存nextest、Semaユニット、全workspace check／Clippy、Tier 2、Native／Webの最終受入は未実行。
 
 [検証原本・途中の失敗・LLDB・公開照合](acceptance-evidence/task-reduce-canonical-conditional.raw.zip) は29 entry、1018955 bytes、SHA256 `8258904abc94199a18c1885f65f52e5b0c0b1a7135aa4121ce3adf44867aff3b`。各原本の長さとハッシュを照合した。既存履歴は追記前のバイト列を保持した。
+
+
+<a id="observe-solved-effect-cells"></a>
+## 2026-11-19 — 作用の観測時に確定セルを適用
+
+Source `94239cc4c72e6c3a3cf85fbcb689d842938537ad`。基点は `a1ee72b7652ebea4991ce5140fb45d157935fa5e`。コンパイル時は作用セルを変数として扱い、作用の確定と観測は同じ適用処理に解を渡す。観測のラベルが元の基底にあればそのクラスを使い、新規ラベルは元の既定クラスを使う。観測側の形式変数のクラスと、取り込んだガード・係数の座標を区別する。4 Rustファイル、物理行の純増0。公開blob 4件を検証入力と照合した。
+
+Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ、captured Mapも成功。遅延コールバックは元の作用制約の独立照合中に作業上限に達した。retained Mapは仮セルの構築を通過し、ヘッダ投影の `Compilation::member` で作用を変換する際に作業上限に達した。locked Sema全feature checkは通常ライブラリ成功、lib testは終了101・829エラー・33警告で、発生ファイルとコードは同じ。fmt、差分チェック、構造ゲートは終了0、構造阻害0件。Semaのユニットテスト、Clippyと全体受入はこのソースでは未実行。
+
+[検証原本・LLDB・公開照合](acceptance-evidence/task-observe-solved-effect-cells.raw.zip) は16 entry、418899 bytes、SHA256 `f822f375d07392df64a0f8f69ed7d8d7a52c2fc442f1773d0192032883b6ed25`。各原本の長さとSHA256を照合し、既存履歴をそのまま保持した。
