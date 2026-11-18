@@ -18578,3 +18578,18 @@ checked／uncheckedの両方で別の観測receiptを拒否し、元のトラン
 11 Rust path、431追加／59削除、物理372 LOC増。所有レビューに全pathのbytes・物理LOC・埋込テストLOCを記録した。会計側は観測と照合に必要な値だけを持ち、元のsourceと確定型の対応は既存componentが発行する。解析台帳はtraceを、call sealは選択済み型の供給を、それぞれ既存の境界内で担当する。テスト用のlive照合は既存の作用グラフの読取り側に置いた。Cargo依存と版に差分はない。現状一覧は物理観測の接続と未達を更新し、以前の検証・公開SHAを履歴に保持した。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-physical-observation-completion-checkpoint.raw.zip) は30 entry、425,732 bytes、SHA256 `47c5a26d966ffde25dc53e6507e3b30837de880aa7a73a1b8663a9382bad3883`。各entryの長さとSHA256を再照合した。旧履歴2,876,733 bytesのSHA256 `ffabae80c0c866c34aac96aea17344274a4bf0e4894a52904e499b8860a8868b` をprefixとして保持した。
+
+<a id="child-result-observation-checkpoint"></a>
+## 2026-11-18 — 子呼出しの結果と親の元の物理引数観測を結び付ける
+
+基点 `107a16d78e670e8ef8d2f9d2510274b39ed954c4`。Source `8590bedf20d7eea8178cc2485fabdc83e4367293` を既存mainへ通常commitし、非force push後にmainのfull SHAと検証した10入力の公開blobを照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+元の親sourceのreceiptで子の結果portを解決し、同じprepared型の実体を親pathと物理観測が共有する。callable driverは作用グラフの借用を終えてから観測を解析台帳に渡す。呼出しの最終sealで、選択したcomponentが保持する元の型と物理スロットを照合し、確定型を付ける。通常の候補不一致に至った試行が持つ解決済み観測も保持できる。選択した元の準備差分の本番適用と再評価の除去は未達。
+
+下位fixtureは子の結果portと親sourceを検査し、親の制約式、観測記録、確定したsourceが同じprepared型を共有することを追加で検査する。普通の子呼出しとジェネリックな子呼出しのfixtureでは、既存の試行・スロット件数を検査したうえで、選択した試行の元の子結果にだけ確定型が付くことを検査する。3件とも未実行。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。固定入力dev01はlibrary **416エラー・25警告**、lib test **1,332エラー・44警告**。基点よりテスト用ビルドのエラーが6件減った。変更pathを一次位置とする125診断を原本に保持した。下位transactionの一次診断は旧completion経路が閉じた元の作用graphと明示Futureを渡していない1件。owner fmtと構造gateは終了0、blocking違反は0件。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,047,157 bytesでcleanは未実行。
+
+10 Rust path、282追加／55削除。所有レビューに各pathのbytes・物理LOC・埋込テストLOCを記録した。結果の由来とraw型は既存の型制約operandが所有し、物理スロットは既存の解析台帳が所有する。driverに追加した配送は作用graphの貸与を終えた後に実行する。Cargo依存と契約の版を維持した。今回の結果を現状一覧に反映し、直接観測の変更と検証原本は前節に保持した。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-child-result-observation-checkpoint.raw.zip) は16 entry、154,469 bytes、SHA256 `def0d330af2478b12683867415ac116b0431e96270330f414bbcc35be46668c3`。各entryの長さとSHA256を再照合した。旧履歴2,880,049 bytesのSHA256 `6bc07c5a9f70f61e5aad0fa31c575cc968681f6cb115f6b6f1bb6e6e8fd65ee4` をprefixとして保持した。
