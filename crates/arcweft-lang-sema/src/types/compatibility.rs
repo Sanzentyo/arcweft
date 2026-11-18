@@ -5,6 +5,7 @@ use crate::{
     types::{ArrayLength, TypeKind},
 };
 
+mod binding_effects;
 // Generic binding/Choice discovery is a compatibility-owned planning hook.
 // It may fork provisional rows, but all terminal compatibility verdicts still
 // go through this module's `SelectedCall` engine.
@@ -106,6 +107,26 @@ impl<E: super::TypeEffectDomain> TypeKind<E> {
     }
 }
 
+impl TypeKind<super::PreparedEffects> {
+    /// A seeded type can be refined when filling its omissions produces
+    /// exactly the prepared value to install. Graph terms keep their original
+    /// identities, and every explicit type and effect port must stay equal.
+    pub(crate) fn completes_seeded_binding<C: super::TypeProjectionControl>(
+        &self,
+        actual: &Self,
+        control: &mut C,
+    ) -> Result<bool, super::TypeProjectionError<C::Error>> {
+        use crate::effect_row::prepared::PreparedEffectRow;
+        binding_effects::complete(
+            self,
+            actual,
+            |row| matches!(row, PreparedEffectRow::Canonical(row) if !row.is_known()),
+            control,
+        )
+        .map(|completed| completed.as_ref() == Some(actual))
+    }
+}
+
 impl TypeKind {
     /// Source annotations whose nested function effects must be inferred from
     /// the checked value. Issued symbolic effect rows are already known rows.
@@ -137,138 +158,24 @@ impl TypeKind {
     /// interface; only unknown rows at corresponding structural positions are
     /// filled by the initializer's solved row. No new generic binder is issued.
     pub(crate) fn binding_type_with_inferred_effects(&self, actual: &Self) -> Option<Self> {
-        use super::constraints::TypeConstraintShape;
-
-        enum Task<'a> {
-            Enter(&'a TypeKind, &'a TypeKind),
-            Finish(TypeConstraintShape<'a>, usize, Option<EffectRow>),
-        }
-
-        fn has_open_effects(effects: &EffectRow) -> bool {
-            !effects.is_known()
-                || effects.variables().is_ok_and(|mut variables| {
-                    variables.any(|reference| {
-                        matches!(reference, super::GenericEffectReference::Inference(_))
-                    })
-                })
-        }
-
-        fn has_omitted_effects(ty: &TypeKind) -> bool {
-            let mut pending = vec![ty];
-            while let Some(ty) = pending.pop() {
-                let shape = ty.constraint_shape();
-                if matches!(shape, TypeConstraintShape::Function { effects, .. } if has_open_effects(effects))
-                {
-                    return true;
-                }
-                pending.extend(shape.children());
-            }
-            false
-        }
-
-        fn corresponding_choice_arms(left: &TypeKind, right: &TypeKind) -> bool {
-            let mut pending = vec![(left, right)];
-            while let Some((left, right)) = pending.pop() {
-                let left = left.constraint_shape();
-                let right = right.constraint_shape();
-                if !left.same_header(right) {
-                    return false;
-                }
-                pending.extend(left.children().zip(right.children()));
-            }
-            true
-        }
-
         if !self.accepts(actual) {
             return None;
         }
-        if !has_omitted_effects(self) {
-            return Some(self.clone());
-        }
-        let mut pending = vec![Task::Enter(self, actual)];
-        let mut completed = Vec::new();
-        while let Some(task) = pending.pop() {
-            match task {
-                Task::Enter(declared, actual) => {
-                    let shape = declared.constraint_shape();
-                    let actual_shape = actual.constraint_shape();
-                    if !shape.same_header(actual_shape) {
-                        if has_omitted_effects(declared) {
-                            return None;
-                        }
-                        completed.push(declared.clone());
-                        continue;
-                    }
-                    if matches!(
-                        shape,
-                        TypeConstraintShape::Unresolved(_)
-                            | TypeConstraintShape::Leaf(_)
-                            | TypeConstraintShape::Never
-                            | TypeConstraintShape::Generic(_)
-                    ) {
-                        completed.push(declared.clone());
-                        continue;
-                    }
-                    let effects = match (shape, actual_shape) {
-                        (
-                            TypeConstraintShape::Function { effects, .. },
-                            TypeConstraintShape::Function {
-                                effects: actual, ..
-                            },
-                        ) if has_open_effects(effects) => {
-                            if has_open_effects(actual) {
-                                return None;
-                            }
-                            Some(actual.clone())
-                        }
-                        _ => None,
-                    };
-                    let children = match (shape, actual_shape) {
-                        (
-                            TypeConstraintShape::Choice(declared),
-                            TypeConstraintShape::Choice(actual),
-                        ) => {
-                            let mut children = Vec::with_capacity(declared.len());
-                            let mut admitted = std::collections::BTreeSet::new();
-                            for declared in declared {
-                                let mut matching =
-                                    actual.iter().enumerate().filter(|(index, actual)| {
-                                        !admitted.contains(index)
-                                            && corresponding_choice_arms(declared, actual)
-                                    });
-                                let (index, actual) = matching.next()?;
-                                if matching.next().is_some() {
-                                    return None;
-                                }
-                                admitted.insert(index);
-                                children.push((declared, actual));
-                            }
-                            children
-                        }
-                        _ => shape.children().zip(actual_shape.children()).collect(),
-                    };
-                    pending.push(Task::Finish(shape, children.len(), effects));
-                    pending.extend(
-                        children
-                            .into_iter()
-                            .rev()
-                            .map(|(declared, actual)| Task::Enter(declared, actual)),
-                    );
-                }
-                Task::Finish(shape, count, effects) => {
-                    let children = completed.split_off(completed.len().checked_sub(count)?);
-                    let mut ty = shape.rebuild(children).ok()?;
-                    if let Some(inferred) = effects {
-                        let TypeKind::Function { effects, .. } = &mut ty else {
-                            return None;
-                        };
-                        *effects = inferred;
-                    }
-                    completed.push(ty);
-                }
-            }
-        }
-        completed.pop()
+        binding_effects::complete(
+            self,
+            actual,
+            |row| {
+                !row.is_known()
+                    || row.variables().is_ok_and(|mut variables| {
+                        variables.any(|reference| {
+                            matches!(reference, super::GenericEffectReference::Inference(_))
+                        })
+                    })
+            },
+            &mut super::UnmeteredTypeProjection,
+        )
+        .ok()
+        .flatten()
     }
 
     /// Returns whether an earlier authoritative resolution failure prevents a

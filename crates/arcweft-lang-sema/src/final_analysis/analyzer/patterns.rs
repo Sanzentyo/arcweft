@@ -270,27 +270,44 @@ impl Analyzer<'_, '_, '_> {
                 seed_pattern_locals(seed_context, graph, pattern, ty, &mut locals, &mut patterns)
             },
         )?;
-        for (owner, value) in locals {
-            if self.facts.locals().get(&owner).is_some_and(|existing| {
-                existing != &value
-                    && existing.binding_type_with_inferred_effects(&value).as_ref() != Some(&value)
-            }) {
+        let mut work = context.work();
+        for (&owner, value) in &locals {
+            if let Some(existing) = self.facts.locals().get(&owner)
+                && existing != value
+                && !existing
+                    .completes_seeded_binding(value, &mut work)
+                    .map_err(|error| {
+                        FinalSemanticAnalysisError::source_type_projection(owner.into(), error)
+                    })?
+            {
                 return Err(FinalSemanticAnalysisError::LocalTypeUnavailable { owner });
             }
-            self.facts
-                .set_local_type(owner, value)
-                .map_err(FinalSemanticAnalysisError::from)?;
         }
-        for (owner, value) in patterns {
-            if self.facts.patterns().get(&owner).is_some_and(|existing| {
-                existing != &value
-                    && existing.binding_type_with_inferred_effects(&value).as_ref() != Some(&value)
-            }) {
+        for (&owner, value) in &patterns {
+            if let Some(existing) = self.facts.patterns().get(&owner)
+                && existing != value
+                && !existing
+                    .completes_seeded_binding(value, &mut work)
+                    .map_err(|error| {
+                        FinalSemanticAnalysisError::source_type_projection(owner.into(), error)
+                    })?
+            {
                 return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
             }
-            self.facts
-                .set_pattern_type(owner, value)
-                .map_err(FinalSemanticAnalysisError::from)?;
+        }
+        for (owner, value) in locals {
+            if self.facts.locals().get(&owner) != Some(&value) {
+                self.facts
+                    .set_local_type(owner, value)
+                    .map_err(FinalSemanticAnalysisError::from)?;
+            }
+        }
+        for (owner, value) in patterns {
+            if self.facts.patterns().get(&owner) != Some(&value) {
+                self.facts
+                    .set_pattern_type(owner, value)
+                    .map_err(FinalSemanticAnalysisError::from)?;
+            }
         }
         Ok(())
     }

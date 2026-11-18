@@ -230,18 +230,24 @@ impl Analyzer<'_, '_, '_> {
                 })
             })
             .transpose()?;
-        // The call produces a line operation. The pattern receives its published result.
-        let dialogue_expectation = expected
+        let prepared_expected = expected
             .as_ref()
-            .filter(|_| binds_dialogue_result)
-            .map(|result| TypeKind::DialogueLine(Box::new(result.clone())));
+            .map(|annotation| self.retain_source_value_type(context, initializer, annotation))
+            .transpose()
+            .map_err(AnalyzerExpressionError::fatal)?;
+        // The call produces a line operation. The pattern receives its published result.
+        let initializer_expectation = prepared_expected.map(|result| {
+            if binds_dialogue_result {
+                TypeKind::DialogueLine(Box::new(result))
+            } else {
+                result
+            }
+        });
         let actual = match checked_initializer {
             Some(checked) => checked,
-            None => self.evaluate_expression(
-                context,
-                initializer,
-                dialogue_expectation.as_ref().or(expected.as_ref()),
-            )?,
+            None => {
+                self.evaluate_expression(context, initializer, initializer_expectation.as_ref())?
+            }
         };
         let actual_type = actual
             .value_type()
