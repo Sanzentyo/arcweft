@@ -19388,3 +19388,15 @@ Core単体は2,359件すべて成功。旧2,358 IDの結果に差分はなく、
 locked Sema全feature checkは通常ライブラリ成功、lib testは終了101・829エラー・33警告で、発生ファイルとコードの内訳は前回と一致。全featureのCore・SemaライブラリClippy、fmt、差分チェック、構造ゲートは終了0、構造阻害0件。Semaユニットテスト、全逆依存nextest、workspace check／Clippy、最終受入は未実行。
 
 [検証原本・全ID比較・LLDB・公開照合](acceptance-evidence/task-compose-typed-effect-members.raw.zip) は21 entry、937918 bytes、SHA256 `8c9bc5dca748996e489727d75c7a64d36a930a161e2ee4629747357cb7d1f415`。各原本の長さとハッシュを照合し、既存履歴をそのまま保持した。
+
+
+<a id="deterministic-header-validation"></a>
+## 2026-11-19 — 全入力で許可される作用行を直接確定
+
+Source `2d04adc686e7aaa6089aec85914c1bede11dae8e`。比較元のRustは `d37143bd7c52334905006460559c9ca640ddb084`、親の検証記録は `68de1488da16e754c8c7368fc203c71bfdcad7d3`。選択肢のない作用行は、作用コンパイラの各ラベルの決定式を使う。全入力での行の許可を確認し、各決定式にそのラベルの形式変数しか現れないことを検証する。選択肢のある観測は証拠を量化する。両方とも同じ正準行の組み立てを使う。関数ヘッダの作用値は共通処理で検証し、公開する派生証拠の置換元と参照スコープはその証拠を保持する経路だけで集める。2 Rustファイル、物理行の純増54、公開blob 2件を照合した。
+
+途中と最終のCompiler 2 targetは同じ152 IDで150成功・2失敗・0スキップ。captured Mapは引き続き成功。最終の遅延コールバックでは読み取り専用投影の置換元収集が除かれ、作用行を解決する途中で候補共有の作業上限に達した。retained Mapは最終式の作用行を解決し、準備済み型を正準化する途中で同じ上限に達した。2件は引き続き型検査で止まる。
+
+locked Sema全feature checkは通常ライブラリ成功、lib testは終了101・829エラー・33警告で、発生ファイルとコードは前回と一致。Sema全featureのライブラリClippy、fmt、差分チェックと構造ゲートは終了0、構造阻害0件。Coreは変更しておらず、単体2,359件の実測は[先行Source](#compose-typed-effect-members)に保持する。Semaユニットテスト、workspace全target、全逆依存と最終受入は未実行。
+
+[検証原本・途中結果・LLDB・公開照合](acceptance-evidence/task-deterministic-header-validation.raw.zip) は24 entry、900778 bytes、SHA256 `ae9865fc48f4fac538d4ac287ebdbaa2eeb332be40b5f3f6c5f5a3f66f4df762`。各原本の長さとハッシュを照合し、既存履歴をそのまま保持した。
