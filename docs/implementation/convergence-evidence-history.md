@@ -18409,3 +18409,20 @@ Supersedes: 関数値の特殊化がcanonicalなcallable schemaの生成とseman
 呼出し結果の期待型を供給するcanonical producer、元の実frameを使うambient bound captureの移送、Fn局所∀／guarded契約、実original-productからのdispatchとfrontend公開切替えは未達。12 Rust pathの物理増は 162 LOC。値の特殊化と呼出しの引数マッピングは所有する状態が異なるため、旧specialization分岐をcallable scope発行から除いた。既存Cargo依存graphと推移的逆依存の証拠を保持し、再実行はしていない。[唯一の現状一覧](current-status.md)の4行を更新した。Generic Matchの受入行と過去の実測・公開SHAは保持した。
 
 [検証原本・入力・公開照合・staged diff・所有レビュー](acceptance-evidence/task-prepared-function-specialization-checkpoint.raw.zip) は 37 entry、737300 bytes、SHA256 `35e94015bb27441fdc979698cef9d58a620e58d9077305835a716eced8d84730`。各entryの長さとSHA256を再読取で照合した。旧履歴2,842,326 bytesのSHA256 `b75f7d861e3acd6dffa5fa7debbbd5acfd9560819f9acaca47d4824e5f22e0a0` をprefixとして保持した。
+
+<a id="prepared-application-result-checkpoint"></a>
+## 2026-11-18 — 途中適用の結果投影で元宣言の作用項を保持
+
+基点 `4a41a128ebd94d304fbd3cb0b4c4122223c04657`。Source `f60171fc86c49167c8a3c4ef1c2ca0840200e92f` を既存の main に通常commitし、非force push後の公開mainと6個のGit blobを最終検証入力のSHA256と照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+この変更は、出力投影の登録が早期canonical結果の複製に依存していた処理を置き換える。候補と引数mappingから実際の残り位置を確認し、宣言ですでに定まる作用行は元の宣言契約から読む。作用を推論する本体の途中適用は、同じ宣言グラフ上のNamed作用項を保持する。本体行のキャッシュが先に入っても作用項を保持し、利用可能な本体の結果型情報を反映する。終端の結果型とContentのidentityはそれぞれの型付き契約を使う。ルート／中断中の子の両方に、同じ準備済みBase・Result・Future投影を従来の順序で登録する。最終値は同じ完了結果のResult投影から読む。
+
+回帰fixture 1件を追加した。実HIRの途中適用をmapperへ通し、作用行のキャッシュ前後の結果にNamed項が残り、後から本体を登録して解いたrowと一致することを検査する。このfixtureは未実行。期待結果の制約とrankは旧canonicalの経路を使う。早期の本体準備、選択を確定する既存経路、実original productへの接続、ambient bound frameの移送、公開切替えも継続する。
+
+ユーザー指定で全体の `cargo clean` を実行した。対象 `D:\git\arcweft\target` を事前に確認し、終了0で2,153ファイル・332.2 MiBを削除した。直後はtargetが存在せず、D:の空きは573.75 GiBから574.05 GiBになった。後続checkの開始前に削除を確認した。
+
+必須 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は、clean前のdev01が終了101でlibrary 464 エラー・lib test 1,507 エラー。clean後の最終dev02も終了101で、library 462 エラー・25 警告、lib test 1,505 エラー・44 警告。owner fmtは終了0。CARGO_INCREMENTAL=0、jobs／profile上書きなし。既存の期待型と旧eager transaction、既存fixtureの未移行が診断に残る。変更した6 pathの一次診断88件は、いずれもanalyzerの既存コードにある。宣言グラフと新規fixtureへの一次診断は0件。検証入力はcommit前の同一bytes。nextest／Clippy／doctest／推移的逆依存／workspace・Native／AWBC・Native/Web最終受入は未実行。
+
+6 Rust path、物理 301 LOC増。宣言の矢印構築を既存の署名投影に統合し、結果と補助投影を同じ制約入力に揃えた。Cargo manifestと公開契約に差分はない。現在の範囲は[現状一覧](current-status.md)に集約する。
+
+[検証原本・clean結果・入力・公開照合・staged diff・所有レビュー](acceptance-evidence/task-prepared-application-result-checkpoint.raw.zip) は 21 entry、303044 bytes、SHA256 `904b3909e710ba8a3698fc4975a0a40e3d6db00115ca793a5c1797da51f74f6c`。各entryの長さとSHA256を再読取で照合した。旧履歴の2,845,886 bytesとSHA256 `db93429c48d6803f063451c21c57b7c223de43947385fe67daf673dbf9ef73ed` をprefixとして保持した。
