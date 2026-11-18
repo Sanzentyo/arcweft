@@ -18759,3 +18759,15 @@ Analyzer回帰に、元の差分に入っていた式の型が同じ割当ての
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` は終了101。library **416エラー・25警告**、lib test **1,314エラー・44警告**。一次診断のパスとヘッダは前回と一致した。Semaのfmtと構造gateは終了0、blocking違反0件。locked・workspace・all-featuresのCargo依存グラフはSema自身と逆依存21 packageを含み、直逆依存はCLIを含む12 package。Cargo依存グラフの取得は終了0。nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは347,025,442 bytesで、約300 GBを目安とするcleanは未実行。
 
 [検証原本・逆依存グラフ・所有レビュー・公開照合](acceptance-evidence/task-selected-probe-publication.raw.zip) は18 entry、155,862 bytes、SHA256 `02b8f550cb86bbb91fb50aa3a08848e861739394607be5221008da15d813e5b2`。各entryの長さとSHA256を再照合した。旧履歴2,910,220 bytesのSHA256 `a1f01169c50c52f904d16193c6776a9998f338e08f244c7eea2c13af77bc644a` をprefixとして保持した。
+
+
+<a id="prepared-expression-edges"></a>
+## 2026-11-18 — 構造エッジで準備済みの式を参照する
+
+基点 `72a95bf9ea2d93dc7356aa3dc888f28324cf30a7`。Source `a186278b3f1b887456a2f1e0900c586fdfae2517` を既存mainへcommitし、非force push後にリモートのfull SHAと検証した8入力のblobを照合した。
+
+Matchの分岐とChoiceの入れ子パスを、準備済みの式が持つ情報から検証する。キャプチャ探索は同じMatch分岐の値をたどる。Bool条件のrecovery判定は値の形を使い、Choiceの全選択肢に同じ判定を適用する。メソッド選択は準備済みの値を保持する。Bool条件のrecoveryが公開型の既存判定と一致する回帰を追加し、Choiceとスレッド式の改変fixtureを準備済みの入力に移行した。Generic Matchの既受入・公開の記録を保持した。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は2回とも終了101。初回はlibrary 411エラー・27警告、lib test 1,289エラー・36警告。初回で表面化したimportの誤りを修正した。公開入力はlibrary **404エラー・25警告**、lib test **1,288エラー・37警告**。前回公開入力との一次診断のパス・ヘッダ比較では追加0件、解消28件。Semaのfmtと構造gateは終了0、blocking違反0件。残るエラーには準備済み式の型を確定する境界と、nominal recordのエッジで確定済みidentityを要求する箇所が含まれる。回帰、nextest、Clippy、doctest、逆依存テスト、workspace check、Native／AWBC、Native／Webは未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは346,865,037 bytesで、約300 GBを目安とするcleanは未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-expression-edges.raw.zip) は23 entry、273,374 bytes、SHA256 `5d14633a603403c1f6264087386f87d40a47bde9c1ccbc6e4a31b98b00e92698`。各entryの長さとSHA256を再照合した。旧履歴2,912,580 bytesのSHA256 `8b2aa5f2ffecc6e354d53f135aef9d2b47f146b9cb68f73316368812a59cd708` をprefixとして保持した。
