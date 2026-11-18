@@ -817,7 +817,6 @@ pub struct CallResolverAccountingReport {
     logical_argument_checks: u64,
     resolver_invocations: u64,
     candidate_argument_probes: u64,
-    selected_replay_argument_visits: u64,
     retained_argument_fact_publications: u64,
 }
 
@@ -826,7 +825,6 @@ impl CallResolverAccountingReport {
         logical_argument_checks: 0,
         resolver_invocations: 0,
         candidate_argument_probes: 0,
-        selected_replay_argument_visits: 0,
         retained_argument_fact_publications: 0,
     };
 
@@ -842,8 +840,9 @@ impl CallResolverAccountingReport {
         self.candidate_argument_probes
     }
 
+    /// Version 1 accounting retains the counter after moving winner publication to the probe.
     pub const fn selected_replay_argument_visits(self) -> u64 {
-        self.selected_replay_argument_visits
+        0
     }
 
     pub const fn retained_argument_fact_publications(self) -> u64 {
@@ -865,10 +864,6 @@ impl CallResolverAccountingReport {
                 .candidate_argument_probes
                 .checked_sub(before.candidate_argument_probes)
                 .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
-            selected_replay_argument_visits: self
-                .selected_replay_argument_visits
-                .checked_sub(before.selected_replay_argument_visits)
-                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
             retained_argument_fact_publications: self
                 .retained_argument_fact_publications
                 .checked_sub(before.retained_argument_fact_publications)
@@ -882,7 +877,6 @@ enum CallResolverAccountingEvent {
     LogicalArgumentCheck,
     ResolverInvocation,
     CandidateArgumentProbe,
-    SelectedReplayArgumentVisit,
     RetainedArgumentFactPublication,
 }
 
@@ -958,16 +952,6 @@ impl ResolverWork {
         self.record_call_event(CallResolverAccountingEvent::CandidateArgumentProbe, units)
     }
 
-    pub(crate) fn record_selected_replay_argument_visits(
-        &mut self,
-        units: u64,
-    ) -> Result<(), CallableQueryLimitError> {
-        self.record_call_event(
-            CallResolverAccountingEvent::SelectedReplayArgumentVisit,
-            units,
-        )
-    }
-
     pub(crate) fn record_retained_argument_fact_publications(
         &mut self,
         units: u64,
@@ -999,9 +983,6 @@ impl ResolverWork {
             CallResolverAccountingEvent::ResolverInvocation => &mut self.call.resolver_invocations,
             CallResolverAccountingEvent::CandidateArgumentProbe => {
                 &mut self.call.candidate_argument_probes
-            }
-            CallResolverAccountingEvent::SelectedReplayArgumentVisit => {
-                &mut self.call.selected_replay_argument_visits
             }
             CallResolverAccountingEvent::RetainedArgumentFactPublication => {
                 &mut self.call.retained_argument_fact_publications
@@ -1609,8 +1590,6 @@ mod final_call_accounting_tests {
             .expect("one shared resolver entry");
         work.record_candidate_argument_probes(4)
             .expect("two candidates probe two arguments");
-        work.record_selected_replay_argument_visits(2)
-            .expect("selected replay visits each retained argument");
         work.record_retained_argument_fact_publications(2)
             .expect("fact publication retains each argument");
 
@@ -1621,7 +1600,7 @@ mod final_call_accounting_tests {
         assert_eq!(report.logical_argument_checks(), 2);
         assert_eq!(report.resolver_invocations(), 1);
         assert_eq!(report.candidate_argument_probes(), 4);
-        assert_eq!(report.selected_replay_argument_visits(), 2);
+        assert_eq!(report.selected_replay_argument_visits(), 0);
         assert_eq!(report.retained_argument_fact_publications(), 2);
 
         work.reset();

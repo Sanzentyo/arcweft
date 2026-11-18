@@ -121,8 +121,8 @@ pub use crate::checked_text_proxy::{
     TextProxyDefaultExpectation, TextProxyMetadataRole,
 };
 pub(crate) use accounting::{
-    CandidateEvaluationPass, CandidateExpectedType, PhysicalArgumentEvaluationKind,
-    PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
+    CandidateExpectedType, PhysicalArgumentEvaluationKind, PhysicalCandidateArgument,
+    PhysicalCandidateArgumentEvaluation,
 };
 pub use accounting::{FinalSemanticAnalysisControl, FinalSemanticAnalysisWork};
 pub use analyzer::{FinalSemanticCatalogs, analyze_final_project};

@@ -57,9 +57,9 @@ use crate::callable::{
     PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQueryError,
     prepare_function_value_origin_query_with_pending_captures, prepare_presentation_callee_id,
 };
+use crate::final_analysis::CandidateFactTransactionViolation;
 use crate::final_analysis::PreparedProjectNominalTypeValueExpression;
 use crate::final_analysis::type_rules::compact_numeric_element_type as infer_compact_numeric_element_type;
-use crate::final_analysis::{CandidateEvaluationPass, CandidateFactTransactionViolation};
 use crate::types::PreparedEffects;
 
 #[derive(Clone, Copy)]
@@ -174,7 +174,6 @@ fn close_call_frame<T>(
 }
 
 struct PreparedCandidateBatch {
-    original: crate::types::constraints::OriginalProducerContext,
     probes: Vec<PreparedCandidateOutcome>,
 }
 
@@ -443,9 +442,9 @@ impl PreparedCandidateOutcome {
     fn into_accepted(
         self,
         owner: ExprId,
-    ) -> Result<(SealedAcceptedCandidate, AcceptedCandidateRank), AnalyzerExpressionError> {
+    ) -> Result<SealedAcceptedCandidate, AnalyzerExpressionError> {
         match self {
-            Self::Accepted { transaction, rank } => Ok((transaction, rank)),
+            Self::Accepted { transaction, .. } => Ok(transaction),
             Self::Rejected { .. } => Err(AnalyzerExpressionError::Call {
                 owner,
                 failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
@@ -593,7 +592,6 @@ struct PreparedCandidateRequest<'a, 'ctx> {
     expected_result_scope:
         Option<&'a crate::types::constraints::ImportedGenericParameterScopeLease>,
     callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs,
-    pass: CandidateEvaluationPass,
     attempt: Option<&'a PhysicalCallAttemptId>,
     context: &'ctx AnalyzerExpressionContext<'ctx>,
     dialogue_patch_admissions: &'a [AnalyzerPreparedDialoguePatchAdmission],
@@ -1338,7 +1336,6 @@ impl Analyzer<'_, '_, '_> {
                                     .application_callee(),
                                 expected_result_scope: source.expectation.nested_call_scope_lease(),
                                 callee_inputs: resolution.callee_inputs.clone(),
-                                pass: CandidateEvaluationPass::Probe,
                                 attempt: Some(source.attempt),
                                 context: &candidate_context,
                                 dialogue_patch_admissions: &resolution.dialogue_patch_admissions,
@@ -2358,7 +2355,6 @@ impl Analyzer<'_, '_, '_> {
                             expected_application_callee: source.expectation.application_callee(),
                             expected_result_scope: source.expectation.nested_call_scope_lease(),
                             callee_inputs: resolution.callee_inputs.clone(),
-                            pass: CandidateEvaluationPass::Probe,
                             attempt: Some(source.attempt),
                             context: &context,
                             dialogue_patch_admissions: &resolution.dialogue_patch_admissions,
@@ -2412,13 +2408,9 @@ impl Analyzer<'_, '_, '_> {
             };
             probes.push(probe);
         }
-        Ok(PreparedCandidateBatch { original, probes })
+        Ok(PreparedCandidateBatch { probes })
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "selected-call publication validates the complete semantic candidate and argument-accounting record"
-    )]
     fn publish_selected_call(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
@@ -2427,8 +2419,6 @@ impl Analyzer<'_, '_, '_> {
         batch: PreparedCandidateBatch,
         selected_index: usize,
     ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
-        let singleton = resolution.considered.len() == 1;
-        let consumer = context.consumer();
         let outcome = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
             context.work(),
             |this, _expression_authority, transaction_authority| {
@@ -2438,8 +2428,6 @@ impl Analyzer<'_, '_, '_> {
                     resolution,
                     batch,
                     selected_index,
-                    singleton,
-                    consumer,
                     &transaction_authority,
                 )
                 .map(CandidateFactTransactionAction::Commit)
@@ -2526,7 +2514,6 @@ impl Analyzer<'_, '_, '_> {
                         expected_result_scope: None,
                         callee_inputs:
                             crate::callable::PreparedCallCalleeConstraintInputs::DialogueApplication,
-                        pass: CandidateEvaluationPass::Probe,
                         attempt: None,
                         context: &candidate_context,
                         dialogue_patch_admissions: &[],
@@ -2871,7 +2858,6 @@ impl Analyzer<'_, '_, '_> {
                         expected_result_scope: None,
                         callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs::
                             StaticContentCallee(static_content_callee),
-                        pass: CandidateEvaluationPass::Probe,
                         attempt: Some(attempt),
                         context: &candidate_context,
                         dialogue_patch_admissions: &[],
@@ -2985,18 +2971,20 @@ impl Analyzer<'_, '_, '_> {
         mut resolution: ResolvedCallQuery,
         mut batch: PreparedCandidateBatch,
         selected_index: usize,
-        singleton: bool,
-        consumer: super::expression_error::AnalyzerExpressionConsumer,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
     ) -> Result<PreparedResolvedExpression, CandidateFactOperationFailure> {
-        let (selected_transaction, selected_rank) = batch
+        let selected_transaction = batch
             .probes
             .remove(selected_index)
             .into_accepted(source.owner)?;
-        let (selected_ran, selected_outer_projection) = selected_transaction.into_parts();
+        for discarded in batch.probes {
+            let (_, _, projection) = discarded.into_contextual_parts();
+            self.discard_candidate_semantic_projection(source.owner, projection)?;
+        }
+        let (selected_ran, outer_projection) = selected_transaction.into_parts();
         let selected_transaction = selected_ran
             .into_prepared_application(
-                self.checked_callable_effect_authority_with_projection(&selected_outer_projection)
+                self.checked_callable_effect_authority_with_projection(&outer_projection)
                     .map_err(AnalyzerExpressionError::fatal)
                     .map_err(CandidateFactOperationFailure::Expression)?,
             )
@@ -3009,190 +2997,6 @@ impl Analyzer<'_, '_, '_> {
                 })
             })?;
         let selected = selected_transaction.selected_shared().clone();
-        let current_group = selected_transaction.current_group();
-        let (selected_transaction, outer_projection) = if singleton {
-            (selected_transaction, selected_outer_projection)
-        } else {
-            if resolution
-                .work
-                .record_selected_replay_argument_visits(resolution.argument_count)
-                .is_err()
-            {
-                self.discard_prepared_call_transaction_projection(
-                    source.owner,
-                    selected_transaction,
-                    selected_outer_projection,
-                )
-                .map_err(CandidateFactOperationFailure::Expression)?;
-                return Err(AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::CallResolutionFailed {
-                        owner: source.owner,
-                    },
-                )
-                .into());
-            }
-            let replay = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
-                context.work(),
-                |this, authority, _transaction_authority| {
-                    let context = AnalyzerExpressionContext::candidate(
-                        authority,
-                        Rc::clone(&this.call_frames),
-                        context.work(),
-                    )
-                    .with_consumer(consumer);
-                    let replay = this.prepare_candidate(
-                        PreparedCandidateRequest {
-                            original: &batch.original,
-                            module: source.module,
-                            owner: source.owner,
-                            site: source.site,
-                            authored_arguments: source.call.arguments(),
-                            explicit_type_application: Some(
-                                source.call.explicit_type_application(),
-                            ),
-                            dialogue_application_metadata: source.dialogue_application_metadata,
-                            semantic_operands: Box::new([]),
-                            candidate: Arc::clone(&selected),
-                            current_group,
-                            expected_result: source.expectation.nested_call_type(),
-                            expected_application_callee: source.expectation.application_callee(),
-                            expected_result_scope: source.expectation.nested_call_scope_lease(),
-                            callee_inputs: resolution.callee_inputs.clone(),
-                            pass: CandidateEvaluationPass::SelectedReplay,
-                            attempt: Some(source.attempt),
-                            context: &context,
-                            dialogue_patch_admissions: &resolution.dialogue_patch_admissions,
-                            compile_time_scalar_admissions: Box::new([]),
-                        },
-                        &mut resolution.work,
-                    );
-                    drop(context);
-                    match replay? {
-                        accepted @ PreparedCandidateRunOutcome::Accepted { .. } => {
-                            Ok(CandidateFactTransactionAction::Extract(accepted))
-                        }
-                        rejected @ PreparedCandidateRunOutcome::Rejected { .. } => {
-                            Ok(CandidateFactTransactionAction::Rollback(rejected))
-                        }
-                    }
-                },
-            );
-            let replay = match replay {
-                Ok(replay) => replay,
-                Err(failure) => {
-                    self.discard_prepared_call_transaction_projection(
-                        source.owner,
-                        selected_transaction,
-                        selected_outer_projection,
-                    )
-                    .map_err(CandidateFactOperationFailure::Expression)?;
-                    return Err(failure.into());
-                }
-            };
-            let (replay_ran, replay_outer_projection, replay_rank) = match replay {
-                CandidateFactTransactionOutcome::Extracted {
-                    value: PreparedCandidateRunOutcome::Accepted { transaction, rank },
-                    projection,
-                } => (transaction, projection, rank),
-                CandidateFactTransactionOutcome::RolledBack(
-                    PreparedCandidateRunOutcome::Rejected { .. },
-                ) => {
-                    self.discard_prepared_call_transaction_projection(
-                        source.owner,
-                        selected_transaction,
-                        selected_outer_projection,
-                    )
-                    .map_err(CandidateFactOperationFailure::Expression)?;
-                    return Err(AnalyzerExpressionError::Call {
-                        owner: source.owner,
-                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                            crate::callable::CallConstraintInvariant::ReplayRejected,
-                        )),
-                    }
-                    .into());
-                }
-                CandidateFactTransactionOutcome::Committed(_)
-                | CandidateFactTransactionOutcome::Extracted { .. }
-                | CandidateFactTransactionOutcome::RolledBack { .. } => {
-                    self.discard_prepared_call_transaction_projection(
-                        source.owner,
-                        selected_transaction,
-                        selected_outer_projection,
-                    )
-                    .map_err(CandidateFactOperationFailure::Expression)?;
-                    return Err(AnalyzerExpressionError::Call {
-                        owner: source.owner,
-                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                            crate::callable::CallConstraintInvariant::ReplayTransactionShapeMismatch,
-                        )),
-                    }
-                    .into());
-                }
-            };
-            let replay_transaction = replay_ran
-                .into_prepared_application(
-                    self.checked_callable_effect_authority_with_projection(
-                        &replay_outer_projection,
-                    )
-                    .map_err(AnalyzerExpressionError::fatal)
-                    .map_err(CandidateFactOperationFailure::Expression)?,
-                )
-                .map_err(|error| {
-                    CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                        owner: source.owner,
-                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                            error,
-                        )),
-                    })
-                })?;
-            let replay_mismatch = if selected_rank != replay_rank {
-                Some(crate::callable::CallConstraintInvariant::ReplayRankMismatch)
-            } else {
-                selected_transaction.replay_mismatch(&replay_transaction, &self.facts)
-            };
-            if let Some(replay_mismatch) = replay_mismatch {
-                self.discard_prepared_call_transaction_projection(
-                    source.owner,
-                    selected_transaction,
-                    selected_outer_projection,
-                )
-                .map_err(CandidateFactOperationFailure::Expression)?;
-                self.discard_prepared_call_transaction_projection(
-                    source.owner,
-                    replay_transaction,
-                    replay_outer_projection,
-                )
-                .map_err(CandidateFactOperationFailure::Expression)?;
-                return Err(AnalyzerExpressionError::Call {
-                    owner: source.owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        replay_mismatch,
-                    )),
-                }
-                .into());
-            }
-            let (
-                _selected_application,
-                _selected_consumer,
-                _selected_callee_inputs,
-                _selected_inputs,
-                selected_branch,
-                _selected_component,
-            ) = selected_transaction.into_parts();
-            self.facts
-                .discard_candidate_projection(selected_outer_projection)
-                .map_err(|violation| {
-                    CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fact(
-                        violation,
-                    ))
-                })?;
-            self.discard_nested_call_callee_prerequisites_from_branch(
-                source.owner,
-                selected_branch,
-            )
-            .map_err(CandidateFactOperationFailure::Expression)?;
-            (replay_transaction, replay_outer_projection)
-        };
         let specialization = selected_transaction
             .specialization_result()
             .map(|result| {
@@ -3969,7 +3773,7 @@ impl Analyzer<'_, '_, '_> {
         discarded: Vec<PreparedCandidateSemanticProjection>,
     ) -> Result<(), AnalyzerExpressionError> {
         for projection in discarded {
-            self.discard_recovery_projection(owner, projection)?;
+            self.discard_candidate_semantic_projection(owner, projection)?;
         }
         let PreparedCandidateSemanticProjection { outer, branch } = primary;
         let branch_projection = match branch {
@@ -3998,7 +3802,7 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    fn discard_recovery_projection(
+    fn discard_candidate_semantic_projection(
         &self,
         owner: ExprId,
         projection: PreparedCandidateSemanticProjection,
@@ -4078,19 +3882,6 @@ impl Analyzer<'_, '_, '_> {
                 .map_err(AnalyzerExpressionError::fact)?;
         }
         Ok(())
-    }
-
-    fn discard_prepared_call_transaction_projection(
-        &self,
-        owner: ExprId,
-        transaction: PreparedCallApplicationTransaction,
-        outer: super::state::CandidateSemanticProjection,
-    ) -> Result<(), AnalyzerExpressionError> {
-        let (_, _, _, _, branch, _) = transaction.into_parts();
-        self.facts
-            .discard_candidate_projection(outer)
-            .map_err(AnalyzerExpressionError::fact)?;
-        self.discard_nested_call_callee_prerequisites_from_branch(owner, branch)
     }
 
     fn publish_recovery_call(
@@ -5052,7 +4843,6 @@ impl Analyzer<'_, '_, '_> {
             expected_application_callee,
             expected_result_scope,
             callee_inputs,
-            pass,
             attempt,
             context,
             dialogue_patch_admissions,
@@ -5318,7 +5108,6 @@ impl Analyzer<'_, '_, '_> {
                 owner,
                 site,
                 context,
-                pass,
                 attempt.cloned(),
                 parent_source,
                 constraint_set,
@@ -5333,7 +5122,6 @@ impl Analyzer<'_, '_, '_> {
                 owner,
                 work,
                 context,
-                pass,
                 attempt.cloned(),
                 constraint_set,
                 output,

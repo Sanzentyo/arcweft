@@ -52,8 +52,8 @@ use crate::{
 };
 
 use crate::final_analysis::{
-    CandidateEvaluationPass, CandidateExpectedType, FinalSemanticAnalysisError,
-    PhysicalArgumentEvaluationKind, PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
+    CandidateExpectedType, FinalSemanticAnalysisError, PhysicalArgumentEvaluationKind,
+    PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
 };
 
 use super::super::{
@@ -1299,7 +1299,6 @@ pub(crate) struct AnalyzerCallExpressionClient<'a, 'project, 'catalog, 'control>
     prepared_source_actuals: PreparedCallActuals,
     dialogue_patch_admissions:
         BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
-    pass: CandidateEvaluationPass,
     attempt: Option<PhysicalCallAttemptId>,
     active_fact_scope: Option<AnalyzerCallActiveFactScope>,
     prepared_child_calls: &'a mut Vec<super::PreparedCorrelatedCallRecipe>,
@@ -1324,7 +1323,6 @@ impl<'a, 'project, 'catalog, 'control>
             AnalyzerCallConstraintSource,
             AnalyzerPreparedDialoguePatchAdmission,
         >,
-        pass: CandidateEvaluationPass,
         attempt: Option<PhysicalCallAttemptId>,
         prepared_child_calls: &'a mut Vec<super::PreparedCorrelatedCallRecipe>,
     ) -> Self {
@@ -1338,7 +1336,6 @@ impl<'a, 'project, 'catalog, 'control>
             source_admissions,
             prepared_source_actuals,
             dialogue_patch_admissions,
-            pass,
             attempt,
             active_fact_scope: None,
             prepared_child_calls,
@@ -1409,12 +1406,8 @@ impl<'a, 'project, 'catalog, 'control>
                 crate::final_analysis::CandidateFactTransactionViolation::PhysicalCallAttemptRootMismatch,
             )
         })?;
-        let evaluation = PhysicalCandidateArgumentEvaluation::new(
-            attempt,
-            candidate.id().clone(),
-            self.pass,
-            physical,
-        );
+        let evaluation =
+            PhysicalCandidateArgumentEvaluation::new(attempt, candidate.id().clone(), physical);
         #[cfg(test)]
         let evaluation = evaluation.inspect_expected_effects(
             self.analyzer
@@ -1502,7 +1495,6 @@ impl<'a, 'project, 'catalog, 'control>
         Ok(Some(PhysicalCandidateArgumentEvaluation::new(
             attempt,
             candidate.id().clone(),
-            self.pass,
             physical,
         )))
     }
@@ -4358,10 +4350,6 @@ impl PreparedCallApplicationTransaction {
         self.data.application.selected_shared()
     }
 
-    pub(crate) fn current_group(&self) -> CallableGroupIndex {
-        self.data.application.completed_group()
-    }
-
     pub(crate) fn result(&self) -> Result<CallableResultSchema, CallConstraintInvariant> {
         self.data.application.result_schema()
     }
@@ -4492,36 +4480,6 @@ impl PreparedCallApplicationTransaction {
             action,
             inferred: closed.actual().clone(),
         })
-    }
-
-    pub(crate) fn replay_mismatch(
-        &self,
-        other: &Self,
-        facts: &super::super::state::SemanticFactState,
-    ) -> Option<CallConstraintInvariant> {
-        if !self.data.application.replay_eq(&other.data.application) {
-            return Some(CallConstraintInvariant::ReplayApplicationMismatch);
-        }
-        if self.data.consumer != other.data.consumer {
-            return Some(CallConstraintInvariant::ReplayArgumentMappingMismatch);
-        }
-        if self.data.callee_inputs != other.data.callee_inputs {
-            return Some(CallConstraintInvariant::ReplayCalleeInputsMismatch);
-        }
-        if self.data.inputs != other.data.inputs {
-            return Some(CallConstraintInvariant::ReplayArgumentMappingMismatch);
-        }
-        if let Some(mismatch) = self.data.sealed_branch.replay_mismatch(
-            &other.data.sealed_branch,
-            facts,
-            super::super::state::CandidateFactReplayMode::Semantic,
-        ) {
-            return Some(mismatch);
-        }
-        if self.data.component != other.data.component {
-            return Some(CallConstraintInvariant::ReplayClosedSourcesMismatch);
-        }
-        None
     }
 
     pub(crate) fn into_parts(
@@ -6510,13 +6468,12 @@ fn prepare_parameter_source_constraint(
 
 /// Execute one complete lower candidate transaction through the affine
 /// callable driver. This helper is intentionally independent of semantic
-/// publication; its caller chooses singleton move or multi-candidate replay.
+/// publication; its caller moves the selected candidate into the fact ledger.
 pub(crate) fn run_prepared_candidate(
     analyzer: &mut super::super::Analyzer<'_, '_, '_>,
     application: ExprId,
     work: &mut crate::callable::ResolverWork,
     context: &AnalyzerExpressionContext<'_>,
-    pass: CandidateEvaluationPass,
     attempt: Option<PhysicalCallAttemptId>,
     set: PreparedCallConstraintSet,
     output: PreparedCallOutputProjections<'_>,
@@ -6568,7 +6525,6 @@ pub(crate) fn run_prepared_candidate(
         source_admissions,
         prepared_source_actuals,
         dialogue_patch_admissions,
-        pass,
         attempt,
         &mut prepared_child_calls,
     );
@@ -7362,7 +7318,6 @@ pub(crate) fn run_prepared_child_candidate(
     application: ExprId,
     site: crate::callable::CheckedCallSite,
     context: &AnalyzerExpressionContext<'_>,
-    pass: CandidateEvaluationPass,
     attempt: Option<PhysicalCallAttemptId>,
     parent_source: &mut crate::callable::CandidateConstraintSourceContext<
         '_,
@@ -7416,7 +7371,6 @@ pub(crate) fn run_prepared_child_candidate(
         source_admissions,
         prepared_source_actuals,
         dialogue_patch_admissions,
-        pass,
         attempt,
         &mut descendants,
     );
@@ -7761,7 +7715,6 @@ mod tests {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
-            CandidateEvaluationPass::Probe,
             None,
             &mut prepared_child_calls,
         );
@@ -7936,7 +7889,6 @@ mod tests {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
-            CandidateEvaluationPass::Probe,
             None,
             &mut children,
         );
@@ -8180,7 +8132,6 @@ mod tests {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
-            CandidateEvaluationPass::Probe,
             None,
             &mut prepared_child_calls,
         );
@@ -8259,7 +8210,6 @@ mod tests {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
-            CandidateEvaluationPass::Probe,
             None,
             &mut prepared_child_calls,
         );

@@ -56,14 +56,14 @@ use arcweft_source::{
 
 use super::match_coverage::{CheckedMatchLimitKind, CheckedUnreachableReason};
 use super::{
-    CallAnalysisOutcome, CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType,
-    CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedBinding,
-    CheckedCallableJoinError, CheckedCharacterDialogueTarget, CheckedDropFade,
-    CheckedDropInvocation, CheckedEvaluatedEffectOperation, CheckedExecutableControlRole,
-    CheckedExplicitDropPolicy, CheckedExpression, CheckedExpressionChildEdge,
-    CheckedExpressionEdgeError, CheckedExpressionResolution, CheckedFunctionExecution,
-    CheckedFunctionSiteBoundary, CheckedImplicitCallableBody, CheckedItem, CheckedItemRole,
-    CheckedIteration, CheckedIteratorFamily, CheckedMatchLimits, CheckedOrdinaryFunctionEmission,
+    CallAnalysisOutcome, CallTargetFacts, CandidateExpectedType, CharacterDialogueFieldCoordinate,
+    CheckedAssertionDisposition, CheckedBinding, CheckedCallableJoinError,
+    CheckedCharacterDialogueTarget, CheckedDropFade, CheckedDropInvocation,
+    CheckedEvaluatedEffectOperation, CheckedExecutableControlRole, CheckedExplicitDropPolicy,
+    CheckedExpression, CheckedExpressionChildEdge, CheckedExpressionEdgeError,
+    CheckedExpressionResolution, CheckedFunctionExecution, CheckedFunctionSiteBoundary,
+    CheckedImplicitCallableBody, CheckedItem, CheckedItemRole, CheckedIteration,
+    CheckedIteratorFamily, CheckedMatchLimits, CheckedOrdinaryFunctionEmission,
     CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPipeLeftOccurrence,
     CheckedSelectResolution, CheckedStatementPayload, CheckedSuspensionRole,
     CheckedSuspensionStatement, CheckedTryBoundaryOwner, CheckedTryCarrier, CheckedTypeSelection,
@@ -7694,7 +7694,6 @@ fn production_analyzer_routes_capacity_through_typed_associated_authority() {
     assert_eq!(physical.len(), 1);
     assert_eq!(physical[0].call_expression(), call.expression());
     assert_eq!(physical[0].candidate(), selected.id());
-    assert_eq!(physical[0].pass(), CandidateEvaluationPass::Probe);
     assert_eq!(physical[0].argument().get(), 0);
     assert_eq!(physical[0].slot().get(), 0);
     assert_eq!(physical[0].kind(), PhysicalArgumentEvaluationKind::Authored);
@@ -8317,7 +8316,6 @@ fn caller() { add([1i64, 2i64]...); }
         .collect::<Vec<_>>();
     assert_eq!(physical.len(), 2);
     for (ordinal, evaluation) in physical.iter().enumerate() {
-        assert_eq!(evaluation.pass(), CandidateEvaluationPass::Probe);
         assert_eq!(evaluation.argument().get(), 0);
         assert_eq!(evaluation.slot().get(), ordinal);
         assert_eq!(
@@ -8341,7 +8339,7 @@ fn caller() { add([1i64, 2i64]...); }
 }
 
 #[test]
-fn multi_candidate_winner_replays_but_singleton_does_not() {
+fn multi_candidate_winner_publishes_its_original_observation() {
     let fixture = environment_overload_fixture("fn caller() { choose(1i64); }\n");
     let report = analyze(&fixture).expect("multi-candidate final analysis");
     let call = report
@@ -8355,7 +8353,7 @@ fn multi_candidate_winner_replays_but_singleton_does_not() {
     assert_eq!(call.accounting().logical_argument_checks(), 1);
     assert_eq!(call.accounting().resolver_invocations(), 1);
     assert_eq!(call.accounting().candidate_argument_probes(), 2);
-    assert_eq!(call.accounting().selected_replay_argument_visits(), 1);
+    assert_eq!(call.accounting().selected_replay_argument_visits(), 0);
     assert_eq!(call.accounting().retained_argument_fact_publications(), 1);
     assert_eq!(
         selected_execution_arguments(call)
@@ -8368,11 +8366,8 @@ fn multi_candidate_winner_replays_but_singleton_does_not() {
         .physical_candidate_argument_evaluations()
         .filter(|evaluation| evaluation.call_expression() == call.expression())
         .collect::<Vec<_>>();
-    assert_eq!(physical.len(), 3);
-    assert_eq!(physical[0].pass(), CandidateEvaluationPass::Probe);
-    assert_eq!(physical[1].pass(), CandidateEvaluationPass::Probe);
-    assert_eq!(physical[2].pass(), CandidateEvaluationPass::SelectedReplay);
-    assert_eq!(physical[2].candidate(), selected.id());
+    assert_eq!(physical.len(), 2);
+    assert_eq!(physical[0].candidate(), selected.id());
     assert_eq!(
         physical[0].expected(),
         &CandidateExpectedType::Exact(TypeKind::I64)
@@ -8381,10 +8376,8 @@ fn multi_candidate_winner_replays_but_singleton_does_not() {
         physical[1].expected(),
         &CandidateExpectedType::Exact(TypeKind::U64)
     );
-    assert_eq!(
-        physical[2].expected(),
-        &CandidateExpectedType::Exact(TypeKind::I64)
-    );
+    assert!(physical[0].completed_observed_types().eq([&TypeKind::I64]));
+    assert!(physical[1].completed_observed_types().next().is_none());
 }
 
 fn assert_index_postfix_transaction(fixture: &Fixture) {
@@ -8494,7 +8487,7 @@ fn singleton_call_postfix_argument_commits_with_selected_publication() {
 }
 
 #[test]
-fn multi_candidate_call_postfix_argument_survives_selected_replay() {
+fn multi_candidate_call_postfix_argument_retains_selected_facts() {
     let fixture = typed_overload_fixture(
         "fn caller(items: Seq<i64>, key: usize) { choose(items[key]); }\n",
         "choose",
@@ -8522,20 +8515,27 @@ fn call_adj_a_013_three_candidate_semantic_facts_remain_complete() {
     assert_eq!(call.accounting().logical_argument_checks(), 1);
     assert_eq!(call.accounting().resolver_invocations(), 1);
     assert_eq!(call.accounting().candidate_argument_probes(), 3);
-    assert_eq!(call.accounting().selected_replay_argument_visits(), 1);
+    assert_eq!(call.accounting().selected_replay_argument_visits(), 0);
     assert_eq!(call.accounting().retained_argument_fact_publications(), 1);
     let physical = report
         .physical_candidate_argument_evaluations()
         .filter(|evaluation| evaluation.call_expression() == call.expression())
         .collect::<Vec<_>>();
-    assert_eq!(physical.len(), 4);
-    assert!(
-        physical[..3]
+    assert_eq!(physical.len(), 3);
+    for candidate in considered.iter() {
+        let mut probes = physical
             .iter()
-            .all(|evaluation| evaluation.pass() == CandidateEvaluationPass::Probe)
-    );
-    assert_eq!(physical[3].pass(), CandidateEvaluationPass::SelectedReplay);
-    assert_eq!(physical[3].candidate(), selected.id());
+            .filter(|probe| probe.candidate() == candidate.id());
+        let probe = probes
+            .next()
+            .expect("considered candidate's original probe");
+        assert!(probes.next().is_none());
+        if candidate.id() == selected.id() {
+            assert!(probe.completed_observed_types().eq([&TypeKind::I64]));
+        } else {
+            assert!(probe.completed_observed_types().next().is_none());
+        }
+    }
 }
 
 #[test]
@@ -8568,7 +8568,7 @@ fn t_lim_12_007_candidate_boundary_probes_each_of_256_candidates_once() {
         call.accounting().candidate_argument_probes(),
         u64::try_from(candidate_count).expect("candidate count")
     );
-    assert_eq!(call.accounting().selected_replay_argument_visits(), 1);
+    assert_eq!(call.accounting().selected_replay_argument_visits(), 0);
     assert_eq!(call.accounting().retained_argument_fact_publications(), 1);
     assert_eq!(report.work().call_facts(), 1);
     assert_eq!(report.work().logical_argument_checks(), 1);
@@ -8577,27 +8577,26 @@ fn t_lim_12_007_candidate_boundary_probes_each_of_256_candidates_once() {
         report.work().candidate_argument_probes(),
         u64::try_from(candidate_count).expect("candidate count")
     );
-    assert_eq!(report.work().selected_replay_argument_visits(), 1);
+    assert_eq!(report.work().selected_replay_argument_visits(), 0);
     assert_eq!(report.work().retained_argument_fact_publications(), 1);
 
     let physical = report
         .physical_candidate_argument_evaluations()
         .filter(|evaluation| evaluation.call_expression() == owner)
         .collect::<Vec<_>>();
-    assert_eq!(physical.len(), candidate_count + 1);
+    assert_eq!(physical.len(), candidate_count);
     let mut probe_counts = HashMap::with_capacity(candidate_count);
-    let mut selected_replays = Vec::new();
     for evaluation in physical {
         assert_eq!(evaluation.argument().get(), 0);
         assert_eq!(evaluation.slot().get(), 0);
         assert_eq!(evaluation.kind(), PhysicalArgumentEvaluationKind::Authored);
-        match evaluation.pass() {
-            CandidateEvaluationPass::Probe => {
-                *probe_counts
-                    .entry(evaluation.candidate().clone())
-                    .or_insert(0usize) += 1;
-            }
-            CandidateEvaluationPass::SelectedReplay => selected_replays.push(evaluation),
+        *probe_counts
+            .entry(evaluation.candidate().clone())
+            .or_insert(0usize) += 1;
+        if evaluation.candidate() == selected.id() {
+            assert!(evaluation.completed_observed_types().eq([&TypeKind::I64]));
+        } else {
+            assert!(evaluation.completed_observed_types().next().is_none());
         }
     }
     assert_eq!(probe_counts.len(), candidate_count);
@@ -8608,10 +8607,6 @@ fn t_lim_12_007_candidate_boundary_probes_each_of_256_candidates_once() {
             "every considered candidate is physically probed exactly once"
         );
     }
-    let [selected_replay] = selected_replays.as_slice() else {
-        panic!("the selected multi-candidate path replays exactly once")
-    };
-    assert_eq!(selected_replay.candidate(), selected.id());
 }
 
 #[test]
@@ -8793,7 +8788,6 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
         assert_eq!(physical.len(), 2);
         assert_ne!(physical[0].candidate(), physical[1].candidate());
         for (evaluation, expected) in physical.iter().zip(&expected) {
-            assert_eq!(evaluation.pass(), CandidateEvaluationPass::Probe);
             assert!(
                 call.outcome()
                     .candidate_ids()
@@ -9958,8 +9952,7 @@ flow @flow.root root {
     assert!(
         physical
             .iter()
-            .all(|row| row.pass() == CandidateEvaluationPass::Probe
-                && row.kind() == PhysicalArgumentEvaluationKind::Authored)
+            .all(|row| row.kind() == PhysicalArgumentEvaluationKind::Authored)
     );
     for (index, row) in physical.iter().enumerate() {
         assert!(
@@ -10756,7 +10749,6 @@ fn typed_rest_spread_checks_one_container_slot_per_candidate_pass() {
         .filter(|evaluation| evaluation.call_expression() == call.expression())
         .collect::<Vec<_>>();
     assert_eq!(physical.len(), 1);
-    assert_eq!(physical[0].pass(), CandidateEvaluationPass::Probe);
     assert_eq!(
         physical[0].kind(),
         PhysicalArgumentEvaluationKind::TypedRestSpread
@@ -10776,7 +10768,7 @@ fn typed_rest_spread_checks_one_container_slot_per_candidate_pass() {
 }
 
 #[test]
-fn fixed_literal_spread_counts_each_logical_slot_in_every_probe_and_replay() {
+fn fixed_literal_spread_retains_each_selected_slot_from_its_probe() {
     let fixture = typed_overload_fixture(
         "fn caller() { choose([1i64, 2i64]...); }\n",
         "choose",
@@ -10796,7 +10788,7 @@ fn fixed_literal_spread_counts_each_logical_slot_in_every_probe_and_replay() {
         .physical_candidate_argument_evaluations()
         .filter(|evaluation| evaluation.call_expression() == call.expression())
         .collect::<Vec<_>>();
-    assert_eq!(physical.len(), 6);
+    assert_eq!(physical.len(), 4);
     assert_eq!(
         selected_execution_arguments(call)
             .iter()
@@ -10813,10 +10805,15 @@ fn fixed_literal_spread_counts_each_logical_slot_in_every_probe_and_replay() {
             .iter()
             .map(|evaluation| evaluation.slot().get())
             .collect::<Vec<_>>(),
-        vec![0, 1, 0, 1, 0, 1]
+        vec![0, 1, 0, 1]
     );
-    assert_eq!(physical[4].pass(), CandidateEvaluationPass::SelectedReplay);
-    assert_eq!(physical[5].pass(), CandidateEvaluationPass::SelectedReplay);
+    for evaluation in physical {
+        if evaluation.candidate() == selected_candidate(call).id() {
+            assert!(evaluation.completed_observed_types().eq([&TypeKind::I64]));
+        } else {
+            assert!(evaluation.completed_observed_types().next().is_none());
+        }
+    }
 }
 
 #[test]
@@ -11054,24 +11051,23 @@ fn assert_nested_call_candidate_rechecks(fixture: &Fixture, expected_child_resul
         .physical_candidate_argument_evaluations()
         .filter(|evaluation| evaluation.call_expression() == inner.expression())
         .collect::<Vec<_>>();
-    assert_eq!(outer_physical.len(), 3);
-    // Both outer probes and the selected replay check the singleton inner
-    // source once, including an incompatible expected result.
-    assert_eq!(inner_physical.len(), 3);
-    assert_eq!(
-        outer_physical[2].pass(),
-        CandidateEvaluationPass::SelectedReplay
-    );
-    assert_eq!(inner_physical[0].pass(), CandidateEvaluationPass::Probe);
-    assert_eq!(inner_physical[1].pass(), CandidateEvaluationPass::Probe);
-    assert_eq!(inner_physical[2].pass(), CandidateEvaluationPass::Probe);
+    assert_eq!(outer_physical.len(), 2);
+    // Each outer expectation checks its inner source once, including the mismatch.
+    assert_eq!(inner_physical.len(), 2);
+    let selected_id = selected_candidate(outer).id();
+    let mut selected_probes = outer_physical
+        .iter()
+        .filter(|evaluation| evaluation.candidate() == selected_id);
+    let selected = selected_probes
+        .next()
+        .expect("selected outer candidate's probe");
+    assert!(selected_probes.next().is_none());
     assert!(
-        outer_physical[..2]
+        outer_physical
             .iter()
-            .all(|evaluation| { evaluation.completed_observed_types().next().is_none() }),
-        "discarded attempts retain no selected result"
+            .filter(|evaluation| evaluation.candidate() != selected_id)
+            .all(|evaluation| evaluation.completed_observed_types().next().is_none())
     );
-    let selected = outer_physical[2];
     assert_eq!(
         selected.source(),
         CheckedCallArgumentSlotSource::Expression(inner.expression())
@@ -11125,7 +11121,6 @@ fn cancellation_after_one_completed_candidate_slot_retains_only_the_physical_pre
     assert!(cancellation.load(std::sync::atomic::Ordering::Acquire));
     assert_eq!(remaining.get(), 0);
     assert_eq!(physical.len(), 1);
-    assert_eq!(physical[0].pass(), CandidateEvaluationPass::Probe);
     assert_eq!(physical[0].argument().get(), 0);
     assert_eq!(physical[0].slot().get(), 0);
 }

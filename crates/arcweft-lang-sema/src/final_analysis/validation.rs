@@ -109,10 +109,6 @@ pub(super) fn collect_work(
             accounting.candidate_argument_probes(),
         )?;
         checked_add(
-            &mut work.selected_replay_argument_visits,
-            accounting.selected_replay_argument_visits(),
-        )?;
-        checked_add(
             &mut work.retained_argument_fact_publications,
             accounting.retained_argument_fact_publications(),
         )?;

@@ -103,18 +103,7 @@ pub struct FinalSemanticAnalysisWork {
     pub(super) logical_argument_checks: u64,
     pub(super) resolver_invocations: u64,
     pub(super) candidate_argument_probes: u64,
-    pub(super) selected_replay_argument_visits: u64,
     pub(super) retained_argument_fact_publications: u64,
-}
-
-/// Candidate transaction phase that physically evaluated one argument slot.
-///
-/// This is crate-owned operational evidence. It is deliberately not part of
-/// language semantics or the public signature-help contract.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CandidateEvaluationPass {
-    Probe,
-    SelectedReplay,
 }
 
 /// Candidate-specific expectation in force at one physical evaluation.
@@ -188,7 +177,6 @@ impl PhysicalCandidateArgument {
 pub(crate) struct PhysicalCandidateArgumentEvaluation {
     attempt: PhysicalCallAttemptId,
     candidate: CallableCandidateId,
-    pass: CandidateEvaluationPass,
     argument: HirCallArgumentOrdinal,
     slot: CallableArgumentSlotIndex,
     source: CheckedCallArgumentSlotSource,
@@ -239,13 +227,11 @@ impl PhysicalCandidateArgumentEvaluation {
     pub(in crate::final_analysis) fn new(
         attempt: PhysicalCallAttemptId,
         candidate: CallableCandidateId,
-        pass: CandidateEvaluationPass,
         argument: PhysicalCandidateArgument,
     ) -> Self {
         Self {
             attempt,
             candidate,
-            pass,
             argument: argument.argument,
             slot: argument.slot,
             source: argument.source,
@@ -268,11 +254,6 @@ impl PhysicalCandidateArgumentEvaluation {
     #[cfg(test)]
     pub(crate) const fn candidate(&self) -> &CallableCandidateId {
         &self.candidate
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn pass(&self) -> CandidateEvaluationPass {
-        self.pass
     }
 
     pub(crate) const fn argument(&self) -> HirCallArgumentOrdinal {
@@ -373,7 +354,6 @@ impl PhysicalCandidateArgumentEvaluation {
     pub(crate) fn same_candidate_slot(&self, other: &Self) -> bool {
         self.attempt.same_operational_attempt(&other.attempt)
             && self.candidate == other.candidate
-            && self.pass == other.pass
             && self.argument == other.argument
             && self.slot == other.slot
             && self.source == other.source
@@ -429,8 +409,9 @@ impl FinalSemanticAnalysisWork {
         self.candidate_argument_probes
     }
 
+    /// Version 1 check reports retain this counter. Selection publishes the retained probe.
     pub const fn selected_replay_argument_visits(self) -> u64 {
-        self.selected_replay_argument_visits
+        0
     }
 
     pub const fn retained_argument_fact_publications(self) -> u64 {

@@ -187,42 +187,26 @@ pub(crate) enum CallConstraintInvariant {
     UnexpectedLowerRejection(TypeConstraintRejection),
     #[error("a rejected call candidate reached selected publication")]
     UnexpectedRejectedSelection,
-    #[error("selected call candidate was rejected during replay")]
-    ReplayRejected,
-    #[error("selected call replay returned an invalid transaction shape")]
-    ReplayTransactionShapeMismatch,
-    #[error("selected call replay rank does not match the sealed probe")]
-    ReplayRankMismatch,
-    #[error("selected call replay application does not match the sealed probe")]
-    ReplayApplicationMismatch,
-    #[error("selected call replay callee inputs do not match the sealed probe")]
-    ReplayCalleeInputsMismatch,
-    #[error("selected call replay argument mapping does not match the sealed probe")]
-    ReplayArgumentMappingMismatch,
-    #[error("selected call replay materialized branch shape does not match the sealed probe")]
+    #[error("candidate branches differ in shape")]
     ReplaySealedBranchShapeMismatch,
-    #[error("selected call replay branch projection authority does not match the sealed probe")]
+    #[error("candidate branches differ in projection authority")]
     ReplayBranchProjectionAuthorityMismatch,
-    #[error("selected call replay branch prepared graph does not match the sealed probe: {0}")]
+    #[error("candidate branches differ in prepared graph: {0}")]
     ReplayBranchPreparedGraphMismatch(PreparedCallGraphReplayMismatch),
-    #[error("selected call replay branch local facts do not match the sealed probe")]
+    #[error("candidate branches differ in local facts")]
     ReplayBranchLocalFactsMismatch,
-    #[error("selected call replay branch pattern facts do not match the sealed probe")]
+    #[error("candidate branches differ in pattern facts")]
     ReplayBranchPatternFactsMismatch,
-    #[error("selected call replay branch expression facts do not match the sealed probe")]
+    #[error("candidate branches differ in expression facts")]
     ReplayBranchExpressionFactsMismatch,
-    #[error("selected call replay branch dialogue mark catalogs do not match the sealed probe")]
+    #[error("candidate branches differ in dialogue mark catalogs")]
     ReplayBranchDialogueMarkCatalogMismatch,
-    #[error("selected call replay branch iteration facts do not match the sealed probe")]
+    #[error("candidate branches differ in iteration facts")]
     ReplayBranchIterationFactsMismatch,
-    #[error("selected call replay branch implicit captures do not match the sealed probe")]
+    #[error("candidate branches differ in implicit captures")]
     ReplayBranchImplicitCaptureMismatch,
-    #[error("selected call replay branch physical transcript does not match the sealed probe")]
+    #[error("candidate branches differ in physical transcript")]
     ReplayBranchPhysicalTranscriptMismatch,
-    #[error("selected call replay closed sources do not match the sealed probe")]
-    ReplayClosedSourcesMismatch,
-    #[error("selected call replay typed projections do not match the sealed probe")]
-    ReplayProjectionMismatch,
     #[error("an analyzer callback fact scope remained active at candidate finish")]
     ActiveFactScope,
 }
@@ -431,8 +415,8 @@ impl EnclosingGenericParameterScope {
         context.original_producer_context(&self.header)
     }
 
-    /// Admit the caller once before inspecting any candidate. Every root and
-    /// selected replay of this source occurrence shares the resulting context.
+    /// Admit the caller once before inspecting any candidate. Every probe of
+    /// this source occurrence shares the resulting context.
     pub(crate) fn admit_original_context<D: crate::types::constraints::ConstraintDomain>(
         &self,
         work: &mut super::ResolverWork,
