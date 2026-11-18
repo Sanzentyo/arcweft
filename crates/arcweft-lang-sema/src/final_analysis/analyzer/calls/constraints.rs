@@ -596,10 +596,87 @@ pub(in crate::final_analysis::analyzer) enum AnalyzerCallSealedBranch {
     Materialized {
         projection: CandidateSemanticProjection,
         nested_calls: Box<[super::PreparedSelectedNestedCall]>,
+        original_values: BTreeSet<AnalyzerCallConstraintSourceId>,
     },
 }
 
 impl AnalyzerCallSealedBranch {
+    fn retain_original_values(
+        &mut self,
+        retained: crate::types::constraints::transaction::RetainedSourcePreparations<
+            AnalyzerCallConstraintDomain,
+        >,
+        facts: &super::super::state::SemanticFactState,
+        work: &mut AnalyzerPreparationWork<'_>,
+    ) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+        use crate::types::constraints::{
+            TypeConstraintSourceProtocolInvariant, transaction::SourcePreparationTakeError,
+        };
+        let Self::Materialized {
+            projection,
+            original_values,
+            ..
+        } = self
+        else {
+            return Ok(());
+        };
+        if original_values.is_empty() {
+            return Ok(());
+        }
+        let work_failure = |source, error| match error {
+            FinalSemanticAnalysisError::Cancelled => {
+                TypeConstraintFailure::Abort(TypeConstraintAbort::Cancelled)
+            }
+            error => TypeConstraintFailure::fatal_source(SourceError::new(
+                source,
+                SourcePhase::Materialize,
+                AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
+            )),
+        };
+        let owned = retained
+            .into_owned(work)
+            .map_err(|failure| match failure.error {
+                SourcePreparationTakeError::Control(error) => work_failure(failure.source, error),
+                SourcePreparationTakeError::Shared => {
+                    TypeConstraintError::from(TypeConstraintInvariant::SourceProtocol(
+                        TypeConstraintSourceProtocolInvariant::SharedPreparation,
+                    ))
+                    .into()
+                }
+            })?;
+        let mut pending = std::mem::take(original_values);
+        for row in owned {
+            if pending.remove(&row.source) {
+                let source = row.source.local();
+                let owner = source.expression_owner().ok_or_else(|| {
+                    TypeConstraintFailure::client_invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            source,
+                            CallConstraintInvariant::PreparedCallSiteMismatch,
+                        ),
+                    )
+                })?;
+                work.visit_binding()
+                    .map_err(|error| work_failure(row.source, error))?;
+                facts
+                    .move_isolated_expression(projection, row.preparation, owner)
+                    .map_err(|error| {
+                        TypeConstraintFailure::client_invariant(
+                            AnalyzerCallClientInvariant::fact_transaction(source, error),
+                        )
+                    })?;
+            }
+        }
+        if !pending.is_empty() {
+            return Err(TypeConstraintFailure::from(TypeConstraintError::from(
+                TypeConstraintInvariant::SourceProtocol(
+                    TypeConstraintSourceProtocolInvariant::WrongSource,
+                ),
+            )));
+        }
+        Ok(())
+    }
+
     fn replay_mismatch(
         &self,
         other: &Self,
@@ -612,13 +689,16 @@ impl AnalyzerCallSealedBranch {
                 Self::Materialized {
                     projection: left,
                     nested_calls: left_calls,
+                    original_values: left_originals,
                 },
                 Self::Materialized {
                     projection: right,
                     nested_calls: right_calls,
+                    original_values: right_originals,
                 },
             ) => {
-                if left_calls.len() != right_calls.len()
+                if left_originals != right_originals
+                    || left_calls.len() != right_calls.len()
                     || !left_calls
                         .iter()
                         .zip(right_calls.iter())
@@ -667,6 +747,7 @@ impl AnalyzerCallSealedBranch {
 #[derive(Debug)]
 pub(crate) struct AnalyzerCallPreparedSealedBranch {
     nested_calls: Vec<super::PreparedSelectedNestedCall>,
+    original_values: BTreeSet<AnalyzerCallConstraintSourceId>,
 }
 
 pub(crate) struct PreparedChildCandidateRun {
@@ -2762,7 +2843,17 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
     {
         let requests = sources.into_iter().collect::<Vec<_>>();
         let mut requests_by_application = BTreeMap::<ExprId, Vec<usize>>::new();
+        let mut unique_expressions = BTreeMap::new();
         for (index, request) in requests.iter().enumerate() {
+            if let Some(owner) = request.source().local().expression_owner() {
+                work.visit_binding().map_err(|error| {
+                    materialized_source_failure(request.source().local(), error)
+                })?;
+                unique_expressions
+                    .entry(owner)
+                    .and_modify(|unique| *unique = false)
+                    .or_insert(true);
+            }
             requests_by_application
                 .entry(
                     request
@@ -2810,6 +2901,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             ));
         }
 
+        let mut original_values = BTreeSet::new();
         for request in requests {
             let source_id = *request.source();
             let source = source_id.local();
@@ -2864,6 +2956,45 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         AnalyzerCallClientInvariant::fact_transaction(source, violation),
                     )
                 })?;
+            let has_staged_value = application_context
+                .map_or(&self.prepared_source_actuals, |recipe| {
+                    &recipe.source_preparation.prepared_source_actuals
+                })
+                .contains_key(&source);
+            let result_projection = request.result_projection();
+            let direct_value = if !has_staged_value && result_projection.is_none() {
+                let expected = request
+                    .prepare_expected(work)
+                    .map_err(|error| materialized_source_failure(source, error))?;
+                let source_admission = request.alternative().and_then(|alternative| {
+                    application_context
+                        .map_or(&self.source_admissions, |recipe| {
+                            &recipe.source_preparation.source_admissions
+                        })
+                        .get(&(source, alternative))
+                        .cloned()
+                });
+                if source_admission.is_none()
+                    && let Some(owner) = source.expression_owner()
+                    && unique_expressions.get(&owner) == Some(&true)
+                    && let Some(original) = request.preparation().isolated_resolved_value(owner)
+                    && request
+                        .retained_value()
+                        .and_then(AnalyzerObservedSourceValue::expression_fact)
+                        == Some(original)
+                    && request
+                        .retained_value_is_closed(expected.as_ref(), work)
+                        .map_err(|error| materialized_source_failure(source, error))?
+                {
+                    work.visit_binding()
+                        .map_err(|error| materialized_source_failure(source, error))?;
+                    original_values.insert(source_id);
+                    continue;
+                }
+                Some((expected, source_admission))
+            } else {
+                None
+            };
             self.admit_physical_source(source_id, SourcePhase::Materialize, work)?;
             let expected =
                 source
@@ -2923,7 +3054,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     })?;
                 validate_materialized_source_value(&request, request.actual(), &retained.evidence())
                     .map_err(TypeConstraintError::from)
-            } else if let Some(result) = request.result_projection() {
+            } else if let Some(result) = result_projection {
                 if matches!(
                     result.application_id(),
                     CallableConstraintApplication::Specialize(_)
@@ -3019,17 +3150,8 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 )
                 .map_err(TypeConstraintError::from)
             } else {
-                let expected = request
-                    .prepare_expected(work)
-                    .map_err(|error| materialized_source_failure(source, error))?;
-                let source_admission = request.alternative().and_then(|alternative| {
-                    application_context
-                        .map_or(&self.source_admissions, |recipe| {
-                            &recipe.source_preparation.source_admissions
-                        })
-                        .get(&(source, alternative))
-                        .cloned()
-                });
+                let (expected, source_admission) =
+                    direct_value.expect("a direct source has the closed expectation and admission");
                 let checked = match self.check_source(
                     source_id,
                     AnalyzerExpressionExpectation::from_complete(expected.as_ref()),
@@ -3064,7 +3186,10 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             validation.map_err(|error| materialized_source_failure(source, error))?;
         }
         Ok(MaterializationOutcome::Sealed(
-            AnalyzerCallPreparedSealedBranch { nested_calls },
+            AnalyzerCallPreparedSealedBranch {
+                nested_calls,
+                original_values,
+            },
         ))
     }
 
@@ -3129,6 +3254,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         Ok(Some(AnalyzerCallSealedBranch::Materialized {
             projection,
             nested_calls: sealed.nested_calls.into_boxed_slice(),
+            original_values: sealed.original_values,
         }))
     }
 
@@ -3928,7 +4054,9 @@ struct RanCandidateTransactionData {
     inputs: PreparedCallInputs,
     current_group: CallableGroupIndex,
     result: CallableResultSchema,
-    solved: crate::types::constraints::SolvedCandidate<AnalyzerCallConstraintDomain>,
+    component:
+        crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>,
+    sealed_branch: AnalyzerCallSealedBranch,
 }
 
 /// The selected candidate after the lower solution has been sealed into the
@@ -3946,11 +4074,6 @@ struct PreparedCallApplicationTransactionData {
     inputs: PreparedCallInputs,
     sealed_branch: AnalyzerCallSealedBranch,
     component: CompletedCallApplicationEvidence,
-    source_preparations: Option<
-        crate::types::constraints::transaction::RetainedSourcePreparations<
-            AnalyzerCallConstraintDomain,
-        >,
-    >,
 }
 
 /// Shared immutable completion evidence limited to one exact admitted call
@@ -4085,7 +4208,6 @@ impl RanCandidateTransaction {
     pub(crate) fn declared_exact_argument_matches(&self) -> usize {
         let mapping = self.data.inputs.mapping();
         self.data
-            .solved
             .component
             .sources()
             .selected()
@@ -4109,7 +4231,6 @@ impl RanCandidateTransaction {
 
     pub(crate) fn exact_argument_matches(&self) -> usize {
         self.data
-            .solved
             .component
             .sources()
             .selected()
@@ -4124,7 +4245,7 @@ impl RanCandidateTransaction {
     }
 
     pub(crate) fn exact_result_match(&self) -> bool {
-        completed_result_matches_expected(&self.data.solved)
+        completed_result_matches_expected(&self.data.component)
     }
 
     /// Consume the complete lower transaction exactly once.  This is the
@@ -4141,13 +4262,9 @@ impl RanCandidateTransaction {
             inputs,
             current_group,
             result,
-            solved,
-        } = *self.data;
-        let crate::types::constraints::SolvedCandidate {
             component,
             sealed_branch,
-            source_preparations,
-        } = solved;
+        } = *self.data;
         let component =
             CompletedCallApplicationEvidence::new(Arc::new(component), application_owner)?;
         let solution = component
@@ -4176,7 +4293,6 @@ impl RanCandidateTransaction {
                 inputs,
                 sealed_branch,
                 component,
-                source_preparations: Some(source_preparations),
             }),
         })
     }
@@ -4230,7 +4346,6 @@ impl PreparedCallApplicationTransaction {
                 inputs: recipe.inputs.clone(),
                 sealed_branch: AnalyzerCallSealedBranch::Empty,
                 component: evidence,
-                source_preparations: None,
             }),
         })
     }
@@ -4409,51 +4524,6 @@ impl PreparedCallApplicationTransaction {
         None
     }
 
-    pub(super) fn discard_original_source_preparations(
-        &mut self,
-        facts: &super::super::state::SemanticFactState,
-        work: &mut AnalyzerPreparationWork<'_>,
-    ) -> Result<(), AnalyzerExpressionError> {
-        use crate::types::constraints::{
-            TypeConstraintSourceProtocolInvariant, transaction::SourcePreparationTakeError,
-        };
-
-        let Some(retained) = self.data.source_preparations.take() else {
-            return Ok(());
-        };
-        let owned = match retained.into_owned(work) {
-            Ok(owned) => owned,
-            Err(failure) => {
-                self.data.source_preparations = Some(failure.retained);
-                return Err(match failure.error {
-                    SourcePreparationTakeError::Control(error) => {
-                        AnalyzerExpressionError::fatal(error)
-                    }
-                    SourcePreparationTakeError::Shared => AnalyzerExpressionError::Call {
-                        owner: failure
-                            .source
-                            .local()
-                            .expression_owner()
-                            .unwrap_or(self.data.component.application()),
-                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                            CallConstraintInvariant::Lower(
-                                TypeConstraintInvariant::SourceProtocol(
-                                    TypeConstraintSourceProtocolInvariant::SharedPreparation,
-                                ),
-                            ),
-                        )),
-                    },
-                });
-            }
-        };
-        for source in &owned {
-            facts
-                .require_candidate_projection_owner(&source.preparation)
-                .map_err(AnalyzerExpressionError::fact)?;
-        }
-        Ok(())
-    }
-
     pub(crate) fn into_parts(
         self,
     ) -> (
@@ -4521,10 +4591,10 @@ impl RanCandidateTransaction {
             candidate,
             current_group,
             result,
-            solved,
+            sealed_branch,
             ..
         } = *self.data;
-        (candidate, current_group, result, solved.sealed_branch)
+        (candidate, current_group, result, sealed_branch)
     }
 }
 
@@ -6683,7 +6753,21 @@ pub(crate) fn run_prepared_candidate(
             return Err(failure);
         }
     };
-    let selected_nested_calls = match &solved.sealed_branch {
+    let crate::types::constraints::SolvedCandidate {
+        component,
+        mut sealed_branch,
+        source_preparations,
+    } = solved;
+    if let Err(error) = sealed_branch.retain_original_values(
+        source_preparations,
+        &analyzer.facts,
+        &mut context.work(),
+    ) {
+        drop(sealed_branch);
+        callee_owners.discard_all(analyzer)?;
+        return Err(error);
+    }
+    let selected_nested_calls = match &sealed_branch {
         AnalyzerCallSealedBranch::Empty => &[][..],
         AnalyzerCallSealedBranch::Materialized { nested_calls, .. } => nested_calls,
     };
@@ -6697,7 +6781,8 @@ pub(crate) fn run_prepared_candidate(
             inputs,
             current_group,
             result,
-            solved,
+            component,
+            sealed_branch,
         }),
     })
 }
@@ -7175,7 +7260,7 @@ fn completed_candidate_rank(
             })?;
         }
     }
-    if completed_result_matches_expected(solved) {
+    if completed_result_matches_expected(&solved.component) {
         exact_matches = exact_matches
             .checked_add(1)
             .ok_or_else(|| TypeConstraintFailure::Abort(TypeConstraintAbort::ArithmeticOverflow))?;
@@ -7190,10 +7275,11 @@ fn completed_candidate_rank(
 }
 
 fn completed_result_matches_expected(
-    solved: &crate::types::constraints::SolvedCandidate<AnalyzerCallConstraintDomain>,
+    component: &crate::types::constraints::CompletedConstraintComponent<
+        AnalyzerCallConstraintDomain,
+    >,
 ) -> bool {
-    solved
-        .component
+    component
         .selected()
         .projections()
         .iter()
@@ -8035,11 +8121,27 @@ mod tests {
                             .validate_retained_row(rejected_row.as_ref().unwrap())
                             .is_err()
                     );
-                    client
-                        .analyzer
-                        .facts
-                        .discard_candidate_projection(preparation)
+                    let facts = &mut client.analyzer.facts;
+                    let original_type = std::ptr::from_ref(
+                        preparation
+                            .isolated_resolved_value(owner)
+                            .unwrap()
+                            .value_type()
+                            .unwrap(),
+                    );
+                    let target = facts.open_callback_fact_scope(None, &mut work).unwrap();
+                    let mut target = facts
+                        .extract_callback_fact_scope(target, &mut work)
                         .unwrap();
+                    facts
+                        .move_isolated_expression(&mut target, preparation, owner)
+                        .unwrap();
+                    let transferred = target.expression_update(owner).unwrap().unwrap();
+                    assert!(std::ptr::eq(
+                        transferred.value_type().unwrap(),
+                        original_type
+                    ));
+                    assert_eq!(transferred, &original);
                 }
                 ProbeCheckpointDisposition::Discard => assert!(preparation.is_none()),
             }

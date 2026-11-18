@@ -916,6 +916,18 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
         self.source.prepare_expected(control)
     }
 
+    /// The admitted original was checked with the exact closed expectation
+    /// and its prepared type needs no substitution or effect resolution.
+    pub(crate) fn retained_value_is_closed<
+        C: TypeProjectionControl<Error = TypeConstraintError>,
+    >(
+        &self,
+        expected: Option<&TypeKind<PreparedEffects>>,
+        control: &mut C,
+    ) -> Result<bool, TypeConstraintError> {
+        self.source.retained_value_is_closed(expected, control)
+    }
+
     pub(crate) fn canonicalize_observed_type<
         C: TypeProjectionControl<Error = TypeConstraintError>,
     >(

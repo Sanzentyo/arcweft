@@ -492,6 +492,22 @@ impl<D: ConstraintDomain> ConstraintSourceReceipt<D> {
     pub(crate) fn matches(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.input, &other.input)
     }
+
+    pub(super) fn matches_closed_expectation(
+        &self,
+        alternative: Option<D::AlternativeIndex>,
+        expected: Option<&TypeKind<PreparedEffects>>,
+    ) -> bool {
+        if self.input.prepared.is_unchecked() {
+            return alternative.is_none() && expected.is_none();
+        }
+        self.input.prepared.source_projection().is_scalar()
+            && self.input.hints.iter().any(|hint| {
+                Some(hint.alternative) == alternative
+                    && hint.unbound.is_empty()
+                    && Some(&hint.expected) == expected
+            })
+    }
 }
 
 /// A fork of one exact source path that may admit a child callable

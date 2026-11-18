@@ -3370,7 +3370,7 @@ impl Analyzer<'_, '_, '_> {
     fn apply_sealed_candidate(
         &mut self,
         mut preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
-        mut transaction: PreparedCallApplicationTransaction,
+        transaction: PreparedCallApplicationTransaction,
         outer_projection: super::state::CandidateSemanticProjection,
         metadata: AnalyzerPreparedCandidateMetadata,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
@@ -3388,11 +3388,6 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|error| AnalyzerExpressionError::Call {
                 owner,
                 failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
-            })
-            .and_then(|result| {
-                transaction
-                    .discard_original_source_preparations(&self.facts, &mut preparation_work)?;
-                Ok(result)
             });
         let result = match validated {
             Ok(result) => result,
@@ -3417,6 +3412,7 @@ impl Analyzer<'_, '_, '_> {
             constraints::AnalyzerCallSealedBranch::Materialized {
                 projection,
                 nested_calls,
+                ..
             } => (Some(projection), nested_calls.into_vec()),
         };
         let shared_component = component.shared_component();
@@ -3981,6 +3977,7 @@ impl Analyzer<'_, '_, '_> {
             constraints::AnalyzerCallSealedBranch::Materialized {
                 projection,
                 nested_calls,
+                ..
             } => {
                 self.discard_nested_call_callee_prerequisites(owner, nested_calls)?;
                 Some(projection)
@@ -4072,6 +4069,7 @@ impl Analyzer<'_, '_, '_> {
         if let constraints::AnalyzerCallSealedBranch::Materialized {
             projection,
             nested_calls,
+            ..
         } = branch
         {
             self.discard_nested_call_callee_prerequisites(owner, nested_calls)?;

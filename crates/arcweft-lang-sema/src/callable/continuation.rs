@@ -662,6 +662,15 @@ pub(crate) struct PreparedCallGraphDelta<P, U = ()> {
 }
 
 impl<P, U> PreparedCallGraphDelta<P, U> {
+    pub(crate) fn has_writes(&self) -> bool {
+        !self.nodes.is_empty()
+            || self.effects.has_writes()
+            || self
+                .relation
+                .as_ref()
+                .is_some_and(PreparedRelationDelta::has_writes)
+    }
+
     /// Returns the exact site/payload-state inventory owned by this affine
     /// delta.  This is the graph owner's preflight projection; analyzer fact
     /// code never reconstructs node state from candidate records.

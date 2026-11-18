@@ -55,6 +55,16 @@ pub(crate) struct PreparedEffectDelta {
     pub(in crate::effect_row::prepared) dependencies: Option<super::PreparedEffectReadScope>,
 }
 
+impl PreparedEffectDelta {
+    pub(crate) fn has_writes(&self) -> bool {
+        !self.data.functions.is_empty()
+            || !self.data.obligations.is_empty()
+            || !self.data.rows.is_empty()
+            || !self.data.predicates.is_empty()
+            || !self.data.choices.is_empty()
+    }
+}
+
 #[derive(Debug)]
 pub(in crate::effect_row::prepared) struct PreparedEffectDeltaData {
     pub(in crate::effect_row::prepared) issuer: Arc<PreparedEffectIssuer>,

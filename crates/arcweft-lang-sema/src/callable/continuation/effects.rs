@@ -101,6 +101,10 @@ impl<'a> PreparedCallableEffectView<'a> {
 }
 
 impl PreparedEffectDelta {
+    pub(super) fn has_writes(&self) -> bool {
+        !self.requests.is_empty()
+    }
+
     pub(super) fn replay_eq(&self, other: &Self) -> bool {
         self.baseline == other.baseline && self.requests.values().eq(other.requests.values())
     }

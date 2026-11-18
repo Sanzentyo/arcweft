@@ -434,6 +434,31 @@ impl CandidateSemanticProjection {
         self.data.facts.expressions.get(&owner).map(Option::as_ref)
     }
 
+    pub(super) fn isolated_resolved_value(&self, owner: ExprId) -> Option<&PreparedExpressionFact> {
+        let facts = &self.data.facts;
+        let Some(Some(fact @ PreparedExpressionFact::Resolved(resolved))) =
+            self.expression_update(owner)
+        else {
+            return None;
+        };
+        (facts.expressions.len() == 1
+            && facts.locals.is_empty()
+            && facts.patterns.is_empty()
+            && facts.checked_content.is_empty()
+            && facts.iterations.is_empty()
+            && facts.implicit_capture_uses.is_empty()
+            && facts.implicit_capture_journal_order.is_empty()
+            && facts
+                .physical_candidate_argument_evaluations
+                .rows
+                .is_empty()
+            && !self.data.graph_delta.has_writes()
+            && fact.checked_call_site(owner).is_none()
+            && resolved.value_type().is_some()
+            && resolved.source_value_type() == resolved.value_type())
+        .then_some(fact)
+    }
+
     pub(super) fn effect_view<'a>(
         &'a self,
         graph: &'a AnalyzerPreparedCallGraph,
@@ -2202,6 +2227,42 @@ impl SemanticFactState {
             })?;
         drop(projection);
         Ok(())
+    }
+
+    /// Transfer an isolated expression out of its original affine projection.
+    /// The closed source witness is checked by the caller before selecting it.
+    pub(super) fn move_isolated_expression(
+        &self,
+        target: &mut CandidateSemanticProjection,
+        mut source: CandidateSemanticProjection,
+        owner: ExprId,
+    ) -> Result<(), CandidateFactTransactionViolation> {
+        self.require_candidate_projection_owner(target)?;
+        self.require_candidate_projection_owner(&source)?;
+        self.prepared_calls()?
+            .validate_delta(&source.data.graph_delta)
+            .map_err(|violation| {
+                CandidateFactTransactionViolation::PreparedCallGraph(violation.into())
+            })?;
+        if source.isolated_resolved_value(owner).is_none() {
+            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+        }
+        match target.data.facts.expressions.entry(owner) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(
+                    source
+                        .data
+                        .facts
+                        .expressions
+                        .remove(&owner)
+                        .expect("validated original expression"),
+                );
+                Ok(())
+            }
+            std::collections::btree_map::Entry::Occupied(_) => {
+                Err(CandidateFactTransactionViolation::ProjectionWriteConflict)
+            }
+        }
     }
 
     /// A materialization callback borrows the original probe's facts before

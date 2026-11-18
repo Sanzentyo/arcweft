@@ -418,14 +418,39 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
         let Some(expected) = self.expected_operand() else {
             return Ok(None);
         };
+        self.prepare_closed_operand(expected, control).map(Some)
+    }
+
+    fn prepare_closed_operand<C: TypeProjectionControl<Error = TypeConstraintError>>(
+        &self,
+        operand: &ConstraintOperand<D, TypeKind>,
+        control: &mut C,
+    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
         let gamma = self.original.gamma();
-        if gamma == expected.scope() {
-            return Ok(Some(
-                expected.value().prepare_effects(gamma.shape(), control)?,
-            ));
+        if gamma == operand.scope() {
+            return Ok(operand.value().prepare_effects(gamma.shape(), control)?);
         }
-        let value = gamma.transport_canonical_type(expected.scope(), expected.value(), control)?;
-        Ok(Some(value.prepare_effects(gamma.shape(), control)?))
+        let value = gamma.transport_canonical_type(operand.scope(), operand.value(), control)?;
+        Ok(value.prepare_effects(gamma.shape(), control)?)
+    }
+
+    pub(in crate::types::constraints) fn retained_value_is_closed<
+        C: TypeProjectionControl<Error = TypeConstraintError>,
+    >(
+        &self,
+        expected: Option<&TypeKind<PreparedEffects>>,
+        control: &mut C,
+    ) -> Result<bool, TypeConstraintError> {
+        let Some(retained) = self.retained_value() else {
+            return Ok(false);
+        };
+        let Some(receipt) = retained.probe_receipt() else {
+            return Ok(false);
+        };
+        if !receipt.matches_closed_expectation(self.selection().alternative(), expected) {
+            return Ok(false);
+        }
+        Ok(retained.value_type() == &self.prepare_closed_operand(&self.actual, control)?)
     }
 
     /// Rechecks carry their exact source and original Γ. Resolve any retained
