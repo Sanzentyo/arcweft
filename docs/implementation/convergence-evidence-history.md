@@ -18475,3 +18475,18 @@ Supersedes: 関数値の特殊化がcanonicalなcallable schemaの生成とseman
 9 Rust path、288追加／83削除、物理205 LOC増。Cargo manifest・公開契約・版の変更はない。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-prepared-materialized-source-checkpoint.raw.zip) は26 entry、312,253 bytes、SHA256 `e7b8895bfd79be7e0880bb710bec2ac1e3c61f62a0f7e9e680c115e36c29e4eb`。各entryの長さとSHA256を再読取で照合した。旧履歴2,856,899 bytesの SHA256 `2911358fc8c4a668d049f180226d1d2b18756b1b21331b5f2b885f9c605e72ef` をprefixとして保持した。
+
+<a id="prepared-function-use-checkpoint"></a>
+## 2026-11-18 — 関数値の特殊化と元の式型を一つの結果で保持する
+
+基点 `6a52d43c629bc263e70f6cb77c79ea7466ac1e86`。Source `f672d46e344f4779023403fb8ffd916083cd2cb7` を既存mainへ通常commitし、非force push後のmainと9入力の公開blobをSHA256で照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+準備済み値結果は元のprepared型を持ち、確定済みの特殊化witnessが付いたときは、その利用側の型も保持する。式ownerと元の外側binderを照合する。利用型は完了済みの矢印から作り、式の状態を更新する前に同じ作業予算で投影を完了する。単独の値、呼出しと入れ子の戻り値、引数の確定処理で共通の操作を使う。引数の確定処理は、同じprincipalで型を照合した観測factが現在の式ledgerと一致することを要求する。probe差分の選択後の移送、同一bodyの一回準備、最終call sealとchecked factの公開は未達である。
+
+既存のwitness fixtureで、準備済み式の元型・利用型・選択と同じwitnessの保持、別owner、同じ式への二重適用、資源上限の失敗を検査するよう拡張した。このfixtureは未実行。
+
+必須の `cargo check --locked -p arcweft-lang-sema --tests --all-features` は3回とも終了101。dev01はlibrary 421／lib test 1,459エラーで、作業所有者を隠すローカル名を修正した。dev02は420／1,460エラーで、fixtureのprivate importをテスト用re-exportへ切り替えた。固定入力の最終dev03はlibrary **420エラー・25警告**、lib test **1,458エラー・44警告**。最終差分のRust pathに出た一次診断160件を原本に保持した。3回のowner fmtは終了0。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Web最終受入は未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetの最終計測は347,680,088 bytesで、約300 GBに達しなかったため既存成果物を再利用した。
+
+9 Rust path、321追加／94削除、物理227 LOC増。Cargo manifest・公開契約・版の変更はない。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-prepared-function-use-checkpoint.raw.zip) は26 entry、434,447 bytes、SHA256 `802d5bfcf6d3b897b1418a2073dcc7119eeb60d8b88bdb490c6f21d7e62d5c28`。各entryの長さとSHA256を再読取で照合した。旧履歴2,860,070 bytesの SHA256 `f538549936442055c56db4f91e8582bf34cd35ca68d10b41ec4e0a5a8341094d` をprefixとして保持した。
