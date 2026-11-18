@@ -135,6 +135,12 @@ pub(super) struct ActiveCallbackFactScope {
     checkpoint: CandidateFactCheckpoint,
 }
 
+/// An ordinary child checkpoint within one probe callback's effect scope.
+pub(super) struct ActiveProbeFactAttempt {
+    checkpoint: CandidateFactCheckpoint,
+    physical_checkpoint: CandidateFactCheckpointId,
+}
+
 /// Probe callback identity.  It carries no semantic facts and cannot be used
 /// to close a materialization scope.
 pub(crate) struct ProbeFactCheckpoint {
@@ -198,6 +204,7 @@ impl ActiveCallbackFactScope {
 pub(super) struct CandidateExpressionFactAuthority<'a> {
     checkpoint: &'a CandidateFactCheckpoint,
     visibility: CandidateFactJournalCursor,
+    physical_checkpoint: CandidateFactCheckpointId,
 }
 
 #[derive(Clone)]
@@ -229,6 +236,7 @@ impl<'a> CandidateExpressionFactAuthority<'a> {
         CandidateExpressionFactAuthority {
             checkpoint: self.checkpoint,
             visibility: self.visibility,
+            physical_checkpoint: self.physical_checkpoint,
         }
     }
 
@@ -236,7 +244,7 @@ impl<'a> CandidateExpressionFactAuthority<'a> {
         CandidatePhysicalAttemptContext {
             issuer: Arc::clone(&self.checkpoint.issuer),
             epoch: self.checkpoint.epoch,
-            id: self.checkpoint.id,
+            id: self.physical_checkpoint,
         }
     }
 }
@@ -798,6 +806,7 @@ impl SemanticFactState {
         Ok(CandidateExpressionFactAuthority {
             checkpoint,
             visibility: checkpoint.journal_start,
+            physical_checkpoint: checkpoint.id,
         })
     }
 
@@ -818,6 +827,47 @@ impl SemanticFactState {
         scope: &'a ActiveCallbackFactScope,
     ) -> Result<CandidateExpressionFactAuthority<'a>, CandidateFactTransactionViolation> {
         self.candidate_expression_authority(&scope.checkpoint)
+    }
+
+    pub(super) fn open_probe_fact_attempt<C: DecisionControl>(
+        &mut self,
+        probe: &ActiveCallbackFactScope,
+        control: &mut C,
+    ) -> Result<ActiveProbeFactAttempt, CandidateFactMutationFailure<C::Error>> {
+        self.transaction_authority(&probe.checkpoint)?;
+        // Each alternative gets its own fact visibility cursor. Physical
+        // accounting still belongs to the enclosing source probe.
+        let physical_checkpoint = probe.checkpoint.id;
+        let checkpoint = self.begin_candidate_transaction(control)?;
+        Ok(ActiveProbeFactAttempt {
+            checkpoint,
+            physical_checkpoint,
+        })
+    }
+
+    pub(super) fn probe_fact_attempt_authority<'a>(
+        &self,
+        attempt: &'a ActiveProbeFactAttempt,
+    ) -> Result<CandidateExpressionFactAuthority<'a>, CandidateFactTransactionViolation> {
+        let mut authority = self.candidate_expression_authority(&attempt.checkpoint)?;
+        authority.physical_checkpoint = attempt.physical_checkpoint;
+        Ok(authority)
+    }
+
+    pub(super) fn close_probe_fact_attempt(
+        &mut self,
+        attempt: ActiveProbeFactAttempt,
+        disposition: crate::callable::ProbeCheckpointDisposition,
+    ) -> Result<(), CandidateFactTransactionViolation> {
+        match disposition {
+            crate::callable::ProbeCheckpointDisposition::Retain => {
+                self.commit_candidate_transaction(attempt.checkpoint)
+            }
+            crate::callable::ProbeCheckpointDisposition::Discard => {
+                self.rollback_candidate_transaction(attempt.checkpoint)
+            }
+        }
+        .map_err(|failure| self.abort_after_close_failure(failure))
     }
 
     pub(super) fn rollback_callback_fact_scope(

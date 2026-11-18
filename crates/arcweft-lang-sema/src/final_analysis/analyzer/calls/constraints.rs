@@ -67,8 +67,8 @@ use super::super::{
     },
     preparation_work::AnalyzerPreparationWork,
     state::{
-        ActiveCallbackFactScope, CandidateSemanticProjection, CandidateSemanticReplayMismatch,
-        MaterializationFactCheckpoint, ProbeFactCheckpoint,
+        ActiveCallbackFactScope, ActiveProbeFactAttempt, CandidateSemanticProjection,
+        CandidateSemanticReplayMismatch, MaterializationFactCheckpoint, ProbeFactCheckpoint,
     },
 };
 
@@ -922,6 +922,11 @@ struct AnalyzerCallObservedSource {
     prepared_children: Vec<super::PreparedCorrelatedCallRecipe>,
 }
 
+enum AnalyzerSourceProbeAttempt {
+    Selected(AnalyzerCallObservedSource),
+    Rejected(Option<Arc<AnalyzerObservedSourceValue>>),
+}
+
 impl AnalyzerCallObservedSource {
     fn checked(
         actual: Arc<AnalyzerObservedSourceValue>,
@@ -1180,6 +1185,20 @@ impl AnalyzerCallCheckFailure {
 struct AnalyzerCallActiveFactScope {
     scope: ActiveCallbackFactScope,
     coordinate: AnalyzerCallScopeCoordinate,
+}
+
+enum AnalyzerSourceCheckScope<'a> {
+    Probe(&'a ActiveProbeFactAttempt),
+    Materialize,
+}
+
+impl AnalyzerSourceCheckScope<'_> {
+    fn phase(&self) -> SourcePhase {
+        match self {
+            Self::Probe(_) => SourcePhase::Probe,
+            Self::Materialize => SourcePhase::Materialize,
+        }
+    }
 }
 
 /// The analyzer-side callback implementation used by the candidate driver.
@@ -1527,13 +1546,157 @@ impl<'a, 'project, 'catalog, 'control>
         ))
     }
 
+    fn check_probe_attempt(
+        &mut self,
+        source_id: AnalyzerCallConstraintSourceId,
+        work: &mut crate::callable::CandidateConstraintWorkLoan<'_>,
+        evaluate: impl FnOnce(
+            &mut Self,
+            AnalyzerSourceCheckScope<'_>,
+        ) -> Result<AnalyzerCallObservedSource, AnalyzerCallCheckFailure>,
+        accepts: impl FnOnce(&ObservedSemanticValueEvidence) -> bool,
+    ) -> Result<
+        AnalyzerSourceProbeAttempt,
+        crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>,
+    > {
+        use super::super::state::CandidateFactMutationFailure;
+        use crate::callable::{ProbeCheckpointDisposition, SourceCallbackFailure};
+
+        let source = source_id.local();
+        let fact_failure = |violation| {
+            SourceCallbackFailure::invariant(AnalyzerCallClientInvariant::fact_transaction(
+                source, violation,
+            ))
+        };
+        self.active_source_check(source_id, SourcePhase::Probe)
+            .map_err(SourceCallbackFailure::invariant)?;
+        let parent = &self
+            .active_fact_scope
+            .as_ref()
+            .expect("checked probe scope")
+            .scope;
+        let attempt = self
+            .analyzer
+            .facts
+            .open_probe_fact_attempt(parent, work)
+            .map_err(|failure| match failure {
+                CandidateFactMutationFailure::Control(error) => {
+                    SourceCallbackFailure::Constraint(error)
+                }
+                CandidateFactMutationFailure::Invariant(violation) => fact_failure(violation),
+            })?;
+        let checked = evaluate(self, AnalyzerSourceCheckScope::Probe(&attempt));
+        let selected = checked
+            .as_ref()
+            .is_ok_and(|checked| accepts(&checked.evidence));
+        let disposition = if selected {
+            ProbeCheckpointDisposition::Retain
+        } else {
+            ProbeCheckpointDisposition::Discard
+        };
+        self.analyzer
+            .facts
+            .close_probe_fact_attempt(attempt, disposition)
+            .map_err(fact_failure)?;
+        match checked {
+            Ok(checked) if selected => Ok(AnalyzerSourceProbeAttempt::Selected(checked)),
+            Ok(checked) => {
+                let AnalyzerCallObservedSource {
+                    actual,
+                    prepared_children,
+                    ..
+                } = checked;
+                let owners = PreparedCalleeProjectionOwners::for_source(&prepared_children, source)
+                    .map_err(SourceCallbackFailure::invariant)?;
+                drop(prepared_children);
+                owners
+                    .discard(self.analyzer)
+                    .map_err(SourceCallbackFailure::invariant)?;
+                Ok(AnalyzerSourceProbeAttempt::Rejected(actual))
+            }
+            Err(AnalyzerCallCheckFailure::Mismatch) => {
+                Ok(AnalyzerSourceProbeAttempt::Rejected(None))
+            }
+            Err(AnalyzerCallCheckFailure::Fatal(error)) => Err(SourceCallbackFailure::fatal(error)),
+            Err(AnalyzerCallCheckFailure::Abort(error)) => Err(SourceCallbackFailure::Abort(error)),
+            Err(AnalyzerCallCheckFailure::Invariant(invariant)) => {
+                Err(SourceCallbackFailure::invariant(invariant))
+            }
+        }
+    }
+
+    fn observe_probe_source(
+        &mut self,
+        probe: &mut CandidateConstraintSourceContext<'_, '_, AnalyzerCallConstraintDomain>,
+        mut checked: AnalyzerCallObservedSource,
+        alternative: Option<u32>,
+        work: &mut AnalyzerPreparationWork<'_>,
+    ) -> Result<
+        SourceProbeOutcome<AnalyzerCallConstraintDomain>,
+        crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>,
+    > {
+        use crate::callable::SourceCallbackFailure;
+        use crate::types::constraints::SourceProbeSelection;
+
+        let source_id = probe.source();
+        let source = source_id.local();
+        self.prepared_child_calls
+            .append(&mut checked.prepared_children);
+        let branch = AnalyzerCallProbeSemanticBranch {
+            source,
+            child_choice: None,
+        };
+        match (checked.actual, checked.pending_child) {
+            (Some(actual), None) => {
+                self.retain_physical_observed_type(source_id, &actual, work)?;
+                let declarations =
+                    self.analyzer
+                        .facts
+                        .effect_declarations_mut()
+                        .map_err(|violation| {
+                            SourceCallbackFailure::invariant(
+                                AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                            )
+                        })?;
+                let result = match alternative {
+                    Some(alternative) => SourceProbeResult::checked_value(
+                        actual,
+                        branch,
+                        alternative,
+                        checked.evidence,
+                    ),
+                    None => SourceProbeResult::unchecked_value(actual, branch),
+                };
+                probe.observe(declarations, result)
+            }
+            (None, Some(pending)) => {
+                let selection = match alternative {
+                    Some(alternative) => SourceProbeSelection::Checked {
+                        alternative,
+                        evidence: Arc::new(checked.evidence),
+                    },
+                    None => SourceProbeSelection::Unchecked,
+                };
+                probe.observe_child(pending, branch, selection)
+            }
+            _ => Err(SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::constraint(
+                    source,
+                    CallConstraintInvariant::Lower(TypeConstraintInvariant::SourceProtocol(
+                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+                    )),
+                ),
+            )),
+        }
+    }
+
     fn check_source(
         &mut self,
         source_id: AnalyzerCallConstraintSourceId,
         expectation: AnalyzerExpressionExpectation<'_>,
         source_admission: Option<&AnalyzerCallSourceAdmission>,
         application_context: Option<&super::PreparedCorrelatedCallRecipe>,
-        phase: SourcePhase,
+        check_scope: AnalyzerSourceCheckScope<'_>,
         preparation_work: super::super::preparation_work::AnalyzerPreparationWork<'_>,
         mut parent_probe: Option<
             &mut crate::callable::CandidateConstraintSourceContext<
@@ -1543,6 +1706,7 @@ impl<'a, 'project, 'catalog, 'control>
             >,
         >,
     ) -> Result<AnalyzerCallObservedSource, AnalyzerCallCheckFailure> {
+        let phase = check_scope.phase();
         let source = source_id.local();
         let original = application_context
             .map_or(&self.original, |recipe| &recipe.source_preparation.original)
@@ -1622,15 +1786,19 @@ impl<'a, 'project, 'catalog, 'control>
                 crate::final_analysis::CandidateFactTransactionViolation::StaleCheckpoint,
             ))
         })?;
-        let authority = self
-            .analyzer
-            .facts
-            .callback_fact_authority(&scope.scope)
-            .map_err(|violation| {
-                AnalyzerCallCheckFailure::Invariant(AnalyzerCallClientInvariant::fact_transaction(
-                    source, violation,
-                ))
-            })?;
+        let authority = match check_scope {
+            AnalyzerSourceCheckScope::Probe(attempt) => {
+                self.analyzer.facts.probe_fact_attempt_authority(attempt)
+            }
+            AnalyzerSourceCheckScope::Materialize => {
+                self.analyzer.facts.callback_fact_authority(&scope.scope)
+            }
+        }
+        .map_err(|violation| {
+            AnalyzerCallCheckFailure::Invariant(AnalyzerCallClientInvariant::fact_transaction(
+                source, violation,
+            ))
+        })?;
         let child_context = self
             .context
             .child_candidate(authority)
@@ -2233,169 +2401,120 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             .application()
             .map_err(crate::callable::SourceCallbackFailure::Constraint)?
             .expression();
-        let source_work = super::super::preparation_work::AnalyzerPreparationWork::candidate(
-            probe.work_loan(),
-            work_owner,
-        );
+        let mut attempt_work = probe.work_loan();
+        let mut source_work = AnalyzerPreparationWork::candidate(attempt_work.clone(), work_owner);
         probe.with_hint(|hint, probe| {
-        self.probe_checkpoint_check(source_id, checkpoint)?;
-        let graph = self.analyzer.facts.prepared_calls().map_err(|violation| {
-            crate::callable::SourceCallbackFailure::invariant(
-                AnalyzerCallClientInvariant::fact_transaction(source, violation),
-            )
-        })?;
-        probe.validate_graph(graph).map_err(|invariant| {
-            crate::callable::SourceCallbackFailure::invariant(
-                AnalyzerCallClientInvariant::constraint(source, invariant),
-            )
-        })?;
-        self.admit_physical_source(source_id, SourcePhase::Probe, probe.work())?;
-        self.record_physical_source(source, Self::physical_expected(source, &hint))
-            .map_err(|error| {
-                crate::callable::SourceCallbackFailure::fatal(SourceError::new(
-                    source_id,
-                    SourcePhase::Probe,
-                    AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
-                ))
+            use crate::callable::SourceCallbackFailure;
+
+            self.probe_checkpoint_check(source_id, checkpoint)?;
+            let graph = self.analyzer.facts.prepared_calls().map_err(|violation| {
+                SourceCallbackFailure::invariant(
+                    AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                )
             })?;
-        let map_failure = |failure: AnalyzerCallCheckFailure| match failure {
-            AnalyzerCallCheckFailure::Mismatch => {
-                crate::callable::SourceCallbackFailure::fatal(SourceError::new(
+            probe.validate_graph(graph).map_err(|invariant| {
+                SourceCallbackFailure::invariant(
+                    AnalyzerCallClientInvariant::constraint(source, invariant),
+                )
+            })?;
+            self.admit_physical_source(source_id, SourcePhase::Probe, probe.work())?;
+            self.record_physical_source(source, Self::physical_expected(source, &hint))
+                .map_err(|error| {
+                    SourceCallbackFailure::fatal(SourceError::new(
+                        source_id,
+                        SourcePhase::Probe,
+                        AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
+                    ))
+                })?;
+            let admission = self.dialogue_patch_admissions.get(&source).cloned();
+            let mut observed = None;
+            if let Some(admission) = admission
+                .as_ref()
+                .filter(|admission| !admission.clearable())
+            {
+                let expected_projection = ParameterExpectedTypeProjection::ApplyUnary(
+                    crate::callable::CallableUnaryTypeConstructor::Option,
+                );
+                let expected = expected_projection.apply_to(admission.declared());
+                let guard = CallableSemanticValueGuard::VariantCase {
+                    owner: expected_projection,
+                    ordinal: 1,
+                    payload: VariantPayloadRequirement::Unit,
+                };
+                let attempt = self.check_probe_attempt(
                     source_id,
-                    SourcePhase::Probe,
-                    AnalyzerCallSourceFailureCause::Mismatch,
-                ))
-            }
-            AnalyzerCallCheckFailure::Fatal(error) => {
-                crate::callable::SourceCallbackFailure::fatal(error)
-            }
-            AnalyzerCallCheckFailure::Abort(error) => {
-                crate::callable::SourceCallbackFailure::Abort(error)
-            }
-            AnalyzerCallCheckFailure::Invariant(invariant) => {
-                crate::callable::SourceCallbackFailure::invariant(invariant)
-            }
-        };
-        let admission = self.dialogue_patch_admissions.get(&source).cloned();
-        let mut observed = None;
-        if let Some(admission) = admission
-            .as_ref()
-            .filter(|admission| !admission.clearable())
-        {
-            let expected_projection = ParameterExpectedTypeProjection::ApplyUnary(
-                crate::callable::CallableUnaryTypeConstructor::Option,
-            );
-            let clear_expected = expected_projection.apply_to(admission.declared());
-            match self.check_source(
-                source_id,
-                AnalyzerExpressionExpectation::from_complete(Some(&clear_expected)),
-                None,
-                None,
-                SourcePhase::Probe,
-                source_work.clone(),
-                None,
-            ) {
-                Ok(checked) => {
-                    let guard = CallableSemanticValueGuard::VariantCase {
-                        owner: expected_projection,
-                        ordinal: 1,
-                        payload: VariantPayloadRequirement::Unit,
-                    };
-                    if guard.accepts_observation(admission.declared(), &checked.evidence) {
-                        return Err(crate::callable::SourceCallbackFailure::fatal(
-                            SourceError::new(
+                    &mut attempt_work,
+                    |client, scope| {
+                        let checked = client.check_source(
+                            source_id,
+                            AnalyzerExpressionExpectation::from_complete(Some(&expected)),
+                            None,
+                            None,
+                            scope,
+                            source_work.clone(),
+                            None,
+                        )?;
+                        if guard.accepts_observation(admission.declared(), &checked.evidence) {
+                            return Err(AnalyzerCallCheckFailure::Fatal(SourceError::new(
                                 source_id,
                                 SourcePhase::Probe,
                                 AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(
                                     admission.clear_failure(),
                                 )),
-                            ),
-                        ));
-                    }
-                    if let Some(actual) = checked.actual {
-                        observed = Some((actual.actual().clone(), checked.evidence));
-                    }
-                }
-                Err(AnalyzerCallCheckFailure::Mismatch) => {}
-                Err(failure) => return Err(map_failure(failure)),
-            }
-        }
-        match hint {
-            ExpectedHint::Unchecked => {
-                match self.check_source(
-                    source_id,
-                    AnalyzerExpressionExpectation::Unconstrained,
-                    None,
-                    None,
-                    SourcePhase::Probe,
-                    source_work.clone(),
-                    Some(&mut *probe),
-                ) {
-                    Ok(checked) => {
-                        self.prepared_child_calls
-                            .extend(checked.prepared_children.iter().cloned());
-                        match (checked.actual, checked.pending_child) {
-                        (Some(actual), None) => {
-                            self.retain_physical_observed_type(source_id, &actual, &mut source_work.clone())?;
-                            let declarations = self.analyzer.facts.effect_declarations_mut()
-                                .map_err(|violation| crate::callable::SourceCallbackFailure::invariant(
-                                    AnalyzerCallClientInvariant::fact_transaction(source, violation),
-                                ))?;
-                            probe.observe(declarations, SourceProbeResult::unchecked_value(
-                                actual,
-                                AnalyzerCallProbeSemanticBranch {
-                                    source,
-                                    child_choice: None,
-                                },
-                            ))
-                        },
-                        (None, Some(pending)) => probe.observe_child(
-                            pending,
-                            AnalyzerCallProbeSemanticBranch {
-                                source,
-                                child_choice: None,
-                            },
-                            crate::types::constraints::SourceProbeSelection::Unchecked,
-                        ),
-                        _ => Err(crate::callable::SourceCallbackFailure::invariant(
-                            AnalyzerCallClientInvariant::constraint(
-                                source,
-                                CallConstraintInvariant::Lower(
-                                    TypeConstraintInvariant::SourceProtocol(
-                                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
-                                    ),
-                                ),
-                            ),
-                        )),
+                            )));
                         }
-                    }
-                    Err(AnalyzerCallCheckFailure::Mismatch) => Ok(SourceProbeOutcome::Rejected(
-                        AnalyzerCallSourceFailureCause::Mismatch,
-                    )),
-                    Err(failure) => Err(map_failure(failure)),
+                        Ok(checked)
+                    },
+                    |_| false,
+                )?;
+                if let AnalyzerSourceProbeAttempt::Rejected(actual) = attempt {
+                    observed = actual.map(|actual| actual.actual().clone());
                 }
             }
-            ExpectedHint::Alternatives(alternatives) => {
-                for alternative in alternatives {
-                    let expectation = match *alternative.value_expected() {
-                        ProjectedExpectedHint::Complete(expected)
-                            if alternative.source_projection().is_scalar() =>
-                        {
-                            AnalyzerExpressionExpectation::from_complete(Some(expected))
-                        }
-                        ProjectedExpectedHint::Parametric {
-                            expected,
-                            scope_lease,
-                            ..
-                        }
-                            if alternative.source_projection().is_scalar() =>
-                        {
-                            AnalyzerExpressionExpectation::parametric_with_scope_lease(
-                                expected,
-                                scope_lease.clone(),
+            match hint {
+                ExpectedHint::Unchecked => {
+                    let attempt = self.check_probe_attempt(
+                        source_id,
+                        &mut attempt_work,
+                        |client, scope| {
+                            client.check_source(
+                                source_id,
+                                AnalyzerExpressionExpectation::Unconstrained,
+                                None,
+                                None,
+                                scope,
+                                source_work.clone(),
+                                Some(&mut *probe),
                             )
-                            .ok_or_else(|| {
-                                    crate::callable::SourceCallbackFailure::invariant(
+                        },
+                        |_| true,
+                    )?;
+                    match attempt {
+                        AnalyzerSourceProbeAttempt::Selected(checked) => {
+                            self.observe_probe_source(probe, checked, None, &mut source_work)
+                        }
+                        AnalyzerSourceProbeAttempt::Rejected(_) => Ok(SourceProbeOutcome::Rejected(
+                            AnalyzerCallSourceFailureCause::Mismatch,
+                        )),
+                    }
+                }
+                ExpectedHint::Alternatives(alternatives) => {
+                    for alternative in alternatives {
+                        let expectation = match *alternative.value_expected() {
+                            ProjectedExpectedHint::Complete(expected)
+                                if alternative.source_projection().is_scalar() =>
+                            {
+                                AnalyzerExpressionExpectation::from_complete(Some(expected))
+                            }
+                            ProjectedExpectedHint::Parametric { expected, scope_lease, .. }
+                                if alternative.source_projection().is_scalar() =>
+                            {
+                                AnalyzerExpressionExpectation::parametric_with_scope_lease(
+                                    expected,
+                                    scope_lease.clone(),
+                                )
+                                .ok_or_else(|| {
+                                    SourceCallbackFailure::invariant(
                                         AnalyzerCallClientInvariant::constraint(
                                             source,
                                             CallConstraintInvariant::Lower(
@@ -2406,98 +2525,57 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                                         ),
                                     )
                                 })?
-                        }
-                        ProjectedExpectedHint::Complete(_)
-                        | ProjectedExpectedHint::Parametric { .. } => {
-                            AnalyzerExpressionExpectation::Unconstrained
-                        }
-                    };
-                    match self.check_source(
-                        source_id,
-                        expectation,
-                        alternative.evidence().source_admission.as_ref(),
-                        None,
-                        SourcePhase::Probe,
-                        source_work.clone(),
-                        Some(&mut *probe),
-                    ) {
-                        Ok(checked) => {
-                            self.prepared_child_calls
-                                .extend(checked.prepared_children.iter().cloned());
-                            if alternative.evidence().accepts(&checked.evidence) {
-                                return match (checked.actual, checked.pending_child) {
-                                    (Some(actual), None) => {
-                                        self.retain_physical_observed_type(source_id, &actual, &mut source_work.clone())?;
-                                        let declarations = self.analyzer.facts.effect_declarations_mut()
-                                            .map_err(|violation| crate::callable::SourceCallbackFailure::invariant(
-                                                AnalyzerCallClientInvariant::fact_transaction(source, violation),
-                                            ))?;
-                                        probe.observe(declarations, SourceProbeResult::checked_value(
-                                            actual,
-                                            AnalyzerCallProbeSemanticBranch {
-                                                source,
-                                                child_choice: None,
-                                            },
-                                            alternative.alternative(),
-                                            checked.evidence,
-                                        ))
-                                    },
-                                    (None, Some(pending)) => {
-                                        probe.observe_child(
-                                        pending,
-                                        AnalyzerCallProbeSemanticBranch {
-                                            source,
-                                            child_choice: None,
-                                        },
-                                        crate::types::constraints::SourceProbeSelection::Checked {
-                                            alternative: alternative.alternative(),
-                                            evidence: Arc::new(checked.evidence),
-                                        },
-                                        )
-                                    },
-                                    _ => Err(crate::callable::SourceCallbackFailure::invariant(
-                                        AnalyzerCallClientInvariant::constraint(
-                                            source,
-                                            CallConstraintInvariant::Lower(
-                                                TypeConstraintInvariant::SourceProtocol(
-                                                    crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
-                                                ),
-                                            ),
-                                        ),
-                                    )),
-                                };
                             }
-                            if observed.is_none() {
-                                if let Some(actual) = checked.actual {
-                                    observed = Some((actual.actual().clone(), checked.evidence));
+                            ProjectedExpectedHint::Complete(_)
+                            | ProjectedExpectedHint::Parametric { .. } => {
+                                AnalyzerExpressionExpectation::Unconstrained
+                            }
+                        };
+                        let attempt = self.check_probe_attempt(
+                            source_id,
+                            &mut attempt_work,
+                            |client, scope| {
+                                client.check_source(
+                                    source_id,
+                                    expectation,
+                                    alternative.evidence().source_admission.as_ref(),
+                                    None,
+                                    scope,
+                                    source_work.clone(),
+                                    Some(&mut *probe),
+                                )
+                            },
+                            |evidence| alternative.evidence().accepts(evidence),
+                        )?;
+                        match attempt {
+                            AnalyzerSourceProbeAttempt::Selected(checked) => {
+                                return self.observe_probe_source(
+                                    probe, checked, Some(alternative.alternative()), &mut source_work,
+                                );
+                            }
+                            AnalyzerSourceProbeAttempt::Rejected(actual) => {
+                                if observed.is_none() {
+                                    observed = actual.map(|actual| actual.actual().clone());
                                 }
                             }
-                            continue;
                         }
-                        Err(AnalyzerCallCheckFailure::Mismatch) => continue,
-                        Err(failure) => return Err(map_failure(failure)),
                     }
-                }
-                if let Some(admission) = admission {
-                    let failure = observed.map_or_else(
-                        || crate::final_analysis::FinalSemanticAnalysisError::CharacterDialogueFieldType {
-                            owner: admission.source(),
-                        },
-                        |(actual, _)| admission.mismatch_failure(actual),
-                    );
-                    return Err(crate::callable::SourceCallbackFailure::fatal(
-                        SourceError::new(
+                    if let Some(admission) = admission {
+                        let failure = observed.map_or_else(
+                            || crate::final_analysis::FinalSemanticAnalysisError::CharacterDialogueFieldType {
+                                owner: admission.source(),
+                            },
+                            |actual| admission.mismatch_failure(actual),
+                        );
+                        return Err(SourceCallbackFailure::fatal(SourceError::new(
                             source_id,
                             SourcePhase::Probe,
                             AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(failure)),
-                        ),
-                    ));
+                        )));
+                    }
+                    Ok(SourceProbeOutcome::Rejected(AnalyzerCallSourceFailureCause::Mismatch))
                 }
-                Ok(SourceProbeOutcome::Rejected(
-                    AnalyzerCallSourceFailureCause::Mismatch,
-                ))
             }
-        }
         })
     }
 
@@ -2858,7 +2936,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             AnalyzerExpressionExpectation::Unconstrained,
                             None,
                             application_context,
-                            SourcePhase::Materialize,
+                            AnalyzerSourceCheckScope::Materialize,
                             super::super::preparation_work::AnalyzerPreparationWork::candidate(
                                 work.loan(),
                                 request.application_id().expression(),
@@ -2957,7 +3035,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     AnalyzerExpressionExpectation::from_complete(expected.as_ref()),
                     source_admission.as_ref(),
                     application_context,
-                    SourcePhase::Materialize,
+                    AnalyzerSourceCheckScope::Materialize,
                     super::super::preparation_work::AnalyzerPreparationWork::candidate(
                         work.loan(),
                         request.application_id().expression(),
@@ -3686,22 +3764,31 @@ impl PreparedCallConstraintSet {
     }
 }
 
-struct PreparedCalleeProjectionOwners(Vec<Arc<CandidateSemanticProjection>>);
+struct PreparedCalleeProjectionOwners {
+    projections: Vec<Arc<CandidateSemanticProjection>>,
+    source: AnalyzerCallConstraintSource,
+}
 
 impl PreparedCalleeProjectionOwners {
     fn from_recipes(
         recipes: &[super::PreparedCorrelatedCallRecipe],
     ) -> Result<Self, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+        Self::for_source(recipes, AnalyzerCallConstraintSource::BaseInstantiation)
+            .map_err(TypeConstraintFailure::client_invariant)
+    }
+
+    fn for_source(
+        recipes: &[super::PreparedCorrelatedCallRecipe],
+        source: AnalyzerCallConstraintSource,
+    ) -> Result<Self, AnalyzerCallClientInvariant> {
         fn collect(
             recipe: &super::PreparedCorrelatedCallRecipe,
             projections: &mut Vec<Arc<CandidateSemanticProjection>>,
-        ) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
-            let projection = recipe.callee_prerequisites.as_ref().ok_or_else(|| {
-                TypeConstraintFailure::client_invariant(AnalyzerCallClientInvariant::constraint(
-                    AnalyzerCallConstraintSource::BaseInstantiation,
-                    CallConstraintInvariant::MalformedMapperSeal,
-                ))
-            })?;
+        ) -> Result<(), CallConstraintInvariant> {
+            let projection = recipe
+                .callee_prerequisites
+                .as_ref()
+                .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
             if !projections
                 .iter()
                 .any(|existing| Arc::ptr_eq(existing, projection))
@@ -3716,32 +3803,39 @@ impl PreparedCalleeProjectionOwners {
 
         let mut projections = Vec::new();
         for recipe in recipes {
-            collect(recipe, &mut projections)?;
+            collect(recipe, &mut projections)
+                .map_err(|invariant| AnalyzerCallClientInvariant::constraint(source, invariant))?;
         }
-        Ok(Self(projections))
+        Ok(Self {
+            projections,
+            source,
+        })
     }
 
     fn discard_all(
         self,
         analyzer: &mut super::super::Analyzer<'_, '_, '_>,
     ) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
-        for shared in self.0 {
+        self.discard(analyzer)
+            .map_err(TypeConstraintFailure::client_invariant)
+    }
+
+    fn discard(
+        self,
+        analyzer: &mut super::super::Analyzer<'_, '_, '_>,
+    ) -> Result<(), AnalyzerCallClientInvariant> {
+        for shared in self.projections {
             let projection = Arc::try_unwrap(shared).map_err(|_| {
-                TypeConstraintFailure::client_invariant(AnalyzerCallClientInvariant::constraint(
-                    AnalyzerCallConstraintSource::BaseInstantiation,
+                AnalyzerCallClientInvariant::constraint(
+                    self.source,
                     CallConstraintInvariant::MalformedMapperSeal,
-                ))
+                )
             })?;
             analyzer
                 .facts
                 .discard_candidate_projection(projection)
                 .map_err(|violation| {
-                    TypeConstraintFailure::client_invariant(
-                        AnalyzerCallClientInvariant::fact_transaction(
-                            AnalyzerCallConstraintSource::BaseInstantiation,
-                            violation,
-                        ),
-                    )
+                    AnalyzerCallClientInvariant::fact_transaction(self.source, violation)
                 })?;
         }
         Ok(())
@@ -3752,7 +3846,7 @@ impl PreparedCalleeProjectionOwners {
         analyzer: &mut super::super::Analyzer<'_, '_, '_>,
         nested_calls: &[super::PreparedSelectedNestedCall],
     ) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
-        for shared in self.0 {
+        for shared in self.projections {
             let retained = nested_calls.iter().any(|selected| {
                 selected
                     .recipe
@@ -3766,7 +3860,7 @@ impl PreparedCalleeProjectionOwners {
                 let projection = Arc::try_unwrap(shared).map_err(|_| {
                     TypeConstraintFailure::client_invariant(
                         AnalyzerCallClientInvariant::constraint(
-                            AnalyzerCallConstraintSource::BaseInstantiation,
+                            self.source,
                             CallConstraintInvariant::MalformedMapperSeal,
                         ),
                     )
@@ -3776,10 +3870,7 @@ impl PreparedCalleeProjectionOwners {
                     .discard_candidate_projection(projection)
                     .map_err(|violation| {
                         TypeConstraintFailure::client_invariant(
-                            AnalyzerCallClientInvariant::fact_transaction(
-                                AnalyzerCallConstraintSource::BaseInstantiation,
-                                violation,
-                            ),
+                            AnalyzerCallClientInvariant::fact_transaction(self.source, violation),
                         )
                     })?;
             }
@@ -7705,7 +7796,7 @@ mod tests {
     }
 
     #[test]
-    fn successful_probe_close_moves_original_expression_facts_out_of_the_live_state() {
+    fn probe_close_retains_only_the_selected_attempts_original_facts() {
         use crate::callable::ProbeCheckpointDisposition;
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let owner = callback_test_owner(&fixture);
@@ -7787,17 +7878,103 @@ mod tests {
                 .read()
                 .validate_retained_row(&effect_hint)
                 .unwrap();
-            let observed = client
-                .check_source(
+            let mut attempt_work = work.loan();
+            let source_work = AnalyzerPreparationWork::candidate(attempt_work.clone(), owner);
+            let mut declaration_work = attempt_work.clone();
+            let physical = client
+                .analyzer
+                .facts
+                .callback_fact_authority(&client.active_fact_scope.as_ref().unwrap().scope)
+                .unwrap()
+                .physical_attempt_context();
+            let mut rejected_row = None;
+            let attempted = client
+                .check_probe_attempt(
                     source,
-                    AnalyzerExpressionExpectation::from_complete(Some(&TypeKind::I64)),
-                    None,
-                    None,
-                    SourcePhase::Probe,
-                    client.context.work(),
-                    None,
+                    &mut attempt_work,
+                    |client, scope| {
+                        let AnalyzerSourceCheckScope::Probe(attempt) = scope else {
+                            panic!("the trial ran in the probe phase");
+                        };
+                        let attempt_physical = client
+                            .analyzer
+                            .facts
+                            .probe_fact_attempt_authority(attempt)
+                            .unwrap()
+                            .physical_attempt_context();
+                        assert!(physical.same_issued_context(&attempt_physical));
+                        let (graph, _) = client
+                            .analyzer
+                            .facts
+                            .effect_declarations_mut()
+                            .unwrap()
+                            .relation();
+                        let declared = graph
+                            .declare(
+                                vec![],
+                                crate::effect_row::EffectPredicate::unconstrained(),
+                                &mut declaration_work,
+                            )
+                            .unwrap();
+                        rejected_row = Some(
+                            graph
+                                .application(&declared, vec![], &mut declaration_work)
+                                .unwrap(),
+                        );
+                        let checked = client.check_source(
+                            source,
+                            AnalyzerExpressionExpectation::from_complete(Some(&TypeKind::I64)),
+                            None,
+                            None,
+                            scope,
+                            source_work.clone(),
+                            None,
+                        )?;
+                        assert!(client.analyzer.facts.expressions().contains_key(&owner));
+                        Ok(checked)
+                    },
+                    |_| false,
                 )
-                .unwrap_or_else(|_| panic!("evaluate the real source expression"));
+                .unwrap_or_else(|_| panic!("check the rejected alternative"));
+            assert!(matches!(
+                attempted,
+                AnalyzerSourceProbeAttempt::Rejected(Some(_))
+            ));
+            assert!(!client.analyzer.facts.expressions().contains_key(&owner));
+            assert!(
+                client
+                    .analyzer
+                    .facts
+                    .prepared_calls()
+                    .unwrap()
+                    .effect_declarations()
+                    .unwrap()
+                    .read()
+                    .validate_retained_row(rejected_row.as_ref().unwrap())
+                    .is_err()
+            );
+
+            let selected = client
+                .check_probe_attempt(
+                    source,
+                    &mut attempt_work,
+                    |client, scope| {
+                        client.check_source(
+                            source,
+                            AnalyzerExpressionExpectation::from_complete(Some(&TypeKind::I64)),
+                            None,
+                            None,
+                            scope,
+                            source_work,
+                            None,
+                        )
+                    },
+                    |_| true,
+                )
+                .unwrap_or_else(|_| panic!("evaluate the selected source expression"));
+            let AnalyzerSourceProbeAttempt::Selected(observed) = selected else {
+                panic!("the second alternative is selected");
+            };
             assert_eq!(
                 observed
                     .actual
@@ -7851,6 +8028,13 @@ mod tests {
                         .unwrap()
                         .validate_retained_row(&effect_hint)
                         .unwrap();
+                    assert!(
+                        graph
+                            .read_scoped(preparation.probe_effect_reads().unwrap(), &mut work)
+                            .unwrap()
+                            .validate_retained_row(rejected_row.as_ref().unwrap())
+                            .is_err()
+                    );
                     client
                         .analyzer
                         .facts
