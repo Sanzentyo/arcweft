@@ -411,9 +411,7 @@ impl PreparedEffectRowProjection {
                 let mut work = Work(control);
                 work.charge(DecisionWork::Visit)?;
                 self.principal.graph.row(reference)?;
-                Ok(EffectRow {
-                    formula: Some(work.copy_formula(entry.get().known()?)?),
-                })
+                entry.get().copy_with_control(&mut work)
             }
             Entry::Vacant(entry) => {
                 let row = self
@@ -421,9 +419,7 @@ impl PreparedEffectRowProjection {
                     .resolve_row(&PreparedEffectRow::Term(reference.clone()), control)?;
                 let mut work = Work(control);
                 work.charge(DecisionWork::Node)?;
-                let retained = EffectRow {
-                    formula: Some(work.copy_formula(row.known()?)?),
-                };
+                let retained = row.copy_with_control(&mut work)?;
                 entry.insert(retained);
                 Ok(row)
             }

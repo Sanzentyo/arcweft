@@ -215,6 +215,20 @@ impl EffectConstraintVariable {
 }
 
 impl EffectRow {
+    pub(crate) fn copy_with_control<C: DecisionControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        let formula = match &self.formula {
+            Some(formula) => Some(formula.copy_with_control(control)?),
+            None => {
+                control.charge(DecisionWork::Visit)?;
+                None
+            }
+        };
+        Ok(Self { formula })
+    }
+
     pub(crate) fn try_clone_with_control<C: DecisionControl>(
         &self,
         control: &mut C,

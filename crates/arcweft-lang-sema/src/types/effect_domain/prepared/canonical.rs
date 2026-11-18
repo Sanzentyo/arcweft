@@ -5,6 +5,8 @@ use crate::effect_row::prepared::{PreparedEffectInvariant, PrincipalEffectClosur
 use crate::effect_row::prepared::{
     PreparedEffectReadView, PreparedEffectUnknownRef, ScopedEffectCompletion,
 };
+use crate::effect_row::{DecisionControl, DecisionWork};
+use crate::types::TypeInstantiationError;
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -28,6 +30,32 @@ struct Canonicalization<'a, C> {
     principal: Option<&'a PrincipalEffectClosure>,
     control: &'a mut C,
     depth: u64,
+}
+
+/// Copy admission accounts for canonical decisions and labels before their
+/// allocation. A decision root stays at header depth; stored atoms are one
+/// level below it.
+struct EffectCopyControl<'a, C> {
+    control: &'a mut C,
+    depth: u64,
+}
+
+impl<C: TypeProjectionControl> DecisionControl for EffectCopyControl<'_, C> {
+    type Error = TypeProjectionError<C::Error>;
+
+    fn charge(&mut self, work: DecisionWork) -> Result<(), Self::Error> {
+        self.control.check().map_err(TypeProjectionError::Control)?;
+        let depth = match work {
+            DecisionWork::Visit => self.depth,
+            DecisionWork::Node => self
+                .depth
+                .checked_add(1)
+                .ok_or(TypeInstantiationError::DepthOverflow)?,
+        };
+        self.control
+            .visit_node(TypeProjectionNodeKind::Effect, depth)
+            .map_err(TypeProjectionError::Control)
+    }
 }
 
 impl<'a, C: TypeProjectionControl> Canonicalization<'a, C> {
@@ -78,11 +106,12 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, CanonicalEf
         _: &GenericScope,
     ) -> Result<EffectRow, TypeProjectionError<Self::Error>> {
         match row {
-            PreparedEffectRow::Canonical(row) => {
-                visit_effect_row(self.control, row, self.depth)
-                    .map_err(PreparedTypeEffectProjectionFailure::from_projection)?;
-                Ok(row.clone())
-            }
+            PreparedEffectRow::Canonical(row) => row
+                .copy_with_control(&mut EffectCopyControl {
+                    control: self.control,
+                    depth: self.depth,
+                })
+                .map_err(PreparedTypeEffectProjectionFailure::from_projection),
             PreparedEffectRow::Term(_) => self
                 .principal()?
                 .resolve_row(
@@ -102,11 +131,12 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, CanonicalEf
         _: &GenericScope,
     ) -> Result<EffectPredicate, TypeProjectionError<Self::Error>> {
         match predicate {
-            PreparedEffectPredicate::Canonical(predicate) => {
-                visit_effect_predicate(self.control, predicate, self.depth)
-                    .map_err(PreparedTypeEffectProjectionFailure::from_projection)?;
-                Ok(predicate.clone())
-            }
+            PreparedEffectPredicate::Canonical(predicate) => predicate
+                .copy_with_control(&mut EffectCopyControl {
+                    control: self.control,
+                    depth: self.depth,
+                })
+                .map_err(PreparedTypeEffectProjectionFailure::from_projection),
             PreparedEffectPredicate::Term(_) => self
                 .principal()?
                 .resolve_predicate(
