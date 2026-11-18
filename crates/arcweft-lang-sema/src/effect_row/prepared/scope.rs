@@ -368,7 +368,11 @@ fn retain_layer<C: DecisionControl>(
     layer: &Arc<PreparedEffectDeltaData>,
     work: &mut Work<'_, C>,
 ) -> Result<(), PreparedEffectFailure<C::Error>> {
-    retain_definition(layers, layer.ordinal, layer, work)
+    if layer.has_transition() {
+        retain_definition(layers, layer.ordinal, layer, work)
+    } else {
+        work.charge(DecisionWork::Visit)
+    }
 }
 
 fn retain_definition<T, C: DecisionControl>(

@@ -63,11 +63,7 @@ impl PreparedEffectDelta {
     }
 
     pub(crate) fn has_writes(&self) -> bool {
-        !self.data.functions.is_empty()
-            || !self.data.obligations.is_empty()
-            || !self.data.rows.is_empty()
-            || !self.data.predicates.is_empty()
-            || !self.data.choices.is_empty()
+        self.data.has_writes()
     }
 }
 
@@ -84,6 +80,22 @@ pub(in crate::effect_row::prepared) struct PreparedEffectDeltaData {
     pub(in crate::effect_row::prepared) rows: BTreeMap<u64, Arc<RowTerm>>,
     pub(in crate::effect_row::prepared) predicates: BTreeMap<u64, Arc<PredicateTerm>>,
     pub(in crate::effect_row::prepared) choices: BTreeSet<u64>,
+}
+
+impl PreparedEffectDeltaData {
+    fn has_writes(&self) -> bool {
+        !self.functions.is_empty()
+            || !self.obligations.is_empty()
+            || !self.rows.is_empty()
+            || !self.predicates.is_empty()
+            || !self.choices.is_empty()
+    }
+
+    /// A checkpoint with no writes or revision history supplies no effect
+    /// definitions and cannot witness a new base for another layer.
+    pub(super) fn has_transition(&self) -> bool {
+        self.base != self.result || !self.ancestors.is_empty() || self.has_writes()
+    }
 }
 
 /// A failed preflight returns the original affine payload for retry or discard.
@@ -624,7 +636,10 @@ impl PreparedEffectGraph {
             choices.retain(|id| !inherited.choices.contains(id));
             layers.retain(|id, _| permits.contains(id));
         }
-        let (result, next_state) = if permits.len() == 1 {
+        let (result, next_state) = if layers.is_empty() {
+            witnessed.remove(&self.state);
+            (self.state, self.next_state)
+        } else if permits.len() == 1 {
             let delta = ordered.first_key_value().expect("one publication permit").1;
             witnessed.remove(&delta.data.result);
             (delta.data.result, self.next_state)

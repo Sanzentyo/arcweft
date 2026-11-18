@@ -191,6 +191,39 @@ fn nested_checkpoints_inherit_selected_reads_and_restore_their_parent_on_close()
 }
 
 #[test]
+fn empty_projections_publish_without_issuing_an_effect_transition() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let base = graph.state;
+    let mut first = graph.checkpoint(&mut work).unwrap();
+    let first = graph.extract_delta(&mut first, &mut work).unwrap();
+    let mut second = graph.checkpoint(&mut work).unwrap();
+    let second = graph.extract_delta(&mut second, &mut work).unwrap();
+    let scope = graph.read_scope([&first, &second], &mut work).unwrap();
+    graph
+        .restore_deltas(vec![first, second], &mut work)
+        .unwrap();
+    assert_base(&graph, base);
+    assert!(graph.state_ancestors.is_empty());
+
+    let mut selected = graph.checkpoint_in_read_scope(&scope, &mut work).unwrap();
+    let row = graph
+        .union(vec![literal(&["log.write"])], &mut work)
+        .unwrap();
+    let selected = graph.extract_delta(&mut selected, &mut work).unwrap();
+    assert_base(&graph, base);
+    graph.restore_delta(selected, &mut work).unwrap();
+    assert_eq!(
+        graph
+            .solve_principal(&mut work)
+            .unwrap()
+            .resolve_row(&row, &mut work)
+            .unwrap(),
+        EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap())
+    );
+}
+
+#[test]
 fn restoring_a_nested_projection_journals_only_authorized_writes() {
     let mut graph = PreparedEffectGraph::default();
     let mut work = budget();
