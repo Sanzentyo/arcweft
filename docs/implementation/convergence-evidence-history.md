@@ -19261,3 +19261,14 @@ Source `b263320443c2cc6ff1828e18e097ea7e537585dc`。基点は `fce9f5623e265a139
 試験入力dev01では、実引数から到達する宣言の本体を同じ候補で準備した。遅延コールバックは宣言本体の主作用解を計算するときに `ReadScopeActive` で停止した。本体準備を追加した差分を試験入力として保存し、公開Sourceから外した。dev01の全feature Sema checkはライブラリを検査し、テスト対象は終了101、863エラー・33警告。正規化した一次診断は比較元と一致。dev01の初回nextestはデバッガ調査と再リンクが重なって `LNK1104` で停止し、デバッガ終了後の同一入力再実行で149成功・3失敗を観測した。公開Sourceの検証はdev02。検証は `CARGO_INCREMENTAL=0`、jobs／profileの上書きなし。targetは7,206,742,763 bytesで、今回の `cargo clean` は0回。以降は約300 GBを実行の目安とする。
 
 [検証原本・試験入力・全テストID比較・公開照合](acceptance-evidence/task-correlated-effect-prerequisites.raw.zip) は 32 entry、258130 bytes、SHA256 `2a0520c9ec052839364b49a5efbfb198b77bd1d2cbef4031ca2df48b9d58b225`。各entryの長さとSHA256を再照合した。既存履歴 3008412 bytesのSHA256 `e6572797b88305bf0ddf11beb0e6925a2dbceebe90093eec70d2f2fcdf4c0e33` をprefixとして保持した。
+
+<a id="validate-original-without-detaching"></a>
+## 2026-11-19 — 元の候補の最終検査で作用の読取りを再利用
+
+Source `35519abc9142f9b66817c5b3e757c4a58d3bf6be`。基点は `5d4a66b9d6b7a0eb44d0eed4c5a2222f4482f3ee`。比較元は `b263320443c2cc6ff1828e18e097ea7e537585dc`。公開後に2件のRust blobと実行入力のSHA256を照合した。
+
+Mapの失敗箇所について[前節のデバッガ観測](#correlated-effect-prerequisites)を訂正する。前回の停止点はコールバック本体の作用行投影への到達を示していた。今回、`into_public` の変換分岐と保持された列挙値・引数をLLDBで照合し、Mapの2件とも `WorkLimit { requested: 1, consumed: 4096, limit: 4096 }` だったと確認した。基点のcaptured Mapは `OriginalConstraintForest::close` 内で使い捨ての読取り差分を組み立てる途中に上限に達した。元の候補を検査するスコープは一時的な作用項をロールバックし、正準型と所有された検査証拠を返す。候補群は同じ読取り入力の合成を一度だけ行う。単一の読取り範囲が現在のグラフ状態と外側の読取りに一致する場合、その検証済み範囲の共有参照を使う。出典が異なる範囲の合成と公開差分の検査は従来の経路を通る。
+
+差分の合成を省いた試験入力dev01は、captured Mapが選択した差分の公開前検査まで進んだ。公開入力dev02では別の候補を開く `application_scope` の作用述語準備で上限に達した。同じCompiler nextestの2 target・152 IDを実行し、149成功・3失敗・0スキップ。失敗は遅延コールバックの `SchemeState` とMapの復元2件。fmtと構造ゲートは終了0。予算上限とテストの実行条件は保持した。Compilerの2 target以外の逆依存テスト、Semaユニットテスト、Clippy、workspace最終受入、Native／Web最終受入は未実行。
+
+[検証原本・試験入力・LLDB・全テストID比較](acceptance-evidence/task-validate-original-without-detaching.raw.zip) は 25 entry、100722 bytes、SHA256 `4f51e149a8b53f92eb5eac5c284fb41278da53cd36eee9abf048f0deebb59545`。各entryの長さとSHA256を再照合した。既存履歴 3011650 bytesのSHA256 `db10b6e6d84101ffac0a3d1214db85199a4bda8774dcd39fed0f08f937089f29` をprefixとして保持した。
