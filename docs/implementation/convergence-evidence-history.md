@@ -18984,3 +18984,17 @@ Source `bc32b1b8bf138b0a261c8d39f3e44658c6bbcf3c`。変更の基点は `a2d3b94c
 取消と不一致サイトの拒否で公開状態を保ち、正しい入力で再試行できる回帰fixtureを追加した。Semaのコンパイルが未完了のため、fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-call-result-publication.raw.zip) は32 entry、341807 bytes、SHA256 `e97006c6986a76efff2539c27d11755264ad88627e28975d777e83735a8211eb`。各entryの長さとSHA256を再照合した。更新前の履歴2952826 bytesのSHA256 `78501a5e0d1bab74f15d20315a477f775e049b25e6e5705f6dde67e33ef3d668`をprefixとして保持した。
+
+
+<a id="constructor-candidate-types"></a>
+## 2026-11-18 — 短縮enumコンストラクタの宣言型を候補へ渡す
+
+Source `aadc26c516e2faf04779c85e424408f258a277f2`。変更の基点は `02d74291a8ec8730d37c586d408207470cde43a4`。比較元は `bc32b1b8bf138b0a261c8d39f3e44658c6bbcf3c` の `call-result-publication.dev03-check.log`。公開したmainと9件のRust入力のblobを照合した。
+
+短縮enumコンストラクタは文脈から宣言を選び、宣言自身の型パラメータを持つテンプレートを準備済みの型として保持する。resolverは選んだcaseの所有型とpayloadの宣言作用注釈を元の式スコープで確認し、既存のenum候補スキーマへ渡す。元の型引数は候補の制約側で確定する。関連型receiverや確定済みのstatic calleeの型は元の式に保持し、数値のcompact引数は準備済みの期待型を参照する。パラメトリック期待型の再利用は元の準備済み型を照合する。Entryの型ダイジェストは式を正準化した後に発行する。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` は `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。全試行の終了は101、libraryは25警告、lib testは37警告。dev01はlibrary 161エラー、lib test 1,036エラー。dev02はlibrary 161エラー、lib test 1,036エラー。dev03はlibrary 159エラー、lib test 1,034エラー。dev04はlibrary 158エラー、lib test 1,033エラー。dev02で出たソース型の借用エラーは、注釈参照の寿命をcalleeの寿命から分けて解消した。dev04でEntry参照を準備済みの型から直接構築した。一次診断は1,058件から1,040件に減った。18件削除、追加0件。Semaのfmt checkと `just structure-audit-gate` は終了0。
+
+`Slot<String>` と `Slot<i64>` で同じcaseの識別子を共有し、結果型は個別に確定する回帰fixtureを追加した。関数値や値receiverの候補準備、TextProxyの型の受け渡しなどにはコンパイル診断が残る。fixture、nextest、推移的逆依存、Clippy、workspaceとNative／AWBCの実行は未実行。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-constructor-candidate-types.raw.zip) は40 entry、441453 bytes、SHA256 `cab976ff56fed3ed239f0ff1f81c1b21a6a13c9da2b9695f997282b1b10c9131`。各entryの長さとSHA256を再照合した。更新前の履歴2955382 bytesのSHA256 `b46ab3861692bb5ea6020c80f15d2f36d0be833e8cf1d3d982bea6ce5a6f549c`をprefixとして保持した。
