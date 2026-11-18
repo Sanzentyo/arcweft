@@ -19080,3 +19080,17 @@ Source `038b8c4432d0bdf15c5fe2d44cbd200161360864`。変更の基点は `48126e28
 `cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。全試行は終了101。libraryは24警告、lib testは36警告。dev01はlibrary 129エラー、lib test 996エラー。dev02はlibrary 121エラー、lib test 986エラー。正規化した一次診断は前回1,012件、今回は993件。19件を解消し、新規は0件。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,262,210 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
 
 [検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-contextual-generic-uses.raw.zip) は24 entry、224985 bytes、SHA256 `0ac77740cd9cfddaa4d5ddffe27f63898723ba422c439a02db1a303b1502d1f3`。各entryの長さとSHA256を再照合した。更新前の履歴2970937 bytesのSHA256 `3b7e335d54241ac6aead014e0dceff6e5c532c22d3aa8f78cb116b0c697d8c0a`をprefixとして保持した。
+
+
+<a id="prepared-expression-compatibility"></a>
+## 2026-11-18 — 準備済み型の互換性を式の文脈検査へ接続
+
+Source `4f5591433f8bd6adc95a14fc700dac9dd16e3de2`。変更の基点は `afc16bb18729daf460f47397e760a81eae6aa9b2`。比較元は `038b8c4432d0bdf15c5fe2d44cbd200161360864` の `prepared-contextual-generic-uses.dev02-check.log`。公開したmainと7件のRust入力のblobを照合した。
+
+正準型と準備済み型は、Recoveryで同じ型互換性判定を使う。関数の引数・結果、nominal型の引数、Choiceの判定も共通にした。関数の同じ作用項を比較するときは、宣言本体の準備を要求せずに型の検査を続ける。異なる作用項が判定に必要なときは、作用の観測が必要であることを返す。パイプ、Try、closure、スレッド戻り値などの既存の文脈検査ではこの判定で確実な不一致を早期に拒否する。ローカルEntry・対話行・カタログAssetのペイロードのない参照型も準備済み型を直接検査する。
+
+異なる作用項の途中の観測を式キャッシュ・暗黙関数・配列等の判定に使う試行を取り下げた。観測時と公開時で作用関係が変わり得るため、これらの判定には元の比較入力を確定まで保持して再照合する経路が必要である。dev01とdev02は取り下げた試行の結果であり、公開ソースの結果はdev04。dev03で既存のnominalテストが親モジュールの作用型のimportに依存していたことを確認し、dev04でテスト側にimportした。同一の未準備作用項と、区別できない別の作用項を含むChoiceの回帰を追加した。
+
+`cargo check --locked -p arcweft-lang-sema --tests --all-features` を `CARGO_INCREMENTAL=0` で実行した。jobs／profileの上書きはなし。各試行の終了は101。dev01はlibrary 114エラー、lib test 979エラー。dev02はlibrary 110エラー、lib test 977エラー。dev03はlibrary 116エラー、lib test 983エラー。dev04はlibrary 116エラー、lib test 981エラー。正規化した一次診断は前回993件、今回は988件。比較元にない診断種別と所有ファイルの組は0件。一次診断の出力回数は前回比5件減。Semaのfmt checkと `just structure-audit-gate` は終了0、構造のblocking違反は0件。Semaのコンパイルが未完了のため、回帰、nextest、推移的逆依存、Clippy、workspace、Native／AWBC、Native／Webは未実行。targetは344,232,568 bytesで、約300 GBを目安とする`cargo clean`は実行していない。
+
+[検証原本・一次診断比較・所有レビュー・公開照合](acceptance-evidence/task-prepared-expression-compatibility.raw.zip) は36 entry、414308 bytes、SHA256 `4ab87a1ed175d770ce57ee2f0bf51a303c40c006995d3408aab1764ae082b173`。各entryの長さとSHA256を再照合した。更新前の履歴2973593 bytesのSHA256 `70a3acc67e641f06c4eaad6a0537423e38c2c131d981da52e184fe46a39f4ad5`をprefixとして保持した。
