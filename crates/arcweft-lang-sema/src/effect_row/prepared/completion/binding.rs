@@ -68,7 +68,7 @@ impl PreparedEffectScopedBinding {
             &[],
             &[],
             &constraints,
-            SnapshotSource::Bound(&original.graph),
+            SnapshotSource::Bound(original),
             control,
         )?;
         Ok(BoundScopedEffectCompletion { graph })

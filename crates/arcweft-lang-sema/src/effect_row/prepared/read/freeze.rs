@@ -11,7 +11,7 @@ pub(in crate::effect_row::prepared) enum SnapshotSource<'a> {
     #[cfg(test)]
     AllUnknowns,
     Product(&'a [&'a PreparedEffectUnknownRef]),
-    Bound(&'a PreparedEffectDefinitions),
+    Bound(&'a ScopedEffectCompletion),
     #[cfg(test)]
     Final(&'a PreparedEffectDefinitions),
     FinalBound(&'a BoundScopedEffectCompletion),
@@ -79,15 +79,18 @@ impl PreparedEffectReadView<'_> {
             _ => SchemeDependencies::Headers,
         };
         let original = match source {
-            SnapshotSource::Bound(original) => Some(original),
+            SnapshotSource::Bound(original) => Some(original.definitions()),
             #[cfg(test)]
             SnapshotSource::Final(original) => Some(original),
             SnapshotSource::FinalBound(bound) => Some(bound.definitions()),
             _ => None,
         };
+        let reuse_reachable = match source {
+            SnapshotSource::Bound(original) => original.has_verified_reachability(),
+            SnapshotSource::FinalBound(_) => true,
+            _ => false,
+        };
         let mut reachable = Reachable::new(self, schemes);
-        let mut retained_rows = Vec::new();
-        let mut retained_predicates = Vec::new();
         let mut obligations = Vec::new();
         let mut inventory = BTreeSet::new();
         let mut first_new_obligation = 0;
@@ -106,33 +109,21 @@ impl PreparedEffectReadView<'_> {
                     }
                 }
                 work.charge(DecisionWork::Node)?;
-                if matches!(source, SnapshotSource::FinalBound(_))
-                    && !matches!(
-                        definition.as_ref(),
-                        Function::SchemeInput(_) | Function::Scheme(_)
-                    )
+                if reuse_reachable
+                    && (matches!(schemes, SchemeDependencies::Headers)
+                        || !matches!(
+                            definition.as_ref(),
+                            Function::SchemeInput(_) | Function::Scheme(_)
+                        ))
                 {
                     reachable.functions.insert(id);
                 } else {
                     inventory.insert(id);
                 }
             }
-            if let SnapshotSource::FinalBound(bound) = source {
-                reachable.retain_bound_terms(bound, work.0)?;
+            if reuse_reachable {
+                reachable.retain_terms(original, work.0)?;
                 first_new_obligation = original.obligations.len();
-            } else {
-                for &id in original.rows.keys() {
-                    work.charge(DecisionWork::Node)?;
-                    retained_rows.push(PreparedEffectRow::Term(PreparedEffectRowRef(
-                        original.reference(id),
-                    )));
-                }
-                for &id in original.predicates.keys() {
-                    work.charge(DecisionWork::Node)?;
-                    retained_predicates.push(PreparedEffectPredicate::Term(
-                        PreparedEffectPredicateRef(original.reference(id)),
-                    ));
-                }
             }
             for obligation in &original.obligations {
                 work.charge(DecisionWork::Node)?;
@@ -179,11 +170,25 @@ impl PreparedEffectReadView<'_> {
         for id in inventory {
             reachable.push(Dependency::Function(id), work.0)?;
         }
-        for row in rows.iter().copied().chain(&retained_rows) {
+        for row in rows {
             reachable.push(Dependency::Row(row), work.0)?;
         }
-        for predicate in predicates.iter().copied().chain(&retained_predicates) {
+        if let Some(original) = original.filter(|_| !reuse_reachable) {
+            for &id in original.rows.keys() {
+                let row = PreparedEffectRow::Term(PreparedEffectRowRef(original.reference(id)));
+                reachable.push(Dependency::Row(&row), work.0)?;
+            }
+        }
+        for predicate in predicates {
             reachable.push(Dependency::Predicate(predicate), work.0)?;
+        }
+        if let Some(original) = original.filter(|_| !reuse_reachable) {
+            for &id in original.predicates.keys() {
+                let predicate = PreparedEffectPredicate::Term(PreparedEffectPredicateRef(
+                    original.reference(id),
+                ));
+                reachable.push(Dependency::Predicate(&predicate), work.0)?;
+            }
         }
         for obligation in &obligations[first_new_obligation..] {
             reachable.push(Dependency::Predicate(&obligation.domain), work.0)?;

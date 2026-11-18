@@ -19,6 +19,24 @@ pub(crate) struct ScopedEffectCompletion {
     pub(super) support: BTreeSet<EffectId>,
     pub(super) fixed: BTreeMap<u64, EffectRow>,
     pub(super) program: Arc<EffectResidualProgram>,
+    origin: ScopedEffectOrigin,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ScopedEffectOrigin {
+    Snapshot,
+    #[cfg(test)]
+    WholeGraph,
+}
+
+impl ScopedEffectCompletion {
+    pub(in crate::effect_row::prepared) fn definitions(&self) -> &PreparedEffectDefinitions {
+        &self.graph
+    }
+
+    pub(in crate::effect_row::prepared) fn has_verified_reachability(&self) -> bool {
+        matches!(self.origin, ScopedEffectOrigin::Snapshot)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -58,6 +76,7 @@ impl ImportedEffectFunction {
 }
 
 impl PreparedEffectGraph {
+    #[cfg(test)]
     pub(crate) fn complete_scoped<C: DecisionControl>(
         self,
         control: &mut C,
@@ -68,13 +87,22 @@ impl PreparedEffectGraph {
         if !self.checkpoints.is_empty() {
             return Err(PreparedEffectInvariant::CheckpointOrder.into());
         }
-        self.relation.complete_scoped(control)
+        self.relation
+            .compile_scoped(ScopedEffectOrigin::WholeGraph, control)
     }
 }
 
 impl PreparedEffectDefinitions {
     pub(in crate::effect_row::prepared) fn complete_scoped<C: DecisionControl>(
         self,
+        control: &mut C,
+    ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
+        self.compile_scoped(ScopedEffectOrigin::Snapshot, control)
+    }
+
+    fn compile_scoped<C: DecisionControl>(
+        self,
+        origin: ScopedEffectOrigin,
         control: &mut C,
     ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
@@ -100,6 +128,7 @@ impl PreparedEffectDefinitions {
             support,
             fixed: BTreeMap::new(),
             program: Arc::new(program),
+            origin,
         }))
     }
 }
@@ -298,6 +327,7 @@ impl ScopedEffectCompletion {
             support,
             fixed,
             program: Arc::clone(&self.program),
+            origin: self.origin,
         }))
     }
 

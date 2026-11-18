@@ -9,10 +9,17 @@ pub(in crate::effect_row::prepared) enum SchemeDependencies {
     Observation,
 }
 
+#[derive(Clone, Copy)]
 pub(in crate::effect_row::prepared) enum Dependency<'a> {
     Function(u64),
     Row(&'a PreparedEffectRow),
     Predicate(&'a PreparedEffectPredicate),
+}
+
+enum PendingDependency {
+    Function(u64),
+    Row(u64),
+    Predicate(u64),
 }
 
 impl PreparedEffectReadView<'_> {
@@ -62,7 +69,7 @@ pub(in crate::effect_row::prepared) struct Reachable<'a> {
     pub(in crate::effect_row::prepared) rows: BTreeSet<u64>,
     pub(in crate::effect_row::prepared) predicates: BTreeSet<u64>,
     pub(in crate::effect_row::prepared) choices: BTreeSet<u64>,
-    pending: Vec<Dependency<'a>>,
+    pending: Vec<PendingDependency>,
 }
 
 impl<'a> Reachable<'a> {
@@ -81,12 +88,12 @@ impl<'a> Reachable<'a> {
         }
     }
 
-    /// The bound snapshot has already followed every immutable term edge.
+    /// The original snapshot has already followed every immutable term edge.
     /// Keep its closure only if the receiving view still exposes each exact
     /// definition. Named bodies enter through the normal function traversal.
-    pub(super) fn retain_bound_terms<C: DecisionControl>(
+    pub(super) fn retain_terms<C: DecisionControl>(
         &mut self,
-        bound: &BoundScopedEffectCompletion,
+        original: &PreparedEffectDefinitions,
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         fn retain<'view, T: 'view, C: DecisionControl>(
@@ -107,7 +114,6 @@ impl<'a> Reachable<'a> {
             Ok(())
         }
 
-        let original = bound.definitions();
         let mut work = Work(control);
         retain(
             &original.rows,
@@ -147,13 +153,36 @@ impl<'a> Reachable<'a> {
 
     pub(in crate::effect_row::prepared) fn push<C: DecisionControl>(
         &mut self,
-        value: Dependency<'a>,
+        value: Dependency<'_>,
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        control
-            .charge(DecisionWork::Node)
-            .map_err(PreparedEffectFailure::Control)?;
-        self.pending.push(value);
+        let mut work = Work(control);
+        work.charge(DecisionWork::Visit)?;
+        let (pending, visited) = match value {
+            Dependency::Function(id) => (PendingDependency::Function(id), &self.functions),
+            Dependency::Row(PreparedEffectRow::Term(reference)) => (
+                PendingDependency::Row(self.view.relation.validate(&reference.0)?),
+                &self.rows,
+            ),
+            Dependency::Predicate(PreparedEffectPredicate::Term(reference)) => (
+                PendingDependency::Predicate(self.view.relation.validate(&reference.0)?),
+                &self.predicates,
+            ),
+            Dependency::Row(PreparedEffectRow::Canonical(_))
+            | Dependency::Predicate(PreparedEffectPredicate::Canonical(_)) => return Ok(()),
+        };
+        let id = match pending {
+            PendingDependency::Function(id)
+            | PendingDependency::Row(id)
+            | PendingDependency::Predicate(id) => id,
+        };
+        // Retained terms already cover their edges. A canonical value has
+        // no graph edges. Only unresolved dependencies occupy the worklist.
+        if visited.contains(&id) {
+            return Ok(());
+        }
+        work.charge(DecisionWork::Node)?;
+        self.pending.push(pending);
         Ok(())
     }
 
@@ -162,11 +191,8 @@ impl<'a> Reachable<'a> {
         control: &mut C,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         while let Some(value) = self.pending.pop() {
-            control
-                .charge(DecisionWork::Visit)
-                .map_err(PreparedEffectFailure::Control)?;
             match value {
-                Dependency::Function(id) => {
+                PendingDependency::Function(id) => {
                     if self.functions.contains(&id) {
                         continue;
                     }
@@ -211,10 +237,7 @@ impl<'a> Reachable<'a> {
                         | Function::Unknown { .. } => {}
                     }
                 }
-                Dependency::Row(PreparedEffectRow::Canonical(_))
-                | Dependency::Predicate(PreparedEffectPredicate::Canonical(_)) => {}
-                Dependency::Row(PreparedEffectRow::Term(reference)) => {
-                    let id = self.view.relation.validate(&reference.0)?;
+                PendingDependency::Row(id) => {
                     if self.rows.contains(&id) {
                         continue;
                     }
@@ -222,7 +245,11 @@ impl<'a> Reachable<'a> {
                         .charge(DecisionWork::Node)
                         .map_err(PreparedEffectFailure::Control)?;
                     self.rows.insert(id);
-                    match self.view.row(reference)? {
+                    let row = self
+                        .view
+                        .row_definition(id)
+                        .ok_or(PreparedEffectInvariant::StaleReference)?;
+                    match row.as_ref() {
                         RowTerm::Application {
                             function,
                             arguments,
@@ -254,8 +281,7 @@ impl<'a> Reachable<'a> {
                         }
                     }
                 }
-                Dependency::Predicate(PreparedEffectPredicate::Term(reference)) => {
-                    let id = self.view.relation.validate(&reference.0)?;
+                PendingDependency::Predicate(id) => {
                     if self.predicates.contains(&id) {
                         continue;
                     }
@@ -263,7 +289,11 @@ impl<'a> Reachable<'a> {
                         .charge(DecisionWork::Node)
                         .map_err(PreparedEffectFailure::Control)?;
                     self.predicates.insert(id);
-                    match self.view.predicate(reference)? {
+                    let predicate = self
+                        .view
+                        .predicate_definition(id)
+                        .ok_or(PreparedEffectInvariant::StaleReference)?;
+                    match predicate.as_ref() {
                         PredicateTerm::ImportedPrincipal(imported) => {
                             imported.validate(self.view, control)?;
                             for input in imported.inputs.values() {
