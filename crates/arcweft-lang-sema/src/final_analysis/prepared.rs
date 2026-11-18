@@ -128,11 +128,10 @@ impl PreparedTypedExpressionResult {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub(crate) fn specialization(&self) -> Option<&CheckedFunctionSpecialization> {
+    fn function_specialization(&self) -> Option<&Arc<CheckedFunctionSpecialization>> {
         self.specialization
             .as_ref()
-            .map(|specialization| specialization.witness.as_ref())
+            .map(|specialization| &specialization.witness)
     }
 
     pub(super) fn visit_types<E>(
@@ -155,6 +154,13 @@ pub(crate) enum PreparedExpressionResult {
 }
 
 impl PreparedExpressionResult {
+    fn function_specialization(&self) -> Option<&Arc<CheckedFunctionSpecialization>> {
+        match self {
+            Self::Value(value) => value.function_specialization(),
+            Self::NonValue(_) | Self::Unavailable => None,
+        }
+    }
+
     pub(crate) const fn value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
         match self {
             Self::Value(value) => Some(value.ty()),
@@ -1436,74 +1442,44 @@ impl PreparedExpressionFact {
         }
     }
 
-    pub(crate) const fn value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
+    const fn result(&self) -> &PreparedExpressionResult {
         match self {
-            Self::Resolved(value) => value.value_type(),
-            Self::OwnerBound(value) => value.shell().value_type(),
-            Self::CompileTimeScalar(value) => value.shell().value_type(),
-            Self::DialogueApplication(value) => value.shell().value_type(),
-            Self::ContentApplication(value) => value.shell().value_type(),
-            Self::Method(value) => value.shell().value_type(),
-            Self::Entry(value) => value.shell().value_type(),
-            Self::Variant(value) => value.shell().value_type(),
-            Self::ProjectField(value) => value.shell().value_type(),
-            Self::ProjectRecord(value) => value.shell().value_type(),
-            Self::ProjectNominalTypeValue(value) => value.shell().value_type(),
+            Self::Resolved(value) => value.result(),
+            Self::OwnerBound(value) => value.shell().result(),
+            Self::CompileTimeScalar(value) => value.shell().result(),
+            Self::DialogueApplication(value) => value.shell().result(),
+            Self::ContentApplication(value) => value.shell().result(),
+            Self::Method(value) => value.shell().result(),
+            Self::Entry(value) => value.shell().result(),
+            Self::Variant(value) => value.shell().result(),
+            Self::ProjectField(value) => value.shell().result(),
+            Self::ProjectRecord(value) => value.shell().result(),
+            Self::ProjectNominalTypeValue(value) => value.shell().result(),
         }
+    }
+
+    pub(crate) const fn value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
+        self.result().value_type()
+    }
+
+    /// The producer's type before a particular function value is specialized.
+    pub(crate) const fn source_value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
+        self.result().source_value_type()
+    }
+
+    pub(crate) fn function_specialization(&self) -> Option<&Arc<CheckedFunctionSpecialization>> {
+        self.result().function_specialization()
     }
 
     /// Continuation supplied by the accepted result grammar, independently
     /// of whether this expression publishes a runtime value. An unavailable
     /// checked expression grants no continuation evidence.
     pub(crate) fn normal_continuation(&self) -> Option<super::completion::NormalContinuation> {
-        use super::completion::NormalContinuation;
-        match self {
-            Self::Resolved(value) => {
-                return NormalContinuation::from_prepared_result(value.result());
-            }
-            Self::OwnerBound(value) => {
-                NormalContinuation::from_prepared_result(value.shell().result())
-            }
-            Self::CompileTimeScalar(value) => {
-                NormalContinuation::from_prepared_result(value.shell().result())
-            }
-            Self::DialogueApplication(value) => {
-                NormalContinuation::from_prepared_result(value.shell().result())
-            }
-            Self::ContentApplication(value) => {
-                NormalContinuation::from_prepared_result(value.shell().result())
-            }
-            Self::Method(value) => NormalContinuation::from_prepared_result(value.shell().result()),
-            Self::Entry(value) => NormalContinuation::from_prepared_result(value.shell().result()),
-            Self::Variant(value) => {
-                NormalContinuation::from_prepared_result(value.shell().result())
-            }
-            Self::ProjectField(value) => {
-                NormalContinuation::from_prepared_result(value.shell().result())
-            }
-            Self::ProjectRecord(value) => {
-                NormalContinuation::from_prepared_result(value.shell().result())
-            }
-            Self::ProjectNominalTypeValue(value) => {
-                NormalContinuation::from_prepared_result(value.shell().result())
-            }
-        }
+        super::completion::NormalContinuation::from_prepared_result(self.result())
     }
 
     pub(crate) const fn type_selection(&self) -> Option<CheckedTypeSelection> {
-        match self {
-            Self::Resolved(value) => value.type_selection(),
-            Self::OwnerBound(value) => value.shell().type_selection(),
-            Self::CompileTimeScalar(value) => value.shell().type_selection(),
-            Self::DialogueApplication(value) => value.shell().type_selection(),
-            Self::ContentApplication(value) => value.shell().type_selection(),
-            Self::Method(value) => value.shell().type_selection(),
-            Self::Entry(value) => value.shell().type_selection(),
-            Self::Variant(value) => value.shell().type_selection(),
-            Self::ProjectField(value) => value.shell().type_selection(),
-            Self::ProjectRecord(value) => value.shell().type_selection(),
-            Self::ProjectNominalTypeValue(value) => value.shell().type_selection(),
-        }
+        self.result().type_selection()
     }
 
     pub(crate) fn required_type_selection(

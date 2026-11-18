@@ -157,20 +157,38 @@ fn witness_rejects_foreign_source_and_owner_and_charges_the_same_scoped_fold() {
     let prepared = prepared
         .with_function_specialization(witness.owner(), Arc::clone(&witness), &mut full)
         .unwrap();
+    let specialized_type = prepared_type(witness.specialized_type());
+    assert_eq!(prepared.value_type(), Some(&specialized_type));
+    assert_eq!(prepared.source_value_type(), Some(&original_type));
     assert_eq!(
-        prepared.value_type(),
-        Some(&prepared_type(witness.specialized_type()))
-    );
-    let expression = prepared.resolved().unwrap();
-    assert_eq!(expression.source_value_type(), Some(&original_type));
-    assert_eq!(
-        expression.type_selection(),
+        prepared.type_selection(),
         Some(crate::final_analysis::CheckedTypeSelection::Expected)
     );
-    let crate::final_analysis::PreparedExpressionResult::Value(value) = expression.result() else {
-        panic!("specialized expression retains a value result");
-    };
-    assert_eq!(value.specialization(), Some(witness.as_ref()));
+    assert!(Arc::ptr_eq(
+        prepared.function_specialization().unwrap(),
+        &witness
+    ));
+    let owner_bound = crate::final_analysis::PreparedExpressionFact::from(
+        crate::final_analysis::PreparedOwnerBoundExpression::new(
+            crate::final_analysis::PreparedExpressionShell::value(
+                original_type.clone(),
+                crate::final_analysis::CheckedTypeSelection::Inferred,
+                EffectSet::new(),
+            ),
+            crate::final_analysis::PreparedOwnerBoundResolution::implicit_parameter(
+                foreign_owner,
+                original_type.clone(),
+            ),
+        ),
+    )
+    .with_function_specialization(witness.owner(), Arc::clone(&witness), &mut full)
+    .unwrap();
+    assert_eq!(owner_bound.source_value_type(), Some(&original_type));
+    assert_eq!(owner_bound.value_type(), Some(&specialized_type));
+    assert!(Arc::ptr_eq(
+        owner_bound.function_specialization().unwrap(),
+        &witness
+    ));
     assert!(matches!(
         prepared.with_function_specialization(witness.owner(), Arc::clone(&witness), &mut full),
         Err(FunctionSpecializationSealFailure::Invariant(

@@ -241,6 +241,8 @@ pub use nominal_schema::{
 pub(crate) use nominal_semantic::{
     ProjectNominalSemanticCatalog, ProjectNominalSemanticDefinition,
 };
+#[cfg(test)]
+pub(crate) use prepared::PreparedResolvedExpression;
 pub(crate) use prepared::{
     PreparedAssignmentStatement, PreparedCompileTimeScalarExpression, PreparedEntryExpression,
     PreparedEntryReference, PreparedEventScrutineeProof, PreparedExpressionFact,
@@ -259,8 +261,6 @@ pub(crate) use prepared::{
     PreparedContentApplication, PreparedContentEmission, PreparedDialogueApplication,
     PreparedDialogueEffectPlan, PreparedDialogueEffectSite, PreparedEvaluatedEffect,
 };
-#[cfg(test)]
-pub(crate) use prepared::{PreparedExpressionResult, PreparedResolvedExpression};
 pub use recovery_diagnostics::{
     CallableTailRecoveryDiagnostic, CallableTailRecoveryProjectionError,
     project_callable_tail_recovery_diagnostics,

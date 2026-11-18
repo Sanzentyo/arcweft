@@ -1186,6 +1186,23 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
+        let (delivery, result) = self.selected_value_delivery(site)?;
+        if actual != &result {
+            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        }
+        Ok(delivery)
+    }
+
+    /// Read the original result validated by the graph at this exact site.
+    /// A consumer comparing a prepared expression must retain this result
+    /// under the expression's source owner before comparing its source type.
+    pub(crate) fn selected_value_delivery(
+        &self,
+        site: CheckedCallSite,
+    ) -> Result<(PreparedCallSiteDelivery, TypeKind), CallConstraintInvariant>
+    where
+        P: PreparedCallPrefixPayload<Unselected = U>,
+    {
         let Some(node_id) = self.graph.sites.get(&site) else {
             return Err(CallConstraintInvariant::MissingOrStalePreparedNode);
         };
@@ -1199,11 +1216,8 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 let reference = PreparedCallContinuationRef(continuation.coordinate.clone());
                 self.graph.validate_continuation_chain(&reference)?;
                 continuation.prefix.validate_site(site)?;
-                let function_type = continuation.prefix.application().function_type()?;
-                if actual != &function_type {
-                    return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
-                }
-                Ok(PreparedCallSiteDelivery::Continuation(reference))
+                let result = continuation.prefix.application().function_type()?;
+                Ok((PreparedCallSiteDelivery::Continuation(reference), result))
             }
             PreparedCallNodePayload::SelectedValue { prefix, result } => {
                 prefix.validate_site(site)?;
@@ -1213,13 +1227,10 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 if *result != sealed_result || application.continuation_position().is_some() {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 }
-                let Some(sealed_result) = sealed_result.value_type() else {
+                let CallableResultSchema::Value(result) = sealed_result else {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 };
-                if actual != sealed_result {
-                    return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
-                }
-                Ok(PreparedCallSiteDelivery::Value)
+                Ok((PreparedCallSiteDelivery::Value, result))
             }
             PreparedCallNodePayload::Unselected(_) => {
                 Err(CallConstraintInvariant::InvalidPreparedNodeState)

@@ -240,7 +240,7 @@ impl Analyzer<'_, '_, '_> {
                 caller: origin.frame,
                 result: origin.observation,
             };
-            match self.call_storage(call, frame, &query.work, receiver, &mut next)? {
+            match self.call_storage(context, call, frame, &query.work, receiver, &mut next)? {
                 CallStorage::Borrowed => return Ok(BorrowDependencies::Borrowed),
                 CallStorage::SourceResult(declaration) => {
                     return self.source_result_dependencies(
@@ -512,6 +512,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn call_storage(
         &self,
+        context: &AnalyzerExpressionContext<'_>,
         call: Invocation,
         frame: &StorageFrame,
         work: &CaptureWorklist,
@@ -520,21 +521,24 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<CallStorage, FinalSemanticAnalysisError> {
         let site = call.site;
         let owner = site.expression();
-        let ty = self
+        let source = self
             .storage_expression_fact(owner, frame)
-            .and_then(|fact| {
-                fact.complete()
-                    .and_then(crate::final_analysis::CheckedExpression::source_value_type)
-                    .or_else(|| fact.value_type())
-            })
+            .and_then(PreparedExpressionFact::source_value_type)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
         let graph = self
             .facts
             .prepared_calls()
             .map_err(|error| AnalyzerExpressionError::fact(error).into_public(owner))?;
-        let stage = PreparedCallGraphIngress::new(graph)
-            .value_delivery_at(site, ty)
+        let (stage, result) = PreparedCallGraphIngress::new(graph)
+            .selected_value_delivery(site)
             .map_err(|error| call_storage_error(site, error))?;
+        let retained = self.retain_source_value_type(context, owner, &result)?;
+        if source != &retained {
+            return Err(call_storage_error(
+                site,
+                crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch,
+            ));
+        }
         graph
             .project_site_payload(
                 site,
@@ -567,7 +571,7 @@ impl Analyzer<'_, '_, '_> {
                         if let Some((selection, remaining)) = work.selected_storage(call.result)? {
                             projected_constructor_sources(
                                 prefix,
-                                ty,
+                                &result,
                                 (selection, remaining),
                                 work,
                                 receiver,
