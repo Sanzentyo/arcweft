@@ -221,20 +221,47 @@ impl ObservationLayout {
                 _ => return Err(PreparedEffectInvariant::UnclosedCell.into()),
             }
         }
-        decision
-            .exists(&quantified, work)?
-            .map_references(work, &mut |atom, _| match atom {
-                Atom::Formal {
-                    owner: FormalOwner::Observation,
-                    class: local,
-                    parameter,
-                } if *local == class => self
-                    .parameters
-                    .get(*parameter)
-                    .cloned()
-                    .ok_or_else(|| PreparedEffectInvariant::UnclosedCell.into()),
-                _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
-            })
+        let local = decision.exists(&quantified, work)?;
+        self.decode_member(&local, class, work)
+    }
+
+    fn decode_member<C: DecisionControl>(
+        &self,
+        decision: &Decision,
+        class: usize,
+        work: &mut Work<'_, C>,
+    ) -> Result<EffectDecision<GenericEffectReference>, PreparedEffectFailure<C::Error>> {
+        decision.map_references(work, &mut |atom, _| match atom {
+            Atom::Formal {
+                owner: FormalOwner::Observation,
+                class: local,
+                parameter,
+            } if *local == class => self
+                .parameters
+                .get(*parameter)
+                .cloned()
+                .ok_or_else(|| PreparedEffectInvariant::UnclosedCell.into()),
+            _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
+        })
+    }
+
+    fn assemble_row<C: DecisionControl>(
+        &self,
+        members: impl IntoIterator<Item = EffectDecision<GenericEffectReference>>,
+        work: &mut Work<'_, C>,
+    ) -> Result<EffectRow, PreparedEffectFailure<C::Error>> {
+        let mut members = members.into_iter();
+        let default = members
+            .next()
+            .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+        let mut overrides = BTreeMap::new();
+        for (label, member) in self.labels.iter().zip(members) {
+            work.charge(DecisionWork::Node)?;
+            overrides.insert(label.clone(), member);
+        }
+        Ok(EffectRow {
+            formula: Some(EffectFormula::try_from_decisions(default, overrides, work)?),
+        })
     }
 
     fn valuation(&self) -> FiniteRowValuation<'_> {
@@ -310,21 +337,9 @@ impl<'g> EffectRowObservation<'g> {
             work.charge(DecisionWork::Node)?;
             members.push(positive);
         }
-        let mut members = members.into_iter();
-        let default = members
-            .next()
-            .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-        let mut overrides = BTreeMap::new();
-        for (label, member) in self.layout.labels.iter().zip(members) {
-            work.charge(DecisionWork::Node)?;
-            overrides.insert(label.clone(), member);
-        }
-        let formula = EffectFormula::try_from_decisions(default, overrides, &mut work)?;
         Ok(Some(GuardedEffectRow {
             observation: self,
-            row: EffectRow {
-                formula: Some(formula),
-            },
+            row: self.layout.assemble_row(members, &mut work)?,
         }))
     }
 }
@@ -493,6 +508,26 @@ impl PrincipalEffectClosure {
         row: &PreparedEffectRow,
         control: &mut C,
     ) -> Result<EffectRow, PreparedEffectFailure<C::Error>> {
+        if self.choices.is_empty() && self.witnesses.is_constant(true) {
+            // Without discrete witnesses to eliminate, each admitted member
+            // already describes its own label class. Decode that same row
+            // after proving whole-row admission.
+            let mut work = Work(control);
+            let (labels, parameters) = self.observation_support(&[Root::Row(row)], &mut work)?;
+            let compiled = self
+                .observation_compilation(&labels, &parameters)
+                .row(row, &mut work)?;
+            if !compiled.admitted.is_constant(true) {
+                return Err(PreparedEffectFailure::ObservationNotTotal);
+            }
+            let layout = ObservationLayout { labels, parameters };
+            let mut members = Vec::new();
+            for (class, member) in compiled.membership.iter().enumerate() {
+                work.charge(DecisionWork::Node)?;
+                members.push(layout.decode_member(member, class, &mut work)?);
+            }
+            return layout.assemble_row(members, &mut work);
+        }
         let observation = self.observe_row(
             &PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
             row,
