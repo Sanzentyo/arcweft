@@ -19599,3 +19599,16 @@ Compilerの全548 IDを基点と照合し、529成功・19失敗。差分は `st
 Coreの全feature・全target Clippy、fmt、差分検査と構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存は起点込み 52 のworkspace package。全逆依存のテストとworkspace全targetのcheck／Clippyは未実行。公開されたRust 2 blobを照合した。`target` は `11373249918` bytes。
 
 [CoreとCompilerの検証原本・公開照合](acceptance-evidence/task-direct-universal-quantifier.raw.zip) は 24 entry、592699 bytes、SHA256 `dbc89ea02c513dfa529e15c9ea2500d5a94f2b24f827e33cafe4ca16865fce11`。各原本の長さとハッシュを照合した。
+
+<a id="retain-owned-effect-relation"></a>
+## 2026-11-19 — 作用関係を所有したまま空の置換と量化を進める
+
+基点 `45e26fb59b0740f4b7478746a71d238136ac3411` のMapの代表例は、実際の置換が発生しない作用関係を複製する途中で既定の候補作業上限に達した。Source `c4933d81c9026b34f58ad39ab2da6e1150867765` は同じ関係を移し、選択変数がないときは元の関係を借りて最小解を計算し、証人領域と主条件を直接照合する。実際の置換や選択変数の量化が必要な場合は、その計算を行う。作業上限は従来の値を維持した。
+
+Compilerの548 IDは前回と同じ529成功・19失敗で、新規失敗は0件。Mapの部分適用の代表例は作用関係の複製を通過し、続く最小解を求める量化で上限に達した。retained Mapのopaque ingressとtraversalでも上限に達する位置が変わった。再帰コールバックは引き続きインポート済み作用関係のコンパイルで上限に達した。後段の作用を要求する `UnresolvedFuture` は6件残る。
+
+分岐で異なる関数値を返す例の `ExpressionTypeUnavailable` は、実行宣言の文を確定する `complete_declaration_statements` から返った。この時点では式所有の文を確定する段階に達していない。診断を発行する具体的な式と所有関係は調査中。
+
+Semaの全feature checkではライブラリを生成し、単体テスト対象は終了101・817エラー・33警告だった。前回とエラーのコード・ファイル別内訳が一致した。SemaライブラリのClippyは終了0・1,688警告。fmt・差分検査・構造ゲートは終了0、構造阻害0件。Cargoの全feature逆依存は起点込み 22 package。Sema単体テスト、全逆依存のテスト、workspace全targetのcheck／Clippy、Native／Web最終受入は未実行。公開されたRust 1 blobを照合した。`target` は `11355785310` bytes。
+
+[LLDBの計測、CompilerとSemaの検証原本、公開照合](acceptance-evidence/task-retain-owned-effect-relation.raw.zip) は 32 entry、608115 bytes、SHA256 `2909303e7b08e3b8387f9f6fa447e58dc5de7ef0f65fe0f33a2c19598f7cd68e`。各原本の長さとハッシュを照合した。
