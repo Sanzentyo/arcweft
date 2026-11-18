@@ -19294,3 +19294,14 @@ Coreの決定グラフは、元の式に現れる変数に対応する置換先�
 `cargo nextest run --locked -p arcweft-core --lib --no-fail-fast` は2,357成功、0失敗、0スキップ。Compilerの同じ2 target・152 IDのnextestは149成功、3失敗、0スキップ。遅延コールバックとMapの復元2件は型検査に残る。最新のLLDBでは遅延コールバックは作用式を組み立てる途中の代入、captured Mapは新しい型制約の適用範囲で上限に達した。fmtと構造ゲートは終了0。Cargo treeのworkspace既定featureでCoreを含む52 packageを計測した。Core単体テストとCompilerの2 target以外の逆依存テスト、Clippy、workspace最終受入、Native／Web最終受入は未実行。CARGO_INCREMENTAL=0。targetは7,979,510,245 bytes。
 
 [検証原本・全ID比較・作業量の診断](acceptance-evidence/task-reachable-effect-substitution.raw.zip) は 19 entry、128561 bytes、SHA256 `e11abef67e06f2ad1c8c86664e3a24564907dd988a9d933ca02afd3527c43170`。各entryの長さとSHA256を再照合した。既存履歴 3016101 bytesのSHA256 `5546134fd2d184a98a5d4629904e82f88331978bcaddbbc9bf5b61957aef422c` をprefixとして保持した。
+
+<a id="solved-effect-application"></a>
+## 2026-11-19 — 確定済みの作用セルを同じ適用表から使う
+
+Source `061f4e121c220c0b9a79e42671e32cf4026eebf9`。基点は `9e7318c642c171858cda2017dbe77d143d602838`。比較元のCompiler統合テストは `e59fd6ac05e1316ff76f1877f56f45406c3c757a`。公開後に3件のRust blobと実行入力のSHA256を照合した。
+
+作用の適用表は、制約の組み立てではセル変数を、作用式の確定ではその同じセルの最小解を入力に取る。importされたセルは受け取り側の現在の解を適用する。適用結果と許可条件は一度構築した引数を共有する。表の適用は引数個数を照合し、確定後は元の作用項と最小解を独立した正準式で再検証する。3 Rustファイルで物理行の純増27。
+
+Compilerの同じ2 target・152 IDのnextestは149成功・3失敗・0スキップ。遅延コールバックは確定済み作用式の構築を通過し、独立した `CanonicalReplay` における宣言本体の読取りで作業上限に達した。captured Mapは新しい型制約の適用範囲で作業上限に達した。Map復元は両テストとも型検査で失敗した。fmtと構造ゲートは終了0。Compilerの2 target以外の逆依存テスト、Semaユニットテスト、Clippy、workspace最終受入、Native／Web最終受入は未実行。CARGO_INCREMENTAL=0。
+
+[検証原本・LLDB・全ID比較・公開照合](acceptance-evidence/task-solved-effect-application.raw.zip) は 16 entry、52697 bytes、SHA256 `94033cbc4b96ba809d580322dbfbce213037228581fc38001a1f3c077912cb50`。各entryの長さとSHA256を再照合した。既存履歴 3018173 bytesのSHA256 `b3e803d778d33fe266f3e840e83c6d1b2c682d9caa7e02be40bec958c1bd7da2` をprefixとして保持した。
