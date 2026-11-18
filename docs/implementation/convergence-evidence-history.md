@@ -18460,3 +18460,18 @@ Supersedes: 関数値の特殊化がcanonicalなcallable schemaの生成とseman
 12 Rust path、672追加／481削除、物理191 LOC増。差分は既存gateとlower source expectationの所有境界に置いた。Cargo manifest・公開契約・版に変更はない。
 
 [検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-prepared-call-operands-checkpoint.raw.zip) は33 entry、589,125 bytes、SHA256 `4320134e531408bdc4c1f4233a093b5174c7770d90185e1971690540fd53412d`。各entryの長さとSHA256を再読取で照合した。旧履歴2,853,459 bytesの SHA256 `fa0f8ef2265c20a37b3f2cb29196e16b45daac5585d1f42ebbc57a0f66008f8e` をprefixとして保持した。
+
+<a id="prepared-materialized-source-checkpoint"></a>
+## 2026-11-18 — 呼出しの確定処理で完了済みのsource型を使う
+
+基点 `2c1e2972ea58fa7947e1825a430b5fb3e6879626`。Source `c850e37cde645e5938b255d7641810270fa6a502` を既存mainへ通常commitし、非force push後のmainと9入力の公開blobをSHA256で照合した。公開直後のtracked差分は0件。既存の未追跡 %SystemDrive%/ を保持した。
+
+確定requestの期待型・実型・source projectionを、完了したcomponentが所有するcanonical型に揃えた。元の観測operandからsourceのΓを保持し、式チェッカーへ渡す期待型だけをそのframeに戻してprepared型に変換する。再観測時はsourceとphaseと元Γを検証し、同じprincipalで作用項を閉じた後に同一frameへ移送する。閉じた実型とsource projection、guardの証拠を照合する。子呼出しでは同一componentの確定projectionを使う。関数値の特殊化では元の関数型を別に照合し、特殊化後の出力は確定projectionから読む。callbackの元の式再評価経路は残っている。新しい作用項を完了済みprincipalに追加する経路は設けていない。実original productのdispatch、保持した式準備の再利用、prepared特殊化factの発行は未達である。
+
+既存fixtureを拡張した。実Named本体と外部から与えたFuture値を同じprincipalで閉じ、保持した項から得た型と完了済みの実型を照合する。元Γでprepared期待型を再構成し、sourceの取り違え、実型の不一致、証拠の不一致は既存のanalyzer fixtureで検査する。これらのfixtureは未実行。
+
+必須の `cargo check --locked -p arcweft-lang-sema --tests --all-features` は3回とも終了101。dev01は新規importの誤りでlibrary 1／lib test 3エラー。dev02は427／1,470エラーで、閉じたsourceを複製するときの元Γと既存テストのgraph引数を修正した。固定入力の最終dev03はlibrary **426エラー・25警告**、lib test **1,464エラー・44警告**。旧eager completion、prepared特殊化fact、既存fixtureの移行はコンパイル未完了。最終差分のRust pathに出た一次診断27件を原本へ保持した。3回のowner fmtは終了0。nextest、Clippy、doctest、推移的逆依存、workspace、Native／AWBC、Native／Web最終受入は未実行。CARGO_INCREMENTAL=0、jobs／profile上書きなし。targetは最終計測347,716,549 bytesで、約300 GBに達しなかったため既存の成果物を使った。
+
+9 Rust path、288追加／83削除、物理205 LOC増。Cargo manifest・公開契約・版の変更はない。
+
+[検証原本・所有レビュー・入力・staged diff・公開照合](acceptance-evidence/task-prepared-materialized-source-checkpoint.raw.zip) は26 entry、312,253 bytes、SHA256 `e7b8895bfd79be7e0880bb710bec2ac1e3c61f62a0f7e9e680c115e36c29e4eb`。各entryの長さとSHA256を再読取で照合した。旧履歴2,856,899 bytesの SHA256 `2911358fc8c4a668d049f180226d1d2b18756b1b21331b5f2b885f9c605e72ef` をprefixとして保持した。
