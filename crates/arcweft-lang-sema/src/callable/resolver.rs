@@ -172,12 +172,11 @@ pub(crate) enum PreparedFinalCallCallee<'a> {
         seed: Box<AcceptedEnumVariantCase>,
     },
     RecordConstructor {
-        source: ExprId,
+        receiver: PreparedCallReceiver,
         seed: Box<AcceptedRecordConstructor>,
     },
     Selected {
-        receiver_expression: ExprId,
-        receiver_type: Box<TypeKind>,
+        receiver: PreparedCallReceiver,
         method: CallableName,
     },
     AssociatedType {
@@ -205,7 +204,7 @@ pub(crate) enum PreparedFinalCallCallee<'a> {
 pub(crate) enum PreparedCallCalleeConstraintInputs {
     Free,
     EnumConstructor,
-    ValueReceiver { source: ExprId, actual: TypeKind },
+    ValueReceiver(PreparedCallReceiver),
     AssociatedType { actual: TypeKind },
     DialogueCallee,
     DialogueApplication,
@@ -252,23 +251,38 @@ impl PreparedStaticContentCallee {
     }
 }
 
+/// A value receiver's resolver observation and its original solver operand.
+/// Both come from the same accepted expression and source scope.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PreparedImplicitExtensionReceiver {
+pub(crate) struct PreparedCallReceiver {
     source: ExprId,
-    actual: TypeKind,
+    observed: Arc<TypeKind>,
+    original: Arc<TypeKind<crate::types::PreparedEffects>>,
 }
 
-impl PreparedImplicitExtensionReceiver {
-    pub(crate) const fn new(source: ExprId, actual: TypeKind) -> Self {
-        Self { source, actual }
+impl PreparedCallReceiver {
+    pub(crate) fn new(
+        source: ExprId,
+        observed: TypeKind,
+        original: TypeKind<crate::types::PreparedEffects>,
+    ) -> Self {
+        Self {
+            source,
+            observed: Arc::new(observed),
+            original: Arc::new(original),
+        }
     }
 
     pub(crate) const fn source(&self) -> ExprId {
         self.source
     }
 
-    pub(crate) const fn actual(&self) -> &TypeKind {
-        &self.actual
+    pub(crate) fn observed(&self) -> &TypeKind {
+        &self.observed
+    }
+
+    pub(crate) const fn original(&self) -> &Arc<TypeKind<crate::types::PreparedEffects>> {
+        &self.original
     }
 }
 
@@ -633,7 +647,7 @@ impl PreparedCallCalleeConstraintInputs {
             }
             Self::Free
             | Self::EnumConstructor
-            | Self::ValueReceiver { .. }
+            | Self::ValueReceiver(_)
             | Self::AssociatedType { .. }
             | Self::DialogueCallee
             | Self::DialogueApplication
@@ -694,20 +708,9 @@ impl PreparedFinalCallCallee<'_> {
                 PreparedCallCalleeConstraintInputs::Free
             }
             Self::EnumConstructor { .. } => PreparedCallCalleeConstraintInputs::EnumConstructor,
-            Self::RecordConstructor { source, seed } => {
-                PreparedCallCalleeConstraintInputs::ValueReceiver {
-                    source: *source,
-                    actual: seed.receiver.clone(),
-                }
+            Self::RecordConstructor { receiver, .. } | Self::Selected { receiver, .. } => {
+                PreparedCallCalleeConstraintInputs::ValueReceiver(receiver.clone())
             }
-            Self::Selected {
-                receiver_expression,
-                receiver_type,
-                ..
-            } => PreparedCallCalleeConstraintInputs::ValueReceiver {
-                source: *receiver_expression,
-                actual: receiver_type.as_ref().clone(),
-            },
             Self::AssociatedType { receiver, .. } => {
                 PreparedCallCalleeConstraintInputs::AssociatedType {
                     actual: receiver.ty().clone(),
@@ -738,17 +741,13 @@ impl PreparedFinalCallCallee<'_> {
                 context: *context,
             },
             Self::EnumConstructor { seed } => PreparedCallCallee::EnumConstructor { seed },
-            Self::RecordConstructor { source, seed } => PreparedCallCallee::RecordConstructor {
-                source: *source,
+            Self::RecordConstructor { receiver, seed } => PreparedCallCallee::RecordConstructor {
+                source: receiver.source(),
                 seed,
             },
-            Self::Selected {
-                receiver_expression,
-                receiver_type,
-                method,
-            } => PreparedCallCallee::Selected {
-                receiver_expression: *receiver_expression,
-                receiver_type,
+            Self::Selected { receiver, method } => PreparedCallCallee::Selected {
+                receiver_expression: receiver.source(),
+                receiver_type: receiver.observed(),
                 method,
             },
             Self::AssociatedType { receiver, member } => PreparedCallCallee::AssociatedType {
@@ -781,6 +780,12 @@ type FinalCallSourceAnnotations<'a> = dyn Fn(
     ) -> Result<Option<TypeKind>, FinalSemanticAnalysisError>
     + 'a;
 
+type FinalCallReceiverPreparation<'a> = dyn Fn(
+        ExprId,
+        &TypeKind<crate::types::PreparedEffects>,
+    ) -> Result<PreparedCallReceiver, FinalSemanticAnalysisError>
+    + 'a;
+
 /// Immutable child facts needed to prepare one final-HIR call.
 pub(crate) struct FinalCallCalleeFacts<'a, 'source, P, U> {
     flow_transfer: Option<arcweft_lang_hir::identity::StmtId>,
@@ -790,6 +795,7 @@ pub(crate) struct FinalCallCalleeFacts<'a, 'source, P, U> {
     types: &'a BTreeMap<TypeId, TypeKind>,
     function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
     annotations: &'source FinalCallSourceAnnotations<'source>,
+    receiver: &'source FinalCallReceiverPreparation<'source>,
 }
 
 impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
@@ -800,6 +806,7 @@ impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
         types: &'a BTreeMap<TypeId, TypeKind>,
         function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
         annotations: &'source FinalCallSourceAnnotations<'source>,
+        receiver: &'source FinalCallReceiverPreparation<'source>,
     ) -> Self {
         Self {
             flow_transfer: None,
@@ -809,6 +816,7 @@ impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
             types,
             function_value_origin,
             annotations,
+            receiver,
         }
     }
 
@@ -859,8 +867,8 @@ pub(crate) enum PrepareFinalCallCalleeError {
     InvalidFunctionSchema,
     #[error("checked enum variant cannot issue one accepted constructor case")]
     InvalidEnumVariantAuthority { expression: ExprId },
-    #[error("a callee's authored type projection failed")]
-    SourceAnnotations(#[source] Box<FinalSemanticAnalysisError>),
+    #[error("a callee source type projection failed")]
+    SourceType(#[source] Box<FinalSemanticAnalysisError>),
     #[error("checked channel cannot issue its declaration-backed record constructor")]
     InvalidRecordConstructorAuthority { expression: ExprId },
     #[error("checked Character project item has no exact Character identity")]
@@ -992,7 +1000,7 @@ impl AcceptedEnumVariantCase {
             .ok_or_else(malformed)?;
         let mut authored = |ty: &TypeKind<crate::types::PreparedEffects>| {
             project(ty)
-                .map_err(|error| PrepareFinalCallCalleeError::SourceAnnotations(Box::new(error)))?
+                .map_err(|error| PrepareFinalCallCalleeError::SourceType(Box::new(error)))?
                 .ok_or_else(malformed)
         };
         let ty = authored(&owner.ty())?;
@@ -1637,7 +1645,7 @@ pub(crate) struct CallResolverRequest<'a> {
     prepared_continuations: &'a dyn super::PreparedCallContinuationAuthority,
     work: &'a mut ResolverWork,
     limits: &'a CallableLimits,
-    implicit_extension_receiver: Option<PreparedImplicitExtensionReceiver>,
+    implicit_extension_receiver: Option<PreparedCallReceiver>,
 }
 
 /// Immutable authorities and controls for one final-HIR call-resolution query.
@@ -1653,7 +1661,7 @@ pub(crate) struct CallResolverContext<'a> {
     pub(crate) cancellation: &'a AtomicBool,
     pub(crate) prepared_continuations: &'a dyn super::PreparedCallContinuationAuthority,
     pub(crate) limits: &'a CallableLimits,
-    pub(crate) implicit_extension_receiver: Option<PreparedImplicitExtensionReceiver>,
+    pub(crate) implicit_extension_receiver: Option<PreparedCallReceiver>,
 }
 
 /// The one checked-callable selection authority admitted while a final

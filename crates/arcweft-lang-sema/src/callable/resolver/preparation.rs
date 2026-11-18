@@ -181,10 +181,12 @@ where
                 expression: value,
             });
         }
+        let receiver = (facts.receiver)(value, receiver)
+            .map_err(|error| PrepareFinalCallCalleeError::SourceType(Box::new(error)))?;
         let seed =
             super::AcceptedRecordConstructor::try_from_channel(
                 authority,
-                receiver,
+                receiver.observed(),
                 facts.types,
                 limits,
             )
@@ -192,7 +194,7 @@ where
                 PrepareFinalCallCalleeError::InvalidRecordConstructorAuthority { expression: value }
             })?;
         return Ok(PreparedFinalCallCallee::RecordConstructor {
-            source: value,
+            receiver,
             seed: Box::new(seed),
         });
     }
@@ -226,15 +228,16 @@ where
                 expression: value,
             });
         }
-        let receiver_type = receiver
-            .value_type()
-            .ok_or(PrepareFinalCallCalleeError::MissingValueType {
-                expression: select.target(),
-            })?
-            .clone();
+        let receiver_type =
+            receiver
+                .value_type()
+                .ok_or(PrepareFinalCallCalleeError::MissingValueType {
+                    expression: select.target(),
+                })?;
+        let receiver = (facts.receiver)(select.target(), receiver_type)
+            .map_err(|error| PrepareFinalCallCalleeError::SourceType(Box::new(error)))?;
         return Ok(PreparedFinalCallCallee::Selected {
-            receiver_expression: select.target(),
-            receiver_type: Box::new(receiver_type),
+            receiver,
             method: CallableName::try_new(member.as_str())
                 .map_err(|_| PrepareFinalCallCalleeError::InvalidValuePath { expression: value })?,
         });
@@ -629,16 +632,15 @@ where
         expression: value_receiver,
     })?;
 
+    let ty = checked
+        .value_type()
+        .ok_or(PrepareFinalCallCalleeError::MissingValueType {
+            expression: value_receiver,
+        })?;
+    let receiver = (facts.receiver)(value_receiver, ty)
+        .map_err(|error| PrepareFinalCallCalleeError::SourceType(Box::new(error)))?;
     Ok(PreparedFinalCallCallee::Selected {
-        receiver_expression: value_receiver,
-        receiver_type: Box::new(
-            checked
-                .value_type()
-                .ok_or(PrepareFinalCallCalleeError::MissingValueType {
-                    expression: value_receiver,
-                })?
-                .clone(),
-        ),
+        receiver,
         method: CallableName::try_new(member.as_str()).map_err(|_| {
             PrepareFinalCallCalleeError::InvalidValuePath {
                 expression: value_receiver,

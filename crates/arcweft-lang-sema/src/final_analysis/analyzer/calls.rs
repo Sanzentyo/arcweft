@@ -1904,6 +1904,9 @@ impl Analyzer<'_, '_, '_> {
                 .map_err(AnalyzerExpressionError::fatal)?;
             let annotations =
                 |owner, ty: &TypeKind<PreparedEffects>| types.project_annotations(owner, ty);
+            let receiver = |owner, ty: &TypeKind<PreparedEffects>| {
+                types.call_receiver(owner, ty, self.facts.effect_declarations()?.read())
+            };
             prepare_final_call_callee(
                 authority,
                 source.owner,
@@ -1918,6 +1921,7 @@ impl Analyzer<'_, '_, '_> {
                     &self.types,
                     function_value_origin,
                     &annotations,
+                    &receiver,
                 )
                 .with_flow_transfer(flow_transfer),
                 dialogue_context,
@@ -1925,7 +1929,7 @@ impl Analyzer<'_, '_, '_> {
             )
         }
         .map_err(|error| match error {
-            crate::callable::PrepareFinalCallCalleeError::SourceAnnotations(error) => {
+            crate::callable::PrepareFinalCallCalleeError::SourceType(error) => {
                 AnalyzerExpressionError::fatal(*error)
             }
             crate::callable::PrepareFinalCallCalleeError::PreparedContinuationInvariant(
@@ -1982,12 +1986,21 @@ impl Analyzer<'_, '_, '_> {
             let has_placeholders = region.has_placeholders().map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;
-            (!has_placeholders).then(|| {
-                crate::callable::PreparedImplicitExtensionReceiver::new(
-                    pipe.left,
-                    pipe.value.clone(),
+            if has_placeholders {
+                None
+            } else {
+                Some(
+                    self.source_type_preparation(context.work())
+                        .and_then(|types| {
+                            types.call_receiver(
+                                pipe.left,
+                                &pipe.value,
+                                self.facts.effect_declarations()?.read(),
+                            )
+                        })
+                        .map_err(AnalyzerExpressionError::fatal)?,
                 )
-            })
+            }
         } else {
             None
         };
@@ -2102,11 +2115,9 @@ impl Analyzer<'_, '_, '_> {
                     crate::callable::CallableInstantiation::Extension { .. }
                 )
             }) {
-                callee_inputs =
-                    crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver {
-                        source: receiver.source(),
-                        actual: receiver.actual().clone(),
-                    };
+                callee_inputs = crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver(
+                    receiver.clone(),
+                );
             } else if considered.iter().any(|candidate| {
                 matches!(
                     candidate.instantiation(),
@@ -3301,7 +3312,7 @@ impl Analyzer<'_, '_, '_> {
 
     fn stage_completed_nested_call(
         &mut self,
-        preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
+        mut preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
         selected: PreparedSelectedNestedCall,
         component: Arc<
             crate::types::constraints::CompletedConstraintComponent<
@@ -3380,13 +3391,9 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|error| {
                 CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
             })?;
-        if let crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual } =
+        if let crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver(receiver) =
             &recipe.callee_inputs
-            && !self
-                .facts
-                .expressions()
-                .get(source)
-                .is_some_and(|checked| checked.value_type() == Some(actual))
+            && !self.call_receiver_is_current(receiver)
         {
             return Err(CandidateFactOperationFailure::Expression(
                 AnalyzerExpressionError::Call {
@@ -3569,7 +3576,7 @@ impl Analyzer<'_, '_, '_> {
         }
         let prepared = self
             .source_type_preparation(preparation_work.clone())
-            .and_then(|source| source.retain(owner.into(), &value))
+            .and_then(|source| source.retain(owner, &value))
             .map_err(AnalyzerExpressionError::fatal)?;
         let mut checked = crate::final_analysis::prepared::PreparedResolvedExpression::value(
             prepared,
@@ -5331,6 +5338,14 @@ impl Analyzer<'_, '_, '_> {
         ))
     }
 
+    fn call_receiver_is_current(&self, receiver: &crate::callable::PreparedCallReceiver) -> bool {
+        self.facts
+            .expressions()
+            .get(&receiver.source())
+            .and_then(super::PreparedExpressionFact::value_type)
+            == Some(receiver.original().as_ref())
+    }
+
     fn stage_resolved_callee_expression(
         &mut self,
         preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
@@ -5405,16 +5420,11 @@ impl Analyzer<'_, '_, '_> {
         }
         let (value, nominal_receiver) = match call.callee() {
             HirCallCallee::Value { value } => {
-                if let crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver {
-                    source,
-                    actual,
-                } = callee_inputs
-                    && source == value
+                if let crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver(receiver) =
+                    callee_inputs
+                    && receiver.source() == *value
                 {
-                    let checked = self.facts.expressions().get(value).ok_or(
-                        FinalSemanticAnalysisError::CallResolutionFailed { owner: *value },
-                    )?;
-                    if checked.value_type() != Some(actual) {
+                    if !self.call_receiver_is_current(receiver) {
                         return Err(FinalSemanticAnalysisError::CallResolutionFailed {
                             owner: *value,
                         });
@@ -5424,23 +5434,17 @@ impl Analyzer<'_, '_, '_> {
                 (*value, false)
             }
             HirCallCallee::UnresolvedDot { value_receiver, .. } => match callee_inputs {
-                crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver {
-                    source,
-                    actual,
-                } if source == value_receiver => {
-                    let checked = self.facts.expressions().get(value_receiver).ok_or(
-                        FinalSemanticAnalysisError::CallResolutionFailed {
-                            owner: *value_receiver,
-                        },
-                    )?;
-                    if checked.value_type() != Some(actual) {
+                crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver(receiver)
+                    if receiver.source() == *value_receiver =>
+                {
+                    if !self.call_receiver_is_current(receiver) {
                         return Err(FinalSemanticAnalysisError::CallResolutionFailed {
                             owner: *value_receiver,
                         });
                     }
                     return Ok(AnalyzerPreparedCalleeExpression::semantic(*value_receiver));
                 }
-                crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver { .. } => {
+                crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver(_) => {
                     return Err(FinalSemanticAnalysisError::CallResolutionFailed {
                         owner: *value_receiver,
                     });
@@ -5636,6 +5640,11 @@ impl Analyzer<'_, '_, '_> {
             }
         };
         if let Some((receiver, _)) = &method_callee {
+            let crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver(operand) =
+                callee_inputs
+            else {
+                return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: value });
+            };
             match selected.instantiation() {
                 CallableInstantiation::Receiver {
                     receiver: selected_receiver,
@@ -5643,11 +5652,9 @@ impl Analyzer<'_, '_, '_> {
                 | CallableInstantiation::Extension {
                     receiver: selected_receiver,
                     ..
-                } if self
-                    .facts
-                    .expressions()
-                    .get(receiver)
-                    .is_some_and(|checked| checked.value_type() == Some(selected_receiver)) => {}
+                } if operand.source() == *receiver
+                    && operand.observed() == selected_receiver
+                    && self.call_receiver_is_current(operand) => {}
                 _ => return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: value }),
             }
         }

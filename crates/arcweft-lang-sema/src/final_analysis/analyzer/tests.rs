@@ -97,6 +97,69 @@ fn source_annotation_context_clones_share_work_and_preserve_original_cancellatio
 }
 
 #[test]
+fn call_receiver_observation_keeps_the_original_nested_effect_term() {
+    use crate::effect_row::{
+        EffectPredicate,
+        prepared::{PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow},
+    };
+
+    let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }", None);
+    let executable = fixture.project.analysis_view().unwrap();
+    let module = executable
+        .module(&CanonicalModulePath::crate_root())
+        .unwrap();
+    let owner = module.expressions().next().unwrap().0;
+    let cancellation = AtomicBool::new(false);
+    let control = FinalSemanticAnalysisControl::new(&cancellation);
+    let mut analyzer = Analyzer::new(
+        executable,
+        &fixture.symbols,
+        FinalSemanticCatalogs::production(&fixture.registered),
+        control,
+    )
+    .unwrap();
+    analyzer.resolve_region_types(None).unwrap();
+    analyzer.staged_callables = Some(analyzer.stage_checked_callables().unwrap());
+    let mut work = preparation_work::AnalyzerPreparationWork::root(10_000, control);
+    let mut graph = PreparedEffectGraph::default();
+    let scheme = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+        .unwrap();
+    let canonical_row = EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap());
+    graph
+        .prepare_body(
+            &scheme,
+            PreparedEffectRow::Canonical(canonical_row.clone()),
+            vec![],
+            &mut work,
+        )
+        .unwrap();
+    let term = graph.application(&scheme, vec![], &mut work).unwrap();
+    assert!(matches!(term, PreparedEffectRow::Term(_)));
+    let prepared = TypeKind::Vec(Box::new(TypeKind::Function {
+        binder: crate::types::GenericBinder::EMPTY,
+        predicate: PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        params: vec![],
+        return_type: Box::new(TypeKind::Unit),
+        effects: term,
+    }));
+
+    let types = analyzer.source_type_preparation(work).unwrap();
+    let receiver = types.call_receiver(owner, &prepared, graph.read()).unwrap();
+
+    assert_eq!(receiver.source(), owner);
+    assert_eq!(receiver.original().as_ref(), &prepared);
+    assert_eq!(
+        receiver.observed(),
+        &TypeKind::Vec(Box::new(TypeKind::function_with_effects(
+            vec![],
+            TypeKind::Unit,
+            canonical_row,
+        ))),
+    );
+}
+
+#[test]
 fn public_id_reference_family_checks_precede_cached_string_reuse() {
     let fixture =
         crate::final_analysis::tests::fixture("fn caller() { @target.sample.sprite; }", None);

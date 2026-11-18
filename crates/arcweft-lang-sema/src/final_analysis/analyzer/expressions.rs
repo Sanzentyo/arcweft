@@ -1454,25 +1454,28 @@ impl Analyzer<'_, '_, '_> {
                     .map_err(|_| {
                         AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
                     })?;
-                let context = self
+                let pipe = self
                     .pipe_stack
                     .iter()
                     .rev()
                     .find(|context| pipe_owner == Some(context.owner))
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                if expectation
-                    .complete_type()
-                    .is_some_and(|expected| !expected.accepts(&context.value))
-                {
-                    return Err(AnalyzerExpressionError::rejected(owner));
+                if let Some(expected) = expectation.complete_type() {
+                    let mismatch = self
+                        .source_type_preparation(context.work())
+                        .and_then(|types| types.annotation_mismatch(owner, expected, &pipe.value))
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                    if mismatch.is_some() {
+                        return Err(AnalyzerExpressionError::rejected(owner));
+                    }
                 }
                 let prepared = PreparedOwnerBoundExpression::new(
                     PreparedExpressionShell::value(
-                        context.value.clone(),
+                        pipe.value.clone(),
                         CheckedTypeSelection::Expected,
                         EffectSet::new(),
                     ),
-                    PreparedOwnerBoundResolution::pipe_left(context.owner),
+                    PreparedOwnerBoundResolution::pipe_left(pipe.owner),
                 );
                 Ok(Some(PreparedExpressionFact::from(prepared)))
             }

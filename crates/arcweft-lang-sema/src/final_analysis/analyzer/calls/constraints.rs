@@ -85,7 +85,7 @@ fn static_content_callee_matches(
         }
         PreparedCallCalleeConstraintInputs::Free
         | PreparedCallCalleeConstraintInputs::EnumConstructor
-        | PreparedCallCalleeConstraintInputs::ValueReceiver { .. }
+        | PreparedCallCalleeConstraintInputs::ValueReceiver(_)
         | PreparedCallCalleeConstraintInputs::AssociatedType { .. }
         | PreparedCallCalleeConstraintInputs::DialogueCallee
         | PreparedCallCalleeConstraintInputs::DialogueApplication
@@ -4706,22 +4706,22 @@ impl AnalyzerPreparedCallPrefix {
         &self,
     ) -> Option<crate::final_analysis::statement_effects::PreparedCallReceiverEvaluation> {
         use crate::final_analysis::statement_effects::PreparedCallReceiverEvaluation;
-        let PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual } =
+        let PreparedCallCalleeConstraintInputs::ValueReceiver(receiver) =
             &self.record.callee_inputs
         else {
             return None;
         };
-        if crate::callable::is_contextual_capability_type(actual) {
+        if crate::callable::is_contextual_capability_type(receiver.observed()) {
             return None;
         }
         Some(match self.application.selected().id().receiver_access() {
             crate::callable::CallableReceiverAccess::InspectPlace
             | crate::callable::CallableReceiverAccess::MutatePlace => {
-                PreparedCallReceiverEvaluation::Place(*source)
+                PreparedCallReceiverEvaluation::Place(receiver.source())
             }
             crate::callable::CallableReceiverAccess::Value
             | crate::callable::CallableReceiverAccess::BorrowValue => {
-                PreparedCallReceiverEvaluation::Value(*source)
+                PreparedCallReceiverEvaluation::Value(receiver.source())
             }
         })
     }
@@ -4744,7 +4744,7 @@ impl AnalyzerPreparedCallPrefix {
             .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
         let requires_value_callee = self.application.selected().requires_value_callee();
         let callee = match &self.record.callee_inputs {
-            PreparedCallCalleeConstraintInputs::ValueReceiver { source, .. } => {
+            PreparedCallCalleeConstraintInputs::ValueReceiver(receiver) => {
                 if requires_value_callee {
                     return Err(CallConstraintInvariant::PreparedBaseMismatch);
                 }
@@ -4752,7 +4752,7 @@ impl AnalyzerPreparedCallPrefix {
                     .metadata
                     .callee_expression
                     .semantic_expression()
-                    .or(Some(*source))
+                    .or(Some(receiver.source()))
             }
             PreparedCallCalleeConstraintInputs::FunctionValue { .. } => {
                 if !requires_value_callee {
@@ -6061,16 +6061,18 @@ pub(super) fn validate_and_prepare_call_constraints(
                     | CallableInstantiation::Character { .. }
             ) => {}
         (
-            PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual },
+            PreparedCallCalleeConstraintInputs::ValueReceiver(operand),
             CallableInstantiation::Receiver { receiver },
         ) => {
-            let receiver_source = AnalyzerCallConstraintSource::Receiver { source: *source };
-            if receiver != actual {
+            let receiver_source = AnalyzerCallConstraintSource::Receiver {
+                source: operand.source(),
+            };
+            if receiver != operand.observed() {
                 return Err(CallConstraintPreparationFailure::Invariant(
                     CallConstraintInvariant::MalformedSchemaInventory,
                 ));
             }
-            let actual = Arc::new(preparation.source_type(*source, actual)?);
+            let actual = Arc::clone(operand.original());
             if prepared_source_actuals
                 .insert(
                     receiver_source,
@@ -6094,20 +6096,22 @@ pub(super) fn validate_and_prepare_call_constraints(
             )?);
         }
         (
-            PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual },
+            PreparedCallCalleeConstraintInputs::ValueReceiver(operand),
             CallableInstantiation::Extension {
                 receiver,
                 group,
                 parameter,
             },
         ) => {
-            let receiver_source = AnalyzerCallConstraintSource::Receiver { source: *source };
-            if receiver != actual {
+            let receiver_source = AnalyzerCallConstraintSource::Receiver {
+                source: operand.source(),
+            };
+            if receiver != operand.observed() {
                 return Err(CallConstraintPreparationFailure::Invariant(
                     CallConstraintInvariant::MalformedSchemaInventory,
                 ));
             }
-            let actual = Arc::new(preparation.source_type(*source, actual)?);
+            let actual = Arc::clone(operand.original());
             if prepared_source_actuals
                 .insert(
                     receiver_source,

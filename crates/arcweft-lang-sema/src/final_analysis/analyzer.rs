@@ -323,7 +323,7 @@ struct PipeContext {
     owner: ExprId,
     left: ExprId,
     right: ExprId,
-    value: TypeKind,
+    value: TypeKind<crate::types::PreparedEffects>,
 }
 
 struct FunctionSiteContext {

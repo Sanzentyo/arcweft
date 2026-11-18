@@ -403,17 +403,15 @@ fn checked_receiver_projection(
         ) => Ok((CheckedCallReceiverProjection::None, 0)),
         (
             ResolvedCallableBaseInstantiation::Receiver { receiver },
-            crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual },
+            crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver(operand),
         ) => {
-            checked_value_receiver_source(
-                location, record, solution, *source, actual, receiver, sources,
-            )?;
+            checked_value_receiver_source(location, record, solution, operand, receiver, sources)?;
             let contextual_kind = match (
                 selected.id(),
                 receiver,
                 sources
                     .expressions
-                    .get(source)
+                    .get(&operand.source())
                     .and_then(PreparedExpressionFact::resolved)
                     .map(|expression| expression.resolution()),
             ) {
@@ -443,7 +441,7 @@ fn checked_receiver_projection(
             };
             let source = checked_execution_source(
                 location,
-                crate::callable::CheckedCallArgumentSlotSource::Expression(*source),
+                crate::callable::CheckedCallArgumentSlotSource::Expression(operand.source()),
                 coordinates,
             )?;
             if let Some(kind) = contextual_kind {
@@ -493,11 +491,9 @@ fn checked_receiver_projection(
                 group,
                 parameter,
             },
-            crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual },
+            crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver(operand),
         ) => {
-            checked_value_receiver_source(
-                location, record, solution, *source, actual, receiver, sources,
-            )?;
+            checked_value_receiver_source(location, record, solution, operand, receiver, sources)?;
             Ok((
                 CheckedCallReceiverProjection::Operand {
                     mode: CallableReceiverMode::Extension {
@@ -508,7 +504,9 @@ fn checked_receiver_projection(
                     ty: receiver.clone(),
                     source: checked_execution_source(
                         location,
-                        crate::callable::CheckedCallArgumentSlotSource::Expression(*source),
+                        crate::callable::CheckedCallArgumentSlotSource::Expression(
+                            operand.source(),
+                        ),
                         coordinates,
                     )?,
                     abi_position: 0,
@@ -527,11 +525,12 @@ fn checked_value_receiver_source(
     location: FinalCallSealLocation,
     record: &AnalyzerDetachedCandidateRecord,
     solution: &crate::callable::FrozenCallTypeSolution,
-    source: ExprId,
-    prepared_actual: &TypeKind,
+    operand: &crate::callable::PreparedCallReceiver,
     resolved_receiver: &TypeKind,
     sources: &mut CallSourceFacts<'_, '_, '_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
+    let source = operand.source();
+    let prepared_actual = operand.observed();
     let source_identity = super::calls::AnalyzerCallConstraintSource::Receiver { source };
     let mut rows = record
         .component
@@ -548,7 +547,8 @@ fn checked_value_receiver_source(
         .ok_or_else(|| {
             final_call_seal_error(location, CallConstraintInvariant::PreparedBaseMismatch)
         })?;
-    if rows.next().is_some()
+    if source_type != operand.original().as_ref()
+        || rows.next().is_some()
         || closed.actual() != prepared_actual
         || !closed.prepared_source_projection().is_scalar()
         || closed.source_projection() != &crate::types::CheckedConstraintSourceProjection::Scalar

@@ -943,7 +943,7 @@ fn resolve_free_call(
                 entry.primary().schema().extension_receiver(),
             ) {
                 (Some(receiver), Some(extension)) => CallableInstantiation::Extension {
-                    receiver: receiver.actual().clone(),
+                    receiver: receiver.observed().clone(),
                     group: extension.group(),
                     parameter: extension.parameter(),
                 },

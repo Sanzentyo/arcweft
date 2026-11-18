@@ -95,26 +95,27 @@ impl Analyzer<'_, '_, '_> {
                 },
             );
         }
-        let PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual } = callee else {
+        let PreparedCallCalleeConstraintInputs::ValueReceiver(receiver) = callee else {
             return Err(
                 FinalSemanticAnalysisError::LifetimePromotionReceiverRequired {
                     source_span: expression_span(module, promotion.receiver())?,
                 },
             );
         };
-        if *source != promotion.receiver() {
+        let source = receiver.source();
+        if source != promotion.receiver() {
             return Err(FinalSemanticAnalysisError::InvalidOwner);
         }
         if matches!(
             promotion.authorization(),
             HirLifetimePromotionAuthorization::Safe { .. }
         ) {
-            let source_span = expression_span(module, *source)?;
-            let mut receiver = ReceiverBorrowQuery::new(self.symbols, self.control, &source_span);
-            let borrowed = match receiver.storage(actual, &self.types)? {
+            let source_span = expression_span(module, source)?;
+            let mut borrow = ReceiverBorrowQuery::new(self.symbols, self.control, &source_span);
+            let borrowed = match borrow.storage(receiver.observed(), &self.types)? {
                 TypeStorage::Borrowed => true,
                 TypeStorage::Callable => {
-                    self.value_has_borrowed_captures(context, *source, &mut receiver)?
+                    self.value_has_borrowed_captures(context, source, &mut borrow)?
                 }
                 TypeStorage::Ordinary => false,
             };

@@ -128,6 +128,35 @@ impl<'a> SourceTypePreparation<'a> {
             })
     }
 
+    pub(super) fn call_receiver(
+        &self,
+        expression: super::ExprId,
+        ty: &TypeKind<crate::types::PreparedEffects>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+    ) -> Result<crate::callable::PreparedCallReceiver, super::FinalSemanticAnalysisError> {
+        use super::FinalSemanticAnalysisError;
+        let owner = expression.into();
+        let mut work = self.work.clone();
+        let formals = self
+            .owner(owner, &mut work)?
+            .declaration_formals_with_control(&mut work)
+            .map_err(|error| FinalSemanticAnalysisError::source_type_projection(owner, error))?;
+        let scope = formals.template_scope();
+        let original = ty
+            .retain_effects(scope, graph, &mut work)
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_prepared_type_retention(owner, error)
+            })?;
+        let observed = original
+            .observe_canonical_effects(scope, graph, &mut work)
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_type_effect_projection(owner, error)
+            })?;
+        Ok(crate::callable::PreparedCallReceiver::new(
+            expression, observed, original,
+        ))
+    }
+
     /// A signature that comes entirely from authored annotations needs no
     /// solution from the live relation.
     pub(super) fn project_annotations(
