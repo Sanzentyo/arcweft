@@ -19612,3 +19612,16 @@ Compilerの548 IDは前回と同じ529成功・19失敗で、新規失敗は0件
 Semaの全feature checkではライブラリを生成し、単体テスト対象は終了101・817エラー・33警告だった。前回とエラーのコード・ファイル別内訳が一致した。SemaライブラリのClippyは終了0・1,688警告。fmt・差分検査・構造ゲートは終了0、構造阻害0件。Cargoの全feature逆依存は起点込み 22 package。Sema単体テスト、全逆依存のテスト、workspace全targetのcheck／Clippy、Native／Web最終受入は未実行。公開されたRust 1 blobを照合した。`target` は `11355785310` bytes。
 
 [LLDBの計測、CompilerとSemaの検証原本、公開照合](acceptance-evidence/task-retain-owned-effect-relation.raw.zip) は 32 entry、608115 bytes、SHA256 `2909303e7b08e3b8387f9f6fa447e58dc5de7ef0f65fe0f33a2c19598f7cd68e`。各原本の長さとハッシュを照合した。
+
+<a id="observe-control-result-types"></a>
+## 2026-11-19 — 分岐の実際の型から共通結果型を求める
+
+基点 `960f232cc8b349e751d9843c3ec2f2eddfefce19` の `callable_origins_remain_distinct_across_a_branch` は、実行宣言のローカル束縛を確定する途中で `ExpressionTypeUnavailable` を返した。LLDBで発生箇所を `infer_control_branch_type` の共通型の比較に特定した。等しい型の関数を返す2枝は別の宣言に属する準備済み作用項を持ち、その項の同一性を含む比較で不一致になった。
+
+Source `53e3bc6d631534770c99b68e3cfa68029e85117a` は、各枝の試行を取り消す前に、その枝の作用関係から型を観測する。共通型には既存の結果型の結合規則を使う。各枝の元の式と宣言はそのまま使い、公開前に元の型と共通型の適合性を確定した作用関係から再照合する。`if`、`if let` と `match` の式で同じ規則を使う。
+
+Compilerの全548 IDを比較し、531成功・17失敗、新規失敗0件。分岐で選んだ2つの関数をそれぞれ段階適用し、NativeとデコードしたAWBCの両方で42を確認した。View productの `match` 対象21件はすべて成功し、選択外は93件だった。空のMatchでセレクタが戻らないケースは、評価予算と保存復元時の失敗原子性を184.459秒で確認した。後段の作用を要求する `UnresolvedFuture` 6件と、候補作業上限に達する経路が残る。
+
+Semaの全feature checkではライブラリを生成し、テスト対象は終了101・817エラー・33警告だった。前回とエラーのコード・ファイル別内訳が一致した。SemaライブラリのClippy、fmt、差分検査、構造ゲートは終了0、構造阻害0件。Cargoの全feature逆依存は起点込み 22 package。Sema単体テスト、全逆依存のテスト、workspace全targetのcheck／Clippy、Native／Web最終受入は未実行。公開されたRust 3 blobを照合した。`target` は `12891084080` bytes。
+
+[LLDBの計測、CompilerとSemaの検証原本、公開照合](acceptance-evidence/task-observe-control-result-types.raw.zip) は 27 entry、613198 bytes、SHA256 `cb619592b5056699043feb123fc45d5e72e3cdae98df1c413bfcf859a77c2e2f`。各原本の長さとハッシュを照合した。
