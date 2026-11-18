@@ -19352,3 +19352,17 @@ Compilerの2 targetは同じ152 IDで149成功・3失敗・0スキップ。遅�
 全featureのlocked Sema checkは通常ライブラリ成功、lib testは終了101・829エラー・33警告で従前と同じコード・発生ファイルの内訳だった。途中の833エラーには置換前のメソッドを呼ぶテスト4件を含み、全4件を移行した。fmt、差分チェック、構造ゲートは終了0、構造阻害0件。Semaのユニットテストや全体受入は未実行。
 
 [検証原本・LLDB・診断比較・公開照合](acceptance-evidence/task-admitted-effect-context.raw.zip) は21 entry、791314 bytes、SHA256 `fced865943b9110438c50bdeb5f43c00f092d1cf0796a1d68642324a1a09e0b8`。最終検証とデバッガ実行で本番ソースのハッシュが一致することを確かめた。既存履歴の前置部分はバイト単位で照合した。
+
+
+<a id="reduce-canonical-conditional"></a>
+## 2026-11-19 — 選ばれる正準グラフだけを複製
+
+Source `087746ba5ef9c5ea8e854873d007ffaa8a8cc50a`。基点は `1f652f0030b0c16436b1b974ed8cfe800a7dde66`。Coreは決定グラフを取り込む前に既存の条件式簡約を適用する。各グラフのローカルな枝番号を別々の引数として扱い、定数で選ばれた値だけを複製する。結果の根・実ノード・ラベルのoverrideを複製前に計上し、空の同時置換にも同じ複製を使う。Semaの複製はCoreへ委譲する。5 Rustファイル、物理行の純増64。公開blob 5件を入力と照合した。
+
+途中のCore全件実行は2,344成功・14失敗。すべて定数の条件式に追加した1単位が、保存復元や元の値のexact-work検査に影響した。ゼロ決定ノードの定数演算は従来どおりとし、上限・アサーション・fixtureを変更せずに再実行した。最終Core単体は2,358件すべて成功。基準の2,357 IDは全件同じ結果で、追加した1件は選ばれないグラフのサイズによって必要予算が増えないことと、複製前の不足拒否を検査した。
+
+Compilerの2 targetは同じ152 IDで150成功・2失敗・0スキップ。唯一の変化はcaptured Mapの成功で、i64をキャプチャした元のコールバックをNativeの1 step最大1 opで実行した。AWBCではそのコールバックのフレームがある時点で保存し、別セッションへ復元し、同じsnapshotを確認して残りを処理した。両executorの戻り値は24。遅延コールバックは作用制約の独立照合、retained Mapは確定作用を使ったヘッダ投影で候補共有の作業上限に達した。
+
+Core・Semaの全featureのライブラリClippy、fmt、差分チェック、構造ゲートは終了0、構造阻害0件。locked Sema checkは通常ライブラリ成功、lib testは終了101・829エラー・33警告で、発生ファイル・コードの内訳は同じ。hostの全featureのCargo graphはCoreを含む52パッケージを示した。全逆依存nextest、Semaユニット、全workspace check／Clippy、Tier 2、Native／Webの最終受入は未実行。
+
+[検証原本・途中の失敗・LLDB・公開照合](acceptance-evidence/task-reduce-canonical-conditional.raw.zip) は29 entry、1018955 bytes、SHA256 `8258904abc94199a18c1885f65f52e5b0c0b1a7135aa4121ce3adf44867aff3b`。各原本の長さとハッシュを照合した。既存履歴は追記前のバイト列を保持した。
