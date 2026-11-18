@@ -19558,3 +19558,18 @@ Source `f05f45a88681b559a2ef48aa62381531d7918dcd` では、準備済み作用グ
 Semaの全feature checkはライブラリを生成し、テスト対象は終了101・817エラー・33警告だった。前回とコード・ファイル別の内訳が一致した。Semaの追加fixture、全推移的逆依存のテスト、workspace全targetのcheck／Clippy、Native／Web最終受入は未実行。SemaライブラリClippy・fmt・差分検査・構造ゲートは終了0、構造阻害0件。全featureのCargo逆依存は起点込み22 package。公開3 blobを照合した。 `target` は10596801003 bytesだった。
 
 [作用行の発行計測、Compilerの全ID比較、最終検証と公開照合](acceptance-evidence/task-bare-effect-substitution.raw.zip) は26 entry、919878 bytes、SHA256 `12786715b64dad772983571d2ce0dfe24e99b6d3ddc61d9e19edbdda8ccad0a0`。各原本の長さとハッシュを照合した。
+
+<a id="declared-function-value-binder"></a>
+## 2026-11-19 — 宣言のジェネリックを準備済み関数値に束縛
+
+基点 `e1e558cb263f1fa9995d02f8027a5663b3ee92df` の反復部分適用とコールバック作用の2例をLLDBで追った。どちらも元の式を制約入力に移す際に停止した。プロジェクト宣言の関数値は未束縛の矢印を保持していたため、呼び出し元のスコープに属さない宣言の型・作用変数が制約の実引数に残っていた。
+
+Source `3fbff4766da09d4df45a0fd907bc197b323568f1` では、宣言の関数値に型・定数・作用の束縛を付ける。宣言のジェネリック表を読み取り、既存の型構造の投影で入れ子のスコープを保つ。作用スキームをその束縛下の引数に移し、作用グラフの一つの編集として確定する。呼び出し候補を開くテンプレートと、関数値が所有する束縛は別の段階で具体化する。宣言表の構築前の計上は宣言のスキーマが担う。
+
+主要Compilerは同じ152 IDすべて成功。追加396 IDは376成功・20失敗。前回失敗した12 IDが成功し、新規失敗はなかった。NativeとAWBCの両方で、同じprefixを文字列／boolで再利用し、別々に確定した先行型と後段型を保持し、別の宣言groupに進み、後段ごとに結果型を決められることを確認した。
+
+コールバック作用の6件はスコープ検査を通過し、部分適用の作用確定で `UnresolvedFuture` となった。代表例のLLDB計測では `TypeConstraintTransaction::complete_component` から入力を渡さずに最終作用を閉じる経路が、後段が決める作用を要求した。
+
+全featureのSema checkはライブラリの生成に成功。テスト対象は終了101・817エラー・33警告で、前回とコード・ファイル別の内訳が一致した。Sema単体テスト、全推移的逆依存のテスト、workspace全targetのcheck／Clippy、Native／Web最終受入は未実行。SemaライブラリClippy・fmt・差分検査・構造ゲートは成功し、構造阻害0件。全featureのCargo逆依存は起点込み22 package。公開7 blobを照合した。`target` は10598734199 bytesだった。
+
+[LLDBの計測、Compilerの全ID比較、最終検証と公開照合](acceptance-evidence/task-declared-function-value-binder.raw.zip) は41 entry、949459 bytes、SHA256 `562a946d62e98c11ae1b869eb9f3650cd065088c281d2f9f686a7697f199bffd`。各原本の長さとハッシュを照合した。
