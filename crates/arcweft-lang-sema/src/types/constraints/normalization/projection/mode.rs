@@ -1,6 +1,7 @@
-//! Two statically distinct outputs of the same admission and projection fold.
+//! Outputs of the same admission and projection fold.
 
-use crate::types::PreparedEffects;
+use crate::types::{CanonicalEffects, PreparedEffects, TypeEffectDomain};
+use std::marker::PhantomData;
 
 mod admission;
 pub(super) use admission::AdmitOrigins;
@@ -74,14 +75,33 @@ pub(super) trait ProjectionMode<'ty, D: ConstraintDomain> {
 }
 
 /// Read-only inspection cannot be persisted as a provenance-bearing operand.
-pub(super) struct InspectValues;
+pub(super) struct InspectValues<E = PreparedEffects>(PhantomData<E>);
 
-impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
+trait InspectionEffects: TypeEffectDomain {
+    fn rebuild<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        shape: TypeConstraintShape<'_, PreparedEffects>,
+        children: Vec<TypeKind<Self>>,
+        length: Option<ArrayLength>,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind<Self>, TypeConstraintError>;
+
+    fn transport<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        enclosing: &ConstraintLexicalScope,
+        owner: &ConstraintLexicalScope,
+        value: &TypeKind<Self>,
+        parameter: &GenericTypeReference,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind<Self>, TypeConstraintError>;
+}
+
+impl<'ty, D: ConstraintDomain, E: InspectionEffects> ProjectionMode<'ty, D> for InspectValues<E> {
     type TypeInput = &'ty TypeKind<PreparedEffects>;
     type ConstInput = &'ty ArrayLength;
     type Children = TypeConstraintChildren<'ty, PreparedEffects>;
     type ShapeSeed = TypeConstraintShape<'ty, PreparedEffects>;
-    type TypeOutput = TypeKind<PreparedEffects>;
+    type TypeOutput = TypeKind<E>;
     type ConstOutput = ArrayLength;
 
     fn admit_type_reference<A: TypeConstraintAccounting>(
@@ -131,42 +151,38 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
         let shape = input.constraint_shape();
         Ok((shape.children(), shape))
     }
-    fn type_leaf(input: &Self::TypeInput) -> TypeKind<PreparedEffects> {
-        (*input).clone()
+    fn type_leaf(input: &Self::TypeInput) -> Self::TypeOutput {
+        let TypeKind::GenericParam(reference) = input else {
+            unreachable!("only generic references use the leaf substitution")
+        };
+        TypeKind::GenericParam(reference.clone())
     }
     fn const_leaf(input: &Self::ConstInput) -> ArrayLength {
         (*input).clone()
     }
     fn rebuild<A: TypeConstraintAccounting>(
         shape: Self::ShapeSeed,
-        children: Vec<TypeKind<PreparedEffects>>,
+        children: Vec<Self::TypeOutput>,
         length: Option<ArrayLength>,
         phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
-        let mut header = phase.inspected_header(shape, context)?;
-        shape.rebuild_with(
-            children,
-            &mut header,
-            |_, _| Ok(length.expect("array length was projected before its children")),
-            |header, row| Ok(header.take_row(row)),
-            |header, predicate| Ok(header.take_predicate(predicate)),
-        )
+    ) -> Result<Self::TypeOutput, TypeConstraintError> {
+        E::rebuild(shape, children, length, phase, context)
     }
     fn substitute_type<A: TypeConstraintAccounting>(
         _: &Self::TypeInput,
         _: &'ty ConstraintOperand<D>,
-        value: TypeKind<PreparedEffects>,
+        value: Self::TypeOutput,
         enclosing: &ConstraintLexicalScope,
         owner: &ConstraintLexicalScope,
         parameter: &GenericTypeReference,
         phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
+    ) -> Result<Self::TypeOutput, TypeConstraintError> {
         if owner == enclosing {
             Ok(value)
         } else {
-            phase.transport(enclosing, owner, &value, parameter.clone().into(), context)
+            E::transport(enclosing, owner, &value, parameter, phase, context)
         }
     }
     fn substitute_const<A: TypeConstraintAccounting>(
@@ -179,6 +195,89 @@ impl<'ty, D: ConstraintDomain> ProjectionMode<'ty, D> for InspectValues {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ArrayLength, TypeConstraintError> {
         context.transport_binding_length(enclosing, owner, &value, parameter.clone().into())
+    }
+}
+
+impl InspectionEffects for PreparedEffects {
+    fn rebuild<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        shape: TypeConstraintShape<'_, PreparedEffects>,
+        children: Vec<TypeKind<Self>>,
+        length: Option<ArrayLength>,
+        _: &mut ConstraintProjectionPhase<'_, D>,
+        _: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind<Self>, TypeConstraintError> {
+        shape.rebuild_with(
+            children,
+            &mut (),
+            |(), _| Ok(length.expect("array length was projected before its children")),
+            |(), row| Ok(row.clone()),
+            |(), predicate| Ok(predicate.clone()),
+        )
+    }
+
+    fn transport<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        enclosing: &ConstraintLexicalScope,
+        owner: &ConstraintLexicalScope,
+        value: &TypeKind<Self>,
+        parameter: &GenericTypeReference,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind<Self>, TypeConstraintError> {
+        phase.transport(enclosing, owner, value, parameter.clone().into(), context)
+    }
+}
+
+impl InspectionEffects for CanonicalEffects {
+    fn rebuild<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        shape: TypeConstraintShape<'_, PreparedEffects>,
+        children: Vec<TypeKind>,
+        length: Option<ArrayLength>,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        let ConstraintProjectionPhase::Completion { owner, .. } = phase else {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
+        };
+        let mut header = match shape {
+            TypeConstraintShape::Function {
+                effects, predicate, ..
+            } => {
+                let scope = context.capture_lexical_scope()?;
+                let (row, predicate) =
+                    owner.project_inspected_header(&scope, effects, predicate, context)?;
+                (Some(row), Some(predicate))
+            }
+            _ => (None, None),
+        };
+        shape.rebuild_with(
+            children,
+            &mut header,
+            |_, _| Ok(length.expect("array length was projected before its children")),
+            |(row, _), _| Ok(row.take().expect("the function row was projected")),
+            |(_, predicate), _| {
+                Ok(predicate
+                    .take()
+                    .expect("the function predicate was projected"))
+            },
+        )
+    }
+
+    fn transport<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        enclosing: &ConstraintLexicalScope,
+        owner: &ConstraintLexicalScope,
+        value: &TypeKind,
+        parameter: &GenericTypeReference,
+        _: &mut ConstraintProjectionPhase<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        enclosing
+            .transport_canonical_type(owner, value, context)
+            .map_err(|error| {
+                TypeConstraintContext::<A, D>::binding_transport_error(
+                    error,
+                    parameter.clone().into(),
+                )
+            })
     }
 }
 

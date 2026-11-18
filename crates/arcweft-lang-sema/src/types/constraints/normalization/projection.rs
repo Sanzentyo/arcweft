@@ -1,7 +1,7 @@
 //! Metered transitive projection of candidate bindings and scoped type terms.
 
 use crate::effect_row::prepared::{PreparedEffectGraph, PreparedEffectReadView};
-use crate::types::PreparedEffects;
+use crate::types::{CanonicalEffects, PreparedEffects};
 
 use std::collections::BTreeSet;
 
@@ -202,8 +202,8 @@ where
     })
 }
 
-/// Read-only closure uses the same scoped header substitution as retained
-/// operands. Its raw result cannot acquire provenance or Free authorization.
+/// Inspect the canonical algebra directly in the binding fold. The result
+/// carries neither a retained derivation nor Free authorization.
 pub(in crate::types::constraints) fn project_closed_type<A, D, L>(
     ty: &TypeKind<PreparedEffects>,
     branch: &super::super::transaction::ConstraintInferenceBranch<D, L>,
@@ -211,13 +211,13 @@ pub(in crate::types::constraints) fn project_closed_type<A, D, L>(
     effects: &std::sync::Arc<super::ConstraintClosedEffects<D>>,
     graph: PreparedEffectReadView<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<TypeKind<PreparedEffects>, TypeConstraintError>
+) -> Result<TypeKind, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
     effects.require_branch(branch)?;
-    project_type_fold::<A, D, InspectValues>(
+    project_type_fold::<A, D, InspectValues<CanonicalEffects>>(
         ty,
         branch.projection_view(),
         policy,

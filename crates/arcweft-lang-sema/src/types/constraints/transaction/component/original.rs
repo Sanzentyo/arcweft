@@ -474,7 +474,6 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     unreachable!("type key")
                 };
                 let value = project(&TypeKind::GenericParam(reference.clone()), context)?;
-                let value = effects.canonicalize(&value, scope.shape(), context)?;
                 let value = owner
                     .transport_canonical_type(scope, &value, context)
                     .map_err(|error| {
@@ -579,7 +578,6 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 };
                 let owner = context.binding_scope(original, &parameter.clone().into())?;
                 let left = project(&TypeKind::GenericParam(parameter.clone()), context)?;
-                let left = effects.canonicalize(&left, scope.shape(), context)?;
                 let right = context.with_original_scope(owner, |context| {
                     let projected =
                         crate::types::constraints::normalization::project_closed_operand(

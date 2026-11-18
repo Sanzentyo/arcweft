@@ -452,25 +452,6 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
             .map_err(TypeConstraintError::from)
     }
 
-    /// Complete an annotation using the principal already proved for this
-    /// equation. Compare its value in the same lexical scope as the annotation
-    /// and keep the operation charged to the original transaction.
-    pub(in crate::types::constraints) fn complete_binding_annotation<
-        A: TypeConstraintAccounting,
-    >(
-        &self,
-        annotation: &crate::types::TypeKind<PreparedEffects>,
-        (value, value_scope): (&crate::types::TypeKind, &ConstraintLexicalScope),
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<crate::types::TypeKind, TypeConstraintError> {
-        let annotation_scope = context.lexical_frames().clone();
-        let annotation = self.canonicalize(annotation, annotation_scope.shape(), context)?;
-        let value = annotation_scope.transport_canonical_type(value_scope, value, context)?;
-        annotation
-            .binding_type_with_inferred_effects_with_control(&value, context)?
-            .ok_or_else(|| TypeConstraintRejection::Mismatch.into())
-    }
-
     pub(in crate::types::constraints) fn project_header<A: TypeConstraintAccounting>(
         self: &Arc<Self>,
         header: &ConstraintFunctionHeaderView<'_, D>,
@@ -527,13 +508,12 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         A: TypeConstraintAccounting,
     >(
         &self,
-        scope: &Arc<ConstraintLexicalScope>,
+        scope: &ConstraintLexicalScope,
         row: &PreparedEffectRow,
         predicate: &PreparedEffectPredicate,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<ConstraintProjectedEffectHeader<(), PreparedEffects>, TypeConstraintError> {
-        let (row, predicate) = self.project_header_values(scope, row, predicate, None, context)?;
-        Ok(ConstraintProjectedEffectHeader::closed(row, predicate, ()))
+    ) -> Result<(EffectRow, EffectPredicate), TypeConstraintError> {
+        self.project_header_values(scope, row, predicate, None, context)
     }
 
     fn header_support<'a, A: TypeConstraintAccounting>(
@@ -583,7 +563,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
 
     fn project_header_values<A: TypeConstraintAccounting>(
         &self,
-        scope: &Arc<ConstraintLexicalScope>,
+        scope: &ConstraintLexicalScope,
         row: &PreparedEffectRow,
         predicate: &PreparedEffectPredicate,
         uses: Option<&mut HeaderReplacementUses>,
@@ -640,7 +620,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     fn replacement<A: TypeConstraintAccounting>(
         &self,
         key: &GenericEffectReference,
-        target: &Arc<ConstraintLexicalScope>,
+        target: &ConstraintLexicalScope,
         used: Option<&mut BTreeSet<GenericEffectReference>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<EffectRow, TypeConstraintError> {
@@ -653,7 +633,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         if let Some(used) = used {
             used.insert(key.clone());
         }
-        if row.value.shared_scope() == *target {
+        if row.value.scope() == target {
             return Ok(row.value.value().clone());
         }
         target

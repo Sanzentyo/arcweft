@@ -142,8 +142,6 @@ impl<D: ConstraintDomain> PendingEquation<D> {
             )
         };
         let pattern = project(pattern, context)?;
-        let scope = context.lexical_scope().clone();
-        let pattern = effects.canonicalize(&pattern, &scope, context)?;
         let actual = context.with_original_scope(self.actual.scope().clone(), |context| {
             if self.timing == ConstraintEquationTiming::InferredEffectResult {
                 let annotation = project_closed_type(
@@ -154,15 +152,16 @@ impl<D: ConstraintDomain> PendingEquation<D> {
                     graph,
                     context,
                 )?;
-                effects.complete_binding_annotation(
-                    &annotation,
-                    (&pattern, self.pattern.scope()),
+                let value = self.actual.scope().transport_canonical_type(
+                    self.pattern.scope(),
+                    &pattern,
                     context,
-                )
+                )?;
+                annotation
+                    .binding_type_with_inferred_effects_with_control(&value, context)?
+                    .ok_or_else(|| TypeConstraintRejection::Mismatch.into())
             } else {
-                let value = project(self.actual.value(), context)?;
-                let scope = context.lexical_scope().clone();
-                effects.canonicalize(&value, &scope, context)
+                project(self.actual.value(), context)
             }
         })?;
         self.compare_completed(

@@ -50,26 +50,6 @@ impl<D: ConstraintDomain> ConstraintProjectionPhase<'_, D> {
         }
     }
 
-    pub(super) fn inspected_header<A: TypeConstraintAccounting>(
-        &mut self,
-        shape: TypeConstraintShape<'_, PreparedEffects>,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<ConstraintProjectedEffectHeader<(), PreparedEffects>, TypeConstraintError> {
-        match self {
-            Self::Admission(_) => Ok(ConstraintProjectedEffectHeader::Original),
-            Self::Preparation(_) => Ok(ConstraintProjectedEffectHeader::Original),
-            Self::Completion { owner, .. } => match shape {
-                TypeConstraintShape::Function {
-                    effects, predicate, ..
-                } => {
-                    let scope = Arc::new(context.capture_lexical_scope()?);
-                    owner.project_inspected_header(&scope, effects, predicate, context)
-                }
-                _ => Ok(ConstraintProjectedEffectHeader::Original),
-            },
-        }
-    }
-
     pub(in crate::types::constraints) fn transport<A: TypeConstraintAccounting>(
         &mut self,
         target: &ConstraintLexicalScope,
