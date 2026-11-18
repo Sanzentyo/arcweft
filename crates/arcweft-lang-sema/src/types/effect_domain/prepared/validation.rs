@@ -92,6 +92,28 @@ impl<C: TypeProjectionControl> TypeEffectProjection<PreparedEffects, PreparedEff
 }
 
 impl TypeKind<PreparedEffects> {
+    pub(crate) fn retain_as_tuple<C: TypeProjectionControl>(
+        items: &[Self],
+        scope: &GenericScope,
+        effects: PreparedEffectReadView<'_>,
+        control: &mut C,
+    ) -> Result<Self, TypeProjectionError<PreparedTypeRetentionFailure<C::Error>>> {
+        let mut retention = Retention {
+            effects,
+            control,
+            depth: 1,
+        };
+        retention.check().map_err(TypeProjectionError::Control)?;
+        retention
+            .visit_node(TypeProjectionNodeKind::Type, 1)
+            .map_err(TypeProjectionError::Control)?;
+        let items = items
+            .iter()
+            .map(|item| item.project_effect_domain_at(scope, 2, &mut retention))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::Tuple(items))
+    }
+
     /// Retain the existing root below a new metatype node. Child traversal
     /// starts at depth 2 and charges each copy there. The outer box is allocated
     /// only after that traversal succeeds.

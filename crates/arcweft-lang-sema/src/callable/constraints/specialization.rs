@@ -154,12 +154,13 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
                 }
             })
         })?;
-        lower.request_value_use_projection(
+        lower.request_projection_with_input(
             self.context,
             effects,
             result.clone(),
-            source,
             &template,
+            crate::types::constraints::TypeConstraintProjectionClosure::Closed,
+            Some(source),
         );
         lower
             .suspend_result(self.context, result)
@@ -227,12 +228,13 @@ impl CandidateConstraintWorkSession<'_> {
                 }
             })
         })?;
-        lower.request_value_use_projection(
+        lower.request_projection_with_input(
             &mut context,
             effects,
             result.clone(),
-            source,
             &template,
+            crate::types::constraints::TypeConstraintProjectionClosure::Closed,
+            Some(source),
         );
         lower.constrain(
             &mut context,

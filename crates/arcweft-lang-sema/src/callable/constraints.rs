@@ -641,9 +641,10 @@ where
         key: D::Projection,
         value: &TypeKind<PreparedEffects>,
         closure: crate::types::constraints::TypeConstraintProjectionClosure,
+        input: Option<&TypeKind<PreparedEffects>>,
     ) {
         if let Err(error) = self.with_effect_relation(|lower, context, graph| {
-            lower.request_projection(context, graph, key, value, closure);
+            lower.request_projection_with_input(context, graph, key, value, closure, input);
         }) {
             self.lower.record_failure(error);
         }

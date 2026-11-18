@@ -58,6 +58,7 @@ use crate::callable::{
 use crate::final_analysis::PreparedProjectNominalTypeValueExpression;
 use crate::final_analysis::type_rules::compact_numeric_element_type as infer_compact_numeric_element_type;
 use crate::final_analysis::{CandidateEvaluationPass, CandidateFactTransactionViolation};
+use crate::types::PreparedEffects;
 
 #[derive(Clone, Copy)]
 struct CallSource<'a> {
@@ -584,7 +585,7 @@ struct PreparedCandidateRequest<'a, 'ctx> {
     semantic_operands: Box<[crate::callable::PreparedCallSemanticOperand]>,
     candidate: Arc<PreparedResolvedCallable>,
     current_group: CallableGroupIndex,
-    expected_result: Option<&'a TypeKind>,
+    expected_result: Option<&'a TypeKind<PreparedEffects>>,
     expected_application_callee:
         Option<super::expressions::AnalyzerApplicationCalleeExpectation<'a>>,
     expected_result_scope:
@@ -2495,6 +2496,10 @@ impl Analyzer<'_, '_, '_> {
                 })
             })?;
         let original = self.admit_original_context(module, owner, None, &mut work)?;
+        let expected = expected
+            .map(|ty| self.retain_source_value_type(context, owner, ty))
+            .transpose()
+            .map_err(AnalyzerExpressionError::fatal)?;
         let probe = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
             context.work(), |this, authority, _transaction_authority| {
                 let candidate_context =
@@ -2514,7 +2519,7 @@ impl Analyzer<'_, '_, '_> {
                         semantic_operands: structural_inputs.semantic_operands().to_vec().into_boxed_slice(),
                         candidate: Arc::clone(&candidate),
                         current_group: candidate.call_group(),
-                        expected_result: expected,
+                        expected_result: expected.as_ref(),
                         expected_application_callee: None,
                         expected_result_scope: None,
                         callee_inputs:
@@ -5238,8 +5243,6 @@ impl Analyzer<'_, '_, '_> {
                 .map_err(AnalyzerExpressionError::fatal)?,
             inputs.clone(),
             authored_arguments,
-            expected_result,
-            expected_application_callee,
             owner,
             callee_inputs.clone(),
             dialogue_patch_admissions,
@@ -5252,8 +5255,17 @@ impl Analyzer<'_, '_, '_> {
             site,
         )
         .map_err(|failure| terminal_call_constraint_failure(owner, failure))?;
-        let output =
-            constraint_set.prepare_output_projections(owner, application_result, context)?;
+        let output = constraint_set.prepare_output_projections(
+            owner,
+            application_result,
+            expected_result,
+            expected_application_callee,
+            context,
+            self.facts
+                .effect_declarations()
+                .map_err(AnalyzerExpressionError::fact)?
+                .read(),
+        )?;
         let child_recipe = parent_source.as_ref().map(|_| PreparedCallCandidateRecipe {
             candidate: Arc::clone(&candidate),
             group: current_group,
@@ -5330,15 +5342,13 @@ impl Analyzer<'_, '_, '_> {
         };
         match execution {
             PreparedCallCandidateExecution::Root(transaction) => {
-                let result = transaction.result().clone();
                 rank.exact_matches = rank
                     .exact_matches
                     .checked_add(transaction.exact_argument_matches())
                     .ok_or(FinalSemanticAnalysisError::AccountingOverflow)
                     .map_err(AnalyzerExpressionError::fatal)?;
                 rank.declared_exact_matches = transaction.declared_exact_argument_matches();
-                if matches!(&result, CallableResultSchema::Value(value) if expected_result == Some(value))
-                {
+                if transaction.exact_result_match() {
                     rank.exact_matches = rank
                         .exact_matches
                         .checked_add(1)

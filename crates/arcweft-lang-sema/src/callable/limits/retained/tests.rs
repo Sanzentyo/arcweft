@@ -137,6 +137,7 @@ fn a_root_frontier_outlives_its_driver_and_publication_reads_the_live_original_l
                         (),
                         &TypeKind::I32,
                         crate::types::constraints::TypeConstraintProjectionClosure::Closed,
+                        None,
                     );
                     driver.suspend_result(()).unwrap()
                 },

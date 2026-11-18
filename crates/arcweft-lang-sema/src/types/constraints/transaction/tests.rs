@@ -448,6 +448,9 @@ fn source_equation_operands_keep_their_receipts_when_closed_and_transported() {
 
 #[test]
 fn a_completed_projection_input_keeps_its_type_const_and_effect_environment() {
+    use crate::effect_row::prepared::{
+        PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
+    };
     let cancellation = AtomicBool::new(false);
     let (mut context, parameters) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, ApplicationSourceDomain>::new(
@@ -457,8 +460,9 @@ fn a_completed_projection_input_keeps_its_type_const_and_effect_environment() {
         .into_parts();
     let binder = crate::types::GenericBinder::new(1, 1, 1);
     let outer = context.enter_binder_scope(binder);
-    let input = TypeKind::function_with_binder(
+    let input = TypeKind::function_with_contract(
         crate::types::GenericBinder::EMPTY,
+        PreparedEffectPredicate::Canonical(crate::effect_row::EffectPredicate::unconstrained()),
         [TypeKind::Array {
             item: Box::new(TypeKind::GenericParam(
                 context.lexical_scope().bound_type(0, 0).unwrap(),
@@ -466,20 +470,35 @@ fn a_completed_projection_input_keeps_its_type_const_and_effect_environment() {
             len: ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap()),
         }],
         TypeKind::I64,
-        EffectRow::open(
+        PreparedEffectRow::Canonical(EffectRow::open(
             EffectSet::new(),
             context.lexical_scope().bound_effect(0, 0).unwrap(),
-        ),
+        )),
     );
-    let mut transaction =
-        TypeConstraintTransaction::initialize_fixture(&mut context, 0, parameters, None).unwrap();
-    transaction.request_value_use_projection(&mut context, (), &input, &TypeKind::I64);
+    let mut graph = PreparedEffectGraph::default();
+    let mut transaction = TypeConstraintTransaction::initialize_fixture(
+        &mut context,
+        &mut graph,
+        0,
+        parameters,
+        None,
+    )
+    .unwrap();
+    transaction.request_projection_with_input(
+        &mut context,
+        &mut graph,
+        (),
+        &TypeKind::I64,
+        TypeConstraintProjectionClosure::Closed,
+        Some(&input),
+    );
     context.restore_binder_scope(outer);
     let unrelated = context.enter_binder_scope(binder);
     let solved = transaction
-        .finish(&mut context, |left, right, _| Ok(left == right))
+        .finish(&mut context, &mut graph, |left, right, _| Ok(left == right))
         .unwrap();
     let projection = solved.component.projection(0, &()).unwrap();
+    assert!(!projection.projection().has_exact_input_match());
     let actual = projection.projection().input_type().unwrap();
     assert_eq!(actual.scope().binders(), &[binder, binder]);
     assert_eq!(actual.scope(), projection.projection().value().scope());

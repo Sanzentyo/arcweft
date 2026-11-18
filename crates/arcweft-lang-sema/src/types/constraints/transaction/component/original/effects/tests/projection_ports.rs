@@ -57,6 +57,7 @@ fn a_registered_projection_keeps_named_and_future_queries_before_final_closure()
         EffectPredicate::unconstrained(),
         false,
         &template,
+        None,
     );
     let source = component.original_path(member).unwrap();
     let request = Arc::clone(&source.lineage.projections[0]);
@@ -179,14 +180,15 @@ fn a_late_projection_opening_failure_publishes_no_request_or_graph_terms() {
         .with_binder(GenericBinder::new(1, 0, 0))
         .bound_type(0, 0)
         .unwrap();
-    let template = TypeKind::Tuple(vec![function, TypeKind::GenericParam(foreign)]);
+    let template = TypeKind::Tuple(vec![function.clone(), TypeKind::GenericParam(foreign)]);
     let retained = graph.retained_terms();
-    transaction.request_projection(
+    transaction.request_projection_with_input(
         &mut context,
         &mut graph,
         (),
         &template,
         TypeConstraintProjectionClosure::Closed,
+        Some(&function),
     );
     assert!(transaction.first_failure.is_some());
     assert_eq!(transaction.frontier.len(), 1);

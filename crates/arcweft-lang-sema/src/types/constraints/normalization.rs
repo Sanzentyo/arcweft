@@ -249,6 +249,10 @@ impl<A, P> KeyedConstraintProjection<A, P> {
             .map(super::solution::CompletedConstraintType::view)
     }
 
+    pub(crate) fn has_exact_input_match(&self) -> bool {
+        self.input.as_ref() == Some(&self.value)
+    }
+
     pub(super) const fn source(
         &self,
     ) -> Option<&super::completion::CompletedProjectionAddress<A, P>> {

@@ -1617,61 +1617,18 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         value: &TypeKind<PreparedEffects>,
         closure: TypeConstraintProjectionClosure,
     ) {
-        self.request_projection_inner(context, graph, key, value, closure, None);
+        self.request_projection_with_input(context, graph, key, value, closure, None);
     }
 
-    pub(crate) fn request_value_use_projection<A: TypeConstraintAccounting>(
-        &mut self,
-        context: &mut TypeConstraintContext<'_, A, D>,
-        effects: &mut crate::effect_row::prepared::PreparedEffectGraph,
-        key: D::Projection,
-        input: &TypeKind<PreparedEffects>,
-        value: &TypeKind<PreparedEffects>,
-    ) {
-        if self.first_failure.is_some() || self.closed {
-            return;
-        }
-        if self.probe.is_some() || self.probe_group.is_some() {
-            self.record_failure(
-                protocol_error(TypeConstraintSourceProtocolInvariant::Outcome).into(),
-            );
-            return;
-        }
-        let admitted = (|| {
-            let scope = Arc::new(context.capture_lexical_scope()?);
-            ConstraintOperand::from_prepared_original_in(
-                input,
-                scope,
-                self.original.clone(),
-                &mut operand::ConstraintEffectPhase::new(effects),
-                context,
-            )
-        })();
-        let input = match admitted {
-            Ok(input) => Arc::new(input),
-            Err(error) => {
-                self.record_failure(error.into());
-                return;
-            }
-        };
-        self.request_projection_inner(
-            context,
-            effects,
-            key,
-            value,
-            TypeConstraintProjectionClosure::Closed,
-            Some(input),
-        );
-    }
-
-    fn request_projection_inner<A: TypeConstraintAccounting>(
+    /// Stage the template and its lexical input under the same graph edit.
+    pub(crate) fn request_projection_with_input<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         key: D::Projection,
         value: &TypeKind<PreparedEffects>,
         closure: TypeConstraintProjectionClosure,
-        input: Option<Arc<ConstraintOperand<D>>>,
+        input: Option<&TypeKind<PreparedEffects>>,
     ) {
         if self.first_failure.is_none() && !self.closed {
             if self.probe.is_some() || self.probe_group.is_some() {
@@ -1681,6 +1638,19 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 return;
             }
             let staged = context.with_effect_transaction(graph, |context, graph| {
+                let input = input
+                    .map(|input| {
+                        let scope = Arc::new(context.capture_lexical_scope()?);
+                        ConstraintOperand::from_prepared_original_in(
+                            input,
+                            scope,
+                            self.original.clone(),
+                            &mut operand::ConstraintEffectPhase::new(graph),
+                            context,
+                        )
+                        .map(Arc::new)
+                    })
+                    .transpose()?;
                 context.enter_node()?;
                 let key = Arc::new(key);
                 let mut requests = Vec::new();

@@ -92,6 +92,7 @@ fn root(
         domain,
         invalid,
         &TypeKind::<PreparedEffects>::I64,
+        None,
     )
 }
 
@@ -102,6 +103,7 @@ fn root_with_projection(
     domain: EffectPredicate,
     invalid: bool,
     projection: &TypeKind<PreparedEffects>,
+    expected: Option<&TypeKind<PreparedEffects>>,
 ) -> OriginalProductMember {
     let source = Arc::new(Source {
         identity: Arc::new(()),
@@ -136,12 +138,13 @@ fn root_with_projection(
     let application = path.root_id();
     let mut transaction =
         TypeConstraintTransaction::from_path(context, graph, application, path, None).unwrap();
-    transaction.request_projection(
+    transaction.request_projection_with_input(
         context,
         graph,
         (),
         projection,
         TypeConstraintProjectionClosure::Closed,
+        expected,
     );
     let frontier = transaction.suspend_result(context, ()).unwrap();
     let value = component

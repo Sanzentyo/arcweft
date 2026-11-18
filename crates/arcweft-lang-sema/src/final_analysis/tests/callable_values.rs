@@ -450,3 +450,50 @@ flow main() -> i64 {
         );
     }
 }
+
+#[test]
+fn the_next_invocation_can_contextualize_a_function_result() {
+    let fixture = fixture(
+        r#"
+fn target(number: i64) -> i64 { number }
+fn factory(first: i64)(second: i64) -> (i64 -> i64 effects {}) { target }
+flow main() -> i64 {
+    let produced: (i64 -> i64 effects {}) = factory(1i64)(2i64)
+    return produced(42i64)
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("the next invocation consumes one group");
+    let mut functions_by_arrow_depth = [0, 0];
+    for (_, call) in analysis.calls() {
+        let application = call.selected_application().expect("selected call");
+        match application.result().value_type().unwrap() {
+            TypeKind::Function {
+                params,
+                return_type,
+                ..
+            } => {
+                assert_eq!(params, &[TypeKind::I64]);
+                let depth = match return_type.as_ref() {
+                    TypeKind::Function {
+                        params,
+                        return_type,
+                        ..
+                    } => {
+                        assert_eq!(params, &[TypeKind::I64]);
+                        assert_eq!(return_type.as_ref(), &TypeKind::I64);
+                        1
+                    }
+                    TypeKind::I64 => 0,
+                    other => panic!("unexpected returned function result: {other:?}"),
+                };
+                functions_by_arrow_depth[depth] += 1;
+            }
+            TypeKind::I64 => {}
+            other => panic!("unexpected call result: {other:?}"),
+        }
+    }
+    assert_eq!(analysis.calls().count(), 3);
+    assert_eq!(functions_by_arrow_depth, [1, 1]);
+}

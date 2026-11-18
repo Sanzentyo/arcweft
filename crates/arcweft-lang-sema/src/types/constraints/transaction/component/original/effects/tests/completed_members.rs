@@ -75,6 +75,96 @@ fn materialize(
 }
 
 #[test]
+fn a_contextual_result_compares_the_canonical_rows_of_its_two_ports() {
+    let cancellation = AtomicBool::new(false);
+    for allowed_extra in [false, true] {
+        let mut context = context(&cancellation);
+        let mut graph = PreparedEffectGraph::default();
+        let named = graph
+            .declare(
+                vec![input()],
+                EffectPredicate::unconstrained(),
+                &mut context,
+            )
+            .unwrap();
+        let declared = graph
+            .application(
+                &named,
+                vec![PreparedEffectRow::Canonical(EffectRow::open(
+                    EffectSet::new(),
+                    input(),
+                ))],
+                &mut context,
+            )
+            .unwrap();
+        let value = function(declared);
+        let actual_effects = EffectSet::from_labels(["named.body"]).unwrap();
+        let expected_effects = if allowed_extra {
+            EffectSet::from_labels(["named.body", "allowed.extra"]).unwrap()
+        } else {
+            actual_effects.clone()
+        };
+        let expected = function(PreparedEffectRow::Canonical(EffectRow::open(
+            expected_effects.clone(),
+            input(),
+        )));
+        let mut component = Component::new(&mut context, &graph).unwrap();
+        let member = root_with_projection(
+            &mut component,
+            &mut context,
+            &mut graph,
+            EffectPredicate::unconstrained(),
+            false,
+            &value,
+            Some(&expected),
+        );
+        let forest = component
+            .infer_original_products(&mut context, &mut graph)
+            .unwrap();
+        graph
+            .prepare_body(
+                &named,
+                PreparedEffectRow::Canonical(EffectRow::open(actual_effects.clone(), input())),
+                Vec::new(),
+                &mut context,
+            )
+            .unwrap();
+        let closed = forest.close(&[], &mut graph, &mut context).unwrap();
+        let joint = closed
+            .products
+            .into_vec()
+            .remove(0)
+            .result
+            .unwrap()
+            .into_vec()
+            .remove(0);
+        let completed = joint.completed.into_vec().remove(0);
+        assert_eq!(completed.member, member);
+        let solved = materialize(completed.materialization, &mut context);
+        let [projection] = solved.component.selected().projections() else {
+            panic!("one contextual result projection");
+        };
+        let TypeKind::Function {
+            effects: actual_row,
+            ..
+        } = projection.value().value()
+        else {
+            panic!("the projected function");
+        };
+        let TypeKind::Function {
+            effects: expected_row,
+            ..
+        } = projection.input_type().unwrap().value()
+        else {
+            panic!("the contextual function");
+        };
+        assert_eq!(actual_row, &EffectRow::open(actual_effects, input()));
+        assert_eq!(expected_row, &EffectRow::open(expected_effects, input()));
+        assert_eq!(projection.has_exact_input_match(), !allowed_extra);
+    }
+}
+
+#[test]
 fn a_closed_member_contains_canonical_sources_and_keeps_original_c_unchanged() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
