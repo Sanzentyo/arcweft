@@ -6,12 +6,13 @@ use super::calls::{
 };
 use super::expression_error::AnalyzerExpressionError;
 use super::expressions::AnalyzerExpressionExpectation;
+use super::preparation_work::AnalyzerPreparationWork;
 use super::{Analyzer, ExprId, ResolverWork, TypeKind};
 use crate::callable::{
     CallConstraintInvariant, CallableConstraintApplication, FunctionSpecializationFailure,
     FunctionSpecializationSealFailure,
 };
-use crate::final_analysis::PreparedExpressionFact;
+use crate::final_analysis::{FinalSemanticAnalysisError, PreparedExpressionFact};
 use crate::types::{
     TypeProjectionError,
     constraints::{CompletedResultProjectionView, TypeConstraintError, TypeConstraintFailure},
@@ -42,6 +43,20 @@ fn specialization_failure(
     }
 }
 
+pub(super) fn prepared_specialization_failure(
+    owner: ExprId,
+    error: FunctionSpecializationSealFailure<FinalSemanticAnalysisError>,
+) -> AnalyzerExpressionError {
+    match error {
+        FunctionSpecializationSealFailure::Invariant(invariant) => {
+            specialization_invariant(owner, invariant)
+        }
+        FunctionSpecializationSealFailure::Projection(error) => AnalyzerExpressionError::fatal(
+            FinalSemanticAnalysisError::source_type_projection(owner.into(), error),
+        ),
+    }
+}
+
 impl Analyzer<'_, '_, '_> {
     /// Standalone values are already checked. Calls returning a scheme use
     /// their live Call result port before completion instead of this boundary.
@@ -50,6 +65,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         checked: PreparedExpressionFact,
         expectation: &AnalyzerExpressionExpectation<'_>,
+        work: &mut AnalyzerPreparationWork<'_>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         if expectation.defers_function_value_use() {
             return Ok(checked);
@@ -71,8 +87,8 @@ impl Analyzer<'_, '_, '_> {
             .facts
             .prepared_calls_mut()
             .map_err(AnalyzerExpressionError::fact)?;
-        let mut work = ResolverWork::new(self.catalogs.callable_limits.max_query_work());
-        let session = work
+        let mut resolver_work = ResolverWork::new(self.catalogs.callable_limits.max_query_work());
+        let session = resolver_work
             .begin_candidate_constraint_session(
                 self.catalogs.callable_limits,
                 self.control.cancellation(),
@@ -94,8 +110,8 @@ impl Analyzer<'_, '_, '_> {
             )
             .map_err(|error| specialization_failure(owner, error))?;
         checked
-            .with_function_specialization(owner, witness)
-            .map_err(|error| specialization_invariant(owner, error))
+            .with_function_specialization(owner, witness, work)
+            .map_err(|error| prepared_specialization_failure(owner, error))
     }
 
     pub(super) fn seal_function_result_use(

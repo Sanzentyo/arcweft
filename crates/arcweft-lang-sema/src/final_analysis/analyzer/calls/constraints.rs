@@ -2743,12 +2743,11 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             ),
                         ));
                     }
-                    let checked = self
-                        .analyzer
-                        .facts
-                        .expressions()
-                        .get(&owner)
-                        .cloned()
+                    let checked = observed
+                        .actual
+                        .as_deref()
+                        .and_then(AnalyzerObservedSourceValue::expression_fact)
+                        .filter(|fact| self.analyzer.facts.expressions().get(&owner) == Some(*fact))
                         .ok_or_else(|| {
                             crate::callable::SourceCallbackFailure::invariant(
                                 AnalyzerCallClientInvariant::constraint(
@@ -2757,12 +2756,9 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                                 ),
                             )
                         })?
-                        .with_function_specialization(owner, specialization)
-                        .map_err(|error| {
-                            crate::callable::SourceCallbackFailure::invariant(
-                                AnalyzerCallClientInvariant::constraint(source, error),
-                            )
-                        })?;
+                        .clone()
+                        .with_function_specialization(owner, specialization, work)
+                        .map_err(|error| specialization_seal_failure(source, error))?;
                     self.analyzer
                         .facts
                         .replace_existing_expression(owner, checked)
@@ -6408,30 +6404,28 @@ fn seal_function_value_use(
     Arc<crate::callable::CheckedFunctionSpecialization>,
     crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>,
 > {
-    crate::callable::CheckedFunctionSpecialization::seal(result, work).map_err(|error| {
-        use crate::callable::FunctionSpecializationSealFailure;
-        use crate::types::{TypeProjectionError, constraints::TypeConstraintError};
-        let error = match error {
-            FunctionSpecializationSealFailure::Invariant(error) => error,
-            FunctionSpecializationSealFailure::Projection(TypeProjectionError::Instantiation(
-                error,
-            )) => error.into(),
-            FunctionSpecializationSealFailure::Projection(TypeProjectionError::Control(
-                TypeConstraintError::Abort(error),
-            )) => return crate::callable::SourceCallbackFailure::Abort(error),
-            FunctionSpecializationSealFailure::Projection(TypeProjectionError::Control(
-                TypeConstraintError::Invariant(error),
-            )) => CallConstraintInvariant::Lower(error),
-            FunctionSpecializationSealFailure::Projection(TypeProjectionError::Control(
-                TypeConstraintError::Rejected(error),
-            )) => CallConstraintInvariant::Lower(TypeConstraintInvariant::Projection(
-                crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(error),
-            )),
-        };
-        crate::callable::SourceCallbackFailure::invariant(AnalyzerCallClientInvariant::constraint(
-            source, error,
-        ))
-    })
+    crate::callable::CheckedFunctionSpecialization::seal(result, work)
+        .map_err(|error| specialization_seal_failure(source, error))
+}
+
+fn specialization_seal_failure(
+    source: AnalyzerCallConstraintSource,
+    error: crate::callable::FunctionSpecializationSealFailure<TypeConstraintError>,
+) -> crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain> {
+    use crate::callable::FunctionSpecializationSealFailure;
+    use crate::types::TypeProjectionError;
+    let invariant = match error {
+        FunctionSpecializationSealFailure::Invariant(error) => error,
+        FunctionSpecializationSealFailure::Projection(TypeProjectionError::Instantiation(
+            error,
+        )) => error.into(),
+        FunctionSpecializationSealFailure::Projection(TypeProjectionError::Control(error)) => {
+            return materialized_source_failure(source, error);
+        }
+    };
+    crate::callable::SourceCallbackFailure::invariant(AnalyzerCallClientInvariant::constraint(
+        source, invariant,
+    ))
 }
 
 fn collect_completed_nested_calls<'h>(

@@ -124,6 +124,59 @@ fn witness_rejects_foreign_source_and_owner_and_charges_the_same_scoped_fold() {
             .with_function_specialization(foreign_owner, Arc::clone(&witness)),
         Err(CallConstraintInvariant::PreparedCallSiteMismatch)
     ));
+    let original_type = prepared_type(witness.source_type());
+    let prepared = crate::final_analysis::PreparedExpressionFact::from(
+        crate::final_analysis::PreparedResolvedExpression::value(
+            original_type.clone(),
+            crate::final_analysis::CheckedTypeSelection::Inferred,
+            EffectSet::new(),
+            crate::final_analysis::CheckedExpressionResolution::Call,
+        ),
+    );
+    let mut exhausted = Budget { left: 0, visits: 0 };
+    assert!(matches!(
+        prepared.clone().with_function_specialization(
+            witness.owner(),
+            Arc::clone(&witness),
+            &mut exhausted,
+        ),
+        Err(FunctionSpecializationSealFailure::Projection(
+            TypeProjectionError::Control(Exhausted)
+        ))
+    ));
+    assert!(matches!(
+        prepared.clone().with_function_specialization(
+            foreign_owner,
+            Arc::clone(&witness),
+            &mut full
+        ),
+        Err(FunctionSpecializationSealFailure::Invariant(
+            CallConstraintInvariant::PreparedCallSiteMismatch
+        ))
+    ));
+    let prepared = prepared
+        .with_function_specialization(witness.owner(), Arc::clone(&witness), &mut full)
+        .unwrap();
+    assert_eq!(
+        prepared.value_type(),
+        Some(&prepared_type(witness.specialized_type()))
+    );
+    let expression = prepared.resolved().unwrap();
+    assert_eq!(expression.source_value_type(), Some(&original_type));
+    assert_eq!(
+        expression.type_selection(),
+        Some(crate::final_analysis::CheckedTypeSelection::Expected)
+    );
+    let crate::final_analysis::PreparedExpressionResult::Value(value) = expression.result() else {
+        panic!("specialized expression retains a value result");
+    };
+    assert_eq!(value.specialization(), Some(witness.as_ref()));
+    assert!(matches!(
+        prepared.with_function_specialization(witness.owner(), Arc::clone(&witness), &mut full),
+        Err(FunctionSpecializationSealFailure::Invariant(
+            CallConstraintInvariant::PreparedFunctionTypeMismatch
+        ))
+    ));
     let specialized = fact
         .with_function_specialization(witness.owner(), Arc::clone(&witness))
         .unwrap();

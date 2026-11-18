@@ -3311,25 +3311,41 @@ impl Analyzer<'_, '_, '_> {
         // callable closure and final execution-effect publication complete them.
         match result {
             CallableResultSchema::Value(result) => {
-                let checked = crate::final_analysis::prepared::PreparedResolvedExpression::value(
-                    result,
-                    if source.expectation.complete_type().is_some() {
-                        CheckedTypeSelection::Expected
-                    } else {
-                        CheckedTypeSelection::Inferred
-                    },
-                    direct_effects,
-                    expression_resolution,
-                );
-                match specialization {
-                    Some(witness) => checked
-                        .with_function_specialization(source.owner, witness)
-                        .map_err(|error| {
-                            super::function_value_use::specialization_invariant(source.owner, error)
-                                .into()
-                        }),
-                    None => Ok(checked),
+                if specialization
+                    .as_ref()
+                    .is_some_and(|witness| witness.source_type() != &result)
+                {
+                    return Err(super::function_value_use::specialization_invariant(
+                        source.owner,
+                        crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                    )
+                    .into());
                 }
+                let prepared = self
+                    .retain_source_value_type(context, source.owner, &result)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                let mut checked =
+                    crate::final_analysis::prepared::PreparedResolvedExpression::value(
+                        prepared,
+                        if source.expectation.complete_type().is_some() {
+                            CheckedTypeSelection::Expected
+                        } else {
+                            CheckedTypeSelection::Inferred
+                        },
+                        direct_effects,
+                        expression_resolution,
+                    );
+                if let Some(witness) = specialization {
+                    checked
+                        .attach_function_use(source.owner, witness, &mut context.work())
+                        .map_err(|error| {
+                            super::function_value_use::prepared_specialization_failure(
+                                source.owner,
+                                error,
+                            )
+                        })?;
+                }
+                Ok(checked)
             }
             CallableResultSchema::ContentEmission(callable) => {
                 if source.expectation.complete_type().is_some() {
@@ -3764,25 +3780,33 @@ impl Analyzer<'_, '_, '_> {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily),
             ));
         };
-        let checked = crate::final_analysis::prepared::PreparedResolvedExpression::value(
-            value,
+        if specialization
+            .as_ref()
+            .is_some_and(|witness| witness.source_type() != &value)
+        {
+            return Err(super::function_value_use::specialization_invariant(
+                owner,
+                crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch,
+            )
+            .into());
+        }
+        let prepared = self
+            .source_type_preparation(preparation_work.clone())
+            .and_then(|source| source.retain(owner.into(), &value))
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let mut checked = crate::final_analysis::prepared::PreparedResolvedExpression::value(
+            prepared,
             selection,
             direct_effects,
             expression_resolution,
         );
-        let checked = match specialization {
-            Some(specialization) => checked
-                .with_function_specialization(owner, specialization)
+        if let Some(witness) = specialization {
+            checked
+                .attach_function_use(owner, witness, &mut preparation_work)
                 .map_err(|error| {
-                    CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                        owner,
-                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                            error,
-                        )),
-                    })
-                })?,
-            None => checked,
-        };
+                    super::function_value_use::prepared_specialization_failure(owner, error)
+                })?;
+        }
         let checked = self
             .attach_nested_path_evidence(owner, checked.into())
             .map_err(CandidateFactOperationFailure::Expression)?;

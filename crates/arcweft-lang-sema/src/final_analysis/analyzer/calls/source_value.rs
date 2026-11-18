@@ -69,6 +69,15 @@ impl AnalyzerObservedSourceValue {
         }
     }
 
+    pub(super) fn expression_fact(&self) -> Option<&crate::final_analysis::PreparedExpressionFact> {
+        match &self.value {
+            ObservedValue::Expression(fact) => Some(fact),
+            ObservedValue::Prepared(_) => None,
+            #[cfg(test)]
+            ObservedValue::Fixture(_) => None,
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn fixture(
         source: AnalyzerCallConstraintSourceId,

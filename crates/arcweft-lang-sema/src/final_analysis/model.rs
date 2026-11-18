@@ -2880,7 +2880,17 @@ impl PreparedResolvedExpression {
     pub(crate) const fn source_value_type(
         &self,
     ) -> Option<&TypeKind<crate::types::PreparedEffects>> {
-        self.data.result.value_type()
+        self.data.result.source_value_type()
+    }
+    pub(super) fn attach_function_use<C: crate::types::TypeProjectionControl>(
+        &mut self,
+        owner: ExprId,
+        witness: Arc<crate::callable::CheckedFunctionSpecialization>,
+        control: &mut C,
+    ) -> Result<(), crate::callable::FunctionSpecializationSealFailure<C::Error>> {
+        self.data
+            .result
+            .attach_function_use(owner, witness, control)
     }
     pub(crate) const fn result(&self) -> &super::prepared::PreparedExpressionResult {
         &self.data.result

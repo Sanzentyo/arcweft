@@ -652,7 +652,12 @@ impl Analyzer<'_, '_, '_> {
         checked: PreparedExpressionFact,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         let previous = checked.clone();
-        let checked = self.specialize_checked_function_value(owner, checked, &expectation)?;
+        let checked = self.specialize_checked_function_value(
+            owner,
+            checked,
+            &expectation,
+            &mut context.work(),
+        )?;
         if checked != previous {
             let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
                 context.work(),
@@ -904,7 +909,12 @@ impl Analyzer<'_, '_, '_> {
         expectation: &AnalyzerExpressionExpectation<'_>,
         checked: PreparedExpressionFact,
     ) -> Result<PreparedExpressionFact, CandidateFactOperationFailure> {
-        let checked = self.specialize_checked_function_value(owner, checked, expectation)?;
+        let checked = self.specialize_checked_function_value(
+            owner,
+            checked,
+            expectation,
+            &mut context.work(),
+        )?;
         let checked = self.attach_nested_path_evidence(owner, checked)?;
         self.record_implicit_capture_fact(owner, &checked)
             .map_err(AnalyzerExpressionError::fatal)?;

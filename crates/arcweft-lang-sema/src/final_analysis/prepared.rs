@@ -16,11 +16,14 @@ pub(crate) use typed_binding::PreparedTypedBindingPattern;
 mod record_pattern_tests;
 
 use crate::{
-    callable::ContentCallableIdentity,
+    callable::{
+        CallConstraintInvariant, CheckedFunctionSpecialization, ContentCallableIdentity,
+        FunctionSpecializationSealFailure,
+    },
     checked_text_proxy::CheckedCompileTimeScalar,
     effects::EffectSet,
     env::nominal::AcceptedEnvironmentRecord,
-    types::{PreparedEffects, SemanticTypeDigest, TypeKind},
+    types::{GenericScope, PreparedEffects, SemanticTypeDigest, TypeKind, TypeProjectionControl},
 };
 
 pub(crate) use super::model::{PreparedVariantCaseSeed, PreparedVariantOwnerSeed};
@@ -55,12 +58,20 @@ pub(crate) enum PreparedNonValueExpressionResult {
 
 impl PreparedNonValueExpressionResult {}
 
-/// An inferred source value retains its open effect relation. A checked
-/// specialization or semantic digest can be issued only after the joint seal.
+/// The original expression type survives a checked specialization of one use.
+/// The specialized arrow comes from the completed application, while its
+/// producer's type can still refer to the original preparation graph.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedTypedExpressionResult {
-    ty: TypeKind<PreparedEffects>,
+    source: TypeKind<PreparedEffects>,
     type_selection: CheckedTypeSelection,
+    specialization: Option<Box<PreparedFunctionUse>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PreparedFunctionUse {
+    witness: Arc<CheckedFunctionSpecialization>,
+    ty: TypeKind<PreparedEffects>,
 }
 
 impl PreparedTypedExpressionResult {
@@ -68,19 +79,72 @@ impl PreparedTypedExpressionResult {
         ty: TypeKind<PreparedEffects>,
         type_selection: CheckedTypeSelection,
     ) -> Self {
-        Self { ty, type_selection }
+        Self {
+            source: ty,
+            type_selection,
+            specialization: None,
+        }
     }
 
     pub(crate) const fn ty(&self) -> &TypeKind<PreparedEffects> {
-        &self.ty
+        match &self.specialization {
+            Some(use_type) => &use_type.ty,
+            None => &self.source,
+        }
     }
 
     pub(crate) const fn source_type(&self) -> &TypeKind<PreparedEffects> {
-        &self.ty
+        &self.source
     }
 
     pub(crate) const fn type_selection(&self) -> CheckedTypeSelection {
         self.type_selection
+    }
+
+    pub(super) fn attach_function_use<C: TypeProjectionControl>(
+        &mut self,
+        owner: ExprId,
+        witness: Arc<CheckedFunctionSpecialization>,
+        control: &mut C,
+    ) -> Result<(), FunctionSpecializationSealFailure<C::Error>> {
+        if witness.owner() != owner {
+            return Err(CallConstraintInvariant::PreparedCallSiteMismatch.into());
+        }
+        if self.specialization.is_some()
+            || !matches!(
+                (&self.source, witness.source_type()),
+                (TypeKind::Function { binder: original, .. }, TypeKind::Function { binder, .. })
+                    if !original.is_empty() && original == binder
+            )
+        {
+            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
+        }
+        // CheckedFunctionSpecialization issues its target with no ambient
+        // bound frames. Free parameters retain their declaration identities.
+        let ty = witness
+            .specialized_type()
+            .prepare_effects(&GenericScope::default(), control)?;
+        self.specialization = Some(Box::new(PreparedFunctionUse { witness, ty }));
+        self.type_selection = CheckedTypeSelection::Expected;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn specialization(&self) -> Option<&CheckedFunctionSpecialization> {
+        self.specialization
+            .as_ref()
+            .map(|specialization| specialization.witness.as_ref())
+    }
+
+    pub(super) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(self.source_type())?;
+        if let Some(specialization) = &self.specialization {
+            visitor(&specialization.ty)?;
+        }
+        Ok(())
     }
 }
 
@@ -104,6 +168,25 @@ impl PreparedExpressionResult {
             Self::Value(value) => Some(value.type_selection()),
             Self::NonValue(_) | Self::Unavailable => None,
         }
+    }
+
+    pub(crate) const fn source_value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
+        match self {
+            Self::Value(value) => Some(value.source_type()),
+            Self::NonValue(_) | Self::Unavailable => None,
+        }
+    }
+
+    pub(super) fn attach_function_use<C: TypeProjectionControl>(
+        &mut self,
+        owner: ExprId,
+        witness: Arc<CheckedFunctionSpecialization>,
+        control: &mut C,
+    ) -> Result<(), FunctionSpecializationSealFailure<C::Error>> {
+        let Self::Value(value) = self else {
+            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
+        };
+        value.attach_function_use(owner, witness, control)
     }
 }
 
@@ -166,10 +249,7 @@ impl PreparedExpressionShell {
     }
 
     pub(crate) fn source_value_type(&self) -> Option<&TypeKind<PreparedEffects>> {
-        match &self.result {
-            PreparedExpressionResult::Value(value) => Some(value.source_type()),
-            PreparedExpressionResult::NonValue(_) | PreparedExpressionResult::Unavailable => None,
-        }
+        self.result.source_value_type()
     }
 
     fn visit_types<E>(
@@ -177,7 +257,7 @@ impl PreparedExpressionShell {
         visitor: &mut impl FnMut(&TypeKind<PreparedEffects>) -> Result<(), E>,
     ) -> Result<(), E> {
         if let PreparedExpressionResult::Value(value) = &self.result {
-            visitor(value.ty())?;
+            value.visit_types(visitor)?;
         }
         Ok(())
     }
@@ -1151,6 +1231,37 @@ impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact 
 }
 
 impl PreparedExpressionFact {
+    /// Attach the completed use to the fact whose source was supplied to the
+    /// specialization application. The caller authenticates that source
+    /// against the completed component before this local state transition.
+    pub(crate) fn with_function_specialization<C: TypeProjectionControl>(
+        mut self,
+        owner: ExprId,
+        witness: Arc<CheckedFunctionSpecialization>,
+        control: &mut C,
+    ) -> Result<Self, FunctionSpecializationSealFailure<C::Error>> {
+        let result = match &mut self {
+            Self::Resolved(value) => {
+                value.attach_function_use(owner, witness, control)?;
+                return Ok(self);
+            }
+            Self::OwnerBound(value) => &mut value.shell.result,
+            Self::Method(value) => &mut value.shell.result,
+            Self::Entry(value) => &mut value.shell.result,
+            Self::ProjectField(value) => &mut value.shell.result,
+            Self::CompileTimeScalar(_)
+            | Self::DialogueApplication(_)
+            | Self::ContentApplication(_)
+            | Self::Variant(_)
+            | Self::ProjectRecord(_)
+            | Self::ProjectNominalTypeValue(_) => {
+                return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
+            }
+        };
+        result.attach_function_use(owner, witness, control)?;
+        Ok(self)
+    }
+
     pub(super) fn implicit_body_expression(&self) -> Option<&Self> {
         let Self::OwnerBound(value) = self else {
             return None;
@@ -1664,9 +1775,7 @@ impl PreparedExpressionFact {
             Self::Resolved(value) => value.visit_types(visitor),
             Self::OwnerBound(value) => value.visit_types(visitor),
             Self::CompileTimeScalar(value) => {
-                if let Some(ty) = value.shell().value_type() {
-                    visitor(ty)?;
-                }
+                value.shell().visit_types(visitor)?;
                 value.original().visit_types(visitor)
             }
             Self::DialogueApplication(value) => {
@@ -1676,9 +1785,9 @@ impl PreparedExpressionFact {
                 }
                 visitor(value.line_result())
             }
-            Self::ContentApplication(value) => value.shell().value_type().map_or(Ok(()), visitor),
-            Self::Method(value) => value.shell().value_type().map_or(Ok(()), visitor),
-            Self::Entry(value) => value.shell().value_type().map_or(Ok(()), visitor),
+            Self::ContentApplication(value) => value.shell().visit_types(visitor),
+            Self::Method(value) => value.shell().visit_types(visitor),
+            Self::Entry(value) => value.shell().visit_types(visitor),
             Self::Variant(value) => {
                 if let Some(ty) = value.shell().value_type() {
                     visitor(ty)?;
