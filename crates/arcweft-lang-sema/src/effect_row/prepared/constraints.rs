@@ -10,48 +10,17 @@ use crate::types::PreparedEffects;
 mod tests;
 
 impl EffectConstraintEnvironment<PreparedEffects> {
-    /// The types owner supplies actual registered applications and the complete
-    /// captured rigid Γ. Keep the original environment unchanged until both
-    /// the projected R and its Γ admission succeed in the original graph.
-    pub(crate) fn project_registered_parameters<C: DecisionControl>(
+    /// Substitute actual registered applications in R. Validate the resulting
+    /// predicate against the same Γ that was admitted before inference.
+    pub(crate) fn project_registered_predicate<C: DecisionControl>(
         &self,
-        captured_rigids: &[GenericEffectReference],
         applications: &BTreeMap<GenericEffectReference, PreparedEffectRow>,
         graph: &mut PreparedEffectGraph,
         control: &mut C,
-    ) -> Result<Self, PreparedEffectFailure<C::Error>>
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>>
     where
         C::Error: From<EffectConstraintEnvironmentError>,
     {
-        for _ in &self.parameters {
-            control
-                .charge(DecisionWork::Node)
-                .map_err(PreparedEffectFailure::Control)?;
-        }
-        let parameters = self.parameters.clone();
-        let predicate = graph.read().retain_predicate(&self.predicate, control)?;
-        let mut result = Self {
-            parameters,
-            predicate,
-        };
-        let mut captures = Vec::new();
-        for variable in captured_rigids {
-            control
-                .charge(DecisionWork::Node)
-                .map_err(PreparedEffectFailure::Control)?;
-            if variable.free_parameter().is_none() {
-                return Err(PreparedEffectFailure::Control(
-                    EffectConstraintEnvironmentError::NonCanonicalScope.into(),
-                ));
-            }
-            captures.push(EffectConstraintVariable::new(
-                variable.clone(),
-                crate::effect_row::EffectConstraintEligibility::Rigid,
-            ));
-        }
-        result
-            .admit_variables(&captures)
-            .map_err(|error| PreparedEffectFailure::Control(error.into()))?;
         for variable in applications.keys() {
             control
                 .charge(DecisionWork::Visit)
@@ -81,14 +50,13 @@ impl EffectConstraintEnvironment<PreparedEffects> {
             })?;
         edit.read()
             .visit_predicate_parameters(&predicate, control, &mut |reference, _| {
-                result.validate_reference(reference).map_err(Into::into)
+                self.validate_reference(reference).map_err(Into::into)
             })?;
         control
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
         edit.commit()?;
-        result.predicate = predicate;
-        Ok(result)
+        Ok(predicate)
     }
 
     /// Retain the declaration or scheme predicate in its actual graph. Its

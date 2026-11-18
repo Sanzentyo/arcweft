@@ -363,26 +363,24 @@ fn original_r_instantiates_the_registered_function_under_its_actual_gamma() {
                 &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), input.clone())),
                 context,
             )?;
-            let prepared = path.applications.prepare_effects(
+            let prepared = path.applications.prepare_effect_predicate(
                 &path.effects,
                 &path.lineage.scope,
                 &mut graph,
                 context,
             )?;
             let mut remaining = BTreeSet::new();
-            graph.read().visit_predicate_parameters(
-                prepared.original_predicate(),
-                context,
-                &mut |reference, _| {
+            graph
+                .read()
+                .visit_predicate_parameters(&prepared, context, &mut |reference, _| {
                     remaining.insert(reference.clone());
                     Ok(())
-                },
-            )?;
+                })?;
             assert_eq!(remaining, BTreeSet::from([input.clone()]));
             graph.add_scoped_obligation(
                 vec![input.clone()],
                 PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
-                prepared.original_predicate().clone(),
+                prepared,
                 context,
             )?;
             let principal = graph.solve_principal(context)?;
@@ -440,18 +438,10 @@ fn transitive_function_captures_extend_gamma_from_the_source_owners() {
     let mut child = context
         .start_path_with_imported(child, Some(imported), original, graph.read())
         .unwrap();
-    let unused = child
-        .applications
-        .prepare_effects(
-            &child.effects,
-            &child.lineage.scope,
-            &mut graph,
-            &mut context,
-        )
-        .unwrap();
     for capture in &captures {
         assert!(
-            unused
+            child
+                .effects
                 .original_variables()
                 .any(|variable| variable == capture)
         );
@@ -467,25 +457,15 @@ fn transitive_function_captures_extend_gamma_from_the_source_owners() {
         )
         .unwrap();
     let prepared = child
-        .applications
-        .prepare_effects(
-            &child.effects,
-            &child.lineage.scope,
-            &mut graph,
-            &mut context,
-        )
+        .prepare_effect_constraint(&mut graph, &mut context)
         .unwrap();
     let mut references = BTreeSet::new();
     graph
         .read()
-        .visit_predicate_parameters(
-            prepared.original_predicate(),
-            &mut context,
-            &mut |reference, _| {
-                references.insert(reference.clone());
-                Ok(())
-            },
-        )
+        .visit_predicate_parameters(prepared.predicate(), &mut context, &mut |reference, _| {
+            references.insert(reference.clone());
+            Ok(())
+        })
         .unwrap();
     assert_eq!(references, captures.into_iter().collect());
 }
@@ -557,8 +537,7 @@ fn failed_r_projection_preserves_the_original_r_and_releases_new_terms() {
     .into();
     let source = path.effects.original_predicate().clone();
     let retained = graph.retained_terms();
-    let result = path.effects.project_registered_parameters(
-        &[],
+    let result = path.effects.project_registered_predicate(
         &BTreeMap::from([(
             variable,
             PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), foreign)),
@@ -675,19 +654,15 @@ fn imported_introduction_frames_survive_outside_the_parent_lexical_traversal() {
         .unwrap();
     let prepared = child
         .applications
-        .prepare_effects(&child.effects, &joint, &mut graph, &mut context)
+        .prepare_effect_predicate(&child.effects, &joint, &mut graph, &mut context)
         .unwrap();
     let mut references = BTreeSet::new();
     graph
         .read()
-        .visit_predicate_parameters(
-            prepared.original_predicate(),
-            &mut context,
-            &mut |reference, _| {
-                references.insert(reference.clone());
-                Ok(())
-            },
-        )
+        .visit_predicate_parameters(&prepared, &mut context, &mut |reference, _| {
+            references.insert(reference.clone());
+            Ok(())
+        })
         .unwrap();
     assert_eq!(
         references,

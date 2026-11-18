@@ -220,17 +220,16 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         effects.admit_variables(&variables).map_err(Into::into)
     }
 
-    /// Prepare the original R, keeping function identities, captures and the
-    /// original work context. This transition does not select a solution.
-    pub(in crate::types::constraints) fn prepare_effects<A: TypeConstraintAccounting>(
+    /// Prepare the original R with the application owners admitted by this
+    /// branch. Its existing effect environment owns the complete rigid Γ.
+    pub(in crate::types::constraints) fn prepare_effect_predicate<A: TypeConstraintAccounting>(
         &self,
         effects: &EffectConstraintEnvironment<PreparedEffects>,
         scope: &ConstraintLexicalScope,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<EffectConstraintEnvironment<PreparedEffects>, TypeConstraintError> {
+    ) -> Result<crate::effect_row::prepared::PreparedEffectPredicate, TypeConstraintError> {
         context.with_effect_transaction(graph, |context, graph| {
-            let captures = self.captured_rigid_effects(context)?;
             let mut variables = BTreeSet::new();
             graph.read().visit_predicate_parameters(
                 effects.original_predicate(),
@@ -261,7 +260,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             }
             edit.commit()?;
             effects
-                .project_registered_parameters(&captures, &applications, graph, context)
+                .project_registered_predicate(&applications, graph, context)
                 .map_err(Into::into)
         })
     }
@@ -271,7 +270,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
     fn captured_rigid_effects<A: TypeConstraintAccounting>(
         &self,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Vec<GenericEffectReference>, TypeConstraintError> {
+    ) -> Result<BTreeSet<GenericEffectReference>, TypeConstraintError> {
         let mut pending: Vec<&dyn ImportedApplicationScopeAuthority> = Vec::new();
         for owner in self.applications.values() {
             context.enter_node()?;
@@ -322,11 +321,6 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                 }
             }
         }
-        let mut result = Vec::new();
-        for reference in captures {
-            context.enter_node()?;
-            result.push(reference);
-        }
-        Ok(result)
+        Ok(captures)
     }
 }

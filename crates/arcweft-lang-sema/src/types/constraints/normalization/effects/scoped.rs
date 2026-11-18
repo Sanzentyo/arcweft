@@ -56,9 +56,9 @@ impl<D: ConstraintDomain, L> ConstraintInferenceBranch<D, L> {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<PreparedEffectScopedConstraint, TypeConstraintError> {
         context.with_effect_transaction(graph, |context, graph| {
-            let effects =
+            let predicate =
                 self.applications
-                    .prepare_effects(&self.effects, scope, graph, context)?;
+                    .prepare_effect_predicate(&self.effects, scope, graph, context)?;
             let mut parameters = Vec::new();
             for (depth, binder) in scope.shape().binders().iter().rev().enumerate() {
                 context.enter_node()?;
@@ -72,17 +72,18 @@ impl<D: ConstraintDomain, L> ConstraintInferenceBranch<D, L> {
                     parameters.push(scope.shape().bound_effect(depth, slot)?);
                 }
             }
-            for reference in effects.original_variables() {
+            for reference in self.effects.original_variables() {
                 context.enter_node()?;
                 if reference.free_parameter().is_some()
-                    && effects.eligibility(reference) == Some(EffectConstraintEligibility::Rigid)
+                    && self.effects.eligibility(reference)
+                        == Some(EffectConstraintEligibility::Rigid)
                 {
                     parameters.push(reference.clone());
                 }
             }
             graph
                 .read()
-                .scoped_constraint(&parameters, domain, effects.original_predicate(), context)
+                .scoped_constraint(&parameters, domain, &predicate, context)
                 .map_err(Into::into)
         })
     }

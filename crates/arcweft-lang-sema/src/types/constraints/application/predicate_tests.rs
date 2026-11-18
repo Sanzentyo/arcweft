@@ -67,13 +67,13 @@ fn complete(
     path.applications
         .merge_lexical_scopes(&mut scope, context)
         .unwrap();
-    let effects = path
+    let predicate = path
         .applications
-        .prepare_effects(&path.effects, &scope, graph, context)
+        .prepare_effect_predicate(&path.effects, &scope, graph, context)
         .unwrap();
     let receipt = graph
         .read()
-        .scoped_constraint(&[], &truth(), effects.original_predicate(), context)
+        .scoped_constraint(&[], &truth(), &predicate, context)
         .unwrap();
     let original = graph
         .read()
@@ -211,22 +211,17 @@ fn an_application_opens_its_original_predicate_once_before_actual_named_and_futu
     path.applications
         .merge_lexical_scopes(&mut scope, &mut context)
         .unwrap();
-    let effects = path
+    let predicate = path
         .applications
-        .prepare_effects(&path.effects, &scope, &mut graph, &mut context)
+        .prepare_effect_predicate(&path.effects, &scope, &mut graph, &mut context)
         .unwrap();
     let receipt = graph
         .read()
-        .scoped_constraint(&[], &truth(), effects.original_predicate(), &mut context)
+        .scoped_constraint(&[], &truth(), &predicate, &mut context)
         .unwrap();
     let original = graph
         .read()
-        .freeze_scoped(
-            &[],
-            &[effects.original_predicate()],
-            &[&receipt],
-            &mut context,
-        )
+        .freeze_scoped(&[], &[&predicate], &[&receipt], &mut context)
         .unwrap();
     let original = graph
         .bind_original_scoped(&original, &mut context)
@@ -257,9 +252,7 @@ fn an_application_opens_its_original_predicate_once_before_actual_named_and_futu
         &EffectRow::closed(EffectSet::from_labels(["named.body", "future.actual"]).unwrap())
     );
     assert_eq!(
-        closed
-            .resolve_predicate(effects.original_predicate(), &mut context)
-            .unwrap(),
+        closed.resolve_predicate(&predicate, &mut context).unwrap(),
         EffectPredicate::unconstrained()
     );
     graph.read().validate_retained_predicate(&template).unwrap();
