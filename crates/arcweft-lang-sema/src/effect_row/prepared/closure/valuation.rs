@@ -53,11 +53,7 @@ impl FiniteRowValuation<'_> {
         if !point.variables().any(
             |atom| matches!(atom, Atom::Formal { owner, class: 0, .. } if *owner == self.owner),
         ) {
-            work.charge(DecisionWork::Visit)?;
-            for _ in 0..point.node_count() {
-                work.charge(DecisionWork::Node)?;
-            }
-            return Ok(point.clone());
+            return work.copy_decision(point);
         }
         let mut result = Decision::constant(true);
         for mask in 0..self.pattern_count()? {

@@ -68,6 +68,43 @@ fn boolean_construction_is_extensional_and_canonical() {
 }
 
 #[test]
+fn terminal_condition_copies_only_the_selected_graph() {
+    let mut meter = Meter::default();
+    let selected = atom(0);
+    let discarded = (2..12).fold(atom(1), |row, variable| {
+        row.or(&atom(variable), &mut meter).unwrap()
+    });
+    let yes = EffectDecision::constant(true);
+    let no = EffectDecision::constant(false);
+    let copy_work = selected.node_count() + 1;
+    for (condition, when_true, when_false) in [
+        (&yes, &selected, &discarded),
+        (&no, &discarded, &selected),
+        (&selected, &yes, &no),
+    ] {
+        let mut exact = Meter {
+            used: 0,
+            limit: Some(copy_work),
+        };
+        assert_eq!(
+            condition
+                .conditional(when_true, when_false, &mut exact)
+                .unwrap(),
+            selected,
+        );
+        assert_eq!(exact.used, copy_work);
+        let mut insufficient = Meter {
+            used: 0,
+            limit: Some(copy_work - 1),
+        };
+        assert_eq!(
+            condition.conditional(when_true, when_false, &mut insufficient),
+            Err((copy_work, copy_work - 1)),
+        );
+    }
+}
+
+#[test]
 fn existential_projection_preserves_its_full_admissibility_domain() {
     let mut meter = Meter::default();
     let a = atom(0);

@@ -215,6 +215,16 @@ impl<V: Clone + Ord> Membership<V> {
 }
 
 impl<V: Clone + Ord> EffectFormula<V> {
+    /// Copy canonical membership after admitting all decisions and overrides.
+    pub fn copy_with_control<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
+        self.0.default.admit_copy(control)?;
+        for decision in self.0.overrides.values() {
+            control.charge(DecisionWork::Node)?;
+            decision.admit_copy(control)?;
+        }
+        Ok(self.clone())
+    }
+
     /// Borrows the canonical decisions without copying their graphs.
     pub const fn membership(&self) -> EffectMembershipView<'_, V> {
         EffectMembershipView {

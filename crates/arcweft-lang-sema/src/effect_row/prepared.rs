@@ -245,23 +245,11 @@ impl<E> PreparedEffectFailure<E> {
 struct Work<'a, C>(&'a mut C);
 
 impl<C: DecisionControl> Work<'_, C> {
-    fn charge_decision_copy<V: Clone + Ord>(
-        &mut self,
-        decision: &EffectDecision<V>,
-    ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        self.charge(DecisionWork::Visit)?;
-        for _ in 0..decision.node_count() {
-            self.charge(DecisionWork::Node)?;
-        }
-        Ok(())
-    }
-
     fn copy_decision<V: Clone + Ord>(
         &mut self,
         decision: &EffectDecision<V>,
     ) -> Result<EffectDecision<V>, PreparedEffectFailure<C::Error>> {
-        self.charge_decision_copy(decision)?;
-        Ok(decision.clone())
+        decision.copy_with_control(self)
     }
 
     /// An existing canonical formula can retain its ordering and local node
@@ -270,13 +258,7 @@ impl<C: DecisionControl> Work<'_, C> {
         &mut self,
         formula: &EffectFormula<V>,
     ) -> Result<EffectFormula<V>, PreparedEffectFailure<C::Error>> {
-        let membership = formula.membership();
-        self.charge_decision_copy(membership.default_decision())?;
-        for (_, decision) in membership.overrides() {
-            self.charge(DecisionWork::Node)?;
-            self.charge_decision_copy(decision)?;
-        }
-        Ok(formula.clone())
+        formula.copy_with_control(self)
     }
 }
 

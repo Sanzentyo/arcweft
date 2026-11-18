@@ -183,6 +183,20 @@ impl<V: Clone + Ord> EffectDecision<V> {
         self.nodes.len()
     }
 
+    pub(super) fn admit_copy<C: DecisionControl>(&self, control: &mut C) -> Result<(), C::Error> {
+        control.charge(DecisionWork::Visit)?;
+        for _ in self.nodes.iter() {
+            control.charge(DecisionWork::Node)?;
+        }
+        Ok(())
+    }
+
+    /// Copy an immutable canonical graph after admitting its root and nodes.
+    pub fn copy_with_control<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
+        self.admit_copy(control)?;
+        Ok(self.clone())
+    }
+
     pub(super) fn encode<E: DecisionEncoding<V>>(&self, encoder: &mut E) -> Result<(), E::Error> {
         fn reference<V, E: DecisionEncoding<V>>(
             root: Root,
@@ -324,6 +338,28 @@ impl<V: Clone + Ord> EffectDecision<V> {
         no: &Self,
         control: &mut C,
     ) -> Result<Self, C::Error> {
+        // Branch indices are local to each operand. Before import, give
+        // each nonterminal root a distinct slot so only reductions justified
+        // by the terminal structure can select a complete existing operand.
+        let operands = [self, yes, no];
+        let [condition_root, yes_root, no_root] = [0, 1, 2].map(|slot| match operands[slot].root {
+            Root::Branch(_) => Root::Branch(slot),
+            terminal => terminal,
+        });
+        if let Some(root) = Conditional::new(condition_root, yes_root, no_root).reduced() {
+            return match root {
+                Root::False | Root::True => {
+                    // A purely terminal operation uses no decision nodes.
+                    // Retain the existing cost of that case for runtime
+                    // admission and charge a visit when an operand is a graph.
+                    if operands.iter().any(|operand| !operand.nodes.is_empty()) {
+                        control.charge(DecisionWork::Visit)?;
+                    }
+                    Ok(Self::constant(root == Root::True))
+                }
+                Root::Branch(slot) => operands[slot].copy_with_control(control),
+            };
+        }
         let mut builder = DecisionBuilder::new(control);
         let condition = builder.import(self)?;
         let yes = builder.import(yes)?;
@@ -376,6 +412,9 @@ impl<V: Clone + Ord> EffectDecision<V> {
         replacements: &BTreeMap<V, Self>,
         control: &mut C,
     ) -> Result<Self, C::Error> {
+        if replacements.is_empty() || self.nodes.is_empty() {
+            return self.copy_with_control(control);
+        }
         control.charge(DecisionWork::Visit)?;
         let mut builder = DecisionBuilder::new(control);
         let root = builder.import(self)?;
