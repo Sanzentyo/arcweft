@@ -128,12 +128,12 @@ impl<'a> SourceTypePreparation<'a> {
             })
     }
 
-    pub(super) fn call_receiver(
+    pub(super) fn call_value_operand(
         &self,
         expression: super::ExprId,
         ty: &TypeKind<crate::types::PreparedEffects>,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
-    ) -> Result<crate::callable::PreparedCallReceiver, super::FinalSemanticAnalysisError> {
+    ) -> Result<crate::callable::PreparedCallValueOperand, super::FinalSemanticAnalysisError> {
         use super::FinalSemanticAnalysisError;
         let owner = expression.into();
         let mut work = self.work.clone();
@@ -152,7 +152,7 @@ impl<'a> SourceTypePreparation<'a> {
             .map_err(|error| {
                 FinalSemanticAnalysisError::source_type_effect_projection(owner, error)
             })?;
-        Ok(crate::callable::PreparedCallReceiver::new(
+        Ok(crate::callable::PreparedCallValueOperand::new(
             expression, observed, original,
         ))
     }

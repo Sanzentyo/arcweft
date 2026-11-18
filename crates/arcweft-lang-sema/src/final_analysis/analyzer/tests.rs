@@ -145,7 +145,9 @@ fn call_receiver_observation_keeps_the_original_nested_effect_term() {
     }));
 
     let types = analyzer.source_type_preparation(work).unwrap();
-    let receiver = types.call_receiver(owner, &prepared, graph.read()).unwrap();
+    let receiver = types
+        .call_value_operand(owner, &prepared, graph.read())
+        .unwrap();
 
     assert_eq!(receiver.source(), owner);
     assert_eq!(receiver.original().as_ref(), &prepared);

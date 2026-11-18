@@ -398,7 +398,7 @@ fn resolve_function_value(
         ResolvedFunctionValueSeed::PreparedContinuation { reference } => {
             let candidate = request
                 .prepared_continuations
-                .resolve_prepared_continuation(reference, value.actual())
+                .resolve_prepared_continuation(reference, value.operand().observed())
                 .map_err(ResolveFunctionValueError::Invariant)?;
             return NonEmptyResolvedCandidates::try_new_prepared(vec![candidate], request.limits)
                 .map(ResolvedCallTarget::Candidates)

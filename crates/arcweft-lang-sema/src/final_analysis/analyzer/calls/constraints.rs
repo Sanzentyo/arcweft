@@ -89,7 +89,7 @@ fn static_content_callee_matches(
         | PreparedCallCalleeConstraintInputs::AssociatedType { .. }
         | PreparedCallCalleeConstraintInputs::DialogueCallee
         | PreparedCallCalleeConstraintInputs::DialogueApplication
-        | PreparedCallCalleeConstraintInputs::FunctionValue { .. }
+        | PreparedCallCalleeConstraintInputs::FunctionValue(_)
         | PreparedCallCalleeConstraintInputs::NonCallable => true,
     }
 }
@@ -4754,17 +4754,21 @@ impl AnalyzerPreparedCallPrefix {
                     .semantic_expression()
                     .or(Some(receiver.source()))
             }
-            PreparedCallCalleeConstraintInputs::FunctionValue { .. } => {
+            PreparedCallCalleeConstraintInputs::FunctionValue(operand) => {
                 if !requires_value_callee {
                     return Err(CallConstraintInvariant::PreparedBaseMismatch);
                 }
-                Some(
-                    self.record
-                        .metadata
-                        .callee_expression
-                        .semantic_expression()
-                        .ok_or(CallConstraintInvariant::PreparedCallSiteMismatch)?,
-                )
+                let source = operand.source();
+                if self
+                    .record
+                    .metadata
+                    .callee_expression
+                    .callable_type_projection()
+                    != Some(source)
+                {
+                    return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
+                }
+                Some(source)
             }
             PreparedCallCalleeConstraintInputs::Free
             | PreparedCallCalleeConstraintInputs::EnumConstructor
@@ -6172,18 +6176,18 @@ pub(super) fn validate_and_prepare_call_constraints(
             });
         }
         (
-            PreparedCallCalleeConstraintInputs::FunctionValue { actual },
+            PreparedCallCalleeConstraintInputs::FunctionValue(operand),
             CallableInstantiation::None,
         ) => {
             let constraint = candidate
-                .prepare_function_value_constraint(group, actual, terminal_effects)
+                .prepare_function_value_constraint(group, operand.observed(), terminal_effects)
                 .map_err(CallConstraintPreparationFailure::Invariant)?
                 .into_ready()
                 .map_err(CallConstraintPreparationFailure::Invariant)?;
             if let Some(pattern) = constraint {
                 base_constraints.push(PreparedCallTypeConstraint {
                     pattern: preparation.declaration_type(&pattern)?,
-                    actual: Arc::new(preparation.source_type(result_source, actual)?),
+                    actual: Arc::clone(operand.original()),
                 });
             }
         }

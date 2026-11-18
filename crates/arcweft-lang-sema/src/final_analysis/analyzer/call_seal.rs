@@ -319,38 +319,55 @@ fn checked_callee_execution(
     record: &AnalyzerDetachedCandidateRecord,
     selected: &ResolvedCallable,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
+    sources: &mut CallSourceFacts<'_, '_, '_>,
 ) -> Result<CheckedCallCalleeExecution, FinalSemanticAnalysisError> {
-    let requires_value_callee = selected.requires_value_callee();
-    if record.callee_inputs.is_function_value() != requires_value_callee {
+    use crate::callable::PreparedCallCalleeConstraintInputs::FunctionValue;
+    let operand = match (&record.callee_inputs, selected.requires_value_callee()) {
+        (FunctionValue(operand), true) => operand,
+        (FunctionValue(_), false) | (_, true) => {
+            return Err(final_call_seal_error(
+                location,
+                CallConstraintInvariant::PreparedCallSiteMismatch,
+            ));
+        }
+        (_, false) => {
+            if matches!(selected.id(), crate::callable::CallableCandidateId::Project(declaration)
+                if declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View)
+                && let Some(expression) = record.callee_expression.semantic_expression()
+            {
+                let source = checked_execution_source(
+                    location,
+                    crate::callable::CheckedCallArgumentSlotSource::Expression(expression),
+                    coordinates,
+                )?;
+                return Ok(CheckedCallCalleeExecution::SemanticValue { source });
+            }
+            return Ok(CheckedCallCalleeExecution::Direct);
+        }
+    };
+    let source = operand.source();
+    if record.callee_expression.callable_type_projection() != Some(source) {
         return Err(final_call_seal_error(
             location,
             CallConstraintInvariant::PreparedCallSiteMismatch,
         ));
     }
-    if !requires_value_callee {
-        if matches!(selected.id(), crate::callable::CallableCandidateId::Project(declaration)
-            if declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View)
-            && let Some(expression) = record.callee_expression.semantic_expression()
-        {
-            let source = checked_execution_source(
-                location,
-                crate::callable::CheckedCallArgumentSlotSource::Expression(expression),
-                coordinates,
-            )?;
-            return Ok(CheckedCallCalleeExecution::SemanticValue { source });
-        }
-        return Ok(CheckedCallCalleeExecution::Direct);
-    }
-    let source = record
-        .callee_expression
-        .semantic_expression()
+    let source_type = sources
+        .expressions
+        .get(&source)
+        .and_then(PreparedExpressionFact::value_type)
         .ok_or_else(|| {
-            final_call_seal_error(location, CallConstraintInvariant::PreparedCallSiteMismatch)
+            final_call_seal_error(
+                location,
+                CallConstraintInvariant::PreparedFunctionTypeMismatch,
+            )
         })?;
-    if record.callee_expression.callable_type_projection() != Some(source) {
+    if source_type != operand.original().as_ref()
+        || sources.types.source(source)?.canonical(source_type)? != *operand.observed()
+    {
         return Err(final_call_seal_error(
             location,
-            CallConstraintInvariant::PreparedCallSiteMismatch,
+            CallConstraintInvariant::PreparedFunctionTypeMismatch,
         ));
     }
     let source = checked_execution_source(
@@ -525,7 +542,7 @@ fn checked_value_receiver_source(
     location: FinalCallSealLocation,
     record: &AnalyzerDetachedCandidateRecord,
     solution: &crate::callable::FrozenCallTypeSolution,
-    operand: &crate::callable::PreparedCallReceiver,
+    operand: &crate::callable::PreparedCallValueOperand,
     resolved_receiver: &TypeKind,
     sources: &mut CallSourceFacts<'_, '_, '_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
@@ -1530,7 +1547,7 @@ fn seal_selected_call(
     let selected = inventory.selected();
     let solution = crate::callable::FrozenCallTypeSolution::seal(solution_seed, selected.base())
         .map_err(|error| final_call_seal_error(location, error))?;
-    let callee = checked_callee_execution(location, &record, selected, coordinates)?;
+    let callee = checked_callee_execution(location, &record, selected, coordinates, sources)?;
     let site = CheckedCallApplicationSite::seal(
         site,
         coordinates

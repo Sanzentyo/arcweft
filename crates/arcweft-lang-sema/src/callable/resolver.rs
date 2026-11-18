@@ -172,11 +172,11 @@ pub(crate) enum PreparedFinalCallCallee<'a> {
         seed: Box<AcceptedEnumVariantCase>,
     },
     RecordConstructor {
-        receiver: PreparedCallReceiver,
+        receiver: PreparedCallValueOperand,
         seed: Box<AcceptedRecordConstructor>,
     },
     Selected {
-        receiver: PreparedCallReceiver,
+        receiver: PreparedCallValueOperand,
         method: CallableName,
     },
     AssociatedType {
@@ -204,12 +204,12 @@ pub(crate) enum PreparedFinalCallCallee<'a> {
 pub(crate) enum PreparedCallCalleeConstraintInputs {
     Free,
     EnumConstructor,
-    ValueReceiver(PreparedCallReceiver),
+    ValueReceiver(PreparedCallValueOperand),
     AssociatedType { actual: TypeKind },
     DialogueCallee,
     DialogueApplication,
     StaticContentCallee(PreparedStaticContentCallee),
-    FunctionValue { actual: TypeKind },
+    FunctionValue(PreparedCallValueOperand),
     NonCallable,
 }
 
@@ -251,16 +251,16 @@ impl PreparedStaticContentCallee {
     }
 }
 
-/// A value receiver's resolver observation and its original solver operand.
+/// A call operand's resolver observation and its original solver operand.
 /// Both come from the same accepted expression and source scope.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PreparedCallReceiver {
+pub(crate) struct PreparedCallValueOperand {
     source: ExprId,
     observed: Arc<TypeKind>,
     original: Arc<TypeKind<crate::types::PreparedEffects>>,
 }
 
-impl PreparedCallReceiver {
+impl PreparedCallValueOperand {
     pub(crate) fn new(
         source: ExprId,
         observed: TypeKind,
@@ -626,7 +626,7 @@ impl PreparedCallInputs {
 
 impl PreparedCallCalleeConstraintInputs {
     pub(crate) const fn is_function_value(&self) -> bool {
-        matches!(self, Self::FunctionValue { .. })
+        matches!(self, Self::FunctionValue(_))
     }
 
     pub(crate) fn validates_candidate(&self, candidate: &PreparedResolvedCallable) -> bool {
@@ -651,7 +651,7 @@ impl PreparedCallCalleeConstraintInputs {
             | Self::AssociatedType { .. }
             | Self::DialogueCallee
             | Self::DialogueApplication
-            | Self::FunctionValue { .. }
+            | Self::FunctionValue(_)
             | Self::NonCallable => true,
         }
     }
@@ -717,9 +717,9 @@ impl PreparedFinalCallCallee<'_> {
                 }
             }
             Self::Dialogue { .. } => PreparedCallCalleeConstraintInputs::DialogueCallee,
-            Self::FunctionValue { value } => PreparedCallCalleeConstraintInputs::FunctionValue {
-                actual: value.actual().clone(),
-            },
+            Self::FunctionValue { value } => {
+                PreparedCallCalleeConstraintInputs::FunctionValue(value.operand().clone())
+            }
             Self::NonCallableValue { .. } => PreparedCallCalleeConstraintInputs::NonCallable,
         }
     }
@@ -780,10 +780,10 @@ type FinalCallSourceAnnotations<'a> = dyn Fn(
     ) -> Result<Option<TypeKind>, FinalSemanticAnalysisError>
     + 'a;
 
-type FinalCallReceiverPreparation<'a> = dyn Fn(
+type FinalCallValueOperandPreparation<'a> = dyn Fn(
         ExprId,
         &TypeKind<crate::types::PreparedEffects>,
-    ) -> Result<PreparedCallReceiver, FinalSemanticAnalysisError>
+    ) -> Result<PreparedCallValueOperand, FinalSemanticAnalysisError>
     + 'a;
 
 /// Immutable child facts needed to prepare one final-HIR call.
@@ -795,7 +795,7 @@ pub(crate) struct FinalCallCalleeFacts<'a, 'source, P, U> {
     types: &'a BTreeMap<TypeId, TypeKind>,
     function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
     annotations: &'source FinalCallSourceAnnotations<'source>,
-    receiver: &'source FinalCallReceiverPreparation<'source>,
+    value_operand: &'source FinalCallValueOperandPreparation<'source>,
 }
 
 impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
@@ -806,7 +806,7 @@ impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
         types: &'a BTreeMap<TypeId, TypeKind>,
         function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
         annotations: &'source FinalCallSourceAnnotations<'source>,
-        receiver: &'source FinalCallReceiverPreparation<'source>,
+        value_operand: &'source FinalCallValueOperandPreparation<'source>,
     ) -> Self {
         Self {
             flow_transfer: None,
@@ -816,7 +816,7 @@ impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
             types,
             function_value_origin,
             annotations,
-            receiver,
+            value_operand,
         }
     }
 
@@ -1599,26 +1599,26 @@ impl PreparedFunctionValueOriginQuery {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct PreparedFunctionValueCallee {
-    actual: TypeKind,
+    operand: PreparedCallValueOperand,
     origin: PreparedFunctionValueOriginEvidence,
     seed: ResolvedFunctionValueSeed,
 }
 
 impl PreparedFunctionValueCallee {
     pub(crate) fn new(
-        actual: TypeKind,
+        operand: PreparedCallValueOperand,
         origin: PreparedFunctionValueOriginEvidence,
         seed: ResolvedFunctionValueSeed,
     ) -> Self {
         Self {
-            actual,
+            operand,
             origin,
             seed,
         }
     }
 
-    pub(crate) const fn actual(&self) -> &TypeKind {
-        &self.actual
+    pub(crate) const fn operand(&self) -> &PreparedCallValueOperand {
+        &self.operand
     }
 
     fn into_origin(self) -> PreparedFunctionValueOriginEvidence {
@@ -1645,7 +1645,7 @@ pub(crate) struct CallResolverRequest<'a> {
     prepared_continuations: &'a dyn super::PreparedCallContinuationAuthority,
     work: &'a mut ResolverWork,
     limits: &'a CallableLimits,
-    implicit_extension_receiver: Option<PreparedCallReceiver>,
+    implicit_extension_receiver: Option<PreparedCallValueOperand>,
 }
 
 /// Immutable authorities and controls for one final-HIR call-resolution query.
@@ -1661,7 +1661,7 @@ pub(crate) struct CallResolverContext<'a> {
     pub(crate) cancellation: &'a AtomicBool,
     pub(crate) prepared_continuations: &'a dyn super::PreparedCallContinuationAuthority,
     pub(crate) limits: &'a CallableLimits,
-    pub(crate) implicit_extension_receiver: Option<PreparedCallReceiver>,
+    pub(crate) implicit_extension_receiver: Option<PreparedCallValueOperand>,
 }
 
 /// The one checked-callable selection authority admitted while a final

@@ -10,8 +10,8 @@ use super::{
     HirAssociatedSeparator, HirCallCallee, HirCallInvocation, HirExpr, HirExprKind,
     HirExprSourceRole, HirModule, HirPath, HirPathRoot, HirPathSegment, HirPathValue,
     HirRecoveredName, HirSelectedMember, HirSourceQuery, PrepareFinalCallCalleeError,
-    PreparedCallCallee, PreparedFinalCallCallee, PreparedFreeCallContext, PreparedFreeCallScope,
-    PreparedFunctionValueCallee, PreparedFunctionValueOriginEvidence,
+    PreparedCallCallee, PreparedCallValueOperand, PreparedFinalCallCallee, PreparedFreeCallContext,
+    PreparedFreeCallScope, PreparedFunctionValueCallee, PreparedFunctionValueOriginEvidence,
     PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
     PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQuery,
     PreparedFunctionValueOriginQueryError, PresentationCallableId, ProjectValueLookup,
@@ -112,7 +112,7 @@ fn prepare_value_call_callee<'a, P, U>(
 where
     P: PreparedCallPrefixPayload<Unselected = U>,
 {
-    let mut function_origin = facts.function_value_origin.take();
+    let function_origin = facts.function_value_origin.take();
     let expression = authority
         .module()
         .resolve_expr(value)
@@ -181,7 +181,7 @@ where
                 expression: value,
             });
         }
-        let receiver = (facts.receiver)(value, receiver)
+        let receiver = (facts.value_operand)(value, receiver)
             .map_err(|error| PrepareFinalCallCalleeError::SourceType(Box::new(error)))?;
         let seed =
             super::AcceptedRecordConstructor::try_from_channel(
@@ -234,7 +234,7 @@ where
                 .ok_or(PrepareFinalCallCalleeError::MissingValueType {
                     expression: select.target(),
                 })?;
-        let receiver = (facts.receiver)(select.target(), receiver_type)
+        let receiver = (facts.value_operand)(select.target(), receiver_type)
             .map_err(|error| PrepareFinalCallCalleeError::SourceType(Box::new(error)))?;
         return Ok(PreparedFinalCallCallee::Selected {
             receiver,
@@ -270,33 +270,7 @@ where
                 ))
             )
         {
-            let checked_type = checked
-                .value_type()
-                .ok_or(PrepareFinalCallCalleeError::MissingValueType { expression: value })?;
-            if matches!(checked_type, TypeKind::Function { .. }) {
-                let origin = function_origin.take().ok_or(
-                    PrepareFinalCallCalleeError::MissingFunctionValueOrigin { expression: value },
-                )?;
-                return prepare_function_value(
-                    value,
-                    checked_type,
-                    origin,
-                    facts.prepared_calls,
-                    limits,
-                )
-                .map(|value| PreparedFinalCallCallee::FunctionValue {
-                    value: Box::new(value),
-                });
-            }
-            if function_origin.is_some() {
-                return Err(PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin {
-                    expression: value,
-                });
-            }
-            return Ok(PreparedFinalCallCallee::NonCallableValue {
-                expression: value,
-                ty: Box::new(checked_type.clone()),
-            });
+            return prepare_checked_value_callee(value, checked, function_origin, facts, limits);
         }
         let lookup = resolve_final_project_value(authority, value, path)?;
         let checked = facts.expressions.get(&value);
@@ -350,29 +324,44 @@ where
         .get(&value)
         .ok_or(PrepareFinalCallCalleeError::MissingExpressionFact { expression: value })?;
 
+    prepare_checked_value_callee(value, checked, function_origin, facts, limits)
+}
+
+fn prepare_checked_value_callee<'a, P, U>(
+    value: ExprId,
+    checked: &PreparedExpressionFact,
+    function_origin: Option<PreparedFunctionValueOriginEvidence>,
+    facts: FinalCallCalleeFacts<'a, '_, P, U>,
+    limits: &CallableLimits,
+) -> Result<PreparedFinalCallCallee<'a>, PrepareFinalCallCalleeError>
+where
+    P: PreparedCallPrefixPayload<Unselected = U>,
+{
     let checked_type = checked
         .value_type()
         .ok_or(PrepareFinalCallCalleeError::MissingValueType { expression: value })?;
-    if matches!(checked_type, TypeKind::Function { .. }) {
-        let origin = function_origin
-            .take()
-            .ok_or(PrepareFinalCallCalleeError::MissingFunctionValueOrigin { expression: value })?;
-        return prepare_function_value(value, checked_type, origin, facts.prepared_calls, limits)
-            .map(|value| PreparedFinalCallCallee::FunctionValue {
+    let operand = || {
+        (facts.value_operand)(value, checked_type)
+            .map_err(|error| PrepareFinalCallCalleeError::SourceType(Box::new(error)))
+    };
+    match (checked_type, function_origin) {
+        (TypeKind::Function { .. }, Some(origin)) => {
+            let value = prepare_function_value(operand()?, origin, facts.prepared_calls, limits)?;
+            Ok(PreparedFinalCallCallee::FunctionValue {
                 value: Box::new(value),
-            });
-    }
-
-    if function_origin.is_some() {
-        return Err(PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin {
+            })
+        }
+        (TypeKind::Function { .. }, None) => {
+            Err(PrepareFinalCallCalleeError::MissingFunctionValueOrigin { expression: value })
+        }
+        (_, Some(_)) => {
+            Err(PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin { expression: value })
+        }
+        (_, None) => Ok(PreparedFinalCallCallee::NonCallableValue {
             expression: value,
-        });
+            ty: Box::new(operand()?.observed().clone()),
+        }),
     }
-
-    Ok(PreparedFinalCallCallee::NonCallableValue {
-        expression: value,
-        ty: Box::new(checked_type.clone()),
-    })
 }
 
 /// Resolve a function value's callable origin from typed HIR ownership.  A
@@ -637,7 +626,7 @@ where
         .ok_or(PrepareFinalCallCalleeError::MissingValueType {
             expression: value_receiver,
         })?;
-    let receiver = (facts.receiver)(value_receiver, ty)
+    let receiver = (facts.value_operand)(value_receiver, ty)
         .map_err(|error| PrepareFinalCallCalleeError::SourceType(Box::new(error)))?;
     Ok(PreparedFinalCallCallee::Selected {
         receiver,
@@ -713,8 +702,7 @@ fn prepare_associated_callee<'a>(
 }
 
 fn prepare_function_value<'a, P, U>(
-    expression: ExprId,
-    ty: &TypeKind,
+    operand: PreparedCallValueOperand,
     origin: PreparedFunctionValueOriginEvidence,
     prepared_calls: super::super::PreparedCallGraphIngress<'a, P, U>,
     limits: &CallableLimits,
@@ -722,6 +710,8 @@ fn prepare_function_value<'a, P, U>(
 where
     P: PreparedCallPrefixPayload<Unselected = U>,
 {
+    let expression = operand.source();
+    let ty = operand.observed();
     if !matches!(ty, TypeKind::Function { .. }) {
         return Err(PrepareFinalCallCalleeError::InvalidFunctionValue { expression });
     }
@@ -828,7 +818,7 @@ where
             return Err(PrepareFinalCallCalleeError::InvalidFunctionValue { expression });
         }
     };
-    Ok(PreparedFunctionValueCallee::new(ty.clone(), origin, seed))
+    Ok(PreparedFunctionValueCallee::new(operand, origin, seed))
 }
 
 fn resolve_final_project_value<'a>(
