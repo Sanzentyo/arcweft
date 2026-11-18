@@ -3228,6 +3228,29 @@ impl PreparedResolvedExpression {
         self.data.evaluated_effect()
     }
 
+    /// Installs the selected operation only after its original expression
+    /// result has been checked in the completed effect relation.
+    pub(super) fn with_sealed_evaluated_effect(
+        mut self,
+        owner: ExprId,
+        effect: CheckedEvaluatedEffect,
+        types: &mut super::type_seal::PublicationSourceTypes<'_, '_>,
+    ) -> Result<Self, super::FinalSemanticAnalysisError> {
+        use super::FinalSemanticAnalysisError::WrongPayloadFamily;
+        let value = self.value_type().ok_or(WrongPayloadFamily)?;
+        if effect.site_root() != owner || &types.canonical(value)? != effect.result() {
+            return Err(WrongPayloadFamily);
+        }
+        match self.data.evaluated_effect.as_deref() {
+            Some(existing) if existing != &effect => Err(WrongPayloadFamily),
+            Some(_) => Ok(self),
+            None => {
+                self.data.evaluated_effect = Some(Box::new(effect));
+                Ok(self)
+            }
+        }
+    }
+
     pub(super) fn with_execution_plan(
         self,
         execution: Option<CheckedExpressionExecutionPlan>,
@@ -3566,24 +3589,6 @@ impl CheckedExpression {
     /// the selected callable schema assigns one.
     pub fn evaluated_effect(&self) -> Option<&CheckedEvaluatedEffect> {
         self.data.evaluated_effect()
-    }
-
-    /// Attaches one checked evaluated effect to its exact expression root.
-    /// The operation remains on this expression fact; statement and dialogue
-    /// site rows retain typed references or site metadata only.
-    pub(super) fn with_evaluated_effect(
-        mut self,
-        owner: ExprId,
-        effect: CheckedEvaluatedEffect,
-    ) -> Option<Self> {
-        if self.data.evaluated_effect.is_some()
-            || effect.site_root() != owner
-            || self.value_type() != Some(effect.result())
-        {
-            return None;
-        }
-        self.data.evaluated_effect = Some(Box::new(effect));
-        Some(self)
     }
 
     /// Replaces only the execution plan after all call/content/effect seals

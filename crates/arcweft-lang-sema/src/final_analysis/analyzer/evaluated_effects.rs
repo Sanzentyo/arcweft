@@ -25,11 +25,10 @@ use crate::{
         CheckedDialogueEffectPlan, CheckedDialogueEffectSite, CheckedDropFade,
         CheckedDropFadeOperand, CheckedDropInvocation, CheckedDropPolicySource, CheckedEffectField,
         CheckedEvaluatedEffect, CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation,
-        CheckedExecutableCapture, CheckedExplicitDropPolicy, CheckedExpression,
-        CheckedExpressionResolution, CheckedRegistryDrop, CheckedValueResolution,
-        PreparedContentApplication, PreparedContentEmission, PreparedDialogueApplication,
-        PreparedDialogueEffectSite, PreparedEvaluatedEffect, PreparedExpressionFact,
-        PreparedStatementPayload,
+        CheckedExecutableCapture, CheckedExplicitDropPolicy, CheckedExpressionResolution,
+        CheckedRegistryDrop, CheckedValueResolution, PreparedContentApplication,
+        PreparedContentEmission, PreparedDialogueApplication, PreparedDialogueEffectSite,
+        PreparedEvaluatedEffect, PreparedExpressionFact, PreparedStatementPayload,
     },
     semantic_coordinate::{
         SemanticCoordinateIndex, StableCheckedContentFragmentCoordinate,
@@ -53,7 +52,10 @@ use crate::checked_text_proxy::{
     CheckedTextProxyValueOrigin, PreparedCheckedTextProxyApplication,
     PreparedCheckedTextProxyOrigin, PreparedCheckedTextProxyValue,
 };
-use crate::final_analysis::prepared::PreparedDialogueEffectOperation;
+use crate::final_analysis::prepared::{
+    PreparedDialogueEffectOperation, PreparedExpressionResult, PreparedNonValueExpressionResult,
+};
+use crate::final_analysis::type_seal::PublicationTypes;
 use arcweft_lang_hir::{
     dialogue_application::HirAttachedContentApplicationFamily, expr::HirExprKind, identity::ExprId,
     module::HirModule,
@@ -737,7 +739,7 @@ impl Analyzer<'_, '_, '_> {
         let mut sealed_effects = BTreeMap::new();
         let mut expression_replacements = BTreeMap::new();
         for (root, prepared) in prepared_effects {
-            let effect = self.seal_evaluated_effect(prepared)?;
+            let effect = self.seal_evaluated_effect(prepared, &mut content_traversal.types)?;
             if effect.site_root() != root {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
@@ -750,13 +752,11 @@ impl Analyzer<'_, '_, '_> {
             let PreparedExpressionFact::Resolved(checked) = fact else {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             };
-            let checked = match checked.evaluated_effect() {
-                Some(existing) if existing == &effect => checked,
-                Some(_) => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
-                None => checked
-                    .with_evaluated_effect(root, effect.clone())
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
-            };
+            let checked = checked.with_sealed_evaluated_effect(
+                root,
+                effect.clone(),
+                &mut content_traversal.types.source(root)?,
+            )?;
             if sealed_effects.insert(root, effect).is_some()
                 || expression_replacements
                     .insert(root, PreparedExpressionFact::Resolved(checked))
@@ -834,11 +834,14 @@ impl Analyzer<'_, '_, '_> {
         let (value, effects) = shell
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if value.source_type()
-            != &crate::types::TypeKind::DialogueLine(Box::new(line_result.clone()))
+        if !matches!(value.source_type(), TypeKind::DialogueLine(result) if result.as_ref() == &line_result)
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
+        let line_result = traversal
+            .types
+            .source(content.owner())?
+            .canonical(&line_result)?;
         let resolution = CheckedExpressionResolution::DialogueApplication {
             target,
             application_patch,
@@ -975,6 +978,18 @@ impl Analyzer<'_, '_, '_> {
             .typecheck_env()
             .standard_dialogue_content_type()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let shell_content_type = if content_result {
+            let actual = shell
+                .value_type()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            let actual = traversal.types.source(owner)?.canonical(actual)?;
+            if actual != expected_dialogue_content {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            Some(actual)
+        } else {
+            None
+        };
         let mut content_edges = CheckedContentApplicationEdges::ordinary();
         let insertion = match invocation.form() {
             arcweft_lang_hir::expr::HirCallInvocationForm::Value
@@ -998,10 +1013,10 @@ impl Analyzer<'_, '_, '_> {
                 else {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 };
-                if checked.value_type() != Some(&expected_dialogue_content) {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                }
-                if shell.value_type() != Some(&expected_dialogue_content) {
+                let source = checked
+                    .value_type()
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                if traversal.types.source(target)?.canonical(source)? != expected_dialogue_content {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
                 CheckedContentInsertion::new(
@@ -1024,7 +1039,7 @@ impl Analyzer<'_, '_, '_> {
                         family:
                             crate::callable::CheckedAttachedContentApplicationFamily::ContentCall,
                     })
-                    || application.result().value_type() != shell.value_type()
+                    || application.result().value_type() != shell_content_type.as_ref()
                     || application.result().value_type() != Some(&expected_dialogue_content)
                 {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -1297,20 +1312,24 @@ impl Analyzer<'_, '_, '_> {
         let resolution =
             CheckedExpressionResolution::ContentApplication(Box::new(content_application));
         let expression = match result {
-            super::super::prepared::PreparedExpressionResult::Value(value) => {
-                PreparedExpressionFact::Resolved(
-                    crate::final_analysis::prepared::PreparedResolvedExpression::typed_value(
-                        value, effects, resolution,
-                    ),
-                )
-            }
-            super::super::prepared::PreparedExpressionResult::NonValue(
-                super::super::prepared::PreparedNonValueExpressionResult::ContentEmission(callable),
+            PreparedExpressionResult::Value(value) => PreparedExpressionFact::Resolved(
+                crate::final_analysis::prepared::PreparedResolvedExpression::typed_value(
+                    value, effects, resolution,
+                ),
+            ),
+            PreparedExpressionResult::NonValue(
+                PreparedNonValueExpressionResult::ContentEmission(callable),
             ) => PreparedExpressionFact::Resolved(
                 crate::final_analysis::prepared::PreparedResolvedExpression::content_emission(
                     callable, effects, resolution,
                 ),
             ),
+            PreparedExpressionResult::Unavailable
+            | PreparedExpressionResult::NonValue(
+                PreparedNonValueExpressionResult::RegistryAddress(_),
+            ) => {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
         };
         if content_result {
             traversal.leave_content_result_fragment(&fragment_coordinate)?;
@@ -1436,13 +1455,15 @@ impl Analyzer<'_, '_, '_> {
                         let witness = checked
                             .value_type()
                             .map(|actual| {
+                                let actual =
+                                    traversal.types.source(expression)?.canonical(actual)?;
                                 display
-                                    .for_interpolation(actual, &expected_content)?
+                                    .for_interpolation(&actual, &expected_content)?
                                     .ok_or_else(|| {
                                         FinalSemanticAnalysisError::UnsupportedDialogueDisplayType {
                                             owner: content_id.owner(),
                                             expression,
-                                            actual: Box::new(actual.clone()),
+                                            actual: Box::new(actual),
                                         }
                                     })
                             })
@@ -1632,7 +1653,7 @@ impl Analyzer<'_, '_, '_> {
                 if prepared.root() != root {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
-                let effect = self.seal_evaluated_effect(prepared)?;
+                let effect = self.seal_evaluated_effect(prepared, &mut traversal.types)?;
                 let application = self
                     .facts
                     .calls()
@@ -1769,9 +1790,10 @@ impl Analyzer<'_, '_, '_> {
     /// Seals one prepared evaluated effect after final call applications
     /// exist. Ordinary effects attach to their expression root; dialogue
     /// callback sites retain the operation in their line-plan site.
-    pub(crate) fn seal_evaluated_effect(
+    fn seal_evaluated_effect(
         &self,
         prepared: PreparedEvaluatedEffect,
+        types: &mut PublicationTypes<'_, '_>,
     ) -> Result<CheckedEvaluatedEffect, FinalSemanticAnalysisError> {
         let (root, site, schema, disposition) = prepared.into_parts();
         if site != CheckedCallSite::HirCall(self.terminal_effect_call(root)?) {
@@ -1872,9 +1894,14 @@ impl Analyzer<'_, '_, '_> {
                     .take()
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
             },
-            CallableEvaluatedEffect::Drop(operation) => {
-                self.seal_drop_operation(root, application, operation, schema, &mut operands)?
-            }
+            CallableEvaluatedEffect::Drop(operation) => self.seal_drop_operation(
+                root,
+                application,
+                operation,
+                schema,
+                &mut operands,
+                types,
+            )?,
         };
         operands.finish()?;
         Ok(CheckedEvaluatedEffect::new(
@@ -1946,6 +1973,7 @@ impl Analyzer<'_, '_, '_> {
         operation: DropCallableId,
         schema: CallableSignatureSchemaDigest,
         operands: &mut EvaluatedEffectOperands,
+        types: &mut PublicationTypes<'_, '_>,
     ) -> Result<CheckedEvaluatedEffectOperation, FinalSemanticAnalysisError> {
         if operation == DropCallableId::OnDrop || !operands.fields.is_empty() {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -2006,14 +2034,14 @@ impl Analyzer<'_, '_, '_> {
                 };
                 let source = CheckedDropPolicySource::try_new(source)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                let policy = self.checked_explicit_drop_policy(source.operand())?;
+                let policy = self.checked_explicit_drop_policy(source.operand(), types)?;
                 CheckedDropInvocation::DropWithPolicy { source, policy }
             }
             DropCallableId::OnDrop => {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
         };
-        if let Some(target) = self.checked_registry_drop_target(root, &target, operation)? {
+        if let Some(target) = self.checked_registry_drop_target(root, &target, operation, types)? {
             return Ok(CheckedEvaluatedEffectOperation::RegistryDrop { target, invocation });
         }
         Ok(CheckedEvaluatedEffectOperation::Drop { target, invocation })
@@ -2024,6 +2052,7 @@ impl Analyzer<'_, '_, '_> {
         root: ExprId,
         argument: &CheckedEvaluatedEffectOperand,
         operation: DropCallableId,
+        types: &mut PublicationTypes<'_, '_>,
     ) -> Result<Option<CheckedRegistryDrop>, FinalSemanticAnalysisError> {
         use arcweft_core::effect::RuntimeRegistryReadKind;
 
@@ -2036,7 +2065,7 @@ impl Analyzer<'_, '_, '_> {
             _ => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
         };
         let argument_expression = expression(argument_owner)?;
-        let address = match argument_expression.resolution() {
+        let (address_owner, address) = match argument_expression.resolution() {
             CheckedExpressionResolution::PipeLeft(placeholder) => {
                 let CheckedExpressionResolution::Pipe(pipe) = expression(root)?.resolution() else {
                     return Ok(None);
@@ -2059,9 +2088,9 @@ impl Analyzer<'_, '_, '_> {
                 if occurrence.lookup_expression() != argument_owner {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
-                left
+                (pipe.lookup_left(), left)
             }
-            _ => argument_expression,
+            _ => (argument_owner, argument_expression),
         };
         let CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(read)) =
             address.resolution()
@@ -2085,10 +2114,11 @@ impl Analyzer<'_, '_, '_> {
                 });
             }
         };
+        let item = types.source(address_owner)?.canonical(item)?;
         Ok(Some(CheckedRegistryDrop::new(
             read,
             argument.source().clone(),
-            item.clone(),
+            item,
         )))
     }
 
@@ -2140,13 +2170,20 @@ impl Analyzer<'_, '_, '_> {
     fn checked_explicit_drop_policy(
         &self,
         source: &CheckedEvaluatedEffectOperand,
+        types: &mut PublicationTypes<'_, '_>,
     ) -> Result<CheckedExplicitDropPolicy, FinalSemanticAnalysisError> {
         let CheckedCallArgumentSlotSource::Expression(owner) = source.source().raw() else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
         let expression = self.facts.expressions().get(&owner);
-        if expression.is_some_and(|expression| expression.value_type() != Some(source.ty())) {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        let mut source_types = types.source(owner)?;
+        if let Some(expression) = expression {
+            let actual = expression
+                .value_type()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            if &source_types.canonical(actual)? != source.ty() {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
         }
         if let Some(CheckedExpressionResolution::Value(CheckedValueResolution::Registered(value))) =
             expression.and_then(PreparedExpressionFact::checked_resolution)
@@ -2170,7 +2207,7 @@ impl Analyzer<'_, '_, '_> {
             };
         }
         if let Some(PreparedExpressionFact::Variant(variant)) = expression {
-            if &variant.owner().ty() != source.ty()
+            if &source_types.canonical(&variant.owner().ty())? != source.ty()
                 || variant
                     .owner()
                     .case(variant.selected_ordinal())

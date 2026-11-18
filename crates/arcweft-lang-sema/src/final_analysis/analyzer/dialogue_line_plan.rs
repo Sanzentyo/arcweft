@@ -3,7 +3,9 @@ use crate::final_analysis::PreparedProjectNominalTypeValueExpression;
 use crate::final_analysis::fx_application::{
     checked_builtin_fx_binding, checked_project_fx_argument,
 };
-use crate::final_analysis::prepared::PreparedDialogueEffectOperation;
+use crate::final_analysis::prepared::{
+    PreparedDialogueEffectOperation, PreparedExpressionResult, PreparedNonValueExpressionResult,
+};
 use arcweft_primitives::{CheckedAngle, CheckedLength, LengthUnit, Milli, RatioMilli};
 
 use crate::checked_rich_text::{
@@ -1036,8 +1038,8 @@ impl Analyzer<'_, '_, '_> {
                 .callable_identity()
                 .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
             let result_matches = match checked.result() {
-                crate::final_analysis::CheckedExpressionResult::NonValue(
-                    crate::final_analysis::CheckedNonValueExpressionResult::ContentEmission(actual),
+                PreparedExpressionResult::NonValue(
+                    PreparedNonValueExpressionResult::ContentEmission(actual),
                 ) => *actual == identity,
                 _ => false,
             };
@@ -1067,6 +1069,9 @@ impl Analyzer<'_, '_, '_> {
             .typecheck_env()
             .standard_dialogue_content_type()
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        let expected_dialogue_content = self
+            .retain_source_value_type(context, owner, &expected_dialogue_content)
+            .map_err(AnalyzerExpressionError::fatal)?;
 
         let (checked, is_call) = match invocation.form() {
             HirCallInvocationForm::Value => {
@@ -1078,10 +1083,11 @@ impl Analyzer<'_, '_, '_> {
                 let target = invocation.callee().value_expression().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
                 })?;
-                let checked = self
-                    .evaluate_expression(context, target, None)?
-                    .into_complete()
-                    .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
+                let PreparedExpressionFact::Resolved(checked) =
+                    self.evaluate_expression(context, target, None)?
+                else {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                };
                 if checked.value_type() != Some(&expected_dialogue_content) {
                     return Err(AnalyzerExpressionError::rejected(owner));
                 }
@@ -1135,8 +1141,8 @@ impl Analyzer<'_, '_, '_> {
         // the selected catalog row and its mapped/defaulted operands here,
         // while the call fact is still the sole argument-mapping authority.
         if is_call
-            && let crate::final_analysis::CheckedExpressionResult::NonValue(
-                crate::final_analysis::CheckedNonValueExpressionResult::ContentEmission(operation),
+            && let PreparedExpressionResult::NonValue(
+                PreparedNonValueExpressionResult::ContentEmission(operation),
             ) = checked.result()
             && matches!(
                 operation,
@@ -1165,11 +1171,19 @@ impl Analyzer<'_, '_, '_> {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
 
-        let checked_type = checked.value_type().cloned().ok_or_else(|| {
+        let checked_type = checked.value_type().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                 owner,
             })
         })?;
+        let effects = self
+            .facts
+            .effect_declarations()
+            .map_err(AnalyzerExpressionError::fact)?;
+        let checked_type = self
+            .source_type_preparation(context.work())
+            .and_then(|source| source.retain_prepared(owner, checked_type, effects.read()))
+            .map_err(AnalyzerExpressionError::fatal)?;
         let checked_selection = checked.type_selection().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                 owner,
@@ -1180,18 +1194,12 @@ impl Analyzer<'_, '_, '_> {
             checked_selection,
             checked.effects().clone(),
         );
-        let dialogue_content_type = self
-            .catalogs
-            .world
-            .environment()
-            .typecheck_env()
-            .standard_dialogue_content_type();
         let prepared = crate::final_analysis::PreparedContentApplication::try_new(
             owner,
             shell,
             rich_text_check.as_ref().map(|check| check.content_id()),
             crate::final_analysis::PreparedContentEmission::ContentResult,
-            dialogue_content_type.as_ref(),
+            Some(&expected_dialogue_content),
         )
         .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
         if let Some(rich_text_check) = rich_text_check {
