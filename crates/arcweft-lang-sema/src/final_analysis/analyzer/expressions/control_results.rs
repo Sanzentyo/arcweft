@@ -34,9 +34,18 @@ impl Analyzer<'_, '_, '_> {
                         branch,
                         expectation.clone(),
                     );
-                    drop(probe_context);
                     let synthesis = match result {
-                        Ok(checked) => Ok(checked.value_type().cloned()),
+                        Ok(checked) => Ok(checked
+                            .value_type()
+                            .map(|ty| {
+                                this.observe_source_type_with_dependencies(
+                                    &probe_context,
+                                    branch,
+                                    ty,
+                                )
+                            })
+                            .transpose()
+                            .map_err(AnalyzerExpressionError::fatal)?),
                         // Lack of a synthesis result does not accept a branch.
                         // The final contextual check must validate it in full.
                         Err(AnalyzerExpressionError::Rejected(
@@ -82,8 +91,11 @@ impl Analyzer<'_, '_, '_> {
         // may join another branch, but is not a monomorphic function-use
         // requirement to reopen against every branch origin. Preserve each
         // original scheme and let the final common-type check join them.
-        Ok(joined
-            .filter(|ty| !matches!(ty, TypeKind::Function { binder, .. } if !binder.is_empty())))
+        joined
+            .filter(|ty| !matches!(ty, TypeKind::Function { binder, .. } if !binder.is_empty()))
+            .map(|ty| self.retain_source_value_type(context, owner, &ty))
+            .transpose()
+            .map_err(AnalyzerExpressionError::fatal)
     }
 
     pub(super) fn check_control_branch_pair(
@@ -144,11 +156,45 @@ impl Analyzer<'_, '_, '_> {
                 owner: else_branch,
             })
         })?;
-        let ty = common_type([&then_type, else_type], expectation.complete_type())
-            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        let ty = self.join_control_branch_values(
+            context,
+            owner,
+            &[(then_branch, &then_type), (else_branch, else_type)],
+        )?;
         Ok(super::structural_expression(
             ty,
             super::CheckedTypeSelection::Inferred,
         ))
+    }
+
+    pub(super) fn join_control_branch_values(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        branches: &[(ExprId, &TypeKind<crate::types::PreparedEffects>)],
+    ) -> Result<TypeKind<crate::types::PreparedEffects>, AnalyzerExpressionError> {
+        // Each branch observes its own callable effects. The joined type
+        // becomes a structural result without replacing the branch facts.
+        let mut joined = None;
+        for &(branch, ty) in branches {
+            let ty = self
+                .observe_source_type_with_dependencies(context, branch, ty)
+                .map_err(AnalyzerExpressionError::fatal)?;
+            joined = Some(match joined {
+                None => ty,
+                Some(previous) => common_type([&previous, &ty], None)
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?,
+            });
+        }
+        let joined = joined.ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        let joined = self
+            .retain_source_value_type(context, owner, &joined)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        for &(branch, ty) in branches {
+            if !matches!(ty, TypeKind::Never) {
+                self.require_source_type(context, branch, &joined, ty)?;
+            }
+        }
+        Ok(joined)
     }
 }

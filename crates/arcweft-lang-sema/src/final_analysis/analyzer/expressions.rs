@@ -3145,19 +3145,22 @@ impl Analyzer<'_, '_, '_> {
         }
         let value_types = values
             .iter()
-            .map(|value| {
-                value.value_type().ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-                    )
-                })
+            .zip(match_expr.arms())
+            .map(|(value, arm)| {
+                value
+                    .value_type()
+                    .map(|ty| (arm.value(), ty))
+                    .ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                        )
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
         let ty = if value_types.is_empty() {
             TypeKind::Never
         } else {
-            common_type(value_types, expectation.complete_type())
-                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
+            self.join_control_branch_values(context, owner, &value_types)?
         };
         Ok(
             structural_expression(ty, CheckedTypeSelection::Inferred).with_match_fact(

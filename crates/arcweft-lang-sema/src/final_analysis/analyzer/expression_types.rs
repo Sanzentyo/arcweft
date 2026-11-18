@@ -725,10 +725,10 @@ pub(super) fn expected_item(
     }
 }
 
-pub(super) fn common_type<'a>(
-    values: impl IntoIterator<Item = &'a TypeKind<crate::types::PreparedEffects>>,
-    expected: Option<&TypeKind<crate::types::PreparedEffects>>,
-) -> Option<TypeKind<crate::types::PreparedEffects>> {
+pub(super) fn common_type<'a, D: crate::types::TypeEffectDomain + 'a>(
+    values: impl IntoIterator<Item = &'a TypeKind<D>>,
+    expected: Option<&TypeKind<D>>,
+) -> Option<TypeKind<D>> {
     use crate::final_analysis::completion::ResultTypeJoin;
     let mut values = values.into_iter();
     let first = values.next().cloned().or_else(|| expected.cloned())?;
