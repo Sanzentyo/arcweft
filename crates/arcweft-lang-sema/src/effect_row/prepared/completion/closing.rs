@@ -38,6 +38,7 @@ impl ScopedEffectCompletion {
             .specialize_principal(bindings, control)
     }
 
+    #[cfg(test)]
     pub(crate) fn close_original_with_inputs<C: DecisionControl>(
         &self,
         receiving: PreparedEffectReadView<'_>,
@@ -62,11 +63,53 @@ impl ScopedEffectCompletion {
         if !self.fixed.is_empty() {
             return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
         }
+        self.graph
+            .final_definitions(receiving, query_rows, query_predicates, control)
+    }
+}
+
+impl BoundScopedEffectCompletion {
+    pub(crate) fn close_original_with_inputs<C: DecisionControl>(
+        &self,
+        receiving: PreparedEffectReadView<'_>,
+        query_rows: &[&PreparedEffectRow],
+        query_predicates: &[&PreparedEffectPredicate],
+        inputs: &PreparedEffectActualInputs<'_>,
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
+        self.graph
+            .final_definitions(receiving, query_rows, query_predicates, control)?
+            .solve_with_actual_inputs(inputs, control)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn close_original<C: DecisionControl>(
+        &self,
+        receiving: PreparedEffectReadView<'_>,
+        query_rows: &[&PreparedEffectRow],
+        query_predicates: &[&PreparedEffectPredicate],
+        bindings: &[(&PreparedEffectUnknownRef, &EffectRow)],
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
+        self.graph
+            .final_definitions(receiving, query_rows, query_predicates, control)?
+            .specialize_principal(bindings, control)
+    }
+}
+
+impl PreparedEffectDefinitions {
+    fn final_definitions<C: DecisionControl>(
+        &self,
+        receiving: PreparedEffectReadView<'_>,
+        query_rows: &[&PreparedEffectRow],
+        query_predicates: &[&PreparedEffectPredicate],
+        control: &mut C,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         receiving.snapshot(
             query_rows,
             query_predicates,
             &[],
-            SnapshotSource::Final(&self.graph),
+            SnapshotSource::Final(self),
             control,
         )
     }

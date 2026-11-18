@@ -14,21 +14,29 @@ pub(crate) struct PreparedEffectScopedBinding {
     constraints: Box<[PreparedEffectScopedConstraint]>,
 }
 
-/// A source tuple whose local functions have been tied to its conditional
-/// minimum. Ordinary frozen relations cannot claim this phase authority.
+/// The source definitions with its local functions tied to the conditional
+/// minimum. These definitions are inputs to final closure.
 #[derive(Debug)]
-pub(crate) struct BoundScopedEffectCompletion(Arc<ScopedEffectCompletion>);
-
-impl BoundScopedEffectCompletion {
-    pub(crate) fn as_scoped(&self) -> &Arc<ScopedEffectCompletion> {
-        &self.0
-    }
+pub(crate) struct BoundScopedEffectCompletion {
+    pub(super) graph: PreparedEffectDefinitions,
 }
 
-impl std::ops::Deref for BoundScopedEffectCompletion {
-    type Target = ScopedEffectCompletion;
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl BoundScopedEffectCompletion {
+    pub(crate) fn require_unknown(
+        &self,
+        reference: &PreparedEffectUnknownRef,
+    ) -> Result<(), PreparedEffectInvariant> {
+        self.graph
+            .function(&FunctionRef::Unknown(reference.clone()))
+            .map(|_| ())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn compile_residual_for_test<C: DecisionControl>(
+        self,
+        control: &mut C,
+    ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
+        self.graph.complete_scoped(control)
     }
 }
 
@@ -52,16 +60,14 @@ impl PreparedEffectScopedBinding {
                 .map_err(PreparedEffectFailure::Control)?;
             constraints.push(constraint);
         }
-        graph
-            .snapshot(
-                &[],
-                &[],
-                &constraints,
-                SnapshotSource::Bound(&original.graph),
-                control,
-            )?
-            .complete_scoped(control)
-            .map(BoundScopedEffectCompletion)
+        let graph = graph.snapshot(
+            &[],
+            &[],
+            &constraints,
+            SnapshotSource::Bound(&original.graph),
+            control,
+        )?;
+        Ok(BoundScopedEffectCompletion { graph })
     }
 }
 

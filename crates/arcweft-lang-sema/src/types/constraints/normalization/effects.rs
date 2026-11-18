@@ -352,7 +352,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                     .effect_function(key)
                     .ok_or(TypeConstraintInvariant::OriginalProducer)?
                     .clone();
-                original.as_scoped().unknown(&function)?;
+                original.require_unknown(&function)?;
                 let application = branch
                     .applications
                     .effect_application(key)

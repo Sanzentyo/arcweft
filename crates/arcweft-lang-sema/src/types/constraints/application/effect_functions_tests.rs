@@ -48,7 +48,8 @@ fn conditional_output_agreement_uses_the_declared_captured_function_signature() 
             let original = graph.read().freeze_scoped(&[], &[], &[], context)?;
             let bound = graph
                 .bind_original_scoped(&original, context)?
-                .freeze(graph.read(), context)?;
+                .freeze(graph.read(), context)?
+                .compile_residual_for_test(context)?;
             let mut pending = vec![bound.satisfiable()];
             let mut found = false;
             while let Some(predicate) = pending.pop() {
