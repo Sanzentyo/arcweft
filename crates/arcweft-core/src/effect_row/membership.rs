@@ -80,6 +80,15 @@ enum Operation {
 }
 
 impl<V: Clone + Ord> Membership<V> {
+    fn admit_copy<C: DecisionControl>(&self, control: &mut C) -> Result<(), C::Error> {
+        self.default.admit_copy(control)?;
+        for decision in self.overrides.values() {
+            control.charge(DecisionWork::Node)?;
+            decision.admit_copy(control)?;
+        }
+        Ok(())
+    }
+
     fn try_visit_semantic_child_counts<E>(
         &self,
         visitor: &mut impl FnMut(usize) -> Result<(), E>,
@@ -182,6 +191,10 @@ impl<V: Clone + Ord> Membership<V> {
         replacements: &BTreeMap<V, EffectFormula<V>>,
         control: &mut C,
     ) -> Result<Self, C::Error> {
+        if replacements.is_empty() {
+            self.admit_copy(control)?;
+            return Ok(self.clone());
+        }
         let mut labels = BTreeSet::new();
         let mut defaults = BTreeMap::new();
         for label in self.overrides.keys() {
@@ -217,11 +230,7 @@ impl<V: Clone + Ord> Membership<V> {
 impl<V: Clone + Ord> EffectFormula<V> {
     /// Copy canonical membership after admitting all decisions and overrides.
     pub fn copy_with_control<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
-        self.0.default.admit_copy(control)?;
-        for decision in self.0.overrides.values() {
-            control.charge(DecisionWork::Node)?;
-            decision.admit_copy(control)?;
-        }
+        self.0.admit_copy(control)?;
         Ok(self.clone())
     }
 
@@ -417,6 +426,12 @@ impl<V: Clone + Ord> EffectFormula<V> {
 }
 
 impl<V: Clone + Ord> EffectPredicate<V> {
+    /// Copy canonical membership after admitting all decisions and overrides.
+    pub fn copy_with_control<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
+        self.0.admit_copy(control)?;
+        Ok(self.clone())
+    }
+
     /// Borrows the same decisions while retaining this predicate's relation role.
     pub const fn membership(&self) -> EffectMembershipView<'_, V> {
         EffectMembershipView {

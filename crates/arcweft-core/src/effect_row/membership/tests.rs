@@ -101,6 +101,33 @@ fn membership_view_preserves_conditional_support_and_the_predicate_role() {
 }
 
 #[test]
+fn empty_substitution_admits_the_owned_decisions_and_label_before_copying() {
+    let mut control = Meter::default();
+    let conditional = row(&["fs.read"])
+        .intersection(&variable(0), &mut control)
+        .unwrap();
+    let predicate = conditional.subset(&row(&[]), &mut control).unwrap();
+    let mut complete = AssemblyControl {
+        limit: Some(4),
+        ..AssemblyControl::default()
+    };
+    assert_eq!(
+        predicate
+            .substitute(&BTreeMap::new(), &mut complete)
+            .unwrap(),
+        predicate
+    );
+    let mut short = AssemblyControl {
+        limit: Some(3),
+        ..AssemblyControl::default()
+    };
+    assert_eq!(
+        predicate.substitute(&BTreeMap::new(), &mut short),
+        Err(AssemblyError::Limit { used: 4, limit: 3 })
+    );
+}
+
+#[test]
 fn decision_assembly_normalizes_overrides_and_aborts_before_unadmitted_growth() {
     let default = variable(0).membership().default_decision().clone();
     let overrides = BTreeMap::from([
