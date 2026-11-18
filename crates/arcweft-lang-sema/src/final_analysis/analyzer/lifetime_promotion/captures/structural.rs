@@ -8,8 +8,10 @@ use arcweft_lang_hir::{
 };
 
 use crate::final_analysis::{
-    CheckedExpression, CheckedFieldReceiver, CheckedMatchArmFact, PreparedExpressionFact,
-    prepared::{PreparedProjectRecordExpression, PreparedRecordValueSource},
+    CheckedFieldReceiver, CheckedMatchArmFact, PreparedExpressionFact,
+    prepared::{
+        PreparedProjectRecordExpression, PreparedRecordValueSource, PreparedResolvedExpression,
+    },
 };
 use crate::types::{ArrayLength, TypeKind};
 
@@ -153,8 +155,8 @@ impl Analyzer<'_, '_, '_> {
             HirExprKind::IfLet(branches) => vec![branches.else_branch(), branches.then_branch()],
             HirExprKind::Match(_) => {
                 let matched = fact
-                    .complete()
-                    .and_then(CheckedExpression::match_fact)
+                    .resolved()
+                    .and_then(PreparedResolvedExpression::match_fact)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 receiver.charge(matched.arms().len() as u64)?;
                 matched

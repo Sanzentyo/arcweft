@@ -227,7 +227,7 @@ pub(super) fn seal(
             effects,
             CheckedExpressionResolution::ImplicitCallable(Box::new(checked)),
         );
-        if let Some(body) = seed.body.expression().complete()
+        if let Some(body) = seed.body.expression().resolved()
             && let Some(carrier) = body.carrier_block()
         {
             published = published.with_carrier_block(carrier.clone());

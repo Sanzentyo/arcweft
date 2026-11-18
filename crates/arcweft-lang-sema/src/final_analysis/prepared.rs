@@ -28,9 +28,8 @@ use crate::{
 
 pub(crate) use super::model::{PreparedVariantCaseSeed, PreparedVariantOwnerSeed};
 use super::{
-    CheckedCallableBoundary, CheckedExpression, CheckedExpressionResolution,
-    CheckedFunctionSiteBoundary, CheckedPattern, CheckedTryBoundaryOwner, CheckedTryCarrier,
-    CheckedTypeSelection,
+    CheckedCallableBoundary, CheckedExpressionResolution, CheckedFunctionSiteBoundary,
+    CheckedPattern, CheckedTryBoundaryOwner, CheckedTryCarrier, CheckedTypeSelection,
 };
 
 #[path = "prepared/evaluated_effect.rs"]
@@ -651,7 +650,7 @@ impl PreparedOwnerBoundExpression {
             PreparedOwnerBoundResolution::ImplicitCallable(callable) => callable
                 .body()
                 .expression()
-                .complete()
+                .resolved()
                 .and_then(|body| body.resolution().checked_call_site(owner)),
             PreparedOwnerBoundResolution::ImplicitNominalBody { .. }
             | PreparedOwnerBoundResolution::ImplicitParameter(_)

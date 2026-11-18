@@ -3971,7 +3971,7 @@ fn set_expression_effect(
         .find(|(candidate, _)| *candidate == owner)
         .expect("checked expression fixture");
     let effects = EffectSet::from_labels([effect]).expect("effect fixture");
-    let complete = fact.complete().expect("complete expression fixture");
+    let complete = fact.resolved().expect("resolved expression fixture");
     let ty = complete
         .value_type()
         .cloned()
@@ -3979,7 +3979,7 @@ fn set_expression_effect(
     let type_selection = complete
         .type_selection()
         .expect("value expression selection fixture");
-    *fact = CheckedExpression::value(
+    *fact = super::PreparedResolvedExpression::value(
         ty,
         type_selection,
         effects.clone(),
@@ -7582,13 +7582,13 @@ flow done() -> String {
         .iter_mut()
         .find(|(candidate, _)| *candidate == owner)
         .expect("checked Choice input fact");
-    let complete = checked.complete().expect("complete Choice fixture");
+    let complete = checked.resolved().expect("resolved Choice fixture");
     let ty = complete
         .value_type()
         .cloned()
         .expect("Choice value fixture");
     let type_selection = complete.type_selection().expect("Choice selection fixture");
-    *checked = CheckedExpression::value(
+    *checked = super::PreparedResolvedExpression::value(
         ty,
         type_selection,
         complete.effects().clone(),
@@ -7639,13 +7639,13 @@ flow done() -> String {
         .iter_mut()
         .find(|(candidate, _)| *candidate == owner)
         .expect("checked Choice input fact");
-    let complete = checked.complete().expect("complete Choice fixture");
+    let complete = checked.resolved().expect("resolved Choice fixture");
     let ty = complete
         .value_type()
         .cloned()
         .expect("Choice value fixture");
     let type_selection = complete.type_selection().expect("Choice selection fixture");
-    *checked = CheckedExpression::value(
+    *checked = super::PreparedResolvedExpression::value(
         ty,
         type_selection,
         complete.effects().clone(),

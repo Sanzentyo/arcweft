@@ -94,6 +94,18 @@ impl TypeCompatibilityControl for NoopTypeCompatibilityControl {
     }
 }
 
+impl<E: super::TypeEffectDomain> TypeKind<E> {
+    /// Recovery checking for a boolean condition depends only on the value
+    /// shape. Every alternative of a choice must itself be a condition.
+    pub(crate) fn accepts_as_condition(&self) -> bool {
+        match self {
+            Self::Bool | Self::Never | Self::Error(_) => true,
+            Self::Choice(alternatives) => alternatives.iter().all(Self::accepts_as_condition),
+            _ => false,
+        }
+    }
+}
+
 impl TypeKind {
     /// Source annotations whose nested function effects must be inferred from
     /// the checked value. Issued symbolic effect rows are already known rows.
@@ -270,6 +282,9 @@ impl TypeKind {
     /// Strict callers must use [`Self::accepts_with`] and name their policy;
     /// this method deliberately cannot silently publish strict success.
     pub(crate) fn accepts(&self, actual: &Self) -> bool {
+        if matches!(self, Self::Bool) {
+            return actual.accepts_as_condition();
+        }
         let mut control = NoopTypeCompatibilityControl;
         match self.accepts_with(actual, TypeCompatibilityPolicy::Recovery, &mut control) {
             Ok(accepted) => accepted,
@@ -1851,6 +1866,42 @@ mod tests {
                 TypeKind::U8,
             )))))
         );
+    }
+
+    #[test]
+    fn prepared_conditions_preserve_boolean_choice_recovery() {
+        fn conditions<E: crate::types::TypeEffectDomain>() -> [TypeKind<E>; 5] {
+            [
+                TypeKind::Bool,
+                TypeKind::Never,
+                TypeKind::Error(TypePoisonId::from_index(9)),
+                TypeKind::Choice(vec![
+                    TypeKind::Bool,
+                    TypeKind::Choice(vec![TypeKind::Never, TypeKind::Bool]),
+                ]),
+                TypeKind::Choice(vec![TypeKind::Bool, TypeKind::I32]),
+            ]
+        }
+
+        let prepared = conditions::<crate::types::PreparedEffects>();
+        let canonical = conditions::<crate::types::CanonicalEffects>();
+        for ((prepared, canonical), expected) in prepared
+            .iter()
+            .zip(&canonical)
+            .zip([true, true, true, true, false])
+        {
+            assert_eq!(prepared.accepts_as_condition(), expected);
+            assert_eq!(
+                TypeKind::Bool
+                    .accepts_with(
+                        canonical,
+                        TypeCompatibilityPolicy::Recovery,
+                        &mut NoopTypeCompatibilityControl,
+                    )
+                    .expect("recovery compatibility is infallible"),
+                expected,
+            );
+        }
     }
 
     #[test]

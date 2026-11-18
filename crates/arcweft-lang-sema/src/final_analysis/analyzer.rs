@@ -432,7 +432,7 @@ impl FinalAnalysisMutation for FinalAuthorityMutationForTest {
             .expressions
             .iter()
             .find(|(candidate, _)| candidate == owner)
-            .and_then(|(_, fact)| fact.complete())
+            .and_then(|(_, fact)| fact.resolved())
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         let mut ty = original
             .value_type()
@@ -445,7 +445,7 @@ impl FinalAnalysisMutation for FinalAuthorityMutationForTest {
                 .expressions
                 .iter()
                 .find(|(candidate, _)| candidate == owner)
-                .and_then(|(_, fact)| fact.complete())
+                .and_then(|(_, fact)| fact.resolved())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
                 .resolution()
                 .clone(),
@@ -454,7 +454,7 @@ impl FinalAnalysisMutation for FinalAuthorityMutationForTest {
                 original.resolution().clone()
             }
         };
-        let replacement = CheckedExpression::value(
+        let replacement = PreparedResolvedExpression::value(
             ty,
             original
                 .type_selection()
@@ -872,7 +872,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             self.facts
                 .replace_existing_expression(
                     owner,
-                    CheckedExpression::typed_value(
+                    PreparedResolvedExpression::typed_value(
                         value,
                         effects,
                         CheckedExpressionResolution::Select(CheckedSelectResolution::Method(

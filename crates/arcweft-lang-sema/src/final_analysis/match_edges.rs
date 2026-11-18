@@ -31,6 +31,7 @@ use super::{
     CheckedExpressionResolution, CheckedMethodSelection, CheckedTryOperandAuthorityViolation,
     ExprId as SemaExprId, FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysis,
     FinalSemanticAnalysisError, HirAnalysisProjectView, HirModuleId, SemanticFactFamily, TypeKind,
+    prepared::PreparedResolvedExpression,
 };
 use crate::callable::{
     CheckedCallArgumentPassing, CheckedCallArgumentSlotSource, CheckedCallSemanticOperandSource,
@@ -824,16 +825,17 @@ impl CheckedStructuralEdgeDraft {
                     continue;
                 }
             }
-            if let Some(complete) = checked_owner.complete() {
+            let resolved_owner = checked_owner.resolved();
+            if let Some(resolved) = resolved_owner {
                 if let Err(error) =
-                    validate_match_owner(owner_expression.kind(), complete, expressions)
+                    validate_match_owner(owner_expression.kind(), resolved, expressions)
                 {
                     facts.insert(owner, Err(error));
                     continue;
                 }
                 if let Err(error) = validate_nested_path_evidence(
                     owner_expression.kind(),
-                    complete,
+                    resolved,
                     &edges,
                     expressions,
                 ) {
@@ -858,10 +860,10 @@ impl CheckedStructuralEdgeDraft {
                     first_error = Some(CheckedChildEdgeError::MissingExpression);
                     break;
                 };
-                if let Some(complete) = checked_owner.complete() {
+                if let Some(resolved) = resolved_owner {
                     if let Err(error) = validate_match_edge(
                         owner_expression.kind(),
-                        complete,
+                        resolved,
                         child,
                         role,
                         expressions,
@@ -891,18 +893,13 @@ impl CheckedStructuralEdgeDraft {
                     }
                     _ => None,
                 };
-                if matches!(role, HirExpressionChildRole::Guard { .. })
-                    && !checked_child
-                        .value_type()
-                        .is_some_and(|ty| TypeKind::Bool.accepts(ty))
-                {
-                    first_error = Some(CheckedChildEdgeError::MatchGuardTypeMismatch);
-                    break;
-                }
-                if matches!(role, HirExpressionChildRole::ChoiceMatchGuard { .. })
-                    && !checked_child
-                        .value_type()
-                        .is_some_and(|ty| TypeKind::Bool.accepts(ty))
+                if matches!(
+                    role,
+                    HirExpressionChildRole::Guard { .. }
+                        | HirExpressionChildRole::ChoiceMatchGuard { .. }
+                ) && !checked_child
+                    .value_type()
+                    .is_some_and(TypeKind::accepts_as_condition)
                 {
                     first_error = Some(CheckedChildEdgeError::MatchGuardTypeMismatch);
                     break;
@@ -1164,7 +1161,7 @@ pub(super) fn prepare_checked_method_selections(
 
 fn validate_match_owner(
     kind: &HirExprKind,
-    checked: &super::CheckedExpression,
+    checked: &PreparedResolvedExpression,
     expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
 ) -> Result<(), CheckedChildEdgeError> {
     let HirExprKind::Match(authored) = kind else {
@@ -1196,7 +1193,7 @@ fn validate_match_owner(
                 };
                 if !checked_guard
                     .value_type()
-                    .is_some_and(|ty| TypeKind::Bool.accepts(ty))
+                    .is_some_and(TypeKind::accepts_as_condition)
                 {
                     return Err(CheckedChildEdgeError::MatchGuardTypeMismatch);
                 }
@@ -1211,7 +1208,7 @@ fn validate_match_owner(
 
 fn validate_match_edge(
     kind: &HirExprKind,
-    checked: &super::CheckedExpression,
+    checked: &PreparedResolvedExpression,
     child: ExprId,
     role: &HirExpressionChildRole,
     expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
@@ -1253,7 +1250,7 @@ fn validate_match_edge(
             };
             if !checked_guard
                 .value_type()
-                .is_some_and(|ty| TypeKind::Bool.accepts(ty))
+                .is_some_and(TypeKind::accepts_as_condition)
             {
                 return Err(CheckedChildEdgeError::MatchGuardTypeMismatch);
             }
@@ -1332,11 +1329,11 @@ fn nested_path_role(
 
 pub(crate) fn build_nested_path_evidence(
     kind: &HirExprKind,
-    checked: &super::CheckedExpression,
+    resolution: &CheckedExpressionResolution,
     edges: &[SelectedHirExpressionEdge],
     expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
 ) -> Option<Result<NestedPathEvidence, CheckedChildEdgeError>> {
-    let owner_family = match (kind, checked.resolution()) {
+    let owner_family = match (kind, resolution) {
         (HirExprKind::Choice(_), CheckedExpressionResolution::Choice(_)) => {
             NestedPathFamily::Choice
         }
@@ -1413,11 +1410,11 @@ fn build_nested_path_evidence_for_family(
 
 fn validate_nested_path_evidence(
     kind: &HirExprKind,
-    checked: &super::CheckedExpression,
+    checked: &PreparedResolvedExpression,
     edges: &[SelectedHirExpressionEdge],
     expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
 ) -> Result<(), CheckedChildEdgeError> {
-    let expected = build_nested_path_evidence(kind, checked, edges, expressions);
+    let expected = build_nested_path_evidence(kind, checked.resolution(), edges, expressions);
     let Some(stored) = checked.nested_path_evidence() else {
         return if expected.is_some() {
             Err(CheckedChildEdgeError::MissingNestedPath)

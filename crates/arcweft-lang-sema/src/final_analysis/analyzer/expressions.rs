@@ -993,7 +993,7 @@ impl Analyzer<'_, '_, '_> {
             .collect::<Vec<_>>();
         let Some(evidence) = crate::final_analysis::match_edges::build_nested_path_evidence(
             expression.kind(),
-            &complete,
+            complete.resolution(),
             &edges,
             self.facts.expressions(),
         ) else {
