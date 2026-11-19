@@ -19703,3 +19703,16 @@ Compilerは5 targetの548件で531成功・17失敗。前回と全IDおよび合
 Sema全feature checkはライブラリのコンパイルに成功した。テスト対象は終了101で前回と同じ794エラー・33警告。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargoの全feature逆依存は起点込みでCore 52、Sema 22 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 7 blobを照合した。`target` は `12894397929` bytes。
 
 [比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-streamed-formulas.raw.zip) は 41 entry、1044987 bytes、SHA256 `53266ced9c974cb20bcce7978cb5d72a234b9f36e741e724c9f8c8856db14a6f`。各原本の長さとハッシュを照合した。
+
+<a id="effect-paired-comparison"></a>
+## 2026-11-19 — 作用行と述語の等価比較を正準な決定図で完結
+
+基点 `b45aed3ff65bd0a75bd18e13a33f88ec85a3e8a4` は、比較する両方の決定図を符号化と同じ手順で走査した後、別途等価判定を行った。Source `68a81ddd251800331e245baaa8f1ee58ddc74eac` は、Coreが根とノード数、正準な順序のノード、作用ラベルを対応づけて比較する。検査する組ごとに既存の作業予算を先に計上し、差が確定した時点で判定を返す。作用行の組み立てと述語の比較に加え、Semaの作用行の構造的比較もこの判定を使う。Semaは未確定と確定済みの区別を保持する。
+
+16、256、4,096ラベルで、作用行の組み立てと述語の等価比較を計18入力で照合した。組み立て後の正準形、等価判定、ノード割り当て数は旧実装と一致した。4,096ラベル中33件に差がある組み立てでは訪問数が53,119から12,258に減った。4,096ラベルをもつ述語の比較では、等しい場合は24,590から8,195、先頭ラベルで異なる場合は24,594から5に減った。Core全featureの単体2,364件、公開API統合2件、決定図のdoctest 1件は成功した。ノード比較前の上限拒否と先行する差の確定を回帰テストに追加した。
+
+Compilerは5 targetの548件で531成功・17失敗。前回と全IDおよび合否が一致した。コールバック作用を後段で決める6件は `UnresolvedFuture` が残る。標準Mapは27入力中、最初の23入力でNative／AWBCの実行検証を通過した。24番目の `Result::Ok` は型検査で失敗した。SourceSetRevisionとHIRデータベースIDで失敗入力を照合した。同じソースを単独でコンパイルして失敗を再現し、候補の実体化チケットを予約する予算検査でも上限に達した。別のMap部分適用では、上限に達する箇所が決定図の比較から、取り込んだ作用の確定時に定数の決定図を複製する処理へ移った。保持した不透明Mapは正準形で作用述語を再照合する箇所、Traversalは確定した型を実体化時に投影する箇所、再帰コールバックは形式引数の独立性判定で上限に達した。コールバック作用の7入力を比較するテストは、前回と同じ4入力で型検査に失敗した。
+
+Sema全feature checkはライブラリのコンパイルに成功した。テスト対象は終了101で前回と同じ794エラー・33警告。初回のビルドで検出した旧ヘルパー参照は更新し、再照合の作用式比較もCoreへ接続した。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargoの全feature逆依存は起点込みでCore 52、Sema 22 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 12 blobを照合した。`target` は `12894121790` bytes。
+
+[比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-paired-comparison.raw.zip) は 53 entry、1379847 bytes、SHA256 `3c4bb30255b1d893d6b49a7ed8f9387cae27e86e7cc4d603e96c05efda2cd6cf`。各原本の長さとハッシュを照合した。
