@@ -91,6 +91,25 @@ impl<D: ConstraintDomain> ConstraintOperand<D, TypeKind<PreparedEffects>> {
 
 #[cfg(test)]
 impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_, A, D> {
+    pub(in crate::types::constraints) fn fixture_prepared_operand_in(
+        &mut self,
+        original: &OriginalProducerContext,
+        value: &TypeKind<PreparedEffects>,
+        graph: &mut PreparedEffectGraph,
+    ) -> Result<ConstraintOperand<D>, TypeConstraintError> {
+        self.check_cancelled()?;
+        for _ in original.scope().binders() {
+            self.enter_node()?;
+        }
+        ConstraintOperand::from_prepared_original_in(
+            value,
+            Arc::new(original.gamma().clone()),
+            original.clone(),
+            &mut ConstraintEffectPhase::new(graph),
+            self,
+        )
+    }
+
     pub(in crate::types::constraints) fn fixture_operand_in<T: OriginalOperandValue>(
         &mut self,
         original: &OriginalProducerContext,

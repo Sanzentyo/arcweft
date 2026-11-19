@@ -1,14 +1,11 @@
-use std::{
-    collections::BTreeMap,
-    convert::Infallible,
-    sync::{Arc, atomic::AtomicBool},
-};
+use std::{collections::BTreeMap, convert::Infallible, sync::atomic::AtomicBool};
 
 use crate::{
     callable::{CallableGroupIndex, CallableSignatureSchema, PRODUCTION_CALLABLE_LIMITS},
     effect_row::{
         DecisionControl, DecisionWork, EffectConstraintEligibility, EffectConstraintVariable,
         EffectFormula, EffectPredicate, EffectRow,
+        prepared::{PreparedEffectGraph, PreparedEffectRelation, PreparedEffectRow},
     },
     effects::EffectSet,
     types::{
@@ -19,10 +16,10 @@ use crate::{
 };
 
 use super::super::{
-    ConstraintClosurePolicy, NoConstraintClient, TypeConstraintEffectScope,
-    TypeConstraintParameterScope,
-    application::ConstraintApplicationScope,
+    NoConstraintClient, TypeConstraintEffectScope, TypeConstraintError,
+    TypeConstraintParameterScope, TypeConstraintProjectionClosure, TypeConstraintRejection,
     context::{LocalConstraintAccounting, TypeConstraintContext, TypeConstraintLimits},
+    transaction::TypeConstraintTransaction,
 };
 use super::TypeConstraintSolution;
 
@@ -168,16 +165,20 @@ fn freshly_opened_scheme_predicates_reject_forbidden_effects_without_mutating_th
         (&["fs.write"][..], false),
     ] {
         let mut context = context(&cancellation);
-        let application = ConstraintApplicationScope::test_root(
-            (),
-            parameters(
-                binder,
-                reference.clone(),
-                EffectConstraintEligibility::Bindable,
-                predicate.clone(),
-            ),
-        );
-        let mut path = context.start_path(application).unwrap();
+        let mut graph = PreparedEffectGraph::default();
+        let application = context
+            .fixture_application_scope(
+                (),
+                parameters(
+                    binder,
+                    reference.clone(),
+                    EffectConstraintEligibility::Bindable,
+                    predicate.clone(),
+                ),
+                &mut graph,
+            )
+            .unwrap();
+        let mut path = context.start_path(application, &mut graph).unwrap();
         let opening = path
             .root_scope()
             .parameters()
@@ -185,16 +186,25 @@ fn freshly_opened_scheme_predicates_reject_forbidden_effects_without_mutating_th
             .unwrap();
         openings.push(opening.clone());
         let actual = EffectRow::closed(EffectSet::from_labels(labels.iter().copied()).unwrap());
-        let admitted = path.effects.constrain_subset(
-            &actual,
-            &EffectRow::open(EffectSet::new(), opening),
-            &mut context,
-        );
-        assert_eq!(admitted.is_ok(), accepted, "{labels:?}");
+        path.effects
+            .constrain_relation(
+                &mut graph,
+                PreparedEffectRelation::AdmittedSubset,
+                &PreparedEffectRow::Canonical(actual.clone()),
+                &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), opening)),
+                &mut context,
+            )
+            .unwrap();
+        let effects = path.close_original_path_effects(&mut graph, &mut context);
         if accepted {
-            let solution =
-                TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
-                    .unwrap();
+            let solution = TypeConstraintSolution::complete_application(
+                &path,
+                path.root_id(),
+                &effects.unwrap(),
+                graph.read(),
+                &mut context,
+            )
+            .unwrap();
             let value = solution
                 .apply_result_template(&TypeKind::function_with_effects(
                     [],
@@ -214,6 +224,13 @@ fn freshly_opened_scheme_predicates_reject_forbidden_effects_without_mutating_th
             assert!(binder.is_empty());
             assert!(predicate.is_unconstrained());
             assert_eq!(effects, actual);
+        } else {
+            assert!(matches!(
+                effects,
+                Err(TypeConstraintError::Rejected(
+                    TypeConstraintRejection::EffectUnsatisfiable
+                ))
+            ));
         }
     }
     assert!(openings.windows(2).all(|pair| pair[0] != pair[1]));
@@ -262,15 +279,20 @@ fn known_callback_predicates_distinguish_callable_digests_and_selected_call_cand
         .iter()
         .map(|expected| {
             let mut context = context(&cancellation);
-            let path = context
-                .start_path(ConstraintApplicationScope::test_root(
-                    (),
-                    TypeConstraintParameterScope::empty(),
-                ))
+            let mut graph = PreparedEffectGraph::default();
+            let application = context
+                .fixture_application_scope((), TypeConstraintParameterScope::empty(), &mut graph)
                 .unwrap();
-            super::super::fixture_relate_selected_call(
-                expected,
-                &reading,
+            let path = context.start_path(application, &mut graph).unwrap();
+            let scope = GenericScope::default();
+            let expected = expected.prepare_effects(&scope, &mut context).unwrap();
+            let actual = reading.prepare_effects(&scope, &mut context).unwrap();
+            let expected = context.fixture_operand(expected);
+            let actual = context.fixture_operand(actual);
+            super::super::relate_selected_call(
+                &mut graph,
+                &expected.view(),
+                &actual.view(),
                 path,
                 &mut context,
                 super::super::ConstraintAcceptance::PatternAcceptsActual,
@@ -290,20 +312,20 @@ fn returned_scheme_fuses_residual_and_local_predicates_in_templates_and_complete
     ));
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let path = context
-        .start_path(ConstraintApplicationScope::test_root(
-            (),
-            parameters(
-                GenericBinder::EMPTY,
-                external.clone(),
-                EffectConstraintEligibility::FutureEligible,
-                subset(external.clone(), &["fs.read"]),
-            ),
-        ))
-        .unwrap();
-    let application = path.root_id();
-    let solution =
-        TypeConstraintSolution::complete_application(&path, application, &mut context).unwrap();
+    let mut graph = PreparedEffectGraph::default();
+    let mut transaction = TypeConstraintTransaction::initialize_fixture(
+        &mut context,
+        &mut graph,
+        (),
+        parameters(
+            GenericBinder::EMPTY,
+            external.clone(),
+            EffectConstraintEligibility::FutureEligible,
+            subset(external.clone(), &["fs.read"]),
+        ),
+        None,
+    )
+    .unwrap();
     let own = GenericBinder::new(0, 0, 1);
     let local = GenericScope::default().with_binder(own);
     let template = TypeKind::function_with_contract(
@@ -317,6 +339,21 @@ fn returned_scheme_fuses_residual_and_local_predicates_in_templates_and_complete
         TypeKind::Unit,
         EffectRow::open(EffectSet::new(), local.bound_effect(0, 0).unwrap()),
     );
+    let prepared = template
+        .prepare_effects(&GenericScope::default(), &mut context)
+        .unwrap();
+    transaction.request_projection(
+        &mut context,
+        &mut graph,
+        (),
+        &prepared,
+        TypeConstraintProjectionClosure::AllowFutureEligible,
+    );
+    let completed = transaction
+        .finish(&mut context, &mut graph, |_, _, _| Ok(true))
+        .expect("the prefix must retain the residual effect predicate");
+    let application = completed.component.selected();
+    let solution = application.solution();
     let result = solution.apply_result_template(&template).unwrap();
     let merged = GenericScope::default().with_binder(GenericBinder::new(0, 0, 2));
     let expected = subset(merged.bound_effect(0, 0).unwrap(), &["fs.read"])
@@ -335,19 +372,9 @@ fn returned_scheme_fuses_residual_and_local_predicates_in_templates_and_complete
     assert_eq!(predicate, &expected);
     assert!(result.semantic_identity_digest().is_ok());
 
-    let opened = context
-        .open_template_type(&template, &path, application)
-        .unwrap();
-    let projection = solution
-        .reify_projection(
-            Arc::new(()),
-            &context.fixture_operand(opened),
-            &path,
-            application,
-            ConstraintClosurePolicy::ProjectionFuture,
-            &mut context,
-        )
-        .unwrap();
+    let [projection] = application.projections() else {
+        panic!("the original projection is retained");
+    };
     assert_eq!(projection.to_quantified_type().unwrap(), result);
 }
 

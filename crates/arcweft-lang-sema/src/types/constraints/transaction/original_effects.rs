@@ -1,6 +1,6 @@
 //! Retain the prepared query roots of the original constraint calculation.
 
-use super::super::normalization::PreparedConstraintEffects;
+use super::super::normalization::{ConstraintClosedEffects, PreparedConstraintEffects};
 use super::*;
 use crate::{
     effect_row::prepared::{
@@ -11,6 +11,19 @@ use crate::{
 };
 
 impl<D: ConstraintDomain> ConstraintPath<D> {
+    /// Complete the source relation from within its original read scope.
+    /// A direct terminal calculation has no caller-provided Future rows.
+    pub(in crate::types::constraints) fn close_original_path_effects<
+        A: TypeConstraintAccounting,
+    >(
+        &self,
+        graph: &mut PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Arc<ConstraintClosedEffects<D>>, TypeConstraintError> {
+        let original = self.bind_original_path_effects(graph, context)?;
+        ConstraintClosedEffects::for_original_path(self, &original, &[], graph, context)
+    }
+
     pub(super) fn collect_original_effect_types<'a, A: TypeConstraintAccounting>(
         &'a self,
         types: &mut Vec<&'a TypeKind<PreparedEffects>>,

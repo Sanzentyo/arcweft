@@ -1,27 +1,43 @@
-use crate::types::constraints::test_support::ConstraintTestSetup;
 use std::{
     collections::BTreeMap,
     sync::{Arc, atomic::AtomicBool},
 };
 
 use crate::{
-    effect_row::EffectRow,
+    effect_row::{EffectRow, prepared::PreparedEffectGraph},
     types::{
         ArrayLength, DetachedGenericOwnerId, GenericBinder, GenericConstParameterId,
         GenericConstReference, GenericParameterOwnerId, GenericScope, GenericScopeError,
         GenericTypeParameterId, GenericTypeReference, TypeKind,
         constraints::{
-            NoConstraintClient, TypeConstraintConstEligibility, TypeConstraintParameterEligibility,
-            TypeConstraintParameterScope, TypeConstraintSolution,
+            ConstraintPath, NoConstraintClient, TypeConstraintConstEligibility,
+            TypeConstraintError, TypeConstraintParameterEligibility, TypeConstraintParameterScope,
+            TypeConstraintSolution,
             context::{
                 LocalConstraintAccounting, TypeConstraintConstParameterScopeRow,
-                TypeConstraintLimits, TypeConstraintTypeParameterScopeRow,
+                TypeConstraintContext, TypeConstraintLimits, TypeConstraintTypeParameterScopeRow,
             },
+            test_support::ConstraintTestSetup,
         },
     },
 };
 
 type TestContext<'a> = ConstraintTestSetup<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
+
+fn close_solution(
+    path: &ConstraintPath<NoConstraintClient>,
+    graph: &mut PreparedEffectGraph,
+    context: &mut TypeConstraintContext<'_, LocalConstraintAccounting<'_>, NoConstraintClient>,
+) -> Result<TypeConstraintSolution, TypeConstraintError> {
+    let effects = path.close_original_path_effects(graph, context)?;
+    TypeConstraintSolution::complete_application(
+        path,
+        path.root_id(),
+        &effects,
+        graph.read(),
+        context,
+    )
+}
 
 fn parameter(slot: u16) -> GenericTypeParameterId {
     GenericTypeParameterId::new(
@@ -71,7 +87,9 @@ fn recursive_scope() -> TypeConstraintParameterScope {
 fn recursive_binding_to_the_same_declaration_is_free_and_issuer_independent() {
     let cancellation = AtomicBool::new(false);
     let complete = || {
-        let (mut context, mut path) = context(recursive_scope(), &cancellation).into_path();
+        let mut graph = PreparedEffectGraph::default();
+        let (mut context, mut path) =
+            context(recursive_scope(), &cancellation).into_path(&mut graph);
         let callee = path
             .root_scope()
             .parameters()
@@ -91,11 +109,11 @@ fn recursive_binding_to_the_same_declaration_is_free_and_issuer_independent() {
                 )
                 .unwrap();
             let value = context
-                .fixture_operand_in(&original, &TypeKind::GenericParam(caller))
+                .fixture_prepared_operand_in(&original, &TypeKind::GenericParam(caller), &mut graph)
                 .unwrap();
             path.bindings = [(callee, value)].into();
             path.const_bindings = BTreeMap::new();
-            TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+            close_solution(&path, &mut graph, &mut context)
         }
         .expect("recursive binding is not an occurs cycle")
     };
@@ -151,7 +169,9 @@ fn continuation_scope(next: bool) -> TypeConstraintParameterScope {
 }
 
 fn prefix(cancellation: &AtomicBool) -> TypeConstraintSolution {
-    let (mut context, mut path) = context(continuation_scope(false), cancellation).into_path();
+    let mut graph = PreparedEffectGraph::default();
+    let (mut context, mut path) =
+        context(continuation_scope(false), cancellation).into_path(&mut graph);
     let local = GenericScope::default()
         .with_binder(GenericBinder::new(1, 0, 0))
         .bound_type(0, 0)
@@ -178,7 +198,9 @@ fn prefix(cancellation: &AtomicBool) -> TypeConstraintSolution {
             },
         ]),
         EffectRow::closed(crate::effects::EffectSet::new()),
-    );
+    )
+    .prepare_effects(&GenericScope::default(), &mut context)
+    .unwrap();
     {
         // This prepared template's contract independently declares its caller
         // capture and the actual application's future parameters.
@@ -200,7 +222,7 @@ fn prefix(cancellation: &AtomicBool) -> TypeConstraintSolution {
         )]
         .into();
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+        close_solution(&path, &mut graph, &mut context)
     }
     .expect("future references become residual binders")
 }
@@ -247,13 +269,27 @@ fn nested_function_binders_preserve_inner_variables_and_bind_future_types_and_le
 fn one_prefix_can_reopen_twice_without_sharing_inference_variables() {
     let cancellation = AtomicBool::new(false);
     let solution = Arc::new(prefix(&cancellation));
-    let (mut first, first_path) = context(continuation_scope(true), &cancellation).into_path();
-    let (mut second, second_path) = context(continuation_scope(true), &cancellation).into_path();
+    let mut first_graph = PreparedEffectGraph::default();
+    let mut second_graph = PreparedEffectGraph::default();
+    let (mut first, first_path) =
+        context(continuation_scope(true), &cancellation).into_path(&mut first_graph);
+    let (mut second, second_path) =
+        context(continuation_scope(true), &cancellation).into_path(&mut second_graph);
     let mut first_path = solution
-        .restore_inherited_path(first_path.root_id(), first_path, &mut first)
+        .restore_inherited_path(
+            first_path.root_id(),
+            first_path,
+            &mut first_graph,
+            &mut first,
+        )
         .expect("first opening");
     let mut second_path = solution
-        .restore_inherited_path(second_path.root_id(), second_path, &mut second)
+        .restore_inherited_path(
+            second_path.root_id(),
+            second_path,
+            &mut second_graph,
+            &mut second,
+        )
         .expect("second opening");
     let first_key = first_path
         .root_scope()
@@ -288,18 +324,10 @@ fn one_prefix_can_reopen_twice_without_sharing_inference_variables() {
             .expect("length"),
         second.fixture_operand(ArrayLength::Const(5)),
     );
-    let first = {
-        TypeConstraintSolution::complete_application(&first_path, first_path.root_id(), &mut first)
-    }
-    .expect("first application closes");
-    let second = {
-        TypeConstraintSolution::complete_application(
-            &second_path,
-            second_path.root_id(),
-            &mut second,
-        )
-    }
-    .expect("second application closes");
+    let first = close_solution(&first_path, &mut first_graph, &mut first)
+        .expect("first application closes");
+    let second = close_solution(&second_path, &mut second_graph, &mut second)
+        .expect("second application closes");
     assert_ne!(first, second);
     for (solution, item, length) in [(&first, TypeKind::I32, 3), (&second, TypeKind::String, 5)] {
         let (_, value) = solution.bindings().next().expect("inherited function");
