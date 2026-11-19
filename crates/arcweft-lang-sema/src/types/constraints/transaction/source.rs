@@ -18,7 +18,7 @@ use super::{ConstraintInferenceBranch, ConstraintOperand};
 mod canonical_tests;
 #[cfg(test)]
 mod tests;
-use super::super::{ConstraintClosurePolicy, ConstraintSourceValueOwner, OriginalProducerContext};
+use super::super::{ConstraintSourceValueOwner, OriginalProducerContext};
 use super::{
     CheckedConstraintSourceProjection, ConstraintDomain, ConstraintResultProjection,
     ConstraintSourceId, PreparedConstraintSourceProjection, PreparedSourceOrdinal,
@@ -348,21 +348,16 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
         let (original, retained_value) = self.actual.source_origin(self.source)?;
         let original = original.clone();
         let retained_value = retained_value.map(Arc::clone);
-        let projected = projection.project_operand(
-            self.actual.view(),
-            path,
-            ConstraintClosurePolicy::ProjectionClosed,
-            graph,
-            context,
-        )?;
+        let projected = self
+            .actual
+            .view()
+            .close_source_operand(path, projection, graph, context)?;
         let prepared_projection = CheckedConstraintSourceProjection::derive(
             self.prepared_source_projection,
             projected.value(),
         )
         .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::Outcome))?;
-        let actual = projected
-            .view()
-            .close_canonical(path, projection, graph, context)?;
+        let actual = projected.canonicalize(context)?;
         let source_projection = CheckedConstraintSourceProjection::derive(
             self.prepared_source_projection,
             actual.value(),
@@ -377,13 +372,9 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
                 },
                 Some(expected),
             ) => {
-                let value_expected = projection.project_operand(
-                    expected.view(),
-                    path,
-                    ConstraintClosurePolicy::ProjectionClosed,
-                    graph,
-                    context,
-                )?;
+                let value_expected = expected
+                    .view()
+                    .close_source_operand(path, projection, graph, context)?;
                 let evidence = D::project_checked_evidence(evidence.as_ref(), actual.value())
                     .ok_or_else(|| {
                         protocol_error(TypeConstraintSourceProtocolInvariant::InvalidEvidence)
@@ -391,10 +382,11 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
                 ClosedSourceSelection::Checked {
                     alternative,
                     evidence: Arc::new(evidence),
-                    expected: prepared_projection
-                        .compose_operand(&projected.view(), &value_expected.view())?
-                        .view()
-                        .close_canonical(path, projection, graph, context)?,
+                    expected: projected.compose_expected(
+                        &value_expected,
+                        &prepared_projection,
+                        context,
+                    )?,
                 }
             }
             _ => {

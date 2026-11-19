@@ -83,6 +83,46 @@ fn function(row: PreparedEffectRow) -> TypeKind<PreparedEffects> {
 }
 
 #[test]
+fn source_expectation_uses_ports_from_the_same_completion() {
+    let cancellation = AtomicBool::new(false);
+    let mut graph = PreparedEffectGraph::default();
+    let (mut context, path) = setup(&cancellation, GenericBinder::EMPTY, &mut graph);
+    let original = original(&path, &[], &mut graph, &mut context);
+    let first =
+        ConstraintClosedEffects::for_path(&path, &original, &[], &mut graph, &mut context).unwrap();
+    let other =
+        ConstraintClosedEffects::for_path(&path, &original, &[], &mut graph, &mut context).unwrap();
+    let actual = context.fixture_operand(TypeKind::I64);
+    let expected = context.fixture_operand(TypeKind::Bool);
+    let actual = actual
+        .view()
+        .close_source_operand(&path, &mut first.projection(), graph.read(), &mut context)
+        .unwrap();
+    let foreign = expected
+        .view()
+        .close_source_operand(&path, &mut other.projection(), graph.read(), &mut context)
+        .unwrap();
+    let expected = expected
+        .view()
+        .close_source_operand(&path, &mut first.projection(), graph.read(), &mut context)
+        .unwrap();
+    let scalar = CheckedConstraintSourceProjection::Scalar;
+    assert!(matches!(
+        actual.compose_expected(&foreign, &scalar, &mut context),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::OriginalProducer
+        ))
+    ));
+    assert_eq!(
+        actual
+            .compose_expected(&expected, &scalar, &mut context)
+            .unwrap()
+            .value(),
+        &TypeKind::Bool,
+    );
+}
+
+#[test]
 fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
     let cancellation = AtomicBool::new(false);
     let mut graph = PreparedEffectGraph::default();

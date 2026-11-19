@@ -3,6 +3,9 @@
 use crate::types::PreparedEffects;
 
 use super::*;
+use crate::types::constraints::normalization::{
+    ConstraintClosedEffects, ConstraintEffectProjection,
+};
 use crate::types::constraints::shape::TypeConstraintChildren;
 
 mod admission;
@@ -136,34 +139,54 @@ impl<D: ConstraintDomain> Clone for ConstraintConstOperandView<'_, D> {
     }
 }
 
-impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
-    /// Issue a canonical value only after closing every port through the same
-    /// original calculation. The shape-preserving algebra transition keeps
-    /// that projection's exact derivation and occurrence frames.
-    pub(in crate::types::constraints) fn close_canonical<A: TypeConstraintAccounting, L>(
+/// The original calculation has closed every port in this prepared operand.
+/// Canonicalizing its effect algebra preserves the derivation and occurrence.
+pub(in crate::types::constraints) struct ClosedPreparedSourceOperand<D: ConstraintDomain> {
+    operand: ConstraintOperand<D>,
+    completion: Arc<ConstraintClosedEffects<D>>,
+}
+
+impl<D: ConstraintDomain> ClosedPreparedSourceOperand<D> {
+    pub(in crate::types::constraints) fn value(&self) -> &TypeKind<PreparedEffects> {
+        self.operand.value()
+    }
+
+    pub(in crate::types::constraints) fn canonicalize<A: TypeConstraintAccounting>(
         &self,
-        branch: &'a super::super::ConstraintInferenceBranch<D, L>,
-        projection: &mut crate::types::constraints::normalization::ConstraintEffectProjection<D>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ConstraintOperand<D, TypeKind>, TypeConstraintError> {
-        let projected = projection.project_operand(
+        let value = self.completion.canonicalize(
+            self.operand.value(),
+            self.operand.scope().shape(),
+            context,
+        )?;
+        context.enter_node()?;
+        Ok(ConstraintOperand {
+            value: Arc::new(value),
+            scope: Arc::clone(&self.operand.scope),
+            origin: Arc::clone(&self.operand.origin),
+        })
+    }
+}
+
+impl<'a, D: ConstraintDomain> ConstraintOperandView<'a, D> {
+    pub(in crate::types::constraints) fn close_source_operand<A: TypeConstraintAccounting, L>(
+        &self,
+        branch: &'a super::super::ConstraintInferenceBranch<D, L>,
+        projection: &mut ConstraintEffectProjection<D>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<ClosedPreparedSourceOperand<D>, TypeConstraintError> {
+        let operand = projection.project_operand(
             self.clone(),
             branch,
             crate::types::constraints::ConstraintClosurePolicy::ProjectionClosed,
             graph,
             context,
         )?;
-        let value = projection.owner().canonicalize(
-            projected.value(),
-            projected.scope().shape(),
-            context,
-        )?;
-        context.enter_node()?;
-        Ok(ConstraintOperand {
-            value: Arc::new(value),
-            scope: projected.scope,
-            origin: projected.origin,
+        Ok(ClosedPreparedSourceOperand {
+            operand,
+            completion: Arc::clone(projection.owner()),
         })
     }
 
