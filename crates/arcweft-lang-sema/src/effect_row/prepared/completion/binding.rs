@@ -88,7 +88,7 @@ impl PreparedEffectScopedBinding {
     ) -> Result<BoundScopedEffectCompletion, PreparedEffectFailure<C::Error>> {
         graph.validate_owner(&self.relation.owner)?;
         self.relation.relation.validate(graph, control)?;
-        let original = &self.relation.relation.completion;
+        let original = self.relation.relation.completion();
         let mut constraints = Vec::new();
         // The snapshot already contains the entire original relation. With no
         // local functions or choices, its principal predicate is that same

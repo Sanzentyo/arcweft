@@ -77,7 +77,7 @@ fn a_source_without_outputs_keeps_its_principal_condition_as_a_candidate_fact() 
             .freeze_scoped(&[], &[], &[&receipt], &mut budget())
             .unwrap();
         let binding = graph.bind_original_scoped(&source, &mut budget()).unwrap();
-        assert!(Arc::ptr_eq(&binding.relation.relation.completion, &source));
+        assert!(Arc::ptr_eq(binding.relation.relation.completion(), &source));
         assert!(binding.agreements.is_empty());
         assert!(graph.relation.functions.is_empty());
         // Candidate facts have not constrained a sibling or the live graph.
@@ -262,12 +262,12 @@ fn an_original_future_stays_the_same_input_until_its_actual_row_is_supplied() {
     let binding = graph
         .bind_original_scoped(&freeze(&graph), &mut budget())
         .unwrap();
-    assert_eq!(binding.relation.relation.inputs.len(), 1);
+    assert_eq!(binding.relation.relation.inputs().len(), 1);
     assert_eq!(
         binding
             .relation
             .relation
-            .inputs
+            .inputs()
             .values()
             .next()
             .unwrap()

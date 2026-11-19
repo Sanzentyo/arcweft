@@ -223,7 +223,7 @@ impl<'a> Reachable<'a> {
                             }
                         }
                         Function::Imported(imported) => {
-                            for input in imported.relation.inputs.values() {
+                            for input in imported.relation.inputs().values() {
                                 self.push(
                                     Dependency::Function(
                                         self.view.relation.validate(input.reference())?,
@@ -296,7 +296,7 @@ impl<'a> Reachable<'a> {
                     match predicate.as_ref() {
                         PredicateTerm::ImportedPrincipal(imported) => {
                             imported.validate(self.view, control)?;
-                            for input in imported.inputs.values() {
+                            for input in imported.inputs().values() {
                                 self.push(
                                     Dependency::Function(
                                         self.view.relation.validate(input.reference())?,

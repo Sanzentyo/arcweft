@@ -228,7 +228,7 @@ impl Layout {
         }
         for predicate in graph.predicates.values() {
             if let PredicateTerm::ImportedPrincipal(imported) = predicate.as_ref() {
-                for label in &imported.completion.support {
+                for label in &imported.completion().support {
                     work.charge(DecisionWork::Node)?;
                     labels.insert(label.clone());
                 }
@@ -236,7 +236,7 @@ impl Layout {
         }
         for function in graph.functions.values() {
             if let Function::Imported(imported) = function.as_ref() {
-                for label in &imported.relation.completion.support {
+                for label in &imported.relation.completion().support {
                     work.charge(DecisionWork::Node)?;
                     labels.insert(label.clone());
                 }

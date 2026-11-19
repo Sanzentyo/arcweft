@@ -58,9 +58,9 @@ pub(crate) struct PreparedEffectImportedRelation {
 
 #[derive(Debug)]
 pub(super) struct ImportedEffectRelation {
-    pub(super) completion: Arc<ScopedEffectCompletion>,
-    /// Each reference belongs to the receiving graph, not the frozen child.
-    pub(super) inputs: BTreeMap<u64, FunctionRef>,
+    completion: Arc<ScopedEffectCompletion>,
+    /// Covers the child's unresolved inputs with references from the receiving graph.
+    inputs: BTreeMap<u64, FunctionRef>,
 }
 
 #[derive(Debug)]
@@ -249,6 +249,14 @@ impl PreparedEffectGraph {
 }
 
 impl ImportedEffectRelation {
+    pub(super) fn completion(&self) -> &Arc<ScopedEffectCompletion> {
+        &self.completion
+    }
+
+    pub(super) fn inputs(&self) -> &BTreeMap<u64, FunctionRef> {
+        &self.inputs
+    }
+
     pub(super) fn validate<C: DecisionControl>(
         &self,
         receiving: PreparedEffectReadView<'_>,

@@ -146,14 +146,14 @@ impl<'a> ResidualFunction<'a> {
             },
             Function::Imported(imported) => ResidualFunctionRole::Imported {
                 value: ResidualFunction {
-                    source: &imported.relation.completion,
+                    source: imported.relation.completion(),
                     id: imported.selected.reference().ordinal,
                 },
-                principal: imported.relation.completion.principal(),
+                principal: imported.relation.completion().principal(),
                 bindings: ResidualImportBindings {
                     parent: self.source,
-                    child: &imported.relation.completion,
-                    values: imported.relation.inputs.iter(),
+                    child: imported.relation.completion(),
+                    values: imported.relation.inputs().iter(),
                 },
             },
         })
@@ -584,11 +584,11 @@ impl<'a> ResidualPreparedPredicate<'a> {
             {
                 PredicateTerm::ImportedPrincipal(imported) => {
                     ResidualPreparedPredicateView::ImportedPrincipal {
-                        principal: imported.completion.principal(),
+                        principal: imported.completion().principal(),
                         inputs: ResidualImportBindings {
                             parent: self.source,
-                            child: &imported.completion,
-                            values: imported.inputs.iter(),
+                            child: imported.completion(),
+                            values: imported.inputs().iter(),
                         },
                     }
                 }

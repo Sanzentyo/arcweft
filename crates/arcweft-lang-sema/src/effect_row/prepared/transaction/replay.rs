@@ -438,17 +438,18 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
         left: &crate::effect_row::prepared::completion::ImportedEffectRelation,
         right: &crate::effect_row::prepared::completion::ImportedEffectRelation,
     ) -> Result<Option<PreparedEffectReplayMismatch>, PreparedEffectFailure<C::Error>> {
-        if !left
-            .completion
+        let left_source = left.completion();
+        let right_source = right.completion();
+        if !left_source
             .graph
-            .same_original(&right.completion.graph, self.control)?
-            || left.completion.fixed.len() != right.completion.fixed.len()
-            || left.inputs.len() != right.inputs.len()
+            .same_original(&right_source.graph, self.control)?
+            || left_source.fixed.len() != right_source.fixed.len()
+            || left.inputs().len() != right.inputs().len()
         {
             return Ok(Some(PreparedEffectReplayMismatch::ImportOrigin));
         }
         for ((left_id, left), (right_id, right)) in
-            left.completion.fixed.iter().zip(&right.completion.fixed)
+            left_source.fixed.iter().zip(&right_source.fixed)
         {
             self.visit()?;
             if left_id != right_id
@@ -459,7 +460,7 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
                 return Ok(Some(PreparedEffectReplayMismatch::ImportOrigin));
             }
         }
-        for ((left_input, left), (right_input, right)) in left.inputs.iter().zip(&right.inputs) {
+        for ((left_input, left), (right_input, right)) in left.inputs().iter().zip(right.inputs()) {
             self.visit()?;
             if left_input != right_input {
                 return Ok(Some(PreparedEffectReplayMismatch::ImportOrigin));

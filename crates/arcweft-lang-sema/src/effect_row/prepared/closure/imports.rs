@@ -71,7 +71,7 @@ fn enqueue<C: DecisionControl>(
         if inventory.contains(*id) {
             if let Function::Imported(imported) = function.as_ref() {
                 work.charge(DecisionWork::Node)?;
-                pending.push((Arc::clone(&imported.relation.completion), false));
+                pending.push((Arc::clone(imported.relation.completion()), false));
             }
         }
     }
@@ -79,7 +79,7 @@ fn enqueue<C: DecisionControl>(
         work.charge(DecisionWork::Visit)?;
         if let PredicateTerm::ImportedPrincipal(imported) = predicate.as_ref() {
             work.charge(DecisionWork::Node)?;
-            pending.push((Arc::clone(&imported.completion), false));
+            pending.push((Arc::clone(imported.completion()), false));
         }
     }
     Ok(())
@@ -137,7 +137,7 @@ impl ImportedEffectRelation {
             return Err(PreparedEffectInvariant::UnclosedCell);
         };
         let input = self
-            .inputs
+            .inputs()
             .get(&scheme)
             .ok_or(PreparedEffectInvariant::UnclosedCell)?;
         Ok(Atom::Cell {
@@ -156,18 +156,6 @@ impl ImportedEffectRelation {
             self.bind_cell(cell).map_err(Into::into)
         })
     }
-
-    fn validate_child_cells<C: DecisionControl>(
-        &self,
-        decision: &Decision,
-        work: &mut Work<'_, C>,
-    ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        for cell in decision.variables() {
-            work.charge(DecisionWork::Visit)?;
-            self.bind_cell(cell)?;
-        }
-        Ok(())
-    }
 }
 
 fn attach<C: DecisionControl>(
@@ -185,19 +173,18 @@ fn attach<C: DecisionControl>(
         }
     }
     let child =
-        cached(cache, &imported.completion, work)?.ok_or(PreparedEffectInvariant::UnclosedCell)?;
+        cached(cache, imported.completion(), work)?.ok_or(PreparedEffectInvariant::UnclosedCell)?;
     let mut same_coordinates = true;
-    for (&original, actual) in &imported.inputs {
+    for (&original, actual) in imported.inputs() {
         work.charge(DecisionWork::Visit)?;
         graph.function(actual)?;
         same_coordinates &= actual.reference().ordinal == original;
     }
-    let rebound_principal = if same_coordinates {
-        imported.validate_child_cells(&child.principal, work)?;
-        None
-    } else {
-        Some(imported.bind_decision(&child.principal, work)?)
-    };
+    // The completed child can reference only unresolved inputs. Its binding
+    // covers those inputs, so matching ordinals preserve all child cells.
+    let rebound_principal = (!same_coordinates)
+        .then(|| imported.bind_decision(&child.principal, work))
+        .transpose()?;
     work.charge(DecisionWork::Node)?;
     let table = Arc::new(ImportedRelationTable {
         child: Arc::clone(child),
@@ -239,7 +226,6 @@ fn assemble_selected<C: DecisionControl>(
                     let value = if let Some(value) = relation.child.coefficients.get(&cell) {
                         if borrow_coefficients {
                             work.charge(DecisionWork::Visit)?;
-                            imported.relation.validate_child_cells(value, work)?;
                             continue;
                         }
                         imported.relation.bind_decision(value, work)?
@@ -291,9 +277,10 @@ impl ImportedRelationTable {
         if !parent.coefficients.evaluate(self.principal(), work)? {
             return Ok(None);
         }
-        let graph = &imported.completion.graph;
+        let completion = imported.completion();
+        let graph = &completion.graph;
         let mut fixed = BTreeMap::new();
-        for (&future, row) in &imported.completion.fixed {
+        for (&future, row) in &completion.fixed {
             let formula = work.copy_formula(row.known()?)?;
             work.charge(DecisionWork::Node)?;
             fixed.insert(
@@ -304,7 +291,7 @@ impl ImportedRelationTable {
             );
         }
         let mut coefficients = BTreeMap::new();
-        for (&future, actual) in &imported.inputs {
+        for (&future, actual) in imported.inputs() {
             let actual = actual.clone();
             let actual_definition = parent.graph.function(&actual)?;
             let parameters = graph.functions[&future].parameters();

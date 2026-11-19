@@ -79,6 +79,29 @@ fn conditional_completion_keeps_future_cells_free_in_the_least_function() {
 }
 
 #[test]
+fn conditional_completion_rejects_an_invalid_cell_even_with_a_total_principal_domain() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    retain_label_basis(&mut graph);
+    let local = unknown(&mut graph, PreparedEffectUnknownEligibility::Bindable);
+    let future = unknown(&mut graph, PreparedEffectUnknownEligibility::Future);
+    let mut work = Work(&mut work);
+    let mut component =
+        CompiledComponent::new(&graph.relation, &BTreeMap::new(), &mut work).unwrap();
+    let local = Decision::variable(cell(&local, 1), &mut work).unwrap();
+    let outside_layout = Decision::variable(cell(&future, 2), &mut work).unwrap();
+    // Every valuation has a least witness, but the witness would refer to a
+    // class that the declared input does not have.
+    component.relation = local.equivalent(&outside_layout, &mut work).unwrap();
+    assert!(matches!(
+        component.complete(&mut work),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::UnclosedCell
+        ))
+    ));
+}
+
+#[test]
 fn a_parent_restriction_cannot_rescue_a_nonprincipal_child_completion() {
     let mut graph = PreparedEffectGraph::default();
     let mut work = budget();

@@ -10,8 +10,8 @@ use crate::effect_row::prepared::completion::residual::{
 mod tests;
 
 pub(super) struct CompiledComponent {
-    pub(super) layout: Layout,
-    pub(super) relation: Decision,
+    layout: Layout,
+    relation: Decision,
     fixed: BTreeMap<Atom, bool>,
     minimized: BTreeSet<Atom>,
     choices: BTreeSet<Atom>,
@@ -19,6 +19,7 @@ pub(super) struct CompiledComponent {
 
 /// One completion boundary. Future coefficients remain parameters of both the
 /// least tuple and its principal domain; they are never minimized with locals.
+/// The domains and coefficients can refer only to unresolved input cells.
 pub(super) struct ComponentCompletion {
     pub(super) layout: Arc<Layout>,
     pub(super) satisfiable: Decision,
@@ -481,6 +482,14 @@ impl CompiledComponent {
         } else {
             self.relation.restrict(&self.fixed, work)?
         };
+        // Every derived decision uses this same checked source vocabulary.
+        // Projection removes choices; minimization removes local cells.
+        for atom in relation.variables() {
+            work.charge(DecisionWork::Visit)?;
+            if !self.layout.cells.contains(atom) && !self.choices.contains(atom) {
+                return Err(PreparedEffectInvariant::UnclosedCell.into());
+            }
+        }
         let projected = if self.choices.is_empty() {
             None
         } else {
@@ -509,19 +518,6 @@ impl CompiledComponent {
                 relation,
             })
         };
-        // With no choices the principal guard already describes exactly where
-        // the completed tuple satisfies the original relation.
-        let (domain, choices) = match &choice_witnesses {
-            Some(witnesses) => (&witnesses.relation, Some(&witnesses.choices)),
-            None => (&principal, None),
-        };
-        for atom in domain.variables() {
-            work.charge(DecisionWork::Visit)?;
-            let future = self.layout.cells.contains(atom) && !least.domain().contains(atom);
-            if !future && !choices.is_some_and(|choices| choices.contains(atom)) {
-                return Err(PreparedEffectInvariant::UnclosedCell.into());
-            }
-        }
         Ok(ComponentCompletion {
             layout: Arc::new(self.layout),
             satisfiable,
