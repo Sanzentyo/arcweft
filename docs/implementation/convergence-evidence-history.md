@@ -20260,3 +20260,14 @@ Coreの全feature library／`effect_decision` は2,377件すべてPASS。Semaの
 Coreの全feature library／`effect_decision` は2,379件すべてPASS。Semaの全featureユニットは1,993件中1,901 PASS、92既知FAIL。Compilerの統合6 targetは582件中580 PASS、2既知FAIL。前回と全IDの合否が一致した。2 callback のSemaとNative／AWBCは取り込み時の参照付け替え、3 callback のSemaは出力ノード確保で既定上限4,096に達する。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
 
 [検証原本・公開照合](acceptance-evidence/task-ordered-effect-table.raw.zip) は32 entry、1,188,612 bytes、SHA256 `b764e4512d4a81d3ec3e98ed603386a17ef1dcdfa4f31a3d48266dd375abeb7b`。公開2ファイルと各entryを照合した。記録時の `target` は101,403,572,075 bytes。
+
+<a id="verified-import-cell-coordinates"></a>
+## 2026-11-20 — 照合済みの効果入力番号で判定図を共有する
+
+検証基点 `9756d2f1690c74e62ec9b4abff8bf6f0bd1c5a0c`、Source `7762a0ca74fb15e455f78430df00fba5a82c1653`。効果関係の入力を受け手のlayoutに照合し、番号がすべて一致する場合は主条件と局所係数の判定図を借用する。各判定図の参照の結び付けと係数の有無は取り込み時に検査する。番号を移す場合は従来の参照付け替えを使う。同じ番号では同一の判定図を参照し、番号を移しても両方が同じ効果を求めるテストを追加した。取り込み結果を壊す既存テストは移動後の判定図を改変し、独立した再検証による拒否を確認した。
+
+Supersedes [真理値表の畳み込み時点の停止箇所](#ordered-effect-table-selectors)。既定上限4,096での2 callback のSemaとNative／AWBCは、共有した局所係数の参照を検証する段階で停止した。3 callback のSemaは判定図の出力ノード確保で同上限に達した。Native／AWBCの停止位置は実装ファイルのSHA256が最終Sourceと一致する初回ビルドで取得した。初回のworkspace checkは既存テストが旧表現へ添字アクセスして失敗し、テストを新しい表現に合わせた後の実行で通過した。
+
+Semaの全featureユニットは1,994件中1,902 PASS、92既知FAIL。追加1件が通過し、既存IDの合否は前回と一致した。Compilerの統合6 targetは582件中580 PASS、2既知FAILで、全IDの合否が前回と一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。直近のCore 2,379 PASSは[先行Source](#ordered-effect-table-selectors)で取得した。
+
+[検証原本・公開照合](acceptance-evidence/task-shared-import-coordinates.raw.zip) は33 entry、1,132,263 bytes、SHA256 `97901aa41ce2634526aa710f42bfab65a08539a019e8991f0444f9ccc2830dc8`。初回のcheckログ、同一の実装を確認できる両入力manifest、停止位置、再検証結果を保持した。公開したSourceの3ファイルと原本の各entryを照合した。
