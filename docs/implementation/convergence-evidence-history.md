@@ -20282,3 +20282,14 @@ Supersedes [入力番号を照合した時点の検証範囲](#verified-import-c
 実Cargo graphから選んだCLIを除く推移的逆依存は8,105件中8,005 PASS、100既知FAIL、18 SKIP。比較元 `c70bc4ab48d9f78f4644a0f31faeefc7048627e0` の全IDで合否が一致し、追加5件が通過した。100件の失敗はSema 92件とCompiler 8件。CLI library／binary 196件と規定の統合6 target 30件、Core全feature library／`effect_decision` 2,380件、Core全feature doctest 81件はすべて通過した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
 
 [検証原本・全失敗ID](acceptance-evidence/task-shared-least-coefficients.raw.zip) は32 entry、1,329,567 bytes、SHA256 `d5d2eb1aa86ab6ce5f386c9698e827d65067d814ca127a526e1f1e0fb757a11b`。各entryの長さとハッシュ、公開Sourceの2ファイルを照合した。記録時の `target` は101,560,361,408 bytes。
+
+<a id="direct-future-effect-closure"></a>
+## 2026-11-20 — 確定した実引数を元の効果制約へ代入する
+
+検証基点 `21a91e6359e2601952a6d52899dd611f21c5560f`、Source `d00174c9d5cee5aa99a89e9388d0d4de3bcbcaa7`。最終照合で同一と確認した効果制約へ実引数の効果行を代入し、点ごとの最小解を求める。実引数の正規化されたラベル上書きは、少なくとも1つの引数マスクで既定クラスと異なり、そのラベルを元の制約に追加できる。本体が後から確定する名前付き関数や新しい義務を持つ場合は、元の最小解を取り込んだ上で最終制約を解く。実引数で初めて現れるラベルのテストでは、元の制約に直接代入した結果と再取り込みの結果が一致し、直接代入の作業量が少なかった。実引数の欠落・重複を拒否し、作業後の元グラフの状態IDも照合した。
+
+Supersedes [係数共有時点の停止位置](#shared-least-effect-coefficients)。2 callback のSemaでは、名前付き関数の本体を取り込む必要があるため直接閉包を選ばない分岐を1回通過した。2 callback のSemaとNative／AWBCは取り込んだ局所係数の参照検証で、3 callback のSemaは判定図の出力ノード確保で既定上限4,096に達した。
+
+Sema全featureの1,994件は1,902 PASS、92既知FAIL。Compilerの統合6 targetの582件は580 PASS、2既知FAIL。Mapの修復3件と `flow_wait` の32件は通過した。両対象で前回の全IDと合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。推移的逆依存全件の実測は[先行Source](#shared-least-effect-coefficients)に保持した。
+
+[検証原本・公開照合](acceptance-evidence/task-direct-future-effect-closure.raw.zip) は31 entry、1,105,329 bytes、SHA256 `f4e43d016d6bfd4114cd9bc0af9dd416bcefdaade7ce69a66726bb3a98e5b846`。各entryの長さとハッシュ、公開Sourceの2ファイルを照合した。記録時の `target` は101,562,534,793 bytes。
