@@ -20190,3 +20190,10 @@ Supersedes [効果参照の逐次走査時点の現状](#prepared-effect-paramet
 Semaの全featureユニットは1,991件中1,899 PASS、92既知FAIL。SemaとCompilerで新規失敗は0。既定上限4,096での再調査では、2 callback のSemaとNative／AWBCは元の型等式の事前走査を越え、確定したソースの具体的な型照合で停止した。3 callback を循環させるSemaは、元の効果義務を処理する判定図の出力ノード確保で停止した。
 
 workspace全target・全feature check、fmt、差分、推移的逆依存のCargo graph、構造ゲートは終了0。公開した2ファイルの内容を検証入力と照合した。Clippyと推移的逆依存テストは実行中。[検証原本・公開照合](acceptance-evidence/task-callback-decision-finalization.raw.zip) は30 entry、350,215 bytes、SHA256 `a22f161c82b5462c3e498eae013cead6096b98cb9a102f2cb25aa048da6325b7`。各entryの長さとハッシュを照合した。記録時の `target` は100,338,718,086 bytes。
+
+<a id="reachable-effect-decision-reverse"></a>
+## 2026-11-20 — 効果判定図を共有するCoreの推移的逆依存結果
+
+製品Source `61ba3e59b1c965f470633934c720a0f32feae4db`。公開内容を照合した時点の記録commitは `b73a2e53ea1fe8635edd1316026c2a74f782342d`。実Cargo graphから選んだCLIを除く推移的逆依存は8,097件中7,997 PASS、100 FAIL、18 SKIP。失敗はSema 92件とCompiler 8件。比較元 `803c48be2096fbfbbff14566fa55dae4af444666` のテストIDから、Map 3件、TryPipe 1件、Sema 2件がFAILからPASSへ変わった。追加2件も通過し、新規失敗は0。TryPipeのケースは暗黙引数で受けたcallbackを返されたクロージャから呼び、Native／AWBCの実行で42を返した。
+
+規定のCLI library／binary 196件と統合6 target 30件、Core全feature doctest 81件は全件通過。workspace全target・全feature Clippyは終了0。[検証原本・全失敗ID](acceptance-evidence/task-callback-decision-finalization-reverse.raw.zip) は15 entry、1,195,025 bytes、SHA256 `09d8ce9cf360849a962a9f8efc0149f2cdd495d904eb6faf5a7c2ca637cfefce`。各entryの長さとハッシュは照合済み。記録時の `target` は101,368,132,088 bytes。
