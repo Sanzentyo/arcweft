@@ -19959,3 +19959,16 @@ Sema全featureユニットは1,984件中1,866 PASS、118 FAIL、0 SKIP。Compile
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。Sourceの公開時に変更11 blobを検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-retained-continuation-delivery.raw.zip) は21 entry、470,846 bytes、SHA256 `43449b2d9d79d21fdb399a674ab6fd15339b121f3286ae597f31054388e43ba3`。各原本の長さとハッシュを照合した。
+
+<a id="continuation-effect-port"></a>
+## 2026-11-19 — 段階適用が保持する宣言の終端効果を特定
+
+基点 `9d73ce8cc5c2c606ba990a24e1d1ad8492c0d425`。Source `bafd29520f37e093805cd379a16dd8382d47ba3c`。段階適用や同一グループの部分適用で入力を保持する候補は、残りの引数グループに対応する矢印を辿って終端行を特定し、元の宣言の効果適用と照合する。効果グラフは宣言本体が未確定でも、同じ宣言の適用と順序付き引数を検査できる。終端まで適用した呼出しが返す関数値には、その値自身の型を使う。
+
+ルート・子候補の本体要求が、実際に準備した終端行の証拠を参照する。子候補は従来どおり有効な制約経路の読取りを保持してから、親のトランザクションで必要な本体を準備する。初回ビルドで不足していた文脈の引数検査用の判定を復元した。その次の版では宣言済みの継続に範囲を絞ったため、Compilerの既存11件が失敗した。非ジェネリック宣言の同一グループ部分適用にも宣言由来の終端行があるため、実際の結果型から要求を決めるよう訂正し、11件すべての成功を確認した。追加テストは、宣言本体が未確定でも2個の引数を順に取り出せること、同じ引数を持つ別の宣言の適用とロールバック済みの適用を拒否することを確認した。
+
+Sema全featureユニットは1,985件中1,867 PASS、118 FAIL、0 SKIP。既存1,984件は直前の公開ソースと全ID・合否が一致した。Compiler統合5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中29 PASS、3 FAIL。Compiler全582件のID・合否も一致した。制約計算はまだ終端行の本体を確定してから結果を発行するため、正しい引数での再帰段階適用と再帰する attached default は既存の失敗を再現した。[失敗箇所の記録](#application-result-authority)。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。Sourceの公開時に変更8 blobを検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-continuation-effect-port.raw.zip) は27 entry、515,368 bytes、SHA256 `7e4352e298cb74ca08b1f97532f8f4ce42d8969ebfe489ad2dd6989e5a69df15`。各原本の長さとハッシュを照合した。
