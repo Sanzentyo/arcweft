@@ -20354,3 +20354,16 @@ Supersedes [効果関係を一度の走査で取り込んだ時点の停止位�
 Cargo graphから求めたSemaの逆依存は22パッケージ。CLIを除く4,307件で4,213 PASS、94既知FAIL、1 SKIP。比較元 `351900274456fee74da72b18b3a670add9e059e3` から6件がFAILからPASSへ移り、追加1件が通過した。CLI library／binary 196件と規定の統合6 target 30件はすべてPASS。Sema全featureの1,997件は1,911 PASS、86既知FAIL。追加1件と、作業量の引き継ぎ、型引数の射影、候補キーを検証する既存6件が通過した。既存のPASSからFAILへの変化は0件。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
 
 [検証原本・回復した全ID・全失敗ID](acceptance-evidence/task-typed-scoped-effect-clauses.raw.zip) は38 entry、1,329,473 bytes、SHA256 `6472bb112297131efcc4407c698a35b53ff6e451e1d3d422fdfe804739918e0a`。各entryの長さとハッシュ、公開Sourceの8ファイルを照合した。記録時の `target` は101,635,522,013 bytes。
+
+<a id="shared-prepared-effect-terms"></a>
+## 2026-11-20 — 効果の行と述語を同じ依存走査で評価する
+
+検証基点 `b4a2bc44daedea7702c309dc9561bf538fb34b67`、Source `1bf8e94fdc4d2859e3a46b1654d71294d6fd5ee8`。行と述語の依存を同じ走査で辿り、子を先に評価する。参照を受け取るたびに発行元と定義を照合し、同種の子が親より先に発行されたことを確認する。子を評価した後は親の依存走査の途中から再開する。コンパイル済みの述語は不変の判定図を共有し、量化節の条件が恒真で射影が不要なときは帰結をそのまま使う。最終判定図は一時的なキャッシュを解放してから取り出す。
+
+行に依存する述語を評価した後、同じ述語と子の行をそれぞれ1作業単位で取り出した。述語の同一インスタンスを共有し、同じ序数の行・述語でも別の発行元から来た参照は拒否した。初回checkでは子述語を読むクロージャの借用型が明示されずコンパイルエラーになった。型を明示し、各子の走査を計上する修正後の入力で以下の検証を行った。
+
+Supersedes [義務を一つのノードで保持した時点の停止位置](#typed-scoped-effect-clauses)。2 callback のSemaは `main` の呼び出し（式75）、Native／AWBCは型検査の式76で、関数本体の最初の効果項を読む作業の計上で既定上限4,096に達した。3 callback のSemaは `rotate` の再帰分岐（式26）で、マスクごとの条件を合成中に判定図の処理を作業に計上する段階で同上限に達した。Native／AWBCの対象2件を直接実行して失敗式と停止箇所を確認した。
+
+Cargo graphから求めたSemaの逆依存は22パッケージ。CLIを除く4,308件で4,214 PASS、94既知FAIL、1 SKIP。比較元 `f9ee3a1f4a826118d91fa20203064a16d40101f4` の全IDの合否が一致し、追加1件が通過した。CLI library／binary 196件と規定の統合6 target 30件はすべてPASS。Sema全featureの1,998件は1,912 PASS、86既知FAILで、追加1件が通過した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+[検証原本・全失敗ID](acceptance-evidence/task-shared-prepared-effect-terms.raw.zip) は41 entry、1,342,673 bytes、SHA256 `008559bc18236f60a512ff5daf195323330180d23c13eda4064c7f056e7b940b`。各entryの長さとハッシュ、公開Sourceの4ファイルを照合した。記録時の `target` は101,641,001,309 bytes。
