@@ -57,19 +57,20 @@ impl FiniteRowValuation<'_> {
         }
         let mut result = Decision::constant(true);
         for mask in 0..self.pattern_count()? {
-            let mut bindings = BTreeMap::new();
-            for parameter in 0..self.parameters.len() {
-                work.charge(DecisionWork::Node)?;
-                bindings.insert(
+            work.charge(DecisionWork::Visit)?;
+            let value = point.restrict_references(
+                |atom| match atom {
                     Atom::Formal {
-                        owner: self.owner,
+                        owner,
                         class: 0,
                         parameter,
-                    },
-                    Decision::constant(mask & (1usize << parameter) != 0),
-                );
-            }
-            let value = point.substitute(&bindings, work)?;
+                    } if *owner == self.owner && *parameter < self.parameters.len() => {
+                        Some(mask & (1usize << parameter) != 0)
+                    }
+                    _ => None,
+                },
+                work,
+            )?;
             let value = if mask == 0 {
                 value
             } else {

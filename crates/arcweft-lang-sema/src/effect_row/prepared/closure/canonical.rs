@@ -13,6 +13,13 @@ enum Variable {
     Parameter(GenericEffectReference),
     Choice(u64),
 }
+
+impl Variable {
+    fn empty_row_parameter(&self) -> Option<bool> {
+        matches!(self, Self::Parameter(_)).then_some(false)
+    }
+}
+
 type Formula = arcweft_core::effect_row::EffectFormula<Variable>;
 type Predicate = arcweft_core::effect_row::EffectPredicate<Variable>;
 
@@ -116,19 +123,12 @@ impl<'a> CanonicalReplay<'a> {
         row: &Formula,
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        let mut zero = BTreeMap::new();
-        for variable in row.membership().default_decision().variables() {
-            if matches!(variable, Variable::Parameter(_)) {
-                work.charge(DecisionWork::Node)?;
-                zero.insert(variable.clone(), EffectDecision::constant(false));
-            }
-        }
         // Uniform choices are scalars, not finite row variables. Finiteness
         // must hold for every choice when all actual row parameters are empty.
         if !row
             .membership()
             .default_decision()
-            .substitute(&zero, work)?
+            .restrict_references(Variable::empty_row_parameter, work)?
             .is_constant(false)
         {
             return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
@@ -338,14 +338,11 @@ impl<'a> CanonicalReplay<'a> {
         value: &EffectDecision<Variable>,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let mut bindings = BTreeMap::new();
-        for variable in value.variables() {
-            if matches!(variable, Variable::Parameter(_)) {
-                work.charge(DecisionWork::Node)?;
-                bindings.insert(variable.clone(), EffectDecision::constant(false));
-            }
-        }
-        self.scalar(&value.substitute(&bindings, work)?, 0, work)
+        self.scalar(
+            &value.restrict_references(Variable::empty_row_parameter, work)?,
+            0,
+            work,
+        )
     }
 
     fn covered<C: DecisionControl>(

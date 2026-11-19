@@ -230,6 +230,37 @@ fn substitutions_are_simultaneous_and_reorder_decisions() {
 }
 
 #[test]
+fn restriction_retains_free_branches_without_visiting_excluded_subgraphs() {
+    let mut setup = Meter::default();
+    let discarded = (3..64).fold(EffectDecision::constant(false), |tail, variable| {
+        atom(variable).or(&tail, &mut setup).unwrap()
+    });
+    let left = atom(1)
+        .conditional(&discarded, &atom(2), &mut setup)
+        .unwrap();
+    let right = atom(1)
+        .conditional(&discarded, &atom(3), &mut setup)
+        .unwrap();
+    let decision = atom(0).conditional(&left, &right, &mut setup).unwrap();
+    let expected = atom(0).conditional(&atom(2), &atom(3), &mut setup).unwrap();
+    let mut meter = Meter {
+        limit: Some(discarded.nodes.len()),
+        ..Meter::default()
+    };
+    let assignment = BTreeMap::from([(1, false)]);
+    assert_eq!(
+        decision.restrict(&assignment, &mut meter).unwrap(),
+        expected
+    );
+    assert_eq!(
+        decision
+            .restrict_references(|variable| (*variable == 1).then_some(true), &mut setup)
+            .unwrap(),
+        discarded
+    );
+}
+
+#[test]
 fn substitution_borrows_target_formulas_and_resolves_each_source_reference_once() {
     let mut meter = Meter::default();
     let (a, b) = (atom(0), atom(1));

@@ -603,9 +603,18 @@ impl<V: Clone + Ord> EffectDecision<V> {
             return self.copy_with_control(control);
         }
         let mut builder = DecisionBuilder::new(control);
-        let root = builder.import(self)?;
-        let root = builder.quantify(root, quantified, quantifier)?;
-        builder.finish(root)
+        // The input is already child-first. Project directly into the builder
+        // so the discarded source branches never have to be interned.
+        let mut indices = BTreeMap::new();
+        for (index, node) in self.nodes.iter().enumerate() {
+            builder.control.charge(DecisionWork::Visit)?;
+            let low = DecisionBuilder::<V, C>::remap(node.low, &indices);
+            let high = DecisionBuilder::<V, C>::remap(node.high, &indices);
+            let projected =
+                builder.project_branch(node.variable.clone(), low, high, quantified, quantifier)?;
+            indices.insert(index, projected);
+        }
+        builder.finish(DecisionBuilder::<V, C>::remap(self.root, &indices))
     }
 
     /// Simultaneous substitution: references inside a replacement are not
@@ -633,18 +642,64 @@ impl<V: Clone + Ord> EffectDecision<V> {
         assignment: &BTreeMap<V, bool>,
         control: &mut C,
     ) -> Result<Self, C::Error> {
-        if assignment.is_empty() || self.nodes.is_empty() {
+        if assignment.is_empty() {
             return self.copy_with_control(control);
         }
-        let zero = Self::constant(false);
-        let one = Self::constant(true);
-        self.substitute_references(control, |variable, _| {
-            Ok(match assignment.get(variable) {
-                Some(false) => EffectDecisionReplacement::Decision(&zero),
-                Some(true) => EffectDecisionReplacement::Decision(&one),
-                None => EffectDecisionReplacement::Variable(variable.clone()),
-            })
-        })
+        self.restrict_references(|variable| assignment.get(variable).copied(), control)
+    }
+
+    /// Assigns each visited reference the Boolean value returned by the
+    /// resolver. It must return the same value for repeated occurrences of a
+    /// reference. Returning `None` leaves that reference free.
+    pub fn restrict_references<C: DecisionControl>(
+        &self,
+        assignment: impl Fn(&V) -> Option<bool>,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        if self.nodes.is_empty() {
+            return self.copy_with_control(control);
+        }
+
+        // Fixed variables select a single child. Discover only the remaining
+        // inventory before rebuilding it in the source's child-first order.
+        control.charge(DecisionWork::Visit)?;
+        let mut pending = vec![self.root];
+        let mut selected = BTreeMap::new();
+        while let Some(root) = pending.pop() {
+            control.charge(DecisionWork::Visit)?;
+            let Root::Branch(index) = root else {
+                continue;
+            };
+            if selected.contains_key(&index) {
+                continue;
+            }
+            let node = &self.nodes[index];
+            let child =
+                assignment(&node.variable).map(|value| if value { node.high } else { node.low });
+            selected.insert(index, child);
+            if let Some(child) = child {
+                pending.push(child);
+            } else {
+                pending.push(node.high);
+                pending.push(node.low);
+            }
+        }
+
+        let mut builder = DecisionBuilder::new(control);
+        let mut indices = BTreeMap::new();
+        for (index, child) in selected {
+            builder.control.charge(DecisionWork::Visit)?;
+            let restricted = if let Some(child) = child {
+                DecisionBuilder::<V, C>::remap(child, &indices)
+            } else {
+                let node = &self.nodes[index];
+                let low = DecisionBuilder::<V, C>::remap(node.low, &indices);
+                let high = DecisionBuilder::<V, C>::remap(node.high, &indices);
+                builder.branch(node.variable.clone(), low, high)?
+            };
+            indices.insert(index, restricted);
+        }
+        builder.finish(DecisionBuilder::<V, C>::remap(self.root, &indices))
     }
 
     /// Eliminate current existential references without selecting an arbitrary
