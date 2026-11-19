@@ -102,8 +102,18 @@ fn parameter_reads_admit_actuals_and_unsubstituted_references_without_reading_bo
         .unwrap();
     let unknown = PreparedEffectRow::Canonical(EffectRow::unknown());
     let choice = graph.choice(&mut work).unwrap();
+    assert!(matches!(
+        graph.select_row(&choice, substituted.clone(), unknown.clone(), &mut work),
+        Err(PreparedEffectFailure::Row(EffectRowError::UnknownRow))
+    ));
+    graph
+        .read()
+        .visit_row_parameters(&unknown, &mut work, &mut |_, _| {
+            panic!("an omitted row has no declared references")
+        })
+        .unwrap();
     let row = graph
-        .select_row(&choice, substituted.clone(), unknown.clone(), &mut work)
+        .select_row(&choice, substituted.clone(), literal(&[]), &mut work)
         .unwrap();
     let row = graph.union(vec![row, substituted], &mut work).unwrap();
     let expected = BTreeSet::from([retained.clone(), actual.clone()]);
@@ -160,7 +170,6 @@ fn parameter_reads_admit_actuals_and_unsubstituted_references_without_reading_bo
         })
         .unwrap();
     assert_eq!(observed, BTreeSet::from([retained, actual, other]));
-    assert_eq!(unknown, PreparedEffectRow::Canonical(EffectRow::unknown()));
 }
 
 #[test]
