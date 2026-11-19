@@ -19651,3 +19651,16 @@ Compilerは5 targetの548件で531成功・17失敗。前回と全IDおよび合
 Sema全feature checkはライブラリの生成に成功した。テスト対象は終了101、既存794エラー・33警告。コード・ファイル別内訳に増減0。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、対象のfmt、差分検査、構造ゲートは終了0。Cargo全feature逆依存はCore 52、Sema 22 package。Sema単体、全逆依存、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 4 blobを照合した。`target` は `12890814083` bytes。
 
 [比較手順、検証原本、公開照合](acceptance-evidence/task-effect-parameter-independence.raw.zip) は 42 entry、1056738 bytes、SHA256 `2bc4da4107c7c87bf56a67f071c291f4f645369e4001026267be028c84aaf237`。各原本の長さとハッシュを照合した。
+
+<a id="effect-lower-envelope"></a>
+## 2026-11-19 — 作用関係の最小解で存在量化した決定図を再利用
+
+基点 `1879c6c55a45a2cbdef6ab21555a86ce71c28ae4` は、最小解を求めるたびに各座標を偽とする決定図を作り、その全体を量化していた。Source `13cbe08b8290ef624014eb368682a7b9c7fcc7fb` は、まず存在量化した結果を部分グラフごとに求める。各座標を偽に固定した場合には結果が変わる部分だけを再計算する。偽に固定しても解があるかを使って、各座標が必須となる領域を求める。元の関係による主解の再検査と既定の作業上限を保持する。量化対象が空の場合は関係を共有する。
+
+7変数の320比較で、満足可能領域・主解領域・全座標の下限が一致した。既定の作業計数に対応する訪問とノード作業の合計は318件で減り、2件で同じだった。分岐のある16座標の比較では訪問7,508→2,704、ノード作業501→638。全featureのCore単体2,362件は全件成功し、前回と全IDが一致した。公開API統合2件とdoctest 1件も全件成功。
+
+Compilerは5 targetの548件で531成功・17失敗。前回と全IDおよび合否が一致した。コールバック作用を後段で決める6件は `UnresolvedFuture` が残る。27入力を順に検証するMapテストはSourceSetRevisionと失敗したHIRデータベースIDを照合した。最初の失敗が9番目の要素3個の配列から24番目の`Result::Ok`へ進み、合計23入力で、Nativeの値とコールバック回数、AWBCの値とプログラム呼出し回数の検証を通過した。前回の通過は8入力。保持した不透明Mapは取込関係の特殊化を通過して元の作用述語の正準形での再照合へ、Traversalは完了型の互換性照合を通過して後続の型投影へ進んだ。Mapの部分適用は最小解の各決定を出力する段階、再帰コールバックは形式引数の独立性判定で作業上限に達した。
+
+Sema全feature checkはライブラリを生成した。テスト対象は終了101、前回と同じ794エラー・33警告。Coreの全target・全feature Clippy、fmt、構造ゲートは終了0。今回抽出した2関数の引数名に `clippy::similar_names` の指摘が増えた。`decision.rs` は 840→922 物理行。所有する決定図内で部分グラフを再利用する。全featureのCargo逆依存は起点込み 52 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 1 blobを照合した。`target` は `12891614470` bytes。
+
+[比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-lower-envelope.raw.zip) は 44 entry、886617 bytes、SHA256 `0a34ebc288e222e9f0144cbbc6f0990e83a5b0a28556771d36c7ae1b2820eb8a`。各原本の長さとハッシュを照合した。
