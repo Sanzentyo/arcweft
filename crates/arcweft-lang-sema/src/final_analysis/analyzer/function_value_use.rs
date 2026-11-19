@@ -4,9 +4,8 @@ use super::calls::{
     AnalyzerCallConstraintDomain, AnalyzerCallProjection, CallAnalysisFailure,
     CallAnalysisInvariant,
 };
-use super::expression_error::AnalyzerExpressionError;
+use super::expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError};
 use super::expressions::AnalyzerExpressionExpectation;
-use super::preparation_work::AnalyzerPreparationWork;
 use super::{Analyzer, ExprId, ResolverWork};
 use crate::callable::{
     CallConstraintInvariant, CallableConstraintApplication, FunctionSpecializationFailure,
@@ -62,10 +61,10 @@ impl Analyzer<'_, '_, '_> {
     /// their live Call result port before completion instead of this boundary.
     pub(super) fn specialize_checked_function_value(
         &mut self,
+        context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
         checked: PreparedExpressionFact,
         expectation: &AnalyzerExpressionExpectation<'_>,
-        work: &mut AnalyzerPreparationWork<'_>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         let Some(source) = checked.value_type() else {
             return Ok(checked);
@@ -73,6 +72,8 @@ impl Analyzer<'_, '_, '_> {
         let Some(expected) = expectation.specialization_target(Some(source)) else {
             return Ok(checked);
         };
+        self.prepare_specialization_effect_bodies(context, owner, [source, expected])
+            .map_err(AnalyzerExpressionError::fatal)?;
         let module = self
             .module(owner.module())
             .map_err(AnalyzerExpressionError::fatal)?;
@@ -104,7 +105,7 @@ impl Analyzer<'_, '_, '_> {
             )
             .map_err(|error| specialization_failure(owner, error))?;
         checked
-            .with_function_specialization(owner, witness, work)
+            .with_function_specialization(owner, witness, &mut context.work())
             .map_err(|error| prepared_specialization_failure(owner, error))
     }
 

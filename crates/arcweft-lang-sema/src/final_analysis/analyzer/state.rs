@@ -445,6 +445,12 @@ pub(super) struct RetainedProbeTypes {
     expressions: BTreeMap<ExprId, PreparedExpressionTypeUpdates>,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum RetainedProbeUpdate {
+    Types(RetainedProbeTypes),
+    SpecializedFunction(PreparedExpressionFact),
+}
+
 #[cfg(test)]
 impl RetainedProbeTypes {
     pub(super) fn unchanged_for_test() -> Self {
@@ -2433,13 +2439,32 @@ impl SemanticFactState {
         materialized: &mut CandidateSemanticProjection,
         mut original: CandidateSemanticProjection,
         owner: ExprId,
-        completed: RetainedProbeTypes,
+        completed: RetainedProbeUpdate,
     ) -> Result<Option<CandidateSemanticProjection>, CandidateFactTransactionViolation> {
         self.require_candidate_projection_owner(materialized)?;
         self.require_candidate_projection_owner(&original)?;
         self.prepared_calls()?
             .validate_delta(&original.data.graph_delta)
             .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))?;
+        let completed = match completed {
+            RetainedProbeUpdate::Types(completed) => completed,
+            RetainedProbeUpdate::SpecializedFunction(value) => {
+                let Some(Some(source)) = original.data.facts.expressions.get_mut(&owner) else {
+                    return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+                };
+                if source.source_value_type() != value.source_value_type()
+                    || value
+                        .function_specialization()
+                        .is_none_or(|use_| use_.owner() != owner)
+                {
+                    return Err(CandidateFactTransactionViolation::ProjectionAuthorityMismatch);
+                }
+                *source = value;
+                // Keep every dependency of the original observation in the
+                // candidate's affine projection batch.
+                return Ok(Some(original));
+            }
+        };
         if original.retained_expression_value(owner).is_none() {
             return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
         }
@@ -3782,7 +3807,7 @@ mod tests {
                 &mut child,
                 parent,
                 parent_expression,
-                RetainedProbeTypes::unchanged_for_test(),
+                RetainedProbeUpdate::Types(RetainedProbeTypes::unchanged_for_test()),
             )
             .unwrap()
             .expect("the effect writes keep their original projection");

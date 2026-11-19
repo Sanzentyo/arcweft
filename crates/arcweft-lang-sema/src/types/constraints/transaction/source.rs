@@ -588,13 +588,22 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
                 TypeConstraintSourceProtocolInvariant::WrongPhase,
             ));
         }
-        if observed.original_context() != &self.original {
+        self.canonicalize_source_type(observed.original_context(), observed.value_type(), control)
+    }
+
+    pub(in crate::types::constraints) fn canonicalize_source_type<
+        C: TypeProjectionControl<Error = TypeConstraintError>,
+    >(
+        &self,
+        original: &OriginalProducerContext,
+        ty: &TypeKind<PreparedEffects>,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        if original != &self.original {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
         let gamma = self.original.gamma();
-        let canonical =
-            self.completion
-                .canonicalize(observed.value_type(), gamma.shape(), control)?;
+        let canonical = self.completion.canonicalize(ty, gamma.shape(), control)?;
         if self.actual.scope() == gamma {
             return Ok(canonical);
         }

@@ -70,7 +70,7 @@ use super::super::{
     state::{
         ActiveCallbackFactScope, ActiveProbeFactAttempt, CandidateSemanticProjection,
         CandidateSemanticReplayMismatch, MaterializationFactCheckpoint, ProbeFactCheckpoint,
-        RetainedProbeTypes,
+        RetainedProbeUpdate,
     },
 };
 
@@ -598,7 +598,7 @@ pub(in crate::final_analysis::analyzer) enum AnalyzerCallSealedBranch {
     Materialized {
         projections: Vec<CandidateSemanticProjection>,
         nested_calls: Box<[super::PreparedSelectedNestedCall]>,
-        original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedProbeTypes>,
+        original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedProbeUpdate>,
     },
 }
 
@@ -760,7 +760,7 @@ impl AnalyzerCallSealedBranch {
 #[derive(Debug)]
 pub(crate) struct AnalyzerCallPreparedSealedBranch {
     nested_calls: Vec<super::PreparedSelectedNestedCall>,
-    original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedProbeTypes>,
+    original_values: BTreeMap<AnalyzerCallConstraintSourceId, RetainedProbeUpdate>,
 }
 
 pub(crate) struct PreparedChildCandidateRun {
@@ -2175,7 +2175,6 @@ impl<'a, 'project, 'catalog, 'control>
             expectation,
             source_admission,
         );
-        drop(child_context);
         match result {
             Ok(checked) => {
                 let invalid_variant_evidence = || {
@@ -2198,6 +2197,15 @@ impl<'a, 'project, 'catalog, 'control>
                     && let Some(probe) = parent_probe.as_deref_mut()
                     && let Some(owner) = source.expression_owner()
                 {
+                    self.analyzer
+                        .prepare_specialization_effect_bodies(&child_context, owner, [checked_type])
+                        .map_err(|error| {
+                            AnalyzerCallCheckFailure::expression(
+                                source_id,
+                                phase,
+                                AnalyzerExpressionError::fatal(error),
+                            )
+                        })?;
                     let module = self.analyzer.module(owner.module()).map_err(|error| {
                         AnalyzerCallCheckFailure::Fatal(SourceError::new(source_id, phase, AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error))))
                     })?;
@@ -3079,7 +3087,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 {
                     work.visit_binding()
                         .map_err(|error| materialized_source_failure(source, error))?;
-                    original_values.insert(source_id, completed);
+                    original_values.insert(source_id, RetainedProbeUpdate::Types(completed));
                     continue;
                 }
                 Some((expected, source_admission))
@@ -3152,79 +3160,51 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 ) && result.source().is_none()
                 {
                     let specialization = seal_function_value_use(&result, source, work)?;
-                    let observed = self
-                        .check_source(
-                            source_id,
-                            AnalyzerExpressionExpectation::Unconstrained,
-                            None,
-                            application_context,
-                            AnalyzerSourceCheckScope::Materialize,
-                            super::super::preparation_work::AnalyzerPreparationWork::candidate(
-                                work.loan(),
-                                request.application_id().expression(),
-                            ),
-                            None,
-                        )
-                        .map_err(|error| match error {
-                            AnalyzerCallCheckFailure::Mismatch => {
-                                crate::callable::SourceCallbackFailure::invariant(
-                                    AnalyzerCallClientInvariant::constraint(
-                                        source,
-                                        CallConstraintInvariant::PreparedFunctionTypeMismatch,
-                                    ),
-                                )
-                            }
-                            AnalyzerCallCheckFailure::Fatal(error) => {
-                                crate::callable::SourceCallbackFailure::fatal(error)
-                            }
-                            AnalyzerCallCheckFailure::Abort(error) => {
-                                crate::callable::SourceCallbackFailure::Abort(error)
-                            }
-                            AnalyzerCallCheckFailure::Invariant(error) => {
-                                crate::callable::SourceCallbackFailure::invariant(error)
-                            }
-                        })?;
                     let owner = specialization.owner();
-                    let observed_type = observed
-                        .canonical_materialized_type(&request, work)
-                        .map_err(|error| materialized_source_failure(source, error))?;
-                    if source.expression_owner() != Some(owner)
-                        || &observed_type != specialization.source_type()
-                    {
-                        return Err(crate::callable::SourceCallbackFailure::invariant(
+                    let mismatch = || {
+                        crate::callable::SourceCallbackFailure::invariant(
                             AnalyzerCallClientInvariant::constraint(
                                 source,
                                 CallConstraintInvariant::PreparedFunctionTypeMismatch,
                             ),
-                        ));
+                        )
+                    };
+                    if source.expression_owner() != Some(owner) {
+                        return Err(mismatch());
+                    }
+                    let update = request.preparation().expression_update(owner);
+                    let observed = match update {
+                        Some(observed) => observed,
+                        None => self.analyzer.facts.expressions().get(&owner),
+                    }
+                    .ok_or_else(mismatch)?;
+                    let original = application_context
+                        .map_or(&self.original, |recipe| &recipe.source_preparation.original);
+                    let observed_type = request
+                        .canonicalize_source_type(
+                            original,
+                            observed.value_type().ok_or_else(mismatch)?,
+                            work,
+                        )
+                        .map_err(|error| materialized_source_failure(source, error))?;
+                    if &observed_type != specialization.source_type() {
+                        return Err(mismatch());
                     }
                     let checked = observed
-                        .actual
-                        .as_deref()
-                        .and_then(AnalyzerObservedSourceValue::expression_fact)
-                        .filter(|fact| self.analyzer.facts.expressions().get(&owner) == Some(*fact))
-                        .ok_or_else(|| {
-                            crate::callable::SourceCallbackFailure::invariant(
-                                AnalyzerCallClientInvariant::constraint(
-                                    source,
-                                    CallConstraintInvariant::PreparedCallSiteMismatch,
-                                ),
-                            )
-                        })?
                         .clone()
                         .with_function_specialization(owner, specialization, work)
                         .map_err(|error| specialization_seal_failure(source, error))?;
-                    self.analyzer
-                        .facts
-                        .replace_existing_expression(owner, checked)
-                        .map_err(|_| {
-                            crate::callable::SourceCallbackFailure::invariant(
-                                AnalyzerCallClientInvariant::constraint(
-                                    source,
-                                    CallConstraintInvariant::PreparedCallSiteMismatch,
-                                ),
-                            )
-                        })?;
+                    if update.is_some() {
+                        work.visit_binding()
+                            .map_err(|error| materialized_source_failure(source, error))?;
+                        original_values
+                            .insert(source_id, RetainedProbeUpdate::SpecializedFunction(checked));
+                    } else {
+                        self.analyzer
+                            .facts
+                            .replace_existing_expression(owner, checked)
+                            .map_err(|_| mismatch())?;
+                    }
                 }
                 let actual = result.projection().to_quantified_type().map_err(|_| {
                     crate::callable::SourceCallbackFailure::invariant(
@@ -8166,7 +8146,9 @@ mod tests {
                                 &mut target,
                                 preparation,
                                 owner,
-                                RetainedProbeTypes::unchanged_for_test()
+                                RetainedProbeUpdate::Types(
+                                    super::super::super::state::RetainedProbeTypes::unchanged_for_test()
+                                )
                             )
                             .unwrap()
                             .is_none()

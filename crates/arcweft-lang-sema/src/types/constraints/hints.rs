@@ -1007,6 +1007,19 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
         self.source.canonicalize_observed_type(observed, control)
     }
 
+    /// Check the original input of a source resolved through an in-flight
+    /// specialization, under the same completion as the result port.
+    pub(crate) fn canonicalize_source_type<
+        C: TypeProjectionControl<Error = TypeConstraintError>,
+    >(
+        &self,
+        original: &super::OriginalProducerContext,
+        ty: &TypeKind<PreparedEffects>,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        self.source.canonicalize_source_type(original, ty, control)
+    }
+
     pub(crate) const fn alternative(&self) -> Option<D::AlternativeIndex> {
         self.source.selection().alternative()
     }

@@ -698,10 +698,10 @@ impl Analyzer<'_, '_, '_> {
                 context.work(),
                 |this, _, _| {
                     let specialized = this.specialize_checked_function_value(
+                        context,
                         owner,
                         checked,
                         &expectation,
-                        &mut context.work(),
                     )?;
                     if !accepts(this, &specialized)? {
                         return Err(AnalyzerExpressionError::rejected(owner));
@@ -981,12 +981,8 @@ impl Analyzer<'_, '_, '_> {
         expectation: &AnalyzerExpressionExpectation<'_>,
         checked: PreparedExpressionFact,
     ) -> Result<PreparedExpressionFact, CandidateFactOperationFailure> {
-        let checked = self.specialize_checked_function_value(
-            owner,
-            checked,
-            expectation,
-            &mut context.work(),
-        )?;
+        let checked =
+            self.specialize_checked_function_value(context, owner, checked, expectation)?;
         let checked = self.attach_nested_path_evidence(owner, checked)?;
         self.record_implicit_capture_fact(owner, &checked)
             .map_err(AnalyzerExpressionError::fatal)?;

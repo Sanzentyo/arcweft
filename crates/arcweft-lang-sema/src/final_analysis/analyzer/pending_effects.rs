@@ -153,6 +153,19 @@ impl Analyzer<'_, '_, '_> {
         })
     }
 
+    pub(super) fn prepare_specialization_effect_bodies<'a>(
+        &mut self,
+        context: &super::AnalyzerExpressionContext<'_>,
+        owner: super::ExprId,
+        types: impl IntoIterator<Item = &'a TypeKind<PreparedEffects>>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let roots = crate::types::PreparedTypeEffectRoots::collect(types, [], &mut context.work())
+            .map_err(|error| {
+                FinalSemanticAnalysisError::source_type_projection(owner.into(), error)
+            })?;
+        self.prepare_source_effect_bodies(context, owner, &roots)
+    }
+
     fn observe_source_with_dependencies<T>(
         &mut self,
         context: &super::expression_error::AnalyzerExpressionContext<'_>,
