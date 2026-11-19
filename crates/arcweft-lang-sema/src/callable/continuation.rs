@@ -35,7 +35,7 @@ use crate::types::{
 };
 
 use super::{
-    CallableGroupIndex, CallableParameterCoordinate, CallableResultSchema,
+    CallableGroupIndex, CallableParameterCoordinate, PreparedCallResult,
     schema::CallableGroupTransition,
 };
 
@@ -626,10 +626,7 @@ struct PreparedCallNode<P, U> {
 }
 
 enum PreparedCallNodePayload<P, U> {
-    SelectedValue {
-        prefix: P,
-        result: CallableResultSchema,
-    },
+    SelectedTerminal(P),
     SelectedContinuation(PreparedCallContinuation<P>),
     Unselected(U),
 }
@@ -692,7 +689,7 @@ impl<P, U> PreparedCallGraphDelta<P, U> {
                     .insert(
                         node.site,
                         match &node.payload {
-                            PreparedCallNodePayload::SelectedValue { .. }
+                            PreparedCallNodePayload::SelectedTerminal(_)
                             | PreparedCallNodePayload::SelectedContinuation(_) => {
                                 PreparedCallGraphSiteState::Selected
                             }
@@ -733,8 +730,6 @@ pub(crate) enum PreparedCallGraphReplayMismatch {
     NodeDependencies,
     #[error("canonical node payload state differs")]
     NodePayloadState,
-    #[error("canonical selected node result differs")]
-    NodeResult,
     #[error("canonical selected node prefix differs: {0}")]
     NodePrefix(PreparedCallPrefixReplayMismatch),
     #[error("canonical unselected node payload differs")]
@@ -846,7 +841,7 @@ fn canonical_delta_nodes<P, U>(
                     Some(())
                 }
                 PreparedCallNodePayload::SelectedContinuation(_) => None,
-                PreparedCallNodePayload::SelectedValue { .. }
+                PreparedCallNodePayload::SelectedTerminal(_)
                 | PreparedCallNodePayload::Unselected(_) => Some(()),
             })
             .is_none()
@@ -946,23 +941,11 @@ fn node_payload_replay_mismatch<P: PreparedCallPrefixPayload>(
 ) -> Option<PreparedCallGraphReplayMismatch> {
     match (left, right) {
         (
-            PreparedCallNodePayload::SelectedValue {
-                prefix: left,
-                result: left_result,
-            },
-            PreparedCallNodePayload::SelectedValue {
-                prefix: right,
-                result: right_result,
-            },
-        ) => {
-            if let Some(mismatch) = left.replay_mismatch(right) {
-                Some(PreparedCallGraphReplayMismatch::NodePrefix(mismatch))
-            } else if left_result != right_result {
-                Some(PreparedCallGraphReplayMismatch::NodeResult)
-            } else {
-                None
-            }
-        }
+            PreparedCallNodePayload::SelectedTerminal(left),
+            PreparedCallNodePayload::SelectedTerminal(right),
+        ) => left
+            .replay_mismatch(right)
+            .map(PreparedCallGraphReplayMismatch::NodePrefix),
         (
             PreparedCallNodePayload::SelectedContinuation(left),
             PreparedCallNodePayload::SelectedContinuation(right),
@@ -1136,13 +1119,7 @@ pub(crate) struct PreparedCallGraphSealNode<P, U> {
 }
 
 pub(crate) enum PreparedCallGraphSealPayload<P, U> {
-    SelectedValue {
-        prefix: P,
-        result: CallableResultSchema,
-    },
-    SelectedContinuation {
-        prefix: P,
-    },
+    Selected(P),
     Unselected(U),
 }
 
@@ -1216,19 +1193,21 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 let reference = PreparedCallContinuationRef(continuation.coordinate.clone());
                 self.graph.validate_continuation_chain(&reference)?;
                 continuation.prefix.validate_site(site)?;
-                let result = continuation.prefix.application().function_type()?;
+                let PreparedCallResult::Continuation(result) =
+                    continuation.prefix.application().result()
+                else {
+                    return Err(CallConstraintInvariant::InvalidPreparedNodeState);
+                };
                 Ok((PreparedCallSiteDelivery::Continuation(reference), result))
             }
-            PreparedCallNodePayload::SelectedValue { prefix, result } => {
+            PreparedCallNodePayload::SelectedTerminal(prefix) => {
                 prefix.validate_site(site)?;
                 self.graph.validate_prefix(prefix)?;
                 let application = prefix.application();
-                let CallableResultSchema::Value(result) = result else {
+                let PreparedCallResult::Value(result) = application.result() else {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 };
-                if result != application.result_type()?
-                    || application.continuation_position().is_some()
-                {
+                if application.continuation_position().is_some() {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 }
                 Ok((PreparedCallSiteDelivery::Value, result))
@@ -1283,7 +1262,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         &self,
     ) -> impl Iterator<Item = PreparedCallGraphSelectedNode<'_, P>> {
         self.nodes.values().filter_map(|node| match &node.payload {
-            PreparedCallNodePayload::SelectedValue { prefix, .. }
+            PreparedCallNodePayload::SelectedTerminal(prefix)
             | PreparedCallNodePayload::SelectedContinuation(PreparedCallContinuation {
                 prefix,
                 ..
@@ -1359,7 +1338,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             .get(&site)
             .and_then(|node| self.nodes.get(node))?;
         Some(match &node.payload {
-            PreparedCallNodePayload::SelectedValue { .. }
+            PreparedCallNodePayload::SelectedTerminal(_)
             | PreparedCallNodePayload::SelectedContinuation(_) => {
                 PreparedCallGraphSiteState::Selected
             }
@@ -1383,7 +1362,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             .get(&site)
             .and_then(|node| self.nodes.get(node))?;
         Some(match &node.payload {
-            PreparedCallNodePayload::SelectedValue { prefix, .. }
+            PreparedCallNodePayload::SelectedTerminal(prefix)
             | PreparedCallNodePayload::SelectedContinuation(PreparedCallContinuation {
                 prefix,
                 ..
@@ -1445,8 +1424,8 @@ impl<P, U> PreparedCallGraph<P, U> {
                 })
                 .collect::<Result<Box<[_]>, _>>()?;
             let payload = match node.payload {
-                PreparedCallNodePayload::SelectedValue { prefix, result } => {
-                    PreparedCallGraphSealPayload::SelectedValue { prefix, result }
+                PreparedCallNodePayload::SelectedTerminal(prefix) => {
+                    PreparedCallGraphSealPayload::Selected(prefix)
                 }
                 PreparedCallNodePayload::SelectedContinuation(continuation) => {
                     if !Arc::ptr_eq(&self.issuer, &continuation.coordinate.issuer)
@@ -1454,9 +1433,7 @@ impl<P, U> PreparedCallGraph<P, U> {
                     {
                         return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                     }
-                    PreparedCallGraphSealPayload::SelectedContinuation {
-                        prefix: continuation.prefix,
-                    }
+                    PreparedCallGraphSealPayload::Selected(continuation.prefix)
                 }
                 PreparedCallNodePayload::Unselected(value) => {
                     PreparedCallGraphSealPayload::Unselected(value)
@@ -2026,7 +2003,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         &mut self,
         site: CheckedCallSite,
         prefix: P,
-    ) -> Result<(CallableResultSchema, Option<PreparedCallContinuationRef>), CallConstraintInvariant>
+    ) -> Result<(), CallConstraintInvariant>
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
@@ -2042,77 +2019,51 @@ impl<P, U> PreparedCallGraph<P, U> {
         let application = prefix.application();
         let selected = application.selected();
         self.validate_prepared_candidate_ancestry(selected)?;
-        let result = application.result_schema()?;
-        let function_type = if application.continuation_position().is_some() {
-            Some(application.function_type()?)
-        } else {
-            None
-        };
-        if let Some(sealed) =
-            self.reconcile_selected_site(site, &dependencies, &prefix, &result, function_type)?
-        {
-            return Ok(sealed);
+        if let Some(node_id) = self.sites.get(&site).copied() {
+            return self.reconcile_selected_site(site, node_id, &dependencies, &prefix);
         }
         let node = self.allocate_node()?;
-        let continuation = if function_type.is_some() {
-            let coordinate = PreparedCallContinuationCoordinate {
-                issuer: Arc::clone(&self.issuer),
-                node,
-            };
-            self.nodes.insert(
-                node,
-                Box::new(PreparedCallNode {
-                    site,
-                    dependencies,
-                    payload: PreparedCallNodePayload::SelectedContinuation(
-                        PreparedCallContinuation {
-                            coordinate: coordinate.clone(),
-                            prefix,
-                        },
-                    ),
-                }),
-            );
-            Some(PreparedCallContinuationRef(coordinate))
-        } else {
-            self.nodes.insert(
-                node,
-                Box::new(PreparedCallNode {
-                    site,
-                    dependencies,
-                    payload: PreparedCallNodePayload::SelectedValue {
-                        prefix,
-                        result: result.clone(),
+        let payload = match application.result() {
+            PreparedCallResult::Continuation(_) => {
+                PreparedCallNodePayload::SelectedContinuation(PreparedCallContinuation {
+                    coordinate: PreparedCallContinuationCoordinate {
+                        issuer: Arc::clone(&self.issuer),
+                        node,
                     },
-                }),
-            );
-            None
+                    prefix,
+                })
+            }
+            PreparedCallResult::Value(_) | PreparedCallResult::ContentEmission(_) => {
+                PreparedCallNodePayload::SelectedTerminal(prefix)
+            }
         };
+        self.nodes.insert(
+            node,
+            Box::new(PreparedCallNode {
+                site,
+                dependencies,
+                payload,
+            }),
+        );
         self.sites.insert(site, node);
         if let Err(violation) = self.record_insert(node, site) {
             self.sites.remove(&site);
             self.nodes.remove(&node);
             return Err(violation);
         }
-        Ok((result, continuation))
+        Ok(())
     }
 
     fn reconcile_selected_site(
         &self,
         site: CheckedCallSite,
+        node_id: PreparedCallNodeId,
         dependencies: &[PreparedCallContinuationRef],
         prefix: &P,
-        result: &CallableResultSchema,
-        function_type: Option<&TypeKind>,
-    ) -> Result<
-        Option<(CallableResultSchema, Option<PreparedCallContinuationRef>)>,
-        CallConstraintInvariant,
-    >
+    ) -> Result<(), CallConstraintInvariant>
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
-        let Some(node_id) = self.sites.get(&site).copied() else {
-            return Ok(None);
-        };
         let node = self
             .nodes
             .get(&node_id)
@@ -2120,26 +2071,20 @@ impl<P, U> PreparedCallGraph<P, U> {
         if node.site != site || node.dependencies.as_ref() != dependencies {
             return Err(CallConstraintInvariant::PreparedGraphReplayMismatch);
         }
-        match (&node.payload, function_type) {
+        match (&node.payload, prefix.application().result()) {
             (
-                PreparedCallNodePayload::SelectedValue {
-                    prefix: sealed,
-                    result: sealed_result,
-                },
-                None,
-            ) if sealed_result == result && sealed.replay_eq(prefix) => {
-                Ok(Some((result.clone(), None)))
-            }
-            (PreparedCallNodePayload::SelectedContinuation(sealed), Some(function_type))
-                if sealed.prefix.replay_eq(prefix)
-                    && matches!(result, CallableResultSchema::Value(value) if sealed.prefix.application().result_type()? == value)
-                    && sealed.prefix.application().function_type()? == function_type
-                    && Arc::ptr_eq(&sealed.coordinate.issuer, &self.issuer)
-                    && sealed.coordinate.node == node_id =>
-            {
+                PreparedCallNodePayload::SelectedTerminal(sealed),
+                PreparedCallResult::Value(_) | PreparedCallResult::ContentEmission(_),
+            ) if sealed.replay_eq(prefix) => Ok(()),
+            (
+                PreparedCallNodePayload::SelectedContinuation(sealed),
+                PreparedCallResult::Continuation(_),
+            ) if sealed.prefix.replay_eq(prefix) => {
                 let reference = PreparedCallContinuationRef(sealed.coordinate.clone());
-                self.validate_continuation_chain(&reference)?;
-                Ok(Some((result.clone(), Some(reference))))
+                if sealed.coordinate.node != node_id {
+                    return Err(CallConstraintInvariant::PreparedGraphReplayMismatch);
+                }
+                self.validate_continuation_chain(&reference)
             }
             _ => Err(CallConstraintInvariant::PreparedGraphReplayMismatch),
         }
@@ -2286,32 +2231,10 @@ impl<P, U> PreparedCallGraph<P, U> {
         {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
-        let result = application.result_schema()?;
-        let continuation_position = application.continuation_position();
-        match &node.payload {
-            PreparedCallNodePayload::SelectedContinuation(_) => {
-                let function_type = application.function_type()?;
-                if continuation_position.is_none()
-                    || !matches!(&result, CallableResultSchema::Value(value) if function_type == value)
-                    || !matches!(function_type, TypeKind::Function { .. })
-                {
-                    return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
-                }
-            }
-            PreparedCallNodePayload::SelectedValue { result: stored, .. } => {
-                if continuation_position.is_some()
-                    || *stored != result
-                    || matches!(
-                        result,
-                        CallableResultSchema::Value(TypeKind::Function { .. })
-                    )
-                {
-                    return Err(CallConstraintInvariant::InvalidPreparedNodeState);
-                }
-            }
-            PreparedCallNodePayload::Unselected(_) => {
-                return Err(CallConstraintInvariant::InvalidPreparedNodeState);
-            }
+        if application.continuation_position().is_none()
+            || !matches!(application.result(), PreparedCallResult::Continuation(_))
+        {
+            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
         }
         Ok(())
     }

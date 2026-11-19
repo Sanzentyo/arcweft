@@ -24,8 +24,9 @@ use crate::{
 
 use super::{
     CallConstraintInvariant, CallableGroupIndex, CallableParameterCoordinate, CallableResultSchema,
-    CallableSignatureSchema, CallableSignatureSchemaDigest, DetachedPreparedResolvedCallable,
-    PreparedResolvedCallable, PreparedResolvedCallableDetachArena, schema::CallableGroupTransition,
+    CallableSignatureSchema, CallableSignatureSchemaDigest, ContentCallableIdentity,
+    DetachedPreparedResolvedCallable, PreparedResolvedCallable,
+    PreparedResolvedCallableDetachArena, schema::CallableGroupTransition,
 };
 
 /// One selected callable together with the exact group transition and lower
@@ -36,7 +37,16 @@ pub(crate) struct PreparedCallableApplication {
     selected: Arc<PreparedResolvedCallable>,
     transition: CallableGroupTransition,
     solution: Arc<TypeConstraintSolution>,
-    result: CallableResultSchema,
+    result: PreparedCallResult,
+}
+
+/// The selected output determines how this application delivers its result.
+/// An ordinary value of function type does not own a continuation.
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) enum PreparedCallResult {
+    Value(TypeKind),
+    Continuation(TypeKind),
+    ContentEmission(ContentCallableIdentity),
 }
 
 /// The result and solution of the same completed application. The component
@@ -123,11 +133,12 @@ pub(crate) enum PreparedCallableApplicationReplayMismatch {
 
 /// Detached application after stage one. The selected callable is represented
 /// exactly once and the lower solution has crossed into the opaque
-/// final-solution seed; the prepared projection is discarded so final sealing
-/// can recompute it from the frozen checked-catalog row.
+/// final-solution seed. Final sealing validates the same prepared result
+/// against the frozen declaration.
 pub(crate) struct DetachedPreparedCallableApplication {
     selected: DetachedPreparedResolvedCallable,
     solution: super::checked_application::FrozenCallTypeSolutionSeed,
+    result: PreparedCallResult,
 }
 
 impl DetachedPreparedCallableApplication {
@@ -136,8 +147,9 @@ impl DetachedPreparedCallableApplication {
     ) -> (
         DetachedPreparedResolvedCallable,
         super::checked_application::FrozenCallTypeSolutionSeed,
+        PreparedCallResult,
     ) {
-        (self.selected, self.solution)
+        (self.selected, self.solution, self.result)
     }
 }
 
@@ -161,14 +173,16 @@ impl PreparedCallableApplication {
         if schema != selected.schema().semantic_digest() {
             return Err(CallConstraintInvariant::PreparedSchemaMismatch);
         }
-        if transition.continuation_position().is_some()
-            && !matches!(
-                &result,
-                CallableResultSchema::Value(TypeKind::Function { .. })
-            )
-        {
-            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
-        }
+        let result = match (transition.continuation_position(), result) {
+            (None, CallableResultSchema::Value(value)) => PreparedCallResult::Value(value),
+            (None, CallableResultSchema::ContentEmission(operation)) => {
+                PreparedCallResult::ContentEmission(operation)
+            }
+            (Some(_), CallableResultSchema::Value(value @ TypeKind::Function { .. })) => {
+                PreparedCallResult::Continuation(value)
+            }
+            (Some(_), _) => return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch),
+        };
         Ok(Self {
             selected,
             transition,
@@ -205,22 +219,8 @@ impl PreparedCallableApplication {
         self.selected.schema().semantic_digest()
     }
 
-    pub(crate) fn result_schema(&self) -> Result<CallableResultSchema, CallConstraintInvariant> {
-        Ok(self.result.clone())
-    }
-
-    pub(crate) fn result_type(&self) -> Result<&TypeKind, CallConstraintInvariant> {
-        self.result
-            .value_type()
-            .ok_or(CallConstraintInvariant::PreparedFunctionTypeMismatch)
-    }
-
-    pub(crate) fn function_type(&self) -> Result<&TypeKind, CallConstraintInvariant> {
-        let result = self.result_type()?;
-        if !matches!(result, TypeKind::Function { .. }) {
-            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
-        }
-        Ok(result)
+    pub(crate) const fn result(&self) -> &PreparedCallResult {
+        &self.result
     }
 
     pub(crate) fn function_input_specialization_with_control<
@@ -368,7 +368,7 @@ impl PreparedCallableApplication {
             selected,
             transition,
             solution,
-            result: _,
+            result,
         } = self;
         let schema = selected.schema().semantic_digest();
         let selected = arena.detach(selected)?;
@@ -377,6 +377,7 @@ impl PreparedCallableApplication {
             solution: super::checked_application::FrozenCallTypeSolutionSeed::from_prepared(
                 schema, transition, solution,
             ),
+            result,
         })
     }
 }

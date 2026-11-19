@@ -16,9 +16,9 @@ use super::{
     PatternId, PhysicalCandidateArgumentEvaluation, TypeKind,
 };
 use crate::callable::{
-    CheckedCallSite, EnclosingGenericParameterScope, PreparedCallContinuationRef,
-    PreparedCallGraph, PreparedCallGraphCheckpoint, PreparedCallGraphDelta,
-    PreparedCallGraphReplayMismatch, PreparedCallGraphSiteState,
+    CheckedCallSite, EnclosingGenericParameterScope, PreparedCallGraph,
+    PreparedCallGraphCheckpoint, PreparedCallGraphDelta, PreparedCallGraphReplayMismatch,
+    PreparedCallGraphSiteState,
 };
 use crate::{
     checked_rich_text::{PreparedCheckedContentCatalog, PreparedCheckedRichTextCheck},
@@ -1327,13 +1327,7 @@ impl SemanticFactState {
         target: &CandidateFactTransactionAuthority<'_>,
         site: crate::callable::CheckedCallSite,
         prefix: AnalyzerPreparedCallPrefix,
-    ) -> Result<
-        (
-            crate::callable::CallableResultSchema,
-            Option<PreparedCallContinuationRef>,
-        ),
-        CandidateFactTransactionViolation,
-    > {
+    ) -> Result<(), CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
         if !Arc::ptr_eq(&self.issuer, &target.checkpoint.issuer) {
             return Err(CandidateFactTransactionViolation::ForeignCheckpoint);

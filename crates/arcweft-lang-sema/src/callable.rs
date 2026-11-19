@@ -38,8 +38,9 @@ pub use catalog::{
 pub use crate::types::StandardMapFamily;
 pub use crate::types::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub(crate) use application::{
-    CompletedCallResult, DetachedPreparedCallableApplication, PreparedCallableApplication,
-    PreparedCallableApplicationReplayMismatch, PreparedCallableEffectProjection,
+    CompletedCallResult, DetachedPreparedCallableApplication, PreparedCallResult,
+    PreparedCallableApplication, PreparedCallableApplicationReplayMismatch,
+    PreparedCallableEffectProjection,
 };
 pub use arcweft_presentation::fx::FxSourceConstructor;
 pub use arguments::CallableParameterCoordinate;
@@ -80,10 +81,10 @@ pub use checked_application::{
 pub(crate) use checked_application::{
     CheckedCallApplicationCoreSeal, CheckedCallConsumerAdmissionSeal,
     CheckedCallExecutionArgumentSeal, CheckedCallExecutionProjectionSeal,
-    CheckedCallExecutionSlotSeal, CheckedCallResultSeal, CheckedCallSemanticOperandSeal,
-    CheckedCaptureSignatureSeal, PreparedCandidateIndex, ResolvedCallableBaseSeal,
-    ResolvedCallableCheckedDefinition, ResolvedCallableStableIdentitySeal,
-    checked_view_fx_runtime_parameter, is_contextual_capability_type,
+    CheckedCallExecutionSlotSeal, CheckedCallSemanticOperandSeal, CheckedCaptureSignatureSeal,
+    PreparedCandidateIndex, ResolvedCallableBaseSeal, ResolvedCallableCheckedDefinition,
+    ResolvedCallableStableIdentitySeal, checked_view_fx_runtime_parameter,
+    is_contextual_capability_type,
 };
 pub use checked_catalog::{
     CallableEffectContract, CallableInterfaceDigest, CheckedCallableAttachedContentParameter,

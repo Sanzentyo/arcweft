@@ -43,13 +43,13 @@ use super::{
     DialogueCallableId, DropCallableId, EquivalentCallableSource, FloatWidth, FmtParameterId,
     FunctionValueOrdinal, FxSourceConstructor, IntegerMethodId, LanguageCallableFamily,
     LineContextMethodId, LineScheduleCallableId, MathCallableId, OpenArgumentId,
-    OptionConstructorKind, PreparedCaptureIdentityRow, PreparedDialogueCalleeIdentity,
-    PreparedFunctionValueOriginIdentity, PreparedResolvedCallableDefinitionSealInput,
-    PreparedResolvedCallableIdentity, PresentationCallableId, PresentationHandleMethodId,
-    ProbeComparisonOperator, PromotionCallableId, ResolvedCharacterOwner, ResultConstructorKind,
-    SignatureOrigin, StageMethodId, StdFloatCallableId, StdFloatOperation,
-    TypeReceiverInstantiation, VariantPayloadRequirement, VectorDimensions,
-    schema::CallableGroupTransition,
+    OptionConstructorKind, PreparedCallResult, PreparedCaptureIdentityRow,
+    PreparedDialogueCalleeIdentity, PreparedFunctionValueOriginIdentity,
+    PreparedResolvedCallableDefinitionSealInput, PreparedResolvedCallableIdentity,
+    PresentationCallableId, PresentationHandleMethodId, ProbeComparisonOperator,
+    PromotionCallableId, ResolvedCharacterOwner, ResultConstructorKind, SignatureOrigin,
+    StageMethodId, StdFloatCallableId, StdFloatOperation, TypeReceiverInstantiation,
+    VariantPayloadRequirement, VectorDimensions, schema::CallableGroupTransition,
 };
 
 const RESOLVED_CALLABLE_DOMAIN: &[u8] = b"arcweft.lang.resolved-callable.v1\0";
@@ -2870,12 +2870,6 @@ impl CheckedCallResult {
     }
 }
 
-pub(crate) enum CheckedCallResultSeal {
-    Value { prepared: TypeKind },
-    ContentEmission { operation: ContentCallableIdentity },
-    Continuation { prepared: TypeKind },
-}
-
 /// Exact selected operands and fallback policy for the standard `fmt`
 /// callable. The parameter identities are issued by its selected schema; the
 /// sources are copied from that call's C1 execution projection.
@@ -3089,7 +3083,7 @@ pub struct CheckedCallApplication {
 impl CheckedCallApplication {
     pub(crate) fn seal(
         core: Arc<CheckedCallApplicationCore>,
-        expected: CheckedCallResultSeal,
+        expected: PreparedCallResult,
         terminal_effects: &EffectRow,
         inferred_result_schema: Option<&CallableResultSchema>,
         selected_display_witness: Option<CheckedDisplayWitness>,
@@ -3102,7 +3096,7 @@ impl CheckedCallApplication {
             inferred_result_schema,
         )?;
         let result = match (core.continuation_position(), expected) {
-            (None, CheckedCallResultSeal::Value { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
+            (None, PreparedCallResult::Value(prepared)) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
             {
                 if (!core.solution().deferred().is_empty()
                     || !core.solution().deferred_consts().is_empty())
@@ -3116,7 +3110,7 @@ impl CheckedCallApplication {
                 };
                 CheckedCallResult::Value(projected)
             }
-            (None, CheckedCallResultSeal::ContentEmission { operation })
+            (None, PreparedCallResult::ContentEmission(operation))
                 if projected == CallableResultSchema::ContentEmission(operation) =>
             {
                 if !core.solution().deferred().is_empty()
@@ -3126,7 +3120,7 @@ impl CheckedCallApplication {
                 }
                 CheckedCallResult::ContentEmission(operation)
             }
-            (Some(_), CheckedCallResultSeal::Continuation { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
+            (Some(_), PreparedCallResult::Continuation(prepared)) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
             {
                 let CallableResultSchema::Value(projected) = projected else {
                     return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);

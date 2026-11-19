@@ -51,10 +51,11 @@ use super::{
     resolve_call_target,
 };
 use crate::callable::{
-    CallableCandidateId, CallableResultSchema, DialogueCallableId, EnclosingGenericParameterScope,
-    PreparedCallGraphIngress, PreparedCaptureIdentityRow, PreparedFunctionValueOriginEvidence,
-    PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
-    PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQueryError,
+    CallableCandidateId, DialogueCallableId, EnclosingGenericParameterScope,
+    PreparedCallGraphIngress, PreparedCallResult, PreparedCaptureIdentityRow,
+    PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginProducer,
+    PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginPurpose,
+    PreparedFunctionValueOriginQueryError,
     prepare_function_value_origin_query_with_pending_captures, prepare_presentation_callee_id,
 };
 use crate::final_analysis::CandidateFactTransactionViolation;
@@ -2685,10 +2686,7 @@ impl Analyzer<'_, '_, '_> {
                             crate::callable::CheckedAttachedContentApplicationFamily::DialogueLine,
                     },
                 )?;
-                if !matches!(
-                    result,
-                    CallableResultSchema::Value(TypeKind::DialogueLine(_))
-                ) {
+                if !matches!(result, PreparedCallResult::Value(TypeKind::DialogueLine(_))) {
                     return Err(CandidateFactOperationFailure::Expression(
                         AnalyzerExpressionError::fatal(
                             FinalSemanticAnalysisError::WrongPayloadFamily,
@@ -3018,7 +3016,7 @@ impl Analyzer<'_, '_, '_> {
                     )?;
                     if !matches!(
                         result,
-                        CallableResultSchema::ContentEmission(
+                        PreparedCallResult::ContentEmission(
                             crate::callable::ContentCallableIdentity::TextProxyObject { .. },
                         )
                     )
@@ -3034,7 +3032,7 @@ impl Analyzer<'_, '_, '_> {
             )?
             .into_committed()
             .map_err(AnalyzerExpressionError::fact)?;
-        let CallableResultSchema::ContentEmission(callable) = result else {
+        let PreparedCallResult::ContentEmission(callable) = result else {
             return Err(AnalyzerExpressionError::fatal(
                 FinalSemanticAnalysisError::WrongPayloadFamily,
             ));
@@ -3083,12 +3081,7 @@ impl Analyzer<'_, '_, '_> {
                 self.seal_function_result_use(source.owner, &result, &mut resolution.work)
             })
             .transpose()?;
-        let result = selected_transaction.result().map_err(|error| {
-            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                owner: source.owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
-            })
-        })?;
+        let result = selected_transaction.result();
         resolution
             .work
             .record_retained_argument_fact_publications(resolution.argument_count)
@@ -3105,8 +3098,8 @@ impl Analyzer<'_, '_, '_> {
                     return Err(AnalyzerExpressionError::fatal(error).into());
                 }
             };
-        let callee_expression = match &result {
-            CallableResultSchema::Value(value) => {
+        let callee_expression = match result {
+            PreparedCallResult::Value(value) | PreparedCallResult::Continuation(value) => {
                 let callable_effects = self
                     .source_callable_effects(&selected, Some(&outer_projection))
                     .map_err(AnalyzerExpressionError::fatal)?;
@@ -3123,7 +3116,7 @@ impl Analyzer<'_, '_, '_> {
                 )
                 .map_err(AnalyzerExpressionError::fatal)?
             }
-            CallableResultSchema::ContentEmission(_) => {
+            PreparedCallResult::ContentEmission(_) => {
                 if source.expectation.complete_type().is_some() {
                     return Err(CandidateFactOperationFailure::Expression(
                         AnalyzerExpressionError::fatal(
@@ -3195,7 +3188,7 @@ impl Analyzer<'_, '_, '_> {
         // retain their declared rows or project-body edges until the existing
         // callable closure and final execution-effect publication complete them.
         match result {
-            CallableResultSchema::Value(result) => {
+            PreparedCallResult::Value(result) | PreparedCallResult::Continuation(result) => {
                 if specialization
                     .as_ref()
                     .is_some_and(|witness| witness.source_type() != &result)
@@ -3232,7 +3225,7 @@ impl Analyzer<'_, '_, '_> {
                 }
                 Ok(checked)
             }
-            CallableResultSchema::ContentEmission(callable) => {
+            PreparedCallResult::ContentEmission(callable) => {
                 if source.expectation.complete_type().is_some() {
                     return Err(CandidateFactOperationFailure::Expression(
                         AnalyzerExpressionError::fatal(
@@ -3259,7 +3252,7 @@ impl Analyzer<'_, '_, '_> {
         metadata: AnalyzerPreparedCandidateMetadata,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
         site: crate::callable::CheckedCallSite,
-    ) -> Result<CallableResultSchema, CandidateFactOperationFailure> {
+    ) -> Result<PreparedCallResult, CandidateFactOperationFailure> {
         let owner = match site {
             crate::callable::CheckedCallSite::HirCall(owner)
             | crate::callable::CheckedCallSite::AttachedContentApplication {
@@ -3267,28 +3260,7 @@ impl Analyzer<'_, '_, '_> {
                 ..
             } => owner,
         };
-        let validated = transaction
-            .result()
-            .map_err(|error| AnalyzerExpressionError::Call {
-                owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
-            });
-        let result = match validated {
-            Ok(result) => result,
-            Err(error) => {
-                let (_, _, _, _, branch, _) = transaction.into_parts();
-                self.discard_nested_call_prerequisites_from_branch(owner, branch)
-                    .map_err(CandidateFactOperationFailure::Expression)?;
-                self.facts
-                    .discard_candidate_projection(outer_projection)
-                    .map_err(|violation| {
-                        CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fact(
-                            violation,
-                        ))
-                    })?;
-                return Err(CandidateFactOperationFailure::Expression(error));
-            }
-        };
+        let result = transaction.result().clone();
         let (application, consumer, callee_inputs, inputs, sealed_branch, component) =
             transaction.into_parts();
         let mut projections = vec![outer_projection];
@@ -3359,22 +3331,11 @@ impl Analyzer<'_, '_, '_> {
                     )),
                 })
             })?;
-        let (projected_result, _continuation) = self
-            .facts
+        self.facts
             .seal_selected_application(transaction_authority, site, prefix)
             .map_err(|violation| {
                 CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fact(violation))
             })?;
-        if projected_result != result {
-            return Err(CandidateFactOperationFailure::Expression(
-                AnalyzerExpressionError::Call {
-                    owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch,
-                    )),
-                },
-            ));
-        }
         Ok(result)
     }
 
@@ -3434,22 +3395,7 @@ impl Analyzer<'_, '_, '_> {
                 failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
             })
         })?;
-        let result = match transaction.result() {
-            Ok(result) => result,
-            Err(error) => {
-                let (_, _, _, _, branch, _) = transaction.into_parts();
-                self.discard_nested_call_prerequisites_from_branch(owner, branch)
-                    .map_err(CandidateFactOperationFailure::Expression)?;
-                return Err(CandidateFactOperationFailure::Expression(
-                    AnalyzerExpressionError::Call {
-                        owner,
-                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                            error,
-                        )),
-                    },
-                ));
-            }
-        };
+        let result = transaction.result().clone();
         let selected_callable = transaction.selected_shared().clone();
         let direct_effects = self
             .source_call_execution_effects(owner, &transaction)
@@ -3470,7 +3416,7 @@ impl Analyzer<'_, '_, '_> {
             ));
         }
         let callee_expression = match &result {
-            CallableResultSchema::Value(value) => {
+            PreparedCallResult::Value(value) | PreparedCallResult::Continuation(value) => {
                 let callable_effects = self
                     .source_callable_effects(&selected_callable, None)
                     .map_err(|error| {
@@ -3493,7 +3439,7 @@ impl Analyzer<'_, '_, '_> {
                     CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
                 })?
             }
-            CallableResultSchema::ContentEmission(_) => {
+            PreparedCallResult::ContentEmission(_) => {
                 return Err(CandidateFactOperationFailure::Expression(
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily),
                 ));
@@ -3608,23 +3554,13 @@ impl Analyzer<'_, '_, '_> {
                     )),
                 })
             })?;
-        let (sealed_result, _) = self
-            .facts
+        self.facts
             .seal_selected_application(transaction_authority, recipe.site, prefix)
             .map_err(|violation| {
                 CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fact(violation))
             })?;
-        if sealed_result != result {
-            return Err(CandidateFactOperationFailure::Expression(
-                AnalyzerExpressionError::Call {
-                    owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch,
-                    )),
-                },
-            ));
-        }
-        let CallableResultSchema::Value(value) = result else {
+        let (PreparedCallResult::Value(value) | PreparedCallResult::Continuation(value)) = result
+        else {
             return Err(CandidateFactOperationFailure::Expression(
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily),
             ));

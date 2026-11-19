@@ -17,7 +17,7 @@ use crate::{
         CheckedCallContextualReceiverKind, CheckedCallExecutionArgumentSeal,
         CheckedCallExecutionProjectionSeal, CheckedCallExecutionSlotSeal,
         CheckedCallExecutionSource, CheckedCallOperandDestination, CheckedCallReceiverProjection,
-        CheckedCallResultSeal, CheckedCallSemanticOperandSeal, CheckedCallSemanticOperandSource,
+        CheckedCallSemanticOperandSeal, CheckedCallSemanticOperandSource,
         CheckedCallSemanticSelection, CheckedCallSite, CheckedCaptureSignatureSeal, CheckedFmtCall,
         DetachedPreparedCallableApplication, MappedCallArgumentPassing,
         PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
@@ -58,10 +58,7 @@ pub(super) struct DetachedAnalyzerCallNode {
 }
 
 pub(super) enum DetachedAnalyzerCallPayload {
-    Selected {
-        selected: DetachedAnalyzerSelectedCall,
-        result: CheckedCallResultSeal,
-    },
+    Selected(DetachedAnalyzerSelectedCall),
     Unselected(AnalyzerDetachedUnselectedCall),
 }
 
@@ -95,38 +92,12 @@ pub(super) fn detach_prepared_call_graph(
     for node in nodes {
         let (key, site, dependencies, payload) = node.into_parts();
         let payload = match payload {
-            PreparedCallGraphSealPayload::SelectedValue { prefix, result } => {
+            PreparedCallGraphSealPayload::Selected(prefix) => {
                 let (application, record) = prefix.into_parts();
-                let application = application.detach(&mut arena)?;
-                let record = record.into_parts().detach(&mut arena)?;
-                let result = match result {
-                    crate::callable::CallableResultSchema::Value(prepared) => {
-                        CheckedCallResultSeal::Value { prepared }
-                    }
-                    crate::callable::CallableResultSchema::ContentEmission(operation) => {
-                        CheckedCallResultSeal::ContentEmission { operation }
-                    }
-                };
-                DetachedAnalyzerCallPayload::Selected {
-                    selected: DetachedAnalyzerSelectedCall {
-                        application,
-                        record,
-                    },
-                    result,
-                }
-            }
-            PreparedCallGraphSealPayload::SelectedContinuation { prefix } => {
-                let (application, record) = prefix.into_parts();
-                let result = application.function_type()?.clone();
-                let application = application.detach(&mut arena)?;
-                let record = record.into_parts().detach(&mut arena)?;
-                DetachedAnalyzerCallPayload::Selected {
-                    selected: DetachedAnalyzerSelectedCall {
-                        application,
-                        record,
-                    },
-                    result: CheckedCallResultSeal::Continuation { prepared: result },
-                }
+                DetachedAnalyzerCallPayload::Selected(DetachedAnalyzerSelectedCall {
+                    application: application.detach(&mut arena)?,
+                    record: record.into_parts().detach(&mut arena)?,
+                })
             }
             PreparedCallGraphSealPayload::Unselected(value) => {
                 DetachedAnalyzerCallPayload::Unselected(value.detach(&mut arena)?)
@@ -1606,7 +1577,6 @@ fn seal_selected_call(
     location: FinalCallSealLocation,
     site: CheckedCallSite,
     selected: DetachedAnalyzerSelectedCall,
-    expected_result: crate::callable::CheckedCallResultSeal,
     node_dependencies: &[PreparedCallGraphSealNodeKey],
     authority: &PreparedCallGraphSealAuthority,
     definitions: &mut PreparedResolvedCallableDefinitionBatch,
@@ -1628,7 +1598,7 @@ fn seal_selected_call(
             CallConstraintInvariant::PreparedCallSiteMismatch,
         ));
     }
-    let (selected, solution_seed) = application.into_parts();
+    let (selected, solution_seed, prepared_result) = application.into_parts();
     let considered = core::mem::take(&mut record.inventory);
     let inventory = seal_selected_inventory(
         location,
@@ -1717,7 +1687,7 @@ fn seal_selected_call(
     };
     let application = crate::callable::CheckedCallApplication::seal(
         core,
-        expected_result,
+        prepared_result,
         terminal_effects.as_ref(),
         inferred_result_schema,
         selected_display_witness,
@@ -1993,12 +1963,11 @@ impl super::Analyzer<'_, '_, '_> {
             let owner = site.expression();
             let location = FinalCallSealLocation::Site(site);
             let input = match payload {
-                DetachedAnalyzerCallPayload::Selected { selected, result } => {
+                DetachedAnalyzerCallPayload::Selected(selected) => {
                     let sealed = seal_selected_call(
                         location,
                         site,
                         selected,
-                        result,
                         &dependencies,
                         &authority,
                         &mut definitions,

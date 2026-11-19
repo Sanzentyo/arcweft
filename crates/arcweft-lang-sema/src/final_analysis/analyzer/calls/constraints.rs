@@ -21,20 +21,20 @@ use crate::{
         CallConstraintInvariant, CallableArgumentSemanticAction, CallableArgumentSlotIndex,
         CallableCandidateId, CallableConstraintApplication, CallableGroupIndex,
         CallableInstantiation, CallableParameterAdmission, CallableParameterConsumer,
-        CallableParameterCoordinate, CallableRestContainerPolicy, CallableResultSchema,
-        CallableSchemaGenericRole, CallableSemanticValueGuard, CallableValidator,
-        CandidateConstraintDriver, CandidateConstraintSourceContext, CheckedCallArgumentSlotSource,
+        CallableParameterCoordinate, CallableRestContainerPolicy, CallableSchemaGenericRole,
+        CallableSemanticValueGuard, CallableValidator, CandidateConstraintDriver,
+        CandidateConstraintSourceContext, CheckedCallArgumentSlotSource,
         CheckedCallResolverAuthority, CheckedCallSite, CheckedSemanticValueEvidence,
         CompletedCallResult, DetachedPreparedResolvedCallable, EnclosingGenericParameterScope,
         ObservedSemanticValueEvidence, ParameterExpectedTypeProjection, PreparedApplicationResult,
         PreparedArgumentSourceProjection, PreparedCallCalleeConstraintInputs, PreparedCallGraph,
-        PreparedCallInputs, PreparedCallPrefixPayload, PreparedCallSemanticOperand,
-        PreparedCallSemanticOperandOwner, PreparedCallSemanticOperandRole,
-        PreparedCallableApplication, PreparedChildConstraintInitialization,
-        PreparedConstraintInitialization, PreparedDialogueApplicationMetadataArgument,
-        PreparedFunctionValueOriginEvidence, PreparedResolvedCallable,
-        PreparedResolvedCallableDetachArena, PreparedSourceConstraintGroup, TypeConstraintClient,
-        VariantPayloadRequirement,
+        PreparedCallInputs, PreparedCallPrefixPayload, PreparedCallResult,
+        PreparedCallSemanticOperand, PreparedCallSemanticOperandOwner,
+        PreparedCallSemanticOperandRole, PreparedCallableApplication,
+        PreparedChildConstraintInitialization, PreparedConstraintInitialization,
+        PreparedDialogueApplicationMetadataArgument, PreparedFunctionValueOriginEvidence,
+        PreparedResolvedCallable, PreparedResolvedCallableDetachArena,
+        PreparedSourceConstraintGroup, TypeConstraintClient, VariantPayloadRequirement,
     },
     effect_row::prepared::PreparedEffectReadScope,
     types::{
@@ -4415,8 +4415,8 @@ impl PreparedCallApplicationTransaction {
         self.data.application.selected_shared()
     }
 
-    pub(crate) fn result(&self) -> Result<CallableResultSchema, CallConstraintInvariant> {
-        self.data.application.result_schema()
+    pub(crate) fn result(&self) -> &PreparedCallResult {
+        self.data.application.result()
     }
 
     pub(super) fn registry_drop_argument(&self) -> Option<ExprId> {
