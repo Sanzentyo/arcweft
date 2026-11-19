@@ -20271,3 +20271,14 @@ Supersedes [真理値表の畳み込み時点の停止箇所](#ordered-effect-ta
 Semaの全featureユニットは1,994件中1,902 PASS、92既知FAIL。追加1件が通過し、既存IDの合否は前回と一致した。Compilerの統合6 targetは582件中580 PASS、2既知FAILで、全IDの合否が前回と一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。直近のCore 2,379 PASSは[先行Source](#ordered-effect-table-selectors)で取得した。
 
 [検証原本・公開照合](acceptance-evidence/task-shared-import-coordinates.raw.zip) は33 entry、1,132,263 bytes、SHA256 `97901aa41ce2634526aa710f42bfab65a08539a019e8991f0444f9ccc2830dc8`。初回のcheckログ、同一の実装を確認できる両入力manifest、停止位置、再検証結果を保持した。公開したSourceの3ファイルと原本の各entryを照合した。
+
+<a id="shared-least-effect-coefficients"></a>
+## 2026-11-20 — 同じ根から得た最小係数の判定図を共有する
+
+検証基点 `381138f7ef3f15ff6134f6cb536ab48bada4cdd5`、Source `6041a8acde60d041d73314d63b1ccf32084d1f21`。同じ正規根から得た係数は、一度確定した不変の判定図を共有する。入力を固定する際も、共有元の同一性をその計算内の検索に使って制限を一度適用する。係数の走査順は座標順で、判定図のアドレスは出力や走査順に使わない。値が偽になった係数は疎な表の既定値に戻し、最小化対象の座標は保持する。異なる2座標で共有した非定数の判定図が、同じ入力を固定した後も共有され、制限一度分の作業量に収まることを確認した。
+
+Supersedes [入力番号を照合した時点の検証範囲](#verified-import-cell-coordinates)。2 callback のSemaとNative／AWBCでは、共有した局所係数の参照を検証する段階で既定上限4,096に達した。3 callback のSemaでは真理値表から判定図の出力ノードを確保する段階で同上限に達した。判定図の共有と制限の再利用はCoreのテストで確認した。
+
+実Cargo graphから選んだCLIを除く推移的逆依存は8,105件中8,005 PASS、100既知FAIL、18 SKIP。比較元 `c70bc4ab48d9f78f4644a0f31faeefc7048627e0` の全IDで合否が一致し、追加5件が通過した。100件の失敗はSema 92件とCompiler 8件。CLI library／binary 196件と規定の統合6 target 30件、Core全feature library／`effect_decision` 2,380件、Core全feature doctest 81件はすべて通過した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+[検証原本・全失敗ID](acceptance-evidence/task-shared-least-coefficients.raw.zip) は32 entry、1,329,567 bytes、SHA256 `d5d2eb1aa86ab6ce5f386c9698e827d65067d814ca127a526e1f1e0fb757a11b`。各entryの長さとハッシュ、公開Sourceの2ファイルを照合した。記録時の `target` は101,560,361,408 bytes。
