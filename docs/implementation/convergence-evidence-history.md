@@ -19810,3 +19810,16 @@ Sema全featureユニットは1,979件中1,860 PASS、119 FAIL、0 SKIP。比較�
 現状表の長い移行説明と実行結果の重複は、現在の適用範囲と残った失敗経路に置き換えた。以前の実測と公開SHAは上記の各Sourceの章と原本から追跡できる。公開したRust 19 blobを検証時の入力と照合した。検証後の `target` は16,761,453,470 bytes。
 
 [検証原本と公開照合](acceptance-evidence/task-declaration-backed-function-values.raw.zip) は37 entry、789645 bytes、SHA256 `cab08458fb094d5b2cf32b955502a7b8c0302fcf1d45a91f924f8c92d0f46183`。収録原本の長さとハッシュを照合した。
+
+<a id="joint-effect-projection-reuse"></a>
+## 2026-11-19 — 合同推論で確定した作用行を再利用
+
+基点 `2dcfd7f6ebf97e18f3d2c23fb3a608ce596c2ab0`。Source `ba87bbc407fc7aba2eb50efbfb1d1805639473c7`。離散witnessがなく、制約のないグラフ内関数へ正準作用行を渡す場合、最小固定点で照合済みの本体へ実引数を置換する。字句スコープの作用行の移送は所有フレームを確認し、座標が同じ式を再利用する。合同制約の再検査では、同じ元候補のスコープと等式の検査で投影した型を再利用する。既存の作用観測テストで、従来のラベル別の観測と同じ式を返し、計測対象の作業を減らしたことを確認した。
+
+Sema全featureユニットは1,979件中1,860 PASS、119 FAIL、0 SKIP。Compilerの5 targetは550件中541 PASS、9 FAIL、0 SKIP。どちらも先行Source `f242cb5acf57ad77cd282ae9bf87a685920b31b3` と全ID・合否が一致した。Compilerの `flow_wait` は31件中28 PASS、3 FAIL、0 SKIP。別々の型で共有できる再帰本体の関数値を、Nativeと各ステップで公開保存・復元するAWBCで実行した。
+
+`flow_wait` は基点のソースでも全31件を再実行し、全ID・合否が一致した。`project_calls_accept_callbacks_with_fewer_effects_than_the_parameter` と `shared_prefix_restores_independent_callback_effects_in_an_attached_default` は、今回のSourceで元の型制約の右辺を再検査する際に候補の `WorkLimit` に達した。`recursive_body_attached_prefix_restores_before_inferred_default_execution` は、基点を使ったデバッガー観測で `prepare_pending_result_projection` から検査中の宣言本体を再び要求し、`ExpressionCycle` になった。以前の `6cde3621e955a5798b8b1e978205410127c4f610` の31件は29 PASS、2 FAILで、比較すると再帰本体の関数値の待機復元は成功に移行し、上記の作業上限の2件は失敗に移行した。この比較を根拠に現状一覧を更新し、先行の受入と実行結果は各Sourceの履歴に保持した。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時にRustの4 blobを検証した入力と照合した。記録時の `target` は17,625,498,460 bytes。
+
+[テスト全件、デバッガー観測、公開照合](acceptance-evidence/task-joint-effect-projection-reuse.raw.zip) は39 entry、709,890 bytes、SHA256 `2b7d6b95d5e2833b1caea198aa1b1d1a43a9afd3c5aeb06fe25c820741c6146b`。各原本の長さとハッシュを照合した。
