@@ -20251,3 +20251,12 @@ CLI library／binary 196件と規定の統合6 target 30件、Core全feature doc
 Coreの全feature library／`effect_decision` は2,377件すべてPASS。Semaの全featureユニットは1,993件中1,901 PASS、92既知FAIL。Compilerの統合6 targetは582件中580 PASS、2既知FAIL。SemaとCompilerで新規失敗は0。2 callback のSemaとNative／AWBCは効果関係の取り込み時の参照付け替え、3 callback のSemaは判定図の出力ノード確保で既定上限4,096に達した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。最新の全逆依存は[先行Source](#mapped-effect-references-reverse)で実施した。
 
 [検証原本・公開照合](acceptance-evidence/task-reuse-canonical-rebuild.raw.zip) は32 entry、1,188,066 bytes、SHA256 `503c69c195d4b37daec897cc9cd1f10df83a1c415efb5a0d37f90208581d3d74`。公開2ファイルと各entryを照合した。記録時の `target` は101,373,258,454 bytes。
+
+<a id="ordered-effect-table-selectors"></a>
+## 2026-11-20 — 効果の真理値表を参照順で畳み込む
+
+検証基点 `bfe42aad83d5f5d173460e6f3b19378974fd3cf8`、Source `51ca82515d119fb7242e2f37c527af2278f24acf`。真理値表のビットと係数の対応を保ち、定数と後方の参照から畳み込む。係数をマスク順に読み、非一様な表のselector descriptorをビット降順に一度読む。決定図へのselectorの取り込みは係数が異なる枝で行う。3つの変数を循環させた8係数の表で、64通りの評価と正規順と同じ作業量を確認した。一様な表は全係数を順に検査し、selectorは取得しない。
+
+Coreの全feature library／`effect_decision` は2,379件すべてPASS。Semaの全featureユニットは1,993件中1,901 PASS、92既知FAIL。Compilerの統合6 targetは582件中580 PASS、2既知FAIL。前回と全IDの合否が一致した。2 callback のSemaとNative／AWBCは取り込み時の参照付け替え、3 callback のSemaは出力ノード確保で既定上限4,096に達する。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+[検証原本・公開照合](acceptance-evidence/task-ordered-effect-table.raw.zip) は32 entry、1,188,612 bytes、SHA256 `b764e4512d4a81d3ec3e98ed603386a17ef1dcdfa4f31a3d48266dd375abeb7b`。公開2ファイルと各entryを照合した。記録時の `target` は101,403,572,075 bytes。
