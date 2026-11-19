@@ -19742,3 +19742,12 @@ Compilerは5 targetの548件で532成功・16失敗。前回と全IDおよび合
 Sema全feature checkはライブラリのコンパイルに成功した。テスト対象は終了101で前回と同じ794エラー・33警告。初回のコンパイルで検出した借用型の参照渡し3箇所を修正した。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargoの全feature逆依存は起点込みでCore 52、Sema 22 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 4 blobを照合した。`target` は `12895490090` bytes。
 
 [比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-borrowed-replay.raw.zip) は 51 entry、1376550 bytes、SHA256 `a3433b6bb7e50b5c527d8a2ecca79c7bb1aa3af914cf8cf4f2a0361ce506ecc9`。各原本の長さとハッシュを照合した。
+
+<a id="effect-retain-original"></a>
+## 2026-11-19 — 元の作用制約の保持と実入力による確定を分離
+
+基点 `48b41625522e8e2a1fae4b8763f40e1c49063063`。Source `5b08a96a238011b4db25d50a9dcb9251a178c47c` では、元の作用関係を保持して固有の義務を確認する段階と、実入力で閉じるため条件付き最小解をグラフへ結びつける段階を型で分離した。単独候補は準備済みの元の関係を完了処理へ渡す。複数producerの元の関係は引き続き候補の準備時に結びつける。部分適用ではまだ後段のコールバックを受け取っていないため、実入力を要求する現在の完了処理で失敗する。後段が決める作用行とその条件を戻り値の関数型へ保持する経路は未接続。
+
+Compilerの5 target、548件は532成功・16失敗で、前回と全IDおよび合否が一致した。`UnresolvedFuture` は6件。標準Mapは27入力ともNativeと正準符号化を往復したAWBCの実行検証を通過した。Sema全feature checkはライブラリ成功。テスト対象は終了101、既存794エラーと33警告で、コード・ファイル別の増減0。Semaライブラリの全feature Clippy、整形、差分検査、構造ゲートは終了0。Cargo全feature逆依存は起点込みでCore 52、Sema 22 package。Sema単体、全逆依存テスト、workspace全targetのcheck／Clippy、最終受入は未実行。公開後に変更したRust 5 blobを照合した。`target` は12,895,473,525 bytes。
+
+[検証原本と公開照合](acceptance-evidence/task-effect-retain-original.raw.zip) は20 entry、575,087 bytes、SHA256 `bef493fb554d41891d5619f3d95d2abf440e3e13ce71185b9e35d898b961136a`。各原本の長さとハッシュを照合した。
