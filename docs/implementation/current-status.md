@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日 2026-11-20。参照した `main` と `origin/main` は実装Source `803c48be2096fbfbbff14566fa55dae4af444666` で一致した。記録時の差分はこの一覧、検証履歴、原本1件と、先行の未追跡 `%SystemDrive%/`。検証入力と再利用の範囲は履歴・原本に記録する。
+確認日 2026-11-20。参照した `main` と `origin/main` は `689aa86b42451c2d92e45c10a5a298f50f00f76b` で一致した。製品Sourceは `803c48be2096fbfbbff14566fa55dae4af444666`、後続変更は効果参照のfixture。記録時の差分はこの一覧、検証履歴、原本1件と、先行の未追跡 `%SystemDrive%/`。検証入力と再利用の範囲は履歴・原本に記録する。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画を、そのまま現在の残作業へ転記しない。
@@ -133,7 +133,7 @@
 
 | 対象・入力 | 実際の結果 | 適用範囲・原本 |
 |---|---|---|
-| 効果判定／Coreの推移的逆依存 | **全逆依存の直近実測はCLIを除く8,089件で7,983 PASS／106 FAIL／18 SKIP** | Source `630229b2eaa239a143765b2d2d5389ae00ffbb3b` の失敗はSema 94件とCompiler 12件。Compilerの5件は対象6 targetでも再現し、残る7件はこのSourceの変更直前でも再現した。全feature・全targetのworkspace check／ClippyとCore doctest 81件は通過した。現行SourceではCore 2,374件成功、Sema 1,896 PASS／94既知FAIL、Compilerの対象582件は577 PASS／5既知FAIL。SemaとCompilerは前の同範囲の実測と全ID・合否が一致した。workspace check／Clippyと構造ゲートは終了0。現行Sourceの全逆依存は実行中。[全逆依存の実測・失敗ID・再試行](convergence-evidence-history.md#effect-decision-projection-reverse)・[現行の対象実測](convergence-evidence-history.md#literal-effect-decision-composition)。 |
+| 効果判定／Coreの推移的逆依存 | **全逆依存の直近実測はCLIを除く8,089件で7,983 PASS／106 FAIL／18 SKIP** | Source `630229b2eaa239a143765b2d2d5389ae00ffbb3b` の失敗はSema 94件とCompiler 12件。Compilerの5件は対象6 targetでも再現し、残る7件はこのSourceの変更直前でも再現した。全feature・全targetのworkspace check／ClippyとCore doctest 81件は通過した。現行の製品SourceではCore 2,374件成功、fixture修正前のSemaは1,896 PASS／94既知FAIL、Compilerの対象582件は577 PASS／5既知FAIL。workspace check／Clippyと構造ゲートは終了0。層の契約に合わせて効果参照のfixtureを修正し、先行の失敗1件を含む対象2件が通過した。現行の製品Sourceの全逆依存は実行中。[全逆依存の実測・失敗ID・再試行](convergence-evidence-history.md#effect-decision-projection-reverse)・[現行の対象実測](convergence-evidence-history.md#literal-effect-decision-composition)・[fixture修正](convergence-evidence-history.md#prepared-effect-parameter-read-fixture)。 |
 | 共有契約／推移的逆依存matrix | **8,151実行、8,148 PASS／3 FAIL／41 SKIP** | Source `b7fba62b6f2de22bdb40ad08f754fecbc5a2e985`。Coreの逆依存53はRuntimePlanの16を含む。Windows・locked・全feature・既定filter。非CLIは7,438件すべてPASS、18 SKIP。前回の53 packageから3件を追加し、共通IDの変化は無音台詞CLIのFAILからPASSのみ。元Sourceと元EXEの前後差分0。初回の構築失敗は[履歴](convergence-evidence-history.md)に保持。[全逆依存の実測](acceptance-evidence/task-unvoiced-line-lease-reverse.raw.zip)。 |
 | 保持 View の推移的逆依存 | **41パッケージ、5,418実行、5,416 PASS／2 FAIL／41 SKIP** | 検証Source `83d3689000598ad41a27a01593d5a1f4e95af705`。Panel／BoxのNative描画、キー付きText／Button、Scrollの保存復元、標準台詞geometry、旧Surface表の拒否を含む必須8件がPASS。前回のWeb IME生成器とMCP起動待ちも全件実行でPASSへ移行した。当時のCLI 2失敗は同じ原本に保持し、現在の規定CLI結果とは区別する。Sourceと元バイナリ180本の実行前後差分は0。[検証原本](acceptance-evidence/task-retained-surface-reverse.raw.zip)。 |
 | Native MCP／scriptのフレーム進行 | **当該request所有と2行の実進行は修復・検証・公開済み** | Source ceca5955ab15bee03ac4ca020a708f5b12eea1be。初回image／crop／capture frontierと継続step／viewport／sampleを分離し、同じ型付きrequestで進行する。transition時に初回dialogue layer captureを繰り返さず、step_framesの各countが実tickを進める。owner111／111 PASS、公開MCPの2行・画像再要求なし・tick＋1を含む。後続line005の描画・捕捉はcoverage行の受入へ集約する。[実装・失敗原本・全件結果](acceptance-evidence/task-rich-text-property-identity.json)。 |

@@ -20145,3 +20145,10 @@ Coreの全featureユニットと効果判定の統合2,374件はすべて通過�
 純粋Mapの最初の入力は引き続き `CallResolutionFailed` を返す。前節のバイナリで監視を追加すると、候補の初期化中に型制約側の `WorkLimit` へ到達した。現行Sourceでは初期化を通過し、候補のcallbackを準備する段階で同じ上限へ到達する。前節の監視範囲から漏れていた型制約側の分岐を確認できたため、現状一覧の停止理由を訂正した。期待する `log.write` を含む `EffectUpperBoundExceeded` はまだ返っていない。
 
 [検証原本・公開照合](acceptance-evidence/task-callback-literal-composition.raw.zip) は42 entry、1,203,110 bytes、SHA256 `e1beda5fcd38fc2fc24098d808890d7b5b26f9b7182d398535d9995f49364ea3`。各entryの長さとハッシュ、公開した2 Rust blobを照合した。記録時の `target` は100,706,050,931 bytesだった。
+
+<a id="prepared-effect-parameter-read-fixture"></a>
+## 2026-11-20 — 効果参照の読取りテストで確定行を使う
+
+基点 `04a6ac2388c8cfeb24b6b59444acf680e1e177fc`、Source `689aa86b42451c2d92e45c10a5a298f50f00f76b`。先行のSema全feature実行で、効果参照の読取りテストは、未確定の効果行で分岐を組み立てた時点で `Row(UnknownRow)` になっていた。空の確定行を分岐に渡し、未確定行の分岐拒否と、読取り口が未確定行から参照を報告しないことを個別に検査する。宣言本体の準備前後で実引数と置換対象外の参照を得る検査、元の読取りscope、取消、作業上限の検査も通過した。
+
+Semaの全featureから対象2件を実行し、2 PASS、0 FAIL。製品コードの変更はない。先行の全件実行では修正前のバイナリを使用したため、元の失敗をその時点の結果として保持する。[変更前の失敗・修正後の結果・公開照合](acceptance-evidence/task-callback-parameter-read-fixture.raw.zip) は7 entry、22,269 bytes、SHA256 `ad10f23522b8e729d708a00e9746fb03b68ed5fb8169f0a5d21430b505a6554a`。各entryの長さとハッシュ、公開したRust blobを照合した。
