@@ -547,6 +547,7 @@ impl<'a> CanonicalReplay<'a> {
         if !self
             .principal
             .witnesses
+            .relation()
             .and(&expected.not(work)?, work)?
             .is_constant(false)
         {
@@ -566,6 +567,7 @@ impl<'a> CanonicalReplay<'a> {
         if !self
             .principal
             .witnesses
+            .relation()
             .and(&expected.not(work)?, work)?
             .is_constant(false)
         {
@@ -589,6 +591,7 @@ impl<'a> CanonicalReplay<'a> {
         if !self
             .principal
             .witnesses
+            .relation()
             .and(&self.guard(&equal, work)?.not(work)?, work)?
             .is_constant(false)
         {

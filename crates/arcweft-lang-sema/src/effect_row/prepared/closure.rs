@@ -11,7 +11,9 @@ mod canonical;
 mod compilation;
 mod component;
 pub(crate) use component::PreparedEffectActualInputs;
-use component::{CompiledComponent, ComponentCompletion, EffectCoefficients};
+use component::{
+    ClosedEffectWitnesses, CompiledComponent, ComponentCompletion, EffectCoefficients,
+};
 mod imports;
 use imports::ImportedRelations;
 mod observation;
@@ -377,8 +379,7 @@ pub(crate) struct PrincipalEffectClosure {
     layout: Arc<Layout>,
     functions: BTreeMap<u64, EffectRow>,
     coefficients: EffectCoefficients,
-    choices: BTreeSet<Atom>,
-    witnesses: Decision,
+    witnesses: ClosedEffectWitnesses,
     input_bindings: BTreeMap<u64, EffectRow>,
 }
 
@@ -573,8 +574,7 @@ impl PreparedEffectDefinitions {
             satisfiable,
             principal,
             coefficients,
-            choices,
-            witnesses,
+            choice_witnesses,
         } = CompiledComponent::with_inventory(self, &fixed, inventory, &mut work)?
             .complete(&mut work)?;
         if !satisfiable.is_constant(true) {
@@ -583,20 +583,14 @@ impl PreparedEffectDefinitions {
         if !principal.is_constant(true) {
             return Err(PreparedEffectFailure::NonPrincipal);
         }
-        for atom in witnesses.variables() {
-            work.charge(DecisionWork::Visit)?;
-            if !choices.contains(atom) {
-                return Err(PreparedEffectInvariant::UnclosedCell.into());
-            }
-        }
-        if !witnesses.exists(&choices, &mut work)?.is_constant(true) {
-            return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
-        }
+        let witnesses = match choice_witnesses {
+            Some(witnesses) => witnesses.close(&mut work)?,
+            None => ClosedEffectWitnesses::unique(),
+        };
         let closed = PrincipalEffectClosure::reify(
             self.retain(&mut work)?,
             layout,
             coefficients,
-            choices,
             witnesses,
             fixed,
             &mut work,
@@ -613,8 +607,7 @@ impl PrincipalEffectClosure {
         graph: Arc<PreparedEffectDefinitions>,
         layout: Arc<Layout>,
         coefficients: EffectCoefficients,
-        choices: BTreeSet<Atom>,
-        witnesses: Decision,
+        witnesses: ClosedEffectWitnesses,
         input_bindings: BTreeMap<u64, EffectRow>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
@@ -668,7 +661,6 @@ impl PrincipalEffectClosure {
             layout,
             functions,
             coefficients,
-            choices,
             witnesses,
             input_bindings,
         })

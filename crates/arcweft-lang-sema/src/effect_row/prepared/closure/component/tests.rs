@@ -75,7 +75,7 @@ fn conditional_completion_keeps_future_cells_free_in_the_least_function() {
         &finite.and(&future, &mut Work(&mut work)).unwrap()
     );
     assert!(result.coefficients.get(&cell(&f, 1)).is_none());
-    assert_eq!(result.witnesses, finite);
+    assert!(result.choice_witnesses.is_none());
 }
 
 #[test]
@@ -187,9 +187,10 @@ fn conditional_completion_preserves_one_choice_for_the_whole_future_row() {
         .complete(&mut Work(&mut work))
         .unwrap();
     assert_eq!(result.layout.labels.len(), 2);
+    let witnesses = result.choice_witnesses.as_ref().unwrap();
     assert!(
-        result
-            .witnesses
+        witnesses
+            .relation
             .variables()
             .any(|atom| matches!(atom, Atom::Choice(_)))
     );
@@ -200,26 +201,29 @@ fn conditional_completion_preserves_one_choice_for_the_whole_future_row() {
         (false, false, false),
     ] {
         let actual = BTreeMap::from([
-            (cell(&f, 0), Decision::constant(false)),
-            (cell(&f, 1), Decision::constant(left)),
-            (cell(&f, 2), Decision::constant(right)),
+            (cell(&f, 0), false),
+            (cell(&f, 1), left),
+            (cell(&f, 2), right),
         ]);
         assert!(
             result
                 .principal
-                .substitute(&actual, &mut Work(&mut work))
+                .restrict(&actual, &mut Work(&mut work))
                 .unwrap()
                 .is_constant(admitted)
         );
-        assert!(
-            result
-                .witnesses
-                .substitute(&actual, &mut Work(&mut work))
-                .unwrap()
-                .exists(&result.choices, &mut Work(&mut work))
-                .unwrap()
-                .is_constant(admitted)
-        );
+        let specialized = witnesses.specialize(&actual, &mut Work(&mut work)).unwrap();
+        let closed = specialized.close(&mut Work(&mut work));
+        if admitted {
+            assert!(closed.is_ok());
+        } else {
+            assert!(matches!(
+                closed,
+                Err(PreparedEffectFailure::Invariant(
+                    PreparedEffectInvariant::PrincipalConfirmation
+                ))
+            ));
+        }
     }
 }
 

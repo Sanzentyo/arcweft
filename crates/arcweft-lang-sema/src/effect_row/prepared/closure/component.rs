@@ -23,8 +23,66 @@ pub(super) struct ComponentCompletion {
     pub(super) satisfiable: Decision,
     pub(super) principal: Decision,
     pub(super) coefficients: EffectCoefficients,
+    pub(super) choice_witnesses: Option<EffectWitnesses>,
+}
+
+/// A joint relation whose alternatives are quantified once for the whole
+/// effect component.
+pub(super) struct EffectWitnesses {
     pub(super) choices: BTreeSet<Atom>,
-    pub(super) witnesses: Decision,
+    pub(super) relation: Decision,
+}
+
+/// Witnesses that cover a total principal domain after fixing all inputs.
+pub(super) struct ClosedEffectWitnesses(EffectWitnesses);
+
+impl ClosedEffectWitnesses {
+    pub(super) fn unique() -> Self {
+        Self(EffectWitnesses {
+            choices: BTreeSet::new(),
+            relation: Decision::constant(true),
+        })
+    }
+
+    pub(super) fn choices(&self) -> &BTreeSet<Atom> {
+        &self.0.choices
+    }
+
+    pub(super) fn relation(&self) -> &Decision {
+        &self.0.relation
+    }
+}
+
+impl EffectWitnesses {
+    pub(super) fn close<C: DecisionControl>(
+        self,
+        work: &mut Work<'_, C>,
+    ) -> Result<ClosedEffectWitnesses, PreparedEffectFailure<C::Error>> {
+        for atom in self.relation.variables() {
+            work.charge(DecisionWork::Visit)?;
+            if !self.choices.contains(atom) {
+                return Err(PreparedEffectInvariant::UnclosedCell.into());
+            }
+        }
+        if !self.relation.exists(&self.choices, work)?.is_constant(true) {
+            return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+        }
+        Ok(ClosedEffectWitnesses(self))
+    }
+
+    pub(super) fn specialize<C: DecisionControl>(
+        &self,
+        actuals: &BTreeMap<Atom, bool>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        let relation = self.relation.restrict(actuals, work)?;
+        let mut choices = BTreeSet::new();
+        for choice in &self.choices {
+            work.charge(DecisionWork::Node)?;
+            choices.insert(choice.clone());
+        }
+        Ok(Self { choices, relation })
+    }
 }
 
 /// Fixed inputs and the least tuple have disjoint domains. Any cell outside
@@ -338,35 +396,43 @@ impl CompiledComponent {
             .unwrap_or(&relation)
             .complete_conditionally(self.minimized, work)?
             .into_parts();
-        let witnesses = if least.domain().is_empty() || relation.node_count() == 0 {
-            relation
+        let choice_witnesses = if self.choices.is_empty() {
+            None
         } else {
-            least.instantiate(&relation, work)?
+            let relation = if least.domain().is_empty() || relation.node_count() == 0 {
+                relation
+            } else {
+                least.instantiate(&relation, work)?
+            };
+            // Projecting the joint witnesses must give the same principal guard
+            // without choosing a different alternative for each label.
+            if relation.exists(&self.choices, work)? != principal {
+                return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+            }
+            Some(EffectWitnesses {
+                choices: self.choices,
+                relation,
+            })
         };
-        for atom in witnesses.variables() {
+        // With no choices the principal guard already describes exactly where
+        // the completed tuple satisfies the original relation.
+        let (domain, choices) = match &choice_witnesses {
+            Some(witnesses) => (&witnesses.relation, Some(&witnesses.choices)),
+            None => (&principal, None),
+        };
+        for atom in domain.variables() {
             work.charge(DecisionWork::Visit)?;
             let future = self.layout.cells.contains(atom) && !least.domain().contains(atom);
-            if !self.choices.contains(atom) && !future {
+            if !future && !choices.is_some_and(|choices| choices.contains(atom)) {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());
             }
-        }
-        // The guard and all remaining discrete witnesses describe the same
-        // region. A caller may restrict that region, never re-minimize locals.
-        let confirmed = if self.choices.is_empty() {
-            witnesses == principal
-        } else {
-            witnesses.exists(&self.choices, work)? == principal
-        };
-        if !confirmed {
-            return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
         }
         Ok(ComponentCompletion {
             layout: Arc::new(self.layout),
             satisfiable,
             principal,
             coefficients: EffectCoefficients::new(self.fixed, least),
-            choices: self.choices,
-            witnesses,
+            choice_witnesses,
         })
     }
 

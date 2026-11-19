@@ -305,18 +305,26 @@ impl ImportedRelationTable {
                 },
             );
         }
-        let witnesses = self.child.witnesses.restrict(&coefficients, work)?;
+        let witnesses = if let Some(witnesses) = &self.child.choice_witnesses {
+            witnesses.specialize(&coefficients, work)?.close(work)?
+        } else {
+            // The child uses its own coefficient basis. Confirm the guard
+            // against the actual rows transported into that basis.
+            if !self
+                .child
+                .principal
+                .restrict(&coefficients, work)?
+                .is_constant(true)
+            {
+                return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+            }
+            ClosedEffectWitnesses::unique()
+        };
         let completed = self.child.coefficients.specialize(coefficients, work)?;
-        let mut choices = BTreeSet::new();
-        for choice in &self.child.choices {
-            work.charge(DecisionWork::Node)?;
-            choices.insert(choice.clone());
-        }
         Ok(Some(PrincipalEffectClosure::reify(
             Arc::clone(graph),
             Arc::clone(&self.child.layout),
             completed,
-            choices,
             witnesses,
             fixed,
             work,

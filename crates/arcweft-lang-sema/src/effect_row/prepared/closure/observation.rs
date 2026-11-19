@@ -409,14 +409,14 @@ impl PrincipalEffectClosure {
         let compiled = compilation.row(row, &mut work)?;
         let admitted = &compiled.admitted;
         Self::require_whole(admitted)?;
-        let scoped = self.witnesses.and(&context, &mut work)?;
-        let possible = scoped.exists(&self.choices, &mut work)?;
+        let scoped = self.witnesses.relation().and(&context, &mut work)?;
+        let possible = scoped.exists(self.witnesses.choices(), &mut work)?;
         let yes = scoped
             .and(admitted, &mut work)?
-            .exists(&self.choices, &mut work)?;
+            .exists(self.witnesses.choices(), &mut work)?;
         let no = scoped
             .and(&admitted.not(&mut work)?, &mut work)?
-            .exists(&self.choices, &mut work)?;
+            .exists(self.witnesses.choices(), &mut work)?;
         let accepted = scoped.and(admitted, &mut work)?;
         let mut positive = Vec::new();
         let mut negative = Vec::new();
@@ -424,10 +424,10 @@ impl PrincipalEffectClosure {
         for (class, member) in compiled.membership.iter().enumerate() {
             let on = accepted
                 .and(member, &mut work)?
-                .exists(&self.choices, &mut work)?;
+                .exists(self.witnesses.choices(), &mut work)?;
             let off = accepted
                 .and(&member.not(&mut work)?, &mut work)?
-                .exists(&self.choices, &mut work)?;
+                .exists(self.witnesses.choices(), &mut work)?;
             let mixed = on.and(&off, &mut work)?;
             let mixed = if class == 0 {
                 compilation
@@ -478,14 +478,14 @@ impl PrincipalEffectClosure {
         Self::require_whole(&context)?;
         let predicate = compilation.predicate(predicate, &mut work)?;
         Self::require_whole(&predicate)?;
-        let scoped = self.witnesses.and(&context, &mut work)?;
-        let possible = scoped.exists(&self.choices, &mut work)?;
+        let scoped = self.witnesses.relation().and(&context, &mut work)?;
+        let possible = scoped.exists(self.witnesses.choices(), &mut work)?;
         let yes = scoped
             .and(&predicate, &mut work)?
-            .exists(&self.choices, &mut work)?;
+            .exists(self.witnesses.choices(), &mut work)?;
         let no = scoped
             .and(&predicate.not(&mut work)?, &mut work)?
-            .exists(&self.choices, &mut work)?;
+            .exists(self.witnesses.choices(), &mut work)?;
         let ambiguous = yes.and(&no, &mut work)?;
         let exclusive_yes = yes.and(&no.not(&mut work)?, &mut work)?;
         let exclusive_no = no.and(&yes.not(&mut work)?, &mut work)?;
@@ -508,7 +508,7 @@ impl PrincipalEffectClosure {
         row: &PreparedEffectRow,
         control: &mut C,
     ) -> Result<EffectRow, PreparedEffectFailure<C::Error>> {
-        if self.choices.is_empty() && self.witnesses.is_constant(true) {
+        if self.witnesses.choices().is_empty() {
             // Without discrete witnesses to eliminate, each admitted member
             // already describes its own label class. Decode that same row
             // after proving whole-row admission.
