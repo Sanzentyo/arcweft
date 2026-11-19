@@ -20026,3 +20026,5 @@ Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終�
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22 パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。公開した3 Rust blobを照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-attached-callback-closure.raw.zip) は 31 entry、701,676 bytes、SHA256 `75b4cf11960dabd161fb1879c543b9463420b847a605e49d35aeb48316a84292`。各原本の長さとハッシュを照合した。
+
+現状一覧で「共有 prefix の後段 callback 効果」の2件に残っていた作業上限の記述を、同じテストの成功に基づいて訂正した。作業上限に達した公開SHAと失敗条件は[先行の検証](#joint-effect-projection-reuse)と検証原本で追跡できる。
