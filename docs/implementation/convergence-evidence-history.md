@@ -19784,3 +19784,14 @@ fmt、差分検査、構造ゲートは終了0。Cargoの全feature推移的逆�
 以前のlocked Sema全target／全feature check・Clippy、workspace fmtはSource `71e6b6fdede2ce8e5d33cb9ec30e3c03e63747c0` で終了0。非公開代数の22 Rust pathを確認し、Cargo graphのfan-in／outは12／19だった。全workspace全target／全feature check・ClippyとSema doctest 2件はSource `6cde3621e955a5798b8b1e978205410127c4f610` で終了0。[Sema品質と所有レビュー](acceptance-evidence/task-open-source-effect-relations.raw.zip)・[workspaceと構造の原本](acceptance-evidence/task-analyzer-effect-declarations.raw.zip)。
 
 [コンパイル診断、nextestの全結果、公開照合](acceptance-evidence/task-sema-fixtures-recovery.raw.zip) は37 entry、958,028 bytes、SHA256 `afa970c1440e5917e7f9f2537398811de631ea0ef457421cd4f751b8e7ebb67c`。各原本の長さとハッシュを照合した。
+
+<a id="function-specialization-effect-source"></a>
+## 2026-11-19 — 関数値の特殊化が元の作用参照を保持
+
+基点 `0cb358672f863b29b64b827088f06c9c240efdc5`。Source `5c7985a8afc82de5915f10ebb6b60ada041fa9df` は、既知の関数値を特殊化する際に元の型が参照する作用本体を準備する。選択済みのプローブが持つ式、またはその時点で閲覧できた式の元の型を、同じ候補で確定した作用関係と照合する。特殊化した式を元の差分と一緒に公開する。初回の局所検証では候補確定を通過した名前付き関数値が、確定後にソースを再評価して別の作用参照を取得し、`StaleReference` になった。元の観測を使う経路に切り替えて解消した。
+
+Sema全featureの同じユニット1,979件で1,858 PASS、121 FAIL、0 SKIP。名前付きジェネリック関数値、再帰関数値の終端作用、裸の関数値と直接呼出しによる同じ本体の選択、特殊化した宣言の格納を通るライフタイム検査の4件が成功へ移行した。新規失敗は0。残る再帰本体内の失敗では、`call_value_operand` の効果観測が未確定の宣言本体を要求し、検査中の本体を再び検査して `ExpressionCycle` になることをデバッガーで確認した。
+
+Compilerの5 target、548件は539 PASS、9 FAIL、0 SKIPで、Source `01a15d0dbf42104b132ecfab0231f2ac1ec523f7` の全IDと合否に一致した。再帰ジェネリック、共有prefixの独立した後段型、後段コールバックを含むNative／AWBCテストを実行した。Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全feature逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、最終受入は今回未実行。公開したRust 7 blobを照合した。`target` は15,032,175,137 bytes。
+
+[テスト全件、デバッガーの観測、公開照合](acceptance-evidence/task-function-specialization-effect-source.raw.zip) は29 entry、804,125 bytes、SHA256 `18f03c32752b6e3d2224b4bebade4a33268fe8f456f06374c5a0af272cf1d537`。各原本の長さとハッシュを照合した。
