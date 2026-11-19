@@ -459,10 +459,11 @@ fn source_equation_operands_keep_their_receipts_when_closed_and_transported() {
     let receipt = before.source_receipt().unwrap().clone();
     let original = before.original_context().clone();
     let effects = pure_component_effects(&path, &mut graph, &mut context);
-    let (closed, _) = path
+    let trace = path
         .lineage
         .close_trace(&path, &mut effects.projection(), graph.read(), &mut context)
         .unwrap();
+    let closed = trace.sources();
     let equation = &path.equations[0];
     assert!(equation.actual.source_receipt().unwrap().matches(&receipt));
     assert_eq!(equation.actual.original_context(), &original);
@@ -662,10 +663,11 @@ fn a_child_result_equation_retains_the_selected_port_after_closure_and_transport
     assert_eq!(before.result_origin().unwrap().application(), child_id);
     assert!(before.source_receipt().unwrap().matches(&receipt));
     let effects = pure_component_effects(&path, &mut graph, &mut context);
-    let (closed, _) = path
+    let trace = path
         .lineage
         .close_trace(&path, &mut effects.projection(), graph.read(), &mut context)
         .unwrap();
+    let closed = trace.sources();
     assert!(Arc::ptr_eq(
         &recorded_value,
         closed.last().unwrap().observed_result().unwrap()

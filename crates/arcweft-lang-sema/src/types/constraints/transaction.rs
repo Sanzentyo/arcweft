@@ -34,10 +34,10 @@ use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 mod completed_component;
 mod materialization;
 mod original_effects;
+use materialization::MaterializationInput;
 pub(crate) use materialization::{
     ConstraintMaterialization, RetainedSourcePreparations, SourcePreparationTakeError,
 };
-use materialization::{MaterializationInput, SourcePreparation};
 mod operand;
 pub(in crate::types::constraints) use operand::ConstraintAliasStep;
 pub(in crate::types::constraints) use operand::{
@@ -2908,32 +2908,6 @@ fn unique_request_ordinal<D: ConstraintDomain>(
             .map_err(|_| TypeConstraintError::Abort(TypeConstraintAbort::ArithmeticOverflow))?,
     ))
 }
-impl<D: ConstraintDomain> ConstraintSourceLineage<D> {
-    fn close_trace<A: TypeConstraintAccounting, L>(
-        &self,
-        branch: &ConstraintInferenceBranch<D, L>,
-        projection: &mut ConstraintEffectProjection<D>,
-        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(Box<[ClosedConstraintProbe<D>]>, Box<[SourcePreparation<D>]>), TypeConstraintError>
-    {
-        projection.owner().require_branch(branch)?;
-        let mut closed = Vec::new();
-        let mut preparations = Vec::new();
-        for probe in &self.probe_trace {
-            context.enter_node()?;
-            context.enter_node()?;
-            closed.push(probe.clone().close(branch, projection, graph, context)?);
-            context.enter_node()?;
-            preparations.push(SourcePreparation::new(
-                probe.source(),
-                Arc::clone(&probe.branch),
-            ));
-        }
-        Ok((closed.into_boxed_slice(), preparations.into_boxed_slice()))
-    }
-}
-
 fn path_correlation_cmp<D: ConstraintDomain>(
     left: &ConstraintPath<D>,
     right: &ConstraintPath<D>,

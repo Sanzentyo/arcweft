@@ -1,5 +1,6 @@
 //! Callback tickets and sealed results for already canonical components.
 
+use super::super::{CompletedConstraintApplication, CompletedConstraintComponent};
 use super::*;
 
 /// The original callback close remains available while its canonical source
@@ -24,22 +25,12 @@ pub(crate) struct SourcePreparationTakeFailure<D: ConstraintDomain, E> {
     pub(crate) retained: RetainedSourcePreparations<D>,
 }
 
-pub(super) struct SourcePreparation<D: ConstraintDomain> {
+struct SourcePreparation<D: ConstraintDomain> {
     source: ConstraintSourceId<D::Source>,
     observation: Arc<SourceProbeObservation<D>>,
 }
 
 impl<D: ConstraintDomain> SourcePreparation<D> {
-    pub(super) fn new(
-        source: ConstraintSourceId<D::Source>,
-        observation: Arc<SourceProbeObservation<D>>,
-    ) -> Self {
-        Self {
-            source,
-            observation,
-        }
-    }
-
     fn preparation(&self) -> &D::ProbePreparation {
         self.observation
             .preparation()
@@ -52,29 +43,67 @@ pub(super) struct MaterializationInput<D: ConstraintDomain> {
     pub(super) preparations: RetainedSourcePreparations<D>,
 }
 
-impl<D: ConstraintDomain> MaterializationInput<D> {
-    pub(super) fn new<A: TypeConstraintAccounting>(
-        component: super::super::CompletedConstraintComponent<D>,
-        rows: Box<[SourcePreparation<D>]>,
+/// A closed source and its callback preparation are appended by the same
+/// original probe. Only the semantic trace survives component publication.
+pub(super) struct ClosedSourceMaterialization<D: ConstraintDomain> {
+    sources: Box<[ClosedConstraintProbe<D>]>,
+    preparations: RetainedSourcePreparations<D>,
+}
+
+impl<D: ConstraintDomain> ConstraintSourceLineage<D> {
+    pub(super) fn close_trace<A: TypeConstraintAccounting, L>(
+        &self,
+        branch: &ConstraintInferenceBranch<D, L>,
+        projection: &mut ConstraintEffectProjection<D>,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Self, TypeConstraintError> {
-        if component.sources().all().len() != rows.len() {
-            return Err(protocol_error(
-                TypeConstraintSourceProtocolInvariant::Outcome,
-            ));
-        }
-        for (source, row) in component.sources().all().iter().zip(&rows) {
+    ) -> Result<ClosedSourceMaterialization<D>, TypeConstraintError> {
+        projection.owner().require_branch(branch)?;
+        let mut sources = Vec::new();
+        let mut rows = Vec::new();
+        for probe in &self.probe_trace {
             context.enter_node()?;
-            if source.source() != row.source {
-                return Err(protocol_error(
-                    TypeConstraintSourceProtocolInvariant::WrongSource,
-                ));
-            }
+            context.enter_node()?;
+            let closed = probe.clone().close(branch, projection, graph, context)?;
+            context.enter_node()?;
+            rows.push(SourcePreparation {
+                source: closed.source(),
+                observation: Arc::clone(&probe.branch),
+            });
+            sources.push(closed);
         }
-        Ok(Self {
-            component,
-            preparations: RetainedSourcePreparations { rows },
+        Ok(ClosedSourceMaterialization {
+            sources: sources.into_boxed_slice(),
+            preparations: RetainedSourcePreparations {
+                rows: rows.into_boxed_slice(),
+            },
         })
+    }
+}
+
+impl<D: ConstraintDomain> ClosedSourceMaterialization<D> {
+    pub(super) fn sources(&self) -> &[ClosedConstraintProbe<D>] {
+        &self.sources
+    }
+
+    pub(super) fn finish(
+        self,
+        selected: ConstraintApplicationId,
+        selected_domain: D::Application,
+        completed: BTreeMap<
+            D::Application,
+            CompletedConstraintApplication<D::Application, D::Projection>,
+        >,
+        applications: Arc<ConstraintApplicationInventory<D>>,
+    ) -> MaterializationInput<D> {
+        MaterializationInput {
+            component: CompletedConstraintComponent::new(
+                selected_domain,
+                completed,
+                ClosedConstraintSourceTrace::new(selected, applications, self.sources),
+            ),
+            preparations: self.preparations,
+        }
     }
 }
 

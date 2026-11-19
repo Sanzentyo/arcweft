@@ -190,11 +190,11 @@ fn canonical_source_ports_share_one_completion_without_rewriting_original_c() {
         value_expected: Some(context.fixture_operand(expected_function)),
         actual: actual_operand,
     });
-    let (sources, _) = path
+    let trace = path
         .lineage
         .close_trace(&path, &mut effects.projection(), graph.read(), &mut context)
         .unwrap();
-    let closed = &sources[0];
+    let closed = &trace.sources()[0];
     closed.require_completion(&effects).unwrap();
     assert!(std::ptr::eq(
         path.lineage.probe_trace[0].actual.value(),
