@@ -20304,3 +20304,14 @@ Supersedes [実引数の直接適用時点の停止位置](#direct-future-effect
 実Cargo graphでSemaの逆依存22パッケージを対象に選び、CLIを除く4,305件で4,205 PASS、100既知FAIL、1 SKIP。先行のCore全逆依存結果を同じパッケージに絞った4,304件と全IDの合否が一致し、追加1件が通過した。CLI library／binary 196件、規定の統合6 target 30件はすべてPASS。Semaの全featureユニット1,995件は1,903 PASS／92既知FAIL、Compilerの統合6 targetは582件で580 PASS／2既知FAIL。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
 
 [検証原本・全失敗ID](acceptance-evidence/task-validate-effect-component-inputs.raw.zip) は38 entry、1,342,516 bytes、SHA256 `44360421a8674fba1257d7bc51dfa55b09a9eb0c5153ec758d5ff72bc20c3258`。各entryの長さとハッシュ、公開Sourceの11ファイルを照合した。記録時の `target` は101,589,953,992 bytes。
+
+<a id="literal-and-equality-effect-decisions"></a>
+## 2026-11-20 — 真理値表の枝と効果の等値判定を直接組み立てる
+
+検証基点 `d3b88614c20046f3ba827ce81484e29a2f6fa1db`、Source `3eb39ac93efeaa44e8fd6accbb413f93cf0591cc`。選択リテラルが両方の係数の参照より前に来る枝は、係数と極性から直接組み立てる。同じ結果の枝は構築済みノードを共有する。3変数・8係数の表で、正規順と循環順が同じ結果になり、双方71作業単位で完了したことを確認した。否定リテラルや、選択変数を係数も参照する場合も確認した。Semaの等値比較は共有の判定図演算を使い、真との等値には相手の判定図を複製する作業量だけを計上する。
+
+Supersedes [効果入力の参照を集約した時点の停止位置](#validated-effect-component-inputs)。2 callback のSemaで先行の失敗式50は関数内の再帰分岐だった。現行Sourceはそこを通過し、`main` の `swap(report, increment, 1i64)`（式75）で効果関係を取り込む際に既定上限4,096に達した。Native／AWBCの別入力は型検査で同じ上限に達し、失敗を報告する式IDが51から76に移った。3 callback のSemaは真理値表の出力を作り終え、効果の包含判定で右辺の判定図を取り込む段階に進んだ。外側のラベルの存在条件を一括量化する試行では、2 callback の停止が再帰分岐に戻ったため、その試行は取り除いた。
+
+実Cargo graphから選んだCLIを除くCoreの推移的逆依存は8,109件中8,009 PASS、100既知FAIL、18 SKIP。比較元 `6041a8acde60d041d73314d63b1ccf32084d1f21` の全IDで合否が一致し、追加4件が通過した。CLI library／binary 196件と規定の統合6 target 30件、Core全feature doctest 81件はすべてPASS。Core全featureのlibraryと `effect_decision` は2,383件すべて通過し、試行と公開Sourceで対象のCoreファイル2本のハッシュが一致した事実を照合して再利用した。Sema全featureユニットの1,995件は1,903 PASS／92既知FAILで、既存IDの合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+初回の逆依存ビルドはWindowsのページングファイル不足（OSエラー1455）で終了101。同じSourceと引数で失敗した範囲を再試行し、上記結果を取得した。[検証原本・全失敗ID](acceptance-evidence/task-literal-and-equality-effect-decisions.raw.zip) は62 entry、1,818,496 bytes、SHA256 `48ed246e3034c4812744b1dffbe1c768a42b9563697190e5075da20e3e0f6374`。各entryの長さとハッシュ、公開Sourceの4ファイルを照合した。記録時の `target` は101,592,452,253 bytes。
