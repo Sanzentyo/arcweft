@@ -8,12 +8,18 @@ mod tests;
 
 pub(super) struct ImportedFunctionTable {
     pub(super) relation: Arc<ImportedRelationTable>,
-    membership: Box<[Box<[Decision]>]>,
+    membership: ImportedMembership,
+}
+
+enum ImportedMembership {
+    Child(u64),
+    Rebound(Box<[Box<[Decision]>]>),
 }
 
 pub(super) struct ImportedRelationTable {
     pub(super) child: Arc<ComponentCompletion>,
-    principal: Decision,
+    // Absent when all receiving input cells keep the child's coordinates.
+    rebound_principal: Option<Decision>,
 }
 
 #[derive(Default)]
@@ -150,6 +156,18 @@ impl ImportedEffectRelation {
             self.bind_cell(cell).map_err(Into::into)
         })
     }
+
+    fn validate_child_cells<C: DecisionControl>(
+        &self,
+        decision: &Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        for cell in decision.variables() {
+            work.charge(DecisionWork::Visit)?;
+            self.bind_cell(cell)?;
+        }
+        Ok(())
+    }
 }
 
 fn attach<C: DecisionControl>(
@@ -168,15 +186,22 @@ fn attach<C: DecisionControl>(
     }
     let child =
         cached(cache, &imported.completion, work)?.ok_or(PreparedEffectInvariant::UnclosedCell)?;
-    for actual in imported.inputs.values() {
+    let mut same_coordinates = true;
+    for (&original, actual) in &imported.inputs {
         work.charge(DecisionWork::Visit)?;
         graph.function(actual)?;
+        same_coordinates &= actual.reference().ordinal == original;
     }
-    let principal = imported.bind_decision(&child.principal, work)?;
+    let rebound_principal = if same_coordinates {
+        imported.validate_child_cells(&child.principal, work)?;
+        None
+    } else {
+        Some(imported.bind_decision(&child.principal, work)?)
+    };
     work.charge(DecisionWork::Node)?;
     let table = Arc::new(ImportedRelationTable {
         child: Arc::clone(child),
-        principal,
+        rebound_principal,
     });
     work.charge(DecisionWork::Node)?;
     tables
@@ -200,6 +225,8 @@ fn assemble_selected<C: DecisionControl>(
         if let Function::Imported(imported) = function.as_ref() {
             let relation = attach(graph, &mut result, &imported.relation, cache, work)?;
             let selected = imported.selected.reference().ordinal;
+            let is_input = imported.definition().is_input();
+            let borrow_coefficients = relation.rebound_principal.is_none() && !is_input;
             let mut membership = Vec::new();
             for class in 0..relation.child.layout.view().classes() {
                 let mut cells = Vec::new();
@@ -210,8 +237,13 @@ fn assemble_selected<C: DecisionControl>(
                         mask,
                     };
                     let value = if let Some(value) = relation.child.coefficients.get(&cell) {
+                        if borrow_coefficients {
+                            work.charge(DecisionWork::Visit)?;
+                            imported.relation.validate_child_cells(value, work)?;
+                            continue;
+                        }
                         imported.relation.bind_decision(value, work)?
-                    } else if imported.definition().is_input() {
+                    } else if is_input {
                         Decision::variable(imported.relation.bind_cell(&cell)?, work)?
                     } else {
                         return Err(PreparedEffectInvariant::UnclosedCell.into());
@@ -219,14 +251,21 @@ fn assemble_selected<C: DecisionControl>(
                     work.charge(DecisionWork::Node)?;
                     cells.push(value);
                 }
-                membership.push(cells.into_boxed_slice());
+                if !borrow_coefficients {
+                    membership.push(cells.into_boxed_slice());
+                }
             }
+            let membership = if borrow_coefficients {
+                ImportedMembership::Child(selected)
+            } else {
+                ImportedMembership::Rebound(membership.into_boxed_slice())
+            };
             work.charge(DecisionWork::Node)?;
             result.functions.insert(
                 id,
                 ImportedFunctionTable {
                     relation,
-                    membership: membership.into_boxed_slice(),
+                    membership,
                 },
             );
         }
@@ -336,7 +375,9 @@ impl ImportedRelationTable {
     }
 
     pub(super) fn principal(&self) -> &Decision {
-        &self.principal
+        self.rebound_principal
+            .as_ref()
+            .unwrap_or(&self.child.principal)
     }
 }
 
@@ -346,9 +387,18 @@ impl ImportedFunctionTable {
         class: usize,
         mask: usize,
     ) -> Result<&Decision, PreparedEffectInvariant> {
-        self.membership
-            .get(class)
-            .and_then(|coefficients| coefficients.get(mask))
-            .ok_or(PreparedEffectInvariant::UnclosedCell)
+        match &self.membership {
+            ImportedMembership::Child(scheme) => {
+                self.relation.child.coefficients.get(&Atom::Cell {
+                    scheme: *scheme,
+                    class,
+                    mask,
+                })
+            }
+            ImportedMembership::Rebound(membership) => membership
+                .get(class)
+                .and_then(|coefficients| coefficients.get(mask)),
+        }
+        .ok_or(PreparedEffectInvariant::UnclosedCell)
     }
 }

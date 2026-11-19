@@ -168,6 +168,75 @@ fn output_and_principal_share_one_attachment_and_one_lowered_table() {
 }
 
 #[test]
+fn original_cell_coordinates_share_the_guard_and_local_coefficients() {
+    let mut source = PreparedEffectGraph::default();
+    let future = unknown(&mut source, true, vec![]);
+    let local = unknown(&mut source, false, vec![]);
+    let actual_row = call(&mut source, &future);
+    let local_row = call(&mut source, &local);
+    equation(&mut source, local_row, actual_row.clone(), vec![]);
+    let permitted = literal(&["fs.read"]);
+    let bound = source
+        .relate(
+            PreparedEffectRelation::AdmittedSubset,
+            actual_row,
+            permitted.clone(),
+            &mut budget(),
+        )
+        .unwrap();
+    require(&mut source, bound);
+    let source = source.complete_scoped(&mut budget()).unwrap();
+
+    for displaced in [false, true] {
+        let mut parent = PreparedEffectGraph::default();
+        if displaced {
+            unknown(&mut parent, false, vec![]);
+        }
+        let actual = unknown(&mut parent, false, vec![]);
+        let relation = parent
+            .import_scoped_relation(&source, &[(&future, &actual)], &mut budget())
+            .unwrap();
+        let principal = parent.imported_principal(&relation, &mut budget()).unwrap();
+        require(&mut parent, principal);
+        let output = parent
+            .import_relation_function(&relation, &source.unknown(&local).unwrap(), &mut budget())
+            .unwrap();
+        let output_row = parent
+            .imported_application(&output, vec![], &mut budget())
+            .unwrap();
+        let actual_row = call(&mut parent, &actual);
+        equation(&mut parent, actual_row, permitted.clone(), vec![]);
+        let closed = parent.solve_principal(&mut budget()).unwrap();
+        assert_eq!(
+            closed.resolve_row(&output_row, &mut budget()).unwrap(),
+            EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap()),
+        );
+        let table = &closed.layout.imports.functions[&id(&output)];
+        assert!(table.relation.principal().node_count() > 0);
+        assert_eq!(
+            std::ptr::eq(table.relation.principal(), &table.relation.child.principal),
+            !displaced,
+        );
+        let original_cell = Atom::Cell {
+            scheme: FunctionRef::Unknown(local.clone()).reference().ordinal,
+            class: 1,
+            mask: 0,
+        };
+        let original = table
+            .relation
+            .child
+            .coefficients
+            .get(&original_cell)
+            .unwrap();
+        assert!(original.node_count() > 0);
+        assert_eq!(
+            std::ptr::eq(table.coefficient(1, 0).unwrap(), original),
+            !displaced
+        );
+    }
+}
+
+#[test]
 fn foreign_stale_and_differently_fixed_attachments_cannot_issue_results() {
     let (source, x, future) = child_equality();
     let mut parent = PreparedEffectGraph::default();

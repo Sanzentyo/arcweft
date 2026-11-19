@@ -504,7 +504,10 @@ fn independent_replay_rejects_a_corrupted_child_lowering_even_if_the_parent_agre
         },
         true,
     );
-    table.membership[1][0] = Decision::constant(true);
+    let ImportedMembership::Rebound(membership) = &mut table.membership else {
+        panic!("the actual input moves the child's Future cell");
+    };
+    membership[1][0] = Decision::constant(true);
     imports
         .relations
         .push((origin, Arc::clone(&table.relation)));
