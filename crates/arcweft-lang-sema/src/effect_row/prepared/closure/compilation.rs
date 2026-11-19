@@ -14,7 +14,7 @@ pub(super) enum ApplicationCells<'a> {
     Variables,
     Solved {
         basis: ClassLayout<'a>,
-        coefficients: &'a EffectCoefficients,
+        coefficients: &'a ClosedEffectCoefficients,
     },
 }
 
@@ -28,17 +28,13 @@ impl<'a> ApplicationCells<'a> {
 
     fn complete_import<C: DecisionControl>(
         self,
-        decision: Decision,
+        decision: &Decision,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
         match self {
-            Self::Variables => Ok(decision),
+            Self::Variables => work.copy_decision(decision),
             Self::Solved { coefficients, .. } => {
-                let value = coefficients.substitute(&decision, work)?;
-                if !value.is_constant(false) && !value.is_constant(true) {
-                    return Err(PreparedEffectInvariant::UnclosedCell.into());
-                }
-                Ok(value)
+                Ok(Decision::constant(coefficients.evaluate(decision, work)?))
             }
         }
     }
@@ -220,7 +216,7 @@ impl<'a> Compilation<'a> {
             let mut frontier = Vec::new();
             for mask in 0..table {
                 let coefficient = if let Some(imported) = imported {
-                    let value = imported.coefficient(basis, basis_class, mask, work)?;
+                    let value = imported.coefficient(basis_class, mask)?;
                     self.cells.complete_import(value, work)?
                 } else {
                     let cell = Atom::Cell {
@@ -231,13 +227,8 @@ impl<'a> Compilation<'a> {
                     match self.cells {
                         ApplicationCells::Variables => Decision::variable(cell, work)?,
                         ApplicationCells::Solved { coefficients, .. } => {
-                            let value = coefficients
-                                .get(&cell)
-                                .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-                            if !value.is_constant(false) && !value.is_constant(true) {
-                                return Err(PreparedEffectInvariant::UnclosedCell.into());
-                            }
-                            work.copy_decision(value)?
+                            work.charge(DecisionWork::Visit)?;
+                            Decision::constant(coefficients.value(&cell)?)
                         }
                     }
                 };
@@ -328,8 +319,10 @@ impl<'a> Compilation<'a> {
                             .functions
                             .get(&function.reference().ordinal)
                             .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-                        let guard = imported.principal(self.cells.basis(self.layout), work)?;
-                        admitted = admitted.and(&self.cells.complete_import(guard, work)?, work)?;
+                        let guard = self
+                            .cells
+                            .complete_import(imported.relation.principal(), work)?;
+                        admitted = admitted.and(&guard, work)?;
                     }
                     CompiledRow {
                         membership: self.application(
@@ -571,11 +564,7 @@ impl<'a> Compilation<'a> {
             let term = self.graph.predicates[&id].as_ref();
             let value = match term {
                 PredicateTerm::ImportedPrincipal(imported) => {
-                    let guard = self
-                        .layout
-                        .imports
-                        .relation(imported, work)?
-                        .principal(self.cells.basis(self.layout), work)?;
+                    let guard = self.layout.imports.relation(imported, work)?.principal();
                     self.cells.complete_import(guard, work)?
                 }
                 PredicateTerm::Substitution {

@@ -210,9 +210,11 @@ impl<'a> CanonicalReplay<'a> {
                             .functions
                             .get(&function.reference().ordinal)
                             .ok_or(PreparedEffectInvariant::PrincipalConfirmation)?;
-                        let guard = imported.principal(self.principal.layout.view(), work)?;
-                        let guard = self.principal.coefficients.substitute(&guard, work)?;
-                        admitted = admitted.and(&guard, work)?;
+                        let admitted_by_import = self
+                            .principal
+                            .coefficients
+                            .evaluate(imported.relation.principal(), work)?;
+                        admitted = admitted.and(&Decision::constant(admitted_by_import), work)?;
                     }
                     let formula = self
                         .formula(
@@ -467,8 +469,8 @@ impl<'a> CanonicalReplay<'a> {
                         .layout
                         .imports
                         .relation(imported, work)?
-                        .principal(self.principal.layout.view(), work)?;
-                    self.principal.coefficients.substitute(&guard, work)?
+                        .principal();
+                    Decision::constant(self.principal.coefficients.evaluate(guard, work)?)
                 }
                 PredicateTerm::Substitution {
                     predicate,

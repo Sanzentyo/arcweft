@@ -595,7 +595,7 @@ impl ObservationSupport {
             labels: BTreeSet::new(),
             parameters: BTreeSet::new(),
         };
-        for label in &base.labels {
+        for label in base.labels.iter() {
             work.charge(DecisionWork::Node)?;
             support.labels.insert(label.clone());
         }

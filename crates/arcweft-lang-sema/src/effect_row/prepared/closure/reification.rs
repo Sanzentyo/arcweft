@@ -84,26 +84,18 @@ impl PrincipalEffectClosure {
                             },
                             work,
                         )?;
-                    let imported;
                     let least = if matches!(function.as_ref(), Function::Imported(_)) {
-                        let coefficient = self.layout.imports.functions[&id].coefficient(
-                            self.layout.view(),
+                        let coefficient =
+                            self.layout.imports.functions[&id].coefficient(class, mask)?;
+                        self.coefficients.evaluate(coefficient, work)?
+                    } else {
+                        self.coefficients.value(&Atom::Cell {
+                            scheme: id,
                             class,
                             mask,
-                            work,
-                        )?;
-                        imported = self.coefficients.substitute(&coefficient, work)?;
-                        &imported
-                    } else {
-                        self.coefficients
-                            .get(&Atom::Cell {
-                                scheme: id,
-                                class,
-                                mask,
-                            })
-                            .ok_or(PreparedEffectInvariant::UnclosedCell)?
+                        })?
                     };
-                    if !least.is_constant(value) {
+                    if least != value {
                         return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
                     }
                 }

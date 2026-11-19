@@ -31,6 +31,45 @@ fn truth_table(decision: &EffectDecision<u8>, variables: u8) -> Vec<bool> {
 }
 
 #[test]
+fn fallible_evaluation_loads_only_admitted_references_on_the_selected_path() {
+    let decision = atom(0).and(&atom(1), &mut Meter::default()).unwrap();
+    let mut lookups = Vec::new();
+    let mut lookup = |&reference| {
+        lookups.push(reference);
+        if reference == 0 {
+            Ok(false)
+        } else {
+            Err((0, 0))
+        }
+    };
+    let mut exhausted = Meter {
+        limit: Some(0),
+        ..Meter::default()
+    };
+    assert_eq!(
+        decision.try_evaluate_with_control(&mut lookup, &mut exhausted),
+        Err((1, 0))
+    );
+    assert!(
+        !decision
+            .try_evaluate_with_control(lookup, &mut Meter::default())
+            .unwrap()
+    );
+    assert_eq!(lookups, [0]);
+    assert_eq!(
+        decision.try_evaluate_with_control(
+            |&reference| if reference == 0 {
+                Ok(true)
+            } else {
+                Err((0, 0))
+            },
+            &mut Meter::default(),
+        ),
+        Err((0, 0))
+    );
+}
+
+#[test]
 fn boolean_construction_is_extensional_and_canonical() {
     let (a, b, c) = (atom(0), atom(1), atom(2));
     let mut meter = Meter::default();

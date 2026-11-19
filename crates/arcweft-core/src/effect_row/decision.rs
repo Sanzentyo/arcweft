@@ -388,8 +388,11 @@ impl<V: Clone + Ord> EffectDecision<V> {
     }
 
     pub(super) fn evaluate(&self, mut value: impl FnMut(&V) -> bool) -> bool {
-        self.try_evaluate(&mut value, || Ok::<_, std::convert::Infallible>(()))
-            .unwrap_or_else(|never| match never {})
+        self.try_evaluate(
+            |reference| Ok(value(reference)),
+            || Ok::<_, std::convert::Infallible>(()),
+        )
+        .unwrap_or_else(|never| match never {})
     }
 
     /// Evaluates one valuation, charging before each visited node or terminal.
@@ -398,12 +401,22 @@ impl<V: Clone + Ord> EffectDecision<V> {
         mut value: impl FnMut(&V) -> bool,
         control: &mut C,
     ) -> Result<bool, C::Error> {
-        self.try_evaluate(&mut value, || control.charge(DecisionWork::Visit))
+        self.try_evaluate_with_control(|reference| Ok(value(reference)), control)
+    }
+
+    /// Evaluates a valuation that may reject an encountered reference.
+    /// The path is visited in decision order, with each step charged first.
+    pub fn try_evaluate_with_control<C: DecisionControl>(
+        &self,
+        value: impl FnMut(&V) -> Result<bool, C::Error>,
+        control: &mut C,
+    ) -> Result<bool, C::Error> {
+        self.try_evaluate(value, || control.charge(DecisionWork::Visit))
     }
 
     fn try_evaluate<E>(
         &self,
-        value: &mut impl FnMut(&V) -> bool,
+        mut value: impl FnMut(&V) -> Result<bool, E>,
         mut visit: impl FnMut() -> Result<(), E>,
     ) -> Result<bool, E> {
         let mut root = self.root;
@@ -414,7 +427,7 @@ impl<V: Clone + Ord> EffectDecision<V> {
                 Root::True => return Ok(true),
                 Root::Branch(index) => {
                     let node = &self.nodes[index];
-                    root = if value(&node.variable) {
+                    root = if value(&node.variable)? {
                         node.high
                     } else {
                         node.low

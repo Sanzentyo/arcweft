@@ -13,7 +13,6 @@ pub(super) struct ImportedFunctionTable {
 
 pub(super) struct ImportedRelationTable {
     pub(super) child: Arc<ComponentCompletion>,
-    bindings: BTreeMap<Atom, Decision>,
     principal: Decision,
 }
 
@@ -84,7 +83,7 @@ fn enqueue<C: DecisionControl>(
 /// nested relation keeps its own quantifiers, uniform choices and late inputs.
 pub(super) fn lower_selected_imports<C: DecisionControl>(
     graph: &PreparedEffectDefinitions,
-    labels: &[EffectId],
+    labels: &Arc<[EffectId]>,
     inventory: FunctionInventory<'_>,
     work: &mut Work<'_, C>,
 ) -> Result<ImportedRelations, PreparedEffectFailure<C::Error>> {
@@ -102,12 +101,9 @@ pub(super) fn lower_selected_imports<C: DecisionControl>(
             enqueue(&source.graph, FunctionInventory::All, &mut pending, work)?;
             continue;
         }
-        let mut basis = BTreeSet::new();
-        for label in labels {
-            work.charge(DecisionWork::Node)?;
-            basis.insert(label.clone());
-        }
-        let mut layout = Layout::with_labels(&source.graph, basis, work)?;
+        // Every table reached by this lowering shares the root basis.
+        // Observation labels are projected into this basis by the caller.
+        let mut layout = Layout::with_shared_labels(&source.graph, Arc::clone(labels), work)?;
         layout.imports = assemble_selected(&source.graph, &cache, FunctionInventory::All, work)?;
         let mut component = CompiledComponent::compile(
             &source.graph,
@@ -122,6 +118,38 @@ pub(super) fn lower_selected_imports<C: DecisionControl>(
         cache.push((source, Arc::new(completed)));
     }
     assemble_selected(graph, &cache, inventory, work)
+}
+
+impl ImportedEffectRelation {
+    fn bind_cell(&self, cell: &Atom) -> Result<Atom, PreparedEffectInvariant> {
+        let &Atom::Cell {
+            scheme,
+            class,
+            mask,
+        } = cell
+        else {
+            return Err(PreparedEffectInvariant::UnclosedCell);
+        };
+        let input = self
+            .inputs
+            .get(&scheme)
+            .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+        Ok(Atom::Cell {
+            scheme: input.reference().ordinal,
+            class,
+            mask,
+        })
+    }
+
+    fn bind_decision<C: DecisionControl>(
+        &self,
+        decision: &Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        decision.map_references(work, &mut |cell, _| {
+            self.bind_cell(cell).map_err(Into::into)
+        })
+    }
 }
 
 fn attach<C: DecisionControl>(
@@ -140,36 +168,14 @@ fn attach<C: DecisionControl>(
     }
     let child =
         cached(cache, &imported.completion, work)?.ok_or(PreparedEffectInvariant::UnclosedCell)?;
-    let mut bindings = BTreeMap::new();
-    for (&future, actual) in &imported.inputs {
+    for actual in imported.inputs.values() {
         work.charge(DecisionWork::Visit)?;
         graph.function(actual)?;
-        for class in 0..child.layout.view().classes() {
-            for mask in 0..child.layout.tables[&future] {
-                work.charge(DecisionWork::Node)?;
-                bindings.insert(
-                    Atom::Cell {
-                        scheme: future,
-                        class,
-                        mask,
-                    },
-                    Decision::variable(
-                        Atom::Cell {
-                            scheme: actual.reference().ordinal,
-                            class,
-                            mask,
-                        },
-                        work,
-                    )?,
-                );
-            }
-        }
     }
-    let principal = child.principal.substitute(&bindings, work)?;
+    let principal = imported.bind_decision(&child.principal, work)?;
     work.charge(DecisionWork::Node)?;
     let table = Arc::new(ImportedRelationTable {
         child: Arc::clone(child),
-        bindings,
         principal,
     });
     work.charge(DecisionWork::Node)?;
@@ -204,14 +210,14 @@ fn assemble_selected<C: DecisionControl>(
                         mask,
                     };
                     let value = if let Some(value) = relation.child.coefficients.get(&cell) {
-                        work.copy_decision(value)?
+                        imported.relation.bind_decision(value, work)?
                     } else if imported.definition().is_input() {
-                        Decision::variable(cell, work)?
+                        Decision::variable(imported.relation.bind_cell(&cell)?, work)?
                     } else {
                         return Err(PreparedEffectInvariant::UnclosedCell.into());
                     };
                     work.charge(DecisionWork::Node)?;
-                    cells.push(value.substitute(&relation.bindings, work)?);
+                    cells.push(value);
                 }
                 membership.push(cells.into_boxed_slice());
             }
@@ -243,13 +249,8 @@ impl ImportedRelationTable {
         parent: &PrincipalEffectClosure,
         work: &mut Work<'_, C>,
     ) -> Result<Option<PrincipalEffectClosure>, PreparedEffectFailure<C::Error>> {
-        let guard = self.principal(parent.layout.view(), work)?;
-        let guard = parent.coefficients.substitute(&guard, work)?;
-        if guard.is_constant(false) {
+        if !parent.coefficients.evaluate(self.principal(), work)? {
             return Ok(None);
-        }
-        if !guard.is_constant(true) {
-            return Err(PreparedEffectInvariant::UnclosedCell.into());
         }
         let graph = &imported.completion.graph;
         let mut fixed = BTreeMap::new();
@@ -310,12 +311,15 @@ impl ImportedRelationTable {
         } else {
             // The child uses its own coefficient basis. Confirm the guard
             // against the actual rows transported into that basis.
-            if !self
-                .child
-                .principal
-                .restrict(&coefficients, work)?
-                .is_constant(true)
-            {
+            if !self.child.principal.try_evaluate_with_control(
+                |cell| {
+                    coefficients
+                        .get(cell)
+                        .copied()
+                        .ok_or_else(|| PreparedEffectInvariant::UnclosedCell.into())
+                },
+                work,
+            )? {
                 return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
             }
             ClosedEffectWitnesses::unique()
@@ -331,73 +335,20 @@ impl ImportedRelationTable {
         )?))
     }
 
-    fn transport<C: DecisionControl>(
-        &self,
-        decision: &Decision,
-        receiving: ClassLayout<'_>,
-        work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        decision.map_references(work, &mut |atom, _| match atom {
-            Atom::Cell {
-                scheme,
-                class,
-                mask,
-            } => {
-                let class = if *class == 0 {
-                    0
-                } else {
-                    receiving
-                        .labels
-                        .binary_search(&self.child.layout.labels[*class - 1])
-                        .map(|index| index + 1)
-                        .map_err(|_| PreparedEffectInvariant::UnclosedCell)?
-                };
-                Ok(Atom::Cell {
-                    scheme: *scheme,
-                    class,
-                    mask: *mask,
-                })
-            }
-            _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
-        })
-    }
-
-    pub(super) fn principal<C: DecisionControl>(
-        &self,
-        receiving: ClassLayout<'_>,
-        work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        self.transport(&self.principal, receiving, work)
+    pub(super) fn principal(&self) -> &Decision {
+        &self.principal
     }
 }
 
 impl ImportedFunctionTable {
-    pub(super) fn coefficient<C: DecisionControl>(
+    pub(super) fn coefficient(
         &self,
-        receiving: ClassLayout<'_>,
         class: usize,
         mask: usize,
-        work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let source = if class == 0 {
-            0
-        } else {
-            self.relation
-                .child
-                .layout
-                .labels
-                .binary_search(&receiving.labels[class - 1])
-                .map_or(0, |index| index + 1)
-        };
-        self.relation
-            .transport(&self.membership[source][mask], receiving, work)
-    }
-
-    pub(super) fn principal<C: DecisionControl>(
-        &self,
-        receiving: ClassLayout<'_>,
-        work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        self.relation.principal(receiving, work)
+    ) -> Result<&Decision, PreparedEffectInvariant> {
+        self.membership
+            .get(class)
+            .and_then(|coefficients| coefficients.get(mask))
+            .ok_or(PreparedEffectInvariant::UnclosedCell)
     }
 }

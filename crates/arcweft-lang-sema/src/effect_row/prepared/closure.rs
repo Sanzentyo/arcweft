@@ -1,8 +1,6 @@
 //! Joint closure of issuer-owned, parameterized effect schemes.
 
-use arcweft_core::effect_row::{
-    DecisionLowerEnvelope, EffectDecision, EffectDecisionReplacement, EffectMembershipView,
-};
+use arcweft_core::effect_row::{DecisionLowerEnvelope, EffectDecision, EffectMembershipView};
 
 use super::*;
 use crate::effects::EffectId;
@@ -12,7 +10,7 @@ mod compilation;
 mod component;
 pub(crate) use component::PreparedEffectActualInputs;
 use component::{
-    ClosedEffectWitnesses, CompiledComponent, ComponentCompletion, EffectCoefficients,
+    ClosedEffectCoefficients, ClosedEffectWitnesses, CompiledComponent, ComponentCompletion,
 };
 mod imports;
 use imports::ImportedRelations;
@@ -74,7 +72,7 @@ enum FormalOwner {
 type Decision = EffectDecision<Atom>;
 
 struct Layout {
-    labels: Box<[EffectId]>,
+    labels: Arc<[EffectId]>,
     tables: BTreeMap<u64, usize>,
     cells: BTreeSet<Atom>,
     imports: ImportedRelations,
@@ -103,7 +101,8 @@ impl Layout {
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let labels = Self::support(graph, fixed, work)?;
-        Self::with_inventory(graph, labels, inventory, work)
+        work.charge(DecisionWork::Node)?;
+        Self::with_inventory(graph, labels.into_iter().collect(), inventory, work)
     }
 
     fn support<C: DecisionControl>(
@@ -243,9 +242,9 @@ impl Layout {
         Ok(labels)
     }
 
-    fn with_labels<C: DecisionControl>(
+    fn with_shared_labels<C: DecisionControl>(
         graph: &PreparedEffectDefinitions,
-        labels: BTreeSet<EffectId>,
+        labels: Arc<[EffectId]>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         Self::with_inventory(graph, labels, FunctionInventory::All, work)
@@ -253,7 +252,7 @@ impl Layout {
 
     fn with_inventory<C: DecisionControl>(
         graph: &PreparedEffectDefinitions,
-        labels: BTreeSet<EffectId>,
+        labels: Arc<[EffectId]>,
         inventory: FunctionInventory<'_>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
@@ -307,7 +306,7 @@ impl Layout {
             }
         }
         Ok(Self {
-            labels: labels.into_iter().collect(),
+            labels,
             tables,
             cells,
             imports: ImportedRelations::default(),
@@ -378,7 +377,7 @@ pub(crate) struct PrincipalEffectClosure {
     graph: Arc<PreparedEffectDefinitions>,
     layout: Arc<Layout>,
     functions: BTreeMap<u64, EffectRow>,
-    coefficients: EffectCoefficients,
+    coefficients: ClosedEffectCoefficients,
     witnesses: ClosedEffectWitnesses,
     input_bindings: BTreeMap<u64, EffectRow>,
 }
@@ -590,7 +589,7 @@ impl PreparedEffectDefinitions {
         let closed = PrincipalEffectClosure::reify(
             self.retain(&mut work)?,
             layout,
-            coefficients,
+            coefficients.close(&mut work)?,
             witnesses,
             fixed,
             &mut work,
@@ -606,7 +605,7 @@ impl PrincipalEffectClosure {
     fn reify<C: DecisionControl>(
         graph: Arc<PreparedEffectDefinitions>,
         layout: Arc<Layout>,
-        coefficients: EffectCoefficients,
+        coefficients: ClosedEffectCoefficients,
         witnesses: ClosedEffectWitnesses,
         input_bindings: BTreeMap<u64, EffectRow>,
         work: &mut Work<'_, C>,

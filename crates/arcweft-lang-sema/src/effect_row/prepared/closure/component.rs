@@ -111,31 +111,12 @@ impl EffectCoefficients {
             .or_else(|| self.least.get(cell))
     }
 
-    pub(super) fn substitute<C: DecisionControl>(
-        &self,
-        decision: &Decision,
-        work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        if decision.node_count() == 0 {
-            return work.copy_decision(decision);
-        }
-        decision.substitute_references(work, |atom, _| {
-            Ok(match self.get(atom) {
-                Some(value) => EffectDecisionReplacement::Decision(value),
-                None => EffectDecisionReplacement::Variable(atom.clone()),
-            })
-        })
-    }
-
     pub(super) fn specialize<C: DecisionControl>(
         &self,
         mut actuals: BTreeMap<Atom, bool>,
         work: &mut Work<'_, C>,
-    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+    ) -> Result<ClosedEffectCoefficients, PreparedEffectFailure<C::Error>> {
         let least = self.least.specialize(&actuals, work)?;
-        if !least.is_closed(work)? {
-            return Err(PreparedEffectInvariant::UnclosedCell.into());
-        }
         for (cell, &value) in &self.fixed {
             work.charge(DecisionWork::Node)?;
             if let std::collections::btree_map::Entry::Vacant(entry) = actuals.entry(cell.clone()) {
@@ -144,12 +125,42 @@ impl EffectCoefficients {
                 return Err(PreparedEffectInvariant::DuplicateFutureBinding.into());
             }
         }
-        Ok(Self::new(actuals, least))
+        Self::new(actuals, least).close(work)
+    }
+
+    pub(super) fn close<C: DecisionControl>(
+        self,
+        work: &mut Work<'_, C>,
+    ) -> Result<ClosedEffectCoefficients, PreparedEffectFailure<C::Error>> {
+        if !self.least.is_closed(work)? {
+            return Err(PreparedEffectInvariant::UnclosedCell.into());
+        }
+        Ok(ClosedEffectCoefficients(self))
     }
 
     #[cfg(test)]
     pub(super) fn inject_coefficient_for_replay_test(&mut self, cell: Atom, value: bool) {
         self.fixed.insert(cell, value);
+    }
+}
+
+/// A retained tuple whose stored coefficients have no free references.
+pub(super) struct ClosedEffectCoefficients(EffectCoefficients);
+
+impl ClosedEffectCoefficients {
+    pub(super) fn value(&self, cell: &Atom) -> Result<bool, PreparedEffectInvariant> {
+        self.0
+            .get(cell)
+            .map(|value| value.is_constant(true))
+            .ok_or(PreparedEffectInvariant::UnclosedCell)
+    }
+
+    pub(super) fn evaluate<C: DecisionControl>(
+        &self,
+        decision: &Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<bool, PreparedEffectFailure<C::Error>> {
+        decision.try_evaluate_with_control(|cell| self.value(cell).map_err(Into::into), work)
     }
 }
 
