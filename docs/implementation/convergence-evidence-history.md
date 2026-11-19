@@ -20168,3 +20168,14 @@ Semaの全featureから対象2件を実行し、2 PASS、0 FAIL。製品コー�
 16 msの論理tick 3と5を1280×720・DPR 1で比較した。いずれも全RGBA成分の MSE／MAE／最大誤差は0、色SSIMは1。Nativeでは `(48,48)` にある420×168の `view_mount_0.scroll.feedback` のoffsetが0から66 pxになった。Chromeの生のwheel入力は、表示文字列を `Ada`／`Send`／`More` から `Send`／`More`／`Below` に変えた。操作前後で変化した画素は9,541で、すべてクリップ内に収まった。
 
 試行した `arcw agent observe` はファイル入口が `.arcw` に限られ、使用したCLIでは画像取得に必要な `PreparedFrame` が得られなかった。Nativeの検証用プログラムはMSVCの既定スタックで停止したため、リンク時に16 MiBを指定して再実行した。今回の確認範囲はこの保持Scroll入力の描画とクリップの一致。[両系の画像・実行原本・imq JSON](acceptance-evidence/task-retained-scroll-browser-parity.raw.zip) は24 entry、37,071 bytes、SHA256 `b692d8a8e841e327efecb7bf7133ba61e69ecd1d942f6b9d2a612fe0624c5621`。各entryの長さとハッシュを照合した。
+
+<a id="prepared-effect-parameter-stream"></a>
+## 2026-11-20 — 効果参照をソース順に逐次走査する
+
+検証基点 `2fd64add41d38d7d25844db40e57ddbc7668ff79`、Source `78fb7489b41dd93f3c25903aac5fbf056c6edf4d`。効果行と述語の読取りで、兄弟の参照を先に全件積む処理を、分岐ごとに保持する借用イテレータへ変更した。分岐の残り、元ノード、個々の参照に対する作業計上は各処理で行う。訪問順、元グラフの読取りscope、取消、効果宣言とchoiceの確認を維持する。16引数の効果参照を記述順に読み、35作業単位に収まる回帰テストを追加した。
+
+Semaの全featureユニットは1,991件中1,899 PASS、92既知FAIL。追加1件と先に修正したfixtureに加え、型とconstの循環投影で呼出し元のガードを維持する既存テストが通過した。このテストは先行Sourceでは16ノードの上限に対して17を要求していた。Compilerの統合6 targetは582件中577 PASS、5既知FAILで、`flow_wait` の32件はすべて通過した。新規失敗は0。workspaceの全feature・全target checkとClippy、fmt、差分検査、構造ゲートは終了0。推移的逆依存の全件結果は[先行Source](#literal-effect-decision-reverse)に記録した。
+
+2 callback のNative／AWBCとSemaは元の効果参照の検査を通過し、元の型等式を照合する互換性検査で既定上限4,096に達した。3 callback のSemaは、元の述語を処理する過程で効果関数の判定図を確定する段階で同上限に達した。Mapの遅延効果と純粋呼出しの拒否は型束縛の投影、保持後の呼出しは候補の初期化で局所の作業上限に達した。いずれも要求される実行または拒否診断は未達。
+
+検証中に `5a2cb5267508e26a5032134677690f2330e31f26` の資料を先に公開したため、公開前に基点間の全差分が資料だけであることと、検証した3 RustファイルのSHA256が一致することを照合した。[検証原本・公開照合](acceptance-evidence/task-callback-stream-parameter-admission.raw.zip) は37 entry、1,113,052 bytes、SHA256 `48b8277aaca26678ee41c5f645377016a5968c3bd599b5de40c180fa5f03f924`。各entryの長さとハッシュ、公開した3 Rust blobを照合した。記録時の `target` は101,351,639,659 bytes。
