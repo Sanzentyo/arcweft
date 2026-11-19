@@ -19879,3 +19879,16 @@ Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終�
 同じRustソースを含む基点 `a70aa9348743dc78d5866d378813c5a01913eb5e` で、段階適用の終端効果について早期の本体検査だけを外した。比較対象は同じ8件。元の5 PASS／3 FAILから4 PASS／4 FAILとなった。正しい再帰段階適用と再帰する attached default は制約計算の `PreparedEffect(Invariant(SchemeState))` で失敗した。引数の数が合わない段階適用の拒否を確認するテストも同じエラーで失敗した。純粋な callback 引数に関する解析循環は継続した。差分を取り消し、元のproduction sourceに一致することを確認した。
 
 本体の早期検査を外すには、呼出し結果として持ち回るだけの効果と、その場で比較・確定する効果を制約計算で区別する必要がある。現行の `collect_original_effect_types` は要求されたすべての結果を元の効果計算に含め、確定時の `BoundScopedEffectCompletion` は到達した宣言本体を要求する。[試験入力・差分・全出力](acceptance-evidence/task-latent-continuation-observation.raw.zip) は6 entry、22,574 bytes、SHA256 `2c51e7316a4614b2cf080897c173325778db9fd3de6998060104b25219c7c038`。
+
+<a id="continuation-operand-owner"></a>
+## 2026-11-19 — 継続の関数型を発行元で照合
+
+基点 `ba0da2029fe638b9b5d22af0f9d38002c5b25459`。Source `5962d2594432d221716775492e45237e7a3ef29c`。継続候補は発行元グラフへの参照と次の引数位置を保持する。名前解決と制約入力の受入は元の適用を借り、実際の関数型を同じ結果と照合する。候補と公開準備の型の複製を削除した。公開時は依存順に検証した継続を参照し、元の宣言と次の引数位置を照合する。継続を発行する時点で確定した宣言と結果を照合する検査を維持する。
+
+既存のrollbackテストを拡張した。生きている継続に対して同じ引数型で戻り値だけが違う関数型を拒否し、続く本来の型を受理する。rollback後は同じ参照を失効として拒否する。初回ビルドの型名解決エラーは修正した。
+
+Sema全featureユニットは1,982件中1,864 PASS、118 FAIL、0 SKIP。Compilerの5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中29 PASS、3 FAIL。全2,564件で直前の検証結果とテストID・合否が一致した。callbackが返した継続の実行はNative／AWBCとも通過し、保持したmap継続の保存復元も通過した。正しい再帰段階適用と再帰する attached default は引き続き失敗した。[実際の失敗経路](#completed-call-result)。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時に変更7 blobを検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-continuation-operand-owner.raw.zip) は20 entry、465,654 bytes、SHA256 `ef8a64878ac0053af2968ca14b1b25ccd1c983b16f7b52a83b2d715977c73841`。各原本の長さとハッシュを照合した。

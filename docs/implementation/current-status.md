@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日 2026-11-19。資料更新前の `main` と `origin/main` は `ef93879c1e94e7e9ae02977711a8d77c6e9b5d08` で一致し、tracked差分は0件。未追跡の `%SystemDrive%/` が1件あった。検証入力と再利用の範囲は履歴・原本に記録する。
+確認日 2026-11-19。資料更新前の `main` と `origin/main` は `5962d2594432d221716775492e45237e7a3ef29c` で一致し、tracked差分は0件。未追跡の `%SystemDrive%/` が1件あった。検証入力と再利用の範囲は履歴・原本に記録する。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画を、そのまま現在の残作業へ転記しない。
@@ -132,7 +132,7 @@
 
 | 対象・入力 | 実際の結果 | 適用範囲・原本 |
 |---|---|---|
-| 再帰本体の型表現／Semaの推移的逆依存 | **Compiler統合5 targetは541 PASS／9 FAIL。`flow_wait` は29 PASS／3 FAIL** | Source `ef93879c1e94e7e9ae02977711a8d77c6e9b5d08`。582件の全ID・合否が直前の公開ソースと一致した。今回の全逆依存テストは未実行。[今回の全件比較](convergence-evidence-history.md#completed-call-result)・[型注釈付き再帰の待機復元](convergence-evidence-history.md#annotated-recursive-binding)・[全逆依存の先行実測](convergence-evidence-history.md#nominal-publication-catalog-ownership)。 |
+| 再帰本体の型表現／Semaの推移的逆依存 | **Compiler統合5 targetは541 PASS／9 FAIL。`flow_wait` は29 PASS／3 FAIL** | Source `5962d2594432d221716775492e45237e7a3ef29c`。582件の全ID・合否が直前の公開ソースと一致した。今回の全逆依存テストは未実行。[今回の全件比較](convergence-evidence-history.md#continuation-operand-owner)・[型注釈付き再帰の待機復元](convergence-evidence-history.md#annotated-recursive-binding)・[全逆依存の先行実測](convergence-evidence-history.md#nominal-publication-catalog-ownership)。 |
 | 共有契約／推移的逆依存matrix | **8,151実行、8,148 PASS／3 FAIL／41 SKIP** | Source `b7fba62b6f2de22bdb40ad08f754fecbc5a2e985`。Coreの逆依存53はRuntimePlanの16を含む。Windows・locked・全feature・既定filter。非CLIは7,438件すべてPASS、18 SKIP。前回の53 packageから3件を追加し、共通IDの変化は無音台詞CLIのFAILからPASSのみ。元Sourceと元EXEの前後差分0。初回の構築失敗は[履歴](convergence-evidence-history.md)に保持。[全逆依存の実測](acceptance-evidence/task-unvoiced-line-lease-reverse.raw.zip)。 |
 | 保持 View の推移的逆依存 | **41パッケージ、5,418実行、5,416 PASS／2 FAIL／41 SKIP** | 検証Source `83d3689000598ad41a27a01593d5a1f4e95af705`。Panel／BoxのNative描画、キー付きText／Button、Scrollの保存復元、標準台詞geometry、旧Surface表の拒否を含む必須8件がPASS。前回のWeb IME生成器とMCP起動待ちも全件実行でPASSへ移行した。当時のCLI 2失敗は同じ原本に保持し、現在の規定CLI結果とは区別する。Sourceと元バイナリ180本の実行前後差分は0。[検証原本](acceptance-evidence/task-retained-surface-reverse.raw.zip)。 |
 | Native MCP／scriptのフレーム進行 | **当該request所有と2行の実進行は修復・検証・公開済み** | Source ceca5955ab15bee03ac4ca020a708f5b12eea1be。初回image／crop／capture frontierと継続step／viewport／sampleを分離し、同じ型付きrequestで進行する。transition時に初回dialogue layer captureを繰り返さず、step_framesの各countが実tickを進める。owner111／111 PASS、公開MCPの2行・画像再要求なし・tick＋1を含む。後続line005の描画・捕捉はcoverage行の受入へ集約する。[実装・失敗原本・全件結果](acceptance-evidence/task-rich-text-property-identity.json)。 |
@@ -140,6 +140,6 @@
 | full-grammarの進行後viewport PNG保存 | **現行fixtureへ同期・当該CLI保存を検証・公開済み** | Source 590587b009e74ee0e850f80b74a1932df5e0d933。公開Agent Script CLIで1回観測＋13回の実semantic入力を返し、元の4-step／64-opのまま005／tick55へ進行する。Windows-fontの従来保存も保持し、既存1 case内の両sampleがPASS。native1280×720 PNGの実保存・同じ発行URIとのバイト一致・BLAKE3・decoded pixels・元Source／厳密geometryを検証した。CLI check／Clippy・formatも終了0、4120入力drift0。後続のrich-text constructsは次行で独立して判定する。[旧期待の訂正理由・全入力・失敗probe・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |
 | full-grammarのFx／proxy／Page・Line／sampled readback | **当該11場面と共有glowを修復・検証・公開済み** | Source 3bd77a9e200cb882f6dd516e3644fc42d38111cd。実MCPで各現在frameへ進行し、canonical Fx、typed field、親context、hit／depth／Source範囲を検証。glowだけに残った旧dirを現行directionへ統一し、3 phaseと型違い／zero／重複拒否を確認した。同じNative frameのproxy／Page／Line Mask・ObjectId、shader実画素、typewriterとwave／shake／2 sparkleの時刻差も保持。通常revealとFxの両方をsampleする契約に従い、元の4-step／128-opで005／tick55の0・60秒以降を比較する。MCP公開policyは維持する。[旧期待・実不具合・訂正理由・全実測](acceptance-evidence/task-rich-text-property-identity.json)。 |
 | CLIの規定対象／全 check 照合 | **規定226件の直近実測はPASS。全 check は未再実行** | Source `6cde3621e955a5798b8b1e978205410127c4f610` のlocked・規定feature／filterでlibrary 196件と統合6 target 30件を2026-11-14に実行し、226 PASS。binはcompile済み・runnable test 0件。選択／終端ID一致・重複0。2026-11-17に同じ入力の終端を監査した。旧Source `20a847545961e185230491ee3de9e4d256d2db32` の実測は履歴に保持し、最新の結果を本欄へ集約する。[今回のCLI原本](acceptance-evidence/task-analyzer-effect-declarations.raw.zip)。 |
-| workspace check／Clippy・fmt・構造gate | **Sema全ユニットは1,864 PASS／118 FAIL。Sema全target Clippy・fmt・構造gateは成功** | Source `ef93879c1e94e7e9ae02977711a8d77c6e9b5d08` の1,982件は、直前の公開ソースと全ID・合否が一致した。全workspaceのcheck／Clippy、全逆依存テスト、Tier 2の最終受入は今回未実行。[品質と検証の実測](convergence-evidence-history.md#completed-call-result)。 |
+| workspace check／Clippy・fmt・構造gate | **Sema全ユニットは1,864 PASS／118 FAIL。Sema全target Clippy・fmt・構造gateは成功** | Source `5962d2594432d221716775492e45237e7a3ef29c` の1,982件は、直前の公開ソースと全ID・合否が一致した。全workspaceのcheck／Clippy、全逆依存テスト、Tier 2の最終受入は今回未実行。[品質と検証の実測](convergence-evidence-history.md#continuation-operand-owner)。 |
 
 以前の件数・失敗・full SHAと今回の訂正理由は[検証履歴](convergence-evidence-history.md)と各原本へ保持する。過去の資料整理は[資料整理記録](documentation-cleanup.md)を参照。
