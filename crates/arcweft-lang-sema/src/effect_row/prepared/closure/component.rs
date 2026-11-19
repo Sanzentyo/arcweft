@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::effect_row::prepared::completion::residual::{
-    EffectResidualProgram, ResidualNode, ResidualPredicateSource, ResidualRowScope,
+    EffectResidualProgram, ResidualNode, ResidualNodeId, ResidualPredicateSource, ResidualRowScope,
     ResidualSourcePredicate, source_body,
 };
 
@@ -217,6 +217,38 @@ fn relation_scope<'g, 's, C: DecisionControl>(
     }
 }
 
+enum CompiledRelationNode {
+    Decision(Decision),
+    Shared(ResidualNodeId),
+}
+
+impl CompiledRelationNode {
+    fn owner(nodes: &[Self], source: ResidualNodeId) -> ResidualNodeId {
+        match &nodes[source.index()] {
+            Self::Decision(_) => source,
+            Self::Shared(owner) => *owner,
+        }
+    }
+
+    fn at(nodes: &[Self], source: ResidualNodeId) -> &Decision {
+        match &nodes[Self::owner(nodes, source).index()] {
+            Self::Decision(value) => value,
+            Self::Shared(_) => unreachable!("shares always name a materialized decision"),
+        }
+    }
+
+    fn into_result(mut nodes: Vec<Self>) -> Option<Decision> {
+        let entry = match nodes.pop()? {
+            Self::Shared(owner) => nodes.swap_remove(owner.index()),
+            decision @ Self::Decision(_) => decision,
+        };
+        match entry {
+            Self::Decision(value) => Some(value),
+            Self::Shared(_) => unreachable!("shares always name a materialized decision"),
+        }
+    }
+}
+
 fn compile_relation<C: DecisionControl>(
     graph: &PreparedEffectDefinitions,
     program: &EffectResidualProgram,
@@ -224,37 +256,62 @@ fn compile_relation<C: DecisionControl>(
     work: &mut Work<'_, C>,
 ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
     let mut scopes = BTreeMap::new();
-    let mut values: Vec<Decision> = Vec::new();
+    let mut values = Vec::new();
     for node in program.relation_nodes() {
         work.charge(DecisionWork::Visit)?;
-        let value = match node {
-            ResidualNode::True => Decision::constant(true),
-            ResidualNode::And(children) => {
-                Decision::all(children.iter().map(|child| &values[child.index()]), work)?
-            }
-            ResidualNode::Not(child) => values[child.index()].not(work)?,
+        // Logical identity steps retain the original node's immutable value.
+        // Resolve an existing share here so future readers never follow chains.
+        let shared = match node {
+            ResidualNode::And(children) if children.len() == 1 => Some(children[0]),
             ResidualNode::Implies {
                 domain,
                 consequence,
-            } => values[domain.index()].conditional(
-                &values[consequence.index()],
-                &Decision::constant(true),
-                work,
-            )?,
-            ResidualNode::ForAllFiniteRows { scope, body } => {
-                let body = &values[body.index()];
-                if scope.parameters(graph).is_empty() {
-                    work.copy_decision(body)?
+            } if CompiledRelationNode::at(&values, *domain).is_constant(true)
+                || CompiledRelationNode::at(&values, *consequence).is_constant(true) =>
+            {
+                Some(*consequence)
+            }
+            ResidualNode::ForAllFiniteRows { scope, body }
+                if scope.parameters(graph).is_empty()
+                    || CompiledRelationNode::at(&values, *body).node_count() == 0 =>
+            {
+                Some(*body)
+            }
+            _ => None,
+        };
+        if let Some(source) = shared {
+            work.charge(DecisionWork::Node)?;
+            let owner = CompiledRelationNode::owner(&values, source);
+            values.push(CompiledRelationNode::Shared(owner));
+            continue;
+        }
+        let decision = |id| CompiledRelationNode::at(&values, id);
+        let value = match node {
+            ResidualNode::True => Decision::constant(true),
+            ResidualNode::And(children) => {
+                Decision::all(children.iter().copied().map(decision), work)?
+            }
+            ResidualNode::Not(child) => decision(*child).not(work)?,
+            ResidualNode::Implies {
+                domain,
+                consequence,
+            } => {
+                let domain = decision(*domain);
+                if domain.is_constant(false) {
+                    Decision::constant(true)
                 } else {
-                    let scoped = relation_scope(&mut scopes, graph, layout, *scope, work)?;
-                    if scoped.formals.is_none() {
-                        scoped.formals = Some(scoped.compiler.formals(work)?);
-                    }
-                    body.forall(
-                        scoped.formals.as_ref().expect("formals were computed"),
-                        work,
-                    )?
+                    domain.conditional(decision(*consequence), &Decision::constant(true), work)?
                 }
+            }
+            ResidualNode::ForAllFiniteRows { scope, body } => {
+                let scoped = relation_scope(&mut scopes, graph, layout, *scope, work)?;
+                if scoped.formals.is_none() {
+                    scoped.formals = Some(scoped.compiler.formals(work)?);
+                }
+                decision(*body).forall(
+                    scoped.formals.as_ref().expect("formals were computed"),
+                    work,
+                )?
             }
             ResidualNode::SourcePredicate(source) => {
                 let scoped = relation_scope(&mut scopes, graph, layout, source.scope(), work)?;
@@ -322,10 +379,9 @@ fn compile_relation<C: DecisionControl>(
             }
         };
         work.charge(DecisionWork::Node)?;
-        values.push(value);
+        values.push(CompiledRelationNode::Decision(value));
     }
-    values
-        .pop()
+    CompiledRelationNode::into_result(values)
         .ok_or_else(|| PreparedEffectInvariant::PrincipalConfirmation.into())
 }
 
