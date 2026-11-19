@@ -20050,3 +20050,14 @@ Sema全featureユニットは1,988件中1,875 PASS、113 FAIL。段階適用し�
 最終のCompiler 582件は 577 PASS、5 FAIL。Source traverse の3件がNativeと正準復号したAWBCで成功へ移行し、4種類のcollection、計算したreceiverとcallback、callback本体に入らない構築を再確認した。checked ingress を通すMapの1件も成功へ移行し、両実行系で写像の評価順、6回のcallback、結果18を確認した。`flow_wait` の32件はすべて通過した。最終のSema全featureユニット1,989件は 1,894 PASS、95 FAIL。Sema の既存18件が成功に移行した。両スイートの新規失敗は0。3個の callback のSemaケースは、先行の読み取り範囲の構成を通過し、最終バイナリでは効果制約をコンパイルする段階で作業上限に達した。callback 2個のNativeテストもこの段階で止まった。Mapの遅延効果と保持後の呼出し効果の2件では、元の最小効果と受け手の条件を結合した関係を解く過程で上限に達した。Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実施。公開した9 Rust blobを照合した。
 
 [検証原本・公開照合](acceptance-evidence/task-callback-retained-relation.raw.zip) は 29 entry、539,865 bytes、SHA256 `20d8594e57082353d9ec2770bb8bf360af4b259634a85b252f561495ace1b90e`。各原本の長さとハッシュを照合した。
+
+<a id="effect-decision-projection"></a>
+## 2026-11-19 — 効果判定の分岐選択と量化
+
+基点 `bc6c6a4bf2c87be7832e77805b7f8f75206d2896`。Source `630229b2eaa239a143765b2d2d5389ae00ffbb3b`。固定値を与えた効果判定は選んだ枝だけをたどり、未確定の変数は正準な分岐として残す。大きな枝を除外して残りを制約内で再構築できることを回帰テストで確認した。全称・存在量化では元の正準順から直接結果を組み立てる。Semaの有限行の照合もこの分岐選択を使う。
+
+Coreの全featureユニット2,367件と公開効果判定の統合2件が成功した。Semaの全featureユニット1,989件は1,895 PASS、94既知FAIL。前回からViewの既定引数の一般式・先行引数を検証する1件が復旧した。Compilerの6 targetは582件中577 PASS、5既知FAIL。`flow_wait` は32件すべて成功。Sema・Compilerで新規失敗は0。全workspace・全feature・全targetの `cargo check`、fmt、差分検査、構造ゲートは終了0。
+
+本番設定の作業上限4,096で、2個の callback を入れ替えるNative／AWBC実行と、3個を循環させるSemaケースは引き続き型検査で停止する。2個のNativeケースは効果制約のコンパイルを通過し、最小解の計算に入ってから上限に達した。3個のケースは効果制約をコンパイルする段階で停止した。Mapの既存失敗3件も残る。デバッガーでは、遅延効果のケースは固定入力の式を再照合する段階で、保持後の呼出し効果のケースは取込先の固定入力を再構成する段階で上限に達した。
+
+[検証原本・公開照合](acceptance-evidence/task-callback-decision-projection.raw.zip) は28 entry、363,958 bytes、SHA256 `8143abff3c17045f544f194ded33d9287d0bcdab3282d3df51bcb45515be10ae`。各entryの長さとハッシュ、公開した4 Rust blobを照合した。記録時の `target` は24,031,856,219 bytesだった。
