@@ -50,6 +50,16 @@ pub(super) struct Node<V> {
     pub(super) high: Root,
 }
 
+impl<V> Node<V> {
+    fn literal_polarity(&self) -> Option<bool> {
+        match (self.low, self.high) {
+            (Root::False, Root::True) => Some(true),
+            (Root::True, Root::False) => Some(false),
+            _ => None,
+        }
+    }
+}
+
 /// A canonical, immutable Boolean function over caller-owned typed identities.
 /// Local node indices are never accepted from another graph or from a consumer.
 ///
@@ -72,6 +82,17 @@ pub enum EffectDecisionReplacement<'a, V> {
 }
 
 impl<V> EffectDecisionReplacement<'_, V> {
+    fn literal(&self) -> Option<(&V, bool)> {
+        match self {
+            Self::Constant(_) => None,
+            Self::Variable(variable) => Some((variable, true)),
+            Self::Decision(decision) => match (decision.root, decision.nodes.as_ref()) {
+                (Root::Branch(0), [node]) => Some((&node.variable, node.literal_polarity()?)),
+                _ => None,
+            },
+        }
+    }
+
     fn first_reference(&self) -> Option<&V> {
         match self {
             Self::Constant(_) => None,
@@ -798,20 +819,35 @@ impl<V: Clone + Ord> EffectDecision<V> {
                 let low_index = (index & lower_bits) | ((index & !lower_bits) << 1);
                 let low = frontier[low_index];
                 let high = frontier[low_index | high_bit];
-                frontier[index] = if low == high {
-                    low
-                } else {
-                    let test = match condition {
-                        Some(test) => test,
-                        None => {
-                            let test = builder
-                                .operand(selector.take().expect("selector is lowered once"))?;
-                            condition = Some(test);
-                            test
-                        }
-                    };
-                    builder.conditional(Conditional::new(test, high, low))?
+                if low == high {
+                    frontier[index] = low;
+                    continue;
+                }
+                if let Some((variable, positive)) = selector
+                    .as_ref()
+                    .and_then(EffectDecisionReplacement::literal)
+                    && builder.children_follow(variable, low, high)
+                {
+                    // The pair visit admitted this ordered branch; intern
+                    // its result directly, including a literal result.
+                    let (low, high) = if positive { (low, high) } else { (high, low) };
+                    frontier[index] = builder.intern_branch(Node {
+                        variable: variable.clone(),
+                        low,
+                        high,
+                    })?;
+                    continue;
+                }
+                let test = match condition {
+                    Some(test) => test,
+                    None => {
+                        let test =
+                            builder.operand(selector.take().expect("selector is lowered once"))?;
+                        condition = Some(test);
+                        test
+                    }
                 };
+                frontier[index] = builder.conditional(Conditional::new(test, high, low))?;
             }
             frontier.truncate(next_count);
         }
@@ -829,6 +865,18 @@ impl<V: Clone + Ord> EffectDecision<V> {
         other: &Self,
         control: &mut C,
     ) -> Result<Self, C::Error> {
+        if self.is_constant(true) {
+            return other.copy_with_control(control);
+        }
+        if other.is_constant(true) {
+            return self.copy_with_control(control);
+        }
+        if self.is_constant(false) {
+            return other.not(control);
+        }
+        if other.is_constant(false) {
+            return self.not(control);
+        }
         let mut builder = DecisionBuilder::new(control);
         let left = builder.import(self)?;
         let right = builder.import(other)?;
@@ -1385,13 +1433,10 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             return Ok(root);
         }
         if let Some(condition) = self.node(key.condition)
-            && matches!(
-                (condition.low, condition.high),
-                (Root::False, Root::True) | (Root::True, Root::False)
-            )
+            && let Some(positive) = condition.literal_polarity()
             && self.children_follow(&condition.variable, key.no, key.yes)
         {
-            let (low, high) = if condition.low == Root::False {
+            let (low, high) = if positive {
                 (key.no, key.yes)
             } else {
                 (key.yes, key.no)

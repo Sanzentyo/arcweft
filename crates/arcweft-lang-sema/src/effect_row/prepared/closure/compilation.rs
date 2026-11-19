@@ -596,9 +596,7 @@ impl<'a> Compilation<'a> {
         let mut members = Vec::new();
         for (left, right) in actual.membership.iter().zip(&permitted.membership) {
             let test = match relation {
-                PreparedEffectRelation::Equal => {
-                    left.conditional(right, &right.not(work)?, work)?
-                }
+                PreparedEffectRelation::Equal => left.equivalent(right, work)?,
                 PreparedEffectRelation::AdmittedSubset => {
                     left.conditional(right, &Decision::constant(true), work)?
                 }

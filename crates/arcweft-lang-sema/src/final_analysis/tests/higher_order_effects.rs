@@ -6,10 +6,50 @@ use crate::{
         CallableCandidateId, CheckedCallApplication, CheckedProjectFunctionRuntimeInput,
         CheckedProjectFunctionRuntimeOutcome,
     },
-    final_analysis::FinalSemanticAnalysis,
+    final_analysis::{FinalSemanticAnalysis, FinalSemanticAnalysisError},
     types::TypeKind,
 };
-use arcweft_lang_hir::{identity::ExprId, symbol::CallableDeclarationKey};
+use arcweft_lang_hir::{
+    expr::HirExprKind,
+    identity::ExprId,
+    source_index::{HirExprSourceRole, HirSourceQuery},
+    symbol::CallableDeclarationKey,
+};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+
+fn analyze_recursive_callbacks(fixture: &super::Fixture) -> FinalSemanticAnalysis {
+    match analyze(fixture) {
+        Ok(analysis) => analysis,
+        Err(error @ FinalSemanticAnalysisError::CallResolutionFailed { owner }) => {
+            let module = fixture
+                .project
+                .analysis_view()
+                .unwrap()
+                .module(&CanonicalModulePath::crate_root())
+                .unwrap();
+            let source_at = |owner| {
+                let span = module
+                    .source_anchor(HirSourceQuery::Expr {
+                        owner,
+                        role: HirExprSourceRole::Whole,
+                    })
+                    .ok()
+                    .flatten()?;
+                fixture.root_document.text().get(span.range().as_range())
+            };
+            let calls: Vec<_> = module
+                .expressions()
+                .filter(|(_, expr)| matches!(expr.kind(), HirExprKind::Call(_)))
+                .filter_map(|(id, _)| source_at(id).map(|source| (id, source)))
+                .collect();
+            panic!(
+                "recursive callback analysis failed at {:?}: {error:?}\nCalls: {calls:?}",
+                source_at(owner)
+            );
+        }
+        Err(error) => panic!("recursive callback analysis failed: {error:?}"),
+    }
+}
 
 fn project_applications<'a>(
     analysis: &'a FinalSemanticAnalysis,
@@ -412,7 +452,7 @@ flow main() -> i64 { return swap(report, increment, 1i64) }
 "#,
         None,
     );
-    let analysis = analyze(&fixture).expect("recursive callback application retains caller rows");
+    let analysis = analyze_recursive_callbacks(&fixture);
     let calls = project_applications(&analysis, "swap");
     assert_eq!(calls.len(), 2);
     let (entry, _) = calls
@@ -461,7 +501,7 @@ fn rotate(first: i64 -> i64, second: i64 -> i64, third: i64 -> i64, remaining: i
 ",
         None,
     );
-    let analysis = analyze(&fixture).expect("three rows converge in the sole declaration");
+    let analysis = analyze_recursive_callbacks(&fixture);
     let calls = project_applications(&analysis, "rotate");
     let [(_, recursive)] = calls.as_slice() else {
         panic!("one recursive call edge");
@@ -863,12 +903,6 @@ fn contextual_effect_rows_do_not_hide_array_length_mismatches() {
     use crate::callable::{
         CallAnalysisOutcome, CallableDiagnosticCode, CallableDiagnosticSeverity,
     };
-    use arcweft_lang_hir::{
-        expr::HirExprKind,
-        source_index::{HirExprSourceRole, HirSourceQuery},
-    };
-    use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-
     let fixture = fixture(
         "fn writer(value: i64) -> i64 effects { fs.write } { value }\n\
          fn ignore(unused: Array<i64 -> i64, 2>, value: i64) -> i64 { value }\n\

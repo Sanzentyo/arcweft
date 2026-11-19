@@ -200,6 +200,9 @@ fn truth_table_uses_the_same_work_for_permuted_literal_selectors() {
     .unwrap();
     assert_eq!(selected, expected);
     assert_eq!(work.used, ordered.used);
+    // Eight coefficient nodes and seven output branches. Selector literals
+    // are read as descriptors and create no standalone decision nodes.
+    assert_eq!(work.used, 71);
     for mask in 0..8u8 {
         for cell in 0..8u8 {
             let value = selected.evaluate(|&reference| {
@@ -211,6 +214,48 @@ fn truth_table_uses_the_same_work_for_permuted_literal_selectors() {
             });
             assert_eq!(value, mask == cell, "mask {mask}, coefficient {cell}");
         }
+    }
+}
+
+#[test]
+fn table_selection_interns_a_repeated_literal_result_once() {
+    let mut work = Meter::default();
+    let result = EffectDecision::select_table(
+        2,
+        4,
+        &mut work,
+        |bit| EffectDecisionReplacement::Variable(bit as u8),
+        |mask, _| Ok(EffectDecisionReplacement::Constant(mask & 2 != 0)),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(result, atom(1));
+    assert_eq!(work.used, 12);
+}
+
+#[test]
+fn table_selection_handles_negated_literals_with_and_without_shared_references() {
+    let mut work = Meter::default();
+    let bit = atom(0);
+    let negated = bit.not(&mut work).unwrap();
+    let coefficient = atom(1);
+    for high in [&coefficient, &bit] {
+        let selected = EffectDecision::select_table(
+            1,
+            2,
+            &mut work,
+            |_| EffectDecisionReplacement::Decision(&negated),
+            |mask, _| {
+                Ok(if mask == 0 {
+                    EffectDecisionReplacement::Constant(true)
+                } else {
+                    EffectDecisionReplacement::Decision(high)
+                })
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(selected, bit.or(high, &mut work).unwrap());
     }
 }
 
@@ -252,6 +297,20 @@ fn shared_conjunction_has_the_same_result_as_pairwise_conjunction() {
         left.equivalent(&right, &mut work).unwrap(),
         left.conditional(&right, &not_right, &mut work).unwrap()
     );
+}
+
+#[test]
+fn equivalence_to_true_admits_only_a_copy_of_the_other_operand() {
+    let mut setup = Meter::default();
+    let effect = atom(0).and(&atom(1), &mut setup).unwrap();
+    let mut copy = Meter::default();
+    effect.copy_with_control(&mut copy).unwrap();
+    let truth = EffectDecision::constant(true);
+    for (left, right) in [(&truth, &effect), (&effect, &truth)] {
+        let mut work = Meter::default();
+        assert_eq!(left.equivalent(right, &mut work).unwrap(), effect);
+        assert_eq!(work.used, copy.used);
+    }
 }
 
 #[test]
