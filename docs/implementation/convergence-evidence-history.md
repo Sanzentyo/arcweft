@@ -19771,3 +19771,16 @@ Compilerの5 target、548件は539成功・9失敗・0 skip。Source `5b08a96a23
 locked Sema全feature checkはライブラリ成功。テスト対象は終了101、210エラー・36警告。基点の794エラーのうち、引数不一致は647件から47件へ減少した。現在は正準型と準備済み型の境界、ソースの投影とコールバックの型の移行が残る。Sema単体と全逆依存テストは未実行。fmt、差分検査、構造ゲートは終了0。Cargo全feature逆依存は起点込みでSema 22 package。前回のCompiler実行結果を保管した。公開後にRustの30 blobを照合した。`target` は12,897,630,460 bytes。
 
 [コンパイル診断、差分、公開照合](acceptance-evidence/task-sema-fixtures-graph.raw.zip) は17 entry、261,244 bytes、SHA256 `56d3e81f15f4030b5b118848951851dfc94822e4b10fc6116c1b656501d304df`。各原本の長さとハッシュを照合した。
+
+<a id="sema-fixture-recovery"></a>
+## 2026-11-19 — Semaのテストコンパイルを復旧し全ユニットテストを測定
+
+基点 `da9dd69da8373be6ead2019d7c6eaef2e731233c`。Source `34f27dad08033cc2eecff941c4d0ebdd8bb7e895` で適用・正規化・ソースの投影を準備済み型と元の作用グラフに接続し、コンパイルエラーが210件から112件に減った。Source `1a729c591f97d9eb514c64d5c3528a91d30282a6` で候補の意味情報、捕捉と残余スコープ、および引数の確定後の型を現行の境界へ移し、locked Sema全featureのテストcheckが終了0になった。変更はテストとテスト用ヘルパーに限り、各公開時に7件と28件のRust blobを照合した。各区切りで77個と496個のテスト関数の名前と件数を照合した。
+
+同じ入力のSema全featureユニットテストは1,979件中1,854 PASS、125 FAIL、0 SKIPで終了100。作用行の存在と座標の個数を検証する `quantifying_lexical_rows_preserves_presence_and_checks_cardinality` と、部分適用で残余と局所述語を結合する `returned_scheme_fuses_residual_and_local_predicates_in_templates_and_completed_projections` はPASS。失敗には高階作用の確定、元の制約の所有境界、厳密な作業上限が含まれる。全件のIDと診断を保存した。テスト対象をコンパイルできなかった基点では同じ実行結果を取得できていない。
+
+fmt、差分検査、構造ゲートは終了0。Cargoの全feature推移的逆依存は起点込みでSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippyと、Native／AWBC・Native／Webの最終受入は今回未実行。`target` は14,887,485,664 bytes。先行のSemaライブラリ全feature Clippyは [Source `01a15d0dbf42104b132ecfab0231f2ac1ec523f7`](#effect-continuation-rows)、Core全target・全feature Clippyは [Source `8b63bd57116d8f8d1d3f39c0f1ac8b6218d4baf8`](#effect-borrowed-replay) で通過した。
+
+以前のlocked Sema全target／全feature check・Clippy、workspace fmtはSource `71e6b6fdede2ce8e5d33cb9ec30e3c03e63747c0` で終了0。非公開代数の22 Rust pathを確認し、Cargo graphのfan-in／outは12／19だった。全workspace全target／全feature check・ClippyとSema doctest 2件はSource `6cde3621e955a5798b8b1e978205410127c4f610` で終了0。[Sema品質と所有レビュー](acceptance-evidence/task-open-source-effect-relations.raw.zip)・[workspaceと構造の原本](acceptance-evidence/task-analyzer-effect-declarations.raw.zip)。
+
+[コンパイル診断、nextestの全結果、公開照合](acceptance-evidence/task-sema-fixtures-recovery.raw.zip) は37 entry、958,028 bytes、SHA256 `afa970c1440e5917e7f9f2537398811de631ea0ef457421cd4f751b8e7ebb67c`。各原本の長さとハッシュを照合した。
