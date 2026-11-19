@@ -19946,3 +19946,16 @@ LLDBで段階適用とattached defaultの2件を再実行した。どちらも `
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。Sourceの公開時に変更8 blobを検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-application-result-authority.raw.zip) は28 entry、467,535 bytes、SHA256 `6af9c066e8320f7063c0271b42ba07cd7b6e05211a30ab4e811625da861b1478`。各原本の長さとハッシュを照合した。
+
+<a id="retained-continuation-delivery"></a>
+## 2026-11-19 — 継続の型を準備済みの効果項として引き渡す
+
+基点 `2693cd849c0e54849013ddf6c6f09b40746e0742`。Source `014b48087aae5a0a9154503e7c9acca9bb621a31`。選択済みの継続は準備済みの型と発行元の参照を呼出しグラフから返す。継続の呼出し先とキャプチャ検査では、この型を実際のソースのスコープで照合する。通常の呼出しが返す値には従来の確定型を使う。関数の特殊化には入力型の照合があり、公開時はソースのスコープと確定済み効果グラフで継続の型を解決し、最終宣言から導く結果に一致することを検査する。
+
+初回ビルドは公開座標から元の式を直接取得しようとした箇所と、効果グラフのトランザクションエラーを変換する箇所で失敗した。公開時は照合済みの記録の式を使い、グラフ取得失敗はトランザクションエラーとして扱った。既存の継続テストは、発行時の型との不一致、元の継続の解決、ロールバック後の参照の拒否を確認した。呼出し先の決定では継続の確定型を観測していない。
+
+Sema全featureユニットは1,984件中1,866 PASS、118 FAIL、0 SKIP。Compiler統合5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中29 PASS、3 FAIL。全2,566件のテストIDと合否は直前の公開ソースと一致した。下位の制約計算はまだ継続の終端効果を確定してから結果を発行する。正しい引数での再帰段階適用と再帰する attached default は既存の失敗を再現した。[失敗箇所の記録](#application-result-authority)。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。Sourceの公開時に変更11 blobを検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-retained-continuation-delivery.raw.zip) は21 entry、470,846 bytes、SHA256 `43449b2d9d79d21fdb399a674ab6fd15339b121f3286ae597f31054388e43ba3`。各原本の長さとハッシュを照合した。
