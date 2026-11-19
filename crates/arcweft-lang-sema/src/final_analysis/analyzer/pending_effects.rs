@@ -7,9 +7,9 @@ use std::{
 
 use crate::{
     callable::{
-        CallableCandidateId, CallableInstantiation, CallableProjection,
-        CallableTerminalEffectProjection, CheckedCallSite, CheckedCallableDeclaration,
-        CheckedCallableId, EffectPermission, PreparedCallableEffectProjectionSite,
+        CallableCandidateId, CallableInstantiation, CallableTerminalEffectProjection,
+        CheckedCallSite, CheckedCallableDeclaration, CheckedCallableId, EffectPermission,
+        PreparedCallArgumentMapping, PreparedCallableEffectProjectionSite,
         PreparedResolvedCallable,
     },
     effect_row::EffectRow,
@@ -335,20 +335,22 @@ impl Analyzer<'_, '_, '_> {
             .map_err(FinalSemanticAnalysisError::from)
             .map_err(AnalyzerExpressionError::fatal)
     }
-    /// Only a projection that needs an inferred terminal row enters this
-    /// prerequisite. Ordinary terminal calls retain their typed effect edge.
-    pub(super) fn prepare_pending_result_projection(
+    /// A mapped continuation exposes the latent invocation row. A terminal
+    /// application with a complete result type retains its effect edge.
+    pub(super) fn prepare_application_result_dependencies(
         &mut self,
         site: CheckedCallSite,
         candidate: &PreparedResolvedCallable,
+        mapping: &PreparedCallArgumentMapping,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let effects = self.source_callable_terminal_effects(candidate)?;
-        let result = candidate
-            .result_schema_for_group(candidate.call_group(), effects)
-            .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed {
+        let transition = candidate.application_transition(mapping).map_err(|_| {
+            FinalSemanticAnalysisError::CallResolutionFailed {
                 owner: site.expression(),
-            })?;
-        if matches!(result, CallableProjection::Pending(_))
+            }
+        })?;
+        let effects = self.source_callable_terminal_effects(candidate)?;
+        if (transition.remaining_position().is_some()
+            && matches!(effects, CallableTerminalEffectProjection::Pending(_)))
             || (result_schema_has_omitted_function_rows(candidate.schema())
                 && effects.inferred_result_schema().is_none())
         {

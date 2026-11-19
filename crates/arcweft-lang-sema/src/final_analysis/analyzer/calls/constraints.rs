@@ -4615,24 +4615,16 @@ impl RanCandidateTransaction {
 
     /// Consume a completed lower transaction for deterministic unselected
     /// recovery. The callback branch remains affine and travels with the
-    /// exact candidate/result that produced it; recovery cannot reconstruct
-    /// contextual facts by evaluating HIR again.
-    pub(crate) fn into_contextual_parts(
+    /// exact candidate that produced it.
+    pub(crate) fn into_recovery_parts(
         self,
-    ) -> (
-        Arc<PreparedResolvedCallable>,
-        CallableGroupIndex,
-        CallableResultSchema,
-        AnalyzerCallSealedBranch,
-    ) {
+    ) -> (Arc<PreparedResolvedCallable>, AnalyzerCallSealedBranch) {
         let RanCandidateTransactionData {
             candidate,
-            current_group,
-            result,
             sealed_branch,
             ..
         } = *self.data;
-        (candidate, current_group, result, sealed_branch)
+        (candidate, sealed_branch)
     }
 }
 

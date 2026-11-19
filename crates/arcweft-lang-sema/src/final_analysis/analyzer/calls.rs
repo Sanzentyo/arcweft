@@ -179,7 +179,6 @@ struct PreparedCandidateBatch {
 
 struct PreparedRecoveryCandidateBatch {
     candidates: Vec<Arc<PreparedResolvedCallable>>,
-    primary_result: CallableResultSchema,
     primary_argument_count: Option<usize>,
     primary_projection: PreparedCandidateSemanticProjection,
     discarded_projections: Vec<PreparedCandidateSemanticProjection>,
@@ -215,6 +214,11 @@ enum PreparedCandidateRejection {
     Constraint,
 }
 
+enum PreparedCallInputAdmission {
+    Admitted(crate::callable::PreparedCallInputs),
+    Rejected(PreparedCandidateRejection),
+}
+
 enum PreparedCandidateRunOutcome {
     Accepted {
         transaction: RanCandidateTransaction,
@@ -222,7 +226,6 @@ enum PreparedCandidateRunOutcome {
     },
     Rejected {
         candidate: Arc<PreparedResolvedCallable>,
-        result: CallableResultSchema,
         evidence: PreparedCandidateRejection,
         branch: constraints::AnalyzerCallSealedBranch,
     },
@@ -240,7 +243,6 @@ enum PreparedChildCandidateRunOutcome {
     },
     Rejected {
         candidate: Arc<PreparedResolvedCallable>,
-        result: CallableResultSchema,
         evidence: PreparedCandidateRejection,
     },
 }
@@ -261,7 +263,6 @@ enum PreparedCandidatePreparationOutcome {
     },
     Rejected {
         candidate: Arc<PreparedResolvedCallable>,
-        result: CallableResultSchema,
         evidence: PreparedCandidateRejection,
         branch: constraints::AnalyzerCallSealedBranch,
     },
@@ -434,7 +435,6 @@ enum PreparedCandidateOutcome {
     },
     Rejected {
         candidate: Arc<PreparedResolvedCallable>,
-        result: CallableResultSchema,
         evidence: PreparedCandidateRejection,
         projection: super::state::CandidateSemanticProjection,
         branch: constraints::AnalyzerCallSealedBranch,
@@ -469,32 +469,28 @@ impl PreparedCandidateOutcome {
         }
     }
 
-    fn into_contextual_parts(
+    fn into_recovery_parts(
         self,
     ) -> (
         Arc<PreparedResolvedCallable>,
-        CallableResultSchema,
         PreparedCandidateSemanticProjection,
     ) {
         match self {
             Self::Accepted { transaction, .. } => {
                 let (ran, outer) = transaction.into_parts();
-                let (candidate, _current_group, result, branch) = ran.into_contextual_parts();
+                let (candidate, branch) = ran.into_recovery_parts();
                 (
                     candidate,
-                    result,
                     PreparedCandidateSemanticProjection { outer, branch },
                 )
             }
             Self::Rejected {
                 candidate,
-                result,
                 projection,
                 branch,
                 ..
             } => (
                 candidate,
-                result,
                 PreparedCandidateSemanticProjection {
                     outer: projection,
                     branch,
@@ -525,16 +521,14 @@ impl PreparedCandidateBatch {
             });
         }
         let mut by_index = Vec::with_capacity(self.probes.len());
-        let mut primary_result = None;
         let mut primary_argument_count = None;
         let mut primary_projection = None;
         let mut discarded_projections = Vec::new();
         for (index, outcome) in self.probes.into_iter().enumerate() {
             let argument_count = outcome.recovery_argument_count();
-            let (candidate, result, projection) = outcome.into_contextual_parts();
+            let (candidate, projection) = outcome.into_recovery_parts();
             by_index.push(candidate);
             if index == primary {
-                primary_result = Some(result);
                 primary_argument_count = argument_count;
                 primary_projection = Some(projection);
             } else {
@@ -557,12 +551,6 @@ impl PreparedCandidateBatch {
         }
         Ok(PreparedRecoveryCandidateBatch {
             candidates,
-            primary_result: primary_result.ok_or_else(|| AnalyzerExpressionError::Call {
-                owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                    crate::callable::CallConstraintInvariant::UnexpectedRejectedSelection,
-                )),
-            })?,
             primary_argument_count,
             primary_projection: primary_projection.ok_or_else(|| {
                 AnalyzerExpressionError::Call {
@@ -714,11 +702,9 @@ impl From<crate::callable::CallConstraintInvariant> for CharacterDialogueResolut
 struct RecoveryCall<'a> {
     source: CallSource<'a>,
     callee: CallCalleeClassificationFact,
-    callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs,
     candidates: Vec<Arc<PreparedResolvedCallable>>,
     considered: Vec<Arc<PreparedResolvedCallable>>,
     argument_count: usize,
-    result: CallableResultSchema,
     work: ResolverWork,
     ambiguous: bool,
 }
@@ -1313,11 +1299,34 @@ impl Analyzer<'_, '_, '_> {
             } else {
                 candidate.call_group()
             };
-            // Declaration body prerequisites are independent of candidate
-            // argument solving. Retain them with the callee transaction;
-            // The lower source trace retains each successfully closed probe's
-            // original facts separately from these callee prerequisites.
-            self.prepare_pending_result_projection(source.site, candidate)
+            let mut request = PreparedCandidateRequest {
+                original: &original,
+                module: source.module,
+                owner: source.owner,
+                site: source.site,
+                authored_arguments: source.call.arguments(),
+                explicit_type_application: Some(source.call.explicit_type_application()),
+                dialogue_application_metadata: source.dialogue_application_metadata,
+                semantic_operands: Box::new([]),
+                candidate: Arc::clone(candidate),
+                current_group: candidate_group,
+                expected_result: source.expectation.nested_call_type(),
+                expected_application_callee: source.expectation.application_callee(),
+                expected_result_scope: source.expectation.nested_call_scope_lease(),
+                callee_inputs: resolution.callee_inputs.clone(),
+                attempt: Some(source.attempt),
+                context: source_context,
+                dialogue_patch_admissions: &resolution.dialogue_patch_admissions,
+                compile_time_scalar_admissions: Box::new([]),
+            };
+            let PreparedCallInputAdmission::Admitted(inputs) =
+                self.admit_candidate_inputs(&mut request)?
+            else {
+                continue;
+            };
+            // Sibling probes share declaration-body preparations owned by
+            // their parent source transaction.
+            self.prepare_application_result_dependencies(source.site, candidate, inputs.mapping())
                 .map_err(AnalyzerExpressionError::fatal)?;
             let prepared = self
                 .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
@@ -1331,29 +1340,10 @@ impl Analyzer<'_, '_, '_> {
                         .with_consumer(source_context.consumer());
                         let result = this.prepare_child_candidate(
                             PreparedCandidateRequest {
-                                original: &original,
-                                module: source.module,
-                                owner: source.owner,
-                                site: source.site,
-                                authored_arguments: source.call.arguments(),
-                                explicit_type_application: Some(
-                                    source.call.explicit_type_application(),
-                                ),
-                                dialogue_application_metadata: source.dialogue_application_metadata,
-                                semantic_operands: Box::new([]),
-                                candidate: Arc::clone(candidate),
-                                current_group: candidate_group,
-                                expected_result: source.expectation.nested_call_type(),
-                                expected_application_callee: source
-                                    .expectation
-                                    .application_callee(),
-                                expected_result_scope: source.expectation.nested_call_scope_lease(),
-                                callee_inputs: resolution.callee_inputs.clone(),
-                                attempt: Some(source.attempt),
                                 context: &candidate_context,
-                                dialogue_patch_admissions: &resolution.dialogue_patch_admissions,
-                                compile_time_scalar_admissions: Box::new([]),
+                                ..request
                             },
+                            inputs,
                             &mut resolution.work,
                             parent_source,
                         );
@@ -2484,14 +2474,12 @@ impl Analyzer<'_, '_, '_> {
                     value:
                         PreparedCandidateRunOutcome::Rejected {
                             candidate,
-                            result,
                             evidence,
                             branch,
                         },
                     projection,
                 } => PreparedCandidateOutcome::Rejected {
                     candidate,
-                    result,
                     evidence,
                     projection,
                     branch,
@@ -3064,7 +3052,7 @@ impl Analyzer<'_, '_, '_> {
             .remove(selected_index)
             .into_accepted(source.owner)?;
         for discarded in batch.probes {
-            let (_, _, projection) = discarded.into_contextual_parts();
+            let (_, projection) = discarded.into_recovery_parts();
             self.discard_candidate_semantic_projection(source.owner, projection)?;
         }
         let (selected_ran, outer_projection) = selected_transaction.into_parts();
@@ -3708,7 +3696,6 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<PreparedResolvedExpression, AnalyzerExpressionError> {
         let ResolvedCallQuery {
             callee,
-            callee_inputs,
             considered,
             work,
             ..
@@ -3737,15 +3724,12 @@ impl Analyzer<'_, '_, '_> {
                     });
                 }
                 this.publish_recovery_call(
-                    context.work(),
                     RecoveryCall {
                         source,
                         callee,
-                        callee_inputs,
                         candidates: recovery.candidates,
                         considered,
                         argument_count,
-                        result: recovery.primary_result,
                         work,
                         ambiguous: true,
                     },
@@ -3794,15 +3778,12 @@ impl Analyzer<'_, '_, '_> {
                 }
                 let considered = resolution.considered;
                 this.publish_recovery_call(
-                    context.work(),
                     RecoveryCall {
                         source,
                         callee: resolution.callee,
-                        callee_inputs: resolution.callee_inputs.clone(),
                         candidates: recovery.candidates,
                         considered,
                         argument_count,
-                        result: recovery.primary_result,
                         work: resolution.work,
                         ambiguous: false,
                     },
@@ -3926,27 +3907,23 @@ impl Analyzer<'_, '_, '_> {
 
     fn publish_recovery_call(
         &mut self,
-        preparation_work: super::preparation_work::AnalyzerPreparationWork<'_>,
         recovery: RecoveryCall<'_>,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
     ) -> Result<PreparedResolvedExpression, FinalSemanticAnalysisError> {
         let RecoveryCall {
             source,
             callee,
-            callee_inputs,
             candidates,
             considered,
             argument_count,
-            result,
             mut work,
             ambiguous,
         } = recovery;
-        let primary =
-            candidates
-                .first()
-                .ok_or(FinalSemanticAnalysisError::CallResolutionFailed {
-                    owner: source.owner,
-                })?;
+        if candidates.is_empty() {
+            return Err(FinalSemanticAnalysisError::CallResolutionFailed {
+                owner: source.owner,
+            });
+        }
         work.record_retained_argument_fact_publications(
             u64::try_from(argument_count)
                 .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
@@ -3954,23 +3931,6 @@ impl Analyzer<'_, '_, '_> {
         .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed {
             owner: source.owner,
         })?;
-        let callee_expression = match &result {
-            CallableResultSchema::Value(value) => {
-                let callable_effects = self.source_callable_effects(primary, None)?;
-                self.stage_resolved_callee_expression(
-                    preparation_work.clone(),
-                    source.owner,
-                    source.site,
-                    source.module,
-                    source.call,
-                    primary,
-                    &callee_inputs,
-                    value,
-                    callable_effects.as_ref(),
-                )?
-            }
-            CallableResultSchema::ContentEmission(_) => AnalyzerPreparedCalleeExpression::none(),
-        };
         let tied = candidates
             .iter()
             .map(|candidate| candidate.id().clone())
@@ -3998,7 +3958,7 @@ impl Analyzer<'_, '_, '_> {
                     .map(HirCallArgument::value)
                     .collect::<Vec<_>>()
                     .into_boxed_slice(),
-                callee_expression.semantic_expression(),
+                source.call.callee().value_expression(),
             );
         self.facts
             .insert_unselected_call(
@@ -4772,22 +4732,36 @@ impl Analyzer<'_, '_, '_> {
 
     fn prepare_candidate(
         &mut self,
-        request: PreparedCandidateRequest<'_, '_>,
+        mut request: PreparedCandidateRequest<'_, '_>,
         work: &mut ResolverWork,
     ) -> Result<PreparedCandidateRunOutcome, AnalyzerExpressionError> {
         let owner = request.owner;
-        match self.prepare_candidate_impl(request, work, None)? {
+        let inputs = match self.admit_candidate_inputs(&mut request)? {
+            PreparedCallInputAdmission::Admitted(inputs) => inputs,
+            PreparedCallInputAdmission::Rejected(evidence) => {
+                return Ok(PreparedCandidateRunOutcome::Rejected {
+                    candidate: request.candidate,
+                    evidence,
+                    branch: constraints::AnalyzerCallSealedBranch::Empty,
+                });
+            }
+        };
+        self.prepare_application_result_dependencies(
+            request.site,
+            &request.candidate,
+            inputs.mapping(),
+        )
+        .map_err(AnalyzerExpressionError::fatal)?;
+        match self.prepare_candidate_impl(request, inputs, work, None)? {
             PreparedCandidatePreparationOutcome::Accepted { transaction, rank } => {
                 Ok(PreparedCandidateRunOutcome::Accepted { transaction, rank })
             }
             PreparedCandidatePreparationOutcome::Rejected {
                 candidate,
-                result,
                 evidence,
                 branch,
             } => Ok(PreparedCandidateRunOutcome::Rejected {
                 candidate,
-                result,
                 evidence,
                 branch,
             }),
@@ -4847,6 +4821,7 @@ impl Analyzer<'_, '_, '_> {
     fn prepare_child_candidate(
         &mut self,
         request: PreparedCandidateRequest<'_, '_>,
+        inputs: crate::callable::PreparedCallInputs,
         work: &mut ResolverWork,
         parent_source: &mut crate::callable::CandidateConstraintSourceContext<
             '_,
@@ -4855,7 +4830,7 @@ impl Analyzer<'_, '_, '_> {
         >,
     ) -> Result<PreparedChildCandidateRunOutcome, AnalyzerExpressionError> {
         let owner = request.owner;
-        match self.prepare_candidate_impl(request, work, Some(parent_source))? {
+        match self.prepare_candidate_impl(request, inputs, work, Some(parent_source))? {
             PreparedCandidatePreparationOutcome::Deferred {
                 candidate,
                 pending,
@@ -4871,12 +4846,10 @@ impl Analyzer<'_, '_, '_> {
             }),
             PreparedCandidatePreparationOutcome::Rejected {
                 candidate,
-                result,
                 evidence,
                 ..
             } => Ok(PreparedChildCandidateRunOutcome::Rejected {
                 candidate,
-                result,
                 evidence,
             }),
             PreparedCandidatePreparationOutcome::Accepted { .. } => {
@@ -4887,40 +4860,23 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
-    fn prepare_candidate_impl(
-        &mut self,
-        request: PreparedCandidateRequest<'_, '_>,
-        work: &mut ResolverWork,
-        mut parent_source: Option<
-            &mut crate::callable::CandidateConstraintSourceContext<
-                '_,
-                '_,
-                constraints::AnalyzerCallConstraintDomain,
-            >,
-        >,
-    ) -> Result<PreparedCandidatePreparationOutcome, AnalyzerExpressionError> {
-        let PreparedCandidateRequest {
-            original,
-            module,
-            owner,
-            site,
-            authored_arguments,
-            explicit_type_application,
-            dialogue_application_metadata,
-            semantic_operands,
-            candidate,
-            current_group,
-            expected_result,
-            expected_application_callee,
-            expected_result_scope,
-            callee_inputs,
-            attempt,
-            context,
-            dialogue_patch_admissions,
-            compile_time_scalar_admissions,
-        } = request;
-        self.prepare_pending_result_projection(site, &candidate)
-            .map_err(AnalyzerExpressionError::fatal)?;
+    /// Admit authored and semantic inputs through the exact candidate mapper.
+    /// This pass reads source annotations and never checks the callable body.
+    fn admit_candidate_inputs(
+        &self,
+        request: &mut PreparedCandidateRequest<'_, '_>,
+    ) -> Result<PreparedCallInputAdmission, AnalyzerExpressionError> {
+        let module = request.module;
+        let owner = request.owner;
+        let site = request.site;
+        let context = request.context;
+        let authored_arguments = request.authored_arguments;
+        let explicit_type_application = request.explicit_type_application;
+        let dialogue_application_metadata = request.dialogue_application_metadata;
+        let semantic_operands = std::mem::take(&mut request.semantic_operands);
+        let candidate = &request.candidate;
+        let current_group = request.current_group;
+        let callee_inputs = &request.callee_inputs;
         let implicit = match candidate.instantiation() {
             CallableInstantiation::Extension {
                 group, parameter, ..
@@ -4940,17 +4896,11 @@ impl Analyzer<'_, '_, '_> {
         })? {
             PreparedAttachedContentAdmission::Accepted(operand) => operand,
             PreparedAttachedContentAdmission::Rejected => {
-                let result = self
-                    .source_result_schema_for_group(owner, &candidate, current_group)
-                    .map_err(AnalyzerExpressionError::fatal)?;
-                return Ok(PreparedCandidatePreparationOutcome::Rejected {
-                    candidate: Arc::clone(&candidate),
-                    result,
-                    evidence: PreparedCandidateRejection::Mapping(
+                return Ok(PreparedCallInputAdmission::Rejected(
+                    PreparedCandidateRejection::Mapping(
                         PreparedCallMappingRejection::from_authored(authored_arguments),
                     ),
-                    branch: constraints::AnalyzerCallSealedBranch::Empty,
-                });
+                ));
             }
         };
         let mapping = if semantic_operands.is_empty() {
@@ -4962,17 +4912,11 @@ impl Analyzer<'_, '_, '_> {
                 authored_arguments,
                 implicit,
             ) else {
-                let result = self
-                    .source_result_schema_for_group(owner, &candidate, current_group)
-                    .map_err(AnalyzerExpressionError::fatal)?;
-                return Ok(PreparedCandidatePreparationOutcome::Rejected {
-                    candidate: Arc::clone(&candidate),
-                    result,
-                    evidence: PreparedCandidateRejection::Mapping(
+                return Ok(PreparedCallInputAdmission::Rejected(
+                    PreparedCandidateRejection::Mapping(
                         PreparedCallMappingRejection::from_authored(authored_arguments),
                     ),
-                    branch: constraints::AnalyzerCallSealedBranch::Empty,
-                });
+                ));
             };
             mapping
                 .seal_dialogue_application_metadata(
@@ -5006,17 +4950,11 @@ impl Analyzer<'_, '_, '_> {
                 authored_arguments,
                 None,
             ) else {
-                let result = self
-                    .source_result_schema_for_group(owner, &candidate, current_group)
-                    .map_err(AnalyzerExpressionError::fatal)?;
-                return Ok(PreparedCandidatePreparationOutcome::Rejected {
-                    candidate: Arc::clone(&candidate),
-                    result,
-                    evidence: PreparedCandidateRejection::Mapping(
+                return Ok(PreparedCallInputAdmission::Rejected(
+                    PreparedCandidateRejection::Mapping(
                         PreparedCallMappingRejection::from_authored(authored_arguments),
                     ),
-                    branch: constraints::AnalyzerCallSealedBranch::Empty,
-                });
+                ));
             };
             mapping
         } else {
@@ -5072,21 +5010,45 @@ impl Analyzer<'_, '_, '_> {
         let inputs =
             crate::callable::PreparedCallInputs::new(mapping, semantic_operands, attached_content)
                 .with_type_application(type_application);
-        if !inputs.validates_type_application(&candidate) {
-            let result = self
-                .source_result_schema_for_group(owner, &candidate, current_group)
-                .map_err(AnalyzerExpressionError::fatal)?;
-            return Ok(PreparedCandidatePreparationOutcome::Rejected {
-                candidate: Arc::clone(&candidate),
-                result,
-                evidence: PreparedCandidateRejection::Constraint,
-                branch: constraints::AnalyzerCallSealedBranch::Empty,
-            });
+        if !inputs.validates_type_application(candidate) {
+            return Ok(PreparedCallInputAdmission::Rejected(
+                PreparedCandidateRejection::Constraint,
+            ));
         }
-        if inputs.mapping().first_unbound().is_some() {
-            self.prepare_callable_body_effects(site.into(), &candidate)
-                .map_err(AnalyzerExpressionError::fatal)?;
-        }
+        Ok(PreparedCallInputAdmission::Admitted(inputs))
+    }
+
+    fn prepare_candidate_impl(
+        &mut self,
+        request: PreparedCandidateRequest<'_, '_>,
+        inputs: crate::callable::PreparedCallInputs,
+        work: &mut ResolverWork,
+        mut parent_source: Option<
+            &mut crate::callable::CandidateConstraintSourceContext<
+                '_,
+                '_,
+                constraints::AnalyzerCallConstraintDomain,
+            >,
+        >,
+    ) -> Result<PreparedCandidatePreparationOutcome, AnalyzerExpressionError> {
+        let PreparedCandidateRequest {
+            original,
+            module,
+            owner,
+            site,
+            authored_arguments,
+            candidate,
+            current_group,
+            expected_result,
+            expected_application_callee,
+            expected_result_scope,
+            callee_inputs,
+            attempt,
+            context,
+            dialogue_patch_admissions,
+            compile_time_scalar_admissions,
+            ..
+        } = request;
         let mut rank = AcceptedCandidateRank {
             exact_matches: 0,
             declared_exact_matches: 0,
@@ -5094,9 +5056,6 @@ impl Analyzer<'_, '_, '_> {
             omitted_parameters: inputs.omitted_parameters(),
             authority: candidate.authority(),
         };
-        let default_result = self
-            .source_result_schema_for_group(owner, &candidate, current_group)
-            .map_err(AnalyzerExpressionError::fatal)?;
         let prepared_candidate = Arc::clone(&candidate);
         let view_fx_runtime_parameters = self.view_fx_runtime_parameter_overrides(
             context,
@@ -5215,7 +5174,6 @@ impl Analyzer<'_, '_, '_> {
                 }
                 return Ok(PreparedCandidatePreparationOutcome::Rejected {
                     candidate: Arc::clone(&candidate),
-                    result: default_result,
                     evidence: PreparedCandidateRejection::Constraint,
                     branch: constraints::AnalyzerCallSealedBranch::Empty,
                 });

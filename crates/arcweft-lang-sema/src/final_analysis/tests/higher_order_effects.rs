@@ -249,6 +249,47 @@ fn right<T>(value: T, remaining: i64) -> T {
 }
 
 #[test]
+fn recursive_staged_call_with_wrong_arity_retains_its_rejection() {
+    use crate::callable::CallAnalysisOutcome;
+
+    let fixture = fixture(
+        r#"
+fn staged<T>(value: T)(answer: i64) -> i64 {
+    staged(value, 0i64);
+    log.info("body")
+    answer
+}
+flow main() -> i64 { return staged("saved")(42i64) }
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("the rejected prefix remains a call diagnostic");
+    let rejected = analysis
+        .calls()
+        .filter_map(|(owner, call)| match call.outcome() {
+            CallAnalysisOutcome::Rejected(evidence) => Some((owner, evidence)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [(owner, evidence)] = rejected.as_slice() else {
+        panic!("only the wrong-arity prefix is rejected");
+    };
+    let [candidate] = evidence.candidates() else {
+        panic!("the staged declaration is the only candidate");
+    };
+    assert!(matches!(
+        candidate.id(),
+        CallableCandidateId::Project(CallableDeclarationKey::Existing(declaration))
+            if declaration.name() == "staged"
+    ));
+    super::callable_values::assert_unselected_call_has_no_execution(&analysis, *owner);
+    assert_eq!(
+        application_rows(&analysis, "staged"),
+        [vec![], vec!["log.write".to_owned()]]
+    );
+}
+
+#[test]
 fn recursive_body_staged_prefix_retains_the_inferred_terminal_row() {
     assert_recursive_body_effect_rows(
         r#"
