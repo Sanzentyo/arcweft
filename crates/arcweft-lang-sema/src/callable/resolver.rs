@@ -209,7 +209,7 @@ pub(crate) enum PreparedCallCalleeConstraintInputs {
     DialogueCallee,
     DialogueApplication,
     StaticContentCallee(PreparedStaticContentCallee),
-    FunctionValue(PreparedCallValueOperand),
+    FunctionValue(PreparedFunctionValueOperand),
     NonCallable,
 }
 
@@ -283,6 +283,34 @@ impl PreparedCallValueOperand {
 
     pub(crate) const fn original(&self) -> &Arc<TypeKind<crate::types::PreparedEffects>> {
         &self.original
+    }
+}
+
+/// A declaration-backed value already carries the declaration's parameter
+/// grammar. Its latent effects can stay open while the call is selected.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum PreparedFunctionValueOperand {
+    Declared {
+        source: ExprId,
+        original: Arc<TypeKind<PreparedEffects>>,
+        declaration: PreparedFunctionValueDeclaration,
+    },
+    Observed(PreparedCallValueOperand),
+}
+
+impl PreparedFunctionValueOperand {
+    pub(crate) const fn source(&self) -> ExprId {
+        match self {
+            Self::Declared { source, .. } => *source,
+            Self::Observed(operand) => operand.source(),
+        }
+    }
+
+    pub(crate) const fn original(&self) -> &Arc<TypeKind<PreparedEffects>> {
+        match self {
+            Self::Declared { original, .. } => original,
+            Self::Observed(operand) => operand.original(),
+        }
     }
 }
 
@@ -789,11 +817,22 @@ type FinalCallSourceAnnotations<'a> = dyn Fn(
     ) -> Result<Option<TypeKind>, FinalSemanticAnalysisError>
     + 'a;
 
-type FinalCallValueOperandPreparation<'a> = dyn Fn(
+type FinalCallObservedValuePreparation<'a> = dyn Fn(
         ExprId,
         &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<PreparedCallValueOperand, FinalSemanticAnalysisError>
     + 'a;
+
+type FinalCallRetainedValuePreparation<'a> = dyn Fn(
+        ExprId,
+        &TypeKind<PreparedEffects>,
+    ) -> Result<TypeKind<PreparedEffects>, FinalSemanticAnalysisError>
+    + 'a;
+
+pub(crate) struct FinalCallValueOperandPreparation<'a> {
+    pub(crate) observe: &'a FinalCallObservedValuePreparation<'a>,
+    pub(crate) retain: &'a FinalCallRetainedValuePreparation<'a>,
+}
 
 /// Immutable child facts needed to prepare one final-HIR call.
 pub(crate) struct FinalCallCalleeFacts<'a, 'source, P, U> {
@@ -804,7 +843,7 @@ pub(crate) struct FinalCallCalleeFacts<'a, 'source, P, U> {
     types: &'a BTreeMap<TypeId, TypeKind>,
     function_value_origin: &'source mut Option<PreparedFunctionValueOriginEvidence>,
     annotations: &'source FinalCallSourceAnnotations<'source>,
-    value_operand: &'source FinalCallValueOperandPreparation<'source>,
+    value_operand: FinalCallValueOperandPreparation<'source>,
 }
 
 impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
@@ -815,7 +854,7 @@ impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
         types: &'a BTreeMap<TypeId, TypeKind>,
         function_value_origin: &'source mut Option<PreparedFunctionValueOriginEvidence>,
         annotations: &'source FinalCallSourceAnnotations<'source>,
-        value_operand: &'source FinalCallValueOperandPreparation<'source>,
+        value_operand: FinalCallValueOperandPreparation<'source>,
     ) -> Self {
         Self {
             flow_transfer: None,
@@ -842,7 +881,7 @@ impl<'a, 'source, P, U> FinalCallCalleeFacts<'a, 'source, P, U> {
         expression: ExprId,
         ty: &TypeKind<crate::types::PreparedEffects>,
     ) -> Result<PreparedCallValueOperand, PrepareFinalCallCalleeError> {
-        (self.value_operand)(expression, ty).map_err(|error| {
+        (self.value_operand.observe)(expression, ty).map_err(|error| {
             PrepareFinalCallCalleeError::SourceType {
                 expression,
                 error: Box::new(error),
@@ -1136,9 +1175,7 @@ impl AcceptedEnumVariantCase {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ResolvedFunctionValueSeed {
-    Declaration {
-        checked: CheckedCallableId,
-    },
+    Declaration,
     Lexical {
         id: LocalCallableId,
         schema: CallableSignatureSchema,
@@ -1170,13 +1207,31 @@ pub(crate) enum PreparedFunctionValueOriginQueryError {
     CaptureEvidenceMismatch(CheckedCaptureAuthorityViolation),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum PreparedFunctionValueDeclaration {
+    Project(Arc<CallableDeclarationKey>),
+    Environment(Arc<CheckedCallableId>),
+}
+
+impl PreparedFunctionValueDeclaration {
+    pub(crate) fn matches(&self, checked: &CheckedCallableId) -> bool {
+        match self {
+            Self::Project(key) => matches!(
+                checked.declaration(),
+                CheckedCallableDeclaration::Project(project) if project == key.as_ref()
+            ),
+            Self::Environment(id) => id.as_ref() == checked,
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum PreparedFunctionValueOriginProducer {
     /// Original checked declaration, reached through zero or more immutable
     /// value bindings. Its parameter grammar remains in the accepted record.
     Declaration {
         producer: ExprId,
-        checked: CheckedCallableId,
+        declaration: PreparedFunctionValueDeclaration,
     },
     /// A typed call-origin observation.  The prepared graph later resolves
     /// this site to either a continuation or an independent terminal value.
@@ -1524,7 +1579,9 @@ impl PreparedFunctionValueOriginQuery {
             return Ok(self.ready(
                 PreparedFunctionValueOriginProducer::Declaration {
                     producer: self.current,
-                    checked: checked.clone(),
+                    declaration: PreparedFunctionValueDeclaration::Environment(Arc::new(
+                        checked.clone(),
+                    )),
                 },
                 Vec::new(),
             ));
@@ -1541,6 +1598,22 @@ impl PreparedFunctionValueOriginQuery {
             if self.storage_specialization.replace(self.current).is_some() {
                 return Err(PreparedFunctionValueOriginQueryError::Invalid);
             }
+        }
+        if self.purpose == PreparedFunctionValueOriginPurpose::Selection
+            && let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
+                value,
+            )) = resolution
+            && matches!(fact.value_type(), Some(TypeKind::Function { .. }))
+        {
+            return Ok(self.ready(
+                PreparedFunctionValueOriginProducer::Declaration {
+                    producer: self.current,
+                    declaration: PreparedFunctionValueDeclaration::Project(Arc::new(
+                        value.declaration().clone(),
+                    )),
+                },
+                Vec::new(),
+            ));
         }
         if let Some(site) = resolution.checked_call_site(self.current) {
             return Ok(self.ready(PreparedFunctionValueOriginProducer::Call(site), Vec::new()));
@@ -1628,14 +1701,14 @@ impl PreparedFunctionValueOriginQuery {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct PreparedFunctionValueCallee {
-    operand: PreparedCallValueOperand,
+    operand: PreparedFunctionValueOperand,
     origin: PreparedFunctionValueOriginEvidence,
     seed: ResolvedFunctionValueSeed,
 }
 
 impl PreparedFunctionValueCallee {
     pub(crate) fn new(
-        operand: PreparedCallValueOperand,
+        operand: PreparedFunctionValueOperand,
         origin: PreparedFunctionValueOriginEvidence,
         seed: ResolvedFunctionValueSeed,
     ) -> Self {
@@ -1646,7 +1719,7 @@ impl PreparedFunctionValueCallee {
         }
     }
 
-    pub(crate) const fn operand(&self) -> &PreparedCallValueOperand {
+    pub(crate) const fn operand(&self) -> &PreparedFunctionValueOperand {
         &self.operand
     }
 

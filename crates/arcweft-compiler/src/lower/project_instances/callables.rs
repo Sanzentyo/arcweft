@@ -468,9 +468,14 @@ impl ProjectInstanceProjection<'_> {
             return Err(ProjectInstantiationOrigin::Call(owner)
                 .error("call input lacks checked expression"));
         };
-        if expression.function_specialization().is_some() {
-            return Ok(None);
-        }
+        use arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionSpecializationPlacement;
+        let placement = match expression.function_specialization() {
+            Some(witness) if witness.is_selected_declaration_input() => {
+                RuntimeProjectFunctionSpecializationPlacement::CalleeExpression
+            }
+            Some(_) => return Ok(None),
+            None => RuntimeProjectFunctionSpecializationPlacement::CallInput,
+        };
         let origin = ProjectInstantiationOrigin::Call(owner);
         let ty = expression
             .source_value_type()
@@ -507,6 +512,7 @@ impl ProjectInstanceProjection<'_> {
             RuntimeCallableValueSpecialization::try_new(source.clone(), key)
                 .map_err(|error| origin.error(error.to_string()))?,
             checked.source_digest(),
+            placement,
         );
         let use_key = self.callable_use(owner, ProjectCallableUseKind::CallInput);
         self.insert_demand(

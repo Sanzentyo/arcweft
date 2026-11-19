@@ -1390,6 +1390,32 @@ flow main() -> bool {
 );
 
 callable_case!(
+    mutually_recursive_generic_function_values_execute_for_distinct_types,
+    r#"
+fn forward<T>(value: T, remaining: i64) -> T {
+    log.info("forward")
+    if remaining == 0i64 { value } else {
+        let next = backward
+        next(value, remaining - 1i64)
+    }
+}
+fn backward<T>(value: T, remaining: i64) -> T {
+    if remaining == 0i64 { value } else {
+        let next = forward
+        next(value, remaining - 1i64)
+    }
+}
+flow main() -> bool {
+    let number = forward(42i64, 4i64)
+    let text = backward("kept", 3i64)
+    return number == 42i64 && text == "kept"
+}
+"#,
+    RuntimeValue::Bool(true),
+    "true"
+);
+
+callable_case!(
     shared_prefix_with_distinct_later_types,
     r#"
 fn choose<A, B>(first: A)(second: B) -> B { second }

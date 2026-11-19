@@ -1443,16 +1443,19 @@ fn immutable_project_function_aliases_use_the_checked_body_suspension() {
         None,
     );
     let report = analyze(&world).unwrap();
-    assert!(
-        report
-            .calls()
-            .any(|(_, call)| call
-                .selected_application()
-                .is_some_and(|application| matches!(
-                    application.core().candidates().selected().id(),
-                    crate::callable::CallableCandidateId::FunctionValue(_)
-                )))
-    );
+    let mut applications = report
+        .calls()
+        .filter_map(|(_, call)| call.selected_application());
+    let application = applications.next().expect("the immutable alias invocation");
+    assert!(applications.next().is_none());
+    assert!(matches!(
+        application.core().candidates().selected().id(),
+        crate::callable::CallableCandidateId::Project(declaration) if declaration.name() == "pure"
+    ));
+    assert!(matches!(
+        application.core().callee(),
+        crate::callable::CheckedCallCalleeExecution::Value { .. }
+    ));
     let source = declaration_body(&report, "root");
     let context = report
         .checked_execution_context(

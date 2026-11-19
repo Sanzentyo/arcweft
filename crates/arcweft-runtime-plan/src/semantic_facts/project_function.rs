@@ -362,18 +362,34 @@ impl RuntimeProjectFunctionCallOutcome {
     }
 }
 
-/// One call-fact-owned project-function continuation/invocation contract.
+/// Where the selected application's single specialization is evaluated.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeProjectFunctionSpecializationPlacement {
+    CalleeExpression,
+    CallInput,
+}
+
+/// The original callable source and exact state selected for the input.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeProjectFunctionCallSpecialization {
     value: super::RuntimeCallableValueSpecialization,
     source: arcweft_lang_sema::callable::CheckedProjectFunctionCallableSourceDigest,
+    placement: RuntimeProjectFunctionSpecializationPlacement,
 }
 impl RuntimeProjectFunctionCallSpecialization {
     pub const fn new(
         value: super::RuntimeCallableValueSpecialization,
         source: arcweft_lang_sema::callable::CheckedProjectFunctionCallableSourceDigest,
+        placement: RuntimeProjectFunctionSpecializationPlacement,
     ) -> Self {
-        Self { value, source }
+        Self {
+            value,
+            source,
+            placement,
+        }
+    }
+    pub const fn placement(&self) -> RuntimeProjectFunctionSpecializationPlacement {
+        self.placement
     }
     pub const fn source(&self) -> &RuntimeNormalizedType {
         self.value.source()

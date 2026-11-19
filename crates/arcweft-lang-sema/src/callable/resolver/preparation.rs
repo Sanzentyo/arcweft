@@ -7,11 +7,12 @@ use super::{
     CallResolverAuthority, CallableLimits, CallableName, CallablePath, CallableSignatureSchema,
     CheckedExpressionResolution, CheckedValueResolution, ExprId, FinalCallCalleeFacts,
     FunctionValueSignatureId, HirAssociatedCallSyntax, HirAssociatedReceiver,
-    HirAssociatedSeparator, HirCallCallee, HirCallInvocation, HirExpr, HirExprKind,
-    HirExprSourceRole, HirModule, HirPath, HirPathRoot, HirPathSegment, HirPathValue,
+    HirAssociatedSeparator, HirCallArgument, HirCallCallee, HirCallInvocation, HirExpr,
+    HirExprKind, HirExprSourceRole, HirModule, HirPath, HirPathRoot, HirPathSegment, HirPathValue,
     HirRecoveredName, HirSelectedMember, HirSourceQuery, PrepareFinalCallCalleeError,
     PreparedCallCallee, PreparedCallValueOperand, PreparedFinalCallCallee, PreparedFreeCallContext,
-    PreparedFreeCallScope, PreparedFunctionValueCallee, PreparedFunctionValueOriginEvidence,
+    PreparedFreeCallScope, PreparedFunctionValueCallee, PreparedFunctionValueDeclaration,
+    PreparedFunctionValueOperand, PreparedFunctionValueOriginEvidence,
     PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
     PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQuery,
     PreparedFunctionValueOriginQueryError, PresentationCallableId, ProjectValueLookup,
@@ -73,9 +74,15 @@ where
     }
 
     match call.callee() {
-        HirCallCallee::Value { value } => {
-            prepare_value_call_callee(authority, *value, facts, dialogue_context, context, limits)
-        }
+        HirCallCallee::Value { value } => prepare_value_call_callee(
+            authority,
+            Some(call),
+            *value,
+            facts,
+            dialogue_context,
+            context,
+            limits,
+        ),
         HirCallCallee::UnresolvedDot {
             value_receiver,
             nominal_receiver,
@@ -103,6 +110,7 @@ where
 
 fn prepare_value_call_callee<'a, P, U>(
     authority: CallResolverAuthority<'a>,
+    call: Option<&HirCallInvocation>,
     value: ExprId,
     facts: FinalCallCalleeFacts<'a, '_, P, U>,
     dialogue_context: CharacterDialoguePatchContext,
@@ -268,7 +276,7 @@ where
                 ))
             )
         {
-            return prepare_checked_value_callee(value, checked, facts, limits);
+            return prepare_checked_value_callee(authority, call, value, checked, facts, limits);
         }
         let lookup = resolve_final_project_value(authority, value, path)?;
         let checked = facts.expressions.get(&value);
@@ -322,10 +330,12 @@ where
         .get(&value)
         .ok_or(PrepareFinalCallCalleeError::MissingExpressionFact { expression: value })?;
 
-    prepare_checked_value_callee(value, checked, facts, limits)
+    prepare_checked_value_callee(authority, call, value, checked, facts, limits)
 }
 
 fn prepare_checked_value_callee<'a, P, U>(
+    authority: CallResolverAuthority<'a>,
+    call: Option<&HirCallInvocation>,
     value: ExprId,
     checked: &PreparedExpressionFact,
     facts: FinalCallCalleeFacts<'a, '_, P, U>,
@@ -339,20 +349,99 @@ where
         .ok_or(PrepareFinalCallCalleeError::MissingValueType { expression: value })?;
     let missing_origin =
         PrepareFinalCallCalleeError::MissingFunctionValueOrigin { expression: value };
-    match (checked_type, facts.function_value_origin.is_some()) {
-        (TypeKind::Function { .. }, true) => {
-            let operand = facts.prepare_value_operand(value, checked_type)?;
-            let origin = facts.function_value_origin.take().ok_or(missing_origin)?;
-            let value = prepare_function_value(operand, origin, facts.prepared_calls, limits)?;
+    match (checked_type, facts.function_value_origin.as_ref()) {
+        (TypeKind::Function { .. }, Some(origin)) => {
+            let declared = match origin.producer() {
+                PreparedFunctionValueOriginProducer::Declaration {
+                    producer,
+                    declaration: declaration @ PreparedFunctionValueDeclaration::Environment(_),
+                } => Some((*producer, declaration)),
+                PreparedFunctionValueOriginProducer::Declaration {
+                    producer,
+                    declaration: declaration @ PreparedFunctionValueDeclaration::Project(key),
+                } => {
+                    let record = authority
+                        .world
+                        .environment()
+                        .callable_catalog()
+                        .project_record(key)
+                        .ok_or(PrepareFinalCallCalleeError::InvalidFunctionValueOrigin {
+                            expression: value,
+                        })?;
+                    call.filter(|call| positional_terminal_application(record.schema(), call))
+                        .map(|_| (*producer, declaration))
+                }
+                _ => None,
+            };
+            let value = if let Some((producer, declaration)) = declared {
+                let original = facts.expressions.get(&producer);
+                let same_declaration = match (
+                    declaration,
+                    original.and_then(PreparedExpressionFact::checked_resolution),
+                ) {
+                    (
+                        PreparedFunctionValueDeclaration::Project(key),
+                        Some(CheckedExpressionResolution::Value(
+                            CheckedValueResolution::ProjectCallable(callable),
+                        )),
+                    ) => callable.declaration() == key.as_ref(),
+                    (
+                        PreparedFunctionValueDeclaration::Environment(id),
+                        Some(CheckedExpressionResolution::Value(
+                            CheckedValueResolution::EnvironmentCallable(callable),
+                        )),
+                    ) => callable == id.as_ref(),
+                    _ => false,
+                };
+                if origin.callee() != value
+                    || !origin.captures().is_empty()
+                    || !same_declaration
+                    || original.and_then(PreparedExpressionFact::value_type) != Some(checked_type)
+                {
+                    return Err(PrepareFinalCallCalleeError::InvalidFunctionValueOrigin {
+                        expression: value,
+                    });
+                }
+                let original =
+                    (facts.value_operand.retain)(value, checked_type).map_err(|error| {
+                        PrepareFinalCallCalleeError::SourceType {
+                            expression: value,
+                            error: Box::new(error),
+                        }
+                    })?;
+                let operand = PreparedFunctionValueOperand::Declared {
+                    source: value,
+                    original: super::Arc::new(original),
+                    declaration: declaration.clone(),
+                };
+                let origin = facts.function_value_origin.take().ok_or(missing_origin)?;
+                PreparedFunctionValueCallee::new(
+                    operand,
+                    origin,
+                    ResolvedFunctionValueSeed::Declaration,
+                )
+            } else {
+                let operand = facts.prepare_value_operand(value, checked_type)?;
+                let mut origin = facts.function_value_origin.take().ok_or(missing_origin)?;
+                if let PreparedFunctionValueOriginProducer::Declaration {
+                    producer,
+                    declaration: PreparedFunctionValueDeclaration::Project(_),
+                } = origin.producer
+                {
+                    origin.producer =
+                        PreparedFunctionValueOriginProducer::IndependentExpression { producer };
+                }
+                prepare_function_value(operand, origin, facts.prepared_calls, limits)?
+            };
             Ok(PreparedFinalCallCallee::FunctionValue {
                 value: Box::new(value),
             })
         }
-        (TypeKind::Function { .. }, false) => Err(missing_origin),
-        (_, true) => {
+        (TypeKind::Function { .. }, None) => Err(missing_origin),
+        (_, Some(_)) => {
             Err(PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin { expression: value })
         }
-        (_, false) => Ok(PreparedFinalCallCallee::NonCallableValue {
+        (_, None) => Ok(PreparedFinalCallCallee::NonCallableValue {
             expression: value,
             ty: Box::new(
                 facts
@@ -362,6 +451,33 @@ where
             ),
         }),
     }
+}
+
+/// A value apply can select its declaration as the terminal body only when
+/// both interfaces consume the same fixed positional inputs in one group.
+/// A retaining application instead uses the evaluated arrow's own grammar.
+fn positional_terminal_application(
+    schema: &CallableSignatureSchema,
+    call: &HirCallInvocation,
+) -> bool {
+    let [group] = schema.groups() else {
+        return false;
+    };
+    schema.attached_content().is_none()
+        && group.parameters().len() == call.arguments().len()
+        && group
+            .parameters()
+            .iter()
+            .zip(call.arguments())
+            .all(|(parameter, argument)| {
+                matches!(
+                    parameter.passing(),
+                    super::super::CallableParameterPassing::PositionalOnly
+                        | super::super::CallableParameterPassing::PositionalOrNamed
+                ) && parameter.presence() == super::super::CallableParameterPresence::Required
+                    && parameter.consumer() == &super::super::CallableParameterConsumer::Value
+                    && matches!(argument, HirCallArgument::Positional { .. })
+            })
 }
 
 /// Resolve a function value's callable origin from typed HIR ownership.  A
@@ -544,6 +660,7 @@ where
                     }
                     return prepare_value_call_callee(
                         authority,
+                        None,
                         value_receiver,
                         facts,
                         dialogue_context,
@@ -554,6 +671,7 @@ where
                 ProjectValueLookup::External(_) => {
                     return prepare_value_call_callee(
                         authority,
+                        None,
                         value_receiver,
                         facts,
                         dialogue_context,
@@ -719,21 +837,6 @@ where
         return Err(PrepareFinalCallCalleeError::InvalidFunctionValueOrigin { expression });
     }
     let (seed, origin) = match producer {
-        PreparedFunctionValueOriginProducer::Declaration { producer, checked } => {
-            if !captures.is_empty() {
-                return Err(PrepareFinalCallCalleeError::InvalidFunctionValue { expression });
-            }
-            (
-                ResolvedFunctionValueSeed::Declaration {
-                    checked: checked.clone(),
-                },
-                PreparedFunctionValueOriginEvidence::new(
-                    origin_callee,
-                    PreparedFunctionValueOriginProducer::Declaration { producer, checked },
-                    Vec::new(),
-                ),
-            )
-        }
         PreparedFunctionValueOriginProducer::Call(super::super::CheckedCallSite::HirCall(
             producer,
         )) => {
@@ -813,11 +916,16 @@ where
                 ),
             )
         }
-        PreparedFunctionValueOriginProducer::PreparedContinuation(_) => {
+        PreparedFunctionValueOriginProducer::Declaration { .. }
+        | PreparedFunctionValueOriginProducer::PreparedContinuation(_) => {
             return Err(PrepareFinalCallCalleeError::InvalidFunctionValue { expression });
         }
     };
-    Ok(PreparedFunctionValueCallee::new(operand, origin, seed))
+    Ok(PreparedFunctionValueCallee::new(
+        PreparedFunctionValueOperand::Observed(operand),
+        origin,
+        seed,
+    ))
 }
 
 fn resolve_final_project_value<'a>(

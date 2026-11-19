@@ -147,8 +147,8 @@ pub use project_function::{
     RuntimeProjectFunctionParameterMaterialization, RuntimeProjectFunctionParameterSource,
     RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionPatternSemanticFact,
     RuntimeProjectFunctionRootFact, RuntimeProjectFunctionRootRole,
-    RuntimeProjectFunctionStatementPayload, RuntimeProjectFunctionStatementSemanticFact,
-    RuntimeResidualValue,
+    RuntimeProjectFunctionSpecializationPlacement, RuntimeProjectFunctionStatementPayload,
+    RuntimeProjectFunctionStatementSemanticFact, RuntimeResidualValue,
 };
 
 /// Stable semantic identity for a registered callable or value that is not

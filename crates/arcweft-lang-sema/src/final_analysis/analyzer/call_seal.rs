@@ -21,10 +21,10 @@ use crate::{
         CheckedCallSemanticSelection, CheckedCallSite, CheckedCaptureSignatureSeal, CheckedFmtCall,
         DetachedPreparedCallableApplication, MappedCallArgumentPassing,
         PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
-        PreparedCallableDefinitionKey, PreparedFunctionValueOriginIdentity,
-        PreparedResolvedCallableDefinitionBatch, PreparedResolvedCallableDetachArena,
-        PreparedResolvedCallableIdentity, ResolvedCallable, ResolvedCallableBase,
-        ResolvedCallableBaseInstantiation, ResolvedCallableBaseSeal,
+        PreparedCallableDefinitionKey, PreparedFunctionValueOperand,
+        PreparedFunctionValueOriginIdentity, PreparedResolvedCallableDefinitionBatch,
+        PreparedResolvedCallableDetachArena, PreparedResolvedCallableIdentity, ResolvedCallable,
+        ResolvedCallableBase, ResolvedCallableBaseInstantiation, ResolvedCallableBaseSeal,
         ResolvedCallableStableIdentitySeal, ResolvedCallableState,
     },
     final_analysis::{
@@ -320,6 +320,7 @@ fn checked_callee_execution(
     selected: &ResolvedCallable,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
     sources: &mut CallSourceFacts<'_, '_, '_>,
+    checked_callables: &crate::callable::CheckedCallableCatalog,
 ) -> Result<CheckedCallCalleeExecution, FinalSemanticAnalysisError> {
     use crate::callable::PreparedCallCalleeConstraintInputs::FunctionValue;
     let operand = match (&record.callee_inputs, selected.requires_value_callee()) {
@@ -362,13 +363,53 @@ fn checked_callee_execution(
                 CallConstraintInvariant::PreparedFunctionTypeMismatch,
             )
         })?;
-    if source_type != operand.original().as_ref()
-        || sources.types.source(source)?.canonical(source_type)? != *operand.observed()
-    {
-        return Err(final_call_seal_error(
+    let mismatch = || {
+        final_call_seal_error(
             location,
             CallConstraintInvariant::PreparedFunctionTypeMismatch,
-        ));
+        )
+    };
+    if source_type != operand.original().as_ref() {
+        return Err(mismatch());
+    }
+    let mut source_types = sources.types.source(source)?;
+    let actual = source_types.canonical(source_type)?;
+    match operand {
+        PreparedFunctionValueOperand::Observed(operand) => {
+            if &actual != operand.observed() {
+                return Err(mismatch());
+            }
+        }
+        PreparedFunctionValueOperand::Declared { declaration, .. } => {
+            if !selected
+                .checked()
+                .is_some_and(|checked| declaration.matches(checked))
+            {
+                return Err(mismatch());
+            }
+            let declared = declared_callable_type(selected, checked_callables, location)?;
+            let control = source_types.control();
+            let binder = selected
+                .schema()
+                .function_value_binder_with_control(control)
+                .map_err(|error| match error {
+                    crate::types::TypeProjectionError::Control(error) => error,
+                    crate::types::TypeProjectionError::Instantiation(error) => {
+                        location.failure(error.into())
+                    }
+                })?;
+            let expected = binder
+                .quantify_function_with_control(&declared, control)
+                .map_err(|error| match error {
+                    crate::types::TypeProjectionError::Control(error) => error,
+                    crate::types::TypeProjectionError::Instantiation(error) => {
+                        location.failure(error.into())
+                    }
+                })?;
+            if actual != expected {
+                return Err(mismatch());
+            }
+        }
     }
     let source = checked_execution_source(
         location,
@@ -1383,10 +1424,36 @@ impl SealedSelectedCall {
             })
             .map(|source| {
                 let source = types.canonical(source)?;
+                let declared = matches!(
+                    selected.id(),
+                    crate::callable::CallableCandidateId::Project(_)
+                )
+                .then(|| declared_callable_type(selected, checked_callables, location))
+                .transpose()?;
+                let declaration = declared
+                    .as_ref()
+                    .map(|template| {
+                        selected
+                            .schema()
+                            .function_value_binder_with_control(types.control())
+                            .map(|binder| (template, binder))
+                            .map_err(|error| {
+                                FinalSemanticAnalysisError::source_type_projection(
+                                    callee.into(),
+                                    error,
+                                )
+                            })
+                    })
+                    .transpose()?;
                 self.application
                     .core()
                     .solution()
-                    .function_input_specialization_with_control(callee, &source, types.control())
+                    .function_input_specialization_with_control(
+                        callee,
+                        &source,
+                        declaration,
+                        types.control(),
+                    )
                     .map_err(specialization_error)
             })
             .transpose()?;
@@ -1572,7 +1639,14 @@ fn seal_selected_call(
     let selected = inventory.selected();
     let solution = crate::callable::FrozenCallTypeSolution::seal(solution_seed, selected.base())
         .map_err(|error| final_call_seal_error(location, error))?;
-    let callee = checked_callee_execution(location, &record, selected, coordinates, sources)?;
+    let callee = checked_callee_execution(
+        location,
+        &record,
+        selected,
+        coordinates,
+        sources,
+        checked_callables,
+    )?;
     let site = CheckedCallApplicationSite::seal(
         site,
         coordinates
@@ -1818,16 +1892,11 @@ fn seal_unselected_call(
     })
 }
 
-fn selected_callable_type(
-    application: &crate::callable::CheckedCallApplication,
+fn declared_callable_type(
+    selected: &ResolvedCallable,
     checked_callables: &crate::callable::CheckedCallableCatalog,
-    specializes_input: bool,
-    control: &mut impl crate::types::TypeProjectionControl<Error = FinalSemanticAnalysisError>,
+    location: FinalCallSealLocation,
 ) -> Result<TypeKind, FinalSemanticAnalysisError> {
-    let selected = application.core().candidates().selected();
-    if let ResolvedCallableState::Continuation(continuation) = selected.state() {
-        return Ok(continuation.function_type().clone());
-    }
     let effects = final_callable_effects(selected, checked_callables)?;
     let result_schema = selected
         .checked()
@@ -1839,7 +1908,7 @@ fn selected_callable_type(
         })
         .transpose()?
         .flatten();
-    let declared = selected
+    selected
         .base()
         .callable_type_with_terminal_interface(
             crate::callable::CallableTerminalEffectProjection::Known {
@@ -1847,12 +1916,21 @@ fn selected_callable_type(
                 result_schema,
             },
         )
-        .map_err(|error| {
-            final_call_seal_error(
-                FinalCallSealLocation::Site(application.core().site()),
-                error,
-            )
-        })?;
+        .map_err(|error| final_call_seal_error(location, error))
+}
+
+fn selected_callable_type(
+    application: &crate::callable::CheckedCallApplication,
+    checked_callables: &crate::callable::CheckedCallableCatalog,
+    specializes_input: bool,
+    control: &mut impl crate::types::TypeProjectionControl<Error = FinalSemanticAnalysisError>,
+) -> Result<TypeKind, FinalSemanticAnalysisError> {
+    let selected = application.core().candidates().selected();
+    if let ResolvedCallableState::Continuation(continuation) = selected.state() {
+        return Ok(continuation.function_type().clone());
+    }
+    let location = FinalCallSealLocation::Site(application.core().site());
+    let declared = declared_callable_type(selected, checked_callables, location)?;
     let solution = application.core().solution();
     let projected = if specializes_input {
         solution.instantiate_call_input_with_control(&declared, control)
@@ -1861,9 +1939,7 @@ fn selected_callable_type(
     };
     projected.map_err(|error| match error {
         crate::types::TypeProjectionError::Control(error) => error,
-        crate::types::TypeProjectionError::Instantiation(error) => {
-            FinalCallSealLocation::Site(application.core().site()).failure(error.into())
-        }
+        crate::types::TypeProjectionError::Instantiation(error) => location.failure(error.into()),
     })
 }
 

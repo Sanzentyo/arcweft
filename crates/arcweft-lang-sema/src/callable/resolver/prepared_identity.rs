@@ -318,12 +318,13 @@ impl PreparedResolvedCallableIdentity {
                 let dispatch = match function_origin {
                     None => CatalogCallableDispatch::Direct,
                     Some(origin) => {
-                        let PreparedFunctionValueOriginProducer::Declaration { checked, .. } =
-                            origin.producer()
+                        let PreparedFunctionValueOriginProducer::Declaration {
+                            declaration, ..
+                        } = origin.producer()
                         else {
                             return None;
                         };
-                        if checked != id || !origin.captures().is_empty() {
+                        if !declaration.matches(id) || !origin.captures().is_empty() {
                             return None;
                         }
                         CatalogCallableDispatch::Value

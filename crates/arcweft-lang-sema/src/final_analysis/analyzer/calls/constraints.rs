@@ -5399,7 +5399,7 @@ impl AnalyzerPreparedCandidateRecord {
 
     pub(crate) fn function_value_callee(
         &self,
-    ) -> Option<&crate::callable::PreparedCallValueOperand> {
+    ) -> Option<&crate::callable::PreparedFunctionValueOperand> {
         let PreparedCallCalleeConstraintInputs::FunctionValue(operand) = &self.callee_inputs else {
             return None;
         };
@@ -6257,7 +6257,19 @@ pub(super) fn validate_and_prepare_call_constraints(
             });
         }
         (
-            PreparedCallCalleeConstraintInputs::FunctionValue(operand),
+            PreparedCallCalleeConstraintInputs::FunctionValue(
+                crate::callable::PreparedFunctionValueOperand::Declared { declaration, .. },
+            ),
+            CallableInstantiation::None,
+        ) if candidate
+            .checked()
+            .is_some_and(|checked| declaration.matches(checked))
+            && candidate.call_group() == group
+            && candidate.prepared_continuation().is_none() => {}
+        (
+            PreparedCallCalleeConstraintInputs::FunctionValue(
+                crate::callable::PreparedFunctionValueOperand::Observed(operand),
+            ),
             CallableInstantiation::None,
         ) => {
             let constraint = candidate

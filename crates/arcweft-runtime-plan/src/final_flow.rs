@@ -8161,7 +8161,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 "project callable {expression:?} has no admitted group state"
             ))
         })?;
-        let mut callee = match checked.input() {
+        let callee = match checked.input() {
             crate::semantic_facts::RuntimeProjectFunctionCallInput::Direct => RuntimeExprSeed::new(
                 checked.application_type().identity(),
                 arcweft_core::plan::RuntimeExprSeedKind::MakeCallable {
@@ -8172,24 +8172,10 @@ impl<'a> FinalFlowLowerer<'a> {
             crate::semantic_facts::RuntimeProjectFunctionCallInput::Value { callee }
             | crate::semantic_facts::RuntimeProjectFunctionCallInput::Continuation {
                 callee, ..
-            } => lowerer.lower(*callee).map_err(RuntimePlanLowerError::new)?,
+            } => lowerer
+                .lower_project_function_callee(*callee, checked)
+                .map_err(RuntimePlanLowerError::new)?,
         };
-        if let Some(specialization) = checked.input_specialization() {
-            let seed = self
-                .callable_specializations
-                .get(specialization.key())
-                .cloned()
-                .ok_or_else(|| {
-                    RuntimePlanLowerError::new("project call input specialization is absent")
-                })?;
-            callee = RuntimeExprSeed::new(
-                checked.application_type().identity(),
-                arcweft_core::plan::RuntimeExprSeedKind::SpecializeCallable {
-                    value: Box::new(callee),
-                    specialization: seed,
-                },
-            );
-        }
         let mut operands = call
             .operands()
             .iter()

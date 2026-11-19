@@ -613,6 +613,52 @@ impl<'hir> FinalExprLowerer<'hir> {
         self.specialize_result(id, source)
     }
 
+    pub(crate) fn lower_project_function_callee(
+        &self,
+        callee: ExprId,
+        plan: &crate::semantic_facts::RuntimeProjectFunctionCallPlan,
+    ) -> Result<RuntimeExprSeed, String> {
+        use crate::semantic_facts::RuntimeProjectFunctionSpecializationPlacement;
+
+        let value = self.lower(callee)?;
+        let Some(specialization) = plan.input_specialization() else {
+            return Ok(value);
+        };
+        match specialization.placement() {
+            RuntimeProjectFunctionSpecializationPlacement::CalleeExpression => {
+                let matches = self
+                    .semantic_facts
+                    .expression_specialization(callee)
+                    .is_some_and(|expression| {
+                        expression.key() == specialization.key()
+                            && expression.source() == specialization.source()
+                    });
+                if !matches || value.ty() != plan.application_type().identity() {
+                    return Err(format!(
+                        "callee {callee:?} does not carry the selected input specialization"
+                    ));
+                }
+                Ok(value)
+            }
+            RuntimeProjectFunctionSpecializationPlacement::CallInput => {
+                let seed = self
+                    .callable_specializations
+                    .and_then(|specializations| specializations.get(specialization.key()))
+                    .cloned()
+                    .ok_or_else(|| {
+                        format!("callable input specialization is absent for {callee:?}")
+                    })?;
+                Ok(RuntimeExprSeed::new(
+                    plan.application_type().identity(),
+                    RuntimeExprSeedKind::SpecializeCallable {
+                        value: Box::new(value),
+                        specialization: seed,
+                    },
+                ))
+            }
+        }
+    }
+
     pub(crate) fn lower_source(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
         if let Some(value) = self.overrides.get(&id) {
             return Ok(value.clone());
@@ -3193,8 +3239,11 @@ impl<'hir> FinalExprLowerer<'hir> {
         id: ExprId,
         selected: &RuntimeResolvedCall,
     ) -> Result<(RuntimeExprSeed, Box<[RuntimeCallArgumentSeed]>), String> {
-        let mut callee = match selected.dispatch() {
-            RuntimeResolvedCallDispatch::Value { callee } => self.lower(*callee)?,
+        let callee = match selected.dispatch() {
+            RuntimeResolvedCallDispatch::Value { callee } => match selected.project_function() {
+                Some(plan) => self.lower_project_function_callee(*callee, plan)?,
+                None => self.lower(*callee)?,
+            },
             RuntimeResolvedCallDispatch::Static(_) => {
                 let plan = selected
                     .project_function()
@@ -3223,22 +3272,6 @@ impl<'hir> FinalExprLowerer<'hir> {
                 )
             }
         };
-        if let Some(plan) = selected.project_function()
-            && let Some(specialization) = plan.input_specialization()
-        {
-            let seed = self
-                .callable_specializations
-                .and_then(|specializations| specializations.get(specialization.key()))
-                .cloned()
-                .ok_or_else(|| format!("partial call {id:?} input specialization is absent"))?;
-            callee = RuntimeExprSeed::new(
-                plan.application_type().identity(),
-                RuntimeExprSeedKind::SpecializeCallable {
-                    value: Box::new(callee),
-                    specialization: seed,
-                },
-            );
-        }
         let values = self.lower_call_operands(id, selected)?;
         let arguments = self.lower_function_arguments(id, selected, &values)?;
         Ok((callee, arguments.into_boxed_slice()))

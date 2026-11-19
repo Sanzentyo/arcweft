@@ -8,6 +8,7 @@ use super::{
     LanguageCallableFamily, LineContextMethodId, LineScheduleCallableId, NonCallableSource,
     NonEmptyResolvedCandidates, OptionConstructorKind, Ordering, PreparedCallCallee,
     PreparedFreeCallContext, PreparedFreeCallScope, PreparedFunctionValueCallee,
+    PreparedFunctionValueDeclaration, PreparedFunctionValueOperand,
     PreparedFunctionValueOriginProducer, PreparedResolvedCallable, PresentationCallableId,
     PresentationHandleMethodId, ProjectCallablePath, ProjectNameBinding, PromotionCallableId,
     ReceiverMethodKey, ResolveCallError, ResolveCallOutcome, ResolvedAssociatedTypeReceiver,
@@ -347,16 +348,17 @@ fn resolve_function_value(
 ) -> Result<ResolvedCallTarget, ResolveFunctionValueError> {
     check_query_step(request)?;
     let (id, schema) = match value.seed() {
-        ResolvedFunctionValueSeed::Declaration { checked } => {
-            let PreparedFunctionValueOriginProducer::Declaration {
-                checked: origin, ..
-            } = value.origin().producer()
-            else {
+        ResolvedFunctionValueSeed::Declaration => {
+            let PreparedFunctionValueOperand::Declared { declaration, .. } = value.operand() else {
                 return Err(ResolveCallError::InvalidResolvedCallable.into());
             };
-            if origin != checked {
-                return Err(ResolveCallError::InvalidResolvedCallable.into());
-            }
+            let checked = match declaration {
+                PreparedFunctionValueDeclaration::Project(key) => request
+                    .checked
+                    .checked_for_candidate(&CallableCandidateId::Project(key.as_ref().clone()))
+                    .map_err(|_| ResolveCallError::InvalidResolvedCallable)?,
+                PreparedFunctionValueDeclaration::Environment(checked) => checked.as_ref(),
+            };
             let record = Arc::clone(
                 request
                     .checked
@@ -396,9 +398,12 @@ fn resolve_function_value(
             effect_callable: _,
         } => (id, schema),
         ResolvedFunctionValueSeed::PreparedContinuation { reference } => {
+            let PreparedFunctionValueOperand::Observed(operand) = value.operand() else {
+                return Err(ResolveCallError::InvalidResolvedCallable.into());
+            };
             let candidate = request
                 .prepared_continuations
-                .resolve_prepared_continuation(reference, value.operand().observed())
+                .resolve_prepared_continuation(reference, operand.observed())
                 .map_err(ResolveFunctionValueError::Invariant)?;
             return NonEmptyResolvedCandidates::try_new_prepared(vec![candidate], request.limits)
                 .map(ResolvedCallTarget::Candidates)
@@ -1171,7 +1176,7 @@ fn resolve_catalog_record(
         Arc::clone(record),
         match &request.callee {
             PreparedCallCallee::FunctionValue { value }
-                if matches!(value.seed(), ResolvedFunctionValueSeed::Declaration { .. }) =>
+                if matches!(value.seed(), ResolvedFunctionValueSeed::Declaration) =>
             {
                 super::PreparedCatalogCallee::Value(value.origin())
             }

@@ -10,7 +10,8 @@ use arcweft_lang_hir::{
 use crate::{
     callable::{
         CheckedCallSite, CheckedFunctionSpecialization, FunctionSpecializationSealFailure,
-        PreparedCallableApplication, SpecializedDeclarationProjection,
+        PreparedCallableApplication, PreparedFunctionValueOperand,
+        SpecializedDeclarationProjection,
     },
     effect_row::EffectRow,
     final_analysis::PreparedExpressionFact,
@@ -95,6 +96,9 @@ impl Analyzer<'_, '_, '_> {
                         .function_value_callee()
                         .filter(|callee| callee.source() == origin.callee())
                         .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                    let PreparedFunctionValueOperand::Observed(callee) = callee else {
+                        return Ok(None);
+                    };
                     let source = callee.observed();
                     let TypeKind::Function { binder, .. } = source else {
                         return Err(FinalSemanticAnalysisError::InvalidCallableOwner);

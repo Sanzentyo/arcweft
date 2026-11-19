@@ -1020,6 +1020,7 @@ impl FrozenCallTypeSolution {
         &self,
         owner: ExprId,
         source: &TypeKind,
+        declaration: Option<(&TypeKind, crate::types::GenericDeclarationBinder)>,
         control: &mut C,
     ) -> Result<
         Arc<super::CheckedFunctionSpecialization>,
@@ -1030,6 +1031,7 @@ impl FrozenCallTypeSolution {
             source,
             &self.solution,
             self.transition,
+            declaration,
             control,
         )
     }

@@ -89,6 +89,7 @@ pub struct CheckedFunctionSpecialization {
     source: TypeKind,
     specialized: TypeKind,
     solution: Arc<TypeConstraintSolution>,
+    declaration_binder: Option<GenericDeclarationBinder>,
     digest: CheckedFunctionSpecializationDigest,
 }
 
@@ -191,6 +192,7 @@ impl CheckedFunctionSpecialization {
         source: &TypeKind,
         solution: &Arc<TypeConstraintSolution>,
         transition: super::schema::CallableGroupTransition,
+        declaration: Option<(&TypeKind, GenericDeclarationBinder)>,
         control: &mut C,
     ) -> Result<Arc<Self>, FunctionSpecializationSealFailure<C::Error>> {
         let TypeKind::Function {
@@ -203,16 +205,35 @@ impl CheckedFunctionSpecialization {
         else {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
         };
-        if binder.is_empty() || solution.template_scope().binders() != [*binder] {
+        let (scheme_scope, template, declaration_binder) = match declaration {
+            Some((template, declaration)) => {
+                if declaration.template_scope() != solution.template_scope()
+                    || transition.remaining_position().is_some()
+                    || !solution.residual_scope().binders().is_empty()
+                {
+                    return Err(CallConstraintInvariant::PreparedSchemaMismatch.into());
+                }
+                (
+                    declaration.scope().clone(),
+                    template.clone(),
+                    Some(declaration),
+                )
+            }
+            None => (
+                solution.template_scope().clone(),
+                TypeKind::function_with_contract(
+                    GenericBinder::EMPTY,
+                    predicate.clone(),
+                    params.clone(),
+                    return_type.as_ref().clone(),
+                    effects.clone(),
+                ),
+                None,
+            ),
+        };
+        if binder.is_empty() || scheme_scope.binders() != [*binder] {
             return Err(CallConstraintInvariant::PreparedSchemaMismatch.into());
         }
-        let template = TypeKind::function_with_contract(
-            GenericBinder::EMPTY,
-            predicate.clone(),
-            params.clone(),
-            return_type.as_ref().clone(),
-            effects.clone(),
-        );
         let specialized = if transition.first_unbound().is_some() {
             solution.apply_result_template_with_control(&template, control)?
         } else {
@@ -233,6 +254,7 @@ impl CheckedFunctionSpecialization {
             source: source.clone(),
             specialized,
             solution: Arc::clone(solution),
+            declaration_binder,
             digest,
         }))
     }
@@ -318,6 +340,7 @@ impl CheckedFunctionSpecialization {
             source: source.clone(),
             specialized: projected.value().clone(),
             solution: Arc::clone(solution),
+            declaration_binder: None,
             digest,
         }))
     }
@@ -335,6 +358,12 @@ impl CheckedFunctionSpecialization {
         self.digest
     }
 
+    /// This expression witness uses the selected declaration's call solution.
+    /// Executable consumers join it to that call's exact callable state.
+    pub const fn is_selected_declaration_input(&self) -> bool {
+        self.declaration_binder.is_some()
+    }
+
     pub(super) fn solution(&self) -> &TypeConstraintSolution {
         &self.solution
     }
@@ -345,8 +374,13 @@ impl CheckedFunctionSpecialization {
         control: &mut C,
     ) -> Result<crate::types::constraints::ClosedTypeInstantiation, TypeProjectionError<C::Error>>
     {
-        self.solution
-            .close_instantiation_with_control(enclosing, control)
+        let arguments = self
+            .solution
+            .close_instantiation_with_control(enclosing, control)?;
+        match &self.declaration_binder {
+            Some(binder) => arguments.declaration_arguments_with_control(binder, control),
+            None => Ok(arguments),
+        }
     }
 
     pub(crate) fn visit_types<E>(
