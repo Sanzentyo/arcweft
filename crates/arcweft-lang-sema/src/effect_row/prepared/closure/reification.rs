@@ -54,23 +54,27 @@ impl PrincipalEffectClosure {
                     return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
                 }
             }
+            let mut parameters = BTreeMap::new();
             for reference in row.variables() {
                 work.charge(DecisionWork::Visit)?;
-                if !function.parameters().contains(reference) {
-                    return Err(
-                        PreparedEffectInvariant::UndeclaredParameter(reference.clone()).into(),
-                    );
+                if let std::collections::btree_map::Entry::Vacant(slot) =
+                    parameters.entry(reference)
+                {
+                    let index = function
+                        .parameters()
+                        .iter()
+                        .position(|parameter| parameter == reference)
+                        .ok_or_else(|| {
+                            PreparedEffectInvariant::UndeclaredParameter(reference.clone())
+                        })?;
+                    work.charge(DecisionWork::Node)?;
+                    slot.insert(index);
                 }
             }
             // Fixed-point replay alone would also accept a larger solution to
             // S=S. Check that every canonical table entry is the retained least
             // cell before independently replaying the original typed terms.
             for mask in 0..self.layout.tables[&id] {
-                let mut values = BTreeMap::new();
-                for (parameter, reference) in function.parameters().iter().enumerate() {
-                    work.charge(DecisionWork::Node)?;
-                    values.insert(reference, mask & (1usize << parameter) != 0);
-                }
                 for class in 0..self.layout.view().classes() {
                     let value = self
                         .layout
@@ -78,9 +82,10 @@ impl PrincipalEffectClosure {
                         .at(row.membership(), class)
                         .evaluate_with_control(
                             |reference| {
-                                *values.get(reference).expect(
+                                let &index = parameters.get(reference).expect(
                                     "canonical scheme references were checked against their header",
-                                )
+                                );
+                                mask & (1usize << index) != 0
                             },
                             work,
                         )?;
@@ -115,13 +120,26 @@ impl PrincipalEffectClosure {
                 canonical::CanonicalReplay::new(self, scope).confirm_fixed(id, row, work)?;
             }
         }
+        let mut replays = BTreeMap::new();
         for (id, obligation) in self.graph.obligations.iter().enumerate() {
-            let scope = FiniteRowValuation {
-                classes: self.layout.view().label_classes(),
-                owner: FormalOwner::Obligation(id),
-                parameters: &obligation.parameters,
+            work.charge(DecisionWork::Visit)?;
+            // Only choices leave a proof's local valuation. With identical
+            // ordered parameters, terms can share a local numbering while
+            // each obligation is proved separately in its original order.
+            let parameters = obligation.parameters.as_ref();
+            let replay = match replays.entry(parameters) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    work.charge(DecisionWork::Node)?;
+                    let scope = FiniteRowValuation {
+                        classes: self.layout.view().label_classes(),
+                        owner: FormalOwner::Obligation(id),
+                        parameters,
+                    };
+                    entry.insert(canonical::CanonicalReplay::new(self, scope))
+                }
             };
-            canonical::CanonicalReplay::new(self, scope).confirm_obligation(obligation, work)?;
+            replay.confirm_obligation(obligation, work)?;
         }
         Ok(())
     }

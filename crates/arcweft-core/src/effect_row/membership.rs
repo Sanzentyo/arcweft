@@ -6,11 +6,13 @@
 //! infinitely many labels outside that support.
 
 use std::{
-    borrow::Cow,
+    borrow::{Borrow, Cow},
     collections::{BTreeMap, BTreeSet},
 };
 
-use super::decision::{DecisionControl, DecisionEncoding, DecisionWork, EffectDecision};
+use super::decision::{
+    DecisionControl, DecisionEncoding, DecisionWork, EffectDecision, EffectDecisionReplacement,
+};
 use super::{EffectDeclarationError, EffectSet};
 use arcweft_id::EffectId;
 
@@ -249,41 +251,62 @@ impl<V: Clone + Ord> Membership<V> {
         Ok(result)
     }
 
-    fn substitute<C: DecisionControl>(
+    fn substitute<C: DecisionControl, R: Borrow<EffectFormula<V>>>(
         &self,
-        replacements: &BTreeMap<V, EffectFormula<V>>,
+        replacements: &BTreeMap<V, R>,
         control: &mut C,
     ) -> Result<Self, C::Error> {
         if replacements.is_empty() {
             self.admit_copy(control)?;
             return Ok(self.clone());
         }
+        let mut active = BTreeMap::new();
+        for reference in self
+            .default
+            .variables()
+            .chain(self.overrides.values().flat_map(EffectDecision::variables))
+        {
+            control.charge(DecisionWork::Visit)?;
+            if let Some(replacement) = replacements.get(reference)
+                && let std::collections::btree_map::Entry::Vacant(slot) = active.entry(reference)
+            {
+                control.charge(DecisionWork::Node)?;
+                slot.insert(replacement.borrow());
+            }
+        }
+        if active.is_empty() {
+            self.admit_copy(control)?;
+            return Ok(self.clone());
+        }
+        let apply = |decision: &EffectDecision<V>, label: Option<&EffectId>, control: &mut C| {
+            decision.substitute_references(control, |reference, _| {
+                Ok(match active.get(reference) {
+                    Some(replacement) => EffectDecisionReplacement::Decision(match label {
+                        Some(label) => replacement.0.at(label),
+                        None => &replacement.0.default,
+                    }),
+                    None => EffectDecisionReplacement::Variable(reference.clone()),
+                })
+            })
+        };
         let mut labels = BTreeSet::new();
-        let mut defaults = BTreeMap::new();
         for label in self.overrides.keys() {
             control.charge(DecisionWork::Visit)?;
             labels.insert(label);
         }
-        for (variable, replacement) in replacements {
-            control.charge(DecisionWork::Visit)?;
-            defaults.insert(variable.clone(), replacement.0.default.clone());
+        for replacement in active.values() {
             for label in replacement.0.overrides.keys() {
                 control.charge(DecisionWork::Visit)?;
                 labels.insert(label);
             }
         }
-        let default = self.default.substitute(&defaults, control)?;
+        let default = apply(&self.default, None, control)?;
         let mut result = Self {
             default,
             overrides: BTreeMap::new(),
         };
         for label in labels {
-            let mut at_label = BTreeMap::new();
-            for (variable, replacement) in replacements {
-                control.charge(DecisionWork::Visit)?;
-                at_label.insert(variable.clone(), replacement.0.at(label).clone());
-            }
-            let decision = self.at(label).substitute(&at_label, control)?;
+            let decision = apply(self.at(label), Some(label), control)?;
             result.insert_override(label.clone(), decision, control)?;
         }
         Ok(result)
@@ -472,9 +495,10 @@ impl<V: Clone + Ord> EffectFormula<V> {
             .map(EffectPredicate::normalized)
     }
 
-    pub fn substitute<C: DecisionControl>(
+    /// Simultaneously substitutes borrowed row formulas for referenced variables.
+    pub fn substitute<C: DecisionControl, R: Borrow<Self>>(
         &self,
-        replacements: &BTreeMap<V, Self>,
+        replacements: &BTreeMap<V, R>,
         control: &mut C,
     ) -> Result<Self, C::Error> {
         self.0.substitute(replacements, control).map(Self)
@@ -531,7 +555,7 @@ impl<V: Clone + Ord> EffectPredicate<V> {
         R: TryInto<EffectFormula<V>>,
         C::Error: From<R::Error>,
     {
-        let mut replacements = BTreeMap::new();
+        let mut replacements: BTreeMap<V, EffectFormula<V>> = BTreeMap::new();
         for variable in self.variables() {
             control.charge(DecisionWork::Visit)?;
             if let std::collections::btree_map::Entry::Vacant(entry) =
@@ -681,9 +705,10 @@ impl<V: Clone + Ord> EffectPredicate<V> {
         Ok(Self::normalized(membership))
     }
 
-    pub fn substitute<C: DecisionControl>(
+    /// Simultaneously substitutes borrowed row formulas for referenced variables.
+    pub fn substitute<C: DecisionControl, R: Borrow<EffectFormula<V>>>(
         &self,
-        replacements: &BTreeMap<V, EffectFormula<V>>,
+        replacements: &BTreeMap<V, R>,
         control: &mut C,
     ) -> Result<Self, C::Error> {
         self.0

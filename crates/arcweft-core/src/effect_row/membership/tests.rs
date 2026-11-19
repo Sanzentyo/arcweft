@@ -107,14 +107,13 @@ fn empty_substitution_admits_the_owned_decisions_and_label_before_copying() {
         .intersection(&variable(0), &mut control)
         .unwrap();
     let predicate = conditional.subset(&row(&[]), &mut control).unwrap();
+    let replacements = BTreeMap::<u8, EffectFormula<u8>>::new();
     let mut complete = AssemblyControl {
         limit: Some(4),
         ..AssemblyControl::default()
     };
     assert_eq!(
-        predicate
-            .substitute(&BTreeMap::new(), &mut complete)
-            .unwrap(),
+        predicate.substitute(&replacements, &mut complete).unwrap(),
         predicate
     );
     let mut short = AssemblyControl {
@@ -122,9 +121,30 @@ fn empty_substitution_admits_the_owned_decisions_and_label_before_copying() {
         ..AssemblyControl::default()
     };
     assert_eq!(
-        predicate.substitute(&BTreeMap::new(), &mut short),
+        predicate.substitute(&replacements, &mut short),
         Err(AssemblyError::Limit { used: 4, limit: 3 })
     );
+}
+
+#[test]
+fn substitution_borrows_bindings_and_ignores_unused_label_support() {
+    let source = variable(0);
+    let replacement = row(&["fs.read"]);
+    let unused = row(&["fs.write", "log.write"]);
+    let selected = BTreeMap::from([(0, &replacement)]);
+    let supplied = BTreeMap::from([(0, &replacement), (1, &unused)]);
+    let mut minimal = Meter::default();
+    let mut all = Meter::default();
+    assert_eq!(
+        source.substitute(&selected, &mut minimal).unwrap(),
+        replacement
+    );
+    assert_eq!(source.substitute(&supplied, &mut all).unwrap(), replacement);
+    assert_eq!(all.0, minimal.0);
+
+    let predicate = source.subset(&unused, &mut all).unwrap();
+    let expected = replacement.subset(&unused, &mut all).unwrap();
+    assert_eq!(predicate.substitute(&supplied, &mut all).unwrap(), expected);
 }
 
 #[test]

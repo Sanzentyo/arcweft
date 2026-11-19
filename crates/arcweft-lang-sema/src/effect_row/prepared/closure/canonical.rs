@@ -1,5 +1,7 @@
 //! Independent replay through canonical formula algebra, without scheme cells.
 
+use std::borrow::Cow;
+
 use super::*;
 use crate::effects::EffectSet;
 
@@ -17,6 +19,11 @@ type Predicate = arcweft_core::effect_row::EffectPredicate<Variable>;
 struct Row {
     formula: Formula,
     admitted: Decision,
+}
+
+struct RowView<'a> {
+    formula: Cow<'a, Formula>,
+    admitted: Cow<'a, Decision>,
 }
 
 pub(super) struct CanonicalReplay<'a> {
@@ -133,31 +140,32 @@ impl<'a> CanonicalReplay<'a> {
         &self,
         row: &PreparedEffectRow,
         work: &mut Work<'_, C>,
-    ) -> Result<Row, PreparedEffectFailure<C::Error>> {
+    ) -> Result<RowView<'_>, PreparedEffectFailure<C::Error>> {
         match row {
-            PreparedEffectRow::Canonical(row) => Ok(Row {
-                formula: self.formula(row, work)?,
-                admitted: Decision::constant(true),
+            PreparedEffectRow::Canonical(row) => Ok(RowView {
+                formula: Cow::Owned(self.formula(row, work)?),
+                admitted: Cow::Owned(Decision::constant(true)),
             }),
             PreparedEffectRow::Term(reference) => {
                 self.principal.graph.row(reference)?;
+                work.charge(DecisionWork::Visit)?;
                 let row = self
                     .rows
                     .get(&reference.0.ordinal)
                     .ok_or(PreparedEffectInvariant::StaleReference)?;
-                Ok(Row {
-                    formula: work.copy_formula(&row.formula)?,
-                    admitted: work.copy_decision(&row.admitted)?,
+                Ok(RowView {
+                    formula: Cow::Borrowed(&row.formula),
+                    admitted: Cow::Borrowed(&row.admitted),
                 })
             }
         }
     }
 
-    fn row<C: DecisionControl>(
+    fn prepare_row<C: DecisionControl>(
         &mut self,
         root: &PreparedEffectRow,
         work: &mut Work<'_, C>,
-    ) -> Result<Row, PreparedEffectFailure<C::Error>> {
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
         let mut todo = vec![root];
         let mut reachable = BTreeSet::new();
         while let Some(row) = todo.pop() {
@@ -297,7 +305,7 @@ impl<'a> CanonicalReplay<'a> {
             work.charge(DecisionWork::Node)?;
             self.rows.insert(id, row);
         }
-        self.read_row(root, work)
+        Ok(())
     }
 
     fn closed<C: DecisionControl>(
@@ -376,8 +384,10 @@ impl<'a> CanonicalReplay<'a> {
         permitted: &PreparedEffectRow,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let actual = self.row(actual, work)?;
-        let permitted = self.row(permitted, work)?;
+        self.prepare_row(actual, work)?;
+        self.prepare_row(permitted, work)?;
+        let actual = self.read_row(actual, work)?;
+        let permitted = self.read_row(permitted, work)?;
         let subset = actual.formula.subset(&permitted.formula, work)?;
         let predicate = if relation == PreparedEffectRelation::Equal {
             subset.and(&permitted.formula.subset(&actual.formula, work)?, work)?
@@ -406,27 +416,28 @@ impl<'a> CanonicalReplay<'a> {
         &self,
         predicate: &PreparedEffectPredicate,
         work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Cow<'_, Decision>, PreparedEffectFailure<C::Error>> {
         match predicate {
-            PreparedEffectPredicate::Canonical(predicate) => {
-                self.guard(&self.canonical_predicate(predicate, work)?, work)
-            }
+            PreparedEffectPredicate::Canonical(predicate) => self
+                .guard(&self.canonical_predicate(predicate, work)?, work)
+                .map(Cow::Owned),
             PreparedEffectPredicate::Term(reference) => {
                 self.principal.graph.predicate(reference)?;
+                work.charge(DecisionWork::Visit)?;
                 let predicate = self
                     .predicates
                     .get(&reference.0.ordinal)
                     .ok_or(PreparedEffectInvariant::StaleReference)?;
-                work.copy_decision(predicate)
+                Ok(Cow::Borrowed(predicate))
             }
         }
     }
 
-    fn predicate<C: DecisionControl>(
+    fn prepare_predicate<C: DecisionControl>(
         &mut self,
         root: &PreparedEffectPredicate,
         work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
         let mut todo = vec![root];
         let mut reachable = BTreeSet::new();
         while let Some(predicate) = todo.pop() {
@@ -476,11 +487,14 @@ impl<'a> CanonicalReplay<'a> {
                     predicate,
                     arguments,
                 } => {
+                    for argument in arguments.values() {
+                        self.prepare_row(argument, work)?;
+                    }
                     let source = self.canonical_predicate(predicate, work)?;
                     let mut substitutions = BTreeMap::new();
                     let mut admitted = Decision::constant(true);
                     for (parameter, argument) in arguments {
-                        let argument = self.row(argument, work)?;
+                        let argument = self.read_row(argument, work)?;
                         admitted = admitted.and(&argument.admitted, work)?;
                         work.charge(DecisionWork::Node)?;
                         substitutions
@@ -511,8 +525,8 @@ impl<'a> CanonicalReplay<'a> {
                 PredicateTerm::Select { choice, yes, no } => {
                     self.principal.graph.validate_choice(choice)?;
                     Decision::variable(Atom::Choice(choice.0.ordinal), work)?.conditional(
-                        &self.read_predicate(yes, work)?,
-                        &self.read_predicate(no, work)?,
+                        self.read_predicate(yes, work)?.as_ref(),
+                        self.read_predicate(no, work)?.as_ref(),
                         work,
                     )?
                 }
@@ -520,7 +534,7 @@ impl<'a> CanonicalReplay<'a> {
             work.charge(DecisionWork::Node)?;
             self.predicates.insert(id, value);
         }
-        self.read_predicate(root, work)
+        Ok(())
     }
 
     pub(super) fn confirm<C: DecisionControl>(
@@ -532,14 +546,16 @@ impl<'a> CanonicalReplay<'a> {
         let SchemeState::BodyPrepared { body, obligations } = &scheme.state else {
             return Err(PreparedEffectInvariant::SchemeState.into());
         };
-        let body = self.row(body, work)?;
+        self.prepare_row(body, work)?;
+        let body = self.read_row(body, work)?;
         let own = self.formula(&self.principal.functions[&id], work)?;
         let equal = own
             .subset(&body.formula, work)?
             .and(&body.formula.subset(&own, work)?, work)?;
         let mut expected = self.guard(&equal, work)?.and(&body.admitted, work)?;
         for obligation in obligations {
-            expected = expected.and(&self.predicate(obligation, work)?, work)?;
+            self.prepare_predicate(obligation, work)?;
+            expected = expected.and(self.read_predicate(obligation, work)?.as_ref(), work)?;
         }
         let domain = self.guard(
             &self.canonical_predicate(&scheme.header.domain, work)?,
@@ -563,8 +579,10 @@ impl<'a> CanonicalReplay<'a> {
         obligation: &ScopedObligation,
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        let domain = self.predicate(&obligation.domain, work)?;
-        let predicate = self.predicate(&obligation.predicate, work)?;
+        self.prepare_predicate(&obligation.domain, work)?;
+        self.prepare_predicate(&obligation.predicate, work)?;
+        let domain = self.read_predicate(&obligation.domain, work)?;
+        let predicate = self.read_predicate(&obligation.predicate, work)?;
         let expected = domain.conditional(&predicate, &Decision::constant(true), work)?;
         if !self
             .principal
