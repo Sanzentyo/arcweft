@@ -19875,3 +19875,7 @@ Sema全featureユニットは1,982件中1,864 PASS、118 FAIL、0 SKIP。Compile
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時に変更6 blobを検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-completed-call-result.raw.zip) は18 entry、452,499 bytes、SHA256 `bda255b2bfc61b0c66dcb165e3083492b05d679ba3afd21e5273a4f6f83e80c3`。各原本の長さとハッシュを照合した。
+
+同じRustソースを含む基点 `a70aa9348743dc78d5866d378813c5a01913eb5e` で、段階適用の終端効果について早期の本体検査だけを外した。比較対象は同じ8件。元の5 PASS／3 FAILから4 PASS／4 FAILとなった。正しい再帰段階適用と再帰する attached default は制約計算の `PreparedEffect(Invariant(SchemeState))` で失敗した。引数の数が合わない段階適用の拒否を確認するテストも同じエラーで失敗した。純粋な callback 引数に関する解析循環は継続した。差分を取り消し、元のproduction sourceに一致することを確認した。
+
+本体の早期検査を外すには、呼出し結果として持ち回るだけの効果と、その場で比較・確定する効果を制約計算で区別する必要がある。現行の `collect_original_effect_types` は要求されたすべての結果を元の効果計算に含め、確定時の `BoundScopedEffectCompletion` は到達した宣言本体を要求する。[試験入力・差分・全出力](acceptance-evidence/task-latent-continuation-observation.raw.zip) は6 entry、22,574 bytes、SHA256 `2c51e7316a4614b2cf080897c173325778db9fd3de6998060104b25219c7c038`。
