@@ -19716,3 +19716,16 @@ Compilerは5 targetの548件で531成功・17失敗。前回と全IDおよび合
 Sema全feature checkはライブラリのコンパイルに成功した。テスト対象は終了101で前回と同じ794エラー・33警告。初回のビルドで検出した旧ヘルパー参照は更新し、再照合の作用式比較もCoreへ接続した。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargoの全feature逆依存は起点込みでCore 52、Sema 22 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 12 blobを照合した。`target` は `12894121790` bytes。
 
 [比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-paired-comparison.raw.zip) は 53 entry、1379847 bytes、SHA256 `3c4bb30255b1d893d6b49a7ed8f9387cae27e86e7cc4d603e96c05efda2cd6cf`。各原本の長さとハッシュを照合した。
+
+<a id="effect-shared-import-basis"></a>
+## 2026-11-19 — 作用の取込でラベルの基底を共有し確定セルを直接評価
+
+基点 `f0927619708ae8fcceaf4fa12f6abf5477786b8b` は、子の関係ごとにラベル表を複製し、取込入力の全セルについて置換用の決定図を作成した。Source `bcfb31cfff2cf46a20a3bb07087615b577927b92` では、同じ取込階層を一つのラベル基底で解き、決定図が参照した入力セルを親の関数座標へ付け替える。観測が追加した作用ラベルは既存の基底へ投影する。閉じた係数の型で確定済みの取込を真偽値として評価し、元の作用プログラムは独立して再照合する。
+
+16と256の入力セルに対し、参照セル数0、1、4、16の8パターンで正準形と4,136評価を照合した。256セル中4セルを参照する束縛で、訪問数は1,575から34、ノード割り当ては783から11になった。517評価では訪問数20,163→1,040、ノード割り当て7,755→0。Core全featureの単体2,365件、公開API統合2件、決定図のdoctest 1件は成功した。選ばれた枝だけの参照と、作業上限時の参照前拒否を回帰テストで確認した。
+
+Compilerは実装Commit `6def9be744b0e82586ae9bf22cbf068541eb2c1c` の5 targetで548件を実行し、532成功・16失敗。前回の全IDを保持し、1件が成功へ移行した。成功へ移行したIDは `callable_execution::standard_map_program::every_map_family_uses_a_control_program_with_exact_values_and_callback_count`。コールバック作用を後段で決める6件は `UnresolvedFuture` が残る。標準Mapの27入力がすべて成功した。Nativeは1操作刻みの実行で値とコールバック回数を確認した。AWBCは正準符号化の往復後に値とプログラム呼出し回数を確認した。前回停止した24番目の `Result::Ok` と、後続の `Result::Err` の3件も通過した。別のMap部分適用は、取込時の定数決定図の複製を過ぎ、保持した不透明Mapと同様に元の作用述語の独立再照合で作業上限に達した。Traversalは確定型の実体化時の投影、再帰コールバックは形式引数の独立性判定で上限に達した。コールバック作用の7入力を比較するテストは、前回と同じ4入力で型検査に失敗した。
+
+Sema全feature checkはライブラリのコンパイルに成功した。テスト対象は終了101で前回と同じ794エラー・33警告。初回のSemaコンパイルで検出した再照合のテストヘルパーの配置と未使用importを修正した。公開Sourceの追加コミットはCore回帰テストに型注釈を加えた。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargoの全feature逆依存は起点込みでCore 52、Sema 22 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 9 blobを照合した。`target` は `12893378248` bytes。
+
+[比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-shared-import-basis.raw.zip) は 53 entry、1714024 bytes、SHA256 `5e33174939d7a6828c2d90c54360a4356bed7d7e6509e7e5d9c2001b4c18501a`。各原本の長さとハッシュを照合した。
