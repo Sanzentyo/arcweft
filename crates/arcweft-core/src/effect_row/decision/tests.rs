@@ -891,6 +891,54 @@ fn conditional_completion_retains_exact_principal_and_unsatisfiable_domains() {
 }
 
 #[test]
+fn conditional_completion_specializes_shared_coefficients_once() {
+    let mut setup = Meter::default();
+    let required = atom(0).and(&atom(1), &mut setup).unwrap();
+    let outputs = atom(2).and(&atom(3), &mut setup).unwrap();
+    let relation = required
+        .conditional(&outputs, &EffectDecision::constant(true), &mut setup)
+        .unwrap();
+    let completion = relation
+        .complete_conditionally(BTreeSet::from([2, 3, 4]), &mut setup)
+        .unwrap();
+    assert!(completion.principal().is_constant(true));
+    let envelope = completion.lower_envelope();
+    let left = envelope.get(&2).unwrap();
+    let right = envelope.get(&3).unwrap();
+    assert_eq!(left, &required);
+    assert!(std::ptr::eq(left, right));
+    assert!(envelope.get(&4).unwrap().is_constant(false));
+    assert!(envelope.get(&5).is_none());
+
+    let untouched = envelope.specialize(&BTreeMap::new(), &mut setup).unwrap();
+    assert!(std::ptr::eq(untouched.get(&2).unwrap(), left));
+
+    let assignment = BTreeMap::from([(0, true)]);
+    let mut single_restriction = Meter::default();
+    assert_eq!(
+        required
+            .restrict(&assignment, &mut single_restriction)
+            .unwrap(),
+        atom(1)
+    );
+    let mut work = Meter::default();
+    let specialized = envelope.specialize(&assignment, &mut work).unwrap();
+    assert_eq!(specialized.get(&2), Some(&atom(1)));
+    assert!(std::ptr::eq(
+        specialized.get(&2).unwrap(),
+        specialized.get(&3).unwrap()
+    ));
+    // Two coordinates, one cached restriction, and one result tuple.
+    assert_eq!(work.used, single_restriction.used + 6);
+
+    let zero = envelope
+        .specialize(&BTreeMap::from([(0, false)]), &mut setup)
+        .unwrap();
+    assert!(zero.nonzero.is_empty());
+    assert_eq!(zero.domain(), envelope.domain());
+}
+
+#[test]
 fn conditional_completion_aborts_at_every_budget_boundary_without_mutating_inputs() {
     let mut meter = Meter::default();
     let relation = atom(0).or(&atom(1), &mut meter).unwrap();

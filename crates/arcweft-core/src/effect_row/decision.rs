@@ -7,7 +7,7 @@
 
 use std::{
     cmp::Reverse,
-    collections::{BTreeMap, BTreeSet, BinaryHeap},
+    collections::{BTreeMap, BTreeSet, BinaryHeap, btree_map::Entry},
     sync::Arc,
 };
 
@@ -134,11 +134,12 @@ impl<V> ConditionalDecisionCompletion<V> {
 
 /// A total tuple over the admitted coordinates, stored by nonzero support.
 /// An admitted coordinate with no stored decision is always false. A reference
-/// outside the bound domain is not a coefficient of this tuple.
+/// outside the bound domain is not a coefficient of this tuple. Coordinates
+/// derived from the same canonical root share its immutable decision.
 #[derive(Debug, Eq, PartialEq)]
 pub struct DecisionLowerEnvelope<V> {
     domain: Arc<BTreeSet<V>>,
-    nonzero: BTreeMap<V, EffectDecision<V>>,
+    nonzero: BTreeMap<V, Arc<EffectDecision<V>>>,
     zero: EffectDecision<V>,
 }
 
@@ -152,6 +153,7 @@ impl<V: Clone + Ord> DecisionLowerEnvelope<V> {
     pub fn get(&self, coordinate: &V) -> Option<&EffectDecision<V>> {
         self.nonzero
             .get(coordinate)
+            .map(Arc::as_ref)
             .or_else(|| self.domain.contains(coordinate).then_some(&self.zero))
     }
 
@@ -179,12 +181,28 @@ impl<V: Clone + Ord> DecisionLowerEnvelope<V> {
         control: &mut C,
     ) -> Result<Self, C::Error> {
         let mut nonzero = BTreeMap::new();
+        // Local input identity only. Allocation addresses never enter the tuple
+        // or determine the order in which its coordinates are processed.
+        let mut specialized = BTreeMap::<_, Option<_>>::new();
         for (coordinate, value) in &self.nonzero {
             control.charge(DecisionWork::Visit)?;
-            let value = value.restrict(assignment, control)?;
-            if !value.is_constant(false) {
+            let value = if assignment.is_empty() {
+                Some(value)
+            } else {
+                match specialized.entry(Arc::as_ptr(value)) {
+                    Entry::Occupied(entry) => entry.into_mut().as_ref(),
+                    Entry::Vacant(entry) => {
+                        let restricted = value.restrict(assignment, control)?;
+                        control.charge(DecisionWork::Node)?;
+                        entry
+                            .insert((!restricted.is_constant(false)).then(|| Arc::new(restricted)))
+                            .as_ref()
+                    }
+                }
+            };
+            if let Some(value) = value {
                 control.charge(DecisionWork::Node)?;
-                nonzero.insert(coordinate.clone(), value);
+                nonzero.insert(coordinate.clone(), Arc::clone(value));
             }
         }
         control.charge(DecisionWork::Node)?;
@@ -1033,9 +1051,18 @@ impl<V: Clone + Ord> EffectDecision<V> {
         let principal =
             builder.conditional(Conditional::new(admissibility, instantiated, Root::False))?;
         let mut nonzero = BTreeMap::new();
+        let mut decisions = BTreeMap::new();
         for (variable, root) in replacements {
             builder.control.charge(DecisionWork::Node)?;
-            nonzero.insert(variable, builder.finish(root)?);
+            let decision = match decisions.entry(root) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => {
+                    let decision = builder.finish(root)?;
+                    builder.control.charge(DecisionWork::Node)?;
+                    entry.insert(Arc::new(decision))
+                }
+            };
+            nonzero.insert(variable, Arc::clone(decision));
         }
         Ok(ConditionalDecisionCompletion {
             satisfiable: builder.finish(admissibility)?,
