@@ -20000,3 +20000,16 @@ Sema 全featureユニットは1,987件中1,871 PASS、116 FAIL、0 SKIP。再帰
 Sema 全target・全feature Clippy、変更クレートのfmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。公開した変更の全36 blob を検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-retained-result-transport.raw.zip) は35 entry、606,255 bytes、SHA256 `3b6cf2fd7193f46d458e5c9f97ee0f62a9f89dd9c0d4fd7f24cba65e62429bd9`。各原本の長さとハッシュを照合した。
+
+<a id="recursive-callback-effect-bound"></a>
+## 2026-11-19 — 再帰関数値の callback 効果上限を検査
+
+基点 `2ff221ff2754e4c05bbfe5aeb5e1e46bc7e46cfa`。Source `3617eed55ff6574406fdd91db59d3a98d549ed28`。再現ログは、関数値を引数として観測する処理が、解析中の宣言本体へ再入して `ExpressionCycle` に達することを示した。元の効果グラフから実際の適用先の宣言を照合し、本体の解析が進行中なら、型検査済みの実行部分から必要な効果を取得する。既存の実行効果フォールドを各部分に適用し、無条件に含まれる効果で閉じた callback の許容効果を超えると証明できれば、通常の型不一致として候補を棄却する。この判定で使う効果は拒否の証拠に限り、許容範囲内か未確定の場合は本体の確定を従来どおり要求する。証拠収集に候補の既存の作業上限を適用する。
+
+初回ビルドの `E0308` は効果集合の更新が真偽値を返す箇所で起きた。更新後に単位値を返す形へ揃え、再帰本体の対象7テストを通過した。最終入力では、許容効果が空の callback と `fs.read` のみを許容する callback に、`log.write` が必要な再帰関数を渡した。両方で対象の呼出しだけが型付きで拒否され、実行計画が発行されないことを検査した。
+
+Sema 全featureユニットは1,987件中1,872 PASS、115 FAIL、0 SKIP。前回から成功に変わった既存テストはこの1件で、新規失敗は0。Compiler統合5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中30 PASS、2 FAIL。Compiler 全582件の合否とIDは前回と一致した。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。公開した変更の全8 blob を検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-recursive-callback-bound.raw.zip) は23 entry、507,846 bytes、SHA256 `fb12648ba9eeae5d36033a8fa6c6b486db5630daaf19564072702e01ff0d9df7`。各原本の長さとハッシュを照合した。
