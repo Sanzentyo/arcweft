@@ -20152,3 +20152,19 @@ Coreの全featureユニットと効果判定の統合2,374件はすべて通過�
 基点 `04a6ac2388c8cfeb24b6b59444acf680e1e177fc`、Source `689aa86b42451c2d92e45c10a5a298f50f00f76b`。先行のSema全feature実行で、効果参照の読取りテストは、未確定の効果行で分岐を組み立てた時点で `Row(UnknownRow)` になっていた。空の確定行を分岐に渡し、未確定行の分岐拒否と、読取り口が未確定行から参照を報告しないことを個別に検査する。宣言本体の準備前後で実引数と置換対象外の参照を得る検査、元の読取りscope、取消、作業上限の検査も通過した。
 
 Semaの全featureから対象2件を実行し、2 PASS、0 FAIL。製品コードの変更はない。先行の全件実行では修正前のバイナリを使用したため、元の失敗をその時点の結果として保持する。[変更前の失敗・修正後の結果・公開照合](acceptance-evidence/task-callback-parameter-read-fixture.raw.zip) は7 entry、22,269 bytes、SHA256 `ad10f23522b8e729d708a00e9746fb03b68ed5fb8169f0a5d21430b505a6554a`。各entryの長さとハッシュ、公開したRust blobを照合した。
+
+<a id="literal-effect-decision-reverse"></a>
+## 2026-11-20 — 効果判定変更後のCore推移的逆依存を検証
+
+製品Source `803c48be2096fbfbbff14566fa55dae4af444666`。Cargoで `rdeps(=arcweft-core)` を選択し、先にビルドしたfixture修正前のライブラリ・統合テストはCLIを除き213バイナリで8,095件を実行した。7,989 PASS、106 FAIL、18 SKIP。比較元 `630229b2eaa239a143765b2d2d5389ae00ffbb3b` の全IDの合否は一致し、追加した6件が通過した。CLIのライブラリ・バイナリ196件と規定の統合6 targetの30件はすべて通過し、同じIDだった。Coreの全feature doctestは81件すべて通過した。
+
+既知の106件のうち94件はSema、12件はCompiler。後から修正したfixtureの2件の実測は[別記録](#prepared-effect-parameter-read-fixture)に保持する。[コマンド・失敗ID・比較・公開照合](acceptance-evidence/task-callback-literal-composition-reverse.raw.zip) は12 entry、358,912 bytes、SHA256 `0e299dae1c04673fe9855e0d3a05985e2908b13d1343788fb9755afbfb7920fa`。各entryの長さとハッシュを照合した。
+
+<a id="retained-scroll-native-web-pixels"></a>
+## 2026-11-20 — 保持Scrollの操作前後をNativeとChromeで比較
+
+先にNative CLIで検証した `scroll-fixture-probe2-typed.arcw` を同じ入力でコンパイルした。両実行系はSHA256 `ec050065bcbb736f0a0472dca9dd33a2cc81e447b629d300c179efa3143332bd` の同じAWFBを読み、`entry.scroll_agent_parity` を選択した。Nativeは製品Source `803c48be2096fbfbbff14566fa55dae4af444666` の既存ライブラリをリンクした検証用プログラムで、保持フレームを共有Native GPUのオフスクリーン描画から取得した。Webは2026-11-09に生成した既存のWasmをChrome `157.0.8103.79` で動かし、WebGPU canvasを撮影した。使用したWasm、CLI、Native libraryのハッシュは原本に記録した。
+
+16 msの論理tick 3と5を1280×720・DPR 1で比較した。いずれも全RGBA成分の MSE／MAE／最大誤差は0、色SSIMは1。Nativeでは `(48,48)` にある420×168の `view_mount_0.scroll.feedback` のoffsetが0から66 pxになった。Chromeの生のwheel入力は、表示文字列を `Ada`／`Send`／`More` から `Send`／`More`／`Below` に変えた。操作前後で変化した画素は9,541で、すべてクリップ内に収まった。
+
+試行した `arcw agent observe` はファイル入口が `.arcw` に限られ、使用したCLIでは画像取得に必要な `PreparedFrame` が得られなかった。Nativeの検証用プログラムはMSVCの既定スタックで停止したため、リンク時に16 MiBを指定して再実行した。今回の確認範囲はこの保持Scroll入力の描画とクリップの一致。[両系の画像・実行原本・imq JSON](acceptance-evidence/task-retained-scroll-browser-parity.raw.zip) は24 entry、37,071 bytes、SHA256 `b692d8a8e841e327efecb7bf7133ba61e69ecd1d942f6b9d2a612fe0624c5621`。各entryの長さとハッシュを照合した。
