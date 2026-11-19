@@ -344,39 +344,45 @@ impl<'a> Compilation<'a> {
                 .layout
                 .label_classes()
                 .class_in(class, basis.label_classes());
-            let mut frontier = Vec::new();
-            for mask in 0..table {
-                let coefficient = if let Some(imported) = imported {
-                    let value = imported.coefficient(basis_class, mask)?;
-                    self.cells.complete_import(value, work)?
-                } else {
-                    let cell = Atom::Cell {
-                        scheme,
-                        class: basis_class,
-                        mask,
-                    };
-                    match self.cells {
-                        ApplicationCells::Variables => Decision::variable(cell, work)?,
-                        ApplicationCells::Solved { coefficients, .. } => {
-                            work.charge(DecisionWork::Visit)?;
-                            Decision::constant(coefficients.value(&cell)?)
-                        }
-                    }
-                };
-                frontier.push(coefficient);
-            }
-            for argument in arguments {
-                let argument = argument.borrow();
-                let mut next = Vec::new();
-                for pair in frontier.chunks_exact(2) {
-                    next.push(argument.membership[class].conditional(&pair[1], &pair[0], work)?);
-                }
-                frontier = next;
-            }
             result.push(
-                frontier
-                    .pop()
-                    .ok_or(PreparedEffectInvariant::ApplicationArity)?,
+                Decision::select_table(
+                    arguments.len(),
+                    table,
+                    work,
+                    |index| {
+                        EffectDecisionReplacement::Decision(
+                            &arguments[index].borrow().membership[class],
+                        )
+                    },
+                    |mask, work| {
+                        let cell = Atom::Cell {
+                            scheme,
+                            class: basis_class,
+                            mask,
+                        };
+                        Ok(match (self.cells, imported) {
+                            (ApplicationCells::Variables, Some(imported)) => {
+                                EffectDecisionReplacement::Decision(
+                                    imported.coefficient(basis_class, mask)?,
+                                )
+                            }
+                            (ApplicationCells::Variables, None) => {
+                                EffectDecisionReplacement::Variable(cell)
+                            }
+                            (ApplicationCells::Solved { coefficients, .. }, Some(imported)) => {
+                                let value = imported.coefficient(basis_class, mask)?;
+                                EffectDecisionReplacement::Constant(
+                                    coefficients.evaluate(value, work)?,
+                                )
+                            }
+                            (ApplicationCells::Solved { coefficients, .. }, None) => {
+                                work.charge(DecisionWork::Visit)?;
+                                EffectDecisionReplacement::Constant(coefficients.value(&cell)?)
+                            }
+                        })
+                    },
+                )?
+                .ok_or(PreparedEffectInvariant::ApplicationArity)?,
             );
         }
         Ok(result)

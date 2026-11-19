@@ -230,11 +230,7 @@ fn compile_relation<C: DecisionControl>(
         let value = match node {
             ResidualNode::True => Decision::constant(true),
             ResidualNode::And(children) => {
-                let mut result = Decision::constant(true);
-                for child in children {
-                    result = result.and(&values[child.index()], work)?;
-                }
-                result
+                Decision::all(children.iter().map(|child| &values[child.index()]), work)?
             }
             ResidualNode::Not(child) => values[child.index()].not(work)?,
             ResidualNode::Implies {

@@ -66,6 +66,7 @@ pub struct EffectDecision<V> {
 
 /// A simultaneous replacement for one source reference in a decision.
 pub enum EffectDecisionReplacement<'a, V> {
+    Constant(bool),
     Variable(V),
     Decision(&'a EffectDecision<V>),
 }
@@ -529,12 +530,8 @@ impl<V: Clone + Ord> EffectDecision<V> {
             if let Some(&root) = replacements.get(&reference) {
                 return Ok(root);
             }
-            let root = match binding(reference, builder.control)? {
-                EffectDecisionReplacement::Variable(variable) => {
-                    builder.branch(variable, Root::False, Root::True)?
-                }
-                EffectDecisionReplacement::Decision(decision) => builder.import(decision)?,
-            };
+            let value = binding(reference, builder.control)?;
+            let root = builder.operand(value)?;
             builder.control.charge(DecisionWork::Node)?;
             replacements.insert(reference, root);
             Ok(root)
@@ -600,6 +597,120 @@ impl<V: Clone + Ord> EffectDecision<V> {
     /// Conjoins two functions using the shared controlled decision builder.
     pub fn and<C: DecisionControl>(&self, other: &Self, control: &mut C) -> Result<Self, C::Error> {
         self.conditional(other, &Self::constant(false), control)
+    }
+
+    /// Conjoin a sequence inside one interner, publishing only the final decision.
+    pub fn all<'a, C: DecisionControl>(
+        decisions: impl IntoIterator<Item = &'a Self>,
+        control: &mut C,
+    ) -> Result<Self, C::Error>
+    where
+        V: 'a,
+    {
+        let mut decisions = decisions.into_iter();
+        let mut nontrivial = || -> Result<Option<&'a Self>, C::Error> {
+            for decision in decisions.by_ref() {
+                control.charge(DecisionWork::Visit)?;
+                if decision.root != Root::True {
+                    return Ok(Some(decision));
+                }
+            }
+            Ok(None)
+        };
+        let Some(first) = nontrivial()? else {
+            return Ok(Self::constant(true));
+        };
+        if first.root == Root::False {
+            return Ok(Self::constant(false));
+        }
+        let Some(second) = nontrivial()? else {
+            return first.copy_with_control(control);
+        };
+        if second.root == Root::False {
+            return Ok(Self::constant(false));
+        }
+        let mut builder = DecisionBuilder::new(control);
+        let first = builder.import(first)?;
+        let second = builder.import(second)?;
+        let mut root = builder.conditional(Conditional::new(first, second, Root::False))?;
+        for decision in decisions {
+            if root == Root::False {
+                break;
+            }
+            builder.control.charge(DecisionWork::Visit)?;
+            match decision.root {
+                Root::False => return Ok(Self::constant(false)),
+                Root::True => {}
+                Root::Branch(_) => {
+                    let constraint = builder.import(decision)?;
+                    root = builder.conditional(Conditional::new(root, constraint, Root::False))?;
+                }
+            }
+        }
+        builder.finish(root)
+    }
+
+    /// Select an entry in a Boolean truth table. Selector zero supplies the
+    /// least significant bit of the entry index. Every operand lives in the
+    /// same reference scope, and only the final result is materialized.
+    /// Returns `None` if the table size is not exactly two to the power of
+    /// the selector count.
+    pub fn select_table<'a, C: DecisionControl>(
+        selectors: usize,
+        entries: usize,
+        control: &mut C,
+        mut selector: impl FnMut(usize) -> EffectDecisionReplacement<'a, V>,
+        mut entry: impl FnMut(usize, &mut C) -> Result<EffectDecisionReplacement<'a, V>, C::Error>,
+    ) -> Result<Option<Self>, C::Error>
+    where
+        V: 'a,
+    {
+        if u32::try_from(selectors)
+            .ok()
+            .and_then(|bits| 1usize.checked_shl(bits))
+            != Some(entries)
+        {
+            return Ok(None);
+        }
+        if selectors == 0 {
+            return Ok(Some(match entry(0, control)? {
+                EffectDecisionReplacement::Constant(value) => Self::constant(value),
+                EffectDecisionReplacement::Variable(variable) => Self::variable(variable, control)?,
+                EffectDecisionReplacement::Decision(value) => value.copy_with_control(control)?,
+            }));
+        }
+
+        let mut builder = DecisionBuilder::new(control);
+        let mut frontier = Vec::new();
+        for index in 0..entries {
+            builder.control.charge(DecisionWork::Node)?;
+            let value = entry(index, builder.control)?;
+            frontier.push(builder.operand(value)?);
+        }
+        for bit in 0..selectors {
+            let mut condition = None;
+            let next_count = frontier.len() / 2;
+            for index in 0..next_count {
+                builder.control.charge(DecisionWork::Visit)?;
+                let low = frontier[2 * index];
+                let high = frontier[2 * index + 1];
+                frontier[index] = if low == high {
+                    low
+                } else {
+                    let test = match condition {
+                        Some(test) => test,
+                        None => {
+                            let test = builder.operand(selector(bit))?;
+                            condition = Some(test);
+                            test
+                        }
+                    };
+                    builder.conditional(Conditional::new(test, high, low))?
+                };
+            }
+            frontier.truncate(next_count);
+        }
+        builder.finish(frontier[0]).map(Some)
     }
 
     /// Disjoins two functions using the shared controlled decision builder.
@@ -926,16 +1037,12 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
                 instantiated: relation.root,
             }));
         }
+        let mut ranks = BTreeMap::new();
         for node in relation.nodes.iter() {
             self.control.charge(DecisionWork::Visit)?;
             if !quantified.contains(&node.variable) {
                 return Ok(None);
             }
-        }
-
-        let mut ranks = BTreeMap::new();
-        for node in relation.nodes.iter() {
-            self.control.charge(DecisionWork::Visit)?;
             if let std::collections::btree_map::Entry::Vacant(slot) = ranks.entry(&node.variable) {
                 self.control.charge(DecisionWork::Node)?;
                 slot.insert(0);
@@ -1093,6 +1200,17 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             indices.insert(index, self.branch(node.variable.clone(), low, high)?);
         }
         Ok(Self::remap(decision.root, &indices))
+    }
+
+    fn operand(&mut self, operand: EffectDecisionReplacement<'_, V>) -> Result<Root, C::Error> {
+        match operand {
+            EffectDecisionReplacement::Constant(false) => Ok(Root::False),
+            EffectDecisionReplacement::Constant(true) => Ok(Root::True),
+            EffectDecisionReplacement::Variable(variable) => {
+                self.branch(variable, Root::False, Root::True)
+            }
+            EffectDecisionReplacement::Decision(decision) => self.import(decision),
+        }
     }
 
     fn known(&self, key: Conditional) -> Option<Root> {

@@ -1,6 +1,7 @@
 //! Exact finite-row valuations: named labels and outside-support patterns.
 
 use super::*;
+use arcweft_core::effect_row::EffectDecisionReplacement;
 
 #[derive(Clone, Copy)]
 pub(super) struct FiniteRowValuation<'a> {
@@ -96,11 +97,11 @@ impl FiniteRowValuation<'_> {
         let (default, named) = members
             .split_first()
             .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-        let mut result = self.outside(default, work)?;
-        for member in named {
-            result = result.and(member, work)?;
+        let outside = self.outside(default, work)?;
+        if named.is_empty() {
+            return Ok(outside);
         }
-        Ok(result)
+        Decision::all(std::iter::once(&outside).chain(named), work)
     }
 
     /// A distinguished outside label must have a pattern actually present in
@@ -109,39 +110,28 @@ impl FiniteRowValuation<'_> {
         self,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let mut frontier = Vec::new();
-        for mask in 0..self.pattern_count()? {
-            work.charge(DecisionWork::Node)?;
-            frontier.push(if mask == 0 {
-                Decision::constant(true)
-            } else {
-                Decision::variable(
-                    Atom::Presence {
-                        owner: self.owner,
-                        mask,
-                    },
-                    work,
-                )?
-            });
-        }
-        for parameter in 0..self.parameters.len() {
-            let bit = Decision::variable(
-                Atom::Formal {
+        Decision::select_table(
+            self.parameters.len(),
+            self.pattern_count()?,
+            work,
+            |parameter| {
+                EffectDecisionReplacement::Variable(Atom::Formal {
                     owner: self.owner,
                     class: 0,
                     parameter,
-                },
-                work,
-            )?;
-            let mut next = Vec::new();
-            for pair in frontier.chunks_exact(2) {
-                work.charge(DecisionWork::Node)?;
-                next.push(bit.conditional(&pair[1], &pair[0], work)?);
-            }
-            frontier = next;
-        }
-        frontier
-            .pop()
-            .ok_or_else(|| PreparedEffectInvariant::TruthTableOverflow.into())
+                })
+            },
+            |mask, _| {
+                Ok(if mask == 0 {
+                    EffectDecisionReplacement::Constant(true)
+                } else {
+                    EffectDecisionReplacement::Variable(Atom::Presence {
+                        owner: self.owner,
+                        mask,
+                    })
+                })
+            },
+        )?
+        .ok_or_else(|| PreparedEffectInvariant::TruthTableOverflow.into())
     }
 }

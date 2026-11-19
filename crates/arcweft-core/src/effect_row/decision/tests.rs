@@ -31,6 +31,55 @@ fn truth_table(decision: &EffectDecision<u8>, variables: u8) -> Vec<bool> {
 }
 
 #[test]
+fn table_selection_preserves_correlated_selectors_and_entry_references() {
+    let mut work = Meter::default();
+    let bit = atom(0);
+    let borrowed = atom(1);
+    let result = EffectDecision::select_table(
+        2,
+        4,
+        &mut work,
+        |_| EffectDecisionReplacement::Decision(&bit),
+        |index, _| {
+            Ok(match index {
+                0 => EffectDecisionReplacement::Decision(&borrowed),
+                3 => EffectDecisionReplacement::Variable(2),
+                _ => EffectDecisionReplacement::Constant(true),
+            })
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let expected = bit.conditional(&atom(2), &borrowed, &mut work).unwrap();
+    assert_eq!(result, expected);
+    let invalid = EffectDecision::<u8>::select_table(
+        2,
+        3,
+        &mut work,
+        |_| panic!("invalid table must not resolve selectors"),
+        |_, _| panic!("invalid table must not resolve entries"),
+    );
+    assert_eq!(invalid.unwrap(), None);
+}
+
+#[test]
+fn shared_conjunction_has_the_same_result_as_pairwise_conjunction() {
+    let mut work = Meter::default();
+    let left = atom(0).or(&atom(1), &mut work).unwrap();
+    let right = atom(1).or(&atom(2), &mut work).unwrap();
+    let last = atom(0).not(&mut work).unwrap();
+    let expected = left
+        .and(&right, &mut work)
+        .unwrap()
+        .and(&last, &mut work)
+        .unwrap();
+    assert_eq!(
+        EffectDecision::all([&left, &right, &last], &mut work).unwrap(),
+        expected
+    );
+}
+
+#[test]
 fn fallible_evaluation_loads_only_admitted_references_on_the_selected_path() {
     let decision = atom(0).and(&atom(1), &mut Meter::default()).unwrap();
     let mut lookups = Vec::new();
