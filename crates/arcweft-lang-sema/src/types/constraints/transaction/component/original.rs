@@ -592,20 +592,15 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     )?,
                 };
                 let right = context.with_original_scope(owner, |context| {
-                    let projected = projection.project_operand(
+                    let canonical = projection.inspect_operand(
                         value.view(),
                         branch,
                         crate::types::constraints::ConstraintClosurePolicy::Hint,
                         graph.read(),
                         context,
                     )?;
-                    let canonical = projection.owner().canonicalize(
-                        projected.value(),
-                        projected.scope().shape(),
-                        context,
-                    )?;
                     scope
-                        .transport_canonical_type(projected.scope(), &canonical, context)
+                        .transport_canonical_type(value.scope(), &canonical, context)
                         .map_err(projection_failure)
                 })?;
                 if !crate::types::constraints::completed_types_equal(&left, &right, context)? {

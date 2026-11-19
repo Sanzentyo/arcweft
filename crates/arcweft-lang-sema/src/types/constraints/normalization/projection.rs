@@ -30,7 +30,9 @@ use crate::types::constraints::transaction::{
     AdmittedConstraintFunctionHeader, ConstraintConstOperandView, ConstraintFunctionHeaderView,
     ConstraintOperand, ConstraintOperandView,
 };
-use mode::{AdmitOrigins, InspectValues, ProjectionChildren, ProjectionMode, RetainOrigins};
+use mode::{
+    AdmitOrigins, InspectOperand, InspectValues, ProjectionChildren, ProjectionMode, RetainOrigins,
+};
 pub(in crate::types::constraints) use phase::ConstraintProjectionPhase;
 
 impl<'ty, D: ConstraintDomain> ConstraintProjectionView<'ty, D> {
@@ -194,6 +196,38 @@ where
 }
 
 impl<D: ConstraintDomain> ConstraintEffectProjection<D> {
+    /// Verify the original ports while computing the result of an equality
+    /// check. The type leaves this fold only for comparison, without a new
+    /// source derivation.
+    pub(in crate::types::constraints) fn inspect_operand<'ty, A, L>(
+        &mut self,
+        input: ConstraintOperandView<'ty, D>,
+        branch: &'ty super::super::transaction::ConstraintInferenceBranch<D, L>,
+        policy: ConstraintClosurePolicy,
+        graph: PreparedEffectReadView<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind, TypeConstraintError>
+    where
+        A: TypeConstraintAccounting,
+    {
+        self.owner().require_branch(branch)?;
+        let scope = input.lexical_scope().as_ref().clone();
+        context.with_original_scope(scope, |context| {
+            project_type_fold::<A, D, InspectOperand>(
+                input,
+                branch.projection_view(),
+                policy,
+                &mut ConstraintProjectionPhase::Completion {
+                    graph,
+                    projection: self,
+                },
+                context,
+                &mut BTreeSet::new(),
+                &mut BTreeSet::new(),
+            )
+        })
+    }
+
     pub(in crate::types::constraints) fn project_operand<'ty, A, L>(
         &mut self,
         input: ConstraintOperandView<'ty, D>,

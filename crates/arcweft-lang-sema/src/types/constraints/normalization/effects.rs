@@ -85,6 +85,14 @@ struct HeaderReplacementUses {
     predicate: BTreeSet<GenericEffectReference>,
 }
 
+struct CheckedEffectHeader {
+    row: EffectRow,
+    predicate: EffectPredicate,
+    uses: HeaderReplacementUses,
+    row_support: Option<ImportedGenericParameterScopeLease>,
+    predicate_support: ImportedGenericParameterScopeLease,
+}
+
 /// The real calculation scope and domain survive independently of any one
 /// row. The context contains no operands, so primitive origins cannot cycle.
 pub(in crate::types::constraints) struct ConstraintEffectCompletionContext<D: ConstraintDomain> {
@@ -538,6 +546,46 @@ impl<D: ConstraintDomain> ConstraintEffectProjection<D> {
         TypeConstraintError,
     > {
         let header = header.view();
+        let CheckedEffectHeader {
+            row,
+            predicate,
+            uses,
+            row_support,
+            predicate_support,
+        } = self.check_header_projection(header, context)?;
+        let proof = ConstraintClosedEffectHeader {
+            input: header.derivation(),
+            owner: Arc::clone(&self.owner),
+            row_keys: uses.row.into_iter().collect(),
+            predicate_keys: uses.predicate.into_iter().collect(),
+            row_support,
+            predicate_support,
+        };
+        Ok(ConstraintProjectedEffectHeader::closed(
+            row,
+            predicate,
+            Some(proof),
+        ))
+    }
+
+    /// Compare an admitted operand using the same checks as a retained field.
+    /// The result cannot be used as the original operand of another equation.
+    pub(in crate::types::constraints::normalization) fn project_header_for_comparison<
+        A: TypeConstraintAccounting,
+    >(
+        &mut self,
+        header: &AdmittedConstraintFunctionHeader<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(EffectRow, EffectPredicate), TypeConstraintError> {
+        let checked = self.check_header_projection(header.view(), context)?;
+        Ok((checked.row, checked.predicate))
+    }
+
+    fn check_header_projection<A: TypeConstraintAccounting>(
+        &mut self,
+        header: &ConstraintFunctionHeaderView<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<CheckedEffectHeader, TypeConstraintError> {
         let mut uses = HeaderReplacementUses::default();
         let (row, predicate) = self.owner.project_header_values(
             header.lexical_scope(),
@@ -565,19 +613,13 @@ impl<D: ConstraintDomain> ConstraintEffectProjection<D> {
             &uses.predicate,
             context,
         )?;
-        let proof = ConstraintClosedEffectHeader {
-            input: header.derivation(),
-            owner: Arc::clone(&self.owner),
-            row_keys: uses.row.into_iter().collect(),
-            predicate_keys: uses.predicate.into_iter().collect(),
-            row_support,
-            predicate_support,
-        };
-        Ok(ConstraintProjectedEffectHeader::closed(
+        Ok(CheckedEffectHeader {
             row,
             predicate,
-            Some(proof),
-        ))
+            uses,
+            row_support,
+            predicate_support,
+        })
     }
 
     /// Inspection returns values only; it cannot issue a retained derivation.

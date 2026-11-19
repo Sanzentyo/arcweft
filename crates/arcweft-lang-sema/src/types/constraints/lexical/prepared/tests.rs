@@ -94,6 +94,13 @@ fn live_transport_preserves_named_and_future_functions_under_real_frame_permutat
     );
     let before = input.clone();
     let frames = context.lexical_frames().clone();
+    let retained_terms = graph.retained_terms();
+    let same_scope = source
+        .transport_type(&source, &input, &mut graph, &mut context)
+        .unwrap();
+    assert_eq!(same_scope, input);
+    assert_eq!(graph.retained_terms(), retained_terms);
+
     let output = target
         .transport_type(&source, &input, &mut graph, &mut context)
         .unwrap();

@@ -37,6 +37,22 @@ fn effect_failure(
     }
 }
 
+impl<C: TypeProjectionControl> Transport<'_, '_, '_, C> {
+    fn project_effect_reference(
+        original: &ConstraintLexicalScope,
+        destination: &ConstraintLexicalScope,
+        source: &GenericScope,
+        target: &GenericScope,
+        reference: &GenericEffectReference,
+        control: &mut EffectProjectionControl<'_, C>,
+    ) -> Result<Option<PreparedEffectRow>, TypeProjectionError<C::Error>> {
+        let projected =
+            destination.effect_reference(original, source, target, reference, control.control)?;
+        Ok((projected != *reference)
+            .then(|| PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), projected))))
+    }
+}
+
 impl<C: TypeProjectionControl> TypeProjectionControl for Transport<'_, '_, '_, C> {
     type Error = PreparedTypeEffectProjectionFailure<C::Error>;
     fn check(&mut self) -> Result<(), Self::Error> {
@@ -97,24 +113,40 @@ impl<C: TypeProjectionControl> ScopedTypeProjection<PreparedEffects, PreparedEff
         target: &GenericScope,
         depth: u64,
     ) -> Result<PreparedEffectRow, TypeProjectionError<Self::Error>> {
-        self.edit
-            .map_row_parameters(
-                row,
-                &mut EffectProjectionControl {
-                    control: self.context,
-                    depth,
-                },
-                &mut |reference, control| {
-                    let reference = self
-                        .target
-                        .effect_reference(self.original, source, target, reference, control.control)
-                        .map_err(PreparedEffectFailure::Control)?;
-                    Ok(Some(PreparedEffectRow::Canonical(EffectRow::open(
-                        EffectSet::new(),
-                        reference,
-                    ))))
-                },
+        if let PreparedEffectRow::Canonical(row) = row {
+            return self
+                .target
+                .transport_row_at(self.original, row, (source, target), depth, self.context)
+                .map(PreparedEffectRow::Canonical)
+                .map_err(PreparedTypeEffectProjectionFailure::from_projection);
+        }
+        let mut control = EffectProjectionControl {
+            control: self.context,
+            depth,
+        };
+        let project = |reference: &GenericEffectReference, control: &mut _| {
+            Self::project_effect_reference(
+                self.original,
+                self.target,
+                source,
+                target,
+                reference,
+                control,
             )
+        };
+        if self.original == self.target {
+            self.edit
+                .read()
+                .visit_row_parameters(row, &mut control, &mut |reference, control| {
+                    project(reference, control).map(|_| ())
+                })
+                .map_err(PreparedTypeEffectProjectionFailure::from_effect)?;
+            return Ok(row.clone());
+        }
+        self.edit
+            .map_row_parameters(row, &mut control, &mut |reference, control| {
+                project(reference, control).map_err(PreparedEffectFailure::Control)
+            })
             .map_err(PreparedTypeEffectProjectionFailure::from_effect)
     }
     fn project_predicate(
@@ -124,24 +156,33 @@ impl<C: TypeProjectionControl> ScopedTypeProjection<PreparedEffects, PreparedEff
         target: &GenericScope,
         depth: u64,
     ) -> Result<PreparedEffectPredicate, TypeProjectionError<Self::Error>> {
-        self.edit
-            .map_predicate_parameters(
-                predicate,
-                &mut EffectProjectionControl {
-                    control: self.context,
-                    depth,
-                },
-                &mut |reference, control| {
-                    let reference = self
-                        .target
-                        .effect_reference(self.original, source, target, reference, control.control)
-                        .map_err(PreparedEffectFailure::Control)?;
-                    Ok(Some(PreparedEffectRow::Canonical(EffectRow::open(
-                        EffectSet::new(),
-                        reference,
-                    ))))
-                },
+        let mut control = EffectProjectionControl {
+            control: self.context,
+            depth,
+        };
+        let project = |reference: &GenericEffectReference, control: &mut _| {
+            Self::project_effect_reference(
+                self.original,
+                self.target,
+                source,
+                target,
+                reference,
+                control,
             )
+        };
+        if self.original == self.target && matches!(predicate, PreparedEffectPredicate::Term(_)) {
+            self.edit
+                .read()
+                .visit_predicate_parameters(predicate, &mut control, &mut |reference, control| {
+                    project(reference, control).map(|_| ())
+                })
+                .map_err(PreparedTypeEffectProjectionFailure::from_effect)?;
+            return Ok(predicate.clone());
+        }
+        self.edit
+            .map_predicate_parameters(predicate, &mut control, &mut |reference, control| {
+                project(reference, control).map_err(PreparedEffectFailure::Control)
+            })
             .map_err(PreparedTypeEffectProjectionFailure::from_effect)
     }
 }

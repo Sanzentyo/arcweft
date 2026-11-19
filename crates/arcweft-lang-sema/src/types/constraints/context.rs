@@ -1274,6 +1274,10 @@ impl<'c> LocalConstraintAccounting<'c> {
             cancellation,
         }
     }
+
+    pub(crate) const fn report(&self) -> &TypeConstraintWorkReport {
+        &self.report
+    }
 }
 
 #[cfg(test)]

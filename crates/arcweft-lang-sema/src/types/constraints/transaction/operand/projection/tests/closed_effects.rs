@@ -358,6 +358,66 @@ fn a_closed_effect_owner_rejects_changed_premises_and_another_application_invent
 }
 
 #[test]
+fn original_operand_comparison_validates_bound_headers_with_less_work() {
+    use crate::types::constraints::{
+        ConstraintClosurePolicy, normalization::project_closed_operand,
+    };
+
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let (path, _) = path(&mut context, &mut effect_graph);
+    let effects = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
+    let binder = GenericBinder::new(0, 0, 1);
+    let contents = context.lexical_scope().with_binder(binder);
+    let row = EffectRow::open(
+        EffectSet::from_labels(["log.write"]).unwrap(),
+        contents.bound_effect(0, 0).unwrap(),
+    );
+    let input = context.fixture_operand(TypeKind::function_with_contract(
+        binder,
+        PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
+        [TypeKind::I64],
+        TypeKind::Unit,
+        PreparedEffectRow::Canonical(row),
+    ));
+    let before = context.accounting_mut().report().work();
+    let graph = effect_graph.read();
+    let closed = project_closed_operand(
+        input.view(),
+        &path,
+        ConstraintClosurePolicy::Hint,
+        &effects,
+        graph,
+        &mut context,
+    )
+    .unwrap();
+    let canonical = effects
+        .canonicalize(closed.value(), closed.scope().shape(), &mut context)
+        .unwrap();
+    let before_inspection = context.accounting_mut().report().work();
+    let inspected = effects
+        .projection()
+        .inspect_operand(
+            input.view(),
+            &path,
+            ConstraintClosurePolicy::Hint,
+            graph,
+            &mut context,
+        )
+        .unwrap();
+    assert_eq!(inspected, canonical);
+    let retained_work = before_inspection - before;
+    let inspection_work = context.accounting_mut().report().work() - before_inspection;
+    assert!(
+        inspection_work < retained_work,
+        "{inspection_work} >= {retained_work}"
+    );
+}
+
+#[test]
 fn closing_an_observed_value_does_not_replace_its_association_with_an_alias_result() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::types::constraints::transaction::{

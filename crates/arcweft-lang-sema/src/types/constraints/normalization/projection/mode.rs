@@ -4,7 +4,9 @@ use crate::types::{CanonicalEffects, PreparedEffects, TypeEffectDomain};
 use std::marker::PhantomData;
 
 mod admission;
+mod inspection;
 pub(super) use admission::AdmitOrigins;
+pub(super) use inspection::InspectOperand;
 
 use super::*;
 use crate::types::constraints::transaction::{
@@ -251,28 +253,18 @@ impl InspectionEffects for CanonicalEffects {
         let ConstraintProjectionPhase::Completion { projection, .. } = phase else {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         };
-        let mut header = match shape {
+        let header = match shape {
             TypeConstraintShape::Function {
                 effects, predicate, ..
             } => {
                 let scope = context.capture_lexical_scope()?;
                 let (row, predicate) =
                     projection.project_inspected_header(&scope, effects, predicate, context)?;
-                (Some(row), Some(predicate))
+                Some((row, predicate))
             }
-            _ => (None, None),
+            _ => None,
         };
-        shape.rebuild_with(
-            children,
-            &mut header,
-            |_, _| Ok(length.expect("array length was projected before its children")),
-            |(row, _), _| Ok(row.take().expect("the function row was projected")),
-            |(_, predicate), _| {
-                Ok(predicate
-                    .take()
-                    .expect("the function predicate was projected"))
-            },
-        )
+        rebuild_canonical(shape, children, length, header)
     }
 
     fn transport<A: TypeConstraintAccounting, D: ConstraintDomain>(
@@ -292,6 +284,35 @@ impl InspectionEffects for CanonicalEffects {
                 )
             })
     }
+}
+
+fn rebuild_canonical(
+    shape: TypeConstraintShape<'_, PreparedEffects>,
+    children: Vec<TypeKind>,
+    length: Option<ArrayLength>,
+    header: Option<(
+        crate::effect_row::EffectRow,
+        crate::effect_row::EffectPredicate,
+    )>,
+) -> Result<TypeKind, TypeConstraintError> {
+    let mut fields = header.map(|(row, predicate)| (Some(row), Some(predicate)));
+    shape.rebuild_with(
+        children,
+        &mut fields,
+        |_, _| Ok(length.expect("array length was projected before its children")),
+        |fields, _| {
+            Ok(fields
+                .as_mut()
+                .and_then(|(row, _)| row.take())
+                .ok_or(TypeConstraintInvariant::OriginalProducer)?)
+        },
+        |fields, _| {
+            Ok(fields
+                .as_mut()
+                .and_then(|(_, predicate)| predicate.take())
+                .ok_or(TypeConstraintInvariant::OriginalProducer)?)
+        },
+    )
 }
 
 pub(super) struct RetainOrigins;
