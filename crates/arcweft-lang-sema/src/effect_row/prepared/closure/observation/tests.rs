@@ -464,6 +464,17 @@ fn observation_can_extend_support_without_changing_the_least_scheme_tables() {
     assert!(!extension.is_total());
     assert!(principal.layout.labels.is_empty());
     assert_eq!(principal.scheme(&scheme).unwrap(), &expected);
+
+    let mut direct = budget();
+    let mut observed = budget();
+    assert_eq!(principal.resolve_row(&call, &mut direct).unwrap(), expected);
+    assert_eq!(
+        principal
+            .resolve_row_without_discrete_witnesses(&call, &mut Work(&mut observed))
+            .unwrap(),
+        expected,
+    );
+    assert!(direct.0 > observed.0, "direct application uses less work");
 }
 
 #[test]

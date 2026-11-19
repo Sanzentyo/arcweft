@@ -452,34 +452,30 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         };
         for member in members {
             let original = self.original_path(*member)?;
-            for parameter in branch.bindings.keys() {
+            let mut projected_bindings = BTreeMap::new();
+            for reference in branch.bindings.keys() {
                 if original
                     .applications
-                    .parameter_eligibility(parameter)
+                    .parameter_eligibility(reference)
                     .is_none()
                 {
                     continue;
                 }
                 context.enter_node()?;
                 let parameter: crate::types::constraints::ConstraintGenericParameterId =
-                    parameter.clone().into();
+                    reference.clone().into();
                 let check = OriginalProductCheck::BindingScope {
                     member: *member,
                     parameter: parameter.clone(),
                 };
                 let owner = context.binding_scope(original, &parameter)?;
-                let crate::types::constraints::ConstraintGenericParameterId::Type(reference) =
-                    &parameter
-                else {
-                    unreachable!("type key")
-                };
-                let value = project(
+                let projected = project(
                     projection,
                     &TypeKind::GenericParam(reference.clone()),
                     context,
                 )?;
                 let value = owner
-                    .transport_canonical_type(scope, &value, context)
+                    .transport_canonical_type(scope, &projected, context)
                     .map_err(|error| {
                         scope_projection_failure(check.clone(), parameter.clone(), error)
                     })?;
@@ -505,6 +501,10 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                         )
                     })
                     .map_err(|error| scope_constraint_failure(check, parameter, error))?;
+                if original.bindings.contains_key(reference) {
+                    context.enter_node()?;
+                    projected_bindings.insert(reference, projected);
+                }
             }
             for parameter in branch.const_bindings.keys() {
                 if original
@@ -581,11 +581,16 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     parameter: parameter.clone(),
                 };
                 let owner = context.binding_scope(original, &parameter.clone().into())?;
-                let left = project(
-                    projection,
-                    &TypeKind::GenericParam(parameter.clone()),
-                    context,
-                )?;
+                // The scope check already projected bindings retained by
+                // this member in this exact joint context.
+                let left = match projected_bindings.remove(parameter) {
+                    Some(value) => value,
+                    None => project(
+                        projection,
+                        &TypeKind::GenericParam(parameter.clone()),
+                        context,
+                    )?,
+                };
                 let right = context.with_original_scope(owner, |context| {
                     let projected = projection.project_operand(
                         value.view(),

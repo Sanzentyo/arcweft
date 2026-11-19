@@ -515,24 +515,11 @@ impl PrincipalEffectClosure {
         control: &mut C,
     ) -> Result<EffectRow, PreparedEffectFailure<C::Error>> {
         if self.witnesses.choices().is_empty() {
-            // Without discrete witnesses to eliminate, each admitted member
-            // already describes its own label class. Decode that same row
-            // after proving whole-row admission.
             let mut work = Work(control);
-            let (labels, parameters) = self.observation_support(&[Root::Row(row)], &mut work)?;
-            let compiled = self
-                .observation_compilation(&labels, &parameters)
-                .row(row, &mut work)?;
-            if !compiled.admitted.is_constant(true) {
-                return Err(PreparedEffectFailure::ObservationNotTotal);
+            if let Some(value) = self.resolve_unconditional_application(row, &mut work)? {
+                return Ok(value);
             }
-            let layout = ObservationLayout { labels, parameters };
-            let mut members = Vec::new();
-            for (class, member) in compiled.membership.iter().enumerate() {
-                work.charge(DecisionWork::Node)?;
-                members.push(layout.decode_member(member, class, &mut work)?);
-            }
-            return layout.assemble_row(members, &mut work);
+            return self.resolve_row_without_discrete_witnesses(row, &mut work);
         }
         let observation = self.observe_row(
             &PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
@@ -546,6 +533,79 @@ impl PrincipalEffectClosure {
             .canonical_extension(control)?
             .and_then(GuardedEffectRow::into_total)
             .ok_or(PreparedEffectInvariant::PrincipalConfirmation.into())
+    }
+
+    /// With no discrete witnesses, a member describes its whole label class
+    /// after the application's admission has been checked.
+    fn resolve_row_without_discrete_witnesses<C: DecisionControl>(
+        &self,
+        row: &PreparedEffectRow,
+        work: &mut Work<'_, C>,
+    ) -> Result<EffectRow, PreparedEffectFailure<C::Error>> {
+        let (labels, parameters) = self.observation_support(&[Root::Row(row)], work)?;
+        let compiled = self
+            .observation_compilation(&labels, &parameters)
+            .row(row, work)?;
+        if !compiled.admitted.is_constant(true) {
+            return Err(PreparedEffectFailure::ObservationNotTotal);
+        }
+        let layout = ObservationLayout { labels, parameters };
+        let mut members = Vec::new();
+        for (class, member) in compiled.membership.iter().enumerate() {
+            work.charge(DecisionWork::Node)?;
+            members.push(layout.decode_member(member, class, work)?);
+        }
+        layout.assemble_row(members, work)
+    }
+
+    /// The completion has already verified the canonical function against
+    /// its least cells. An unguarded application to canonical rows can
+    /// substitute those rows directly in the function's formal scope.
+    fn resolve_unconditional_application<C: DecisionControl>(
+        &self,
+        row: &PreparedEffectRow,
+        work: &mut Work<'_, C>,
+    ) -> Result<Option<EffectRow>, PreparedEffectFailure<C::Error>> {
+        let PreparedEffectRow::Term(reference) = row else {
+            return Ok(None);
+        };
+        work.charge(DecisionWork::Visit)?;
+        let RowTerm::Application {
+            function,
+            arguments,
+        } = self.graph.row(reference)?
+        else {
+            return Ok(None);
+        };
+        let definition = self.graph.function(function)?;
+        if matches!(definition, Function::Imported(_))
+            || definition
+                .domain()
+                .is_some_and(|domain| !domain.is_unconstrained())
+        {
+            return Ok(None);
+        }
+        let parameters = definition.parameters();
+        if arguments.len() != parameters.len() {
+            return Err(PreparedEffectInvariant::ApplicationArity.into());
+        }
+        let mut replacements = BTreeMap::new();
+        for (formal, actual) in parameters.iter().zip(arguments) {
+            work.charge(DecisionWork::Visit)?;
+            let PreparedEffectRow::Canonical(actual) = actual else {
+                return Ok(None);
+            };
+            work.charge(DecisionWork::Node)?;
+            replacements.insert(formal.clone(), actual.known()?);
+        }
+        let body = self
+            .functions
+            .get(&function.reference().ordinal)
+            .ok_or(PreparedEffectInvariant::StaleReference)?;
+        let formula = body.known()?.substitute(&replacements, work)?;
+        Ok(Some(EffectRow {
+            formula: Some(formula),
+        }))
     }
 
     pub(crate) fn resolve_predicate<C: DecisionControl>(

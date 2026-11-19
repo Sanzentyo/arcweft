@@ -12,6 +12,7 @@ use crate::types::{
     ArrayLength, GenericBinder, GenericConstReference, GenericEffectReference, GenericScope,
     GenericTypeReference, TypeInstantiationError, TypeKind, TypeProjectionControl,
     TypeProjectionError,
+    projection_control::{EffectProjectionControl, visit_effect_row},
 };
 
 mod prepared;
@@ -75,19 +76,47 @@ impl ConstraintLexicalScope {
         row: &crate::effect_row::EffectRow,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<crate::effect_row::EffectRow, TypeProjectionError<TypeConstraintError>> {
-        super::solution::map_effects_with_control(row, 1, context, &|reference, context| {
-            let reference = self.effect_reference(
-                original,
-                original.shape(),
-                self.shape(),
-                reference,
-                context,
-            )?;
-            Ok(crate::effect_row::EffectRow::open(
-                crate::effects::EffectSet::new(),
-                reference,
-            ))
-        })
+        self.transport_row_at(original, row, (original.shape(), self.shape()), 1, context)
+    }
+
+    fn transport_row_at<C: TypeProjectionControl>(
+        &self,
+        original: &Self,
+        row: &crate::effect_row::EffectRow,
+        (source, target): (&GenericScope, &GenericScope),
+        depth: u64,
+        context: &mut C,
+    ) -> Result<crate::effect_row::EffectRow, TypeProjectionError<C::Error>> {
+        visit_effect_row(context, row, depth)?;
+        if !row.is_known() {
+            return Ok(row.clone());
+        }
+        // Lexical transport changes reference coordinates, never the row
+        // paired with a reference. Preserve the admitted formula when every
+        // bound reference retains its frame and coordinate.
+        let mut renamed = std::collections::BTreeMap::new();
+        for reference in row.variables()? {
+            if matches!(reference, GenericEffectReference::Bound(_)) {
+                let projected =
+                    self.effect_reference(original, source, target, reference, context)?;
+                if &projected != reference {
+                    context
+                        .visit_binding()
+                        .map_err(TypeProjectionError::Control)?;
+                    renamed.insert(reference, projected);
+                }
+            }
+        }
+        if renamed.is_empty() {
+            return Ok(row.clone());
+        }
+        row.try_map_variables(
+            &mut EffectProjectionControl {
+                control: context,
+                depth,
+            },
+            &mut |reference, _| Ok(renamed.get(reference).unwrap_or(reference).clone()),
+        )
     }
 
     pub(super) fn type_reference<C: TypeProjectionControl>(
@@ -334,19 +363,7 @@ impl ConstraintLexicalScope {
                 }
             },
             &|row, source, target, depth, context| {
-                super::solution::map_effects_with_control(
-                    row,
-                    depth,
-                    context,
-                    &|reference, context| {
-                        let reference =
-                            self.effect_reference(original, source, target, reference, context)?;
-                        Ok(crate::effect_row::EffectRow::open(
-                            crate::effects::EffectSet::new(),
-                            reference,
-                        ))
-                    },
-                )
+                self.transport_row_at(original, row, (source, target), depth, context)
             },
         )
     }
