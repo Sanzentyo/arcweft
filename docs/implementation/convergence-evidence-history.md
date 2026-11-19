@@ -19638,3 +19638,16 @@ Compilerの548 IDは531成功・17失敗。前回から全IDと合否が一致�
 SemaライブラリのClippy、fmt、差分検査と構造ゲートは終了0、構造阻害0件。Cargoの全feature逆依存は起点込み 22 package。全逆依存のテスト、workspace全targetのcheck／ClippyとNative／Web最終受入は未実行。公開されたRust 5 blobを照合した。`target` は `12890937239` bytes。
 
 [計測パッチ、CompilerとSemaの検証原本、公開照合](acceptance-evidence/task-fixture-original-effect-completion.raw.zip) は 25 entry、958492 bytes、SHA256 `e46e98eca634b84e552d45bf8eb3a6a44944b57192a0d5347c74e3e06dfd4ab0`。各原本の長さとハッシュを照合した。
+
+<a id="effect-parameter-independence"></a>
+## 2026-11-19 — 形式引数に依存しない作用行の判定を決定図で共有
+
+基点 `8061cda139cc44403fa0c8069c499aeedcd07671` では、形式引数の各座標を真偽に置換して作用行を比較していた。Source `0d70335d7f50a991a89ecda85864bec6d05f3c26` では、形式引数を存在量化した結果が全称量化した結果を含意する領域をCoreで求める。Semaの制約コンパイルと正準形の再照合がこの判定を共有する。それぞれのスコープに属する引数を選び、元の全称量化と既定の候補作業上限を保持する。
+
+Core全feature単体2,362件は全件成功し、前回と全IDおよび合否が一致した。3変数の256個の真理値表を全量化マスクで照合した。比較用の8引数の式では旧手順と決定図が一致し、訪問数は2,195から105、ノード作業数は853から12に減少した。1、2、4引数の比較結果も原本に保持した。公開API統合2件とdoctest 1件は全件成功。
+
+Compilerは5 targetの548件で531成功・17失敗。前回と全IDおよび合否が一致した。後段のコールバック作用に `UnresolvedFuture` が出る6件は継続課題。作業上限を4件で再現した。Mapの部分適用は条件付き最小化、Traversalは完了型の互換性照合に達した。保持した不透明Mapは取込関係の列挙から、正準形を再照合する取込関係の特殊化まで進んだ。再帰コールバックは新しい独立性判定の内部で上限に達した。
+
+Sema全feature checkはライブラリの生成に成功した。テスト対象は終了101、既存794エラー・33警告。コード・ファイル別内訳に増減0。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、対象のfmt、差分検査、構造ゲートは終了0。Cargo全feature逆依存はCore 52、Sema 22 package。Sema単体、全逆依存、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 4 blobを照合した。`target` は `12890814083` bytes。
+
+[比較手順、検証原本、公開照合](acceptance-evidence/task-effect-parameter-independence.raw.zip) は 42 entry、1056738 bytes、SHA256 `2bc4da4107c7c87bf56a67f071c291f4f645369e4001026267be028c84aaf237`。各原本の長さとハッシュを照合した。
