@@ -20315,3 +20315,16 @@ Supersedes [効果入力の参照を集約した時点の停止位置](#validate
 実Cargo graphから選んだCLIを除くCoreの推移的逆依存は8,109件中8,009 PASS、100既知FAIL、18 SKIP。比較元 `6041a8acde60d041d73314d63b1ccf32084d1f21` の全IDで合否が一致し、追加4件が通過した。CLI library／binary 196件と規定の統合6 target 30件、Core全feature doctest 81件はすべてPASS。Core全featureのlibraryと `effect_decision` は2,383件すべて通過し、試行と公開Sourceで対象のCoreファイル2本のハッシュが一致した事実を照合して再利用した。Sema全featureユニットの1,995件は1,903 PASS／92既知FAILで、既存IDの合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
 
 初回の逆依存ビルドはWindowsのページングファイル不足（OSエラー1455）で終了101。同じSourceと引数で失敗した範囲を再試行し、上記結果を取得した。[検証原本・全失敗ID](acceptance-evidence/task-literal-and-equality-effect-decisions.raw.zip) は62 entry、1,818,496 bytes、SHA256 `48ed246e3034c4812744b1dffbe1c768a42b9563697190e5075da20e3e0f6374`。各entryの長さとハッシュ、公開Sourceの4ファイルを照合した。記録時の `target` は101,592,452,253 bytes。
+
+<a id="guarded-outside-effect-prefixes"></a>
+## 2026-11-20 — 外側ラベルを選び、必要な効果判定図だけを共有する
+
+検証基点 `e7210c22f3e279ad8e215db008db006197a324c7`、Source `a84dbf28f0efc003fa2348797035035f014e9190`。外側ラベルが持つパラメータ所属のマスクを先に適用し、そのマスクで選ばれた未代入部分だけを同じ判定図ビルダーへ取り込む。以降のマスクが同じ部分へ到達したときは根を共有する。包含関係はマスクごとに左右を比較し、マスク0は無条件、ほかのマスクは対応するラベルの存在を条件とする。照合済みの同一入力座標では、局所宣言の完成済み係数表を借用し、実際に参照する座標を検査する。
+
+Coreの3件は8マスクの逐次演算と同じ結果、ガードが共有部分の最初の参照より前・同じ・後にある場合、包含の4,096通りの割当て、未選択部分を読み込まずに済むことを確認した。Semaの既存テストは借用経路で全クラスにアクセスし、範囲外を拒否することを確認した。
+
+Supersedes [真理値表と等値判定を共有した時点の停止位置](#literal-and-equality-effect-decisions)。2 callback は関数内の再帰分岐を通過する。現行SourceのSemaは `main` の `swap(report, increment, 1i64)`（式75）、Native／AWBCは型検査の式76で既定上限4,096に達した。Native／AWBCの2件を直接実行し、効果を取り込む対象の走査で上限に達することをデバッガでも確認した。3 callback のSemaは `rotate` の再帰分岐（式26）で、包含左辺から該当マスクの枝を選ぶ作業の計上で停止した。前回は右辺の判定図全体を取り込む段階で停止し、今回の途中試行は右辺の未代入部分を先に取り込む段階で停止した。
+
+実Cargo graphから選んだCLIを除くCoreの推移的逆依存は8,112件中8,012 PASS、100既知FAIL、18 SKIP。比較元 `3eb39ac93efeaa44e8fd6accbb413f93cf0591cc` の全IDで合否が一致し、追加3件が通過した。CLI library／binary 196件と規定の統合6 target 30件、Core全feature doctest 81件、Core全feature library／`effect_decision` 2,386件はすべてPASS。Sema全featureユニットの1,995件は1,903 PASS／92既知FAILで、全IDの合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+[検証原本・全失敗ID](acceptance-evidence/task-guarded-outside-effect-prefixes.raw.zip) は57 entry、1,554,348 bytes、SHA256 `4cabf14d1e04c1efa0b6cd4fec9083362f281ad768fad6ffcf79302155795f63`。先行3試行のSemaの比較と停止位置を保持した。各entryの長さとハッシュ、公開Sourceの7ファイルを照合した。記録時の `target` は101,613,479,781 bytes。
