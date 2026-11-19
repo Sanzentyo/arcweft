@@ -19729,3 +19729,16 @@ Compilerは実装Commit `6def9be744b0e82586ae9bf22cbf068541eb2c1c` の5 target�
 Sema全feature checkはライブラリのコンパイルに成功した。テスト対象は終了101で前回と同じ794エラー・33警告。初回のSemaコンパイルで検出した再照合のテストヘルパーの配置と未使用importを修正した。公開Sourceの追加コミットはCore回帰テストに型注釈を加えた。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargoの全feature逆依存は起点込みでCore 52、Sema 22 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 9 blobを照合した。`target` は `12893378248` bytes。
 
 [比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-shared-import-basis.raw.zip) は 53 entry、1714024 bytes、SHA256 `5e33174939d7a6828c2d90c54360a4356bed7d7e6509e7e5d9c2001b4c18501a`。各原本の長さとハッシュを照合した。
+
+<a id="effect-borrowed-replay"></a>
+## 2026-11-19 — 作用の独立再照合で確定済みの式を借用
+
+基点 `b69b2a42c50c7c27ef5edbba8b1c03b5f5fd59d1` では、独立再照合で確定した行と述語を、参照するたびに複製していた。Source `8b63bd57116d8f8d1d3f39c0f1ac8b6218d4baf8` は確定済みの値を借用し、同じ順序の作用型引数を持つ義務で値を共有する。各義務は従来の順序で全て検査する。Coreの同時置換は、元の式で参照された束縛のラベルを列挙し、該当する決定図を借用する。各関数の最小解の検査では、参照された作用型引数の位置を一度解決してから全マスクを照合する。
+
+16件と256件の束縛に対して、作用行と述語の16パターンで正準形が一致した。256束縛中4件を参照する作用行の置換では訪問数76,227→107、ノード割り当て3,826→50、同じ大きさの述語では77,251→123、4,082→54だった。Core全featureの単体2,366件、公開API統合2件、決定図のdoctest 1件は成功した。参照されない束縛を加えても、結果と作業計数が変わらないことを回帰テストに追加した。
+
+Compilerは5 targetの548件で532成功・16失敗。前回と全IDおよび合否が一致した。コールバック作用を後段で決める6件は `UnresolvedFuture` が残る。標準Mapの27入力は引き続きNativeの値・コールバック回数と、正準符号化を往復したAWBCの値・プログラム呼出し回数を通過した。作用の発動を保留するMap部分適用と不透明Mapの保持は、元の作用述語を独立再照合する準備で作業上限に達した。Traversalの再現は確定型の実体化時に述語の作用引数を調べる箇所まで進んだ。再帰コールバックは引き続き形式引数の独立性判定で上限に達した。後段コールバックの3組に対応するNativeの再現すべてで、元の制約を閉じる際、必要なFuture関数の実入力が確定束縛にない条件で停止した。3件とも直接終端の経路を通り、同経路は実入力に空のスライスを渡していた。コールバック作用の7入力を比較するテストは、前回と同じ4入力で型検査に失敗した。
+
+Sema全feature checkはライブラリのコンパイルに成功した。テスト対象は終了101で前回と同じ794エラー・33警告。初回のコンパイルで検出した借用型の参照渡し3箇所を修正した。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargoの全feature逆依存は起点込みでCore 52、Sema 22 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 4 blobを照合した。`target` は `12895490090` bytes。
+
+[比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-borrowed-replay.raw.zip) は 51 entry、1376550 bytes、SHA256 `a3433b6bb7e50b5c527d8a2ecca79c7bb1aa3af914cf8cf4f2a0361ce506ecc9`。各原本の長さとハッシュを照合した。
