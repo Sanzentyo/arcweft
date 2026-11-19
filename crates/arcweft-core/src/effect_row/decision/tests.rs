@@ -294,6 +294,36 @@ fn least_witnesses_for_disjoint_cofactors_fit_the_work_limit() {
 }
 
 #[test]
+fn least_closed_tuple_accounts_for_literals_skipped_by_an_accepting_path() {
+    let mut setup = Meter::default();
+    let dense = (0..64).fold(EffectDecision::constant(true), |decision, variable| {
+        decision.and(&atom(variable), &mut setup).unwrap()
+    });
+    let alternate = dense.or(&atom(64), &mut setup).unwrap();
+    let bound: Arc<BTreeSet<_>> = Arc::new((0..=64).collect());
+    for (relation, has_least) in [(dense, true), (alternate, false)] {
+        let mut work = Meter {
+            limit: Some(1024),
+            ..Meter::default()
+        };
+        let completed = relation
+            .complete_conditionally(Arc::clone(&bound), &mut work)
+            .unwrap();
+        assert!(completed.satisfiable().is_constant(true));
+        assert!(completed.principal().is_constant(has_least));
+        for variable in 0..=64 {
+            assert!(
+                completed
+                    .lower_envelope()
+                    .get(&variable)
+                    .unwrap()
+                    .is_constant(has_least && variable < 64)
+            );
+        }
+    }
+}
+
+#[test]
 fn substitution_borrows_target_formulas_and_resolves_each_source_reference_once() {
     let mut meter = Meter::default();
     let (a, b) = (atom(0), atom(1));

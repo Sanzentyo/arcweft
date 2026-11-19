@@ -849,6 +849,9 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
                 instantiated: relation,
             });
         }
+        if let Some(closed) = self.complete_bound_relation(relation, quantified)? {
+            return Ok(closed);
+        }
         let projected = self.project(relation, quantified, Quantifier::Exists)?;
         let admissibility = EffectDecision::<V>::mapped_root(relation.root, &projected);
         let mut seeds = BTreeMap::<&V, Vec<usize>>::new();
@@ -904,6 +907,86 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             replacements,
             instantiated,
         })
+    }
+
+    /// A closed ordered relation admits a variable set to false if some
+    /// accepting path takes its low edge or never tests it. Every source node
+    /// is reachable, and every non-false child can reach the true terminal.
+    /// Mark skipped intervals over the ordered support without enumerating
+    /// accepting paths or projecting the relation once per variable.
+    fn complete_bound_relation(
+        &mut self,
+        relation: &EffectDecision<V>,
+        quantified: &BTreeSet<V>,
+    ) -> Result<Option<CompletionRoots<V>>, C::Error> {
+        if relation.nodes.is_empty() {
+            return Ok(Some(CompletionRoots {
+                admissibility: relation.root,
+                replacements: BTreeMap::new(),
+                instantiated: relation.root,
+            }));
+        }
+        for node in relation.nodes.iter() {
+            self.control.charge(DecisionWork::Visit)?;
+            if !quantified.contains(&node.variable) {
+                return Ok(None);
+            }
+        }
+
+        let mut ranks = BTreeMap::new();
+        for node in relation.nodes.iter() {
+            self.control.charge(DecisionWork::Visit)?;
+            if let std::collections::btree_map::Entry::Vacant(slot) = ranks.entry(&node.variable) {
+                self.control.charge(DecisionWork::Node)?;
+                slot.insert(0);
+            }
+        }
+        let mut optional_until = Vec::new();
+        for (rank, slot) in ranks.values_mut().enumerate() {
+            self.control.charge(DecisionWork::Node)?;
+            *slot = rank;
+            optional_until.push(0);
+        }
+        for node in relation.nodes.iter() {
+            self.control.charge(DecisionWork::Visit)?;
+            let rank = ranks[&node.variable];
+            if node.low != Root::False {
+                optional_until[rank] = optional_until[rank].max(rank + 1);
+            }
+            for child in [node.low, node.high] {
+                let end = match child {
+                    Root::False => continue,
+                    Root::True => ranks.len(),
+                    Root::Branch(index) => ranks[&relation.nodes[index].variable],
+                };
+                let start = rank + 1;
+                if start < end {
+                    optional_until[start] = optional_until[start].max(end);
+                }
+            }
+        }
+        let mut replacements = BTreeMap::new();
+        let mut optional_end = 0;
+        for ((variable, rank), end) in ranks.into_iter().zip(optional_until) {
+            self.control.charge(DecisionWork::Visit)?;
+            optional_end = optional_end.max(end);
+            if rank >= optional_end {
+                self.control.charge(DecisionWork::Node)?;
+                replacements.insert(variable.clone(), Root::True);
+            }
+        }
+        let instantiated = if relation
+            .evaluate_with_control(|variable| replacements.contains_key(variable), self.control)?
+        {
+            Root::True
+        } else {
+            Root::False
+        };
+        Ok(Some(CompletionRoots {
+            admissibility: Root::True,
+            replacements,
+            instantiated,
+        }))
     }
 
     /// Existential projection with one quantified variable fixed to false.
