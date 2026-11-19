@@ -19823,3 +19823,16 @@ Sema全featureユニットは1,979件中1,860 PASS、119 FAIL、0 SKIP。Compile
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時にRustの4 blobを検証した入力と照合した。記録時の `target` は17,625,498,460 bytes。
 
 [テスト全件、デバッガー観測、公開照合](acceptance-evidence/task-joint-effect-projection-reuse.raw.zip) は39 entry、709,890 bytes、SHA256 `2b7d6b95d5e2833b1caea198aa1b1d1a43a9afd3c5aeb06fe25c820741c6146b`。各原本の長さとハッシュを照合した。
+
+<a id="original-binding-comparison"></a>
+## 2026-11-19 — 移送時の効果項の同一性と元の型制約の照合
+
+基点 `d90b0d9ddb7add9e339c30cd773465a727667fb5`。Source `dec2123b7eb68a08c843c463a6a00807ef13163f`。比較に使った先行runのRust入力は `ba87bbc407fc7aba2eb50efbfb1d1805639473c7`。同じ字句フレームへの移送では、元の効果項の参照と束縛座標を検査し、同じ参照を保持する。フレームの順序が変わる場合は、移送先で変わる座標だけを置換する。元の型制約の照合は、正準型を比較するために元の型と各効果フィールドの権限を検査する。同じ投影処理で得た比較用の値は、その照合にだけ使う。
+
+Sema全featureユニットは1,980件中1,861 PASS、119 FAIL、0 SKIP。従来の1,979件は全ID・合否が一致した。追加テストでは、局所の効果束縛と `log.write` を持つ関数型を使い、直接照合と出所付き投影の正準型が等しく、直接照合が少ない作業で完了することを確認した。同じフレームへの移送で参照と項の件数を保持する既存テストと、異なるフレーム順への移送・失敗時の巻き戻しも通過した。中間の計測では、選んだ既存テストが基点からNodeLimitで先に停止していたため、同じ照合を実際に通る独立した入力へ計測を移した。既存テストの上限・条件を保持した。
+
+Compilerの5 targetは550件中541 PASS、9 FAIL、`flow_wait` は31件中28 PASS、3 FAILで、いずれも全ID・合否が先行実測と一致した。`flow_wait` のコールバック2件は今回のSourceでも候補が元の型制約の右辺を検査する途中で `WorkLimit` に達し、再帰する attached default の循環も再現した。[先行の実測](#joint-effect-projection-reuse)。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時にRustの9 blobを検証した入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-original-binding-comparison.raw.zip) は24 entry、529,784 bytes、SHA256 `011a2940ccdff0d3e443fce8d65d82f642ba61d6d058cfcb00ab815c275f1d0e`。各原本の長さとハッシュを照合した。
