@@ -12,14 +12,11 @@ pub(crate) enum EffectResidualPredicateView<'a> {
     True,
     And(ResidualPredicates<'a>),
     Not(EffectResidualPredicate<'a>),
-    Implies {
-        domain: EffectResidualPredicate<'a>,
-        consequence: EffectResidualPredicate<'a>,
-    },
     ForAllFiniteRows {
         scope: ResidualRowScope,
         parameters: &'a [GenericEffectReference],
-        body: EffectResidualPredicate<'a>,
+        domain: ResidualPreparedPredicate<'a>,
+        consequence: ResidualConsequenceView<'a>,
     },
     ExistsLocalFunctions {
         functions: ResidualFunctions<'a>,
@@ -29,15 +26,6 @@ pub(crate) enum EffectResidualPredicateView<'a> {
     ExistsUniformChoices {
         choices: ResidualChoices<'a>,
         body: EffectResidualPredicate<'a>,
-    },
-    SourcePredicate(ResidualPreparedPredicate<'a>),
-    BodyEquation {
-        function: ResidualFunction<'a>,
-        body: ResidualPreparedRow<'a>,
-    },
-    BodyAdmitted {
-        function: ResidualFunction<'a>,
-        body: ResidualPreparedRow<'a>,
     },
     FiniteFunction(ResidualFunction<'a>),
     OutputMembership {
@@ -50,6 +38,17 @@ pub(crate) enum EffectResidualPredicateView<'a> {
         body: EffectResidualPredicate<'a>,
         bindings: ResidualLowerBindings<'a>,
     },
+}
+
+pub(crate) enum ResidualConsequenceView<'a> {
+    /// The function equals its body, the body is admitted, and every body
+    /// obligation holds in the same lexical valuation.
+    Scheme {
+        function: ResidualFunction<'a>,
+        body: ResidualPreparedRow<'a>,
+        obligations: ResidualPreparedPredicates<'a>,
+    },
+    Obligation(ResidualPreparedPredicate<'a>),
 }
 
 /// The domain's zero-input coefficient is finite; other coefficients may be
@@ -266,18 +265,47 @@ impl<'a> EffectResidualPredicate<'a> {
                 nodes: nodes.iter(),
             }),
             ResidualNode::Not(node) => EffectResidualPredicateView::Not(self.at(*node)),
-            ResidualNode::Implies {
-                domain,
-                consequence,
-            } => EffectResidualPredicateView::Implies {
-                domain: self.at(*domain),
-                consequence: self.at(*consequence),
-            },
-            ResidualNode::ForAllFiniteRows { scope, body } => {
+            ResidualNode::Guarded(clause) => {
+                let scope = clause.scope();
+                let predicate = |value| ResidualPreparedPredicate {
+                    source: self.source,
+                    scope,
+                    value,
+                };
+                let (domain, consequence) = match clause.source(&self.source.graph)? {
+                    ResidualClauseSource::Scheme {
+                        id,
+                        domain,
+                        body,
+                        obligations,
+                    } => (
+                        predicate(ResidualSourcePredicate::Canonical(domain)),
+                        ResidualConsequenceView::Scheme {
+                            function: function(id),
+                            body: ResidualPreparedRow {
+                                source: self.source,
+                                scope,
+                                value: body,
+                            },
+                            obligations: ResidualPreparedPredicates {
+                                source: self.source,
+                                scope,
+                                values: obligations.iter(),
+                            },
+                        },
+                    ),
+                    ResidualClauseSource::Obligation(obligation) => (
+                        predicate(ResidualSourcePredicate::Prepared(&obligation.domain)),
+                        ResidualConsequenceView::Obligation(predicate(
+                            ResidualSourcePredicate::Prepared(&obligation.predicate),
+                        )),
+                    ),
+                };
                 EffectResidualPredicateView::ForAllFiniteRows {
-                    scope: *scope,
+                    scope,
                     parameters: scope.parameters(&self.source.graph),
-                    body: self.at(*body),
+                    domain,
+                    consequence,
                 }
             }
             ResidualNode::ExistsLocalFunctions { body } => {
@@ -307,29 +335,6 @@ impl<'a> EffectResidualPredicate<'a> {
                     body: self.at(*body),
                 }
             }
-            ResidualNode::SourcePredicate(source) => {
-                EffectResidualPredicateView::SourcePredicate(ResidualPreparedPredicate {
-                    source: self.source,
-                    scope: source.scope(),
-                    value: source.value(&self.source.graph)?,
-                })
-            }
-            ResidualNode::BodyEquation { scheme } => EffectResidualPredicateView::BodyEquation {
-                function: function(*scheme),
-                body: ResidualPreparedRow {
-                    source: self.source,
-                    scope: ResidualRowScope::Scheme(*scheme),
-                    value: source_body(&self.source.graph, *scheme)?,
-                },
-            },
-            ResidualNode::BodyAdmitted { scheme } => EffectResidualPredicateView::BodyAdmitted {
-                function: function(*scheme),
-                body: ResidualPreparedRow {
-                    source: self.source,
-                    scope: ResidualRowScope::Scheme(*scheme),
-                    value: source_body(&self.source.graph, *scheme)?,
-                },
-            },
             ResidualNode::FiniteFunction(id) => {
                 EffectResidualPredicateView::FiniteFunction(function(*id))
             }

@@ -54,11 +54,8 @@ fn conditional_output_agreement_uses_the_declared_captured_function_signature() 
             let mut found = false;
             while let Some(predicate) = pending.pop() {
                 match predicate.view()? {
-                    EffectResidualPredicateView::ForAllFiniteRows {
-                        parameters, body, ..
-                    } => {
+                    EffectResidualPredicateView::ForAllFiniteRows { parameters, .. } => {
                         found |= parameters == dependencies;
-                        pending.push(body);
                     }
                     EffectResidualPredicateView::And(children) => pending.extend(children),
                     EffectResidualPredicateView::Not(body)
@@ -67,10 +64,6 @@ fn conditional_output_agreement_uses_the_declared_captured_function_signature() 
                     | EffectResidualPredicateView::SubstituteLower { body, .. } => {
                         pending.push(body)
                     }
-                    EffectResidualPredicateView::Implies {
-                        domain,
-                        consequence,
-                    } => pending.extend([domain, consequence]),
                     _ => {}
                 }
             }

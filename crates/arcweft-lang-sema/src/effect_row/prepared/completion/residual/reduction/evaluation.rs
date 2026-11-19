@@ -327,6 +327,47 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
         self.read_predicate(value, scope)
     }
 
+    fn guarded_clause(
+        &mut self,
+        clause: ResidualClause,
+    ) -> Result<ScalarId, ReductionFailure<C::Error>> {
+        let scope = clause.scope();
+        let (domain, consequence) = match clause.source(&self.source.graph)? {
+            ResidualClauseSource::Scheme {
+                id,
+                domain,
+                body,
+                obligations,
+            } => {
+                let body = self.row(body, scope)?;
+                let function = self.function(id)?;
+                let equation = function.formula.subset(&body.formula, self.work)?.and(
+                    &body.formula.subset(&function.formula, self.work)?,
+                    self.work,
+                )?;
+                let equation = self.arena.pointwise(equation, self.work)?;
+                let admission = ScalarArena::<Variable>::boolean(body.admitted);
+                let mut requirements = Vec::new();
+                for obligation in obligations {
+                    let predicate = self.predicate(obligation, scope)?;
+                    self.work.charge(DecisionWork::Node)?;
+                    requirements.push(predicate);
+                }
+                let consequence = self.arena.conjunction(
+                    [equation, admission].into_iter().chain(requirements),
+                    self.work,
+                )?;
+                let domain = self.canonical_predicate(domain, &BTreeMap::new(), scope)?;
+                (self.arena.pointwise(domain, self.work)?, consequence)
+            }
+            ResidualClauseSource::Obligation(obligation) => (
+                self.predicate(&obligation.domain, scope)?,
+                self.predicate(&obligation.predicate, scope)?,
+            ),
+        };
+        Ok(self.arena.implies(domain, consequence, self.work)?)
+    }
+
     pub(super) fn relation(
         mut self,
     ) -> Result<(ScalarArena<Variable>, ScalarId), ReductionFailure<C::Error>> {
@@ -339,44 +380,7 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
                     .arena
                     .conjunction(children.iter().map(|id| values[id.index()]), self.work)?,
                 ResidualNode::Not(child) => self.arena.negate(values[child.index()], self.work)?,
-                ResidualNode::Implies {
-                    domain,
-                    consequence,
-                } => self.arena.implies(
-                    values[domain.index()],
-                    values[consequence.index()],
-                    self.work,
-                )?,
-                ResidualNode::ForAllFiniteRows { body, .. } => values[body.index()],
-                ResidualNode::SourcePredicate(source) => match source.value(&self.source.graph)? {
-                    ResidualSourcePredicate::Canonical(value) => {
-                        let value =
-                            self.canonical_predicate(value, &BTreeMap::new(), source.scope())?;
-                        self.arena.pointwise(value, self.work)?
-                    }
-                    ResidualSourcePredicate::Prepared(value) => {
-                        self.predicate(value, source.scope())?
-                    }
-                },
-                ResidualNode::BodyEquation { scheme } => {
-                    let body = self.row(
-                        source_body(&self.source.graph, *scheme)?,
-                        ResidualRowScope::Scheme(*scheme),
-                    )?;
-                    let function = self.function(*scheme)?;
-                    let value = function.formula.subset(&body.formula, self.work)?.and(
-                        &body.formula.subset(&function.formula, self.work)?,
-                        self.work,
-                    )?;
-                    self.arena.pointwise(value, self.work)?
-                }
-                ResidualNode::BodyAdmitted { scheme } => ScalarArena::<Variable>::boolean(
-                    self.row(
-                        source_body(&self.source.graph, *scheme)?,
-                        ResidualRowScope::Scheme(*scheme),
-                    )?
-                    .admitted,
-                ),
+                ResidualNode::Guarded(clause) => self.guarded_clause(*clause)?,
                 _ => return Err(PreparedEffectInvariant::UnclosedCell.into()),
             };
             self.work.charge(DecisionWork::Node)?;

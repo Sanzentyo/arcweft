@@ -142,15 +142,8 @@ fn quantified_inputs(frozen: &ScopedEffectCompletion) -> Vec<Vec<GenericEffectRe
             | EffectResidualPredicateView::ExistsLocalFunctions { body, .. }
             | EffectResidualPredicateView::ExistsUniformChoices { body, .. }
             | EffectResidualPredicateView::SubstituteLower { body, .. } => todo.push(body),
-            EffectResidualPredicateView::Implies {
-                domain,
-                consequence,
-            } => todo.extend([domain, consequence]),
-            EffectResidualPredicateView::ForAllFiniteRows {
-                parameters, body, ..
-            } => {
+            EffectResidualPredicateView::ForAllFiniteRows { parameters, .. } => {
                 scopes.push(parameters.to_vec());
-                todo.push(body);
             }
             _ => {}
         }

@@ -259,16 +259,11 @@ fn support(frozen: &ScopedEffectCompletion) -> std::collections::BTreeSet<String
             EffectResidualPredicateView::And(children) => todo.extend(children),
             EffectResidualPredicateView::Not(body)
             | EffectResidualPredicateView::ExistsUniformChoices { body, .. }
-            | EffectResidualPredicateView::SubstituteLower { body, .. }
-            | EffectResidualPredicateView::ForAllFiniteRows { body, .. } => todo.push(body),
+            | EffectResidualPredicateView::SubstituteLower { body, .. } => todo.push(body),
             EffectResidualPredicateView::ExistsLocalFunctions { body, support, .. } => {
                 result.extend(support.retained.iter().map(ToString::to_string));
                 todo.push(body);
             }
-            EffectResidualPredicateView::Implies {
-                domain,
-                consequence,
-            } => todo.extend([domain, consequence]),
             _ => {}
         }
     }

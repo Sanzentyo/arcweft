@@ -2,8 +2,7 @@
 
 use super::*;
 use crate::effect_row::prepared::completion::residual::{
-    EffectResidualProgram, ResidualNode, ResidualNodeId, ResidualPredicateSource, ResidualRowScope,
-    ResidualSourcePredicate, source_body,
+    EffectResidualProgram, ResidualClauseSource, ResidualNode, ResidualNodeId, ResidualRowScope,
 };
 
 #[cfg(test)]
@@ -168,8 +167,75 @@ impl ClosedEffectCoefficients {
 
 struct RelationScope<'a> {
     compiler: Compilation<'a>,
-    body: Option<Arc<compilation::CompiledRow>>,
     formals: Option<BTreeSet<Atom>>,
+}
+
+impl RelationScope<'_> {
+    fn require<C: DecisionControl>(
+        &mut self,
+        domain: Decision,
+        consequence: Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        let guarded = if domain.is_constant(true) || consequence.is_constant(true) {
+            consequence
+        } else if domain.is_constant(false) {
+            Decision::constant(true)
+        } else {
+            domain.conditional(&consequence, &Decision::constant(true), work)?
+        };
+        if guarded.node_count() == 0 || self.compiler.valuation().parameters.is_empty() {
+            return Ok(guarded);
+        }
+        if self.formals.is_none() {
+            self.formals = Some(self.compiler.formals(work)?);
+        }
+        guarded.forall(self.formals.as_ref().expect("formals were computed"), work)
+    }
+
+    fn require_scheme<C: DecisionControl>(
+        &mut self,
+        id: u64,
+        domain: &EffectPredicate,
+        body: &PreparedEffectRow,
+        obligations: &[PreparedEffectPredicate],
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        let body = self.compiler.row(body, work)?;
+        let parameters = self.compiler.parameters(work)?;
+        let own = self.compiler.application(id, &parameters, work)?;
+        let mut members = Vec::new();
+        for (left, right) in own.iter().zip(&body.membership) {
+            work.charge(DecisionWork::Node)?;
+            members.push(left.equivalent(right, work)?);
+        }
+        let equation = self.compiler.whole(&members, work)?;
+        let mut requirements = Vec::new();
+        for obligation in obligations {
+            let required = self.compiler.predicate(obligation, work)?;
+            work.charge(DecisionWork::Node)?;
+            requirements.push(required);
+        }
+        let consequence = Decision::all(
+            [&equation, &body.admitted].into_iter().chain(&requirements),
+            work,
+        )?;
+        let domain = self.compiler.canonical_predicate(domain, work)?;
+        self.require(domain, consequence, work)
+    }
+
+    fn require_obligation<C: DecisionControl>(
+        &mut self,
+        obligation: &ScopedObligation,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        let domain = self.compiler.predicate(&obligation.domain, work)?;
+        let consequence = match self.compiler.extensional_agreement(obligation, work)? {
+            Some(agreement) => agreement,
+            None => self.compiler.predicate(&obligation.predicate, work)?,
+        };
+        self.require(domain, consequence, work)
+    }
 }
 
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
@@ -211,7 +277,6 @@ fn relation_scope<'g, 's, C: DecisionControl>(
                     parameters,
                     ApplicationCells::Variables,
                 ),
-                body: None,
                 formals: None,
             }))
         }
@@ -264,20 +329,6 @@ fn compile_relation<C: DecisionControl>(
         // Resolve an existing share here so future readers never follow chains.
         let shared = match node {
             ResidualNode::And(children) if children.len() == 1 => Some(children[0]),
-            ResidualNode::Implies {
-                domain,
-                consequence,
-            } if CompiledRelationNode::at(&values, *domain).is_constant(true)
-                || CompiledRelationNode::at(&values, *consequence).is_constant(true) =>
-            {
-                Some(*consequence)
-            }
-            ResidualNode::ForAllFiniteRows { scope, body }
-                if scope.parameters(graph).is_empty()
-                    || CompiledRelationNode::at(&values, *body).node_count() == 0 =>
-            {
-                Some(*body)
-            }
             _ => None,
         };
         if let Some(source) = shared {
@@ -293,74 +344,19 @@ fn compile_relation<C: DecisionControl>(
                 Decision::all(children.iter().copied().map(decision), work)?
             }
             ResidualNode::Not(child) => decision(*child).not(work)?,
-            ResidualNode::Implies {
-                domain,
-                consequence,
-            } => {
-                let domain = decision(*domain);
-                if domain.is_constant(false) {
-                    Decision::constant(true)
-                } else {
-                    domain.conditional(decision(*consequence), &Decision::constant(true), work)?
-                }
-            }
-            ResidualNode::ForAllFiniteRows { scope, body } => {
-                let scoped = relation_scope(&mut scopes, graph, layout, *scope, work)?;
-                if scoped.formals.is_none() {
-                    scoped.formals = Some(scoped.compiler.formals(work)?);
-                }
-                decision(*body).forall(
-                    scoped.formals.as_ref().expect("formals were computed"),
-                    work,
-                )?
-            }
-            ResidualNode::SourcePredicate(source) => {
-                let scoped = relation_scope(&mut scopes, graph, layout, source.scope(), work)?;
-                match source.value(graph)? {
-                    ResidualSourcePredicate::Canonical(value) => {
-                        scoped.compiler.canonical_predicate(value, work)?
+            ResidualNode::Guarded(clause) => {
+                let source = clause.source(graph)?;
+                let scoped = relation_scope(&mut scopes, graph, layout, clause.scope(), work)?;
+                match source {
+                    ResidualClauseSource::Scheme {
+                        id,
+                        domain,
+                        body,
+                        obligations,
+                    } => scoped.require_scheme(id, domain, body, obligations, work)?,
+                    ResidualClauseSource::Obligation(obligation) => {
+                        scoped.require_obligation(obligation, work)?
                     }
-                    ResidualSourcePredicate::Prepared(value) => {
-                        let agreement =
-                            match source {
-                                ResidualPredicateSource::ObligationConsequence(id) => scoped
-                                    .compiler
-                                    .extensional_agreement(&graph.obligations[*id], work)?,
-                                _ => None,
-                            };
-                        match agreement {
-                            Some(agreement) => agreement,
-                            None => scoped.compiler.predicate(value, work)?,
-                        }
-                    }
-                }
-            }
-            ResidualNode::BodyEquation { scheme } | ResidualNode::BodyAdmitted { scheme } => {
-                let scoped = relation_scope(
-                    &mut scopes,
-                    graph,
-                    layout,
-                    ResidualRowScope::Scheme(*scheme),
-                    work,
-                )?;
-                if scoped.body.is_none() {
-                    scoped.body = Some(scoped.compiler.row(source_body(graph, *scheme)?, work)?);
-                }
-                let body = scoped
-                    .body
-                    .as_ref()
-                    .expect("the original prepared body was compiled");
-                if matches!(node, ResidualNode::BodyAdmitted { .. }) {
-                    work.copy_decision(&body.admitted)?
-                } else {
-                    let parameters = scoped.compiler.parameters(work)?;
-                    let own = scoped.compiler.application(*scheme, &parameters, work)?;
-                    let mut members = Vec::new();
-                    for (left, right) in own.iter().zip(&body.membership) {
-                        work.charge(DecisionWork::Node)?;
-                        members.push(left.equivalent(right, work)?);
-                    }
-                    scoped.compiler.whole(&members, work)?
                 }
             }
             ResidualNode::FiniteFunction(scheme) => Decision::variable(

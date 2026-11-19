@@ -48,6 +48,26 @@ fn row(labels: &[&str]) -> EffectRow {
 }
 
 #[test]
+fn residual_construction_charges_each_original_obligation_once() {
+    let mut graph = PreparedEffectGraph::default();
+    graph
+        .add_scoped_obligation(vec![], truth(), truth(), &mut budget())
+        .unwrap();
+    let mut initial = budget();
+    EffectResidualProgram::new(&graph.relation, &mut Work(&mut initial)).unwrap();
+
+    let added = 32;
+    for _ in 0..added {
+        graph
+            .add_scoped_obligation(vec![], truth(), truth(), &mut budget())
+            .unwrap();
+    }
+    let mut expanded = budget();
+    EffectResidualProgram::new(&graph.relation, &mut Work(&mut expanded)).unwrap();
+    assert_eq!(expanded.0 + added, initial.0);
+}
+
+#[test]
 fn quantified_residual_exposes_original_scopes_dependencies_and_uniform_choices() {
     let mut work = budget();
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
@@ -108,29 +128,21 @@ fn quantified_residual_exposes_original_scopes_dependencies_and_uniform_choices(
         let EffectResidualPredicateView::ForAllFiniteRows {
             scope,
             parameters,
-            body,
+            domain,
+            consequence,
         } = clause.view().unwrap()
         else {
             continue;
         };
         lexical_scopes += 1;
         assert_eq!(parameters, &[e.clone()]);
-        let EffectResidualPredicateView::Implies {
-            domain,
-            consequence,
-        } = body.view().unwrap()
-        else {
-            panic!("whole domain and consequence must stay distinct");
-        };
+        assert_eq!(domain.parameters(), parameters);
         assert!(matches!(
             domain.view().unwrap(),
-            EffectResidualPredicateView::SourcePredicate(_)
+            ResidualPreparedPredicateView::Canonical(value) if value.is_unconstrained()
         ));
-        if matches!(scope, ResidualRowScope::Obligation(_)) {
-            let EffectResidualPredicateView::SourcePredicate(source) = consequence.view().unwrap()
-            else {
-                panic!("the original obligation must be inspectable");
-            };
+        if let ResidualConsequenceView::Obligation(source) = consequence {
+            assert!(matches!(scope, ResidualRowScope::Obligation(_)));
             let ResidualPreparedPredicateView::Relation {
                 relation,
                 actual,
@@ -164,6 +176,20 @@ fn quantified_residual_exposes_original_scopes_dependencies_and_uniform_choices(
             );
             assert!(arguments.next().is_none());
             saw_outer_equation = true;
+        } else if let ResidualConsequenceView::Scheme {
+            function,
+            body,
+            mut obligations,
+        } = consequence
+        {
+            assert!(matches!(scope, ResidualRowScope::Scheme(_)));
+            assert_eq!(function.parameters(), parameters);
+            assert_eq!(body.parameters(), parameters);
+            assert!(matches!(
+                body.view().unwrap(),
+                ResidualPreparedRowView::Select { .. }
+            ));
+            assert!(obligations.next().is_none());
         }
     }
     assert_eq!(lexical_scopes, 2);
@@ -398,12 +424,7 @@ fn finite_lowering_consumes_the_residual_relation_and_original_replay_remains_in
     let consequence = program
         .nodes
         .iter_mut()
-        .find(|node| {
-            matches!(
-                node,
-                ResidualNode::SourcePredicate(ResidualPredicateSource::ObligationConsequence(_))
-            )
-        })
+        .find(|node| matches!(node, ResidualNode::Guarded(ResidualClause::Obligation(_))))
         .unwrap();
     *consequence = ResidualNode::True;
     let mut parent = PreparedEffectGraph::default();

@@ -49,26 +49,13 @@ pub(in crate::effect_row::prepared) enum ResidualNode {
     True,
     And(Box<[ResidualNodeId]>),
     Not(ResidualNodeId),
-    Implies {
-        domain: ResidualNodeId,
-        consequence: ResidualNodeId,
-    },
-    ForAllFiniteRows {
-        scope: ResidualRowScope,
-        body: ResidualNodeId,
-    },
+    /// One source clause, universally quantified over its ordered finite rows.
+    Guarded(ResidualClause),
     ExistsLocalFunctions {
         body: ResidualNodeId,
     },
     ExistsChoices {
         body: ResidualNodeId,
-    },
-    SourcePredicate(ResidualPredicateSource),
-    BodyEquation {
-        scheme: u64,
-    },
-    BodyAdmitted {
-        scheme: u64,
     },
     FiniteFunction(u64),
     /// Membership at the output lambda's own formal inputs and a bound label
@@ -84,49 +71,54 @@ pub(in crate::effect_row::prepared) enum ResidualNode {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(in crate::effect_row::prepared) enum ResidualPredicateSource {
-    SchemeDomain(u64),
-    SchemeObligation { scheme: u64, index: usize },
-    ObligationDomain(usize),
-    ObligationConsequence(usize),
+pub(in crate::effect_row::prepared) enum ResidualClause {
+    Scheme(u64),
+    Obligation(usize),
 }
 
-impl ResidualPredicateSource {
+impl ResidualClause {
     pub(in crate::effect_row::prepared) fn scope(self) -> ResidualRowScope {
         match self {
-            Self::SchemeDomain(scheme) | Self::SchemeObligation { scheme, .. } => {
-                ResidualRowScope::Scheme(scheme)
-            }
-            Self::ObligationDomain(id) | Self::ObligationConsequence(id) => {
-                ResidualRowScope::Obligation(id)
-            }
+            Self::Scheme(id) => ResidualRowScope::Scheme(id),
+            Self::Obligation(id) => ResidualRowScope::Obligation(id),
         }
     }
 
-    pub(in crate::effect_row::prepared) fn value(
+    pub(in crate::effect_row::prepared) fn source(
         self,
         graph: &PreparedEffectDefinitions,
-    ) -> Result<ResidualSourcePredicate<'_>, PreparedEffectInvariant> {
+    ) -> Result<ResidualClauseSource<'_>, PreparedEffectInvariant> {
         Ok(match self {
-            Self::SchemeDomain(id) => {
-                ResidualSourcePredicate::Canonical(&source_scheme(graph, id)?.header.domain)
-            }
-            Self::SchemeObligation { scheme, index } => {
-                let SchemeState::BodyPrepared { obligations, .. } =
-                    &source_scheme(graph, scheme)?.state
-                else {
+            Self::Scheme(id) => {
+                let scheme = source_scheme(graph, id)?;
+                let SchemeState::BodyPrepared { body, obligations } = &scheme.state else {
                     return Err(PreparedEffectInvariant::SchemeState);
                 };
-                ResidualSourcePredicate::Prepared(&obligations[index])
+                ResidualClauseSource::Scheme {
+                    id,
+                    domain: &scheme.header.domain,
+                    body,
+                    obligations,
+                }
             }
-            Self::ObligationDomain(id) => {
-                ResidualSourcePredicate::Prepared(&graph.obligations[id].domain)
-            }
-            Self::ObligationConsequence(id) => {
-                ResidualSourcePredicate::Prepared(&graph.obligations[id].predicate)
-            }
+            Self::Obligation(id) => ResidualClauseSource::Obligation(
+                graph
+                    .obligations
+                    .get(id)
+                    .ok_or(PreparedEffectInvariant::UnclosedCell)?,
+            ),
         })
     }
+}
+
+pub(in crate::effect_row::prepared) enum ResidualClauseSource<'a> {
+    Scheme {
+        id: u64,
+        domain: &'a EffectPredicate,
+        body: &'a PreparedEffectRow,
+        obligations: &'a [PreparedEffectPredicate],
+    },
+    Obligation(&'a ScopedObligation),
 }
 
 #[derive(Clone, Copy)]
@@ -205,7 +197,6 @@ impl EffectResidualProgram {
             witnesses: ResidualNodeId(0),
             lower: BTreeMap::new(),
         };
-        let truth = program.node(ResidualNode::True, work)?;
         let mut relation = Vec::new();
         for (&id, function) in &graph.functions {
             if !inventory.contains(id) {
@@ -216,71 +207,20 @@ impl EffectResidualProgram {
                 continue;
             }
             if let Function::Scheme(scheme) = function.as_ref() {
-                let SchemeState::BodyPrepared { obligations, .. } = &scheme.state else {
+                let SchemeState::BodyPrepared { .. } = &scheme.state else {
                     return Err(PreparedEffectInvariant::SchemeState.into());
                 };
-                let scope = ResidualRowScope::Scheme(id);
-                let equation = program.node(ResidualNode::BodyEquation { scheme: id }, work)?;
-                let admission = program.node(ResidualNode::BodyAdmitted { scheme: id }, work)?;
-                let mut body = vec![equation, admission];
-                for index in 0..obligations.len() {
-                    body.push(program.node(
-                        ResidualNode::SourcePredicate(ResidualPredicateSource::SchemeObligation {
-                            scheme: id,
-                            index,
-                        }),
-                        work,
-                    )?);
-                }
-                let body = program.conjunction(body, work)?;
-                let domain = program.node(
-                    ResidualNode::SourcePredicate(ResidualPredicateSource::SchemeDomain(id)),
-                    work,
-                )?;
-                let guarded = program.node(
-                    ResidualNode::Implies {
-                        domain,
-                        consequence: body,
-                    },
-                    work,
-                )?;
-                relation.push(program.node(
-                    ResidualNode::ForAllFiniteRows {
-                        scope,
-                        body: guarded,
-                    },
-                    work,
-                )?);
+                relation
+                    .push(program.node(ResidualNode::Guarded(ResidualClause::Scheme(id)), work)?);
             }
             relation.push(program.node(ResidualNode::FiniteFunction(id), work)?);
         }
         for id in 0..graph.obligations.len() {
-            let scope = ResidualRowScope::Obligation(id);
-            let domain = program.node(
-                ResidualNode::SourcePredicate(ResidualPredicateSource::ObligationDomain(id)),
-                work,
-            )?;
-            let consequence = program.node(
-                ResidualNode::SourcePredicate(ResidualPredicateSource::ObligationConsequence(id)),
-                work,
-            )?;
-            let implication = program.node(
-                ResidualNode::Implies {
-                    domain,
-                    consequence,
-                },
-                work,
-            )?;
-            relation.push(program.node(
-                ResidualNode::ForAllFiniteRows {
-                    scope,
-                    body: implication,
-                },
-                work,
-            )?);
+            relation
+                .push(program.node(ResidualNode::Guarded(ResidualClause::Obligation(id)), work)?);
         }
         if relation.is_empty() {
-            relation.push(truth);
+            relation.push(program.node(ResidualNode::True, work)?);
         }
         program.relation = program.conjunction(relation, work)?;
         let witnesses = program.node(
