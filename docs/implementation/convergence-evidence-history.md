@@ -20217,3 +20217,12 @@ Semaの全featureユニットは1,992件中1,900 PASS、92既知FAIL。Compiler�
 Supersedes [閉包投影の再利用時点の停止箇所](#closed-source-port-reuse)。2 callback のSemaとNative／AWBCは該当ソースの実行準備を通過し、結果を候補に格納する箇所で既定上限4,096に達した。3 callback のSemaは判定図の出力ノード確保で同上限に達する。
 
 Semaの全featureユニットは1,992件中1,900 PASS、92既知FAIL。Compilerの統合6 targetは582件中580 PASS、2既知FAIL。Mapの修復3件と `flow_wait` の32件を含め、先行Sourceと全IDの合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。[検証原本・公開照合](acceptance-evidence/task-paired-source-materialization.raw.zip) は30 entry、1,104,137 bytes、SHA256 `bb7edd6e92713193cd725c857c604cdebad2dda95205b4fe99936f5d81eea08d`。公開5ファイルと各entryを照合した。記録時の `target` は101,367,953,375 bytes。
+
+<a id="canonical-member-equations"></a>
+## 2026-11-20 — 元の型等式をソース確定後に一度照合する
+
+検証基点 `bf6f62cda858507c7bedafebedd26e8bff2a58fb`、Source `8d7b21379d61a30fa16e9c12b4b2e4f117e86e2e`。元の型等式の最終照合を、閉じたソースを選べる実行準備の入口に集約した。ソースを伴わない等式も同じ入口で元のscopeのまま照合する。型・const束縛の検証を維持し、拒否時に元の等式IDを保持する。型が一致しない等式について、実行準備の拒否と元IDを確認した。
+
+Supersedes [対で構築した時点の停止箇所](#paired-source-materialization)。2 callback のSemaとNative／AWBCは候補の確定を経て、効果関係を取り込む判定図の参照付け替えで既定上限4,096に達した。3 callback のSemaは判定図の出力ノード確保で同上限に達する。
+
+Semaの全featureユニットは1,993件中1,901 PASS、92既知FAIL。Compilerの統合6 targetは582件中580 PASS、2既知FAIL。新規失敗は0。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。初回の型付きエラー変換によるcompile failureを修復し、そのログと成功した検証を[検証原本・公開照合](acceptance-evidence/task-canonical-member-equations.raw.zip)に保持した。原本は33 entry、1,114,235 bytes、SHA256 `e1a9e2505a4e7dc5e3268fc13366488f9a431df8c0c1474d833ea7905c5a42af`。公開6ファイルと各entryを照合した。記録時の `target` は101,368,151,502 bytes。
