@@ -20328,3 +20328,16 @@ Supersedes [真理値表と等値判定を共有した時点の停止位置](#li
 実Cargo graphから選んだCLIを除くCoreの推移的逆依存は8,112件中8,012 PASS、100既知FAIL、18 SKIP。比較元 `3eb39ac93efeaa44e8fd6accbb413f93cf0591cc` の全IDで合否が一致し、追加3件が通過した。CLI library／binary 196件と規定の統合6 target 30件、Core全feature doctest 81件、Core全feature library／`effect_decision` 2,386件はすべてPASS。Sema全featureユニットの1,995件は1,903 PASS／92既知FAILで、全IDの合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
 
 [検証原本・全失敗ID](acceptance-evidence/task-guarded-outside-effect-prefixes.raw.zip) は57 entry、1,554,348 bytes、SHA256 `4cabf14d1e04c1efa0b6cd4fec9083362f281ad768fad6ffcf79302155795f63`。先行3試行のSemaの比較と停止位置を保持した。各entryの長さとハッシュ、公開Sourceの7ファイルを照合した。記録時の `target` は101,613,479,781 bytes。
+
+<a id="single-traversal-effect-imports"></a>
+## 2026-11-20 — 子の効果関係を取り込んだ位置から宣言の走査を再開する
+
+検証基点 `559467751e05d5e75b4217ad6653e9ea408fa928`、Source `351900274456fee74da72b18b3a670add9e059e3`。取り込みを必要とする関数や主条件に到達した時点で、子の原定義へ降りる。子を確定したら親の走査を直後から再開する。親の関数と述語はそれぞれ序数順に一度走査する。複数の取り込みが同じ子を使う場合は閉包を共有し、受け手での入力対応は添付ごとに保持する。確定した取り込み表は元の関係を所有する。独立した再検証では表を辿り、実入力を元の座標へ戻して元の制約を再生する。
+
+子を持つグラフに取り込みと無関係な宣言を32個追加すると、作業量は32単位だけ増えた。局所係数の結果が一致し、関数と主条件が同じ添付を参照することも確認した。子の判定結果と親の見かけ上の結果が一致するよう両方を改変した既存のテストで、独立した再検証が拒否することを確認した。
+
+Supersedes [外側ラベルごとの枝を共有した時点の停止位置](#guarded-outside-effect-prefixes)。2 callback のSemaは `main` の呼び出し（式75）、Native／AWBCは型検査の式76で、取り込みを通過して義務の適用条件のノードを作る段階で既定の4,096に達した。3 callback のSemaは `rotate` の再帰分岐（式26）で、各マスクの条件を合成中に判定図の枝の作業を計上する段階で同上限に達した。Native／AWBCの2件を直接実行し、失敗式と停止位置を確認した。
+
+Cargo graphから求めたSemaの逆依存は22パッケージ。CLIを除く4,306件で4,206 PASS、100既知FAIL、1 SKIP。比較元 `a84dbf28f0efc003fa2348797035035f014e9190` のCore逆依存を同じパッケージに絞った4,305件と、全IDの合否が一致し、追加1件が通過した。CLI library／binary 196件と規定の統合6 target 30件はすべてPASS。Sema全featureの1,996件は1,904 PASS、92既知FAILで、追加1件が通過し、既存IDの合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+[検証原本・全失敗ID](acceptance-evidence/task-single-traversal-effect-imports.raw.zip) は38 entry、1,327,488 bytes、SHA256 `ec8a3aa8ef7ed23911afa2d4f623c6b31f0e9f920457003871960aa086a432f2`。各entryの長さとハッシュ、公開Sourceの3ファイルを照合した。記録時の `target` は101,633,559,720 bytes。
