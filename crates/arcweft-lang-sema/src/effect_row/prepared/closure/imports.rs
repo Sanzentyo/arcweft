@@ -213,37 +213,39 @@ fn assemble_selected<C: DecisionControl>(
             let relation = attach(graph, &mut result, &imported.relation, cache, work)?;
             let selected = imported.selected.reference().ordinal;
             let is_input = imported.definition().is_input();
-            let borrow_coefficients = relation.rebound_principal.is_none() && !is_input;
-            let mut membership = Vec::new();
-            for class in 0..relation.child.layout.view().classes() {
-                let mut cells = Vec::new();
-                for mask in 0..relation.child.layout.tables[&selected] {
-                    let cell = Atom::Cell {
-                        scheme: selected,
-                        class,
-                        mask,
-                    };
-                    let value = if let Some(value) = relation.child.coefficients.get(&cell) {
-                        if borrow_coefficients {
-                            work.charge(DecisionWork::Visit)?;
-                            continue;
-                        }
-                        imported.relation.bind_decision(value, work)?
-                    } else if is_input {
-                        Decision::variable(imported.relation.bind_cell(&cell)?, work)?
-                    } else {
-                        return Err(PreparedEffectInvariant::UnclosedCell.into());
-                    };
-                    work.charge(DecisionWork::Node)?;
-                    cells.push(value);
-                }
-                if !borrow_coefficients {
-                    membership.push(cells.into_boxed_slice());
-                }
-            }
-            let membership = if borrow_coefficients {
+            let masks = *relation
+                .child
+                .layout
+                .tables
+                .get(&selected)
+                .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+            let membership = if relation.rebound_principal.is_none() && !is_input {
+                // The selected reference names a declaration in the full
+                // child layout. Every cell of a local declaration belongs to
+                // the completed tuple, including implicit false coefficients.
                 ImportedMembership::Child(selected)
             } else {
+                let mut membership = Vec::new();
+                for class in 0..relation.child.layout.view().classes() {
+                    let mut cells = Vec::new();
+                    for mask in 0..masks {
+                        let cell = Atom::Cell {
+                            scheme: selected,
+                            class,
+                            mask,
+                        };
+                        let value = if let Some(value) = relation.child.coefficients.get(&cell) {
+                            imported.relation.bind_decision(value, work)?
+                        } else if is_input {
+                            Decision::variable(imported.relation.bind_cell(&cell)?, work)?
+                        } else {
+                            return Err(PreparedEffectInvariant::UnclosedCell.into());
+                        };
+                        work.charge(DecisionWork::Node)?;
+                        cells.push(value);
+                    }
+                    membership.push(cells.into_boxed_slice());
+                }
                 ImportedMembership::Rebound(membership.into_boxed_slice())
             };
             work.charge(DecisionWork::Node)?;

@@ -1,7 +1,7 @@
 //! Exact finite-row valuations: named labels and outside-support patterns.
 
 use super::*;
-use arcweft_core::effect_row::EffectDecisionReplacement;
+use arcweft_core::effect_row::{EffectDecisionReplacement, EffectDecisionRequirement};
 
 #[derive(Clone, Copy)]
 pub(super) struct FiniteRowValuation<'a> {
@@ -51,42 +51,48 @@ impl FiniteRowValuation<'_> {
         point: &Decision,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        if !point.variables().any(
+        self.outside_requirement(EffectDecisionRequirement::Predicate(point), work)
+    }
+
+    pub(super) fn outside_requirement<C: DecisionControl>(
+        self,
+        requirement: EffectDecisionRequirement<'_, Atom>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        let Some(last_parameter) = self.parameters.len().checked_sub(1) else {
+            return requirement.decision(work);
+        };
+        if !requirement.variables().any(
             |atom| matches!(atom, Atom::Formal { owner, class: 0, .. } if *owner == self.owner),
         ) {
-            return work.copy_decision(point);
+            return requirement.decision(work);
         }
-        let mut result = Decision::constant(true);
-        for mask in 0..self.pattern_count()? {
-            work.charge(DecisionWork::Visit)?;
-            let value = point.restrict_references(
-                |atom| match atom {
-                    Atom::Formal {
-                        owner,
-                        class: 0,
-                        parameter,
-                    } if *owner == self.owner && *parameter < self.parameters.len() => {
-                        Some(mask & (1usize << parameter) != 0)
-                    }
-                    _ => None,
-                },
-                work,
-            )?;
-            let value = if mask == 0 {
-                value
-            } else {
-                Decision::variable(
-                    Atom::Presence {
-                        owner: self.owner,
-                        mask,
-                    },
-                    work,
-                )?
-                .conditional(&value, &Decision::constant(true), work)?
-            };
-            result = result.and(&value, work)?;
-        }
-        Ok(result)
+        // A point uses the current scope. Only its outside-label formals
+        // precede the named classes, presence tests, cells and choices.
+        let through = Atom::Formal {
+            owner: self.owner,
+            class: 0,
+            parameter: last_parameter,
+        };
+        requirement.all_guarded_prefixes(
+            &through,
+            0..self.pattern_count()?,
+            work,
+            |mask, atom| match atom {
+                Atom::Formal {
+                    owner,
+                    class: 0,
+                    parameter,
+                } if *owner == self.owner => Ok(mask & (1usize << parameter) != 0),
+                _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
+            },
+            |mask| {
+                (mask != 0).then_some(Atom::Presence {
+                    owner: self.owner,
+                    mask,
+                })
+            },
+        )
     }
 
     pub(super) fn whole<C: DecisionControl>(
@@ -98,6 +104,14 @@ impl FiniteRowValuation<'_> {
             .split_first()
             .ok_or(PreparedEffectInvariant::UnclosedCell)?;
         let outside = self.outside(default, work)?;
+        Self::join_named(outside, named, work)
+    }
+
+    pub(super) fn join_named<C: DecisionControl>(
+        outside: Decision,
+        named: &[Decision],
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
         if named.is_empty() {
             return Ok(outside);
         }

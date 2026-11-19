@@ -12,7 +12,7 @@ mod set;
 
 pub use decision::{
     ConditionalDecisionCompletion, DecisionControl, DecisionEncoding, DecisionLowerEnvelope,
-    DecisionWork, EffectDecision, EffectDecisionReplacement,
+    DecisionWork, EffectDecision, EffectDecisionReplacement, EffectDecisionRequirement,
 };
 pub use declaration::{
     EffectDecisionDeclaration, EffectDecisionNodeDeclaration, EffectDecisionTarget,

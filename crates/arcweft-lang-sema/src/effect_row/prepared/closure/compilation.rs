@@ -1,7 +1,7 @@
 //! Iterative term compilation. Applications reference cells, never callee bodies.
 
 use super::*;
-use arcweft_core::effect_row::EffectDecisionReplacement;
+use arcweft_core::effect_row::{EffectDecisionReplacement, EffectDecisionRequirement};
 use std::borrow::{Borrow, Cow};
 
 pub(super) struct CompiledRow {
@@ -593,8 +593,26 @@ impl<'a> Compilation<'a> {
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
         let actual = self.row(actual, work)?;
         let permitted = self.row(permitted, work)?;
+        let ((actual_outside, actual_named), (permitted_outside, permitted_named)) = actual
+            .membership
+            .split_first()
+            .zip(permitted.membership.split_first())
+            .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+        let valuation = self.valuation();
+        let outside = match relation {
+            PreparedEffectRelation::Equal => {
+                valuation.outside(&actual_outside.equivalent(permitted_outside, work)?, work)?
+            }
+            PreparedEffectRelation::AdmittedSubset => valuation.outside_requirement(
+                EffectDecisionRequirement::Implication {
+                    premise: actual_outside,
+                    consequence: permitted_outside,
+                },
+                work,
+            )?,
+        };
         let mut members = Vec::new();
-        for (left, right) in actual.membership.iter().zip(&permitted.membership) {
+        for (left, right) in actual_named.iter().zip(permitted_named) {
             let test = match relation {
                 PreparedEffectRelation::Equal => left.equivalent(right, work)?,
                 PreparedEffectRelation::AdmittedSubset => {
@@ -604,7 +622,7 @@ impl<'a> Compilation<'a> {
             work.charge(DecisionWork::Node)?;
             members.push(test);
         }
-        let exact = self.whole(&members, work)?;
+        let exact = FiniteRowValuation::join_named(outside, &members, work)?;
         let admitted = |result: Decision, work: &mut Work<'_, C>| {
             result
                 .and(&actual.admitted, work)?

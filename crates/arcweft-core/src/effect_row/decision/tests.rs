@@ -278,6 +278,112 @@ fn uniform_truth_table_reads_all_entries_without_loading_selectors() {
 }
 
 #[test]
+fn guarded_prefix_cases_share_the_suffix_and_keep_free_guard_order() {
+    let mut setup = Meter::default();
+    let suffix = atom(24).or(&atom(25), &mut setup).unwrap();
+    let entries: Vec<_> = (16..24)
+        .map(|cell| suffix.and(&atom(cell), &mut setup).unwrap())
+        .collect();
+    let point = EffectDecision::select_table(
+        3,
+        8,
+        &mut setup,
+        |bit| EffectDecisionReplacement::Variable(bit as u8),
+        |mask, _| Ok(EffectDecisionReplacement::Decision(&entries[mask])),
+    )
+    .unwrap()
+    .unwrap();
+    let select = |mask: usize, reference: &u8| mask & (1 << reference) != 0;
+    // Exercise guards before, equal to, and after the first suffix reference.
+    let guard = |mask: usize| (mask != 0).then_some(15 + mask as u8 + (mask % 3) as u8);
+    let mut repeated = Meter::default();
+    let mut expected = EffectDecision::constant(true);
+    for mask in 0..8 {
+        let value = point
+            .restrict_references(
+                |reference| (*reference <= 2).then(|| select(mask, reference)),
+                &mut repeated,
+            )
+            .unwrap();
+        let requirement = match guard(mask) {
+            Some(variable) => atom(variable)
+                .conditional(&value, &EffectDecision::constant(true), &mut repeated)
+                .unwrap(),
+            None => value,
+        };
+        expected = expected.and(&requirement, &mut repeated).unwrap();
+    }
+    let mut work = Meter::default();
+    let actual = EffectDecisionRequirement::Predicate(&point)
+        .all_guarded_prefixes(&2, 0..8, &mut work, |mask, v| Ok(select(mask, v)), guard)
+        .unwrap();
+    assert_eq!(actual, expected);
+    assert!(
+        work.used < repeated.used,
+        "{} < {}",
+        work.used,
+        repeated.used
+    );
+}
+
+#[test]
+fn guarded_prefix_only_imports_reachable_suffixes() {
+    let mut setup = Meter::default();
+    let suffix = atom(1).and(&atom(2), &mut setup).unwrap();
+    let point = atom(0)
+        .conditional(&suffix, &EffectDecision::constant(true), &mut setup)
+        .unwrap();
+    let mut work = Meter {
+        used: 0,
+        limit: Some(2),
+    };
+
+    assert_eq!(
+        EffectDecisionRequirement::Predicate(&point).all_guarded_prefixes(
+            &0,
+            [0],
+            &mut work,
+            |_, _| Ok(false),
+            |_| panic!("a true point needs no guard"),
+        ),
+        Ok(EffectDecision::constant(true))
+    );
+    assert_eq!(work.used, 2);
+}
+
+#[test]
+fn guarded_prefix_implication_requires_only_the_present_patterns() {
+    let mut work = Meter::default();
+    let premise = atom(0).conditional(&atom(8), &atom(9), &mut work).unwrap();
+    let consequence = atom(1)
+        .conditional(&atom(10), &atom(11), &mut work)
+        .unwrap();
+    let requirement = EffectDecisionRequirement::Implication {
+        premise: &premise,
+        consequence: &consequence,
+    };
+    let folded = requirement
+        .all_guarded_prefixes(
+            &1,
+            0..4,
+            &mut work,
+            |mask, reference| Ok(mask & (1 << reference) != 0),
+            |mask| (mask != 0).then_some(4 + mask as u8),
+        )
+        .unwrap();
+    for assignment in 0..1u16 << 12 {
+        let value = |reference: u8| assignment & (1 << reference) != 0;
+        let expected = (0..4u8).all(|mask| {
+            let present = mask == 0 || value(4 + mask);
+            let premise = value(if mask & 1 != 0 { 8 } else { 9 });
+            let consequence = value(if mask & 2 != 0 { 10 } else { 11 });
+            !present || !premise || consequence
+        });
+        assert_eq!(folded.evaluate(|&reference| value(reference)), expected);
+    }
+}
+
+#[test]
 fn shared_conjunction_has_the_same_result_as_pairwise_conjunction() {
     let mut work = Meter::default();
     let left = atom(0).or(&atom(1), &mut work).unwrap();

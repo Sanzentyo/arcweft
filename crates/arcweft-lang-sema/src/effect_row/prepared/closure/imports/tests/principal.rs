@@ -217,21 +217,28 @@ fn original_cell_coordinates_share_the_guard_and_local_coefficients() {
             std::ptr::eq(table.relation.principal(), &table.relation.child.principal),
             !displaced,
         );
-        let original_cell = Atom::Cell {
-            scheme: FunctionRef::Unknown(local.clone()).reference().ordinal,
-            class: 1,
-            mask: 0,
-        };
-        let original = table
-            .relation
-            .child
-            .coefficients
-            .get(&original_cell)
-            .unwrap();
-        assert!(original.node_count() > 0);
+        let classes = table.relation.child.layout.view().classes();
+        let scheme = FunctionRef::Unknown(local.clone()).reference().ordinal;
+        assert!(table.coefficient(1, 0).unwrap().node_count() > 0);
+        for class in 0..classes {
+            let original = table
+                .relation
+                .child
+                .coefficients
+                .get(&Atom::Cell {
+                    scheme,
+                    class,
+                    mask: 0,
+                })
+                .unwrap();
+            assert_eq!(
+                std::ptr::eq(table.coefficient(class, 0).unwrap(), original),
+                !displaced
+            );
+        }
         assert_eq!(
-            std::ptr::eq(table.coefficient(1, 0).unwrap(), original),
-            !displaced
+            table.coefficient(classes, 0),
+            Err(PreparedEffectInvariant::UnclosedCell)
         );
     }
 }
