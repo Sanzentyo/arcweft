@@ -19905,3 +19905,16 @@ Sema全featureユニットは1,982件中1,864 PASS、118 FAIL、0 SKIP。Compile
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時に変更10 blobを検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-prepared-continuation-operand.raw.zip) は24 entry、684,355 bytes、SHA256 `0326e0d3fd574d88c580aa5e7b28517ca673a10954b06ef00cc29721d03801e3`。各原本の長さとハッシュを照合した。
+
+<a id="late-continuation-body"></a>
+## 2026-11-19 — 引数制約を通った段階適用から終端効果を要求
+
+基点 `12c04303c7b6813473512ac36790023abe488d56`。Source `c0a6231734c24c7db939e70104d77f19b77770ee`。通常の段階適用では、型引数・受け手・引数の制約と文脈の制約を先に処理する。残っている制約経路だけが、同じトランザクション内で結果に必要な終端効果を求める。引数を再検査せず、その制約経路を確定に渡す。戻り値に省略された関数の効果注釈があれば、結果型を作る前に推論済みの宣言を用意する。相関する子候補の本体の依存は親トランザクションが準備する。
+
+追加したSemaテストは、引数の個数が合っていて `i64` に `String` を渡す再帰段階適用を拒否する。正しい呼出しでは先頭段階が空効果、終端が `log.write` となる。拒否した呼出しには値型と実行計画が発行されない。同じテストを基点の実装で実行すると `ExpressionCycle` で失敗した。
+
+Sema全featureユニットは1,983件中1,865 PASS、118 FAIL、0 SKIP。既存1,982件で全ID・合否が直前の公開ソースと一致した。Compiler統合5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中29 PASS、3 FAIL。Compilerの全582件でテストID・合否が一致した。正しい引数で再帰本体から作る段階適用と再帰する attached default は引き続き失敗した。[元の再現と失敗経路](#completed-call-result)。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時に変更6 blobを検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-late-continuation-body.raw.zip) は23 entry、474,243 bytes、SHA256 `056ce47b6d37567fa33f2f297293a5eff4c4fb916d441d9f34d0e51d430307eb`。各原本の長さとハッシュを照合した。
