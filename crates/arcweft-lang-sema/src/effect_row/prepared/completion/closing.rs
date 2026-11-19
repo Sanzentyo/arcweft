@@ -178,11 +178,12 @@ impl ScopedEffectCompletion {
         control: &mut C,
     ) -> Result<Option<PreparedEffectDefinitions>, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        // Late input equations, new obligations, and changes to finite label
-        // support can affect the original conditional minimum.
+        // A Named input acquires a body equation at final closure. Actual
+        // Future rows fix the original relation's input coordinates, so its
+        // pointwise minimum can be computed after applying those values.
         for function in self.graph.functions.values() {
             work.charge(DecisionWork::Visit)?;
-            if function.is_input() {
+            if matches!(function.as_ref(), Function::SchemeInput(_)) {
                 return Ok(None);
             }
         }
@@ -214,6 +215,10 @@ impl ScopedEffectCompletion {
         definitions
             .obligations
             .truncate(self.graph.obligations.len());
+        // A label contributed only by an actual Future row is admitted by
+        // that row's canonical override: it differs from the outside class
+        // for at least one input mask. A label added by a definition or
+        // obligation does not have this guarantee.
         if definitions.label_support(&mut work)? != self.support {
             return Ok(None);
         }

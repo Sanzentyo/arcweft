@@ -473,26 +473,41 @@ fn an_actual_future_row_is_required_and_extends_the_final_label_basis() {
         .read()
         .freeze_scoped(&[&row], &[], &[&receipt], &mut budget())
         .unwrap();
+    let pending =
+        BoundScopedEffectCompletion::pending(source, graph.read(), &mut budget()).unwrap();
+    let missing = graph.read().actual_inputs(&[], &mut budget()).unwrap();
+    let state = graph.state;
     assert!(matches!(
-        source.close_original(graph.read(), &[], &[], &[], &mut budget()),
+        pending.close_original_with_inputs(&mut graph, &[], &[], &missing, &mut budget()),
         Err(PreparedEffectFailure::Invariant(
             PreparedEffectInvariant::UnresolvedFuture
         ))
     ));
+    assert_eq!(graph.state, state);
     let actual = literal_row(&["late.actual"]);
-    let principal = source
-        .close_original(graph.read(), &[], &[], &[(&future, &actual)], &mut budget())
+    let inputs = graph
+        .read()
+        .actual_inputs(&[(&future, &actual)], &mut budget())
         .unwrap();
+    let mut direct_work = budget();
+    let principal = pending
+        .close_original_with_inputs(&mut graph, &[], &[], &inputs, &mut direct_work)
+        .unwrap();
+    let mut attached_work = budget();
+    let attached = pending
+        .attached_definitions(&mut graph, &[], &[], &mut attached_work)
+        .unwrap()
+        .solve_with_actual_inputs(&inputs, &mut attached_work)
+        .unwrap();
+    assert_eq!(attached.resolve_row(&row, &mut budget()).unwrap(), actual);
     assert_eq!(principal.resolve_row(&row, &mut budget()).unwrap(), actual);
     assert_eq!(principal.unknown(&local).unwrap(), &actual);
+    assert!(direct_work.0 > attached_work.0);
+    assert_eq!(graph.state, state);
     assert!(matches!(
-        source.close_original(
-            graph.read(),
-            &[],
-            &[],
-            &[(&future, &actual), (&future, &actual)],
-            &mut budget()
-        ),
+        graph
+            .read()
+            .actual_inputs(&[(&future, &actual), (&future, &actual)], &mut budget()),
         Err(PreparedEffectFailure::Invariant(
             PreparedEffectInvariant::DuplicateFutureBinding
         ))
