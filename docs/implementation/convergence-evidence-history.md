@@ -20242,3 +20242,12 @@ Coreの全feature library／`effect_decision` は2,376件すべて通過。Sema�
 製品Source `c70bc4ab48d9f78f4644a0f31faeefc7048627e0`、逆依存検証中に公開した記録commit `df1f74c8f2c6a0e0c371f28a07145f2950f9e96a`。実Cargo graphから選んだCLIを除く推移的逆依存は8,100件中8,000 PASS、100既知FAIL、18 SKIP。比較元 `61ba3e59b1c965f470633934c720a0f32feae4db` の全テストIDで合否が一致し、参照の付け替え、拒否に使った元の等式ID、期待型を合成する計算の同一性を確認する追加3件が通過した。100件の失敗はSema 92件とCompiler 8件。
 
 CLI library／binary 196件と規定の統合6 target 30件、Core全feature doctest 81件はすべて通過。workspace全target・全feature Clippyは終了0。[検証原本・全失敗ID](acceptance-evidence/task-map-effect-references-reverse.raw.zip) は15 entry、1,196,303 bytes、SHA256 `54951046d318891413b6cfc81454a6c60b59f555daf733d59f28ccaa3fd5cbf2`。各entryの長さとハッシュを照合した。記録時の `target` は101,369,754,500 bytes。
+
+<a id="canonical-effect-rebuild-reuse"></a>
+## 2026-11-20 — 正規順と接続を保った判定図の構築済みノードを再利用する
+
+検証基点 `7fb5751ccf5a3da8703a3ee192f9ae49ca7ef456`、Source `ec2a34b2ee665e279b3844c54f5497bfe94cab7f`。全ノードの番号と両枝の接続が一致し、一時ノードが存在しない場合は、元の正規順を根拠に構築したノードを結果へ移す。3ノードの順序を保つ参照付け替えは15から9作業単位に減り、8での拒否と、番号が同じでも接続が変わる場合の正規化を確認した。
+
+Coreの全feature library／`effect_decision` は2,377件すべてPASS。Semaの全featureユニットは1,993件中1,901 PASS、92既知FAIL。Compilerの統合6 targetは582件中580 PASS、2既知FAIL。SemaとCompilerで新規失敗は0。2 callback のSemaとNative／AWBCは効果関係の取り込み時の参照付け替え、3 callback のSemaは判定図の出力ノード確保で既定上限4,096に達した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。最新の全逆依存は[先行Source](#mapped-effect-references-reverse)で実施した。
+
+[検証原本・公開照合](acceptance-evidence/task-reuse-canonical-rebuild.raw.zip) は32 entry、1,188,066 bytes、SHA256 `503c69c195d4b37daec897cc9cd1f10df83a1c415efb5a0d37f90208581d3d74`。公開2ファイルと各entryを照合した。記録時の `target` は101,373,258,454 bytes。
