@@ -1324,16 +1324,7 @@ impl Analyzer<'_, '_, '_> {
             else {
                 continue;
             };
-            // Sibling probes share declaration-body preparations owned by
-            // their parent source transaction.
             self.prepare_application_result_schema(source.site, candidate)
-                .and_then(|()| {
-                    self.prepare_continuation_result_effects(
-                        source.site,
-                        candidate,
-                        inputs.mapping(),
-                    )
-                })
                 .map_err(AnalyzerExpressionError::fatal)?;
             let prepared = self
                 .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
@@ -1393,11 +1384,27 @@ impl Analyzer<'_, '_, '_> {
                         )),
                     });
                 }
-                self.facts.retain_child_effect_reads(
-                    &projection,
-                    &mut candidate_pending,
-                    &mut source_context.work(),
-                )?;
+                // Retain the child's reads at its original effect frontier.
+                // Its surviving paths can then demand a body in the parent scope.
+                let prepared = (|| {
+                    self.facts.retain_child_effect_reads(
+                        &projection,
+                        &mut candidate_pending,
+                        &mut source_context.work(),
+                    )?;
+                    self.prepare_continuation_result_effects(
+                        source.site,
+                        &recipe.candidate,
+                        recipe.inputs.mapping(),
+                    )
+                    .map_err(AnalyzerExpressionError::fatal)
+                })();
+                if let Err(error) = prepared {
+                    self.facts
+                        .discard_candidate_projection(projection)
+                        .map_err(AnalyzerExpressionError::fact)?;
+                    return Err(error);
+                }
                 candidates.push((
                     selected,
                     candidate_pending,

@@ -251,6 +251,7 @@ fn right<T>(value: T, remaining: i64) -> T {
 #[test]
 fn recursive_staged_call_with_wrong_arity_retains_its_rejection() {
     assert_rejected_recursive_staged_call(
+        "staged",
         r#"
 fn staged<T>(value: T)(answer: i64) -> i64 {
     staged(value, 0i64);
@@ -265,6 +266,7 @@ flow main() -> i64 { return staged("saved")(42i64) }
 #[test]
 fn recursive_staged_call_with_wrong_type_retains_its_rejection() {
     assert_rejected_recursive_staged_call(
+        "staged",
         r#"
 fn staged<T>(value: T, count: i64)(answer: i64) -> i64 {
     staged(value, "not a number");
@@ -276,7 +278,23 @@ flow main() -> i64 { return staged("saved", 0i64)(42i64) }
     );
 }
 
-fn assert_rejected_recursive_staged_call(source: &str) {
+#[test]
+fn recursive_staged_child_with_wrong_type_rejects_parent_argument() {
+    assert_rejected_recursive_staged_call(
+        "consume",
+        r#"
+fn consume<T>(value: T) -> Unit effects {} { () }
+fn staged<T>(value: T, count: i64)(answer: i64) -> i64 {
+    consume(staged(value, "not a number"));
+    log.info("body")
+    answer + count
+}
+flow main() -> i64 { return staged("saved", 0i64)(42i64) }
+"#,
+    );
+}
+
+fn assert_rejected_recursive_staged_call(rejected_declaration: &str, source: &str) {
     use crate::callable::CallAnalysisOutcome;
 
     let fixture = fixture(source, None);
@@ -289,15 +307,15 @@ fn assert_rejected_recursive_staged_call(source: &str) {
         })
         .collect::<Vec<_>>();
     let [(owner, evidence)] = rejected.as_slice() else {
-        panic!("only the invalid prefix is rejected");
+        panic!("the invalid input rejects exactly one call");
     };
     let [candidate] = evidence.candidates() else {
-        panic!("the staged declaration is the only candidate");
+        panic!("the rejected call has one declared candidate");
     };
     assert!(matches!(
         candidate.id(),
         CallableCandidateId::Project(CallableDeclarationKey::Existing(declaration))
-            if declaration.name() == "staged"
+            if declaration.name() == rejected_declaration
     ));
     super::callable_values::assert_unselected_call_has_no_execution(&analysis, *owner);
     assert_eq!(
