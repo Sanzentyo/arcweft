@@ -198,11 +198,12 @@ fn a_template_cannot_borrow_another_applications_rigid_or_inference_inventory() 
             .admit_application(path, child, &mut effect_graph)
             .unwrap();
         for (index, value) in values(&expected, &mut context).into_iter().enumerate() {
+            let expected_value = context.prepare_fixture_type(&value).unwrap();
             assert_eq!(
                 context
                     .open_fixture_template_type(&value, &path, child_id, &mut effect_graph)
                     .unwrap(),
-                value
+                expected_value
             );
             let [
                 ConstraintGenericParameterId::Type(ty),
@@ -250,15 +251,19 @@ fn a_template_can_read_its_original_sources_exact_imported_scope() {
             &mut effect_graph,
             &mut context,
         )
-        .with_fixture_original(original);
+        .with_fixture_original(original, &mut effect_graph, &mut context)
+        .unwrap();
         let child_id = child.id();
-        path = context.admit_application(path, child).unwrap();
+        path = context
+            .admit_application(path, child, &mut effect_graph)
+            .unwrap();
         for value in values(&expected, &mut context) {
+            let expected_value = context.prepare_fixture_type(&value).unwrap();
             assert_eq!(
                 context
                     .open_fixture_template_type(&value, &path, child_id, &mut effect_graph)
                     .unwrap(),
-                value
+                expected_value
             );
         }
     }
@@ -291,6 +296,7 @@ fn template_opening_retains_function_local_binders_and_restores_actual_ambient_f
         TypeKind::I64,
         EffectRow::open(EffectSet::new(), local.bound_effect(0, 0).unwrap()),
     );
+    let value = context.prepare_fixture_type(&value).unwrap();
     assert_eq!(
         context
             .open_template_type(&value, &path, path.root_id(), &mut effect_graph)

@@ -3305,6 +3305,69 @@ impl PreparedResolvedExpression {
 }
 
 impl CheckedExpression {
+    #[cfg(test)]
+    pub(super) fn prepare_fixture(&self, owner: ExprId) -> PreparedResolvedExpression {
+        use super::prepared::{
+            PreparedExpressionResult, PreparedNonValueExpressionResult,
+            PreparedTypedExpressionResult,
+        };
+        use crate::types::{GenericScope, UnmeteredTypeProjection};
+
+        let prepare = |ty: &TypeKind| {
+            ty.prepare_effects(&GenericScope::default(), &mut UnmeteredTypeProjection)
+                .expect("fixture type has valid effect references")
+        };
+        let data = &self.data;
+        let result = match &data.result {
+            CheckedExpressionResult::Value(value) => {
+                let mut prepared = PreparedTypedExpressionResult::new(
+                    prepare(value.source_type()),
+                    value.type_selection(),
+                );
+                if let Some(specialization) = self.function_specialization_shared() {
+                    prepared
+                        .attach_function_use(
+                            owner,
+                            Arc::clone(specialization),
+                            &mut UnmeteredTypeProjection,
+                        )
+                        .expect("fixture specialization belongs to expression");
+                }
+                PreparedExpressionResult::Value(prepared)
+            }
+            CheckedExpressionResult::NonValue(
+                CheckedNonValueExpressionResult::ContentEmission(callable),
+            ) => PreparedExpressionResult::NonValue(
+                PreparedNonValueExpressionResult::ContentEmission(callable.clone()),
+            ),
+            CheckedExpressionResult::NonValue(
+                CheckedNonValueExpressionResult::RegistryAddress(address),
+            ) => PreparedExpressionResult::NonValue(
+                PreparedNonValueExpressionResult::RegistryAddress(*address),
+            ),
+            CheckedExpressionResult::Unavailable => PreparedExpressionResult::Unavailable,
+        };
+        PreparedResolvedExpression {
+            data: Box::new(ExpressionData {
+                result,
+                effects: data.effects.clone(),
+                resolution: data.resolution.clone(),
+                mutable_place: data.mutable_place.clone(),
+                execution: data.execution.clone(),
+                evaluated_effect: data.evaluated_effect.clone(),
+                match_fact: data.match_fact.clone(),
+                carrier_block: data.carrier_block.as_ref().map(|carrier| {
+                    Box::new(CheckedCarrierBlock::new(
+                        prepare(carrier.carrier_type()),
+                        carrier.delivery,
+                        carrier.residual_relation,
+                    ))
+                }),
+                nested_path_evidence: data.nested_path_evidence.clone(),
+            }),
+        }
+    }
+
     pub(super) fn into_resolution(self) -> CheckedExpressionResolution {
         self.data.resolution
     }

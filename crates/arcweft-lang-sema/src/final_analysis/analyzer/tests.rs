@@ -13,6 +13,7 @@ use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use super::expression_error::AnalyzerExpressionError;
 use super::state::CandidateFactTransactionAction;
 use super::*;
+use crate::final_analysis::model::PreparedResolvedExpression;
 
 #[test]
 fn source_annotation_context_clones_share_work_and_preserve_original_cancellation() {
@@ -314,26 +315,29 @@ fn assert_outer_expression_failure_rolls_back_call_publication(
         .set_iteration_fact(call_owner, baseline_iteration.clone())
         .expect("baseline iteration");
     let retry_error = analyzer
-        .run_candidate_fact_transaction(|this, _authority, _transaction| {
-            this.facts
-                .set_local_type(local_owner, TypeKind::Bool)
-                .map_err(AnalyzerExpressionError::fact)?;
-            this.facts
-                .set_pattern_type(pattern_owner, TypeKind::I16)
-                .map_err(AnalyzerExpressionError::fact)?;
-            this.facts
-                .set_iteration_fact(
-                    call_owner,
-                    CheckedIteration::Builtin {
-                        family: CheckedIteratorFamily::Array,
-                        item: TypeKind::Bool,
-                    },
-                )
-                .map_err(AnalyzerExpressionError::fact)?;
-            this.check_expression_published(outer_owner, None)
-                .map(|_| CandidateFactTransactionAction::Commit(()))
-                .map_err(AnalyzerExpressionError::fatal)
-        })
+        .run_candidate_fact_transaction(
+            analyzer.preparation_work.clone(),
+            |this, _authority, _transaction| {
+                this.facts
+                    .set_local_type(local_owner, TypeKind::Bool)
+                    .map_err(AnalyzerExpressionError::fact)?;
+                this.facts
+                    .set_pattern_type(pattern_owner, TypeKind::I16)
+                    .map_err(AnalyzerExpressionError::fact)?;
+                this.facts
+                    .set_iteration_fact(
+                        call_owner,
+                        CheckedIteration::Builtin {
+                            family: CheckedIteratorFamily::Array,
+                            item: TypeKind::Bool,
+                        },
+                    )
+                    .map_err(AnalyzerExpressionError::fact)?;
+                this.check_expression_published(outer_owner, None)
+                    .map(|_| CandidateFactTransactionAction::Commit(()))
+                    .map_err(AnalyzerExpressionError::fatal)
+            },
+        )
         .map(|_| ())
         .map_err(|error| error.into_public(outer_owner))
         .expect_err("retry reaches the authored outer failure again");
@@ -470,7 +474,7 @@ fn candidate_call_keeps_nested_ordinary_call_on_candidate_context() {
         .facts
         .publish_new_expression(
             inner_owner,
-            CheckedExpression::value(
+            PreparedResolvedExpression::value(
                 TypeKind::String,
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),
@@ -479,17 +483,25 @@ fn candidate_call_keeps_nested_ordinary_call_on_candidate_context() {
         )
         .expect("unstable published cache");
 
-    let outcome = analyzer
-        .run_candidate_fact_transaction(|this, authority, _transaction| {
-            let context =
-                AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames));
-            let checked = this.evaluate_expression(&context, outer_owner, None)?;
-            drop(context);
-            Ok::<CandidateFactTransactionAction<PreparedExpressionFact>, AnalyzerExpressionError>(
-                CandidateFactTransactionAction::Commit(checked),
+    let outcome =
+        analyzer
+            .run_candidate_fact_transaction(
+                analyzer.preparation_work.clone(),
+                |this, authority, _transaction| {
+                    let context = AnalyzerExpressionContext::candidate(
+                        authority,
+                        Rc::clone(&this.call_frames),
+                        this.preparation_work.clone(),
+                    );
+                    let checked = this.evaluate_expression(&context, outer_owner, None)?;
+                    drop(context);
+                    Ok::<
+                        CandidateFactTransactionAction<PreparedExpressionFact>,
+                        AnalyzerExpressionError,
+                    >(CandidateFactTransactionAction::Commit(checked))
+                },
             )
-        })
-        .expect("candidate call transaction");
+            .expect("candidate call transaction");
     let checked = outcome.into_committed().expect("candidate call result");
     assert_eq!(checked.value_type(), Some(&TypeKind::I64));
     let selected_sites = analyzer
@@ -976,14 +988,20 @@ fn block_local_inference_rolls_back_with_its_candidate_expression() {
     let patterns_before = analyzer.facts.patterns().clone();
     let locals_before = analyzer.facts.locals().clone();
     let outcome = analyzer
-        .run_candidate_fact_transaction(|this, authority, _transaction| {
-            let context =
-                AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames));
-            let checked = this.evaluate_expression(&context, owner, Some(&TypeKind::I64))?;
-            assert_eq!(checked.value_type(), Some(&TypeKind::I64));
-            assert_eq!(this.facts.locals().get(&local), Some(&TypeKind::I64));
-            Ok::<_, AnalyzerExpressionError>(CandidateFactTransactionAction::Rollback(()))
-        })
+        .run_candidate_fact_transaction(
+            analyzer.preparation_work.clone(),
+            |this, authority, _transaction| {
+                let context = AnalyzerExpressionContext::candidate(
+                    authority,
+                    Rc::clone(&this.call_frames),
+                    this.preparation_work.clone(),
+                );
+                let checked = this.evaluate_expression(&context, owner, Some(&TypeKind::I64))?;
+                assert_eq!(checked.value_type(), Some(&TypeKind::I64));
+                assert_eq!(this.facts.locals().get(&local), Some(&TypeKind::I64));
+                Ok::<_, AnalyzerExpressionError>(CandidateFactTransactionAction::Rollback(()))
+            },
+        )
         .expect("candidate block evaluation");
     assert!(matches!(
         outcome,
@@ -1222,40 +1240,47 @@ fn postfix_ambiguous_rolls_back_both_successful_candidate_rows() {
     // index source and a dialogue target. Exercise the defensive
     // ambiguity branch with two already-checked candidate rows, but mint
     // and roll them back through the real semantic-fact transaction.
-    let outcome = analyzer.run_candidate_fact_transaction(|this, authority, _transaction| {
-        this.facts
-            .publish_new_expression(
-                index,
-                CheckedExpression::value(
-                    TypeKind::I64,
-                    CheckedTypeSelection::Inferred,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::Structural,
-                ),
+    let outcome = analyzer.run_candidate_fact_transaction(
+        analyzer.preparation_work.clone(),
+        |this, authority, _transaction| {
+            this.facts
+                .publish_new_expression(
+                    index,
+                    PreparedResolvedExpression::value(
+                        TypeKind::I64,
+                        CheckedTypeSelection::Inferred,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Structural,
+                    ),
+                )
+                .map_err(|_| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
+                })?;
+            this.facts
+                .publish_new_expression(
+                    dialogue,
+                    PreparedResolvedExpression::value(
+                        TypeKind::I64,
+                        CheckedTypeSelection::Inferred,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Structural,
+                    ),
+                )
+                .map_err(|_| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
+                })?;
+            let context = AnalyzerExpressionContext::candidate(
+                authority,
+                Rc::clone(&this.call_frames),
+                this.preparation_work.clone(),
+            );
+            let _ = this.evaluate_expression(&context, owner, None)?;
+            drop(context);
+            Ok::<CandidateFactTransactionAction<()>, AnalyzerExpressionError>(
+                CandidateFactTransactionAction::Commit(()),
             )
-            .map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-            })?;
-        this.facts
-            .publish_new_expression(
-                dialogue,
-                CheckedExpression::value(
-                    TypeKind::I64,
-                    CheckedTypeSelection::Inferred,
-                    EffectSet::new(),
-                    CheckedExpressionResolution::Structural,
-                ),
-            )
-            .map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-            })?;
-        let context = AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames));
-        let _ = this.evaluate_expression(&context, owner, None)?;
-        drop(context);
-        Ok::<CandidateFactTransactionAction<()>, AnalyzerExpressionError>(
-            CandidateFactTransactionAction::Commit(()),
-        )
-    });
+        },
+    );
     let outcome = outcome
         .map(|_| ())
         .map_err(|error| error.into_public(owner));
@@ -1301,15 +1326,18 @@ fn contextual_literal_cache_rewrite_rolls_back_and_retry_replaces_baseline() {
         .check_expression_published(owner, None)
         .expect("default literal fact");
 
-    let outcome = analyzer.run_candidate_fact_transaction(|this, _authority, _transaction| {
-        let contextual = this
-            .check_expression_published(owner, Some(&TypeKind::I64))
-            .map_err(AnalyzerExpressionError::fatal)?;
-        assert_eq!(contextual.value_type(), Some(&TypeKind::I64));
-        Err::<CandidateFactTransactionAction<()>, _>(AnalyzerExpressionError::fatal(
-            FinalSemanticAnalysisError::CheckedCallableCatalog,
-        ))
-    });
+    let outcome = analyzer.run_candidate_fact_transaction(
+        analyzer.preparation_work.clone(),
+        |this, _authority, _transaction| {
+            let contextual = this
+                .check_expression_published(owner, Some(&TypeKind::I64))
+                .map_err(AnalyzerExpressionError::fatal)?;
+            assert_eq!(contextual.value_type(), Some(&TypeKind::I64));
+            Err::<CandidateFactTransactionAction<()>, _>(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::CheckedCallableCatalog,
+            ))
+        },
+    );
     let outcome = outcome
         .map(|_| ())
         .map_err(|error| error.into_public(owner));
@@ -1819,12 +1847,13 @@ fn evaluator_records_implicit_and_explicit_capture_modes_on_terminal_facts() {
         .evaluate_expression(
             &context,
             implicit_write,
-            Some(&TypeKind::function(
+            Some(&TypeKind::function_with_canonical_effects(
                 [TypeKind::I64],
                 TypeKind::Result {
                     ok: Box::new(TypeKind::Unit),
                     error: Box::new(TypeKind::Never),
                 },
+                crate::effect_row::EffectRow::unknown(),
             )),
         )
         .expect("contextual implicit reassign producer");
@@ -2149,7 +2178,7 @@ fn failed_implicit_branch_synthesis_restores_scope_before_contextual_recheck() {
     ));
     assert!(analyzer.implicit_callable_stack.is_empty());
     assert!(!analyzer.facts.expressions().contains_key(&owner));
-    let expected = TypeKind::function_with_effects(
+    let expected = TypeKind::function_with_canonical_effects(
         [TypeKind::Bool],
         TypeKind::Vec(Box::new(TypeKind::I64)),
         crate::effect_row::EffectRow::closed(EffectSet::new()),

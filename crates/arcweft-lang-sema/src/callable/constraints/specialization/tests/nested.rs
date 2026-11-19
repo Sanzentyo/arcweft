@@ -59,6 +59,6 @@ fn specialization_preserves_a_nested_known_scheme_and_its_predicate() {
     )
     .unwrap();
     assert_eq!(solved.component.applications().len(), 2);
-    assert_eq!(observations.lock().unwrap()[0].1, prepared_type(&expected));
+    assert_eq!(observations.lock().unwrap()[0].1, expected);
     assert_eq!(source.semantic_identity_digest().unwrap(), original);
 }

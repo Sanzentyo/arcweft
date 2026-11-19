@@ -7,13 +7,13 @@ use crate::effect_row::prepared::{
 fn initialization_publishes_the_new_r_only_with_its_transaction() {
     let cancellation = AtomicBool::new(false);
     for fail_after_restore in [false, true] {
+        let mut graph = PreparedEffectGraph::default();
         let (mut context, mut path): (_, ConstraintPath<NoConstraintClient>) =
             ConstraintTestSetup::new(
                 TypeConstraintLimits::new(65_536, 32_768, 1024, 1024),
                 &cancellation,
             )
-            .into_path();
-        let mut graph = PreparedEffectGraph::default();
+            .into_path(&mut graph);
         let pure = PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new()));
         let original = graph.union(vec![pure.clone()], &mut context).unwrap();
         let terms = graph.retained_terms();

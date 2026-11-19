@@ -45,6 +45,19 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         ConstraintClosedEffects::for_original_path(self, original, &residual, graph, context)
     }
 
+    #[cfg(test)]
+    pub(in crate::types::constraints) fn close_fixture_continuation_effects<
+        A: TypeConstraintAccounting,
+    >(
+        &self,
+        residual: &[GenericEffectReference],
+        graph: &mut PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Arc<ConstraintClosedEffects<D>>, TypeConstraintError> {
+        let original = self.prepare_original_path_effects(graph, context)?;
+        ConstraintClosedEffects::for_original_path(self, original, residual, graph, context)
+    }
+
     pub(super) fn collect_original_effect_types<'a, A: TypeConstraintAccounting>(
         &'a self,
         types: &mut Vec<&'a TypeKind<PreparedEffects>>,

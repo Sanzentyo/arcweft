@@ -1,6 +1,8 @@
 use super::*;
 use crate::{
-    effect_row::{EffectConstraintVariable, EffectFormula, EffectPredicate},
+    effect_row::{
+        EffectConstraintVariable, EffectFormula, EffectPredicate, prepared::PreparedEffectGraph,
+    },
     effects::EffectSet,
     types::{
         DetachedGenericOwnerId, GenericBinder, GenericConstParameterId, GenericEffectParameterId,
@@ -26,10 +28,11 @@ struct References {
     effect: GenericEffectReference,
 }
 
-fn fixture(
-    cancellation: &AtomicBool,
+fn fixture<'a>(
+    cancellation: &'a AtomicBool,
+    graph: &mut PreparedEffectGraph,
 ) -> (
-    Context<'_>,
+    Context<'a>,
     ConstraintPath<NoConstraintClient>,
     [References; 2],
 ) {
@@ -63,17 +66,21 @@ fn fixture(
         cancellation,
         parameters,
     )
-    .into_path();
+    .into_path(graph);
     (context, path, references)
 }
 
 #[test]
 fn completed_type_and_const_values_cannot_reopen_with_a_siblings_capture() {
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, references) = fixture(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let (mut context, path, references) = fixture(&cancellation, &mut graph);
     let application = path.root_scope();
     let generic =
         CompletedGenericContext::for_application(&path, application, &mut context).unwrap();
+    let effects = path
+        .close_original_path_effects(&mut graph, &mut context)
+        .unwrap();
     let types = references.each_ref().map(|r| {
         generic
             .reify_type(
@@ -81,6 +88,8 @@ fn completed_type_and_const_values_cannot_reopen_with_a_siblings_capture() {
                 &path,
                 application,
                 None,
+                &effects,
+                graph.read(),
                 &mut context,
             )
             .unwrap()
@@ -174,16 +183,28 @@ fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
                 .unwrap(),
         ),
     ]);
-    let operand = context.fixture_operand(original.clone());
+    let prepared = context.prepare_fixture_type(&original).unwrap();
+    let operand = context.fixture_operand(prepared);
     let length_operand = context.fixture_operand(length.clone());
     let effect = context.lexical_scope().bound_effect(0, 0).unwrap();
     let row_operand = context.fixture_operand(EffectRow::open(EffectSet::new(), effect.clone()));
     let predicate_value = predicate(&effect, &mut context);
     let predicate_operand = context.fixture_operand(predicate_value);
+    let effects = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 1, 1));
     let receiving = context.capture_lexical_scope().unwrap();
     let completed = generic
-        .reify_type(&operand, &path, application, None, &mut context)
+        .reify_type(
+            &operand,
+            &path,
+            application,
+            None,
+            &effects,
+            effect_graph.read(),
+            &mut context,
+        )
         .unwrap();
     assert_eq!(completed.value(), &original);
     assert!(completed.captures().parameters().is_empty());
@@ -203,7 +224,15 @@ fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
     cancellation.store(true, std::sync::atomic::Ordering::Relaxed);
     assert!(
         generic
-            .reify_type(&operand, &path, application, None, &mut context)
+            .reify_type(
+                &operand,
+                &path,
+                application,
+                None,
+                &effects,
+                effect_graph.read(),
+                &mut context
+            )
             .is_err()
     );
     assert!(
@@ -260,7 +289,8 @@ fn predicate(reference: &GenericEffectReference, context: &mut Context<'_>) -> E
 #[test]
 fn effect_reification_rejects_receiver_visible_references_without_operand_gamma() {
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, references) = fixture(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let (mut context, path, references) = fixture(&cancellation, &mut graph);
     let application = path.root_scope();
     let generic =
         CompletedGenericContext::for_application(&path, application, &mut context).unwrap();
@@ -285,7 +315,8 @@ fn effect_reification_rejects_receiver_visible_references_without_operand_gamma(
 #[test]
 fn completed_effect_rows_and_predicates_cannot_reopen_with_a_siblings_capture() {
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, references) = fixture(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let (mut context, path, references) = fixture(&cancellation, &mut graph);
     let application = path.root_scope();
     let declared_effects = references.each_ref().map(|r| r.effect.clone());
     let original = context
@@ -361,7 +392,8 @@ fn completed_effect_rows_and_predicates_cannot_reopen_with_a_siblings_capture() 
 #[test]
 fn inserted_result_predicate_seals_its_own_free_references() {
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, references) = fixture(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let (mut context, path, references) = fixture(&cancellation, &mut graph);
     let application = path.root_scope();
     let declared_effects = references.each_ref().map(|r| r.effect.clone());
     let original = context
@@ -383,9 +415,12 @@ fn inserted_result_predicate_seals_its_own_free_references() {
             &mut context,
         )
         .unwrap();
+    let effects = path
+        .close_original_path_effects(&mut graph, &mut context)
+        .unwrap();
     let value = generic
         .reify_type(
-            &context.fixture_operand(TypeKind::function_with_effects(
+            &context.fixture_operand(TypeKind::function_with_canonical_effects(
                 [],
                 TypeKind::Unit,
                 EffectRow::closed(EffectSet::new()),
@@ -393,6 +428,8 @@ fn inserted_result_predicate_seals_its_own_free_references() {
             &path,
             application,
             Some(&incoming),
+            &effects,
+            graph.read(),
             &mut context,
         )
         .unwrap();
@@ -415,7 +452,8 @@ fn inserted_result_predicate_seals_its_own_free_references() {
 #[test]
 fn canonical_result_predicate_prunes_only_the_root_header_captures() {
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, references) = fixture(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let (mut context, path, references) = fixture(&cancellation, &mut graph);
     let application = path.root_scope();
     let declared_effects = references.each_ref().map(|r| r.effect.clone());
     let original = context
@@ -438,6 +476,9 @@ fn canonical_result_predicate_prunes_only_the_root_header_captures() {
             &mut context,
         )
         .unwrap();
+    let effects = path
+        .close_original_path_effects(&mut graph, &mut context)
+        .unwrap();
     for child_capture in [false, true] {
         let predicate = predicate(&references[0].effect, &mut context);
         let children = child_capture.then(|| {
@@ -454,12 +495,15 @@ fn canonical_result_predicate_prunes_only_the_root_header_captures() {
             TypeKind::Unit,
             EffectRow::closed(EffectSet::new()),
         );
+        let prepared = context.prepare_fixture_type(&original).unwrap();
         let value = generic
             .reify_type(
-                &context.fixture_operand(original),
+                &context.fixture_operand(prepared),
                 &path,
                 application,
                 Some(&incoming),
+                &effects,
+                graph.read(),
                 &mut context,
             )
             .unwrap();

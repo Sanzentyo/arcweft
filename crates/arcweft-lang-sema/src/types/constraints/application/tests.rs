@@ -750,7 +750,7 @@ fn a_child_transaction_opens_projects_and_seals_its_own_parameters() {
     assert_eq!(materialization.requests().len(), 1);
     assert_eq!(
         materialization.requests().next().unwrap().actual(),
-        &child_value
+        &child_completed_type
     );
     let request = materialization.requests().next().unwrap();
     assert_eq!(request.component().applications().len(), 2);
@@ -785,7 +785,7 @@ fn a_child_transaction_opens_projects_and_seals_its_own_parameters() {
     assert_eq!(solved.component.selected().projections().len(), 1);
     assert_eq!(
         solved.component.selected().projections()[0].value().value(),
-        &child_value
+        &child_completed_type
     );
     assert_eq!(
         solved

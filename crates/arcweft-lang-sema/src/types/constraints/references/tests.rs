@@ -6,7 +6,7 @@ use crate::{
     callable::VectorDimensions,
     types::{
         DetachedGenericOwnerId, FixedVectorType, GenericParameterOwnerId, GenericTypeParameterId,
-        TypeKind,
+        TypeEffectDomain, TypeKind,
         constraints::{
             NoConstraintClient, TypeConstraintError, TypeConstraintParameterEligibility,
             TypeConstraintParameterScope, TypeConstraintRejection, TypeConstraintSolution,
@@ -22,7 +22,10 @@ fn parameter(ordinal: u16) -> GenericTypeParameterId {
     )
 }
 
-fn vector(dimensions: VectorDimensions, component: TypeKind) -> TypeKind {
+fn vector<E: TypeEffectDomain>(
+    dimensions: VectorDimensions,
+    component: TypeKind<E>,
+) -> TypeKind<E> {
     TypeKind::FixedVector(FixedVectorType::new(dimensions, component))
 }
 
@@ -194,7 +197,7 @@ fn identical_payload_fields_do_not_widen_their_dependent_owner() {
 #[test]
 fn payload_relation_infers_parameters_used_only_by_the_owner() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
-    use crate::types::constraints::{ConstraintAcceptance, fixture_relate_selected_call};
+    use crate::types::constraints::{ConstraintAcceptance, relate_selected_call};
 
     let scope = TypeConstraintParameterScope::new([(
         parameter(0),
@@ -218,11 +221,14 @@ fn payload_relation_infers_parameters_used_only_by_the_owner() {
         )
         .expect("open payload owner");
     let actual = error_payload(TypeKind::I64);
+    let actual = context.prepare_fixture_type(&actual).unwrap();
+    let actual = context.fixture_operand(actual);
+    let expected = context.fixture_operand(expected);
     let path = context.fork_path(&path).expect("candidate path");
-    let mut paths = fixture_relate_selected_call(
+    let mut paths = relate_selected_call(
         &mut effect_graph,
-        &expected,
-        &actual,
+        &expected.view(),
+        &actual.view(),
         path,
         &mut context,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -269,8 +275,15 @@ fn payload_owner_arguments_open_normalize_and_reseal_with_the_fields() {
     let opened = context
         .open_fixture_template_type(&declared, &path, path.root_id(), &mut effect_graph)
         .expect("logical owner can contain inference");
+    let logical = opened
+        .project_effect_annotations(
+            context.lexical_scope(),
+            &mut crate::types::UnmeteredTypeProjection,
+        )
+        .unwrap()
+        .unwrap();
     assert!(matches!(
-        opened.semantic_identity_digest(),
+        logical.semantic_identity_digest(),
         Err(crate::types::GenericScopeError::EscapedInference { .. })
     ));
     let root = path

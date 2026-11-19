@@ -457,7 +457,7 @@ mod tests {
             .map(|(owner, fact)| {
                 (
                     *owner,
-                    super::super::PreparedExpressionFact::Resolved(fact.clone()),
+                    super::super::PreparedExpressionFact::Resolved(fact.prepare_fixture(*owner)),
                 )
             })
             .collect();

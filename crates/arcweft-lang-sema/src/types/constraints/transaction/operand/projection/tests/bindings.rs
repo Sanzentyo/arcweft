@@ -1,4 +1,5 @@
 use super::*;
+use crate::effect_row::prepared::PreparedEffectGraph;
 use crate::types::{
     DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
     GenericTypeParameterId,
@@ -16,21 +17,28 @@ type BindingSetup<'a> = (
     Vec<GenericConstReference>,
 );
 
-pub(super) fn setup(cancellation: &AtomicBool, types: u16, lengths: u16) -> BindingSetup<'_> {
+pub(super) fn setup<'a>(
+    cancellation: &'a AtomicBool,
+    graph: &mut PreparedEffectGraph,
+    types: u16,
+    lengths: u16,
+) -> BindingSetup<'a> {
     setup_with_limits(
         cancellation,
+        graph,
         types,
         lengths,
         TypeConstraintLimits::new(4096, 2048, 128, 128),
     )
 }
 
-pub(super) fn setup_with_limits(
-    cancellation: &AtomicBool,
+pub(super) fn setup_with_limits<'a>(
+    cancellation: &'a AtomicBool,
+    graph: &mut PreparedEffectGraph,
     types: u16,
     lengths: u16,
     limits: TypeConstraintLimits,
-) -> BindingSetup<'_> {
+) -> BindingSetup<'a> {
     let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(791));
     let types = (0..types)
         .map(|slot| GenericTypeParameterId::new(owner.clone(), slot))
@@ -58,7 +66,7 @@ pub(super) fn setup_with_limits(
         .map(|key| parameters.const_reference(&key.into()).unwrap())
         .collect();
     let (context, path) =
-        ConstraintTestSetup::with_scope(limits, cancellation, parameters).into_path();
+        ConstraintTestSetup::with_scope(limits, cancellation, parameters).into_path(graph);
     (context, path, types, lengths)
 }
 
@@ -66,7 +74,7 @@ pub(super) fn setup_with_limits(
 fn a_selected_relation_keeps_each_binding_on_its_actual_tuple_child_through_seal_and_fork() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, parameters, _) = setup(&cancellation, 2, 0);
+    let (mut context, path, parameters, _) = setup(&cancellation, &mut effect_graph, 2, 0);
     let pattern = context.fixture_operand(TypeKind::Tuple(
         parameters
             .iter()
@@ -124,6 +132,7 @@ fn structural_relations_keep_the_direct_child_and_slice_branch_budgets() {
     for (case, branches, bindings) in [(0, 0, 0), (1, 0, 1), (2, 1, 2), (3, 2, 2)] {
         let (mut context, path, parameters, _) = setup_with_limits(
             &cancellation,
+            &mut effect_graph,
             2,
             0,
             TypeConstraintLimits::new(4096, 2048, branches, 128),
@@ -168,6 +177,7 @@ fn structural_relations_keep_the_direct_child_and_slice_branch_budgets() {
     }
     let (mut context, path, parameters, _) = setup_with_limits(
         &cancellation,
+        &mut effect_graph,
         2,
         0,
         TypeConstraintLimits::new(4096, 2048, 1, 128),
@@ -198,7 +208,7 @@ fn structural_relations_keep_the_direct_child_and_slice_branch_budgets() {
 fn a_transitive_type_alias_retains_every_occurrence_and_the_exact_replacement_root() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, parameters, _) = setup(&cancellation, 3, 0);
+    let (mut context, path, parameters, _) = setup(&cancellation, &mut effect_graph, 3, 0);
     let root = context.fixture_operand(TypeKind::Tuple(vec![
         TypeKind::GenericParam(parameters[1].clone()),
         TypeKind::String,
@@ -281,8 +291,9 @@ fn a_transitive_type_alias_retains_every_occurrence_and_the_exact_replacement_ro
 
 #[test]
 fn a_constant_alias_keeps_the_array_length_port_without_a_synthetic_type() {
+    let mut effect_graph = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, _, parameters) = setup(&cancellation, 0, 2);
+    let (mut context, path, _, parameters) = setup(&cancellation, &mut effect_graph, 0, 2);
     let array = context.fixture_operand(TypeKind::Array {
         item: Box::new(TypeKind::I64),
         len: ArrayLength::Generic(parameters[1].clone()),
@@ -334,8 +345,9 @@ fn a_constant_alias_keeps_the_array_length_port_without_a_synthetic_type() {
 
 #[test]
 fn a_binding_lookup_rejects_a_value_whose_actual_scope_disagrees_with_its_owner() {
+    let mut effect_graph = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path, parameters, _) = setup(&cancellation, 1, 0);
+    let (mut context, mut path, parameters, _) = setup(&cancellation, &mut effect_graph, 1, 0);
     let inner = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
     let foreign = context.fixture_operand(TypeKind::I64);
     context.restore_binder_scope(inner);
@@ -355,6 +367,7 @@ fn ten_thousand_direct_aliases_retain_and_release_a_flat_proof_with_exact_node_a
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path, parameters, _) = setup_with_limits(
         &cancellation,
+        &mut effect_graph,
         10_000,
         0,
         TypeConstraintLimits::new(20_002, 10_001, 128, 10_001),

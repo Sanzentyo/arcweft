@@ -2,8 +2,6 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
-#[cfg(test)]
-use super::CheckedExpression;
 use super::match_edges::{
     CheckedSelectedExpressionGraph, CheckedStructuralEdgeDraft, PreparedCallableJoins,
 };
@@ -53,11 +51,6 @@ impl FinalSemanticAnalysisInput {
 
     pub(crate) fn push_capture(&mut self, owner: CaptureId, binding: CheckedBinding) {
         self.captures.push((owner, binding));
-    }
-
-    #[cfg(test)]
-    pub(crate) fn push_expression(&mut self, owner: ExprId, expression: CheckedExpression) {
-        self.push_prepared_expression(owner, expression.into());
     }
 
     pub(crate) fn push_prepared_expression(

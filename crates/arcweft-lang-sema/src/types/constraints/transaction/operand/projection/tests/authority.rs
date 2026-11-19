@@ -10,7 +10,7 @@ use crate::types::constraints::{
 fn rebuilt_children_keep_their_own_alias_terminal_and_length_authorities() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path, types, lengths) = setup(&cancellation, 2, 1);
+    let (mut context, mut path, types, lengths) = setup(&cancellation, &mut effect_graph, 2, 1);
     let tuple = context.fixture_operand(TypeKind::Tuple(vec![
         TypeKind::GenericParam(types[1].clone()),
         TypeKind::String,

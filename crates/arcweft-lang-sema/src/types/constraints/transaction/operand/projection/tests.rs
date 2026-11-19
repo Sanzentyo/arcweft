@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::constraints::transaction::operand::ConstraintEffectPhase;
 use crate::types::constraints::{
     NoConstraintClient,
     context::{LocalConstraintAccounting, TypeConstraintLimits},
@@ -61,10 +62,11 @@ fn tuple_children_borrow_the_root_and_retain_distinct_exact_addresses() {
     let mut context = context(&cancellation);
     let scope = Arc::new(context.capture_lexical_scope().unwrap());
     let original = context.fixture_original_context(None).unwrap();
-    let root = ConstraintOperand::<NoConstraintClient>::from_original_in(
+    let root = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
         &TypeKind::Tuple(vec![TypeKind::I64, TypeKind::String]),
         Arc::clone(&scope),
         original,
+        &mut ConstraintEffectPhase::new(&mut effect_graph),
         &mut context,
     )
     .unwrap();
@@ -120,13 +122,14 @@ fn an_array_item_and_its_length_have_distinct_type_and_const_projections() {
     let original = context.fixture_original_context(None).unwrap();
     let ty = context.lexical_scope().bound_type(0, 0).unwrap();
     let length = ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap());
-    let root = ConstraintOperand::<NoConstraintClient>::from_original_in(
+    let root = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
         &TypeKind::Array {
             item: Box::new(TypeKind::GenericParam(ty.clone())),
             len: length.clone(),
         },
         Arc::clone(&scope),
         original,
+        &mut ConstraintEffectPhase::new(&mut effect_graph),
         &mut context,
     )
     .unwrap();
@@ -196,15 +199,18 @@ fn function_children_retain_the_actual_local_binder_and_reject_equal_shaped_fore
     let scope = Arc::new(context.capture_lexical_scope().unwrap());
     let original = context.fixture_original_context(None).unwrap();
     let nested = scope.shape().with_binder(ambient);
-    let root = ConstraintOperand::<NoConstraintClient>::from_original_in(
-        &TypeKind::function_with_binder(
-            ambient,
-            [TypeKind::GenericParam(nested.bound_type(0, 0).unwrap())],
-            TypeKind::GenericParam(nested.bound_type(1, 0).unwrap()),
-            crate::effect_row::EffectRow::closed(crate::effects::EffectSet::new()),
-        ),
+    let authored = TypeKind::function_with_binder(
+        ambient,
+        [TypeKind::GenericParam(nested.bound_type(0, 0).unwrap())],
+        TypeKind::GenericParam(nested.bound_type(1, 0).unwrap()),
+        crate::effect_row::EffectRow::closed(crate::effects::EffectSet::new()),
+    );
+    let prepared = context.prepare_fixture_type(&authored).unwrap();
+    let root = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
+        &prepared,
         Arc::clone(&scope),
         original,
+        &mut ConstraintEffectPhase::new(&mut effect_graph),
         &mut context,
     )
     .unwrap();

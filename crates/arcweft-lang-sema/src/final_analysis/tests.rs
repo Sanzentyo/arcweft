@@ -4018,10 +4018,20 @@ fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInp
         input.push_capture(owner, fact.clone());
     }
     for (owner, fact) in report.expressions() {
-        input.push_expression(owner, fact.clone());
+        input.push_prepared_expression(owner, fact.prepare_fixture(owner).into());
     }
     for (owner, fact) in report.patterns() {
-        input.push_pattern(owner, fact.clone());
+        let ty = fact
+            .ty()
+            .prepare_effects(
+                &crate::types::GenericScope::default(),
+                &mut crate::types::UnmeteredTypeProjection,
+            )
+            .unwrap();
+        input.push_pattern(
+            owner,
+            super::model::PreparedResolvedPattern::new(ty, fact.resolution().clone()),
+        );
     }
     for (owner, fact) in report.statements() {
         let prepared = match fact.payload() {
@@ -4146,14 +4156,19 @@ fn push_complete_expression_facts(module: &HirModule, input: &mut FinalSemanticA
             HirExprKind::Error(_) => panic!("executable fixture contains poisoned expression"),
             _ => (TypeKind::Unit, CheckedExpressionResolution::Structural),
         };
-        input.push_expression(
+        input.push_prepared_expression(
             id,
-            CheckedExpression::value(
-                ty,
+            super::model::PreparedResolvedExpression::value(
+                ty.prepare_effects(
+                    &crate::types::GenericScope::default(),
+                    &mut crate::types::UnmeteredTypeProjection,
+                )
+                .unwrap(),
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),
                 resolution,
-            ),
+            )
+            .into(),
         );
     }
 }
@@ -4165,7 +4180,10 @@ fn push_complete_pattern_facts(module: &HirModule, input: &mut FinalSemanticAnal
             HirPatternKind::Error(_) => panic!("executable fixture contains poisoned pattern"),
             _ => CheckedPatternResolution::Structural,
         };
-        input.push_pattern(id, CheckedPattern::new(TypeKind::Unit, resolution));
+        input.push_pattern(
+            id,
+            super::model::PreparedResolvedPattern::new(TypeKind::Unit, resolution),
+        );
     }
 }
 

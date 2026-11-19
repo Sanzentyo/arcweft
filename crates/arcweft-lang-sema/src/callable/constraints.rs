@@ -1793,7 +1793,7 @@ pub(crate) mod tests {
             PreparedSourceAlternative::new(
                 0,
                 (),
-                TypeKind::generic_parameter(unscoped_parameter()),
+                TypeKind::GenericParam(unscoped_parameter().into()),
             ),
         )
         .expect("one terminal alternative")
@@ -2339,12 +2339,12 @@ pub(crate) mod tests {
                     driver.constrain(
                         &TypeKind::Choice(vec![
                             TypeKind::Tuple(vec![
-                                TypeKind::generic_parameter(first.clone()),
-                                TypeKind::generic_parameter(second.clone()),
+                                TypeKind::GenericParam(first.clone().into()),
+                                TypeKind::GenericParam(second.clone().into()),
                             ]),
                             TypeKind::Tuple(vec![
-                                TypeKind::generic_parameter(second),
-                                TypeKind::generic_parameter(first),
+                                TypeKind::GenericParam(second.into()),
+                                TypeKind::GenericParam(first.into()),
                             ]),
                         ]),
                         &TypeKind::Tuple(vec![TypeKind::I32, TypeKind::String]),
@@ -2507,12 +2507,12 @@ pub(crate) mod tests {
                     driver.constrain(
                         &TypeKind::Choice(vec![
                             TypeKind::Tuple(vec![
-                                TypeKind::generic_parameter(first.clone()),
-                                TypeKind::generic_parameter(second.clone()),
+                                TypeKind::GenericParam(first.clone().into()),
+                                TypeKind::GenericParam(second.clone().into()),
                             ]),
                             TypeKind::Tuple(vec![
-                                TypeKind::generic_parameter(second),
-                                TypeKind::generic_parameter(first),
+                                TypeKind::GenericParam(second.into()),
+                                TypeKind::GenericParam(first.into()),
                             ]),
                         ]),
                         &TypeKind::Tuple(vec![TypeKind::I32, TypeKind::String]),

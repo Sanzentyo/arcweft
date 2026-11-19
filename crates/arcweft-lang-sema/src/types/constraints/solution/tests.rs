@@ -134,8 +134,9 @@ pub(super) fn complete(
     ty: TypeKind,
     length: ArrayLength,
 ) -> TypeConstraintSolution {
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path) = context(scope, &cancellation).into_path();
+    let (mut context, mut path) = context(scope, &cancellation).into_path(&mut graph);
     let original = context
         .fixture_original_context_with_rigid(crate::types::constraints::OriginalRigidScope {
             types: &[parameter(0).into(), parameter(1).into()],
@@ -145,12 +146,15 @@ pub(super) fn complete(
         })
         .unwrap();
     {
+        let ty = context.prepare_fixture_type(&ty).unwrap();
         path.bindings = [(
             path.root_scope()
                 .parameters()
                 .type_reference(&(parameter(0)).clone().into())
                 .expect("callee type"),
-            context.fixture_operand_in(&original, &ty).unwrap(),
+            context
+                .fixture_prepared_operand_in(&original, &ty, &mut graph)
+                .unwrap(),
         )]
         .into();
         path.const_bindings = [(
@@ -161,7 +165,12 @@ pub(super) fn complete(
             context.fixture_operand_in(&original, &length).unwrap(),
         )]
         .into();
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut graph,
+            &mut context,
+        )
     }
     .expect("completed application")
 }
@@ -538,7 +547,7 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
         TypeKind::Unit,
         EffectRow::open(crate::effects::EffectSet::new(), reference.clone()),
     );
-    let complete_effect = |ty: Option<TypeKind>, effect: &str| {
+    let mut complete_effect = |ty: Option<TypeKind>, effect: &str| {
         let roles = ty
             .as_ref()
             .map(|_| EffectRole::Rigid)
@@ -576,8 +585,11 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
                     },
                 )
                 .unwrap();
-            path.bindings
-                .insert(key, context.fixture_operand_in(&original, &ty).unwrap());
+            let ty = context.prepare_fixture_type(&ty).unwrap();
+            let ty = context
+                .fixture_prepared_operand_in(&original, &ty, &mut effect_graph)
+                .unwrap();
+            path.bindings.insert(key, ty);
         }
         let effect_key = path
             .root_scope()
@@ -678,16 +690,20 @@ fn residual_effect_replacements_lift_through_existing_function_binders() {
         .expect("type opening");
     path.bindings.insert(
         type_key,
-        context.fixture_operand(TypeKind::function_with_effects(
+        context.fixture_operand(TypeKind::function_with_canonical_effects(
             [],
             TypeKind::Unit,
-            EffectRow::open(crate::effects::EffectSet::new(), effect_key),
+            EffectRow::open(crate::effects::EffectSet::new(), effect_key.clone()),
         )),
     );
-    let solution = TypeConstraintSolution::complete_fixture_application(
+    let completion = path
+        .close_fixture_continuation_effects(&[effect_key], &mut effect_graph, &mut context)
+        .unwrap();
+    let solution = TypeConstraintSolution::complete_application(
         &path,
         path.root_id(),
-        &mut effect_graph,
+        &completion,
+        effect_graph.read(),
         &mut context,
     )
     .expect("residual function binding");

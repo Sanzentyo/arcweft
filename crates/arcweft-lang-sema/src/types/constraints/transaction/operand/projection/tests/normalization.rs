@@ -6,7 +6,7 @@ use crate::types::constraints::normalization::seal_path;
 fn structural_sealing_keeps_corresponding_children_aliases_and_array_length_proofs() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path, types, lengths) = setup(&cancellation, 2, 1);
+    let (mut context, mut path, types, lengths) = setup(&cancellation, &mut effect_graph, 2, 1);
     let tuple = context.fixture_operand(TypeKind::Tuple(vec![
         TypeKind::GenericParam(types[1].clone()),
         TypeKind::String,
@@ -116,7 +116,7 @@ fn structural_sealing_keeps_corresponding_children_aliases_and_array_length_proo
 fn sealing_keeps_a_function_header_on_its_actual_local_frame() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path, types, _) = setup(&cancellation, 1, 0);
+    let (mut context, mut path, types, _) = setup(&cancellation, &mut effect_graph, 1, 0);
     let binder = GenericBinder::new(1, 1, 1);
     let shape = context.lexical_scope().with_binder(binder);
     let item = TypeKind::Array {
@@ -129,13 +129,15 @@ fn sealing_keeps_a_function_header_on_its_actual_local_frame() {
         .subset(&crate::effect_row::EffectFormula::empty(), &mut context)
         .unwrap();
     assert!(!predicate.is_unconstrained());
-    let function = context.fixture_operand(TypeKind::function_with_contract(
+    let function = TypeKind::function_with_contract(
         binder,
         predicate,
         [item],
         TypeKind::String,
         crate::effect_row::EffectRow::open(crate::effects::EffectSet::new(), effect),
-    ));
+    );
+    let function = context.prepare_fixture_type(&function).unwrap();
+    let function = context.fixture_operand(function);
     path.bindings.insert(types[0].clone(), function.clone());
     let sealed = seal_path(path, &mut effect_graph, &mut context).unwrap();
     let value = &sealed.bindings[&types[0]];
@@ -176,7 +178,7 @@ fn sealing_keeps_a_function_header_on_its_actual_local_frame() {
 fn sealing_rejects_a_forged_stored_root_before_adopting_its_scope() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path, types, _) = setup(&cancellation, 1, 0);
+    let (mut context, mut path, types, _) = setup(&cancellation, &mut effect_graph, 1, 0);
     let outer = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
     let foreign = context.fixture_operand(TypeKind::I64);
     context.restore_binder_scope(outer);

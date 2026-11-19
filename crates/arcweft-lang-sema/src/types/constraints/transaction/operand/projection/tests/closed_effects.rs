@@ -109,7 +109,10 @@ fn closed_headers_lift_the_used_completion_row_through_the_actual_local_binder()
     };
     assert_eq!(
         row,
-        &EffectRow::open(EffectSet::new(), contents.bound_effect(1, 0).unwrap())
+        &PreparedEffectRow::Canonical(EffectRow::open(
+            EffectSet::new(),
+            contents.bound_effect(1, 0).unwrap(),
+        ))
     );
     let expected_predicate =
         EffectFormula::variable(contents.bound_effect(1, 0).unwrap(), &mut context)
@@ -120,7 +123,10 @@ fn closed_headers_lift_the_used_completion_row_through_the_actual_local_binder()
                 &mut context,
             )
             .unwrap();
-    assert_eq!(predicate, &expected_predicate);
+    assert_eq!(
+        predicate,
+        &PreparedEffectPredicate::Canonical(expected_predicate)
+    );
     let ConstraintOperandOrigin::Rebuilt {
         header: Some(proof),
         contents_scope,
@@ -362,7 +368,8 @@ fn closing_an_observed_value_does_not_replace_its_association_with_an_alias_resu
         TypeConstraintProjectionClosure,
     };
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, parameters, _) = super::bindings::setup(&cancellation, 1, 0);
+    let (mut context, path, parameters, _) =
+        super::bindings::setup(&cancellation, &mut effect_graph, 1, 0);
     let application = path.root_id();
     let mut transaction = TypeConstraintTransaction::from_path(
         &mut context,

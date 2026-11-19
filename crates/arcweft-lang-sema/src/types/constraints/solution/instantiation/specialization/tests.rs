@@ -188,7 +188,7 @@ fn project_specialization_composes_residual_rows_and_recursive_caller_values_sim
         first,
         crate::types::constraints::transaction::ConstraintOperand::fixture_template(
             TypeKind::Tuple(vec![
-                TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter(0)))),
+                TypeKind::Vec(Box::new(TypeKind::GenericParam(parameter(0).into()))),
                 TypeKind::GenericParam(future),
                 TypeKind::Array {
                     item: Box::new(TypeKind::Bool),

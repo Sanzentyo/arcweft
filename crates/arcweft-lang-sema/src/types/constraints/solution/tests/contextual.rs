@@ -26,11 +26,14 @@ fn complete_ambient(
     future: bool,
     own_function: bool,
 ) -> (TypeConstraintSolution, GenericScope, TypeKind) {
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut work, parameters) = context(scope(false, future), &cancellation).into_parts();
     let ambient = GenericBinder::new(1, 1, 0);
     let enclosing = work.enter_binder_scope(ambient);
-    let application = work.fixture_application_scope((), parameters).unwrap();
+    let application = work
+        .fixture_application_scope((), parameters, &mut graph)
+        .unwrap();
     let id = application.id();
     let key = application
         .parameters()
@@ -40,10 +43,11 @@ fn complete_ambient(
         .parameters()
         .const_reference(&constant().into())
         .unwrap();
-    let mut path = work.start_path(application).unwrap();
+    let mut path = work.start_path(application, &mut graph).unwrap();
     let value = ambient_value(work.lexical_scope(), 0, own_function);
+    let value = work.prepare_fixture_type(&value).unwrap();
     path = work
-        .fixture_add_binding(path, key, &value)
+        .fixture_add_binding(path, key, &value, &mut graph)
         .unwrap()
         .unwrap();
     if !future {
@@ -53,7 +57,9 @@ fn complete_ambient(
             .unwrap()
             .unwrap();
     }
-    let completed = TypeConstraintSolution::complete_application(&path, id, &mut work).unwrap();
+    let completed =
+        TypeConstraintSolution::complete_fixture_application(&path, id, &mut graph, &mut work)
+            .unwrap();
     let residual = if future {
         GenericBinder::new(1, 1, 0)
     } else {
@@ -214,6 +220,7 @@ fn reopening_preserves_actual_ambient_frames_and_opens_residuals_freshly() {
         .unwrap();
     let mut path = work.start_path(application, &mut effect_graph).unwrap();
     let value = ambient_value(work.lexical_scope(), 0, true);
+    let value = work.prepare_fixture_type(&value).unwrap();
     path = work
         .fixture_add_binding(path, key, &value, &mut effect_graph)
         .unwrap()
@@ -335,17 +342,25 @@ fn ambient_residual_and_function_owned_effects_keep_distinct_owners() {
     let effects = EffectRow::open(EffectSet::new(), ambient)
         .union(&EffectRow::open(EffectSet::new(), local), &mut work)
         .unwrap()
-        .union(&EffectRow::open(EffectSet::new(), future), &mut work)
+        .union(
+            &EffectRow::open(EffectSet::new(), future.clone()),
+            &mut work,
+        )
         .unwrap();
     let value = TypeKind::function_with_contract(own, predicate, [], TypeKind::Unit, effects);
+    let value = work.prepare_fixture_type(&value).unwrap();
     path = work
         .fixture_add_binding(path, key, &value, &mut effect_graph)
         .unwrap()
         .unwrap();
-    let solution = TypeConstraintSolution::complete_fixture_application(
+    let completion = path
+        .close_fixture_continuation_effects(&[future], &mut effect_graph, &mut work)
+        .unwrap();
+    let solution = TypeConstraintSolution::complete_application(
         &path,
         path.root_id(),
-        &mut effect_graph,
+        &completion,
+        effect_graph.read(),
         &mut work,
     )
     .unwrap();
@@ -400,6 +415,8 @@ fn ambient_residual_and_function_owned_effects_keep_distinct_owners() {
             &path,
             path.root_id(),
             ConstraintClosurePolicy::ProjectionFuture,
+            &completion,
+            effect_graph.read(),
             &mut work,
         )
         .unwrap();

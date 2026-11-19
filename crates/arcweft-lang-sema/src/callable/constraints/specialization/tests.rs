@@ -62,15 +62,7 @@ struct Client<'a> {
     graph: &'a mut PreparedCallGraph<()>,
     application_owners: Vec<ExprId>,
     sources: &'a [Source],
-    observations: Arc<
-        Mutex<
-            Vec<(
-                u8,
-                TypeKind<PreparedEffects>,
-                Option<CallableConstraintApplication>,
-            )>,
-        >,
-    >,
+    observations: Arc<Mutex<Vec<(u8, TypeKind, Option<CallableConstraintApplication>)>>>,
     cancellation: &'a AtomicBool,
     cancel_during_probe: bool,
     check_foreign_graph: bool,
@@ -269,10 +261,7 @@ impl TypeConstraintClient<Domain> for Client<'_> {
         for request in sources {
             let result = request.result_projection();
             if let Some(result) = &result {
-                assert_eq!(
-                    &prepared_type(result.projection().value().value()),
-                    request.actual()
-                );
+                assert_eq!(result.projection().value().value(), request.actual());
                 assert!(result.projection().value().scope().binders().is_empty());
                 let (Source::Scheme(source) | Source::ReturnedScheme(source)) =
                     &self.sources[usize::from(request.source().local())]
@@ -509,12 +498,12 @@ fn source_scheme_uses_open_types_lengths_and_effects_independently_in_one_compon
         observations[0],
         (
             0,
-            prepared_type(&expected[0]),
+            expected[0].clone(),
             Some(CallableConstraintApplication::Specialize(call_owner))
         )
     );
     assert_eq!(observations[1].0, 1);
-    assert_eq!(observations[1].1, prepared_type(&expected[1]));
+    assert_eq!(observations[1].1, expected[1]);
     assert_ne!(observations[1].2.unwrap().expression(), call_owner);
     assert!(
         observations
@@ -555,7 +544,7 @@ fn pending_call_result_specializes_on_its_own_path_and_retains_same_expression_o
     )
     .unwrap();
     assert_eq!(solved.component.applications().len(), 3);
-    assert_eq!(observations.lock().unwrap()[0].1, prepared_type(&expected));
+    assert_eq!(observations.lock().unwrap()[0].1, expected);
     assert_eq!(source, scheme());
 }
 
@@ -637,11 +626,11 @@ fn specialization_waits_for_later_parent_operands_to_close_its_result() {
     assert_eq!(solved.component.applications().len(), 2);
     assert_eq!(
         observations.lock().unwrap()[0].1,
-        prepared_type(&TypeKind::function_with_effects(
+        TypeKind::function_with_effects(
             [TypeKind::I64],
             TypeKind::I64,
             EffectRow::closed(EffectSet::new())
-        ))
+        )
     );
 }
 

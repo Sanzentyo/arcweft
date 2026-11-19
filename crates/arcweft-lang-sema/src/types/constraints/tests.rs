@@ -1267,7 +1267,6 @@ fn function_effect_subset_failure_is_an_ordinary_candidate_rejection() {
 
 #[test]
 fn transitive_bindings_are_sealed_and_move_only() {
-    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let first = owned_parameter(1, 0);
     let second = owned_parameter(1, 1);
     let outcome = {
@@ -1294,10 +1293,13 @@ fn transitive_bindings_are_sealed_and_move_only() {
                 &actual,
                 transaction.lower.test_single_path(),
                 transaction.lower.test_single_path().root_id(),
-                &mut effect_graph,
+                &mut transaction.graph,
             )
             .expect("equation RHS uses the same active parameter namespace");
-        transaction.constrain_opened(
+        let pattern = transaction.prepare(&pattern);
+        transaction.lower.constrain_application_template(
+            &mut transaction.context,
+            &mut transaction.graph,
             &pattern,
             &actual,
             ConstraintAcceptance::PatternAcceptsActual,
@@ -1541,7 +1543,7 @@ fn a_rigid_actual_is_not_bound_to_a_concrete_pattern() {
         TypeConstraintParameterEligibility::Rigid,
     )])
     .expect("the parameter is rigid");
-    let actual = TypeKind::generic_parameter(rigid.clone());
+    let actual = TypeKind::GenericParam(rigid.clone().into());
     let cancellation = AtomicBool::new(false);
     let (mut context, scope) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -1910,7 +1912,6 @@ fn rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned() {
 
 #[test]
 fn acyclic_choice_sibling_survives_a_deferred_cycle() {
-    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let parameter = owned_parameter(13, 0);
     let pattern = TypeKind::Choice(vec![
         TypeKind::generic_parameter(parameter.clone()),
@@ -1936,10 +1937,13 @@ fn acyclic_choice_sibling_survives_a_deferred_cycle() {
             &actual,
             transaction.lower.test_single_path(),
             transaction.lower.test_single_path().root_id(),
-            &mut effect_graph,
+            &mut transaction.graph,
         )
         .expect("equation RHS uses the same active parameter namespace");
-    transaction.constrain_opened(
+    let pattern = transaction.prepare(&pattern);
+    transaction.lower.constrain_application_template(
+        &mut transaction.context,
+        &mut transaction.graph,
         &pattern,
         &actual,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -2027,10 +2031,15 @@ fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() 
         .parameters()
         .type_reference(&t.into())
         .expect("claimed type slot");
-    let failure: TypeConstraintFailure<NoConstraintClient> =
-        TypeConstraintSolution::test_seal_completed(expected_rows, &mut path, &mut context)
-            .expect_err("a non-canonical completed carrier cannot be issued")
-            .into();
+    let failure: TypeConstraintFailure<NoConstraintClient> = claim_fixture_solution(
+        expected_rows,
+        [],
+        &mut path,
+        &mut effect_graph,
+        &mut context,
+    )
+    .expect_err("a non-canonical completed carrier cannot be issued")
+    .into();
     assert!(matches!(
         failure,
         TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
@@ -2524,7 +2533,7 @@ fn foreign_binding_value_is_rejected_before_solution_publish() {
 fn foreign_nested_hint_is_rejected_before_source_callback_boundary() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let foreign = owned_parameter(202, 0);
-    let expected = TypeKind::Vec(Box::new(TypeKind::generic_parameter(foreign)));
+    let expected = TypeKind::Vec(Box::new(TypeKind::GenericParam(foreign.into())));
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, SyntheticClient>::with_scope(
@@ -3433,8 +3442,8 @@ fn source_choice_alternatives() -> (
         &mut context,
         &mut graph,
         &TypeKind::Choice(vec![
-            TypeKind::generic_parameter(first),
-            TypeKind::generic_parameter(second),
+            TypeKind::GenericParam(first.into()),
+            TypeKind::GenericParam(second.into()),
         ]),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -3636,8 +3645,8 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
         &mut context,
         &mut effect_graph,
         &TypeKind::Choice(vec![
-            TypeKind::generic_parameter(first),
-            TypeKind::generic_parameter(second),
+            TypeKind::GenericParam(first.into()),
+            TypeKind::GenericParam(second.into()),
         ]),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -3753,7 +3762,7 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
             parameters
                 .iter()
                 .cloned()
-                .map(TypeKind::generic_parameter)
+                .map(|parameter| TypeKind::GenericParam(parameter.into()))
                 .collect(),
         ),
         &TypeKind::I32,
@@ -4129,7 +4138,6 @@ fn final_equation_replays_choice_after_later_binding() {
 
 #[test]
 fn deferred_cycle_is_reported_only_after_close() {
-    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let parameter = owned_parameter(11, 0);
     let pattern = TypeKind::generic_parameter(parameter.clone());
     let actual = TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter.clone())));
@@ -4148,10 +4156,13 @@ fn deferred_cycle_is_reported_only_after_close() {
             &actual,
             transaction.lower.test_single_path(),
             transaction.lower.test_single_path().root_id(),
-            &mut effect_graph,
+            &mut transaction.graph,
         )
         .expect("equation RHS uses the same active parameter namespace");
-    transaction.constrain_opened(
+    let pattern = transaction.prepare(&pattern);
+    transaction.lower.constrain_application_template(
+        &mut transaction.context,
+        &mut transaction.graph,
         &pattern,
         &actual,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -4809,7 +4820,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
     transaction.constrain(
         &mut context,
         &mut effect_graph,
-        &TypeKind::generic_parameter(parameter.clone()),
+        &TypeKind::GenericParam(parameter.clone().into()),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -4827,7 +4838,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
     let actual = context
         .open_template_type(
             &TypeKind::Array {
-                item: Box::new(TypeKind::generic_parameter(parameter.clone())),
+                item: Box::new(TypeKind::GenericParam(parameter.clone().into())),
                 len: super::super::ArrayLength::Const(5),
             },
             ticket.test_path(),
@@ -4944,7 +4955,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
     transaction.constrain(
         &mut context,
         &mut effect_graph,
-        &TypeKind::generic_parameter(parameter.clone()),
+        &TypeKind::GenericParam(parameter.clone().into()),
         &TypeKind::String,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -4972,7 +4983,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         .open_template_type(
             &TypeKind::Map {
                 kind: super::super::MapKind::BTree,
-                key: Box::new(TypeKind::generic_parameter(parameter.clone())),
+                key: Box::new(TypeKind::GenericParam(parameter.clone().into())),
                 value: Box::new(TypeKind::I32),
             },
             ticket.test_path(),
@@ -5277,11 +5288,11 @@ fn prepared_source_structurally_owns_otherwise_and_requires_exact_ordinals() {
 
 #[test]
 fn checked_rest_projection_retains_each_runtime_constructor() {
-    let value_expected = TypeKind::I32;
+    let value_expected: TypeKind = TypeKind::I32;
     let positional = PreparedConstraintSourceProjection::InferSpreadContainer {
         policy: ConstraintSourceContainerPolicy::Positional,
     };
-    for actual in [
+    let actuals: [TypeKind; 4] = [
         TypeKind::Vec(Box::new(TypeKind::I32)),
         TypeKind::Seq(Box::new(TypeKind::I32)),
         TypeKind::Slice(Box::new(TypeKind::I32)),
@@ -5289,14 +5300,15 @@ fn checked_rest_projection_retains_each_runtime_constructor() {
             item: Box::new(TypeKind::I32),
             len: super::super::ArrayLength::Const(4),
         },
-    ] {
+    ];
+    for actual in actuals {
         assert!(matches!(
             CheckedConstraintSourceProjection::derive(positional, &actual),
             Some(CheckedConstraintSourceProjection::SpreadContainer(_))
         ));
     }
 
-    let actual = TypeKind::Map {
+    let actual: TypeKind = TypeKind::Map {
         kind: super::super::MapKind::BTree,
         key: Box::new(TypeKind::String),
         value: Box::new(TypeKind::I32),

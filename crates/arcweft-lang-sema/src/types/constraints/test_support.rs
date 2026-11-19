@@ -70,10 +70,10 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_,
             })
     }
 
-    pub(in crate::types::constraints) fn open_fixture_template_type<L>(
+    pub(in crate::types::constraints) fn open_fixture_template_type(
         &mut self,
         value: &TypeKind,
-        path: &super::transaction::ConstraintInferenceBranch<D, L>,
+        path: &ConstraintPath<D>,
         application: super::application::ConstraintApplicationId,
         graph: &mut PreparedEffectGraph,
     ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {

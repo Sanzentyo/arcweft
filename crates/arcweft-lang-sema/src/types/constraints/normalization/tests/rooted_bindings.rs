@@ -89,8 +89,7 @@ fn outer_binding_cannot_capture_an_inner_effect_through_a_function_type() {
     let (mut context, path) = context(scope, &cancellation, 4096).into_path(&mut effect_graph);
     context
         .with_binder(GenericBinder::new(0, 0, 1), |context| {
-            let value = TypeKind::function_with_binder(
-                GenericBinder::EMPTY,
+            let value = TypeKind::function_with_canonical_effects(
                 [],
                 TypeKind::Bool,
                 EffectRow::open(
@@ -145,6 +144,8 @@ fn projecting_an_outer_binding_under_a_function_lifts_its_type_and_const_referen
         lifted,
         EffectRow::closed(EffectSet::new()),
     );
+    let input = context.prepare_fixture_type(&input).unwrap();
+    let expected = context.prepare_fixture_type(&expected).unwrap();
     let projected = project_type(
         &input,
         path.projection_view(),
@@ -181,6 +182,7 @@ fn a_binding_may_own_its_own_polymorphic_function_binder() {
         item,
         EffectRow::open(EffectSet::new(), own.bound_effect(0, 0).unwrap()),
     );
+    let value = context.prepare_fixture_type(&value).unwrap();
     let path = context
         .fixture_add_binding(path, types[0].clone(), &value, &mut effect_graph)
         .unwrap()

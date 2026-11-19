@@ -79,20 +79,23 @@ fn parameters(
 
 fn frontier(
     context: &mut Context<'_>,
+    graph: &mut PreparedEffectGraph,
     scope: TypeConstraintParameterScope,
     equations: &[(TypeKind, TypeKind)],
 ) -> SuspendedConstraintFrontier<NoConstraintClient> {
-    frontier_with_imported(context, scope, equations, None)
+    frontier_with_imported(context, graph, scope, equations, None)
 }
 
 fn frontier_with_imported(
     context: &mut Context<'_>,
+    graph: &mut PreparedEffectGraph,
     scope: TypeConstraintParameterScope,
     equations: &[(TypeKind, TypeKind)],
     imported: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
 ) -> SuspendedConstraintFrontier<NoConstraintClient> {
     frontier_equations(
         context,
+        graph,
         scope,
         equations,
         imported,
@@ -107,14 +110,23 @@ enum EquationOrigin {
 
 fn frontier_application(
     context: &mut Context<'_>,
+    graph: &mut PreparedEffectGraph,
     scope: TypeConstraintParameterScope,
     equations: &[(TypeKind, TypeKind)],
 ) -> SuspendedConstraintFrontier<NoConstraintClient> {
-    frontier_equations(context, scope, equations, None, EquationOrigin::Application)
+    frontier_equations(
+        context,
+        graph,
+        scope,
+        equations,
+        None,
+        EquationOrigin::Application,
+    )
 }
 
 fn frontier_equations(
     context: &mut Context<'_>,
+    graph: &mut PreparedEffectGraph,
     scope: TypeConstraintParameterScope,
     equations: &[(TypeKind, TypeKind)],
     imported: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
@@ -122,6 +134,7 @@ fn frontier_equations(
 ) -> SuspendedConstraintFrontier<NoConstraintClient> {
     let mut lower = TypeConstraintTransaction::initialize_with_imported_fixture(
         context,
+        graph,
         (),
         scope,
         None,
@@ -129,23 +142,28 @@ fn frontier_equations(
     )
     .unwrap();
     for (pattern, actual) in equations {
+        let pattern = context.prepare_fixture_type(pattern).unwrap();
+        let actual = context.prepare_fixture_type(actual).unwrap();
         match origin {
             EquationOrigin::Original => lower.constrain(
                 context,
-                pattern,
-                actual,
+                graph,
+                &pattern,
+                &actual,
                 ConstraintAcceptance::PatternAcceptsActual,
             ),
             EquationOrigin::Application => lower.constrain_application_template(
                 context,
-                pattern,
-                actual,
+                graph,
+                &pattern,
+                &actual,
                 ConstraintAcceptance::PatternAcceptsActual,
             ),
         }
     }
     lower.request_projection(
         context,
+        graph,
         (),
         &TypeKind::I64,
         TypeConstraintProjectionClosure::Closed,
@@ -162,13 +180,14 @@ fn array(length: ArrayLength) -> TypeKind {
 
 #[test]
 fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either_root() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, length) = parameters(2, 2);
     let first = frontier_application(
         &mut context,
+        &mut effects,
         scope.clone(),
         &[
             (
@@ -186,6 +205,7 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
         .unwrap();
     let second = frontier_application(
         &mut context,
+        &mut effects,
         scope,
         &[
             (TypeKind::GenericParam(ty[0].clone()), TypeKind::Bool),
@@ -228,7 +248,6 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
             Some(&ArrayLength::Const(7))
         );
     }
-    assert!(solved.effects.predicate().value().is_unconstrained());
     let ValueDefinition::Constraint { frontiers, .. } =
         &forest.original.value(&first).unwrap().definition
     else {
@@ -248,6 +267,12 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
     );
     assert!(!original.bindings.contains_key(&ty[1]));
     assert!(!original.const_bindings.contains_key(&length[1]));
+    let forest = forest.close(&[], &mut effects, &mut context).unwrap();
+    let solution = &forest.products[0]
+        .result
+        .as_ref()
+        .expect("closed joint product")[0];
+    assert!(solution.effects.predicate().value().is_unconstrained());
 }
 
 #[test]
@@ -266,7 +291,12 @@ fn original_products_keep_conflict_addresses_and_exclude_diagnostic_witnesses() 
             ),
         ]
     };
-    let root = frontier(&mut context, scope.clone(), &equations(TypeKind::Bool, 3));
+    let root = frontier(
+        &mut context,
+        &mut effects,
+        scope.clone(),
+        &equations(TypeKind::Bool, 3),
+    );
     component
         .admit_fixture_roots(&mut context, &mut effects, vec![root], "first")
         .unwrap();
@@ -278,6 +308,7 @@ fn original_products_keep_conflict_addresses_and_exclude_diagnostic_witnesses() 
     ] {
         roots.push(frontier(
             &mut context,
+            &mut effects,
             scope.clone(),
             &equations(value, count),
         ));
@@ -312,6 +343,7 @@ fn cross_root_structural_occurs_cycles_remain_original_product_rejections() {
     for (left, right) in [(0, 1), (1, 0)] {
         let root = frontier_equations(
             &mut context,
+            &mut effects,
             scope.clone(),
             &[(
                 TypeKind::GenericParam(ty[left].clone()),
@@ -341,11 +373,16 @@ fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
-    let first = frontier(&mut context, TypeConstraintParameterScope::empty(), &[]);
+    let first = frontier(
+        &mut context,
+        &mut effects,
+        TypeConstraintParameterScope::empty(),
+        &[],
+    );
     let first_id = first.transaction.application;
     let (scope, _, _) = parameters(1, 0);
     let required = scope.iter().next().unwrap().0.clone();
-    let second = frontier(&mut context, scope, &[]);
+    let second = frontier(&mut context, &mut effects, scope, &[]);
     let second_id = second.transaction.application;
     component
         .admit_fixture_roots(
@@ -397,6 +434,7 @@ fn one_application_opening_cannot_claim_independently_opened_ambient_binders() {
         let value = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
         let root = frontier(
             &mut context,
+            &mut effects,
             scope.clone(),
             &[(TypeKind::GenericParam(ty[0].clone()), value)],
         );
@@ -442,15 +480,17 @@ fn scoped_function(scope: &GenericScope, ambient_depth: u32) -> TypeKind {
 
 #[test]
 fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shapes() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, _) = parameters(1, 0);
     let root_scope = context.enter_binder_scope(GenericBinder::new(1, 1, 1));
     let value = scoped_function(context.lexical_scope(), 1);
+    let prepared_value = context.prepare_fixture_type(&value).unwrap();
     let first = frontier(
         &mut context,
+        &mut effects,
         scope.clone(),
         &[(TypeKind::GenericParam(ty[0].clone()), value.clone())],
     );
@@ -463,8 +503,10 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
         .unwrap();
     let outer = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
     let expected = scoped_function(context.lexical_scope(), 2);
+    let prepared_expected = context.prepare_fixture_type(&expected).unwrap();
     let second = frontier_with_imported(
         &mut context,
+        &mut effects,
         TypeConstraintParameterScope::empty(),
         &[(TypeKind::GenericParam(ty[0].clone()), expected.clone())],
         Some(lease),
@@ -495,7 +537,7 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
             .bindings
             .get(&ty[0])
             .map(|value| value.value()),
-        Some(&value)
+        Some(&prepared_value)
     );
     let projected = context
         .with_original_scope(product.scope.clone(), |context| {
@@ -508,7 +550,7 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
             )
         })
         .unwrap();
-    assert_eq!(projected.value, expected);
+    assert_eq!(projected.value, prepared_expected);
     assert!(context.lexical_scope().binders().is_empty());
 }
 
@@ -518,7 +560,12 @@ fn live_use_tickets_and_cancellation_cannot_publish_a_partial_original_forest() 
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
-    let root = frontier(&mut context, TypeConstraintParameterScope::empty(), &[]);
+    let root = frontier(
+        &mut context,
+        &mut effects,
+        TypeConstraintParameterScope::empty(),
+        &[],
+    );
     let value = component
         .admit_fixture_roots(&mut context, &mut effects, vec![root], "initializer")
         .unwrap();
@@ -637,6 +684,7 @@ fn exact_agreement_keeps_whole_choice_types_and_rejects_bottom_subtyping() {
         for value in [left, right] {
             let root = frontier(
                 &mut context,
+                &mut effects,
                 scope.clone(),
                 &[(TypeKind::GenericParam(ty[0].clone()), value)],
             );
@@ -660,7 +708,7 @@ fn exact_agreement_keeps_whole_choice_types_and_rejects_bottom_subtyping() {
 
 #[test]
 fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_completion() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     use crate::{
         effect_row::{EffectConstraintEligibility, EffectConstraintVariable},
         types::GenericEffectParameterId,
@@ -670,7 +718,7 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
     let mut component = Component::new(&mut context, &effects).unwrap();
     let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(9482));
     let ty = GenericTypeParameterId::new(owner.clone(), 0);
-    let effects: Vec<crate::types::GenericEffectReference> = (0..2)
+    let declarations: Vec<crate::types::GenericEffectReference> = (0..2)
         .map(|slot| GenericEffectParameterId::new(owner.clone(), slot).into())
         .collect();
     let scope = TypeConstraintParameterScope::seal_call_scope(
@@ -681,7 +729,7 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
         )],
         [],
         TypeConstraintEffectScope::seal_call_scope(
-            effects.iter().map(|reference| {
+            declarations.iter().map(|reference| {
                 EffectConstraintVariable::new(
                     reference.clone(),
                     EffectConstraintEligibility::Bindable,
@@ -695,15 +743,16 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
     )
     .unwrap();
     let ty = scope.type_reference(&ty.into()).unwrap();
-    let effects: Vec<_> = effects
+    let effect_keys: Vec<_> = declarations
         .iter()
         .map(|reference| scope.effect_reference(reference).unwrap())
         .collect();
-    let row = |index: usize| EffectRow::open(EffectSet::new(), effects[index].clone());
+    let row = |index: usize| EffectRow::open(EffectSet::new(), effect_keys[index].clone());
     let function = |row| TypeKind::function_with_effects([], TypeKind::Bool, row);
     let log = EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap());
     let mut first = frontier_application(
         &mut context,
+        &mut effects,
         scope.clone(),
         &[(TypeKind::GenericParam(ty.clone()), function(row(0)))],
     );
@@ -713,7 +762,7 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
         .constrain_fixture_subset(&mut effects, &log, &union, &mut context)
         .unwrap();
     assert!(matches!(
-        first.transaction.frontier[0].effects.complete(&mut context),
+        first.transaction.frontier[0].close_original_path_effects(&mut effects, &mut context),
         Err(TypeConstraintError::Rejected(_))
     ));
     let first = component
@@ -726,6 +775,7 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
         .unwrap();
     let second = frontier_application(
         &mut context,
+        &mut effects,
         scope,
         &[(TypeKind::GenericParam(ty), function(log.clone()))],
     );
@@ -740,17 +790,18 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
     let forest = component
         .infer_original_products(&mut context, &mut effects)
         .unwrap();
+    let forest = forest.close(&[], &mut effects, &mut context).unwrap();
     let solution = &forest.products[0]
         .result
         .as_ref()
         .ok()
         .expect("joint effect inference is principal")[0];
     assert_eq!(
-        solution.effects.row(&effects[0]).map(|row| row.value()),
+        solution.effects.row(&effect_keys[0]).map(|row| row.value()),
         Some(&log)
     );
     assert_eq!(
-        solution.effects.row(&effects[1]).map(|row| row.value()),
+        solution.effects.row(&effect_keys[1]).map(|row| row.value()),
         Some(&EffectRow::closed(EffectSet::new()))
     );
     let ValueDefinition::Constraint { frontiers, .. } =
@@ -760,8 +811,7 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
     };
     assert!(matches!(
         frontiers[0].transaction.frontier[0]
-            .effects
-            .complete(&mut context),
+            .close_original_path_effects(&mut effects, &mut context),
         Err(TypeConstraintError::Rejected(_))
     ));
 }
@@ -775,6 +825,7 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
     let (scope, ty, _) = parameters(1, 0);
     let root = frontier(
         &mut context,
+        &mut effects,
         scope,
         &[(TypeKind::GenericParam(ty[0].clone()), TypeKind::Bool)],
     );
@@ -896,7 +947,7 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
     let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, _) = parameters(1, 0);
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
-    let first = frontier(&mut context, scope, &[]);
+    let first = frontier(&mut context, &mut effects, scope, &[]);
     let owner = first.transaction.frontier[0].lineage.scope.clone();
     let lease = first.transaction.frontier[0]
         .applications

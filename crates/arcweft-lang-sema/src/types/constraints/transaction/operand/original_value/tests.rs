@@ -332,7 +332,7 @@ fn a_candidates_rigid_inventory_cannot_admit_a_foreign_original_value() {
     );
     let value = TypeKind::GenericParam(candidate.types[0].clone());
     assert_eq!(
-        ConstraintOperand::<NoConstraintClient>::from_original_in(
+        ConstraintOperand::<NoConstraintClient, TypeKind>::from_original_in(
             &value,
             scope,
             original,
@@ -355,7 +355,7 @@ fn original_value_admission_stops_before_copying_when_its_budget_is_exhausted() 
         LocalConstraintAccounting::new(TypeConstraintLimits::new(0, 0, 0, 0), &cancellation),
     );
     assert!(matches!(
-        ConstraintOperand::<NoConstraintClient>::from_original_in(
+        ConstraintOperand::<NoConstraintClient, TypeKind>::from_original_in(
             &TypeKind::Tuple(vec![TypeKind::I64]),
             scope,
             original,
@@ -469,7 +469,7 @@ fn original_admission_rejects_equally_shaped_foreign_ambient_frames() {
         ),
     ];
     for (value, parameter) in cases {
-        let admitted = ConstraintOperand::<NoConstraintClient>::from_original_in(
+        let admitted = ConstraintOperand::<NoConstraintClient, TypeKind>::from_original_in(
             &value,
             Arc::clone(&target),
             original.clone(),
@@ -549,7 +549,7 @@ fn original_admission_lifts_ambient_type_const_effect_and_predicate_but_keeps_lo
     };
     let value = make(original.scope(), &mut context);
     let expected = make(target.shape(), &mut context);
-    let admitted = ConstraintOperand::<NoConstraintClient>::from_original_in(
+    let admitted = ConstraintOperand::<NoConstraintClient, TypeKind>::from_original_in(
         &value,
         Arc::clone(&target),
         original.clone(),

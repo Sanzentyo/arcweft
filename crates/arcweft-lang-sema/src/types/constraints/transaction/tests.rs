@@ -1417,24 +1417,24 @@ fn fixed_effect_evidence_rejects_shrinking_and_expanding_function_relations() {
             None,
         )
         .unwrap();
-        let projected = PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), variable));
+        let projected = EffectRow::open(EffectSet::new(), variable);
         transaction.constrain_effect_equality(
             &mut context,
             &mut effect_graph,
-            &projected,
+            &PreparedEffectRow::Canonical(projected.clone()),
             &PreparedEffectRow::Canonical(EffectRow::closed(
                 EffectSet::from_labels(["fs.read"]).unwrap(),
             )),
         );
-        let projected = TypeKind::function_with_effects([], TypeKind::I64, projected);
-        let incompatible = TypeKind::function_with_effects(
+        let projected = TypeKind::function_with_canonical_effects([], TypeKind::I64, projected);
+        let incompatible = TypeKind::function_with_canonical_effects(
             [],
             TypeKind::I64,
-            PreparedEffectRow::Canonical(EffectRow::closed(if shrink {
+            EffectRow::closed(if shrink {
                 EffectSet::new()
             } else {
                 EffectSet::from_labels(["fs.read", "fs.write"]).unwrap()
-            })),
+            }),
         );
         let (pattern, actual) = if shrink {
             (&incompatible, &projected)
