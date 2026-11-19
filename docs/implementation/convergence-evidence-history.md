@@ -20013,3 +20013,16 @@ Sema 全featureユニットは1,987件中1,872 PASS、115 FAIL、0 SKIP。前回
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。公開した変更の全8 blob を検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-recursive-callback-bound.raw.zip) は23 entry、507,846 bytes、SHA256 `fb12648ba9eeae5d36033a8fa6c6b486db5630daaf19564072702e01ff0d9df7`。各原本の長さとハッシュを照合した。
+
+<a id="attached-callback-closure"></a>
+## 2026-11-19 — attached default が呼ぶ再帰 callback の効果行を確定
+
+基点 `0596863b1a9aa372b3f8895331bc06c9dcd898b8`。Source `5e051face1f3ff608edf6a1df10f5591e3b5271b`。両方の効果行が閉じる条件が成り立たないと確定した場合は、効果行の包含と両オペランドの適用条件を検査する。権限ラベルの被覆判定は、両行が閉じている可能性がある場合に計算する。効果成分のコンパイルは同じ順序付き量化変数を持つ条件で項の変換結果を共有し、各条件の全称量化を維持する。残余効果式には各条件の前提と結論をそのまま保持する。
+
+修復前の2件は attached default を実行する前に、そこで呼ばれる再帰ジェネリック関数自身の再帰呼出しを型検査していた。候補の総作業上限4,096に達し、外側には `CallResolutionFailed` が返っていた。上限を一時的に16,384とした診断で既存の実行・復元テスト2件が通過し、観測した候補の作業が最大4,520だったことを確認した。効果成分の確定を短縮した試作では、同じ候補で最大3,995を観測した。初回の全件検証で、試作に含まれていた無条件の前提の省略が残余効果式の観測テストを失敗させた。残余効果式の変更を取り除き、本番上限4,096と元のテスト条件で再検証した。
+
+`flow_wait` は32 PASS、0 FAIL。以前失敗した2件とも、共有した前段適用の後ろに異なる型と効果を持つ callback を渡す。Native の停止・再開と、正準符号を復号した AWBC の毎ステップ公開保存・復元で、再開後のログ3件を順に観測し、戻り値42を確認した。Compilerの他の統合5 targetは550件中541 PASS、既知9 FAIL。全582件の比較で新規失敗は0。Sema全featureユニットは1,987件中 1,872 PASS、115 FAIL、0 SKIP。全IDと合否は先行実測と一致した。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22 パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。公開した3 Rust blobを照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-attached-callback-closure.raw.zip) は 31 entry、701,676 bytes、SHA256 `75b4cf11960dabd161fb1879c543b9463420b847a605e49d35aeb48316a84292`。各原本の長さとハッシュを照合した。
