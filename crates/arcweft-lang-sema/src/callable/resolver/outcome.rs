@@ -1061,19 +1061,6 @@ impl PreparedResolvedCallable {
             None => self.complete_application(),
         }
     }
-
-    pub(crate) fn project_application_result(
-        &self,
-        transition: CallableGroupTransition,
-        terminal_effects: CallableTerminalEffectProjection<'_>,
-    ) -> Result<CallableProjection<CallableResultSchema>, super::super::CallConstraintInvariant>
-    {
-        if transition.position() != self.position() {
-            return Err(super::super::CallConstraintInvariant::PreparedGroupMismatch);
-        }
-        self.definition
-            .projected_result_after_group(transition, terminal_effects)
-    }
 }
 
 fn underlying_candidate(id: &CallableCandidateId) -> &CallableCandidateId {

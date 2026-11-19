@@ -4,23 +4,28 @@
 //! independent values.  Those values are sealed together here and can only
 //! be inspected through callable-owned projections. The analyzer receives
 //! the application as part of its prepared prefix, but cannot construct one
-//! or obtain the raw lower solution from this module. Its result is projected
-//! once from the borrowed checked-catalog row and retained as an application
-//! result, never as a second effect-row authority.
+//! or obtain the raw lower solution from this module. The result and solution
+//! are issued together by the completed constraint application. Final sealing
+//! checks that result against the frozen declaration.
 
 use std::sync::Arc;
 use thiserror::Error;
 
 use crate::{
     effect_row::EffectRow,
-    types::{TypeKind, constraints::TypeConstraintSolution},
+    types::{
+        TypeKind,
+        constraints::{
+            CompletedConstraintComponent, ConstraintDomain, TypeConstraintInvariant,
+            TypeConstraintProjectionInvariant, TypeConstraintSolution,
+        },
+    },
 };
 
 use super::{
     CallConstraintInvariant, CallableGroupIndex, CallableParameterCoordinate, CallableResultSchema,
-    CallableSignatureSchemaDigest, CallableTerminalEffectProjection,
-    DetachedPreparedResolvedCallable, PreparedResolvedCallable,
-    PreparedResolvedCallableDetachArena, schema::CallableGroupTransition,
+    CallableSignatureSchema, CallableSignatureSchemaDigest, DetachedPreparedResolvedCallable,
+    PreparedResolvedCallable, PreparedResolvedCallableDetachArena, schema::CallableGroupTransition,
 };
 
 /// One selected callable together with the exact group transition and lower
@@ -32,6 +37,54 @@ pub(crate) struct PreparedCallableApplication {
     transition: CallableGroupTransition,
     solution: Arc<TypeConstraintSolution>,
     result: CallableResultSchema,
+}
+
+/// The result and solution of the same completed application. The component
+/// supplies both from one application address, including nested applications.
+pub(crate) struct CompletedCallResult {
+    schema: CallableSignatureSchemaDigest,
+    solution: Arc<TypeConstraintSolution>,
+    result: CallableResultSchema,
+}
+
+impl CompletedCallResult {
+    pub(crate) fn from_component<D: ConstraintDomain>(
+        component: &CompletedConstraintComponent<D>,
+        application: D::Application,
+        result_key: &D::Projection,
+        schema: &CallableSignatureSchema,
+    ) -> Result<Self, CallConstraintInvariant> {
+        let application = component
+            .application(application)
+            .ok_or(CallConstraintInvariant::PreparedCallSiteMismatch)?;
+        let projection = application
+            .projections()
+            .iter()
+            .find(|projection| projection.key() == result_key);
+        let result = match (schema.result_schema(), projection) {
+            (CallableResultSchema::Value(_), Some(projection)) => {
+                CallableResultSchema::Value(projection.to_quantified_type()?)
+            }
+            (CallableResultSchema::ContentEmission(operation), None) => {
+                CallableResultSchema::ContentEmission(*operation)
+            }
+            (CallableResultSchema::Value(_), None) => {
+                return Err(CallConstraintInvariant::Lower(
+                    TypeConstraintInvariant::Projection(
+                        TypeConstraintProjectionInvariant::MissingKey,
+                    ),
+                ));
+            }
+            (CallableResultSchema::ContentEmission(_), Some(_)) => {
+                return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
+            }
+        };
+        Ok(Self {
+            schema: schema.semantic_digest(),
+            solution: Arc::clone(application.solution()),
+            result,
+        })
+    }
 }
 
 /// Read-only effect projection capability for one exact prepared application.
@@ -97,21 +150,25 @@ impl PreparedCallableApplication {
     pub(crate) fn seal_from_selected_transaction(
         selected: Arc<PreparedResolvedCallable>,
         mapping: &super::PreparedCallArgumentMapping,
-        solution: Arc<TypeConstraintSolution>,
-        terminal_effects: CallableTerminalEffectProjection<'_>,
+        completed: CompletedCallResult,
     ) -> Result<Self, CallConstraintInvariant> {
         let transition = selected.application_transition(mapping)?;
-        let declared = selected
-            .project_application_result(transition, terminal_effects)?
-            .into_ready()?;
-        let result = match declared {
-            CallableResultSchema::Value(value) => {
-                CallableResultSchema::Value(solution.apply_result_template(&value)?)
-            }
-            CallableResultSchema::ContentEmission(operation) => {
-                CallableResultSchema::ContentEmission(operation)
-            }
-        };
+        let CompletedCallResult {
+            schema,
+            solution,
+            result,
+        } = completed;
+        if schema != selected.schema().semantic_digest() {
+            return Err(CallConstraintInvariant::PreparedSchemaMismatch);
+        }
+        if transition.continuation_position().is_some()
+            && !matches!(
+                &result,
+                CallableResultSchema::Value(TypeKind::Function { .. })
+            )
+        {
+            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        }
         Ok(Self {
             selected,
             transition,

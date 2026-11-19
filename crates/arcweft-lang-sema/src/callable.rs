@@ -38,7 +38,7 @@ pub use catalog::{
 pub use crate::types::StandardMapFamily;
 pub use crate::types::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub(crate) use application::{
-    DetachedPreparedCallableApplication, PreparedCallableApplication,
+    CompletedCallResult, DetachedPreparedCallableApplication, PreparedCallableApplication,
     PreparedCallableApplicationReplayMismatch, PreparedCallableEffectProjection,
 };
 pub use arcweft_presentation::fx::FxSourceConstructor;

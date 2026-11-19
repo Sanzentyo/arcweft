@@ -34,11 +34,11 @@ pub(crate) enum PreparedCallableValueTypeFailure<E: std::error::Error + 'static>
     ),
 }
 
-/// Value results enter inference with their live effect terms. Content has no
-/// type projection and retains its typed operation identity.
+/// Value results enter inference with their live effect terms. A content
+/// emission has no value projection; its operation belongs to the schema.
 pub(crate) enum PreparedApplicationResult {
     Value(TypeKind<crate::types::PreparedEffects>),
-    ContentEmission(crate::callable::ContentCallableIdentity),
+    ContentEmission,
 }
 
 pub(crate) struct PreparedCallableEffectDeclarations {
@@ -416,8 +416,8 @@ impl<P, U> PreparedCallGraph<P, U> {
                             super::super::schema::CallableFunctionTypeProjectionError::Projection,
                         )?,
                 ),
-                CallableResultSchema::ContentEmission(identity) => {
-                    PreparedApplicationResult::ContentEmission(*identity)
+                CallableResultSchema::ContentEmission(_) => {
+                    PreparedApplicationResult::ContentEmission
                 }
             });
         };

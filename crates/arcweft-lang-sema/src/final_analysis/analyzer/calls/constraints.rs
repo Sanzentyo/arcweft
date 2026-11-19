@@ -25,7 +25,7 @@ use crate::{
         CallableSchemaGenericRole, CallableSemanticValueGuard, CallableValidator,
         CandidateConstraintDriver, CandidateConstraintSourceContext, CheckedCallArgumentSlotSource,
         CheckedCallResolverAuthority, CheckedCallSite, CheckedSemanticValueEvidence,
-        DetachedPreparedResolvedCallable, EnclosingGenericParameterScope,
+        CompletedCallResult, DetachedPreparedResolvedCallable, EnclosingGenericParameterScope,
         ObservedSemanticValueEvidence, ParameterExpectedTypeProjection, PreparedApplicationResult,
         PreparedArgumentSourceProjection, PreparedCallCalleeConstraintInputs, PreparedCallGraph,
         PreparedCallInputs, PreparedCallPrefixPayload, PreparedCallSemanticOperand,
@@ -3568,7 +3568,7 @@ enum PreparedCallOutput<'a> {
         expected: Option<PreparedCallResultConstraint<'a>>,
         next_parameters: Option<(TypeKind<PreparedEffects>, TypeKind<PreparedEffects>)>,
     },
-    ContentEmission(crate::callable::ContentCallableIdentity),
+    ContentEmission,
 }
 
 pub(super) struct PreparedCallOutputProjections<'a> {
@@ -3945,11 +3945,11 @@ impl PreparedCallConstraintSet {
                     next_parameters,
                 }
             }
-            PreparedApplicationResult::ContentEmission(operation) => {
+            PreparedApplicationResult::ContentEmission => {
                 if expected_result.is_some() || expected_application_callee.is_some() {
                     return Err(result_mismatch());
                 }
-                PreparedCallOutput::ContentEmission(operation)
+                PreparedCallOutput::ContentEmission
             }
         };
         Ok(PreparedCallOutputProjections {
@@ -4125,7 +4125,7 @@ struct RanCandidateTransactionData {
     callee_inputs: PreparedCallCalleeConstraintInputs,
     inputs: PreparedCallInputs,
     current_group: CallableGroupIndex,
-    result: CallableResultSchema,
+    result: CompletedCallResult,
     component:
         crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>,
     sealed_branch: AnalyzerCallSealedBranch,
@@ -4324,7 +4324,6 @@ impl RanCandidateTransaction {
     /// sole analyzer-to-callable application sealing seam.
     pub(crate) fn into_prepared_application(
         self,
-        checked_authority: CheckedCallResolverAuthority<'_>,
     ) -> Result<PreparedCallApplicationTransaction, CallConstraintInvariant> {
         let RanCandidateTransactionData {
             application: application_owner,
@@ -4339,23 +4338,13 @@ impl RanCandidateTransaction {
         } = *self.data;
         let component =
             CompletedCallApplicationEvidence::new(Arc::new(component), application_owner)?;
-        let solution = component
-            .component()
-            .application(CallableConstraintApplication::Call(application_owner))
-            .ok_or(CallConstraintInvariant::PreparedCallSiteMismatch)?
-            .solution();
-        let terminal_effects = checked_authority
-            .terminal_effects_for(&candidate)
-            .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
         let application = PreparedCallableApplication::seal_from_selected_transaction(
-            Arc::clone(&candidate),
+            candidate,
             inputs.mapping(),
-            Arc::clone(solution),
-            terminal_effects,
+            result,
         )?;
-        let projected_result = application.result_schema()?;
-        if application.completed_group() != current_group || projected_result != result {
-            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        if application.completed_group() != current_group {
+            return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
         Ok(PreparedCallApplicationTransaction {
             data: Box::new(PreparedCallApplicationTransactionData {
@@ -4390,22 +4379,18 @@ impl PreparedCallApplicationTransaction {
         component: Arc<
             crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>,
         >,
-        checked_authority: CheckedCallResolverAuthority<'_>,
     ) -> Result<Self, CallConstraintInvariant> {
         let evidence = CompletedCallApplicationEvidence::new(component, recipe.owner)?;
-        let solution = evidence
-            .component()
-            .application(CallableConstraintApplication::Call(recipe.owner))
-            .ok_or(CallConstraintInvariant::PreparedCallSiteMismatch)?
-            .solution();
-        let terminal_effects = checked_authority
-            .terminal_effects_for(&recipe.candidate)
-            .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
+        let result = CompletedCallResult::from_component(
+            evidence.component(),
+            CallableConstraintApplication::Call(recipe.owner),
+            &AnalyzerCallProjection::Result,
+            recipe.candidate.schema(),
+        )?;
         let application = PreparedCallableApplication::seal_from_selected_transaction(
             Arc::clone(&recipe.candidate),
             recipe.inputs.mapping(),
-            Arc::clone(solution),
-            terminal_effects,
+            result,
         )?;
         if application.completed_group() != recipe.group {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
@@ -4609,10 +4594,6 @@ impl SealedAcceptedCandidate {
 }
 
 impl RanCandidateTransaction {
-    pub(crate) fn result(&self) -> &CallableResultSchema {
-        &self.data.result
-    }
-
     /// Consume a completed lower transaction for deterministic unselected
     /// recovery. The callback branch remains affine and travels with the
     /// exact candidate that produced it.
@@ -6732,40 +6713,34 @@ pub(crate) fn run_prepared_candidate(
         }
     };
     let current_group = candidate.call_group();
-    let result = match output.result {
-        PreparedCallOutput::ContentEmission(operation) => {
-            Ok(CallableResultSchema::ContentEmission(operation))
-        }
-        PreparedCallOutput::Value { .. } => (|| {
-            let projection = solved
-                .component
-                .selected()
-                .projections()
-                .iter()
-                .find(|projection| projection.key() == &AnalyzerCallProjection::Result)
-                .ok_or_else(|| {
-                    TypeConstraintFailure::Invariant(
-                        TypeConstraintFailureInvariant::Constraint(
-                            TypeConstraintInvariant::Projection(
-                                crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,
-                            ),
-                        ),
-                    )
-                })?;
-            let result = projection.to_quantified_type().map_err(|error| {
-                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
-                    TypeConstraintInvariant::Instantiation(error),
-                ))
-            })?;
-            Ok(CallableResultSchema::Value(result))
-        })(),
-    };
-    let result = match result {
+    let result = match CompletedCallResult::from_component(
+        &solved.component,
+        CallableConstraintApplication::Call(application),
+        &AnalyzerCallProjection::Result,
+        candidate.schema(),
+    ) {
         Ok(result) => result,
-        Err(failure) => {
+        Err(error) => {
             drop(solved);
             nested_owners.discard_all(analyzer)?;
-            return Err(failure);
+            return Err(match error {
+                CallConstraintInvariant::Lower(error) => TypeConstraintFailure::Invariant(
+                    TypeConstraintFailureInvariant::Constraint(error),
+                ),
+                CallConstraintInvariant::Instantiation(error) => {
+                    TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
+                        TypeConstraintInvariant::Instantiation(error),
+                    ))
+                }
+                error => TypeConstraintFailure::client_invariant(
+                    AnalyzerCallClientInvariant::constraint(
+                        AnalyzerCallConstraintSource::Result {
+                            source: application,
+                        },
+                        error,
+                    ),
+                ),
+            });
         }
     };
     let crate::types::constraints::SolvedCandidate {
@@ -7411,7 +7386,7 @@ pub(crate) fn run_prepared_child_candidate(
             )),
         ));
     };
-    if matches!(output.result, PreparedCallOutput::ContentEmission(_)) {
+    if matches!(output.result, PreparedCallOutput::ContentEmission) {
         return Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Projection(
                 crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,

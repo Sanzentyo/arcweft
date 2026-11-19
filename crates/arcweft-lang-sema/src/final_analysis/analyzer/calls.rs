@@ -2628,15 +2628,14 @@ impl Analyzer<'_, '_, '_> {
                 ));
             }
         };
-        let transaction = ran
-            .into_prepared_application(
-                self.checked_callable_effect_authority_with_projection(&outer_projection)
-                    .map_err(AnalyzerExpressionError::fatal)?,
-            )
-            .map_err(|error| AnalyzerExpressionError::Call {
-                owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
-            })?;
+        let transaction =
+            ran.into_prepared_application()
+                .map_err(|error| AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        error,
+                    )),
+                })?;
         let inventory = AnalyzerPreparedCandidateInventory::from_considered(
             transaction.candidate(),
             considered,
@@ -2960,15 +2959,14 @@ impl Analyzer<'_, '_, '_> {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
         };
-        let transaction = ran
-            .into_prepared_application(
-                self.checked_callable_effect_authority_with_projection(&outer_projection)
-                    .map_err(AnalyzerExpressionError::fatal)?,
-            )
-            .map_err(|error| AnalyzerExpressionError::Call {
-                owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
-            })?;
+        let transaction =
+            ran.into_prepared_application()
+                .map_err(|error| AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        error,
+                    )),
+                })?;
         let inventory = AnalyzerPreparedCandidateInventory::from_considered(
             transaction.candidate(),
             vec![Arc::clone(&candidate)],
@@ -3056,20 +3054,12 @@ impl Analyzer<'_, '_, '_> {
             self.discard_candidate_semantic_projection(source.owner, projection)?;
         }
         let (selected_ran, outer_projection) = selected_transaction.into_parts();
-        let selected_transaction = selected_ran
-            .into_prepared_application(
-                self.checked_callable_effect_authority_with_projection(&outer_projection)
-                    .map_err(AnalyzerExpressionError::fatal)
-                    .map_err(CandidateFactOperationFailure::Expression)?,
-            )
-            .map_err(|error| {
-                CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                    owner: source.owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        error,
-                    )),
-                })
-            })?;
+        let selected_transaction = selected_ran.into_prepared_application().map_err(|error| {
+            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                owner: source.owner,
+                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
+            })
+        })?;
         let selected = selected_transaction.selected_shared().clone();
         let specialization = selected_transaction
             .specialization_result()
@@ -3421,9 +3411,6 @@ impl Analyzer<'_, '_, '_> {
         let transaction = PreparedCallApplicationTransaction::from_completed_nested_call(
             &recipe,
             Arc::clone(&component),
-            self.checked_callable_effect_authority()
-                .map_err(AnalyzerExpressionError::fatal)
-                .map_err(CandidateFactOperationFailure::Expression)?,
         )
         .map_err(|error| {
             CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
