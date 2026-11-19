@@ -25,7 +25,7 @@ use crate::effect_row::{
 #[cfg(test)]
 use crate::types::{GenericConstParameterId, GenericTypeParameterId};
 use crate::types::{
-    GenericConstReference, GenericEffectReference, GenericTypeReference, TypeKind,
+    GenericConstReference, GenericEffectReference, GenericTypeReference, PreparedEffects, TypeKind,
     constraints::{
         TypeConstraintConstEligibility, TypeConstraintEffectScope, TypeConstraintInvariant,
         TypeConstraintParameterEligibility, TypeConstraintParameterScope, TypeConstraintRejection,
@@ -565,9 +565,12 @@ impl Eq for PreparedCallContinuationRef {}
 
 /// The selected application's delivery, checked against the result at its site.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PreparedCallSiteDelivery {
-    Continuation(PreparedCallContinuationRef),
-    Value,
+pub(crate) enum PreparedCallSiteDelivery<'a> {
+    Continuation {
+        reference: PreparedCallContinuationRef,
+        result: &'a TypeKind<PreparedEffects>,
+    },
+    Value(&'a TypeKind),
 }
 
 pub(crate) struct PreparedCallContinuationSeed {
@@ -1176,7 +1179,7 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
     pub(crate) fn selected_value_delivery(
         &self,
         site: CheckedCallSite,
-    ) -> Result<(PreparedCallSiteDelivery, &'a TypeKind), CallConstraintInvariant>
+    ) -> Result<PreparedCallSiteDelivery<'a>, CallConstraintInvariant>
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
@@ -1198,7 +1201,7 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 else {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 };
-                Ok((PreparedCallSiteDelivery::Continuation(reference), result))
+                Ok(PreparedCallSiteDelivery::Continuation { reference, result })
             }
             PreparedCallNodePayload::SelectedTerminal(prefix) => {
                 prefix.validate_site(site)?;
@@ -1210,7 +1213,7 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 if application.continuation_position().is_some() {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 }
-                Ok((PreparedCallSiteDelivery::Value, result))
+                Ok(PreparedCallSiteDelivery::Value(result))
             }
             PreparedCallNodePayload::Unselected(_) => {
                 Err(CallConstraintInvariant::InvalidPreparedNodeState)

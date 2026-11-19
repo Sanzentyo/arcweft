@@ -532,10 +532,20 @@ impl Analyzer<'_, '_, '_> {
             .facts
             .prepared_calls()
             .map_err(|error| AnalyzerExpressionError::fact(error).into_public(owner))?;
-        let (stage, result) = PreparedCallGraphIngress::new(graph)
+        let delivery = PreparedCallGraphIngress::new(graph)
             .selected_value_delivery(site)
             .map_err(|error| call_storage_error(site, error))?;
-        let retained = self.retain_source_value_type(context, owner, result)?;
+        let (retained, terminal_result) = match delivery {
+            PreparedCallSiteDelivery::Value(result) => (
+                self.retain_source_value_type(context, owner, result)?,
+                Some(result),
+            ),
+            PreparedCallSiteDelivery::Continuation { result, .. } => {
+                let types = self.source_type_preparation(context.work())?;
+                let effects = self.facts.effect_declarations()?.read();
+                (types.retain_prepared(owner, result, effects)?, None)
+            }
+        };
         if source != &retained {
             return Err(call_storage_error(
                 site,
@@ -547,7 +557,7 @@ impl Analyzer<'_, '_, '_> {
                 site,
                 |prefix| {
                     let selected = prefix.application().selected();
-                    if matches!(stage, PreparedCallSiteDelivery::Value) {
+                    if let Some(result) = terminal_result {
                         let constructor = matches!(
                             selected.id(),
                             CallableCandidateId::EnumVariant(_)
@@ -574,7 +584,7 @@ impl Analyzer<'_, '_, '_> {
                         if let Some((selection, remaining)) = work.selected_storage(call.result)? {
                             projected_constructor_sources(
                                 prefix,
-                                &result,
+                                result,
                                 (selection, remaining),
                                 work,
                                 receiver,

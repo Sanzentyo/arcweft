@@ -1687,7 +1687,8 @@ fn seal_selected_call(
     };
     let application = crate::callable::CheckedCallApplication::seal(
         core,
-        prepared_result,
+        prepared_result
+            .close_continuation(|ty| sources.types.source(record.expression)?.canonical(ty))?,
         terminal_effects.as_ref(),
         inferred_result_schema,
         selected_display_witness,

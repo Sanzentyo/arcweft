@@ -4322,9 +4322,10 @@ impl RanCandidateTransaction {
 
     /// Consume the complete lower transaction exactly once.  This is the
     /// sole analyzer-to-callable application sealing seam.
-    pub(crate) fn into_prepared_application(
+    pub(super) fn into_prepared_application(
         self,
-    ) -> Result<PreparedCallApplicationTransaction, CallConstraintInvariant> {
+        control: &mut super::super::preparation_work::AnalyzerPreparationWork<'_>,
+    ) -> Result<PreparedCallApplicationTransaction, AnalyzerExpressionError> {
         let RanCandidateTransactionData {
             application: application_owner,
             candidate,
@@ -4337,14 +4338,20 @@ impl RanCandidateTransaction {
             sealed_branch,
         } = *self.data;
         let component =
-            CompletedCallApplicationEvidence::new(Arc::new(component), application_owner)?;
+            CompletedCallApplicationEvidence::new(Arc::new(component), application_owner)
+                .map_err(|error| selected_application_error(application_owner, error.into()))?;
         let application = PreparedCallableApplication::seal_from_selected_transaction(
             candidate,
             inputs.mapping(),
             result,
-        )?;
+            control,
+        )
+        .map_err(|error| selected_application_error(application_owner, error))?;
         if application.completed_group() != current_group {
-            return Err(CallConstraintInvariant::PreparedGroupMismatch);
+            return Err(selected_application_error(
+                application_owner,
+                CallConstraintInvariant::PreparedGroupMismatch.into(),
+            ));
         }
         Ok(PreparedCallApplicationTransaction {
             data: Box::new(PreparedCallApplicationTransactionData {
@@ -4356,6 +4363,27 @@ impl RanCandidateTransaction {
                 component,
             }),
         })
+    }
+}
+
+fn selected_application_error(
+    owner: ExprId,
+    failure: crate::callable::PreparedCallApplicationFailure<
+        crate::final_analysis::FinalSemanticAnalysisError,
+    >,
+) -> AnalyzerExpressionError {
+    use crate::callable::PreparedCallApplicationFailure;
+    match failure {
+        PreparedCallApplicationFailure::Invariant(error) => AnalyzerExpressionError::Call {
+            owner,
+            failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
+        },
+        PreparedCallApplicationFailure::ResultType(error) => AnalyzerExpressionError::fatal(
+            crate::final_analysis::FinalSemanticAnalysisError::source_type_projection(
+                owner.into(),
+                error,
+            ),
+        ),
     }
 }
 
@@ -4374,26 +4402,34 @@ impl PreparedCallApplicationTransaction {
             &AnalyzerCallProjection::Result,
         )
     }
-    pub(crate) fn from_completed_nested_call(
+    pub(super) fn from_completed_nested_call(
         recipe: &super::PreparedCorrelatedCallRecipe,
         component: Arc<
             crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>,
         >,
-    ) -> Result<Self, CallConstraintInvariant> {
-        let evidence = CompletedCallApplicationEvidence::new(component, recipe.owner)?;
+        control: &mut super::super::preparation_work::AnalyzerPreparationWork<'_>,
+    ) -> Result<Self, AnalyzerExpressionError> {
+        let evidence = CompletedCallApplicationEvidence::new(component, recipe.owner)
+            .map_err(|error| selected_application_error(recipe.owner, error.into()))?;
         let result = CompletedCallResult::from_component(
             evidence.component(),
             CallableConstraintApplication::Call(recipe.owner),
             &AnalyzerCallProjection::Result,
             recipe.candidate.schema(),
-        )?;
+        )
+        .map_err(|error| selected_application_error(recipe.owner, error.into()))?;
         let application = PreparedCallableApplication::seal_from_selected_transaction(
             Arc::clone(&recipe.candidate),
             recipe.inputs.mapping(),
             result,
-        )?;
+            control,
+        )
+        .map_err(|error| selected_application_error(recipe.owner, error))?;
         if application.completed_group() != recipe.group {
-            return Err(CallConstraintInvariant::PreparedGroupMismatch);
+            return Err(selected_application_error(
+                recipe.owner,
+                CallConstraintInvariant::PreparedGroupMismatch.into(),
+            ));
         }
         Ok(Self {
             data: Box::new(PreparedCallApplicationTransactionData {

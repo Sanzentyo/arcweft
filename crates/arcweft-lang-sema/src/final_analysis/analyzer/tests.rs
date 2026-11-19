@@ -1122,15 +1122,13 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
                             observe: &|_, _| {
                                 panic!("continuation lookup observes no canonical operand")
                             },
-                            retain: &|owner, ty| {
-                                types.retain_prepared(
+                            retain: &|owner, ty| match override_result {
+                                Some(ty) => types.retain(owner, ty),
+                                None => types.retain_prepared(
                                     owner,
                                     ty,
                                     this.facts.effect_declarations()?.read(),
-                                )
-                            },
-                            retain_result: &|owner, ty| {
-                                types.retain(owner, override_result.unwrap_or(ty))
+                                ),
                             },
                         },
                     ),

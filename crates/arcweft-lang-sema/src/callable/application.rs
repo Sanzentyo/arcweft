@@ -14,7 +14,7 @@ use thiserror::Error;
 use crate::{
     effect_row::EffectRow,
     types::{
-        TypeKind,
+        GenericScope, PreparedEffects, TypeKind, TypeProjectionControl, TypeProjectionError,
         constraints::{
             CompletedConstraintComponent, ConstraintDomain, TypeConstraintInvariant,
             TypeConstraintProjectionInvariant, TypeConstraintSolution,
@@ -43,10 +43,32 @@ pub(crate) struct PreparedCallableApplication {
 /// The selected output determines how this application delivers its result.
 /// An ordinary value of function type does not own a continuation.
 #[derive(Clone, Eq, PartialEq)]
-pub(crate) enum PreparedCallResult {
+pub(crate) enum PreparedCallResult<Continuation = TypeKind<PreparedEffects>> {
     Value(TypeKind),
-    Continuation(TypeKind),
+    Continuation(Continuation),
     ContentEmission(ContentCallableIdentity),
+}
+
+impl PreparedCallResult {
+    /// The publication scope supplies meaning to the retained continuation type.
+    pub(crate) fn close_continuation<E>(
+        self,
+        close: impl FnOnce(&TypeKind<PreparedEffects>) -> Result<TypeKind, E>,
+    ) -> Result<PreparedCallResult<TypeKind>, E> {
+        Ok(match self {
+            Self::Value(value) => PreparedCallResult::Value(value),
+            Self::Continuation(value) => PreparedCallResult::Continuation(close(&value)?),
+            Self::ContentEmission(operation) => PreparedCallResult::ContentEmission(operation),
+        })
+    }
+}
+
+#[derive(Debug, Error)]
+pub(crate) enum PreparedCallApplicationFailure<E: std::error::Error + 'static> {
+    #[error(transparent)]
+    Invariant(#[from] CallConstraintInvariant),
+    #[error(transparent)]
+    ResultType(#[from] TypeProjectionError<E>),
 }
 
 /// The result and solution of the same completed application. The component
@@ -159,11 +181,12 @@ impl PreparedCallableApplication {
     /// caller cannot pair a candidate with an independently supplied group.
     /// The returned application is move-only and no alternate constructor is
     /// available to tests or analyzer code.
-    pub(crate) fn seal_from_selected_transaction(
+    pub(crate) fn seal_from_selected_transaction<C: TypeProjectionControl>(
         selected: Arc<PreparedResolvedCallable>,
         mapping: &super::PreparedCallArgumentMapping,
         completed: CompletedCallResult,
-    ) -> Result<Self, CallConstraintInvariant> {
+        control: &mut C,
+    ) -> Result<Self, PreparedCallApplicationFailure<C::Error>> {
         let transition = selected.application_transition(mapping)?;
         let CompletedCallResult {
             schema,
@@ -171,7 +194,7 @@ impl PreparedCallableApplication {
             result,
         } = completed;
         if schema != selected.schema().semantic_digest() {
-            return Err(CallConstraintInvariant::PreparedSchemaMismatch);
+            return Err(CallConstraintInvariant::PreparedSchemaMismatch.into());
         }
         let result = match (transition.continuation_position(), result) {
             (None, CallableResultSchema::Value(value)) => PreparedCallResult::Value(value),
@@ -179,9 +202,13 @@ impl PreparedCallableApplication {
                 PreparedCallResult::ContentEmission(operation)
             }
             (Some(_), CallableResultSchema::Value(value @ TypeKind::Function { .. })) => {
-                PreparedCallResult::Continuation(value)
+                PreparedCallResult::Continuation(
+                    value.prepare_effects(&GenericScope::default(), control)?,
+                )
             }
-            (Some(_), _) => return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch),
+            (Some(_), _) => {
+                return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
+            }
         };
         Ok(Self {
             selected,

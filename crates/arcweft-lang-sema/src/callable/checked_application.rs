@@ -3083,7 +3083,7 @@ pub struct CheckedCallApplication {
 impl CheckedCallApplication {
     pub(crate) fn seal(
         core: Arc<CheckedCallApplicationCore>,
-        expected: PreparedCallResult,
+        expected: PreparedCallResult<TypeKind>,
         terminal_effects: &EffectRow,
         inferred_result_schema: Option<&CallableResultSchema>,
         selected_display_witness: Option<CheckedDisplayWitness>,

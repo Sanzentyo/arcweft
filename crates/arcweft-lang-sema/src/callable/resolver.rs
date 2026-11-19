@@ -847,13 +847,9 @@ type FinalCallRetainedValuePreparation<'a> = dyn Fn(
     ) -> Result<TypeKind<PreparedEffects>, FinalSemanticAnalysisError>
     + 'a;
 
-type FinalCallResultRetention<'a> =
-    dyn Fn(ExprId, &TypeKind) -> Result<TypeKind<PreparedEffects>, FinalSemanticAnalysisError> + 'a;
-
 pub(crate) struct FinalCallValueOperandPreparation<'a> {
     pub(crate) observe: &'a FinalCallObservedValuePreparation<'a>,
     pub(crate) retain: &'a FinalCallRetainedValuePreparation<'a>,
-    pub(crate) retain_result: &'a FinalCallResultRetention<'a>,
 }
 
 /// Immutable child facts needed to prepare one final-HIR call.

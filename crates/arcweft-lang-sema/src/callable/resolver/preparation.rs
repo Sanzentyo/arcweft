@@ -366,7 +366,7 @@ where
             } else {
                 None
             };
-            if let Some((site, (PreparedCallSiteDelivery::Continuation(reference), expected))) =
+            if let Some((site, PreparedCallSiteDelivery::Continuation { reference, result })) =
                 delivery
             {
                 let value = prepare_continuation_callee(
@@ -374,7 +374,7 @@ where
                     checked_type,
                     site,
                     reference,
-                    expected,
+                    result,
                     facts,
                 )?;
                 return Ok(PreparedFinalCallCallee::FunctionValue {
@@ -452,7 +452,7 @@ where
                 )
             } else {
                 let operand = facts.prepare_value_operand(value, checked_type)?;
-                if let Some((_, (PreparedCallSiteDelivery::Value, expected))) = delivery
+                if let Some((_, PreparedCallSiteDelivery::Value(expected))) = delivery
                     && operand.observed() != expected
                 {
                     return Err(PrepareFinalCallCalleeError::PreparedContinuationInvariant(
@@ -495,7 +495,7 @@ fn prepare_continuation_callee<P, U>(
     checked_type: &TypeKind<crate::types::PreparedEffects>,
     site: super::super::CheckedCallSite,
     reference: super::super::PreparedCallContinuationRef,
-    result: &TypeKind,
+    result: &TypeKind<crate::types::PreparedEffects>,
     facts: FinalCallCalleeFacts<'_, '_, P, U>,
 ) -> Result<PreparedFunctionValueCallee, PrepareFinalCallCalleeError> {
     let missing_origin =
@@ -511,9 +511,8 @@ fn prepare_continuation_callee<P, U>(
         expression: source,
         error: Box::new(error),
     };
-    let expected = (facts.value_operand.retain_result)(source, result).map_err(source_error)?;
     let original = (facts.value_operand.retain)(source, checked_type).map_err(source_error)?;
-    if original != expected {
+    if &original != result {
         return Err(PrepareFinalCallCalleeError::PreparedContinuationInvariant(
             super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch,
         ));

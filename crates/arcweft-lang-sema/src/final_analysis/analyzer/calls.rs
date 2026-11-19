@@ -1994,7 +1994,6 @@ impl Analyzer<'_, '_, '_> {
                 let retained_value = |owner, ty: &TypeKind<PreparedEffects>| {
                     types.retain_prepared(owner, ty, self.facts.effect_declarations()?.read())
                 };
-                let retained_result = |owner, ty: &TypeKind| types.retain(owner, ty);
                 prepare_final_call_callee(
                     authority,
                     source.owner,
@@ -2012,7 +2011,6 @@ impl Analyzer<'_, '_, '_> {
                         crate::callable::FinalCallValueOperandPreparation {
                             observe: &value_operand,
                             retain: &retained_value,
-                            retain_result: &retained_result,
                         },
                     )
                     .with_flow_transfer(flow_transfer),
@@ -2645,14 +2643,7 @@ impl Analyzer<'_, '_, '_> {
                 ));
             }
         };
-        let transaction =
-            ran.into_prepared_application()
-                .map_err(|error| AnalyzerExpressionError::Call {
-                    owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        error,
-                    )),
-                })?;
+        let transaction = ran.into_prepared_application(&mut context.work())?;
         let inventory = AnalyzerPreparedCandidateInventory::from_considered(
             transaction.candidate(),
             considered,
@@ -2973,14 +2964,7 @@ impl Analyzer<'_, '_, '_> {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
         };
-        let transaction =
-            ran.into_prepared_application()
-                .map_err(|error| AnalyzerExpressionError::Call {
-                    owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        error,
-                    )),
-                })?;
+        let transaction = ran.into_prepared_application(&mut context.work())?;
         let inventory = AnalyzerPreparedCandidateInventory::from_considered(
             transaction.candidate(),
             vec![Arc::clone(&candidate)],
@@ -3068,12 +3052,7 @@ impl Analyzer<'_, '_, '_> {
             self.discard_candidate_semantic_projection(source.owner, projection)?;
         }
         let (selected_ran, outer_projection) = selected_transaction.into_parts();
-        let selected_transaction = selected_ran.into_prepared_application().map_err(|error| {
-            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                owner: source.owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
-            })
-        })?;
+        let selected_transaction = selected_ran.into_prepared_application(&mut context.work())?;
         let selected = selected_transaction.selected_shared().clone();
         let specialization = selected_transaction
             .specialization_result()
@@ -3099,7 +3078,7 @@ impl Analyzer<'_, '_, '_> {
                 }
             };
         let callee_expression = match result {
-            PreparedCallResult::Value(value) | PreparedCallResult::Continuation(value) => {
+            PreparedCallResult::Value(_) | PreparedCallResult::Continuation(_) => {
                 let callable_effects = self
                     .source_callable_effects(&selected, Some(&outer_projection))
                     .map_err(AnalyzerExpressionError::fatal)?;
@@ -3111,7 +3090,6 @@ impl Analyzer<'_, '_, '_> {
                     source.call,
                     &selected,
                     &resolution.callee_inputs,
-                    value,
                     callable_effects.as_ref(),
                 )
                 .map_err(AnalyzerExpressionError::fatal)?
@@ -3188,20 +3166,13 @@ impl Analyzer<'_, '_, '_> {
         // retain their declared rows or project-body edges until the existing
         // callable closure and final execution-effect publication complete them.
         match result {
-            PreparedCallResult::Value(result) | PreparedCallResult::Continuation(result) => {
-                if specialization
-                    .as_ref()
-                    .is_some_and(|witness| witness.source_type() != &result)
-                {
-                    return Err(super::function_value_use::specialization_invariant(
-                        source.owner,
-                        crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch,
-                    )
-                    .into());
-                }
-                let prepared = self
-                    .retain_source_value_type(context, source.owner, &result)
-                    .map_err(AnalyzerExpressionError::fatal)?;
+            result @ (PreparedCallResult::Value(_) | PreparedCallResult::Continuation(_)) => {
+                let prepared = self.retain_selected_call_value(
+                    context.work(),
+                    source.owner,
+                    &result,
+                    specialization.as_deref(),
+                )?;
                 let mut checked =
                     crate::final_analysis::prepared::PreparedResolvedExpression::value(
                         prepared,
@@ -3241,6 +3212,55 @@ impl Analyzer<'_, '_, '_> {
                     ),
                 )
             }
+        }
+    }
+
+    fn retain_selected_call_value(
+        &self,
+        work: super::preparation_work::AnalyzerPreparationWork<'_>,
+        owner: ExprId,
+        result: &PreparedCallResult,
+        specialization: Option<&crate::callable::CheckedFunctionSpecialization>,
+    ) -> Result<TypeKind<PreparedEffects>, AnalyzerExpressionError> {
+        let types = self
+            .source_type_preparation(work)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let mismatch = || {
+            super::function_value_use::specialization_invariant(
+                owner,
+                crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch,
+            )
+        };
+        match result {
+            PreparedCallResult::Value(ty) => {
+                if specialization.is_some_and(|witness| witness.source_type() != ty) {
+                    return Err(mismatch());
+                }
+                types
+                    .retain(owner, ty)
+                    .map_err(AnalyzerExpressionError::fatal)
+            }
+            PreparedCallResult::Continuation(ty) => {
+                let graph = self
+                    .facts
+                    .effect_declarations()
+                    .map_err(AnalyzerExpressionError::fact)?
+                    .read();
+                if let Some(witness) = specialization
+                    && &types
+                        .observe_canonical(owner, ty, graph)
+                        .map_err(AnalyzerExpressionError::fatal)?
+                        != witness.source_type()
+                {
+                    return Err(mismatch());
+                }
+                types
+                    .retain_prepared(owner, ty, graph)
+                    .map_err(AnalyzerExpressionError::fatal)
+            }
+            PreparedCallResult::ContentEmission(_) => Err(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::WrongPayloadFamily,
+            )),
         }
     }
 
@@ -3388,13 +3408,8 @@ impl Analyzer<'_, '_, '_> {
         let transaction = PreparedCallApplicationTransaction::from_completed_nested_call(
             &recipe,
             Arc::clone(&component),
-        )
-        .map_err(|error| {
-            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
-            })
-        })?;
+            &mut preparation_work,
+        )?;
         let result = transaction.result().clone();
         let selected_callable = transaction.selected_shared().clone();
         let direct_effects = self
@@ -3416,7 +3431,7 @@ impl Analyzer<'_, '_, '_> {
             ));
         }
         let callee_expression = match &result {
-            PreparedCallResult::Value(value) | PreparedCallResult::Continuation(value) => {
+            PreparedCallResult::Value(_) | PreparedCallResult::Continuation(_) => {
                 let callable_effects = self
                     .source_callable_effects(&selected_callable, None)
                     .map_err(|error| {
@@ -3432,7 +3447,6 @@ impl Analyzer<'_, '_, '_> {
                     call,
                     &selected_callable,
                     &recipe.callee_inputs,
-                    value,
                     callable_effects.as_ref(),
                 )
                 .map_err(|error| {
@@ -3559,26 +3573,12 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|violation| {
                 CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fact(violation))
             })?;
-        let (PreparedCallResult::Value(value) | PreparedCallResult::Continuation(value)) = result
-        else {
-            return Err(CandidateFactOperationFailure::Expression(
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily),
-            ));
-        };
-        if specialization
-            .as_ref()
-            .is_some_and(|witness| witness.source_type() != &value)
-        {
-            return Err(super::function_value_use::specialization_invariant(
-                owner,
-                crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch,
-            )
-            .into());
-        }
-        let prepared = self
-            .source_type_preparation(preparation_work.clone())
-            .and_then(|source| source.retain(owner, &value))
-            .map_err(AnalyzerExpressionError::fatal)?;
+        let prepared = self.retain_selected_call_value(
+            preparation_work.clone(),
+            owner,
+            &result,
+            specialization.as_deref(),
+        )?;
         let mut checked = crate::final_analysis::prepared::PreparedResolvedExpression::value(
             prepared,
             selection,
@@ -5325,7 +5325,6 @@ impl Analyzer<'_, '_, '_> {
         call: &HirCallInvocation,
         selected: &PreparedResolvedCallable,
         callee_inputs: &crate::callable::PreparedCallCalleeConstraintInputs,
-        result: &TypeKind,
         callable_effects: Option<&EffectRow>,
     ) -> Result<AnalyzerPreparedCalleeExpression, FinalSemanticAnalysisError> {
         if selected.requires_value_callee() {
@@ -5578,9 +5577,11 @@ impl Analyzer<'_, '_, '_> {
         } else {
             None
         };
-        let ty = match callable_effects
-            .and_then(|effects| instantiated_callee_type(selected, result, effects))
-        {
+        let ty = match callable_effects.and_then(|row| {
+            selected
+                .constraint_callable_type_with_terminal_effects(row)
+                .ok()
+        }) {
             Some(ty) => ty,
             None if method_callee.is_none()
                 && matches!(
@@ -5695,16 +5696,6 @@ impl Analyzer<'_, '_, '_> {
         }
         Ok(AnalyzerPreparedCalleeExpression::callable(value))
     }
-}
-
-pub(super) fn instantiated_callee_type(
-    selected: &PreparedResolvedCallable,
-    _result: &TypeKind,
-    effects: &EffectRow,
-) -> Option<TypeKind> {
-    selected
-        .constraint_callable_type_with_terminal_effects(effects)
-        .ok()
 }
 
 fn scope_is_dialogue_line_plan(module: &HirModule, mut scope: ScopeId) -> bool {
