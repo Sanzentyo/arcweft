@@ -327,6 +327,43 @@ fn guarded_prefix_cases_share_the_suffix_and_keep_free_guard_order() {
 }
 
 #[test]
+fn guarded_conjunction_shares_points_required_by_many_guards() {
+    let mut setup = Meter::default();
+    let point = atom(24).or(&atom(25), &mut setup).unwrap();
+    let (expected, sequential_work) = {
+        let mut work = Meter::default();
+        let mut builder = DecisionBuilder::new(&mut work);
+        let point = builder.import(&point).unwrap();
+        let mut result = Root::True;
+        for guard in 0..16 {
+            let requirement = builder
+                .branch_on_variable(guard, Root::True, point)
+                .unwrap();
+            result = builder
+                .conditional(Conditional::new(result, requirement, Root::False))
+                .unwrap();
+        }
+        (builder.finish(result).unwrap(), work.used)
+    };
+    let mut work = Meter::default();
+    let mut builder = DecisionBuilder::new(&mut work);
+    let point = builder.import(&point).unwrap();
+    let clauses: Vec<_> = (0..16)
+        .map(|guard| GuardedPoint {
+            point,
+            guard: Some(guard),
+        })
+        .collect();
+    let result = builder.conjoin_guarded(&clauses).unwrap();
+    assert_eq!(builder.finish(result).unwrap(), expected);
+    assert!(
+        work.used < sequential_work,
+        "{} < {sequential_work}",
+        work.used
+    );
+}
+
+#[test]
 fn guarded_prefix_only_imports_reachable_suffixes() {
     let mut setup = Meter::default();
     let suffix = atom(1).and(&atom(2), &mut setup).unwrap();

@@ -11,6 +11,9 @@ use std::{
     sync::Arc,
 };
 
+mod conjunction;
+use conjunction::GuardedPoint;
+
 #[cfg(test)]
 mod tests;
 
@@ -1269,7 +1272,7 @@ impl<'a, V: Clone + Ord> EffectDecisionRequirement<'a, V> {
         let mut builder = DecisionBuilder::new(control);
         let mut first = DecisionPrefix::new(first);
         let mut second = second.map(DecisionPrefix::new);
-        let mut result = Root::True;
+        let mut clauses = Vec::new();
         for case in cases {
             builder.control.charge(DecisionWork::Visit)?;
             let mut point = first.select(through, case, &mut select, &mut builder)?;
@@ -1283,15 +1286,14 @@ impl<'a, V: Clone + Ord> EffectDecisionRequirement<'a, V> {
             if point == Root::True {
                 continue;
             }
-            let requirement = match guard(case) {
-                Some(variable) => builder.branch_on_variable(variable, Root::True, point)?,
-                None => point,
-            };
-            result = builder.conditional(Conditional::new(result, requirement, Root::False))?;
-            if result == Root::False {
-                break;
+            let guard = guard(case);
+            if point == Root::False && guard.is_none() {
+                return Ok(EffectDecision::constant(false));
             }
+            builder.control.charge(DecisionWork::Node)?;
+            clauses.push(GuardedPoint { guard, point });
         }
+        let result = builder.conjoin_guarded(&clauses)?;
         builder.finish(result)
     }
 }
