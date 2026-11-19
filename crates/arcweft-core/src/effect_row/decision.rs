@@ -503,9 +503,8 @@ impl<V: Clone + Ord> EffectDecision<V> {
         self.nodes.iter().map(|node| &node.variable)
     }
 
-    /// Maps references through their owning scope operation. Rebuild through
-    /// conditional construction because opening or reification may change the
-    /// reference order or merge previously distinct references.
+    /// Maps references through their owning scope operation. The same reduced
+    /// builder restores order when opening or reification changes it.
     pub fn map_references<U: Clone + Ord, C: DecisionControl>(
         &self,
         control: &mut C,
@@ -524,9 +523,9 @@ impl<V: Clone + Ord> EffectDecision<V> {
                 root: self.root,
             });
         }
-        self.rebuild_references(control, |reference, builder| {
+        self.rebuild_nodes(control, |reference, low, high, builder| {
             let variable = mapping(reference, builder.control)?;
-            builder.branch(variable, Root::False, Root::True)
+            builder.branch_on_variable(variable, low, high)
         })
     }
 
@@ -549,31 +548,37 @@ impl<V: Clone + Ord> EffectDecision<V> {
             };
         }
         let mut replacements = BTreeMap::<&V, Root>::new();
-        self.rebuild_references(control, |reference, builder| {
-            if let Some(&root) = replacements.get(&reference) {
-                return Ok(root);
-            }
-            let value = binding(reference, builder.control)?;
-            let root = builder.operand(value)?;
-            builder.control.charge(DecisionWork::Node)?;
-            replacements.insert(reference, root);
-            Ok(root)
+        self.rebuild_nodes(control, |reference, low, high, builder| {
+            let condition = if let Some(&root) = replacements.get(&reference) {
+                root
+            } else {
+                let value = binding(reference, builder.control)?;
+                let root = builder.operand(value)?;
+                builder.control.charge(DecisionWork::Node)?;
+                replacements.insert(reference, root);
+                root
+            };
+            builder.conditional(Conditional::new(condition, high, low))
         })
     }
 
-    fn rebuild_references<'s, U: Clone + Ord, C: DecisionControl>(
+    fn rebuild_nodes<'s, U: Clone + Ord, C: DecisionControl>(
         &'s self,
         control: &mut C,
-        mut resolve: impl FnMut(&'s V, &mut DecisionBuilder<'_, U, C>) -> Result<Root, C::Error>,
+        mut rebuild: impl FnMut(
+            &'s V,
+            Root,
+            Root,
+            &mut DecisionBuilder<'_, U, C>,
+        ) -> Result<Root, C::Error>,
     ) -> Result<EffectDecision<U>, C::Error> {
         let mut builder = DecisionBuilder::new(control);
         let mut indices = Vec::new();
         for node in self.nodes.iter() {
             builder.control.charge(DecisionWork::Visit)?;
-            let condition = resolve(&node.variable, &mut builder)?;
             let low = Self::mapped_root(node.low, &indices);
             let high = Self::mapped_root(node.high, &indices);
-            let root = builder.conditional(Conditional::new(condition, high, low))?;
+            let root = rebuild(&node.variable, low, high, &mut builder)?;
             indices.push(root);
         }
         builder.finish(Self::mapped_root(self.root, &indices))
@@ -1217,6 +1222,21 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         })
     }
 
+    fn children_follow(&self, variable: &V, low: Root, high: Root) -> bool {
+        [low, high].into_iter().all(|root| {
+            self.node(root)
+                .is_none_or(|child| &child.variable > variable)
+        })
+    }
+
+    fn branch_on_variable(&mut self, variable: V, low: Root, high: Root) -> Result<Root, C::Error> {
+        if low == high || self.children_follow(&variable, low, high) {
+            return self.branch(variable, low, high);
+        }
+        let condition = self.branch(variable, Root::False, Root::True)?;
+        self.conditional(Conditional::new(condition, high, low))
+    }
+
     fn intern_branch(&mut self, node: Node<V>) -> Result<Root, C::Error> {
         if let Some(&root) = self.interned.get(&node) {
             return Ok(root);
@@ -1284,10 +1304,7 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
                 (condition.low, condition.high),
                 (Root::False, Root::True) | (Root::True, Root::False)
             )
-            && [key.no, key.yes].into_iter().all(|root| {
-                self.node(root)
-                    .is_none_or(|child| child.variable > condition.variable)
-            })
+            && self.children_follow(&condition.variable, key.no, key.yes)
         {
             let (low, high) = if condition.low == Root::False {
                 (key.no, key.yes)

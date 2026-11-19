@@ -85,6 +85,39 @@ fn finalization_emits_only_reachable_branches_in_low_before_high_order() {
 }
 
 #[test]
+fn reference_mapping_builds_ordered_branches_directly_and_normalizes_other_mappings() {
+    let mut setup = Meter::default();
+    let source = atom(0).conditional(&atom(1), &atom(2), &mut setup).unwrap();
+    let expected = atom(3).conditional(&atom(4), &atom(5), &mut setup).unwrap();
+    let required = 5 * source.node_count();
+    let mut short = Meter {
+        used: 0,
+        limit: Some(required - 1),
+    };
+    let mut exact = Meter {
+        used: 0,
+        limit: Some(required),
+    };
+    assert_eq!(
+        source.map_references(&mut short, &mut |variable, _| Ok(variable + 3)),
+        Err((required, required - 1)),
+    );
+    assert_eq!(
+        source.map_references(&mut exact, &mut |variable, _| Ok(variable + 3)),
+        Ok(expected),
+    );
+    assert_eq!(exact.used, required);
+    assert_eq!(
+        source.map_references(&mut setup, &mut |variable, _| Ok(5 - variable)),
+        atom(5).conditional(&atom(4), &atom(3), &mut Meter::default()),
+    );
+    assert_eq!(
+        source.map_references(&mut setup, &mut |variable, _| Ok((*variable == 2) as u8)),
+        atom(0).or(&atom(1), &mut Meter::default()),
+    );
+}
+
+#[test]
 fn table_selection_preserves_correlated_selectors_and_entry_references() {
     let mut work = Meter::default();
     let bit = atom(0);
