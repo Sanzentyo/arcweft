@@ -19933,3 +19933,16 @@ Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終�
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。Sourceの公開時に変更2 blobを検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-correlated-continuation-body.raw.zip) は30 entry、558,631 bytes、SHA256 `fdc74198bd02b15ab53d598becaec5f32f92e23c1a63e48f042370c499062d24`。各原本の長さとハッシュを照合した。
+
+<a id="application-result-authority"></a>
+## 2026-11-19 — 選択済みの呼出し結果を公開時の照合まで保持
+
+基点 `e201f060d644100d887b7ead6aa6bed0c44e5ad3`。Source `e0dfd6d883351bb6f079ff81cda8a4d852400b63`。選択済みの適用が通常値・継続・content操作を表す結果を所有する。引数グループの遷移と下位の完了済み結果を適用の構築時に照合する。呼出しグラフの結果コピーと、最終検査への受け渡しで同じ結果を組み直す処理を削除した。再実行時の比較は適用の結果を含み、継続参照はグラフが発行元と依存先を検査する。公開時は、同じ結果を確定した宣言から導く結果と照合する。
+
+Sema全featureユニットは1,984件中1,866 PASS、118 FAIL、0 SKIP。Compiler統合5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中29 PASS、3 FAIL。全2,566件のテストIDと合否は直前の公開ソースと一致した。正しい引数で再帰本体から作る段階適用、再帰する attached default、効果付き再帰関数値の純粋なcallbackへの受け渡しには既存の失敗がある。[直前の再現](#correlated-continuation-body)。
+
+LLDBで段階適用とattached defaultの2件を再実行した。どちらも `CandidateConstraintDriver::prepare_viable_result` から `prepare_continuation_result_effects` を呼んでいた。通常本体では宣言の結果型を検査し直して `ExpressionCycle` に到達し、attached defaultでは同じ宣言について既に存在する効果の要求に到達した。継続結果を作る時点で宣言本体の効果を確定する経路が、両方の原因となる。初回のLLDB起動は `python311.dll` の検索に失敗した。既存ランタイムのディレクトリをプロセスの検索パスに加え、同じ試験バイナリに対して停止位置と呼出し履歴を取得した。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。Sourceの公開時に変更8 blobを検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-application-result-authority.raw.zip) は28 entry、467,535 bytes、SHA256 `6af9c066e8320f7063c0271b42ba07cd7b6e05211a30ab4e811625da861b1478`。各原本の長さとハッシュを照合した。
