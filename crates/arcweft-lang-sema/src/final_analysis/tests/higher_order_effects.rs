@@ -167,6 +167,44 @@ fn descend(value: i64, remaining: i64) -> i64 {
 }
 
 #[test]
+fn recursive_body_binding_rejects_a_pure_annotation_for_an_effectful_value() {
+    use arcweft_lang_hir::stmt::HirStmtKind;
+
+    let fixture = fixture(
+        r#"
+fn descend(value: i64, remaining: i64) -> i64 {
+    log.info("visit")
+    if remaining == 0i64 { value } else {
+        let recur: (i64, i64) -> i64 effects {} = descend
+        recur(value, remaining - 1i64)
+    }
+}
+flow main() -> i64 { return descend(42i64, 2i64) }
+"#,
+        None,
+    );
+    let error = analyze(&fixture)
+        .err()
+        .expect("an effectful declaration cannot supply a pure initializer");
+    let crate::final_analysis::FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner } =
+        error
+    else {
+        panic!("expected an inadmissible initializer, got {error:?}");
+    };
+    let (_, module) = fixture
+        .project
+        .analysis_view()
+        .unwrap()
+        .modules()
+        .next()
+        .unwrap();
+    assert!(module.statements().any(|(_, statement)| matches!(
+        statement.kind(),
+        HirStmtKind::Let { initializer, .. } if *initializer == owner
+    )));
+}
+
+#[test]
 fn recursive_body_generic_value_keeps_the_callers_fixed_type() {
     assert_recursive_body_effect_rows(
         r#"

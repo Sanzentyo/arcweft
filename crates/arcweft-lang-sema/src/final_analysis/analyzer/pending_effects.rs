@@ -36,19 +36,58 @@ use super::{
     state::{CandidateFactTransactionAction, CandidateFactTransactionOutcome},
 };
 
-/// A branch of expression preparation whose result depended on live effects.
-/// The source's original operands stay in the candidate fact transaction and
-/// are compared again using its completed relation and the publication C.
+/// The exact source operands of a compatibility requirement or a decision
+/// that used a provisional observation. Candidate closure and publication
+/// check both with the completed effect relation.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct PreparedSourceTypeDecision {
     pub(super) owner: super::ExprId,
     pub(super) expected: TypeKind<PreparedEffects>,
     pub(super) actual: TypeKind<PreparedEffects>,
-    pub(super) accepted: bool,
+    pub(super) outcome: SourceTypeDecisionOutcome,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SourceTypeDecisionOutcome {
+    Required,
+    Observed { accepted: bool },
+}
+
+impl PreparedSourceTypeDecision {
+    pub(super) fn expected_acceptance(&self) -> bool {
+        self.outcome.expected_acceptance()
+    }
+
+    pub(super) fn publication_failure(&self, accepted: bool) -> Option<FinalSemanticAnalysisError> {
+        if accepted == self.expected_acceptance() {
+            return None;
+        }
+        Some(match self.outcome {
+            SourceTypeDecisionOutcome::Required => {
+                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: self.owner }
+            }
+            SourceTypeDecisionOutcome::Observed { accepted } => {
+                FinalSemanticAnalysisError::SourceTypeDecisionChanged {
+                    owner: self.owner,
+                    originally_accepted: accepted,
+                }
+            }
+        })
+    }
+}
+
+impl SourceTypeDecisionOutcome {
+    fn expected_acceptance(self) -> bool {
+        match self {
+            Self::Required => true,
+            Self::Observed { accepted } => accepted,
+        }
+    }
 }
 
 pub(super) enum SourceTypeDecisionUse {
     RequireAcceptance,
+    AnnotatedBinding,
     SelectImplicitCallable,
 }
 
@@ -78,17 +117,25 @@ impl Analyzer<'_, '_, '_> {
         let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
             work.clone(),
             |this, _, _| {
-                let (expect_observed, actual_observed) = this
-                    .observe_source_with_dependencies(context, owner, |source, graph| {
-                        source.observe_compatibility_inputs(owner, expected, actual, graph)
-                    })
-                    .map_err(AnalyzerExpressionError::fatal)?;
-                let accepted = expect_observed
-                    .accepts_recovery_with(&actual_observed, &mut work)
-                    .map_err(AnalyzerExpressionError::fatal)?;
-                if !accepted && matches!(use_at, SourceTypeDecisionUse::RequireAcceptance) {
-                    return Ok(CandidateFactTransactionAction::Rollback(false));
-                }
+                let outcome = if matches!(use_at, SourceTypeDecisionUse::AnnotatedBinding) {
+                    // The annotation supplies the local interface. Its
+                    // compatibility with the initializer is a requirement,
+                    // even when the initializer refers to the body in progress.
+                    SourceTypeDecisionOutcome::Required
+                } else {
+                    let (expect_observed, actual_observed) = this
+                        .observe_source_with_dependencies(context, owner, |source, graph| {
+                            source.observe_compatibility_inputs(owner, expected, actual, graph)
+                        })
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                    let accepted = expect_observed
+                        .accepts_recovery_with(&actual_observed, &mut work)
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                    if !accepted && matches!(use_at, SourceTypeDecisionUse::RequireAcceptance) {
+                        return Ok(CandidateFactTransactionAction::Rollback(false));
+                    }
+                    SourceTypeDecisionOutcome::Observed { accepted }
+                };
                 let graph = this
                     .facts
                     .effect_declarations()
@@ -105,7 +152,7 @@ impl Analyzer<'_, '_, '_> {
                     actual: source
                         .retain_prepared(owner, actual, graph)
                         .map_err(AnalyzerExpressionError::fatal)?,
-                    accepted,
+                    outcome,
                 };
                 source
                     .visit_binding()
@@ -114,7 +161,9 @@ impl Analyzer<'_, '_, '_> {
                 this.facts
                     .record_source_type_decision(decision)
                     .map_err(AnalyzerExpressionError::fact)?;
-                Ok(CandidateFactTransactionAction::Commit(accepted))
+                Ok(CandidateFactTransactionAction::Commit(
+                    outcome.expected_acceptance(),
+                ))
             },
         )?;
         match outcome {

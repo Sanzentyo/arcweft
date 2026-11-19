@@ -735,17 +735,13 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             );
             for decision in self.facts.source_type_decisions() {
                 types.visit_binding()?;
-                if selected_expressions.contains_owner(SyntheticOwner::Expr(decision.owner))
-                    && types
+                if selected_expressions.contains_owner(SyntheticOwner::Expr(decision.owner)) {
+                    let accepted = types
                         .source(decision.owner)?
-                        .check_observed_recovery(&decision.expected, &decision.actual)?
-                        != decision.accepted
-                {
-                    return Err(FinalSemanticAnalysisError::SourceTypeDecisionChanged {
-                        owner: decision.owner,
-                        originally_accepted: decision.accepted,
+                        .check_observed_recovery(&decision.expected, &decision.actual)?;
+                    if let Some(error) = decision.publication_failure(accepted) {
+                        return Err(error.into());
                     }
-                    .into());
                 }
             }
             let capture_sources = selected_expressions

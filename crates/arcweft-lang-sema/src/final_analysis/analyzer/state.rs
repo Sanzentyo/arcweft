@@ -544,7 +544,7 @@ impl CandidateSemanticProjection {
                     &decision.expected,
                     &decision.actual,
                     control,
-                )? != Some(decision.accepted)
+                )? != Some(decision.expected_acceptance())
             {
                 return Ok(None);
             }
@@ -4282,7 +4282,7 @@ mod tests {
                 owner,
                 expected: TypeKind::I64,
                 actual: TypeKind::I64,
-                accepted: true,
+                outcome: super::super::pending_effects::SourceTypeDecisionOutcome::Required,
             })
             .expect("outer decision");
 
@@ -4294,7 +4294,9 @@ mod tests {
                 owner,
                 expected: TypeKind::I64,
                 actual: TypeKind::String,
-                accepted: false,
+                outcome: super::super::pending_effects::SourceTypeDecisionOutcome::Observed {
+                    accepted: false,
+                },
             })
             .expect("child decision");
         let projection = state
@@ -4303,7 +4305,7 @@ mod tests {
         assert_eq!(
             state
                 .source_type_decisions()
-                .map(|decision| decision.accepted)
+                .map(PreparedSourceTypeDecision::expected_acceptance)
                 .collect::<Vec<_>>(),
             [true]
         );
@@ -4325,7 +4327,7 @@ mod tests {
         assert_eq!(
             state
                 .source_type_decisions()
-                .map(|decision| decision.accepted)
+                .map(PreparedSourceTypeDecision::expected_acceptance)
                 .collect::<Vec<_>>(),
             [true, false]
         );

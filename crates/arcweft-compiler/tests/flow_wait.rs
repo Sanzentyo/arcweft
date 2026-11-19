@@ -669,6 +669,27 @@ flow main() -> i64 {
 }
 
 #[test]
+fn annotated_recursive_function_values_resume_after_wait() {
+    let body = r#"
+fn descend(value: i64, remaining: i64) -> i64 {
+    log.info("visit")
+    if remaining == 0i64 { value } else {
+        let recur: (i64, i64) -> i64 effects { log.write } = descend
+        recur(value, remaining - 1i64)
+    }
+}
+flow main() -> i64 {
+    let retained: (i64, i64) -> i64 effects { log.write } = descend
+    let value = { log.info("prefix"); 42i64 }
+    wait(0.1s)
+    return retained(value, 2i64)
+}
+"#;
+    let (engine, executor) = artifact_bound_entry(body, "annotated-recursive-function.arcw");
+    assert_shared_prefix_wait_in_both_executors(engine, executor, &["visit", "visit", "visit"]);
+}
+
+#[test]
 fn recursive_body_attached_prefix_restores_before_inferred_default_execution() {
     let body = r#"
 fn fallback<T>(value: T)(seed: DialogueContent, depth: i64)[body: DialogueContent = {

@@ -96,6 +96,9 @@ use super::entities::EntityReferenceResolutionError;
 pub(super) enum AnalyzerExpressionExpectation<'a> {
     Unconstrained,
     Complete(&'a TypeKind<crate::types::PreparedEffects>),
+    /// The binding owns compatibility with the initializer. Keep its
+    /// contextual type on reads of the same initializer during body analysis.
+    AnnotatedBinding(&'a TypeKind<crate::types::PreparedEffects>),
     ApplicationCallee(AnalyzerApplicationCalleeExpectation<'a>),
     /// A compile-time PublicId accepts a normalized HIR entity-reference token.
     /// This is deliberately narrower than ordinary
@@ -260,6 +263,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
                 expected.contextual_shape()
             }
             Self::Complete(expected)
+            | Self::AnnotatedBinding(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
             Self::Parametric {
@@ -294,6 +298,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
                 expected.complete_type()
             }
             Self::Complete(expected)
+            | Self::AnnotatedBinding(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
             Self::Unconstrained | Self::ApplicationCallee(_) | Self::Parametric { .. } => None,
@@ -307,6 +312,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         match self {
             Self::PublicIdReference { expected, .. } => expected.nested_call_type(),
             Self::Complete(expected)
+            | Self::AnnotatedBinding(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
             Self::Parametric {
@@ -374,6 +380,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
                 expected.accepts_cached_with(checked, accepts)
             }
             Self::Complete(expected)
+            | Self::AnnotatedBinding(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => match checked.value_type() {
                 Some(actual) => accepts(expected, actual),
@@ -388,6 +395,16 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 
     pub(super) fn is_contextual(&self) -> bool {
         !matches!(self, Self::Unconstrained)
+    }
+
+    fn source_type_decision_use(&self) -> SourceTypeDecisionUse {
+        match self {
+            Self::AnnotatedBinding(_) => SourceTypeDecisionUse::AnnotatedBinding,
+            Self::FunctionValueSource(expected) | Self::PublicIdReference { expected, .. } => {
+                expected.source_type_decision_use()
+            }
+            _ => SourceTypeDecisionUse::RequireAcceptance,
+        }
     }
 
     pub(super) const fn is_enum_constructor_head(&self) -> bool {
@@ -441,6 +458,9 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
             return source
                 .project(Some(expected), uses)
                 .map(|projected| projected.public_id_reference(*family));
+        }
+        if matches!(self, Self::AnnotatedBinding(_)) {
+            return Ok(AnalyzerExpressionExpectation::AnnotatedBinding(expected));
         }
         let Self::Parametric {
             unbound,
@@ -686,7 +706,7 @@ impl Analyzer<'_, '_, '_> {
                     owner,
                     expected,
                     actual,
-                    SourceTypeDecisionUse::RequireAcceptance,
+                    expectation.source_type_decision_use(),
                 )
             })
         };
@@ -5627,7 +5647,9 @@ impl Analyzer<'_, '_, '_> {
                     let asset = arcweft_id::AssetId::try_from(public_id)
                         .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
                     let ty = TypeKind::Ref(crate::types::EntityType::new(EntityKind::Asset, None));
-                    if let AnalyzerExpressionExpectation::Complete(expected) = expectation {
+                    if let AnalyzerExpressionExpectation::Complete(expected)
+                    | AnalyzerExpressionExpectation::AnnotatedBinding(expected) = expectation
+                    {
                         self.check_prepared_contextual_type(context, owner, expected, &ty)?;
                     }
                     return Ok(Some(
@@ -5666,7 +5688,8 @@ impl Analyzer<'_, '_, '_> {
                         }
                     })?;
                 let expected = match expectation {
-                    AnalyzerExpressionExpectation::Complete(ty) => Some(*ty),
+                    AnalyzerExpressionExpectation::Complete(ty)
+                    | AnalyzerExpressionExpectation::AnnotatedBinding(ty) => Some(*ty),
                     _ => None,
                 };
                 let ty = self.prepare_catalog_entity_type(context, owner, &item.ty(), expected)?;

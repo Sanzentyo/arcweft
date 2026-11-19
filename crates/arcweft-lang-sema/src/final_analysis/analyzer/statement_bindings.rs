@@ -4,6 +4,8 @@ use super::{
     Analyzer, ExprId, FinalSemanticAnalysisError, HirExprKind, HirModule, HirStmtKind, PatternId,
     PreparedExpressionFact, StmtId, TypeId, TypeKind,
     expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError},
+    expressions::AnalyzerExpressionExpectation,
+    pending_effects::SourceTypeDecisionUse,
 };
 
 impl Analyzer<'_, '_, '_> {
@@ -248,9 +250,14 @@ impl Analyzer<'_, '_, '_> {
         });
         let actual = match checked_initializer {
             Some(checked) => checked,
-            None => {
-                self.evaluate_expression(context, initializer, initializer_expectation.as_ref())?
-            }
+            None => self.evaluate_expression_with_expectation(
+                context,
+                initializer,
+                initializer_expectation.as_ref().map_or(
+                    AnalyzerExpressionExpectation::Unconstrained,
+                    AnalyzerExpressionExpectation::AnnotatedBinding,
+                ),
+            )?,
         };
         let actual_type = actual
             .value_type()
@@ -270,7 +277,15 @@ impl Analyzer<'_, '_, '_> {
             expected => expected,
         };
         let binding = if let Some(expected) = expected {
-            self.require_source_type(context, initializer, expected, binding_type)?;
+            if !self.source_type_accepts(
+                context,
+                initializer,
+                expected,
+                binding_type,
+                SourceTypeDecisionUse::AnnotatedBinding,
+            )? {
+                return Err(AnalyzerExpressionError::rejected(initializer));
+            }
             self.source_type_preparation(context.work())
                 .and_then(|source| {
                     source.complete_binding_effects(initializer, expected, binding_type)
