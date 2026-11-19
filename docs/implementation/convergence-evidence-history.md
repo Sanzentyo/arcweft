@@ -20083,3 +20083,23 @@ Compilerの12件のうち5件は先に実行した582件でも確認した。残
 Semaの全featureユニット1,990件は1,896 PASS、94既知FAIL。既存IDに変化はなく、追加テストは通過した。Compilerの6 targetは582件中577 PASS、5既知FAILで、`flow_wait` の32件は通過した。Mapの3件は引き続き既定の作業上限4,096に達する。デバッガーでは、遅延効果のケースは元の義務を準備する段階、保持後の呼出し効果のケースは閉包の行の照合、純粋呼出しの拒否ケースは元の型制約を閉じる段階で停止した。
 
 workspaceの全feature・全targetのcheckとClippy、fmt、差分検査、構造ゲートは終了0。全逆依存の終端実測は[先行Sourceの記録](#effect-decision-projection-reverse)を参照する。[今回の検証原本と公開照合](acceptance-evidence/task-callback-fixed-input-authority.raw.zip) は28 entry、1,119,481 bytes、SHA256 `cb7f2e6584b1b26b236edd249422cf78e5428505d017a457e3794f74b815752e`。各entryの長さとハッシュ、公開した4 Rust blobを照合した。
+
+<a id="least-effect-witness-propagation"></a>
+## 2026-11-19 — 正準判定図を使って最小解の差分を伝播
+
+基点 `5b4b3a5c3ed3e26ff0c3a5e1f0dc2aa3422b16e0`。Source `1b505ac26b962d4846d7c01d67a37b0222ceb1a6` は、元の正準な子優先順を量化・最小解・代入で使い、元の判定図をビルダーへ取り込む工程を除いた。Source `c260209fe1ec4953a5ecca499fec59e84be583b3` は、各変数を偽に固定したときに投影が変わるノードから、その親に変化を伝える。子優先順の待ち行列と差分の領域を入力ノード数で事前に確保し、変数間で再利用する。
+
+32個の独立した候補を選ぶ合成入力では、全組合せで求めた最小解が一致し、作業量は4,182から2,673に減った。少数の候補を持つケースには追加の作業があり、両方の数値を原本に収録した。実行用の制限値に変更はなく、合成入力を3,000作業単位で通す回帰テストを加えた。Coreは順に2,369件と2,370件がすべて通過した。両SourceともSema 1,990件中1,896 PASS、94既知FAIL。Compilerの6 targetは582件中577 PASS、5既知FAIL。全feature・全targetのworkspace checkとClippy、fmt、差分検査、構造ゲートが終了0だった。2 callback のNativeは偽固定の伝播中に、3 callback のSemaは元の制約をコンパイルする段階で作業上限4,096に達した。
+
+[両Sourceの検証原本・公開照合](acceptance-evidence/task-callback-least-witness.raw.zip) は57 entry、2,372,087 bytes、SHA256 `9b08d5606196feac45a2bc9f7c83d91b12c939ebe72fb29bf73938dfc23d3dbf`。各entryの長さとハッシュ、Sourceの1件と2件のRust blobを照合した。
+
+<a id="bound-effect-witness-selection"></a>
+## 2026-11-19 — 閉じた効果制約の必須値を求める
+
+基点 `c260209fe1ec4953a5ecca499fec59e84be583b3`、Source `f7f590dd0f8d24d121a00fbaf78ed3e06d580aa7`。式に現れる変数をすべて量化できる場合、正準判定図から真に到達する枝を調べ、偽を取れる変数と経路で省略される変数を求める。残る必須値の組は元の式に代入し、実際に条件を満たすときに最小解になる。64変数の連言の合成入力で作業量が4,928から578に減った。連言と、別の変数だけでも通る選言を1,024作業単位で判定し、最小解の有無と各値を検査する回帰テストを加えた。
+
+Coreのユニット・統合2,371件が通過した。Semaの全featureユニット1,990件は1,896 PASS、94既知FAIL。Compilerの6 targetは582件中577 PASS、5既知FAILで、`flow_wait` は32件すべて通過した。新規失敗IDは0。全feature・全targetのworkspace checkとClippy、fmt、差分検査、構造ゲートは終了0。全推移的逆依存の実行記録は[先行Sourceでの実測](#effect-decision-projection-reverse)に記載している。
+
+既定の4,096作業単位で、2 callback のNativeとSemaは必須値の計算を終え、元の効果制約に代入して照合する段階で停止した。2 callback のAWBC、3 callback を循環させるSema、効果付きMapの3件も引き続き型検査を通過していない。記録時の `target` は101,147,304,909 bytes。
+
+[検証原本・公開照合](acceptance-evidence/task-callback-bound-witness.raw.zip) は28 entry、1,185,629 bytes、SHA256 `6766feb3b08bd85787f2fe1d7fcf0df5ef73e1c75579208539ffe42501a1047c`。各entryの長さとハッシュ、公開した2 Rust blobを照合した。
