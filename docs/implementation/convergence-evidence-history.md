@@ -20208,3 +20208,12 @@ Supersedes [判定図の確定変更時点の停止箇所](#reachable-effect-dec
 Semaの全featureユニットは1,992件中1,900 PASS、92既知FAIL。Compilerの統合6 targetは582件中580 PASS、再帰 callback の2既知FAIL。Mapの修復3件と `flow_wait` の32件は再実行でも通過した。新規失敗は0。全target・全featureのworkspace check／Clippy、fmt、差分、推移的逆依存のCargo graph、構造ゲートは終了0。推移的逆依存の全件と規定のCLIテストの直近実測は[先行Source](#reachable-effect-decision-reverse)に保持する。
 
 [検証原本・公開照合](acceptance-evidence/task-closed-source-port-reuse.raw.zip) は31 entry、1,104,699 bytes、SHA256 `edf2e8254faf3f29d44a3803b9b6c03603a85a394d771de5aabb601b318e6578`。各entryの長さとハッシュ、および公開した4ファイルの検証入力を照合した。記録時の `target` は101,368,133,125 bytes。
+
+<a id="paired-source-materialization"></a>
+## 2026-11-20 — 閉じたソースと実行準備を同じ元の入力から組み立てる
+
+検証基点 `b7c994801b8699fae4ba035ef509f3fa49d0cf72`、Source `2a40633a6bc1e1c0749fa5394fd1c7250e77392d`。同じ元のprobeから閉じたソースとcallbackの実行準備を記述順に追加する。実行準備に記録するIDは閉じたソースから取得する。片方だけを独立に渡せるconstructorを除き、確定済みの対応を再走査する処理を削除した。構築の各作業計上と公開直前の取消確認を維持する。
+
+Supersedes [閉包投影の再利用時点の停止箇所](#closed-source-port-reuse)。2 callback のSemaとNative／AWBCは該当ソースの実行準備を通過し、結果を候補に格納する箇所で既定上限4,096に達した。3 callback のSemaは判定図の出力ノード確保で同上限に達する。
+
+Semaの全featureユニットは1,992件中1,900 PASS、92既知FAIL。Compilerの統合6 targetは582件中580 PASS、2既知FAIL。Mapの修復3件と `flow_wait` の32件を含め、先行Sourceと全IDの合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。[検証原本・公開照合](acceptance-evidence/task-paired-source-materialization.raw.zip) は30 entry、1,104,137 bytes、SHA256 `bb7edd6e92713193cd725c857c604cdebad2dda95205b4fe99936f5d81eea08d`。公開5ファイルと各entryを照合した。記録時の `target` は101,367,953,375 bytes。
