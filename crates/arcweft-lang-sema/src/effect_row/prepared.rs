@@ -109,8 +109,45 @@ impl Hash for PreparedEffectReference {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PreparedEffectSchemeRef(PreparedEffectReference);
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct PreparedEffectRowRef(PreparedEffectReference);
+#[derive(Clone)]
+pub(crate) struct PreparedEffectRowRef(PreparedEffectReference, Option<Arc<RowTerm>>);
+
+impl PreparedEffectRowRef {
+    fn new(reference: PreparedEffectReference, term: &Arc<RowTerm>) -> Self {
+        let application = matches!(
+            term.as_ref(),
+            RowTerm::Application {
+                function: FunctionRef::Scheme(_),
+                ..
+            }
+        )
+        .then(|| Arc::clone(term));
+        Self(reference, application)
+    }
+}
+
+impl std::fmt::Debug for PreparedEffectRowRef {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("PreparedEffectRowRef")
+            .field(&self.0)
+            .finish()
+    }
+}
+
+impl PartialEq for PreparedEffectRowRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for PreparedEffectRowRef {}
+
+impl Hash for PreparedEffectRowRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PreparedEffectPredicateRef(PreparedEffectReference);
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -121,6 +158,24 @@ pub(crate) struct PreparedEffectChoice(PreparedEffectReference);
 pub(crate) enum PreparedEffectRow {
     Canonical(EffectRow),
     Term(PreparedEffectRowRef),
+}
+
+impl PreparedEffectRow {
+    /// Replaying a continuation can issue a fresh term for the same named
+    /// application. Its declaration and ordered operands are immutable. Exact
+    /// term identity is still required by graph admission and read scopes.
+    pub(crate) fn same_continuation_row(&self, other: &Self) -> bool {
+        if self == other {
+            return true;
+        }
+        let (Self::Term(left), Self::Term(right)) = (self, other) else {
+            return false;
+        };
+        matches!((left.1.as_deref(), right.1.as_deref()), (
+            Some(RowTerm::Application { function: FunctionRef::Scheme(left), arguments: left_arguments }),
+            Some(RowTerm::Application { function: FunctionRef::Scheme(right), arguments: right_arguments }),
+        ) if left == right && left_arguments == right_arguments)
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -502,10 +557,10 @@ impl PreparedEffectGraph {
         self.changed(control)?;
         self.next_row = next;
         self.record_mutation(transaction::EffectMutation::Row(id));
-        self.relation.rows.insert(id, Arc::new(term));
-        Ok(PreparedEffectRow::Term(PreparedEffectRowRef(
-            self.reference(id),
-        )))
+        let term = Arc::new(term);
+        let reference = PreparedEffectRowRef::new(self.reference(id), &term);
+        self.relation.rows.insert(id, term);
+        Ok(PreparedEffectRow::Term(reference))
     }
 
     pub(crate) fn application<C: DecisionControl>(

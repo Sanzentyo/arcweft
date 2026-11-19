@@ -323,6 +323,35 @@ impl TypeConstraintSolution {
         ))
     }
 
+    pub(super) fn reify_retained_projection<
+        A: TypeConstraintAccounting,
+        D: ConstraintDomain,
+        P,
+        L,
+    >(
+        &self,
+        key: Arc<P>,
+        ty: &TypeKind<crate::types::effect_domain::RetainedEffects>,
+        scope: &super::lexical::ConstraintLexicalScope,
+        path: &ConstraintInferenceBranch<D, L>,
+        application: super::application::ConstraintApplicationId,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<super::KeyedConstraintProjection<D::Application, P>, TypeConstraintError> {
+        let application = path.applications.require_application(application)?;
+        let value = self.context.reify_result_type(
+            ty,
+            scope,
+            path,
+            application,
+            Some(&self.effect_predicate),
+            context,
+        )?;
+        Ok(super::KeyedConstraintProjection::retained(
+            key,
+            CompletedConstraintType::new(value, Arc::clone(&self.context)),
+        ))
+    }
+
     #[cfg(test)]
     pub(super) fn complete_fixture_application<A, D>(
         path: &ConstraintPath<D>,

@@ -44,7 +44,7 @@ pub use effect_domain::{CanonicalEffects, TypeEffectDomain};
 pub(crate) use effect_domain::{
     PreparedEffects, PreparedNamedEffectPort, PreparedNominalArgumentInference,
     PreparedTypeArguments, PreparedTypeEffectProjectionFailure, PreparedTypeEffectRoots,
-    PreparedTypeRetentionFailure,
+    PreparedTypeRetentionFailure, RetainedEffects,
 };
 pub(crate) use generic_use::TypeGenericUseCollector;
 pub use generic_use::TypeGenericUseError;

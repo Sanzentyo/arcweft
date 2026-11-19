@@ -10,6 +10,41 @@ use crate::{
     types::{GenericEffectReference, TypeProjectionError, effect_domain::PreparedTypeEffectRoots},
 };
 
+pub(super) type OriginalEffectType<'a> = (
+    &'a TypeKind<PreparedEffects>,
+    Option<&'a PreparedNamedEffectPort>,
+);
+
+pub(super) fn original_effect_roots<'a, A: TypeConstraintAccounting, D: ConstraintDomain>(
+    types: Vec<OriginalEffectType<'a>>,
+    predicates: impl IntoIterator<Item = &'a crate::effect_row::prepared::PreparedEffectPredicate>,
+    graph: PreparedEffectReadView<'a>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<PreparedTypeEffectRoots<'a>, TypeConstraintError> {
+    let projection_error = |error| match error {
+        TypeProjectionError::Control(error) => error,
+        TypeProjectionError::Instantiation(error) => {
+            TypeConstraintInvariant::Instantiation(error).into()
+        }
+    };
+    let mut roots =
+        PreparedTypeEffectRoots::collect([], predicates, context).map_err(projection_error)?;
+    for (value, port) in types {
+        let named = port
+            .map(|port| {
+                port.application(value, graph, context)?
+                    .ok_or(PreparedEffectFailure::Invariant(
+                        PreparedEffectInvariant::StaleReference,
+                    ))
+            })
+            .transpose()?;
+        roots
+            .extend_type(value, named, context)
+            .map_err(projection_error)?;
+    }
+    Ok(roots)
+}
+
 impl<D: ConstraintDomain> ConstraintPath<D> {
     /// Complete the source relation within its original read scope. Only an
     /// application issuing a continuation can retain its own Future rows.
@@ -60,41 +95,33 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
 
     pub(super) fn collect_original_effect_types<'a, A: TypeConstraintAccounting>(
         &'a self,
-        types: &mut Vec<&'a TypeKind<PreparedEffects>>,
-        graph: PreparedEffectReadView<'_>,
+        types: &mut Vec<OriginalEffectType<'a>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         for request in &self.lineage.projections {
             context.enter_node()?;
-            let value = request.value.value();
-            if let Some(port) = &request.named_effect {
-                port.arguments(value, graph, context)?
-                    .ok_or(PreparedEffectFailure::Invariant(
-                        PreparedEffectInvariant::StaleReference,
-                    ))?;
-            }
-            types.push(value);
+            types.push((request.value.value(), request.named_effect.as_ref()));
             if let Some(input) = &request.input {
                 context.enter_node()?;
-                types.push(input.value());
+                types.push((input.value(), None));
             }
         }
         for source in &self.lineage.probe_trace {
             source.visit_original_effect_types(&mut |ty| {
                 context.enter_node()?;
-                types.push(ty);
+                types.push((ty, None));
                 Ok::<_, TypeConstraintError>(())
             })?;
         }
         for equation in &self.equations {
             context.enter_node()?;
             context.enter_node()?;
-            types.push(equation.pattern.value());
-            types.push(equation.actual.value());
+            types.push((equation.pattern.value(), None));
+            types.push((equation.actual.value(), None));
         }
         for binding in self.bindings.values() {
             context.enter_node()?;
-            types.push(binding.value());
+            types.push((binding.value(), None));
         }
         Ok(())
     }
@@ -106,14 +133,8 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
     ) -> Result<PreparedConstraintEffects, TypeConstraintError> {
         let constraint = self.prepare_effect_constraint(graph, context)?;
         let mut types = Vec::new();
-        self.collect_original_effect_types(&mut types, graph.read(), context)?;
-        let roots =
-            PreparedTypeEffectRoots::collect(types, [], context).map_err(|error| match error {
-                TypeProjectionError::Control(error) => error,
-                TypeProjectionError::Instantiation(error) => {
-                    TypeConstraintInvariant::Instantiation(error).into()
-                }
-            })?;
+        self.collect_original_effect_types(&mut types, context)?;
+        let roots = original_effect_roots(types, [], graph.read(), context)?;
         let original = self.freeze_original_effect_roots::<_, TypeConstraintError>(
             &roots,
             &[&constraint],

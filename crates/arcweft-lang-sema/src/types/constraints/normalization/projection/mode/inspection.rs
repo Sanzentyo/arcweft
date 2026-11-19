@@ -4,19 +4,65 @@ use super::{
     AdmittedConstraintFunctionHeader, ArrayLength, CanonicalEffects, ConstraintConstOperandView,
     ConstraintDomain, ConstraintLexicalScope, ConstraintOperand, ConstraintOperandChildren,
     ConstraintOperandView, ConstraintProjectionPhase, GenericConstReference, GenericTypeReference,
-    InspectValues, InspectionEffects, PreparedEffects, ProjectionChildren, ProjectionMode,
-    TypeConstraintAccounting, TypeConstraintContext, TypeConstraintError, TypeConstraintInvariant,
-    TypeConstraintShape, TypeKind, rebuild_canonical,
+    PreparedEffects, ProjectionChildren, ProjectionMode, TypeConstraintAccounting,
+    TypeConstraintContext, TypeConstraintError, TypeConstraintInvariant, TypeConstraintShape,
+    TypeKind, rebuild_closed,
 };
+use crate::effect_row::EffectPredicate;
+use crate::types::effect_domain::{RebindableEffects, RetainedEffects};
+use std::marker::PhantomData;
 
-pub(in crate::types::constraints::normalization::projection) struct InspectOperand;
+pub(in crate::types::constraints::normalization::projection) struct InspectOperand<
+    E = CanonicalEffects,
+>(PhantomData<E>);
 
-impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for InspectOperand {
+trait InspectHeader: RebindableEffects {
+    fn header<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        header: &AdmittedConstraintFunctionHeader<'_, D>,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(Self::Row, EffectPredicate), TypeConstraintError>;
+}
+
+impl InspectHeader for CanonicalEffects {
+    fn header<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        header: &AdmittedConstraintFunctionHeader<'_, D>,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(Self::Row, EffectPredicate), TypeConstraintError> {
+        let ConstraintProjectionPhase::Completion { projection, .. } = phase else {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
+        };
+        projection.project_header_for_comparison(header, context)
+    }
+}
+
+impl InspectHeader for RetainedEffects {
+    fn header<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        header: &AdmittedConstraintFunctionHeader<'_, D>,
+        phase: &mut ConstraintProjectionPhase<'_, D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(Self::Row, EffectPredicate), TypeConstraintError> {
+        let ConstraintProjectionPhase::Completion {
+            projection,
+            named: Some(named),
+            ..
+        } = phase
+        else {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
+        };
+        projection.project_retained_header(header, named, context)
+    }
+}
+
+impl<'ty, D: ConstraintDomain + 'ty, E: InspectHeader> ProjectionMode<'ty, D>
+    for InspectOperand<E>
+{
     type TypeInput = ConstraintOperandView<'ty, D>;
     type ConstInput = ConstraintConstOperandView<'ty, D>;
     type Children = ConstraintOperandChildren<'ty, D>;
     type ShapeSeed = TypeConstraintShape<'ty, PreparedEffects>;
-    type TypeOutput = TypeKind;
+    type TypeOutput = TypeKind<E>;
     type ConstOutput = ArrayLength;
 
     fn ty(input: &Self::TypeInput) -> &'ty TypeKind<PreparedEffects> {
@@ -77,8 +123,11 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for InspectOperand {
         })
     }
 
-    fn type_leaf(input: &Self::TypeInput) -> TypeKind {
-        <InspectValues<CanonicalEffects> as ProjectionMode<'ty, D>>::type_leaf(&input.value())
+    fn type_leaf(input: &Self::TypeInput) -> TypeKind<E> {
+        let TypeKind::GenericParam(reference) = input.value() else {
+            unreachable!("only generic references use the leaf substitution")
+        };
+        TypeKind::GenericParam(reference.clone())
     }
 
     fn const_leaf(input: &Self::ConstInput) -> ArrayLength {
@@ -87,39 +136,43 @@ impl<'ty, D: ConstraintDomain + 'ty> ProjectionMode<'ty, D> for InspectOperand {
 
     fn rebuild<A: TypeConstraintAccounting>(
         shape: Self::ShapeSeed,
-        children: Vec<TypeKind>,
+        children: Vec<TypeKind<E>>,
         length: Option<ArrayLength>,
         header: Option<AdmittedConstraintFunctionHeader<'ty, D>>,
         phase: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<TypeKind, TypeConstraintError> {
-        let ConstraintProjectionPhase::Completion { projection, .. } = phase else {
-            return Err(TypeConstraintInvariant::OriginalProducer.into());
-        };
+    ) -> Result<TypeKind<E>, TypeConstraintError> {
         let header = header
             .as_ref()
-            .map(|header| projection.project_header_for_comparison(header, context))
+            .map(|header| E::header(header, phase, context))
             .transpose()?;
-        rebuild_canonical(shape, children, length, header)
+        rebuild_closed(shape, children, length, header)
     }
 
     fn substitute_type<A: TypeConstraintAccounting>(
         input: &Self::TypeInput,
         binding: &'ty ConstraintOperand<D>,
-        value: TypeKind,
+        value: TypeKind<E>,
         enclosing: &ConstraintLexicalScope,
         owner: &ConstraintLexicalScope,
         parameter: &GenericTypeReference,
-        phase: &mut ConstraintProjectionPhase<'_, D>,
+        _: &mut ConstraintProjectionPhase<'_, D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<TypeKind, TypeConstraintError> {
+    ) -> Result<TypeKind<E>, TypeConstraintError> {
         if input.lexical_scope().as_ref() != enclosing || binding.scope() != owner {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
         if owner == enclosing {
             return Ok(value);
         }
-        CanonicalEffects::transport(enclosing, owner, &value, parameter, phase, context)
+        enclosing
+            .transport_canonical_type(owner, &value, context)
+            .map_err(|error| {
+                TypeConstraintContext::<A, D>::binding_transport_error(
+                    error,
+                    parameter.clone().into(),
+                )
+            })
     }
 
     fn substitute_const<A: TypeConstraintAccounting>(

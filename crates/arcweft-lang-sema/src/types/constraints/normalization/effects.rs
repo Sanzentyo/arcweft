@@ -581,6 +581,70 @@ impl<D: ConstraintDomain> ConstraintEffectProjection<D> {
         Ok((checked.row, checked.predicate))
     }
 
+    pub(in crate::types::constraints::normalization) fn project_retained_header<
+        A: TypeConstraintAccounting,
+    >(
+        &mut self,
+        header: &AdmittedConstraintFunctionHeader<'_, D>,
+        named: &crate::types::effect_domain::PreparedNamedEffectUse<'_, '_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<
+        (
+            crate::types::effect_domain::RetainedEffectRow,
+            EffectPredicate,
+        ),
+        TypeConstraintError,
+    > {
+        use crate::types::effect_domain::RetainedEffectRow;
+        let header = header.view();
+        if !named.matches_row(header.row()) {
+            let checked = self.check_header_projection(header, context)?;
+            return Ok((RetainedEffectRow::Canonical(checked.row), checked.predicate));
+        }
+        let scope = header.lexical_scope();
+        let mut arguments = Vec::new();
+        for argument in named.arguments() {
+            context.enter_node()?;
+            let mut keys = BTreeSet::new();
+            let row = self.owner.project_row_value(
+                scope,
+                argument,
+                Some(&mut keys),
+                &mut self.rows,
+                context,
+            )?;
+            self.owner.header_support(
+                header,
+                ConstraintEffectField::Row,
+                row.variables()?,
+                &keys,
+                context,
+            )?;
+            arguments.push(row);
+        }
+        let mut keys = BTreeSet::new();
+        let predicate = self.owner.project_predicate_value(
+            scope,
+            header.predicate(),
+            Some(&mut keys),
+            context,
+        )?;
+        self.owner.header_support(
+            header,
+            ConstraintEffectField::Predicate,
+            predicate.variables(),
+            &keys,
+            context,
+        )?;
+        Ok((
+            RetainedEffectRow::Named {
+                declaration: named.declaration().clone(),
+                arguments: arguments.into_boxed_slice(),
+            },
+            predicate,
+        ))
+    }
+
     fn check_header_projection<A: TypeConstraintAccounting>(
         &mut self,
         header: &ConstraintFunctionHeaderView<'_, D>,
@@ -692,16 +756,30 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         rows: &mut PreparedEffectRowProjection,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(EffectRow, EffectPredicate), TypeConstraintError> {
-        let (mut row_keys, mut predicate_keys) = uses.map_or((None, None), |uses| {
+        let (row_keys, predicate_keys) = uses.map_or((None, None), |uses| {
             (Some(&mut uses.row), Some(&mut uses.predicate))
         });
-        let row = match row {
+        Ok((
+            self.project_row_value(scope, row, row_keys, rows, context)?,
+            self.project_predicate_value(scope, predicate, predicate_keys, context)?,
+        ))
+    }
+
+    fn project_row_value<A: TypeConstraintAccounting>(
+        &self,
+        scope: &ConstraintLexicalScope,
+        row: &PreparedEffectRow,
+        mut keys: Option<&mut BTreeSet<GenericEffectReference>>,
+        rows: &mut PreparedEffectRowProjection,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<EffectRow, TypeConstraintError> {
+        Ok(match row {
             PreparedEffectRow::Canonical(row) => row
                 .try_substitute_variables(context, &mut |key, context| {
-                    self.replacement(key, scope, row_keys.as_deref_mut(), context)
+                    self.replacement(key, scope, keys.as_deref_mut(), context)
                 })?,
             PreparedEffectRow::Term(reference) => {
-                if let Some(row_keys) = row_keys
+                if let Some(keys) = keys
                     && !self.substitution.is_empty()
                 {
                     let uses = self
@@ -712,21 +790,29 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                     for (key, binding) in &self.substitution {
                         context.enter_node()?;
                         if uses.contains_unknown(&binding.function)? {
-                            row_keys.insert(key.clone());
+                            keys.insert(key.clone());
                         }
                     }
                 }
                 rows.resolve(reference, context)?
             }
-        };
-        let predicate = match predicate {
-            PreparedEffectPredicate::Canonical(predicate) => {
-                predicate.try_substitute_variables(context, &mut |key, context| {
-                    self.replacement(key, scope, predicate_keys.as_deref_mut(), context)
-                })?
-            }
+        })
+    }
+
+    fn project_predicate_value<A: TypeConstraintAccounting>(
+        &self,
+        scope: &ConstraintLexicalScope,
+        predicate: &PreparedEffectPredicate,
+        mut keys: Option<&mut BTreeSet<GenericEffectReference>>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<EffectPredicate, TypeConstraintError> {
+        Ok(match predicate {
+            PreparedEffectPredicate::Canonical(predicate) => predicate
+                .try_substitute_variables(context, &mut |key, context| {
+                    self.replacement(key, scope, keys.as_deref_mut(), context)
+                })?,
             PreparedEffectPredicate::Term(_) => {
-                if let Some(predicate_keys) = predicate_keys
+                if let Some(keys) = keys
                     && !self.substitution.is_empty()
                 {
                     let uses = self
@@ -737,7 +823,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                     for (key, binding) in &self.substitution {
                         context.enter_node()?;
                         if uses.contains_unknown(&binding.function)? {
-                            predicate_keys.insert(key.clone());
+                            keys.insert(key.clone());
                         }
                     }
                 }
@@ -746,8 +832,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                     .terms()
                     .resolve_predicate(predicate, context)?
             }
-        };
-        Ok((row, predicate))
+        })
     }
 
     fn replacement<A: TypeConstraintAccounting>(

@@ -40,7 +40,7 @@ pub use crate::types::{CheckedConstraintContainerConstructor, CheckedConstraintS
 pub(crate) use application::{
     CompletedCallResult, DetachedPreparedCallableApplication, PreparedCallApplicationFailure,
     PreparedCallResult, PreparedCallableApplication, PreparedCallableApplicationReplayMismatch,
-    PreparedCallableEffectProjection,
+    PreparedCallableEffectProjection, SelectedCallableApplication, SelectedContinuation,
 };
 pub use arcweft_presentation::fx::FxSourceConstructor;
 pub use arguments::CallableParameterCoordinate;

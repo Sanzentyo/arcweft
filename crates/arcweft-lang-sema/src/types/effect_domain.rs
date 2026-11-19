@@ -13,11 +13,14 @@ use super::{
 mod tests;
 
 mod prepared;
+mod retained;
 pub(crate) use prepared::PreparedTypeEffectRoots;
 pub(crate) use prepared::{
-    PreparedEffects, PreparedNamedEffectPort, PreparedNominalArgumentInference,
-    PreparedTypeArguments, PreparedTypeEffectProjectionFailure, PreparedTypeRetentionFailure,
+    PreparedEffects, PreparedNamedEffectPort, PreparedNamedEffectUse,
+    PreparedNominalArgumentInference, PreparedTypeArguments, PreparedTypeEffectProjectionFailure,
+    PreparedTypeRetentionFailure,
 };
+pub(crate) use retained::{RebindableEffects, RetainedEffectRow, RetainedEffects};
 
 mod sealed {
     pub trait Sealed {}

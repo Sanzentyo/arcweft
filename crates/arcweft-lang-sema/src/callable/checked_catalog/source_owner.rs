@@ -414,9 +414,10 @@ mod tests {
             assert_eq!(port.owner(), id);
             let arguments = port
                 .port()
-                .arguments(&remaining, effects_graph.read(), &mut control)
+                .application(&remaining, effects_graph.read(), &mut control)
                 .unwrap()
-                .unwrap();
+                .unwrap()
+                .arguments();
             assert!(arguments.is_empty());
             let TypeKind::Function {
                 params,

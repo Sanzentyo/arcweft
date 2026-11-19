@@ -4,11 +4,11 @@ use super::*;
 use crate::types::constraints::{
     ConstraintGenericParameterId, TypeConstraintAbort, TypeConstraintConstEligibility, references,
 };
+use crate::types::effect_domain::RebindableEffects;
 use crate::{
     effect_row::{EffectPredicate, EffectRow},
     types::{
-        CanonicalEffects, GenericScopeError, TypeProjectionControl, TypeProjectionError,
-        TypeProjectionNodeKind,
+        GenericScopeError, TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind,
         projection_control::{EffectProjectionControl, visit_effect_predicate, visit_effect_row},
         structural_projection::{ScopedTypeProjection, child_depth},
     },
@@ -43,6 +43,28 @@ fn fold_error(error: TypeProjectionError<TypeConstraintError>) -> TypeConstraint
 }
 
 impl CompletedGenericContext {
+    pub(in crate::types::constraints::solution) fn reify_result_type<
+        A: TypeConstraintAccounting,
+        D: ConstraintDomain,
+        L,
+        E: RebindableEffects,
+    >(
+        &self,
+        value: &TypeKind<E>,
+        scope: &ConstraintLexicalScope,
+        path: &ConstraintInferenceBranch<D, L>,
+        application: &ConstraintApplicationScope<D>,
+        retained_predicate: Option<&CompletedValue<EffectPredicate>>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<CompletedValue<TypeKind<E>>, TypeConstraintError> {
+        context.with_original_scope(scope.clone(), |context| {
+            let mapping = self.reference_map(application, context, Direction::Reify)?;
+            let mut value = mapping.map_type(value, path, application, context)?;
+            mapping.retain_result_predicate(&mut value, retained_predicate, context)?;
+            Ok(mapping.finish(value))
+        })
+    }
+
     fn reference_map<'a, A: TypeConstraintAccounting, D: ConstraintDomain>(
         &'a self,
         application: &ConstraintApplicationScope<D>,
@@ -92,10 +114,14 @@ impl CompletedGenericContext {
             // produced by this exact original completion, never a prepared
             // term interpreted as an already canonical function contract.
             let canonical = effects.canonicalize(ty.value(), ty.scope().shape(), context)?;
-            let mapping = self.reference_map(application, context, Direction::Reify)?;
-            let mut value = mapping.map_type(&canonical, path, application, context)?;
-            mapping.retain_result_predicate(&mut value, retained_predicate, context)?;
-            Ok(mapping.finish(value))
+            self.reify_result_type(
+                &canonical,
+                ty.scope(),
+                path,
+                application,
+                retained_predicate,
+                context,
+            )
         })
     }
 
@@ -271,9 +297,13 @@ impl<'scope> ContextReferenceMap<'scope> {
     /// Finish the root header before issuing an immutable completed value.
     /// Canonical conjunction may erase references, so retain the final header's
     /// support rather than unioning every input predicate's references.
-    fn retain_result_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    fn retain_result_predicate<
+        A: TypeConstraintAccounting,
+        D: ConstraintDomain,
+        E: RebindableEffects,
+    >(
         &self,
-        value: &mut TypeKind,
+        value: &mut TypeKind<E>,
         incoming: Option<&CompletedValue<EffectPredicate>>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
@@ -321,7 +351,7 @@ impl<'scope> ContextReferenceMap<'scope> {
                 })?;
         *predicate = predicate.and(&lifted, context)?;
         let mut final_header = BTreeSet::new();
-        for reference in effects.variables()?.chain(predicate.variables()) {
+        let mut retain = |reference: &GenericEffectReference| -> Result<(), TypeConstraintError> {
             if matches!(reference, GenericEffectReference::Free(_)) {
                 context.enter_node()?;
                 let parameter = reference.clone().into();
@@ -332,6 +362,15 @@ impl<'scope> ContextReferenceMap<'scope> {
                 }
                 final_header.insert(parameter);
             }
+            Ok(())
+        };
+        for row in E::rows(effects) {
+            for reference in row.variables()? {
+                retain(reference)?;
+            }
+        }
+        for reference in predicate.variables() {
+            retain(reference)?;
         }
         self.root_header.replace(final_header);
         Ok(())
@@ -602,13 +641,13 @@ impl<'scope> ContextReferenceMap<'scope> {
         }
     }
 
-    fn map_type<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
+    fn map_type<A: TypeConstraintAccounting, D: ConstraintDomain, L, E: RebindableEffects>(
         &self,
-        ty: &TypeKind,
+        ty: &TypeKind<E>,
         path: &ConstraintInferenceBranch<D, L>,
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<TypeKind, TypeConstraintError> {
+    ) -> Result<TypeKind<E>, TypeConstraintError> {
         ty.project_structure(
             self.source_scope(),
             self.target_scope(),
@@ -753,13 +792,12 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain, L> TypeProjectionControl
     }
 }
 
-impl<A: TypeConstraintAccounting, D: ConstraintDomain, L>
-    ScopedTypeProjection<CanonicalEffects, CanonicalEffects>
-    for CompletedTypeProjection<'_, '_, '_, A, D, L>
+impl<A: TypeConstraintAccounting, D: ConstraintDomain, L, E: RebindableEffects>
+    ScopedTypeProjection<E, E> for CompletedTypeProjection<'_, '_, '_, A, D, L>
 {
     fn admit_shape(
         &mut self,
-        shape: TypeConstraintShape<'_>,
+        shape: TypeConstraintShape<'_, E>,
     ) -> Result<(), TypeProjectionError<Self::Error>> {
         if matches!(shape, TypeConstraintShape::Unresolved(_)) {
             return Err(TypeProjectionError::Control(
@@ -775,7 +813,7 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain, L>
         source: &GenericScope,
         target: &GenericScope,
         _: u64,
-    ) -> Result<TypeKind, TypeProjectionError<Self::Error>> {
+    ) -> Result<TypeKind<E>, TypeProjectionError<Self::Error>> {
         self.mapping
             .type_reference(
                 reference,
@@ -814,12 +852,13 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain, L>
 
     fn project_row(
         &mut self,
-        row: &EffectRow,
+        row: &E::Row,
         source: &GenericScope,
         target: &GenericScope,
         depth: u64,
-    ) -> Result<EffectRow, TypeProjectionError<Self::Error>> {
-        self.rename_row(row, source, target, child_depth(depth)?)
+    ) -> Result<E::Row, TypeProjectionError<Self::Error>> {
+        let depth = child_depth(depth)?;
+        E::map_row(row, |row| self.rename_row(row, source, target, depth))
     }
 
     fn project_predicate(

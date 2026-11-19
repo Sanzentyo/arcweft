@@ -18,7 +18,7 @@ pub(crate) use type_arguments::{PreparedNominalArgumentInference, PreparedTypeAr
 mod roots;
 pub(crate) use roots::PreparedTypeEffectRoots;
 mod named_port;
-pub(crate) use named_port::PreparedNamedEffectPort;
+pub(crate) use named_port::{PreparedNamedEffectPort, PreparedNamedEffectUse};
 
 /// Prepared identity is operational. This domain cannot issue a checked type
 /// digest, specialization, runtime projection or completed constraint solution.
@@ -225,6 +225,38 @@ where
 }
 
 impl TypeKind<PreparedEffects> {
+    pub(crate) fn same_continuation_type(&self, other: &Self) -> bool {
+        let (mut left, mut right) = (self, other);
+        while let (
+            Self::Function {
+                binder: left_binder,
+                predicate: left_predicate,
+                params: left_params,
+                return_type: left_result,
+                effects: left_effects,
+            },
+            Self::Function {
+                binder: right_binder,
+                predicate: right_predicate,
+                params: right_params,
+                return_type: right_result,
+                effects: right_effects,
+            },
+        ) = (left, right)
+        {
+            if left_binder != right_binder
+                || left_predicate != right_predicate
+                || left_params != right_params
+                || !left_effects.same_continuation_row(right_effects)
+            {
+                return false;
+            }
+            left = left_result;
+            right = right_result;
+        }
+        left == right
+    }
+
     pub(crate) fn function_with_canonical_effects(
         params: impl IntoIterator<Item = Self>,
         return_type: Self,

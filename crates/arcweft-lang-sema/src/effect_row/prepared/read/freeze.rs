@@ -174,8 +174,11 @@ impl PreparedEffectReadView<'_> {
             reachable.push(Dependency::Row(row), work.0)?;
         }
         if let Some(original) = original.filter(|_| !reuse_reachable) {
-            for &id in original.rows.keys() {
-                let row = PreparedEffectRow::Term(PreparedEffectRowRef(original.reference(id)));
+            for (&id, term) in &original.rows {
+                let row = PreparedEffectRow::Term(PreparedEffectRowRef::new(
+                    original.reference(id),
+                    term,
+                ));
                 reachable.push(Dependency::Row(&row), work.0)?;
             }
         }

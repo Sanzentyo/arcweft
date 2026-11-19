@@ -707,9 +707,10 @@ flow main() -> i64 {
     return 42i64
 }
 "#;
+    let (engine, executor) = artifact_bound_entry(body, "recursive-attached-default.arcw");
     assert_shared_prefix_wait_in_both_executors(
-        native(body),
-        product(body, true),
+        engine,
+        executor,
         &["default", "default", "default", "default", "default"],
     );
 }

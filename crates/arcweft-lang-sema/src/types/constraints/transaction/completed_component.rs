@@ -139,9 +139,6 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
                     ConstraintClosurePolicy::ProjectionFuture
                 }
             };
-            let value = projection
-                .project_operand(request.value.view(), branch, policy, graph, context)
-                .map_err(projection_error)?;
             let input = request
                 .input
                 .as_ref()
@@ -167,7 +164,27 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
                         .map_err(projection_error)
                 })
                 .transpose()?;
-            projections.push(
+            let value = if let Some(port) = &request.named_effect {
+                let value = projection.retain_result_operand(
+                    request.value.view(),
+                    branch,
+                    policy,
+                    graph,
+                    port,
+                    context,
+                )?;
+                solution.reify_retained_projection(
+                    Arc::clone(&request.key),
+                    &value,
+                    request.value.scope(),
+                    branch,
+                    application,
+                    context,
+                )?
+            } else {
+                let value = projection
+                    .project_operand(request.value.view(), branch, policy, graph, context)
+                    .map_err(projection_error)?;
                 solution
                     .reify_projection(
                         Arc::clone(&request.key),
@@ -180,25 +197,27 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
                         context,
                     )
                     .map_err(projection_error)?
-                    .with_source(
-                        request
-                            .source
-                            .as_ref()
-                            .map(|origin| {
-                                context.enter_node()?;
-                                Ok::<_, TypeConstraintError>(
-                                    super::super::completion::CompletedProjectionAddress {
-                                        application: source
-                                            .applications
-                                            .require_application(origin.application)?
-                                            .application(),
-                                        key: Arc::clone(&origin.key),
-                                    },
-                                )
-                            })
-                            .transpose()?,
-                        input,
-                    ),
+            };
+            projections.push(
+                value.with_source(
+                    request
+                        .source
+                        .as_ref()
+                        .map(|origin| {
+                            context.enter_node()?;
+                            Ok::<_, TypeConstraintError>(
+                                super::super::completion::CompletedProjectionAddress {
+                                    application: source
+                                        .applications
+                                        .require_application(origin.application)?
+                                        .application(),
+                                    key: Arc::clone(&origin.key),
+                                },
+                            )
+                        })
+                        .transpose()?,
+                    input,
+                ),
             );
         }
         projections.sort_by(|left, right| left.key().cmp(right.key()));

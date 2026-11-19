@@ -221,16 +221,38 @@ where
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct KeyedConstraintProjection<A, P> {
     key: Arc<P>,
-    value: super::solution::CompletedConstraintType,
+    value: CompletedProjectionValue,
     source: Option<super::completion::CompletedProjectionAddress<A, P>>,
     input: Option<super::solution::CompletedConstraintType>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum CompletedProjectionValue {
+    Canonical(super::solution::CompletedConstraintType),
+    Retained(
+        super::solution::CompletedConstraintType<crate::types::effect_domain::RetainedEffects>,
+    ),
 }
 
 impl<A, P> KeyedConstraintProjection<A, P> {
     pub(super) fn new(key: Arc<P>, value: super::solution::CompletedConstraintType) -> Self {
         Self {
             key,
-            value,
+            value: CompletedProjectionValue::Canonical(value),
+            source: None,
+            input: None,
+        }
+    }
+
+    pub(super) fn retained(
+        key: Arc<P>,
+        value: super::solution::CompletedConstraintType<
+            crate::types::effect_domain::RetainedEffects,
+        >,
+    ) -> Self {
+        Self {
+            key,
+            value: CompletedProjectionValue::Retained(value),
             source: None,
             input: None,
         }
@@ -253,7 +275,10 @@ impl<A, P> KeyedConstraintProjection<A, P> {
     }
 
     pub(crate) fn has_exact_input_match(&self) -> bool {
-        self.input.as_ref() == Some(&self.value)
+        match &self.value {
+            CompletedProjectionValue::Canonical(value) => self.input.as_ref() == Some(value),
+            CompletedProjectionValue::Retained(_) => false,
+        }
     }
 
     pub(super) const fn source(
@@ -266,15 +291,72 @@ impl<A, P> KeyedConstraintProjection<A, P> {
         &self.key
     }
 
-    pub(crate) fn value(&self) -> super::super::ScopedTypeView<'_> {
-        self.value.view()
+    pub(crate) fn canonical_value(&self) -> Option<super::super::ScopedTypeView<'_>> {
+        match &self.value {
+            CompletedProjectionValue::Canonical(value) => Some(value.view()),
+            CompletedProjectionValue::Retained(_) => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn value(&self) -> super::super::ScopedTypeView<'_> {
+        self.canonical_value()
+            .expect("canonical fixture projection")
     }
 
     pub(crate) fn to_quantified_type(
         &self,
     ) -> Result<TypeKind, super::solution::TypeInstantiationError> {
-        self.value.quantify()
+        match &self.value {
+            CompletedProjectionValue::Canonical(value) => value.quantify(),
+            CompletedProjectionValue::Retained(_) => {
+                Err(super::solution::TypeInstantiationError::UnresolvedType)
+            }
+        }
     }
+
+    pub(crate) fn to_retained_type(
+        &self,
+    ) -> Result<
+        Option<TypeKind<crate::types::effect_domain::RetainedEffects>>,
+        super::solution::TypeInstantiationError,
+    > {
+        match &self.value {
+            CompletedProjectionValue::Canonical(_) => Ok(None),
+            CompletedProjectionValue::Retained(value) => value.quantify().map(Some),
+        }
+    }
+
+    pub(super) fn equal_value_with<C: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        other: &Self,
+        context: &mut TypeConstraintContext<'_, C, D>,
+    ) -> Result<bool, TypeConstraintError> {
+        match (&self.value, &other.value) {
+            (
+                CompletedProjectionValue::Canonical(left),
+                CompletedProjectionValue::Canonical(right),
+            ) => equal_scoped(left.view(), right.view(), context),
+            (
+                CompletedProjectionValue::Retained(left),
+                CompletedProjectionValue::Retained(right),
+            ) => equal_scoped(left.view(), right.view(), context),
+            _ => Ok(false),
+        }
+    }
+}
+
+fn equal_scoped<
+    C: TypeConstraintAccounting,
+    D: ConstraintDomain,
+    E: crate::types::effect_domain::RebindableEffects,
+>(
+    left: super::super::ScopedTypeView<'_, E>,
+    right: super::super::ScopedTypeView<'_, E>,
+    context: &mut TypeConstraintContext<'_, C, D>,
+) -> Result<bool, TypeConstraintError> {
+    Ok(left.scope() == right.scope()
+        && completed_types_equal(left.value(), right.value(), context)?)
 }
 
 pub(crate) struct SolvedCandidate<D: ConstraintDomain> {
@@ -769,18 +851,26 @@ where
 
 /// Completed terms have already passed their own lexical-scope seal. Equality
 /// still visits every compared type and effect node using the live work owner.
-pub(in crate::types) fn completed_types_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
-    left: &TypeKind,
-    right: &TypeKind,
+pub(in crate::types) fn completed_types_equal<
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+    E: crate::types::effect_domain::RebindableEffects,
+>(
+    left: &TypeKind<E>,
+    right: &TypeKind<E>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError> {
     context.enter_node()?;
     type_shapes_equal(left.constraint_shape(), right.constraint_shape(), context)
 }
 
-fn type_shapes_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
-    left_shape: TypeConstraintShape<'_>,
-    right_shape: TypeConstraintShape<'_>,
+fn type_shapes_equal<
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+    E: crate::types::effect_domain::RebindableEffects,
+>(
+    left_shape: TypeConstraintShape<'_, E>,
+    right_shape: TypeConstraintShape<'_, E>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError> {
     if matches!(left_shape, TypeConstraintShape::Unresolved(_))
@@ -800,10 +890,18 @@ fn type_shapes_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
             ..
         },
     ) = (left_shape, right_shape)
-        && (!left_effects.equal_with(right_effects, context)?
-            || !left_predicate.equal_with(right_predicate, context)?)
     {
-        return Ok(false);
+        if !E::same_header(left_effects, right_effects) {
+            return Ok(false);
+        }
+        for (left, right) in E::rows(left_effects).iter().zip(E::rows(right_effects)) {
+            if !left.equal_with(right, context)? {
+                return Ok(false);
+            }
+        }
+        if !left_predicate.equal_with(right_predicate, context)? {
+            return Ok(false);
+        }
     }
     if !left_shape.same_header(right_shape) {
         return Ok(false);

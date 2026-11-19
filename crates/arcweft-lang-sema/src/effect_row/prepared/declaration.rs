@@ -19,6 +19,12 @@ impl PartialEq for PreparedEffectDeclaration {
 
 impl Eq for PreparedEffectDeclaration {}
 
+impl std::hash::Hash for PreparedEffectDeclaration {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.reference.hash(state);
+    }
+}
+
 impl PreparedEffectDeclaration {
     pub(super) fn from_header(
         reference: PreparedEffectSchemeRef,

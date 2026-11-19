@@ -123,9 +123,9 @@ impl Analyzer<'_, '_, '_> {
     /// callee is already retained as a typed edge in the prepared call graph;
     /// its body row is added by callable closure and final call sealing.
     /// An unknown fixed/detached row has no such deferred authority.
-    fn source_call_intrinsic_effects(
+    fn source_call_intrinsic_effects<R>(
         &self,
-        application: &crate::callable::PreparedCallableApplication,
+        application: &crate::callable::PreparedCallableApplication<R>,
     ) -> Result<EffectSet, FinalSemanticAnalysisError> {
         let candidate = application.selected();
         if candidate.id().is_flow_transfer() || application.retains_inputs() {

@@ -261,8 +261,19 @@ impl TypeConstraintClient<Domain> for Client<'_> {
         for request in sources {
             let result = request.result_projection();
             if let Some(result) = &result {
-                assert_eq!(result.projection().value().value(), request.actual());
-                assert!(result.projection().value().scope().binders().is_empty());
+                assert_eq!(
+                    result.projection().canonical_value().unwrap().value(),
+                    request.actual()
+                );
+                assert!(
+                    result
+                        .projection()
+                        .canonical_value()
+                        .unwrap()
+                        .scope()
+                        .binders()
+                        .is_empty()
+                );
                 let (Source::Scheme(source) | Source::ReturnedScheme(source)) =
                     &self.sources[usize::from(request.source().local())]
                 else {
@@ -285,7 +296,7 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                     .unwrap();
                 assert_eq!(
                     checked.value_type(),
-                    Some(result.projection().value().value())
+                    Some(result.projection().canonical_value().unwrap().value())
                 );
                 assert_eq!(checked.source_value_type(), Some(source));
                 assert_eq!(checked.effects(), source_fact.effects());
@@ -306,7 +317,10 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                         origin.application_id(),
                         CallableConstraintApplication::Call(result.application_id().expression())
                     );
-                    assert_eq!(origin.projection().value().value(), source);
+                    assert_eq!(
+                        origin.projection().canonical_value().unwrap().value(),
+                        source
+                    );
                     assert!(origin.source().is_none());
                 }
             }

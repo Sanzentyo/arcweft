@@ -336,12 +336,15 @@ impl ConstraintLexicalScope {
         Err(TypeInstantiationError::SpecializationScopeMismatch.into())
     }
 
-    pub(super) fn transport_canonical_type<C: TypeProjectionControl>(
+    pub(super) fn transport_canonical_type<
+        C: TypeProjectionControl,
+        E: crate::types::effect_domain::RebindableEffects,
+    >(
         &self,
         original: &Self,
-        ty: &TypeKind,
+        ty: &TypeKind<E>,
         context: &mut C,
-    ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
+    ) -> Result<TypeKind<E>, TypeProjectionError<C::Error>> {
         super::solution::map_term_with_control(
             ty,
             original.shape(),

@@ -12,9 +12,10 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use crate::{
-    effect_row::EffectRow,
+    effect_row::{EffectRow, prepared::PreparedEffectGraph},
     types::{
-        GenericScope, PreparedEffects, TypeKind, TypeProjectionControl, TypeProjectionError,
+        GenericScope, PreparedEffects, PreparedTypeEffectProjectionFailure, RetainedEffects,
+        TypeKind, TypeProjectionControl, TypeProjectionError,
         constraints::{
             CompletedConstraintComponent, ConstraintDomain, TypeConstraintInvariant,
             TypeConstraintProjectionInvariant, TypeConstraintSolution,
@@ -33,12 +34,20 @@ use super::{
 /// solution that produced it.  This is intentionally move-only: a selected
 /// application is transferred from the candidate runner into the prepared
 /// call graph and is never reconstructed from a public triplet.
-pub(crate) struct PreparedCallableApplication {
+pub(crate) struct PreparedCallableApplication<R = PreparedCallResult> {
     selected: Arc<PreparedResolvedCallable>,
     transition: CallableGroupTransition,
     solution: Arc<TypeConstraintSolution>,
-    result: PreparedCallResult,
+    result: R,
 }
+
+pub(crate) enum SelectedContinuation {
+    Canonical(TypeKind),
+    Retained(TypeKind<RetainedEffects>),
+}
+
+pub(crate) type SelectedCallableApplication =
+    PreparedCallableApplication<PreparedCallResult<SelectedContinuation>>;
 
 /// The selected output determines how this application delivers its result.
 /// An ordinary value of function type does not own a continuation.
@@ -69,6 +78,8 @@ pub(crate) enum PreparedCallApplicationFailure<E: std::error::Error + 'static> {
     Invariant(#[from] CallConstraintInvariant),
     #[error(transparent)]
     ResultType(#[from] TypeProjectionError<E>),
+    #[error(transparent)]
+    RetainedResult(#[from] TypeProjectionError<PreparedTypeEffectProjectionFailure<E>>),
 }
 
 /// The result and solution of the same completed application. The component
@@ -76,7 +87,7 @@ pub(crate) enum PreparedCallApplicationFailure<E: std::error::Error + 'static> {
 pub(crate) struct CompletedCallResult {
     schema: CallableSignatureSchemaDigest,
     solution: Arc<TypeConstraintSolution>,
-    result: CallableResultSchema,
+    result: PreparedCallResult<TypeKind<RetainedEffects>>,
 }
 
 impl CompletedCallResult {
@@ -95,10 +106,13 @@ impl CompletedCallResult {
             .find(|projection| projection.key() == result_key);
         let result = match (schema.result_schema(), projection) {
             (CallableResultSchema::Value(_), Some(projection)) => {
-                CallableResultSchema::Value(projection.to_quantified_type()?)
+                match projection.to_retained_type()? {
+                    Some(value) => PreparedCallResult::Continuation(value),
+                    None => PreparedCallResult::Value(projection.to_quantified_type()?),
+                }
             }
             (CallableResultSchema::ContentEmission(operation), None) => {
-                CallableResultSchema::ContentEmission(*operation)
+                PreparedCallResult::ContentEmission(*operation)
             }
             (CallableResultSchema::Value(_), None) => {
                 return Err(CallConstraintInvariant::Lower(
@@ -175,18 +189,14 @@ impl DetachedPreparedCallableApplication {
     }
 }
 
-impl PreparedCallableApplication {
-    /// Callable-owned sealing point for the consuming selected-transaction
-    /// path.  The completed group is derived from the selected callable so a
-    /// caller cannot pair a candidate with an independently supplied group.
-    /// The returned application is move-only and no alternate constructor is
-    /// available to tests or analyzer code.
-    pub(crate) fn seal_from_selected_transaction<C: TypeProjectionControl>(
+impl SelectedCallableApplication {
+    /// Seal the transition and result from the same selected transaction.
+    /// Retained applications are installed after restoring its graph deltas.
+    pub(crate) fn select_from_transaction(
         selected: Arc<PreparedResolvedCallable>,
         mapping: &super::PreparedCallArgumentMapping,
         completed: CompletedCallResult,
-        control: &mut C,
-    ) -> Result<Self, PreparedCallApplicationFailure<C::Error>> {
+    ) -> Result<Self, CallConstraintInvariant> {
         let transition = selected.application_transition(mapping)?;
         let CompletedCallResult {
             schema,
@@ -194,20 +204,21 @@ impl PreparedCallableApplication {
             result,
         } = completed;
         if schema != selected.schema().semantic_digest() {
-            return Err(CallConstraintInvariant::PreparedSchemaMismatch.into());
+            return Err(CallConstraintInvariant::PreparedSchemaMismatch);
         }
         let result = match (transition.continuation_position(), result) {
-            (None, CallableResultSchema::Value(value)) => PreparedCallResult::Value(value),
-            (None, CallableResultSchema::ContentEmission(operation)) => {
+            (None, PreparedCallResult::Value(value)) => PreparedCallResult::Value(value),
+            (None, PreparedCallResult::ContentEmission(operation)) => {
                 PreparedCallResult::ContentEmission(operation)
             }
-            (Some(_), CallableResultSchema::Value(value @ TypeKind::Function { .. })) => {
-                PreparedCallResult::Continuation(
-                    value.prepare_effects(&GenericScope::default(), control)?,
-                )
+            (Some(_), PreparedCallResult::Value(value @ TypeKind::Function { .. })) => {
+                PreparedCallResult::Continuation(SelectedContinuation::Canonical(value))
             }
-            (Some(_), _) => {
-                return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
+            (Some(_), PreparedCallResult::Continuation(value @ TypeKind::Function { .. })) => {
+                PreparedCallResult::Continuation(SelectedContinuation::Retained(value))
+            }
+            _ => {
+                return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
             }
         };
         Ok(Self {
@@ -218,6 +229,35 @@ impl PreparedCallableApplication {
         })
     }
 
+    pub(crate) fn install_result<C: TypeProjectionControl>(
+        self,
+        graph: &mut PreparedEffectGraph,
+        control: &mut C,
+    ) -> Result<PreparedCallableApplication, PreparedCallApplicationFailure<C::Error>> {
+        let result = match self.result {
+            PreparedCallResult::Value(value) => PreparedCallResult::Value(value),
+            PreparedCallResult::ContentEmission(operation) => {
+                PreparedCallResult::ContentEmission(operation)
+            }
+            PreparedCallResult::Continuation(SelectedContinuation::Canonical(value)) => {
+                PreparedCallResult::Continuation(
+                    value.prepare_effects(&GenericScope::default(), control)?,
+                )
+            }
+            PreparedCallResult::Continuation(SelectedContinuation::Retained(value)) => {
+                PreparedCallResult::Continuation(value.install_effects(graph, control)?)
+            }
+        };
+        Ok(PreparedCallableApplication {
+            selected: self.selected,
+            transition: self.transition,
+            solution: self.solution,
+            result,
+        })
+    }
+}
+
+impl<R> PreparedCallableApplication<R> {
     pub(crate) fn selected(&self) -> &PreparedResolvedCallable {
         self.selected.as_ref()
     }
@@ -246,10 +286,12 @@ impl PreparedCallableApplication {
         self.selected.schema().semantic_digest()
     }
 
-    pub(crate) const fn result(&self) -> &PreparedCallResult {
+    pub(crate) const fn result(&self) -> &R {
         &self.result
     }
+}
 
+impl PreparedCallableApplication {
     pub(crate) fn function_input_specialization_with_control<
         C: crate::types::TypeProjectionControl,
     >(
@@ -378,7 +420,13 @@ impl PreparedCallableApplication {
         if self.solution != other.solution {
             return Some(PreparedCallableApplicationReplayMismatch::Solution);
         }
-        if self.result != other.result {
+        let same_result = match (&self.result, &other.result) {
+            (PreparedCallResult::Continuation(left), PreparedCallResult::Continuation(right)) => {
+                left.same_continuation_type(right)
+            }
+            (left, right) => left == right,
+        };
+        if !same_result {
             return Some(PreparedCallableApplicationReplayMismatch::Result);
         }
         None

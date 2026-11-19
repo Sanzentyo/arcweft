@@ -144,12 +144,7 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
                 context.enter_node()?;
                 if left.key() != right.key()
                     || left.source() != right.source()
-                    || left.value().scope() != right.value().scope()
-                    || !super::normalization::completed_types_equal(
-                        left.value().value(),
-                        right.value().value(),
-                        context,
-                    )?
+                    || !left.equal_value_with(right, context)?
                 {
                     return Ok(false);
                 }

@@ -2647,7 +2647,7 @@ impl Analyzer<'_, '_, '_> {
                 ));
             }
         };
-        let transaction = ran.into_prepared_application(&mut context.work())?;
+        let transaction = ran.into_prepared_application()?;
         let inventory = AnalyzerPreparedCandidateInventory::from_considered(
             transaction.candidate(),
             considered,
@@ -2968,7 +2968,7 @@ impl Analyzer<'_, '_, '_> {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
         };
-        let transaction = ran.into_prepared_application(&mut context.work())?;
+        let transaction = ran.into_prepared_application()?;
         let inventory = AnalyzerPreparedCandidateInventory::from_considered(
             transaction.candidate(),
             vec![Arc::clone(&candidate)],
@@ -3056,7 +3056,7 @@ impl Analyzer<'_, '_, '_> {
             self.discard_candidate_semantic_projection(source.owner, projection)?;
         }
         let (selected_ran, outer_projection) = selected_transaction.into_parts();
-        let selected_transaction = selected_ran.into_prepared_application(&mut context.work())?;
+        let selected_transaction = selected_ran.into_prepared_application()?;
         let selected = selected_transaction.selected_shared().clone();
         let specialization = selected_transaction
             .specialization_result()
@@ -3284,7 +3284,6 @@ impl Analyzer<'_, '_, '_> {
                 ..
             } => owner,
         };
-        let result = transaction.result().clone();
         let (application, consumer, callee_inputs, inputs, sealed_branch, component) =
             transaction.into_parts();
         let mut projections = vec![outer_projection];
@@ -3323,6 +3322,9 @@ impl Analyzer<'_, '_, '_> {
         self.facts
             .apply_candidate_projections(transaction_authority, projections, &mut preparation_work)
             .map_err(|failure| failure.into_expression_error())?;
+        let application =
+            self.install_selected_call_result(owner, application, &mut preparation_work)?;
+        let result = application.result().clone();
         let shared_component = component.shared_component();
         for nested in nested_calls.into_vec() {
             self.stage_completed_nested_call(
@@ -3361,6 +3363,22 @@ impl Analyzer<'_, '_, '_> {
                 CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fact(violation))
             })?;
         Ok(result)
+    }
+
+    fn install_selected_call_result(
+        &mut self,
+        owner: ExprId,
+        application: crate::callable::SelectedCallableApplication,
+        work: &mut super::preparation_work::AnalyzerPreparationWork<'_>,
+    ) -> Result<crate::callable::PreparedCallableApplication, AnalyzerExpressionError> {
+        let (graph, _) = self
+            .facts
+            .effect_declarations_mut()
+            .map_err(AnalyzerExpressionError::fact)?
+            .relation();
+        application
+            .install_result(graph, work)
+            .map_err(|error| constraints::selected_application_error(owner, error))
     }
 
     fn stage_completed_nested_call(
@@ -3412,9 +3430,7 @@ impl Analyzer<'_, '_, '_> {
         let transaction = PreparedCallApplicationTransaction::from_completed_nested_call(
             &recipe,
             Arc::clone(&component),
-            &mut preparation_work,
         )?;
-        let result = transaction.result().clone();
         let selected_callable = transaction.selected_shared().clone();
         let direct_effects = self
             .source_call_execution_effects(owner, &transaction)
@@ -3434,7 +3450,7 @@ impl Analyzer<'_, '_, '_> {
                 },
             ));
         }
-        let callee_expression = match &result {
+        let callee_expression = match transaction.result() {
             PreparedCallResult::Value(_) | PreparedCallResult::Continuation(_) => {
                 let callable_effects = self
                     .source_callable_effects(&selected_callable, None)
@@ -3537,6 +3553,9 @@ impl Analyzer<'_, '_, '_> {
         );
         let (application, consumer, callee_inputs, inputs, sealed_branch, component_evidence) =
             transaction.into_parts();
+        let application =
+            self.install_selected_call_result(owner, application, &mut preparation_work)?;
+        let result = application.result().clone();
         if !matches!(sealed_branch, constraints::AnalyzerCallSealedBranch::Empty)
             || component_evidence.application() != owner
         {

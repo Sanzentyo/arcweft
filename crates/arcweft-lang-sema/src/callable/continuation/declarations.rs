@@ -52,6 +52,7 @@ pub(crate) enum PreparedApplicationResult {
 pub(crate) struct PreparedApplicationResultEffect {
     owner: CheckedCallableId,
     port: PreparedNamedEffectPort,
+    declared_continuation: bool,
 }
 
 impl PreparedApplicationResultEffect {
@@ -65,6 +66,10 @@ impl PreparedApplicationResultEffect {
 
     pub(crate) fn port(&self) -> &PreparedNamedEffectPort {
         &self.port
+    }
+
+    pub(crate) const fn declared_continuation(&self) -> bool {
+        self.declared_continuation
     }
 }
 
@@ -476,6 +481,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             .map(|port| PreparedApplicationResultEffect {
                 owner: owner.clone(),
                 port,
+                declared_continuation: transition.continuation_position().is_some(),
             })
         } else {
             None

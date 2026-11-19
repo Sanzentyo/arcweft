@@ -37,36 +37,57 @@ impl<'a> PreparedTypeEffectRoots<'a> {
         types: impl IntoIterator<Item = &'a TypeKind<PreparedEffects>>,
         control: &mut C,
     ) -> Result<(), TypeProjectionError<C::Error>> {
-        let mut pending = Vec::new();
         for ty in types {
-            control
-                .visit_node(TypeProjectionNodeKind::Type, 1)
-                .map_err(TypeProjectionError::Control)?;
-            pending.push((ty, 1u64));
-            while let Some((ty, depth)) = pending.pop() {
-                let shape = ty.constraint_shape();
-                if let TypeConstraintShape::Function {
-                    effects, predicate, ..
-                } = shape
+            self.extend_type(ty, None, control)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn extend_type<C: TypeProjectionControl>(
+        &mut self,
+        ty: &'a TypeKind<PreparedEffects>,
+        named: Option<PreparedNamedEffectUse<'a, 'a>>,
+        control: &mut C,
+    ) -> Result<(), TypeProjectionError<C::Error>> {
+        let mut pending = Vec::new();
+        control
+            .visit_node(TypeProjectionNodeKind::Type, 1)
+            .map_err(TypeProjectionError::Control)?;
+        pending.push((ty, 1u64));
+        while let Some((ty, depth)) = pending.pop() {
+            let shape = ty.constraint_shape();
+            if let TypeConstraintShape::Function {
+                effects, predicate, ..
+            } = shape
+            {
+                control
+                    .visit_node(TypeProjectionNodeKind::Effect, depth)
+                    .map_err(TypeProjectionError::Control)?;
+                if let Some(named) = &named
+                    && named.matches_row(effects)
                 {
-                    control
-                        .visit_node(TypeProjectionNodeKind::Effect, depth)
-                        .map_err(TypeProjectionError::Control)?;
+                    for row in named.arguments() {
+                        control
+                            .visit_node(TypeProjectionNodeKind::Effect, depth)
+                            .map_err(TypeProjectionError::Control)?;
+                        self.rows.push(row);
+                    }
+                } else {
                     self.rows.push(effects);
-                    control
-                        .visit_node(TypeProjectionNodeKind::Effect, depth)
-                        .map_err(TypeProjectionError::Control)?;
-                    self.predicates.push(predicate);
                 }
-                let next_depth = depth
-                    .checked_add(1)
-                    .ok_or(TypeInstantiationError::DepthOverflow)?;
-                for child in shape.children() {
-                    control
-                        .visit_node(TypeProjectionNodeKind::Type, next_depth)
-                        .map_err(TypeProjectionError::Control)?;
-                    pending.push((child, next_depth));
-                }
+                control
+                    .visit_node(TypeProjectionNodeKind::Effect, depth)
+                    .map_err(TypeProjectionError::Control)?;
+                self.predicates.push(predicate);
+            }
+            let next_depth = depth
+                .checked_add(1)
+                .ok_or(TypeInstantiationError::DepthOverflow)?;
+            for child in shape.children() {
+                control
+                    .visit_node(TypeProjectionNodeKind::Type, next_depth)
+                    .map_err(TypeProjectionError::Control)?;
+                pending.push((child, next_depth));
             }
         }
         Ok(())

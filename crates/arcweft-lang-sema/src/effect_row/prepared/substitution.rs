@@ -405,6 +405,28 @@ impl Drop for PreparedEffectTermEdit<'_> {
 }
 
 impl PreparedEffectTermEdit<'_> {
+    pub(crate) fn named_application<C: DecisionControl>(
+        &mut self,
+        declaration: &PreparedEffectDeclaration,
+        arguments: Vec<PreparedEffectRow>,
+        control: &mut C,
+    ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
+        if !matches!(self.state, TermEditState::Open) {
+            return Err(PreparedEffectInvariant::TermEditState.into());
+        }
+        let result = declaration
+            .validate(self.graph)
+            .map_err(PreparedEffectFailure::Invariant)
+            .and_then(|()| {
+                self.graph
+                    .application(declaration.scheme(), arguments, control)
+            });
+        if result.is_err() {
+            self.invalidate();
+        }
+        result
+    }
+
     /// Instantiate an already declared unknown in the same atomic term edit
     /// as the transport of its actual captured inputs.
     pub(crate) fn unknown_application<C: DecisionControl>(

@@ -12,6 +12,27 @@ pub(crate) struct PreparedNamedEffectPort {
     return_edges: usize,
 }
 
+/// The exact field selected in one borrowed type and its live operands.
+pub(crate) struct PreparedNamedEffectUse<'ty, 'g> {
+    row: &'ty PreparedEffectRow,
+    declaration: &'g PreparedEffectDeclaration,
+    arguments: &'g [PreparedEffectRow],
+}
+
+impl<'g> PreparedNamedEffectUse<'_, 'g> {
+    pub(crate) fn matches_row(&self, row: &PreparedEffectRow) -> bool {
+        std::ptr::eq(self.row, row)
+    }
+
+    pub(crate) fn declaration(&self) -> &'g PreparedEffectDeclaration {
+        self.declaration
+    }
+
+    pub(crate) fn arguments(&self) -> &'g [PreparedEffectRow] {
+        self.arguments
+    }
+}
+
 impl PreparedNamedEffectPort {
     pub(crate) fn for_type<C: DecisionControl>(
         declaration: &PreparedEffectDeclaration,
@@ -25,7 +46,7 @@ impl PreparedNamedEffectPort {
             return_edges,
         };
         Ok(port
-            .arguments(ty, graph, control)?
+            .application(ty, graph, control)?
             .is_some()
             .then_some(port))
     }
@@ -37,18 +58,20 @@ impl PreparedNamedEffectPort {
     /// Re-open the occurrence on a scoped copy of the result. Scope transport
     /// can change the term and its arguments, so the lease owns the declaration
     /// and the structural position rather than a graph-local row identity.
-    pub(crate) fn arguments<'g, C: DecisionControl>(
-        &self,
-        ty: &TypeKind<PreparedEffects>,
+    pub(crate) fn application<'ty, 'g, C: DecisionControl>(
+        &'g self,
+        ty: &'ty TypeKind<PreparedEffects>,
         graph: PreparedEffectReadView<'g>,
         control: &mut C,
-    ) -> Result<Option<&'g [PreparedEffectRow]>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Option<PreparedNamedEffectUse<'ty, 'g>>, PreparedEffectFailure<C::Error>> {
         let row = Self::return_spine_row(self.return_edges, ty, control)?;
         match row {
             PreparedEffectRow::Canonical(_) => Ok(None),
-            PreparedEffectRow::Term(_) => {
-                Ok(Some(self.declaration.application_arguments(graph, row)?))
-            }
+            PreparedEffectRow::Term(_) => Ok(Some(PreparedNamedEffectUse {
+                row,
+                declaration: &self.declaration,
+                arguments: self.declaration.application_arguments(graph, row)?,
+            })),
         }
     }
 
@@ -140,12 +163,19 @@ mod tests {
         let before_term = graph
             .application(&scheme, before.to_vec(), &mut control)
             .unwrap();
+        let replay = graph
+            .application(&scheme, before.to_vec(), &mut control)
+            .unwrap();
         let after_term = graph
             .application(&scheme, after.to_vec(), &mut control)
             .unwrap();
         let wrong_term = graph
             .application(&other, after.to_vec(), &mut control)
             .unwrap();
+        assert_ne!(before_term, replay);
+        assert!(before_term.same_continuation_row(&replay));
+        assert!(!before_term.same_continuation_row(&after_term));
+        assert!(!after_term.same_continuation_row(&wrong_term));
         let result = |terminal| {
             arrow(
                 arrow(TypeKind::I64, TypeKind::I64, before_term.clone()),
@@ -159,17 +189,19 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert_eq!(
-            port.arguments(&initial, graph.read(), &mut control)
-                .unwrap(),
+            port.application(&initial, graph.read(), &mut control)
+                .unwrap()
+                .map(|application| application.arguments),
             Some(before.as_slice())
         );
         assert_eq!(
-            port.arguments(&result(after_term), graph.read(), &mut control)
-                .unwrap(),
+            port.application(&result(after_term), graph.read(), &mut control)
+                .unwrap()
+                .map(|application| application.arguments),
             Some(after.as_slice())
         );
         assert!(matches!(
-            port.arguments(&result(wrong_term), graph.read(), &mut control),
+            port.application(&result(wrong_term), graph.read(), &mut control),
             Err(PreparedEffectFailure::Invariant(
                 PreparedEffectInvariant::StaleReference
             )),

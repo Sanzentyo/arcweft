@@ -8,6 +8,7 @@ use crate::types::{
     TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind,
 };
 
+use crate::types::effect_domain::RebindableEffects;
 use crate::types::projection_control::{EffectProjectionControl, UnmeteredTypeProjection};
 use crate::types::projection_control::{visit_effect_predicate, visit_effect_row};
 use crate::types::structural_projection::{ScopedTypeProjection, child_depth};
@@ -588,7 +589,9 @@ impl ScopedTypeView<'_> {
         )
         .map(ScopedType::into_value)
     }
+}
 
+impl<E: RebindableEffects> ScopedTypeView<'_, E> {
     pub(in crate::types::constraints::solution) fn quantify_suffix_with_predicate_and_control<
         C: TypeProjectionControl,
     >(
@@ -596,7 +599,7 @@ impl ScopedTypeView<'_> {
         incoming_predicate: &EffectPredicate,
         ambient: &GenericScope,
         control: &mut C,
-    ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
+    ) -> Result<ScopedType<E>, TypeProjectionError<C::Error>> {
         control.check().map_err(TypeProjectionError::Control)?;
         if !self.scope().binders().starts_with(ambient.binders()) {
             return Err(TypeInstantiationError::SpecializationScopeMismatch.into());
@@ -731,7 +734,7 @@ impl ScopedTypeView<'_> {
                 effect_reference(reference, source, target).map_err(Into::into)
             })
         };
-        let project = |ty: &TypeKind, control: &mut C| {
+        let project = |ty: &TypeKind<E>, control: &mut C| {
             map_term_with_control(
                 ty,
                 &source,
@@ -779,7 +782,7 @@ impl ScopedTypeView<'_> {
                     .map(|ty| project(ty, control))
                     .collect::<Result<Vec<_>, _>>()?,
                 project(return_type, control)?,
-                effect_map(effects, &source, &target, 1, control)?,
+                E::map_row(effects, |row| effect_map(row, &source, &target, 1, control))?,
             ),
             ambient.clone(),
         ))
@@ -1051,8 +1054,11 @@ struct TemplateProjection<'a, C, Types, Consts, Effects> {
     clippy::too_many_arguments,
     reason = "one scoped fold owns source and target binders, accounting, and the three scalar projection operations"
 )]
-pub(in crate::types::constraints) fn map_term_with_control<C: TypeProjectionControl>(
-    ty: &TypeKind,
+pub(in crate::types::constraints) fn map_term_with_control<
+    C: TypeProjectionControl,
+    E: RebindableEffects,
+>(
+    ty: &TypeKind<E>,
     source: &GenericScope,
     target: &GenericScope,
     depth: u64,
@@ -1063,7 +1069,7 @@ pub(in crate::types::constraints) fn map_term_with_control<C: TypeProjectionCont
         &GenericScope,
         u64,
         &mut C,
-    ) -> Result<TypeKind, TypeProjectionError<C::Error>>,
+    ) -> Result<TypeKind<E>, TypeProjectionError<C::Error>>,
     consts: &impl Fn(
         &ArrayLength,
         &GenericScope,
@@ -1078,7 +1084,7 @@ pub(in crate::types::constraints) fn map_term_with_control<C: TypeProjectionCont
         u64,
         &mut C,
     ) -> Result<EffectRow, TypeProjectionError<C::Error>>,
-) -> Result<TypeKind, TypeProjectionError<C::Error>> {
+) -> Result<TypeKind<E>, TypeProjectionError<C::Error>> {
     ty.project_structure(
         source,
         target,
@@ -1110,7 +1116,7 @@ impl<C: TypeProjectionControl, Types, Consts, Effects> TypeProjectionControl
     }
 }
 
-impl<C, Types, Consts, Effects> ScopedTypeProjection<CanonicalEffects, CanonicalEffects>
+impl<C, Types, Consts, Effects, E: RebindableEffects> ScopedTypeProjection<E, E>
     for TemplateProjection<'_, C, Types, Consts, Effects>
 where
     C: TypeProjectionControl,
@@ -1120,7 +1126,7 @@ where
         &GenericScope,
         u64,
         &mut C,
-    ) -> Result<TypeKind, TypeProjectionError<C::Error>>,
+    ) -> Result<TypeKind<E>, TypeProjectionError<C::Error>>,
     Consts: Fn(
         &ArrayLength,
         &GenericScope,
@@ -1142,7 +1148,7 @@ where
         source: &GenericScope,
         target: &GenericScope,
         depth: u64,
-    ) -> Result<TypeKind, TypeProjectionError<Self::Error>> {
+    ) -> Result<TypeKind<E>, TypeProjectionError<Self::Error>> {
         (self.types)(reference, source, target, depth, self.control)
     }
 
@@ -1163,12 +1169,15 @@ where
 
     fn project_row(
         &mut self,
-        row: &EffectRow,
+        row: &E::Row,
         source: &GenericScope,
         target: &GenericScope,
         depth: u64,
-    ) -> Result<EffectRow, TypeProjectionError<Self::Error>> {
-        (self.effects)(row, source, target, child_depth(depth)?, self.control)
+    ) -> Result<E::Row, TypeProjectionError<Self::Error>> {
+        let depth = child_depth(depth)?;
+        E::map_row(row, |row| {
+            (self.effects)(row, source, target, depth, self.control)
+        })
     }
 
     fn project_predicate(
@@ -1204,12 +1213,13 @@ pub(super) fn clone_term_with_control<C: TypeProjectionControl>(
 
 pub(in crate::types::constraints::solution) fn clone_scoped_term_with_control<
     C: TypeProjectionControl,
+    E: RebindableEffects,
 >(
-    ty: &TypeKind,
+    ty: &TypeKind<E>,
     scope: &GenericScope,
     depth: u64,
     control: &mut C,
-) -> Result<TypeKind, TypeProjectionError<C::Error>> {
+) -> Result<TypeKind<E>, TypeProjectionError<C::Error>> {
     map_term_with_control(
         ty,
         scope,

@@ -1,10 +1,8 @@
 //! The joint relation retains each source's own universal premise separately.
 
+use super::super::super::original_effects::original_effect_roots;
 use super::*;
-use crate::{
-    effect_row::prepared::{PreparedEffectScopedConstraint, ScopedEffectCompletion},
-    types::effect_domain::PreparedTypeEffectRoots,
-};
+use crate::effect_row::prepared::{PreparedEffectScopedConstraint, ScopedEffectCompletion};
 
 #[cfg(test)]
 mod tests;
@@ -89,7 +87,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
             let mut types = Vec::new();
             let mut predicates = Vec::new();
-            for value in self.values.values() {
+            for (&producer, value) in &self.values {
                 context.enter_node()?;
                 // Later value uses are not inputs, even when their results
                 // contain new effect labels or refer to an original producer.
@@ -110,20 +108,29 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     predicates.push(&alternative.predicate);
                     if let ValueContent::Available { ty } = &alternative.value {
                         context.enter_node()?;
-                        types.push(ty);
+                        let port = match (&value.definition, selected.get(&producer)) {
+                            (ValueDefinition::Constraint { frontiers }, Some(ProducerBranch::Constraint { frontier, path })) => {
+                                let frontier = &frontiers[*frontier];
+                                let request = crate::types::constraints::transaction::ResolvedConstraintResult::request(
+                                    &frontier.result, &frontier.transaction.frontier[*path],
+                                )?;
+                                request.named_effect.as_ref()
+                            }
+                            _ => None,
+                        };
+                        types.push((ty, port));
                     }
                 }
             }
             for member in members {
                 let path = self.original_path(*member)?;
-                path.collect_original_effect_types(&mut types, graph.read(), context)?;
+                path.collect_original_effect_types(&mut types, context)?;
             }
             for binding in branch.bindings.values() {
                 context.enter_node()?;
-                types.push(binding.value());
+                types.push((binding.value(), None));
             }
-            let roots = PreparedTypeEffectRoots::collect(types, predicates, context)
-                .map_err(projection_failure)?;
+            let roots = original_effect_roots(types, predicates, graph.read(), context)?;
             let relation = branch.freeze_original_effect_roots::<_, OriginalInferenceFailure>(
                 &roots,
                 &constraints,

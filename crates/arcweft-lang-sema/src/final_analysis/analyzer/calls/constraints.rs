@@ -3577,6 +3577,7 @@ pub(super) struct PreparedCallOutputProjections<'a> {
     result: PreparedCallOutput<'a>,
     future_parameters: Vec<GenericTypeReference>,
     closure: TypeConstraintProjectionClosure,
+    parent_constraint_operand: bool,
 }
 
 impl PreparedCallOutputProjections<'_> {
@@ -3584,9 +3585,34 @@ impl PreparedCallOutputProjections<'_> {
         &self,
     ) -> Option<&crate::callable::PreparedApplicationResultEffect> {
         match &self.result {
-            PreparedCallOutput::Value { result_effect, .. } => result_effect.as_ref(),
+            PreparedCallOutput::Value { result_effect, .. }
+                if self.retained_result_effect().is_none() =>
+            {
+                result_effect.as_ref()
+            }
+            PreparedCallOutput::Value { .. } => None,
             PreparedCallOutput::ContentEmission => None,
         }
+    }
+
+    fn retained_result_effect(&self) -> Option<&crate::types::PreparedNamedEffectPort> {
+        let PreparedCallOutput::Value {
+            result_effect: Some(effect),
+            expected,
+            ..
+        } = &self.result
+        else {
+            return None;
+        };
+        // A correlated child is submitted as the operand of its parent's
+        // relation. A whole-value annotation can also constrain or rank the
+        // complete function. An invocation expectation applies below it.
+        (!self.parent_constraint_operand
+            && effect.declared_continuation()
+            && expected.as_ref().is_none_or(|value| {
+                matches!(value.target, PreparedCallResultTarget::NextInvocation)
+            }))
+        .then(|| effect.port())
     }
 
     fn constrain_context<C: TypeConstraintClient<AnalyzerCallConstraintDomain>>(
@@ -3669,7 +3695,7 @@ impl PreparedCallOutputProjections<'_> {
     ) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
         self.visit_projections(|key, value, closure, input| {
             let named_effect = if matches!(key, AnalyzerCallProjection::Result) {
-                self.result_effect().map(|effect| effect.port())
+                self.retained_result_effect()
             } else {
                 None
             };
@@ -3860,6 +3886,7 @@ pub(crate) struct PreparedCallConstraintSet {
     receiver_constraints: Box<[PreparedCallTypeConstraint]>,
     retains_inputs: bool,
     result_closure: TypeConstraintProjectionClosure,
+    parent_constraint_operand: bool,
     future_parameters: Vec<GenericTypeReference>,
     initialization: PreparedCallConstraintInitialization,
 }
@@ -3982,6 +4009,7 @@ impl PreparedCallConstraintSet {
             result,
             future_parameters: self.future_parameters.clone(),
             closure: self.result_closure,
+            parent_constraint_operand: self.parent_constraint_operand,
         })
     }
 }
@@ -4165,7 +4193,7 @@ pub(crate) struct PreparedCallApplicationTransaction {
 }
 
 struct PreparedCallApplicationTransactionData {
-    application: PreparedCallableApplication,
+    application: crate::callable::SelectedCallableApplication,
     consumer: AnalyzerCallConsumerAdmission,
     callee_inputs: PreparedCallCalleeConstraintInputs,
     inputs: PreparedCallInputs,
@@ -4349,7 +4377,6 @@ impl RanCandidateTransaction {
     /// sole analyzer-to-callable application sealing seam.
     pub(super) fn into_prepared_application(
         self,
-        control: &mut super::super::preparation_work::AnalyzerPreparationWork<'_>,
     ) -> Result<PreparedCallApplicationTransaction, AnalyzerExpressionError> {
         let RanCandidateTransactionData {
             application: application_owner,
@@ -4365,13 +4392,12 @@ impl RanCandidateTransaction {
         let component =
             CompletedCallApplicationEvidence::new(Arc::new(component), application_owner)
                 .map_err(|error| selected_application_error(application_owner, error.into()))?;
-        let application = PreparedCallableApplication::seal_from_selected_transaction(
+        let application = crate::callable::SelectedCallableApplication::select_from_transaction(
             candidate,
             inputs.mapping(),
             result,
-            control,
         )
-        .map_err(|error| selected_application_error(application_owner, error))?;
+        .map_err(|error| selected_application_error(application_owner, error.into()))?;
         if application.completed_group() != current_group {
             return Err(selected_application_error(
                 application_owner,
@@ -4391,7 +4417,7 @@ impl RanCandidateTransaction {
     }
 }
 
-fn selected_application_error(
+pub(super) fn selected_application_error(
     owner: ExprId,
     failure: crate::callable::PreparedCallApplicationFailure<
         crate::final_analysis::FinalSemanticAnalysisError,
@@ -4409,11 +4435,17 @@ fn selected_application_error(
                 error,
             ),
         ),
+        PreparedCallApplicationFailure::RetainedResult(error) => AnalyzerExpressionError::fatal(
+            crate::final_analysis::FinalSemanticAnalysisError::source_type_effect_projection(
+                owner.into(),
+                error,
+            ),
+        ),
     }
 }
 
 impl PreparedCallApplicationTransaction {
-    pub(super) fn application(&self) -> &PreparedCallableApplication {
+    pub(super) fn application(&self) -> &crate::callable::SelectedCallableApplication {
         &self.data.application
     }
 
@@ -4432,7 +4464,6 @@ impl PreparedCallApplicationTransaction {
         component: Arc<
             crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>,
         >,
-        control: &mut super::super::preparation_work::AnalyzerPreparationWork<'_>,
     ) -> Result<Self, AnalyzerExpressionError> {
         let evidence = CompletedCallApplicationEvidence::new(component, recipe.owner)
             .map_err(|error| selected_application_error(recipe.owner, error.into()))?;
@@ -4443,13 +4474,12 @@ impl PreparedCallApplicationTransaction {
             recipe.candidate.schema(),
         )
         .map_err(|error| selected_application_error(recipe.owner, error.into()))?;
-        let application = PreparedCallableApplication::seal_from_selected_transaction(
+        let application = crate::callable::SelectedCallableApplication::select_from_transaction(
             Arc::clone(&recipe.candidate),
             recipe.inputs.mapping(),
             result,
-            control,
         )
-        .map_err(|error| selected_application_error(recipe.owner, error))?;
+        .map_err(|error| selected_application_error(recipe.owner, error.into()))?;
         if application.completed_group() != recipe.group {
             return Err(selected_application_error(
                 recipe.owner,
@@ -4476,7 +4506,7 @@ impl PreparedCallApplicationTransaction {
         self.data.application.selected_shared()
     }
 
-    pub(crate) fn result(&self) -> &PreparedCallResult {
+    pub(super) fn result(&self) -> &PreparedCallResult<crate::callable::SelectedContinuation> {
         self.data.application.result()
     }
 
@@ -4611,7 +4641,7 @@ impl PreparedCallApplicationTransaction {
     pub(crate) fn into_parts(
         self,
     ) -> (
-        PreparedCallableApplication,
+        crate::callable::SelectedCallableApplication,
         AnalyzerCallConsumerAdmission,
         PreparedCallCalleeConstraintInputs,
         PreparedCallInputs,
@@ -6370,6 +6400,7 @@ pub(super) fn validate_and_prepare_call_constraints(
         receiver_constraints: receiver_constraints.into_boxed_slice(),
         retains_inputs: transition.retains_inputs(),
         result_closure,
+        parent_constraint_operand: parent_source.is_some(),
         future_parameters,
         initialization,
     })

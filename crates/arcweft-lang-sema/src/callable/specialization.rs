@@ -287,9 +287,13 @@ impl CheckedFunctionSpecialization {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
         };
         let solution = result.application().solution();
+        let target = result
+            .projection()
+            .canonical_value()
+            .ok_or(CallConstraintInvariant::PreparedFunctionTypeMismatch)?;
         if binder.is_empty()
             || solution.template_scope().binders() != [*binder]
-            || !result.projection().value().scope().binders().is_empty()
+            || !target.scope().binders().is_empty()
         {
             return Err(CallConstraintInvariant::PreparedSchemaMismatch.into());
         }
@@ -298,7 +302,8 @@ impl CheckedFunctionSpecialization {
             && (origin.application_id().expression() != owner
                 || origin
                     .projection()
-                    .value()
+                    .canonical_value()
+                    .ok_or(CallConstraintInvariant::PreparedFunctionTypeMismatch)?
                     .semantic_identity_digest_with_control(control)?
                     != source_digest)
         {
@@ -322,10 +327,7 @@ impl CheckedFunctionSpecialization {
         {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
         }
-        let target_digest = result
-            .projection()
-            .value()
-            .semantic_identity_digest_with_control(control)?;
+        let target_digest = target.semantic_identity_digest_with_control(control)?;
         if projected.semantic_identity_digest_with_control(control)? != target_digest {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
         }

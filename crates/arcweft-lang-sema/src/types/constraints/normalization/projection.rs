@@ -220,6 +220,7 @@ impl<D: ConstraintDomain> ConstraintEffectProjection<D> {
                 &mut ConstraintProjectionPhase::Completion {
                     graph,
                     projection: self,
+                    named: None,
                 },
                 context,
                 &mut BTreeSet::new(),
@@ -249,12 +250,50 @@ impl<D: ConstraintDomain> ConstraintEffectProjection<D> {
                 &mut ConstraintProjectionPhase::Completion {
                     graph,
                     projection: self,
+                    named: None,
                 },
                 context,
                 &mut BTreeSet::new(),
                 &mut BTreeSet::new(),
             )
             .map(|value| value.into_operand())
+        })
+    }
+
+    /// Resolve the exact admitted result under the original branch, carrying
+    /// its declaration application through as an unevaluated row and operands.
+    pub(in crate::types::constraints) fn retain_result_operand<'ty, A, L>(
+        &mut self,
+        input: ConstraintOperandView<'ty, D>,
+        branch: &'ty super::super::transaction::ConstraintInferenceBranch<D, L>,
+        policy: ConstraintClosurePolicy,
+        graph: PreparedEffectReadView<'_>,
+        port: &crate::types::PreparedNamedEffectPort,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<TypeKind<crate::types::effect_domain::RetainedEffects>, TypeConstraintError>
+    where
+        A: TypeConstraintAccounting,
+    {
+        self.owner().require_branch(branch)?;
+        let named = port
+            .application(input.value(), graph, context)?
+            .ok_or(crate::effect_row::prepared::PreparedEffectInvariant::StaleReference)
+            .map_err(crate::effect_row::prepared::PreparedEffectFailure::Invariant)?;
+        let scope = input.lexical_scope().as_ref().clone();
+        context.with_original_scope(scope, |context| {
+            project_type_fold::<A, D, InspectOperand<crate::types::effect_domain::RetainedEffects>>(
+                input,
+                branch.projection_view(),
+                policy,
+                &mut ConstraintProjectionPhase::Completion {
+                    graph,
+                    projection: self,
+                    named: Some(&named),
+                },
+                context,
+                &mut BTreeSet::new(),
+                &mut BTreeSet::new(),
+            )
         })
     }
 }
@@ -296,6 +335,7 @@ impl<D: ConstraintDomain> ConstraintEffectProjection<D> {
             &mut ConstraintProjectionPhase::Completion {
                 graph,
                 projection: self,
+                named: None,
             },
             context,
             &mut BTreeSet::new(),

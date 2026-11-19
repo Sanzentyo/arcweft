@@ -264,7 +264,7 @@ impl InspectionEffects for CanonicalEffects {
             }
             _ => None,
         };
-        rebuild_canonical(shape, children, length, header)
+        rebuild_closed(shape, children, length, header)
     }
 
     fn transport<A: TypeConstraintAccounting, D: ConstraintDomain>(
@@ -286,15 +286,12 @@ impl InspectionEffects for CanonicalEffects {
     }
 }
 
-fn rebuild_canonical(
+fn rebuild_closed<E: crate::types::effect_domain::RebindableEffects>(
     shape: TypeConstraintShape<'_, PreparedEffects>,
-    children: Vec<TypeKind>,
+    children: Vec<TypeKind<E>>,
     length: Option<ArrayLength>,
-    header: Option<(
-        crate::effect_row::EffectRow,
-        crate::effect_row::EffectPredicate,
-    )>,
-) -> Result<TypeKind, TypeConstraintError> {
+    header: Option<(E::Row, crate::effect_row::EffectPredicate)>,
+) -> Result<TypeKind<E>, TypeConstraintError> {
     let mut fields = header.map(|(row, predicate)| (Some(row), Some(predicate)));
     shape.rebuild_with(
         children,

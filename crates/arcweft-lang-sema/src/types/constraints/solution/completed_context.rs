@@ -38,26 +38,28 @@ impl Eq for CompletedGenericContext {}
 /// A completed result retains the authority which distinguishes its ambient
 /// captures from the quantifiers it is allowed to transfer to a function.
 #[derive(Debug, Eq, PartialEq)]
-pub(in crate::types::constraints) struct CompletedConstraintType {
-    value: CompletedValue<TypeKind>,
+pub(in crate::types::constraints) struct CompletedConstraintType<
+    E: crate::types::effect_domain::RebindableEffects = crate::types::CanonicalEffects,
+> {
+    value: CompletedValue<TypeKind<E>>,
     context: Arc<CompletedGenericContext>,
 }
 
-impl CompletedConstraintType {
+impl<E: crate::types::effect_domain::RebindableEffects> CompletedConstraintType<E> {
     pub(in crate::types::constraints::solution) fn new(
-        value: CompletedValue<TypeKind>,
+        value: CompletedValue<TypeKind<E>>,
         context: Arc<CompletedGenericContext>,
     ) -> Self {
         Self { value, context }
     }
 
-    pub(in crate::types::constraints) fn view(&self) -> ScopedTypeView<'_> {
+    pub(in crate::types::constraints) fn view(&self) -> ScopedTypeView<'_, E> {
         ScopedTypeView::sealed(self.value.value(), self.context.value_scope())
     }
 
     pub(in crate::types::constraints) fn quantify(
         &self,
-    ) -> Result<TypeKind, TypeInstantiationError> {
+    ) -> Result<TypeKind<E>, TypeInstantiationError> {
         let value = self
             .view()
             .quantify_suffix_with_predicate_and_control(
@@ -69,7 +71,13 @@ impl CompletedConstraintType {
         if self.context.ambient.shape().binders().is_empty() {
             return Ok(value.into_value());
         }
-        value.view().to_root_type()
+        super::template::clone_scoped_term_with_control(
+            value.view().value(),
+            &GenericScope::default(),
+            1,
+            &mut crate::types::projection_control::UnmeteredTypeProjection,
+        )
+        .map_err(crate::types::TypeProjectionError::into_instantiation)
     }
 }
 

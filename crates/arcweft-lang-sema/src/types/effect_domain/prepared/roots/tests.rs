@@ -94,6 +94,77 @@ fn nested_headers_retain_the_actual_unprepared_named_input() {
 }
 
 #[test]
+fn retained_application_keeps_its_arguments_and_independently_observed_use() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = Control(1_000_000);
+    let argument = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+        .unwrap();
+    let operand = graph.application(&argument, vec![], &mut work).unwrap();
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
+    let scheme = graph
+        .declare(
+            vec![scope.bound_effect(0, 0).unwrap()],
+            EffectPredicate::unconstrained(),
+            &mut work,
+        )
+        .unwrap();
+    let declaration = graph.declaration(&scheme, &mut work).unwrap();
+    let effect = graph
+        .application(&scheme, vec![operand.clone()], &mut work)
+        .unwrap();
+    let result = function(effect.clone(), TypeKind::I64);
+    let port = PreparedNamedEffectPort::for_type(&declaration, 0, &result, graph.read(), &mut work)
+        .unwrap()
+        .unwrap();
+    let mut roots = PreparedTypeEffectRoots::default();
+    roots
+        .extend_type(
+            &result,
+            port.application(&result, graph.read(), &mut work).unwrap(),
+            &mut work,
+        )
+        .unwrap();
+    assert_eq!(roots.rows(), &[&operand]);
+    assert_eq!(roots.predicates().len(), 1);
+    assert!(matches!(
+        graph.read().require_query_bodies(roots.rows(), roots.predicates(), &mut work),
+        Err(PreparedEffectFailure::ObservationNeedsBody(reference)) if reference == argument
+    ));
+    graph
+        .prepare_body(
+            &argument,
+            PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new())),
+            vec![],
+            &mut work,
+        )
+        .unwrap();
+
+    let with_callback = TypeKind::function_with_contract(
+        GenericBinder::EMPTY,
+        truth(),
+        [result],
+        TypeKind::I64,
+        effect.clone(),
+    );
+    let mut roots = PreparedTypeEffectRoots::default();
+    roots
+        .extend_type(
+            &with_callback,
+            port.application(&with_callback, graph.read(), &mut work)
+                .unwrap(),
+            &mut work,
+        )
+        .unwrap();
+    assert_eq!(roots.rows(), &[&operand, &effect]);
+    assert_eq!(roots.predicates().len(), 2);
+    assert!(matches!(
+        graph.read().require_query_bodies(roots.rows(), roots.predicates(), &mut work),
+        Err(PreparedEffectFailure::ObservationNeedsBody(reference)) if reference == scheme
+    ));
+}
+
+#[test]
 fn root_collection_cannot_lend_a_foreign_term_to_the_receiving_graph() {
     let graph = PreparedEffectGraph::default();
     let mut foreign = PreparedEffectGraph::default();

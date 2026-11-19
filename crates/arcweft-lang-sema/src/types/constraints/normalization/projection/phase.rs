@@ -12,6 +12,7 @@ pub(in crate::types::constraints) enum ConstraintProjectionPhase<'g, D: Constrai
     Completion {
         graph: PreparedEffectReadView<'g>,
         projection: &'g mut ConstraintEffectProjection<D>,
+        named: Option<&'g crate::types::effect_domain::PreparedNamedEffectUse<'g, 'g>>,
     },
 }
 
