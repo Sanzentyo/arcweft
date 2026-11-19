@@ -20132,3 +20132,16 @@ Semaの全featureユニットは1,990件中1,896 PASS、94既知FAIL。Compiler�
 2 callback のNative／AWBCとSemaは、元の義務へ代入する判定図を取り込む段階で既定上限4,096に達した。3 callback のSemaは、残余効果式をコンパイルして判定図を登録する段階で引き続き停止した。Mapの遅延効果と保持後の呼出しは、元の型等式を再照合するために完了型を投影する段階で上限に達した。純粋呼出しの拒否テストは、最初の `values.map(logging_increment)` で通常の `CallResolutionFailed` を返した。監視した3箇所の作業上限の分岐には到達せず、期待する `log.write` を含む `EffectUpperBoundExceeded` は返らなかった。この入力も受入条件を満たしていない。
 
 [検証原本・公開照合](acceptance-evidence/task-callback-residual-decision-identity.raw.zip) は39 entry、1,113,279 bytes、SHA256 `fc532d851b76c3d9024d370e655ae4610e084aee76cf4f947ed6091fd78e5acb`。各entryの長さとハッシュ、公開したRust blobを照合した。記録時の `target` は101,156,926,028 bytesで、全体の `cargo clean` は実行していない。
+
+<a id="literal-effect-decision-composition"></a>
+## 2026-11-20 — 単一の効果参照を正準判定図へ直接置換する
+
+基点 `bbc3523ae37bfe565d99ab5a5f5151a1037ed91f`、Source `803c48be2096fbfbbff14566fa55dae4af444666`。単一参照の置換に必要な計上を済ませ、正準な置換先を直接返す。変数順が成立する分岐はその順で生成し、正準な判定図の取り込みには枝の順序を使う。32ノードの置換先を34作業単位で受け入れ、33で拒否する回帰テストを追加した。基点と比較した3種類の合成入力で正準な出力が一致した。作業量は単一参照の置換が229から34、順序済みの33ノードの条件分岐が238から202、参照の順序変更・統合を含む代入が30から27に減った。
+
+Coreの全featureユニットと効果判定の統合2,374件はすべて通過した。Semaの全featureユニットは1,990件中1,896 PASS、94既知FAIL。Compilerの統合6 targetは582件中577 PASS、5既知FAILで、`flow_wait` の32件はすべて通過した。先行から検証IDと合否は変化なし。workspaceの全feature・全target checkとClippy、fmt、差分検査、構造ゲートは終了0。この記録時点で全推移的逆依存とCLIの検証は実行中。
+
+既定の作業上限4,096で、2 callback のNative／AWBCとSemaは元の効果義務の代入を通過し、元の型等式を再照合する際に関数型の自由な効果参照を検査する段階で停止した。3 callback のSemaは元の述語の依存を列挙する段階で停止した。Mapの遅延効果は関数型の効果述語を別の型スコープへ運ぶ段階、保持後の呼出しは確定効果の正準化で停止した。
+
+純粋Mapの最初の入力は引き続き `CallResolutionFailed` を返す。前節のバイナリで監視を追加すると、候補の初期化中に型制約側の `WorkLimit` へ到達した。現行Sourceでは初期化を通過し、候補のcallbackを準備する段階で同じ上限へ到達する。前節の監視範囲から漏れていた型制約側の分岐を確認できたため、現状一覧の停止理由を訂正した。期待する `log.write` を含む `EffectUpperBoundExceeded` はまだ返っていない。
+
+[検証原本・公開照合](acceptance-evidence/task-callback-literal-composition.raw.zip) は42 entry、1,203,110 bytes、SHA256 `e1beda5fcd38fc2fc24098d808890d7b5b26f9b7182d398535d9995f49364ea3`。各entryの長さとハッシュ、公開した2 Rust blobを照合した。記録時の `target` は100,706,050,931 bytesだった。
