@@ -19985,3 +19985,18 @@ Sema 全featureユニットは1,986件中1,868 PASS、118 FAIL、0 SKIP。既存
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。公開した変更の全14 blobを検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-continuation-result-effect-port.raw.zip) は23 entry、471,879 bytes、SHA256 `9fd3cb843d7d704761cb95b5622c1706b7a83421f5e4ae06f28404bab7766bf6`。各原本の長さとハッシュを照合した。
+
+<a id="retained-result-transport"></a>
+## 2026-11-19 — 再帰する継続の終端効果と Native／AWBC の停止復元
+
+基点 `4bf8b32444cff9a7f70be04c777ce90712b291c2`。Source `7e5e349b258856d6e01fefab6e3fb341ec426c9c`。宣言済みの継続を返す制約計算では、終端行の宣言と順序付き引数を型に保持する。適用引数と同じヘッダーの述語は元の効果関係に残し、別の型位置や式で参照する効果を従来どおり観測する。親の制約に渡す子の関数型と関数全体の型注釈は本体の効果を照合する。選んだ候補のグラフを復元してから保持した適用を登録する。同じ呼出しを再評価するときは、宣言・引数順・残りの関数型で照合する。グラフ内で参照を検証するときは発行済みの項 ID を使う。
+
+初期版のテストビルドは型の可視性と特殊化の参照更新で失敗した。次に、グラフを復元する前に効果項を登録して `DeltaBase` に達したため、登録を復元後へ移した。全件比較で親へ渡す子に `SchemeState` が出たため、親が読む関数型の効果は確定するようにした。Compiler の共有 prefix 2件では再評価時の効果項 ID が変わって `PreparedGraphReplayMismatch` に達した。元の宣言と引数順で照合する修正後、両ケースの停止復元が再び通過した。
+
+再帰 attached default の `flow_wait` は型検査を通って実行を開始した時点で、Native のテスト入力が成果物に紐づかず DialogueContent を構築できないことが判明した。同一の正規 AWBC から成果物識別子を得る既存のテスト経路に切り替えた。Native の停止・再開と、decoded AWBC の各ステップの公開保存・復元を確認した。両方で一度だけの prefix 実行、実行上限、復帰後の default ログ5件の順序を検査した。
+
+Sema 全featureユニットは1,987件中1,871 PASS、116 FAIL、0 SKIP。再帰本体の段階適用と再帰 attached default の既存2件が成功へ変わり、追加のテストは終端行の引数と別位置の観測を保持することを確認した。Compiler 統合5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中30 PASS、2 FAIL。再帰 attached default の停止復元1件が成功へ変わった。両スイートとも新規の失敗は0。効果付きの再帰関数値を純粋な callback に渡す既存のケースは `ExpressionCycle` を再現した。
+
+Sema 全target・全feature Clippy、変更クレートのfmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。公開した変更の全36 blob を検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-retained-result-transport.raw.zip) は35 entry、606,255 bytes、SHA256 `3b6cf2fd7193f46d458e5c9f97ee0f62a9f89dd9c0d4fd7f24cba65e62429bd9`。各原本の長さとハッシュを照合した。
