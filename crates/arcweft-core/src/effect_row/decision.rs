@@ -448,6 +448,24 @@ impl<V: Clone + Ord> EffectDecision<V> {
         self.quantify(quantified, Quantifier::ForAll, control)
     }
 
+    /// Valuations of the remaining variables for which changing any of the
+    /// supplied variables cannot change this decision's result.
+    pub fn independence_region<C: DecisionControl>(
+        &self,
+        quantified: &BTreeSet<V>,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        if quantified.is_empty() || self.nodes.is_empty() {
+            return Ok(Self::constant(true));
+        }
+        let mut builder = DecisionBuilder::new(control);
+        let root = builder.import(self)?;
+        let possible = builder.quantify(root, quantified, Quantifier::Exists)?;
+        let necessary = builder.quantify(root, quantified, Quantifier::ForAll)?;
+        let region = builder.conditional(Conditional::new(possible, necessary, Root::True))?;
+        builder.finish(region)
+    }
+
     fn quantify<C: DecisionControl>(
         &self,
         quantified: &BTreeSet<V>,

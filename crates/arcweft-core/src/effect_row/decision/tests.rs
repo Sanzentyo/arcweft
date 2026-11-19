@@ -348,8 +348,16 @@ fn completion_matches_exhaustive_models_of_every_three_variable_relation() {
                 .filter(|variable| quantified_mask & (1 << variable) != 0)
                 .collect::<BTreeSet<_>>();
             let universal = relation.forall(&quantified, &mut meter).unwrap();
+            let independent = relation
+                .independence_region(&quantified, &mut meter)
+                .unwrap();
             assert!(
                 universal
+                    .variables()
+                    .all(|variable| !quantified.contains(variable))
+            );
+            assert!(
+                independent
                     .variables()
                     .all(|variable| !quantified.contains(variable))
             );
@@ -384,6 +392,11 @@ fn completion_matches_exhaustive_models_of_every_three_variable_relation() {
                     universal.evaluate(|variable| rigid & (1 << variable) != 0),
                     models.len() == (1usize << quantified.len()),
                     "forall: table {table}, mask {quantified_mask}, rigid {rigid}"
+                );
+                assert_eq!(
+                    independent.evaluate(|variable| rigid & (1 << variable) != 0),
+                    models.is_empty() || models.len() == (1usize << quantified.len()),
+                    "independence: table {table}, mask {quantified_mask}, rigid {rigid}"
                 );
                 assert_eq!(
                     completed

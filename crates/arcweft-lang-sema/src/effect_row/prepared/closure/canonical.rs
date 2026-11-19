@@ -305,23 +305,21 @@ impl<'a> CanonicalReplay<'a> {
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
         let mut parameters = BTreeSet::new();
-        let mut zero = BTreeMap::new();
         for variable in row.variables() {
-            if matches!(variable, Variable::Parameter(_)) {
+            work.charge(DecisionWork::Visit)?;
+            if matches!(variable, Variable::Parameter(_)) && !parameters.contains(variable) {
                 work.charge(DecisionWork::Node)?;
                 parameters.insert(variable.clone());
-                work.charge(DecisionWork::Node)?;
-                zero.insert(variable.clone(), EffectDecision::constant(false));
             }
         }
         let mut closed = EffectDecision::constant(true);
         for class in 0..self.scope.classes.classes() {
-            let value = self.scope.classes.at(row.membership(), class);
-            let base = value.substitute(&zero, work)?;
-            let equal = value
-                .conditional(&base, &base.not(work)?, work)?
-                .forall(&parameters, work)?;
-            closed = closed.and(&equal, work)?;
+            let independent = self
+                .scope
+                .classes
+                .at(row.membership(), class)
+                .independence_region(&parameters, work)?;
+            closed = closed.and(&independent, work)?;
         }
         self.scalar(&closed, 0, work)
     }

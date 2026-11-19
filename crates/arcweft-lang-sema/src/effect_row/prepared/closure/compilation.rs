@@ -431,23 +431,24 @@ impl<'a> Compilation<'a> {
         row: &[Decision],
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        if self.parameters.is_empty() {
+            return Ok(Decision::constant(true));
+        }
         let mut result = Decision::constant(true);
         for (class, decision) in row.iter().enumerate() {
-            for parameter in 0..self.parameters.len() {
-                let atom = Atom::Formal {
-                    owner: self.owner,
-                    class,
-                    parameter,
-                };
-                work.charge(DecisionWork::Node)?;
-                let low = decision.substitute(
-                    &BTreeMap::from([(atom.clone(), Decision::constant(false))]),
-                    work,
-                )?;
-                let high = decision
-                    .substitute(&BTreeMap::from([(atom, Decision::constant(true))]), work)?;
-                result = result.and(&low.conditional(&high, &high.not(work)?, work)?, work)?;
+            let mut parameters = BTreeSet::new();
+            for atom in decision.variables() {
+                work.charge(DecisionWork::Visit)?;
+                if matches!(atom, Atom::Formal { owner, class: member_class, .. }
+                    if *owner == self.owner && *member_class == class)
+                    && !parameters.contains(atom)
+                {
+                    work.charge(DecisionWork::Node)?;
+                    parameters.insert(atom.clone());
+                }
             }
+            let independent = decision.independence_region(&parameters, work)?;
+            result = result.and(&independent, work)?;
         }
         result.forall(&self.formals(work)?, work)
     }
