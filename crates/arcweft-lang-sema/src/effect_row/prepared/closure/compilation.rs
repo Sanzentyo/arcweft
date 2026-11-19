@@ -4,6 +4,8 @@ use super::*;
 use arcweft_core::effect_row::{EffectDecisionReplacement, EffectDecisionRequirement};
 use std::borrow::{Borrow, Cow};
 
+mod terms;
+
 pub(super) struct CompiledRow {
     pub(super) membership: Vec<Decision>,
     pub(super) admitted: Decision,
@@ -48,7 +50,7 @@ pub(super) struct Compilation<'a> {
     cells: ApplicationCells<'a>,
     residual_rows: Option<&'a BTreeMap<u64, GenericEffectReference>>,
     rows: BTreeMap<u64, Arc<CompiledRow>>,
-    predicates: BTreeMap<u64, Decision>,
+    predicates: BTreeMap<u64, Arc<Decision>>,
 }
 
 impl<'a> Compilation<'a> {
@@ -180,7 +182,6 @@ impl<'a> Compilation<'a> {
         match row {
             PreparedEffectRow::Canonical(row) => self.canonical_row(row, work),
             PreparedEffectRow::Term(reference) => {
-                self.graph.row(reference)?;
                 let row = self
                     .rows
                     .get(&reference.0.ordinal)
@@ -394,145 +395,135 @@ impl<'a> Compilation<'a> {
         root: &PreparedEffectRow,
         work: &mut Work<'_, C>,
     ) -> Result<Arc<CompiledRow>, PreparedEffectFailure<C::Error>> {
-        let mut todo = vec![root];
-        let mut reachable = BTreeSet::new();
-        while let Some(row) = todo.pop() {
-            work.charge(DecisionWork::Visit)?;
-            if let PreparedEffectRow::Term(reference) = row {
-                let term = self.graph.row(reference)?;
-                if !self.rows.contains_key(&reference.0.ordinal)
-                    && reachable.insert(reference.0.ordinal)
-                {
-                    for child in term.children() {
-                        work.charge(DecisionWork::Node)?;
-                        todo.push(child);
-                    }
-                }
+        match root {
+            PreparedEffectRow::Canonical(row) => self.canonical_row(row, work),
+            PreparedEffectRow::Term(reference) => {
+                self.prepare(terms::Reference::Row(reference), work)?;
+                Ok(Arc::clone(&self.rows[&reference.0.ordinal]))
             }
         }
-        // Child terms are issued before their parents. Recursive edges occur
-        // only through declared scheme references and do not enter this DAG.
-        for id in reachable {
-            let term = self.graph.rows[&id].as_ref();
-            let value = match term {
-                RowTerm::Application {
-                    function,
-                    arguments,
-                } => {
-                    let mut compiled = Vec::new();
-                    let mut admitted = Decision::constant(true);
-                    let definition = self.graph.function(function)?;
-                    for argument in arguments {
-                        let argument = self.read_row(argument, work)?;
-                        admitted = admitted.and(&argument.admitted, work)?;
-                        work.charge(DecisionWork::Node)?;
-                        compiled.push(argument);
-                    }
-                    if let Some(domain) = definition
-                        .domain()
-                        .filter(|domain| !domain.is_unconstrained())
-                    {
-                        let mut substitutions = BTreeMap::new();
-                        for (parameter, argument) in definition.parameters().iter().zip(&compiled) {
-                            work.charge(DecisionWork::Node)?;
-                            substitutions.insert(parameter, argument);
-                        }
-                        let mut domains = Vec::new();
-                        for class in 0..self.layout.classes() {
-                            let domain = self.member(
-                                self.layout.at(domain.membership(), class),
-                                class,
-                                |reference| substitutions.get(reference).map(|row| row.as_ref()),
-                                work,
-                            )?;
-                            work.charge(DecisionWork::Node)?;
-                            domains.push(domain);
-                        }
-                        admitted = admitted.and(&self.whole(&domains, work)?, work)?;
-                    }
-                    if let Function::Imported(_) = definition {
-                        let imported = self
-                            .layout
-                            .imports
-                            .functions
-                            .get(&function.reference().ordinal)
-                            .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-                        let guard = self
-                            .cells
-                            .complete_import(imported.relation.principal(), work)?;
-                        admitted = admitted.and(&guard, work)?;
-                    }
-                    CompiledRow {
-                        membership: self.application(
-                            function.reference().ordinal,
-                            &compiled,
-                            work,
-                        )?,
-                        admitted,
-                    }
+    }
+
+    fn compile_row<C: DecisionControl>(
+        &mut self,
+        id: u64,
+        term: &RowTerm,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        let value = match term {
+            RowTerm::Application {
+                function,
+                arguments,
+            } => {
+                let mut compiled = Vec::new();
+                let mut admitted = Decision::constant(true);
+                let definition = self.graph.function(function)?;
+                for argument in arguments {
+                    let argument = self.read_row(argument, work)?;
+                    admitted = admitted.and(&argument.admitted, work)?;
+                    work.charge(DecisionWork::Node)?;
+                    compiled.push(argument);
                 }
-                RowTerm::Substitution { formula, arguments } => {
+                if let Some(domain) = definition
+                    .domain()
+                    .filter(|domain| !domain.is_unconstrained())
+                {
                     let mut substitutions = BTreeMap::new();
-                    let mut admitted = Decision::constant(true);
-                    for (parameter, row) in arguments {
-                        let row = self.read_row(row, work)?;
-                        admitted = admitted.and(&row.admitted, work)?;
+                    for (parameter, argument) in definition.parameters().iter().zip(&compiled) {
                         work.charge(DecisionWork::Node)?;
-                        substitutions.insert(parameter.clone(), row);
+                        substitutions.insert(parameter, argument);
                     }
-                    let mut membership = Vec::new();
+                    let mut domains = Vec::new();
                     for class in 0..self.layout.classes() {
-                        membership.push(self.member(
-                            self.layout.at(formula.membership(), class),
+                        let domain = self.member(
+                            self.layout.at(domain.membership(), class),
                             class,
-                            |reference| substitutions.get(reference).map(Arc::as_ref),
+                            |reference| substitutions.get(reference).map(|row| row.as_ref()),
                             work,
-                        )?);
-                    }
-                    CompiledRow {
-                        membership,
-                        admitted,
-                    }
-                }
-                RowTerm::Union(arguments) => {
-                    let mut membership = Vec::new();
-                    for _ in 0..self.layout.classes() {
+                        )?;
                         work.charge(DecisionWork::Node)?;
-                        membership.push(Decision::constant(false));
+                        domains.push(domain);
                     }
-                    let mut admitted = Decision::constant(true);
-                    for row in arguments {
-                        let row = self.read_row(row, work)?;
-                        admitted = admitted.and(&row.admitted, work)?;
-                        for (left, right) in membership.iter_mut().zip(&row.membership) {
-                            *left = left.or(right, work)?;
-                        }
-                    }
-                    CompiledRow {
-                        membership,
-                        admitted,
+                    admitted = admitted.and(&self.whole(&domains, work)?, work)?;
+                }
+                if let Function::Imported(_) = definition {
+                    let imported = self
+                        .layout
+                        .imports
+                        .functions
+                        .get(&function.reference().ordinal)
+                        .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+                    let guard = self
+                        .cells
+                        .complete_import(imported.relation.principal(), work)?;
+                    admitted = admitted.and(&guard, work)?;
+                }
+                CompiledRow {
+                    membership: self.application(function.reference().ordinal, &compiled, work)?,
+                    admitted,
+                }
+            }
+            RowTerm::Substitution { formula, arguments } => {
+                let mut substitutions = BTreeMap::new();
+                let mut admitted = Decision::constant(true);
+                for (parameter, row) in arguments {
+                    let row = self.read_row(row, work)?;
+                    admitted = admitted.and(&row.admitted, work)?;
+                    work.charge(DecisionWork::Node)?;
+                    substitutions.insert(parameter.clone(), row);
+                }
+                let mut membership = Vec::new();
+                for class in 0..self.layout.classes() {
+                    membership.push(self.member(
+                        self.layout.at(formula.membership(), class),
+                        class,
+                        |reference| substitutions.get(reference).map(Arc::as_ref),
+                        work,
+                    )?);
+                }
+                CompiledRow {
+                    membership,
+                    admitted,
+                }
+            }
+            RowTerm::Union(arguments) => {
+                let mut membership = Vec::new();
+                for _ in 0..self.layout.classes() {
+                    work.charge(DecisionWork::Node)?;
+                    membership.push(Decision::constant(false));
+                }
+                let mut admitted = Decision::constant(true);
+                for row in arguments {
+                    let row = self.read_row(row, work)?;
+                    admitted = admitted.and(&row.admitted, work)?;
+                    for (left, right) in membership.iter_mut().zip(&row.membership) {
+                        *left = left.or(right, work)?;
                     }
                 }
-                RowTerm::Select { choice, yes, no } => {
-                    self.graph.validate_choice(choice)?;
-                    let choice = Decision::variable(Atom::Choice(choice.0.ordinal), work)?;
-                    let yes = self.read_row(yes, work)?;
-                    let no = self.read_row(no, work)?;
-                    let mut membership = Vec::new();
-                    for (yes, no) in yes.membership.iter().zip(&no.membership) {
-                        membership.push(choice.conditional(yes, no, work)?);
-                    }
-                    CompiledRow {
-                        membership,
-                        admitted: choice.conditional(&yes.admitted, &no.admitted, work)?,
-                    }
+                CompiledRow {
+                    membership,
+                    admitted,
                 }
-            };
-            work.charge(DecisionWork::Node)?;
-            work.charge(DecisionWork::Node)?;
-            self.rows.insert(id, Arc::new(value));
-        }
-        self.read_row(root, work)
+            }
+            RowTerm::Select { choice, yes, no } => {
+                self.graph.validate_choice(choice)?;
+                let choice = Decision::variable(Atom::Choice(choice.0.ordinal), work)?;
+                let yes = self.read_row(yes, work)?;
+                let no = self.read_row(no, work)?;
+                let mut membership = Vec::new();
+                for (yes, no) in yes.membership.iter().zip(&no.membership) {
+                    membership.push(choice.conditional(yes, no, work)?);
+                }
+                CompiledRow {
+                    membership,
+                    admitted: choice.conditional(&yes.admitted, &no.admitted, work)?,
+                }
+            }
+        };
+        work.charge(DecisionWork::Node)?;
+        work.charge(DecisionWork::Node)?;
+        self.rows.insert(id, Arc::new(value));
+        Ok(())
     }
 
     pub(super) fn canonical_predicate<C: DecisionControl>(
@@ -591,8 +582,8 @@ impl<'a> Compilation<'a> {
         permitted: &PreparedEffectRow,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let actual = self.row(actual, work)?;
-        let permitted = self.row(permitted, work)?;
+        let actual = self.read_row(actual, work)?;
+        let permitted = self.read_row(permitted, work)?;
         let ((actual_outside, actual_named), (permitted_outside, permitted_named)) = actual
             .membership
             .split_first()
@@ -675,11 +666,10 @@ impl<'a> Compilation<'a> {
                 self.canonical_predicate(predicate, work).map(Cow::Owned)
             }
             PreparedEffectPredicate::Term(reference) => {
-                self.graph.predicate(reference)?;
                 work.charge(DecisionWork::Visit)?;
                 self.predicates
                     .get(&reference.0.ordinal)
-                    .map(Cow::Borrowed)
+                    .map(|value| Cow::Borrowed(value.as_ref()))
                     .ok_or_else(|| PreparedEffectInvariant::StaleReference.into())
             }
         }
@@ -689,105 +679,84 @@ impl<'a> Compilation<'a> {
         &mut self,
         root: &PreparedEffectPredicate,
         work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let mut todo = vec![root];
-        let mut reachable = BTreeSet::new();
-        while let Some(predicate) = todo.pop() {
-            work.charge(DecisionWork::Visit)?;
-            if let PreparedEffectPredicate::Term(reference) = predicate {
-                let term = self.graph.predicate(reference)?;
-                if !self.predicates.contains_key(&reference.0.ordinal)
-                    && reachable.insert(reference.0.ordinal)
-                {
-                    match term {
-                        PredicateTerm::And(children) | PredicateTerm::Or(children) => {
-                            for child in children {
-                                work.charge(DecisionWork::Node)?;
-                                todo.push(child);
-                            }
-                        }
-                        PredicateTerm::Not(child) => {
-                            work.charge(DecisionWork::Node)?;
-                            todo.push(child);
-                        }
-                        PredicateTerm::Select { yes, no, .. } => {
-                            work.charge(DecisionWork::Node)?;
-                            todo.push(yes);
-                            work.charge(DecisionWork::Node)?;
-                            todo.push(no);
-                        }
-                        PredicateTerm::Relation { .. }
-                        | PredicateTerm::Substitution { .. }
-                        | PredicateTerm::ImportedPrincipal(_) => {}
-                    }
-                }
+    ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
+        match root {
+            PreparedEffectPredicate::Canonical(value) => {
+                let decision = self.canonical_predicate(value, work)?;
+                work.share_decision(decision)
+            }
+            PreparedEffectPredicate::Term(reference) => {
+                self.prepare(terms::Reference::Predicate(reference), work)?;
+                Ok(Arc::clone(&self.predicates[&reference.0.ordinal]))
             }
         }
-        for id in reachable {
-            let term = self.graph.predicates[&id].as_ref();
-            let value = match term {
-                PredicateTerm::ImportedPrincipal(imported) => {
-                    let guard = self.layout.imports.relation(imported, work)?.principal();
-                    self.cells.complete_import(guard, work)?
+    }
+
+    fn compile_predicate<C: DecisionControl>(
+        &mut self,
+        id: u64,
+        term: &PredicateTerm,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        let value = match term {
+            PredicateTerm::ImportedPrincipal(imported) => {
+                let guard = self.layout.imports.relation(imported, work)?.principal();
+                self.cells.complete_import(guard, work)?
+            }
+            PredicateTerm::Substitution {
+                predicate,
+                arguments,
+            } => {
+                let mut substitutions = BTreeMap::new();
+                let mut result = Decision::constant(true);
+                for (parameter, row) in arguments {
+                    let row = self.read_row(row, work)?;
+                    result = result.and(&row.admitted, work)?;
+                    work.charge(DecisionWork::Node)?;
+                    substitutions.insert(parameter.clone(), row);
                 }
-                PredicateTerm::Substitution {
-                    predicate,
-                    arguments,
-                } => {
-                    let mut substitutions = BTreeMap::new();
-                    let mut result = Decision::constant(true);
-                    for (parameter, row) in arguments {
-                        let row = self.row(row, work)?;
-                        result = result.and(&row.admitted, work)?;
-                        work.charge(DecisionWork::Node)?;
-                        substitutions.insert(parameter.clone(), row);
-                    }
-                    let mut members = Vec::new();
-                    for class in 0..self.layout.classes() {
-                        let decision = self.member(
-                            self.layout.at(predicate.membership(), class),
-                            class,
-                            |reference| substitutions.get(reference).map(Arc::as_ref),
-                            work,
-                        )?;
-                        work.charge(DecisionWork::Node)?;
-                        members.push(decision);
-                    }
-                    result.and(&self.whole(&members, work)?, work)?
+                let mut members = Vec::new();
+                for class in 0..self.layout.classes() {
+                    let decision = self.member(
+                        self.layout.at(predicate.membership(), class),
+                        class,
+                        |reference| substitutions.get(reference).map(Arc::as_ref),
+                        work,
+                    )?;
+                    work.charge(DecisionWork::Node)?;
+                    members.push(decision);
                 }
-                PredicateTerm::Relation {
-                    relation,
-                    actual,
-                    permitted,
-                } => self.relation(*relation, actual, permitted, work)?,
-                PredicateTerm::And(children) | PredicateTerm::Or(children) => {
-                    let and = matches!(term, PredicateTerm::And(_));
-                    let mut result = Decision::constant(and);
-                    for child in children {
-                        let child = self.read_predicate(child, work)?;
-                        result = if and {
-                            result.and(&child, work)?
-                        } else {
-                            result.or(&child, work)?
-                        };
-                    }
-                    result
+                result.and(&self.whole(&members, work)?, work)?
+            }
+            PredicateTerm::Relation {
+                relation,
+                actual,
+                permitted,
+            } => self.relation(*relation, actual, permitted, work)?,
+            PredicateTerm::And(children) | PredicateTerm::Or(children) => {
+                let and = matches!(term, PredicateTerm::And(_));
+                let mut result = Decision::constant(and);
+                for child in children {
+                    let child = self.read_predicate(child, work)?;
+                    result = if and {
+                        result.and(&child, work)?
+                    } else {
+                        result.or(&child, work)?
+                    };
                 }
-                PredicateTerm::Not(child) => self.read_predicate(child, work)?.not(work)?,
-                PredicateTerm::Select { choice, yes, no } => {
-                    self.graph.validate_choice(choice)?;
-                    let condition = Decision::variable(Atom::Choice(choice.0.ordinal), work)?;
-                    let yes = self.read_predicate(yes, work)?;
-                    let no = self.read_predicate(no, work)?;
-                    condition.conditional(&yes, &no, work)?
-                }
-            };
-            work.charge(DecisionWork::Node)?;
-            self.predicates.insert(id, value);
-        }
-        match self.read_predicate(root, work)? {
-            Cow::Borrowed(predicate) => work.copy_decision(predicate),
-            Cow::Owned(predicate) => Ok(predicate),
-        }
+                result
+            }
+            PredicateTerm::Not(child) => self.read_predicate(child, work)?.not(work)?,
+            PredicateTerm::Select { choice, yes, no } => {
+                self.graph.validate_choice(choice)?;
+                let condition = Decision::variable(Atom::Choice(choice.0.ordinal), work)?;
+                let yes = self.read_predicate(yes, work)?;
+                let no = self.read_predicate(no, work)?;
+                condition.conditional(&yes, &no, work)?
+            }
+        };
+        work.charge(DecisionWork::Node)?;
+        self.predicates.insert(id, work.share_decision(value)?);
+        Ok(())
     }
 }

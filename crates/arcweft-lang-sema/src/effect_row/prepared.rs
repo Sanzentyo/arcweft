@@ -301,6 +301,14 @@ impl<E> PreparedEffectFailure<E> {
 struct Work<'a, C>(&'a mut C);
 
 impl<C: DecisionControl> Work<'_, C> {
+    fn share_decision<V>(
+        &mut self,
+        decision: EffectDecision<V>,
+    ) -> Result<Arc<EffectDecision<V>>, PreparedEffectFailure<C::Error>> {
+        self.charge(DecisionWork::Node)?;
+        Ok(Arc::new(decision))
+    }
+
     fn copy_decision<V: Clone + Ord>(
         &mut self,
         decision: &EffectDecision<V>,

@@ -173,24 +173,39 @@ struct RelationScope<'a> {
 impl RelationScope<'_> {
     fn require<C: DecisionControl>(
         &mut self,
-        domain: Decision,
-        consequence: Decision,
+        domain: &Decision,
+        consequence: Arc<Decision>,
         work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let guarded = if domain.is_constant(true) || consequence.is_constant(true) {
-            consequence
-        } else if domain.is_constant(false) {
+    ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
+        if domain.is_constant(true) || consequence.is_constant(true) {
+            return match self.quantify(&consequence, work)? {
+                Some(result) => work.share_decision(result),
+                None => Ok(consequence),
+            };
+        }
+        let guarded = if domain.is_constant(false) {
             Decision::constant(true)
         } else {
             domain.conditional(&consequence, &Decision::constant(true), work)?
         };
+        let result = self.quantify(&guarded, work)?.unwrap_or(guarded);
+        work.share_decision(result)
+    }
+
+    fn quantify<C: DecisionControl>(
+        &mut self,
+        guarded: &Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<Option<Decision>, PreparedEffectFailure<C::Error>> {
         if guarded.node_count() == 0 || self.compiler.valuation().parameters.is_empty() {
-            return Ok(guarded);
+            return Ok(None);
         }
         if self.formals.is_none() {
             self.formals = Some(self.compiler.formals(work)?);
         }
-        guarded.forall(self.formals.as_ref().expect("formals were computed"), work)
+        guarded
+            .forall(self.formals.as_ref().expect("formals were computed"), work)
+            .map(Some)
     }
 
     fn require_scheme<C: DecisionControl>(
@@ -200,7 +215,7 @@ impl RelationScope<'_> {
         body: &PreparedEffectRow,
         obligations: &[PreparedEffectPredicate],
         work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
         let body = self.compiler.row(body, work)?;
         let parameters = self.compiler.parameters(work)?;
         let own = self.compiler.application(id, &parameters, work)?;
@@ -217,24 +232,27 @@ impl RelationScope<'_> {
             requirements.push(required);
         }
         let consequence = Decision::all(
-            [&equation, &body.admitted].into_iter().chain(&requirements),
+            [&equation, &body.admitted]
+                .into_iter()
+                .chain(requirements.iter().map(Arc::as_ref)),
             work,
         )?;
+        let consequence = work.share_decision(consequence)?;
         let domain = self.compiler.canonical_predicate(domain, work)?;
-        self.require(domain, consequence, work)
+        self.require(&domain, consequence, work)
     }
 
     fn require_obligation<C: DecisionControl>(
         &mut self,
         obligation: &ScopedObligation,
         work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
         let domain = self.compiler.predicate(&obligation.domain, work)?;
         let consequence = match self.compiler.extensional_agreement(obligation, work)? {
-            Some(agreement) => agreement,
+            Some(agreement) => work.share_decision(agreement)?,
             None => self.compiler.predicate(&obligation.predicate, work)?,
         };
-        self.require(domain, consequence, work)
+        self.require(&domain, consequence, work)
     }
 }
 
@@ -283,38 +301,6 @@ fn relation_scope<'g, 's, C: DecisionControl>(
     }
 }
 
-enum CompiledRelationNode {
-    Decision(Decision),
-    Shared(ResidualNodeId),
-}
-
-impl CompiledRelationNode {
-    fn owner(nodes: &[Self], source: ResidualNodeId) -> ResidualNodeId {
-        match &nodes[source.index()] {
-            Self::Decision(_) => source,
-            Self::Shared(owner) => *owner,
-        }
-    }
-
-    fn at(nodes: &[Self], source: ResidualNodeId) -> &Decision {
-        match &nodes[Self::owner(nodes, source).index()] {
-            Self::Decision(value) => value,
-            Self::Shared(_) => unreachable!("shares always name a materialized decision"),
-        }
-    }
-
-    fn into_result(mut nodes: Vec<Self>) -> Option<Decision> {
-        let entry = match nodes.pop()? {
-            Self::Shared(owner) => nodes.swap_remove(owner.index()),
-            decision @ Self::Decision(_) => decision,
-        };
-        match entry {
-            Self::Decision(value) => Some(value),
-            Self::Shared(_) => unreachable!("shares always name a materialized decision"),
-        }
-    }
-}
-
 fn compile_relation<C: DecisionControl>(
     graph: &PreparedEffectDefinitions,
     program: &EffectResidualProgram,
@@ -322,28 +308,23 @@ fn compile_relation<C: DecisionControl>(
     work: &mut Work<'_, C>,
 ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
     let mut scopes = BTreeMap::new();
-    let mut values = Vec::new();
+    let mut values = Vec::<Arc<Decision>>::new();
     for node in program.relation_nodes() {
         work.charge(DecisionWork::Visit)?;
-        // Logical identity steps retain the original node's immutable value.
-        // Resolve an existing share here so future readers never follow chains.
-        let shared = match node {
-            ResidualNode::And(children) if children.len() == 1 => Some(children[0]),
-            _ => None,
-        };
-        if let Some(source) = shared {
-            work.charge(DecisionWork::Node)?;
-            let owner = CompiledRelationNode::owner(&values, source);
-            values.push(CompiledRelationNode::Shared(owner));
-            continue;
-        }
-        let decision = |id| CompiledRelationNode::at(&values, id);
+        let decision = |id: ResidualNodeId| values[id.index()].as_ref();
         let value = match node {
-            ResidualNode::True => Decision::constant(true),
-            ResidualNode::And(children) => {
-                Decision::all(children.iter().copied().map(decision), work)?
+            ResidualNode::True => work.share_decision(Decision::constant(true))?,
+            ResidualNode::And(children) => match children.as_ref() {
+                [one] => Arc::clone(&values[one.index()]),
+                many => {
+                    let result = Decision::all(many.iter().copied().map(decision), work)?;
+                    work.share_decision(result)?
+                }
+            },
+            ResidualNode::Not(child) => {
+                let result = decision(*child).not(work)?;
+                work.share_decision(result)?
             }
-            ResidualNode::Not(child) => decision(*child).not(work)?,
             ResidualNode::Guarded(clause) => {
                 let source = clause.source(graph)?;
                 let scoped = relation_scope(&mut scopes, graph, layout, clause.scope(), work)?;
@@ -359,15 +340,18 @@ fn compile_relation<C: DecisionControl>(
                     }
                 }
             }
-            ResidualNode::FiniteFunction(scheme) => Decision::variable(
-                Atom::Cell {
-                    scheme: *scheme,
-                    class: 0,
-                    mask: 0,
-                },
-                work,
-            )?
-            .not(work)?,
+            ResidualNode::FiniteFunction(scheme) => {
+                let result = Decision::variable(
+                    Atom::Cell {
+                        scheme: *scheme,
+                        class: 0,
+                        mask: 0,
+                    },
+                    work,
+                )?
+                .not(work)?;
+                work.share_decision(result)?
+            }
             ResidualNode::ExistsLocalFunctions { .. }
             | ResidualNode::ExistsChoices { .. }
             | ResidualNode::OutputMembership { .. }
@@ -376,9 +360,15 @@ fn compile_relation<C: DecisionControl>(
             }
         };
         work.charge(DecisionWork::Node)?;
-        values.push(CompiledRelationNode::Decision(value));
+        values.push(value);
     }
-    CompiledRelationNode::into_result(values)
+    let result = values.pop();
+    // The temporary scope and expression inventories own every other reference
+    // to the final decision. Release them before transferring it to the caller.
+    drop(values);
+    drop(scopes);
+    result
+        .and_then(Arc::into_inner)
         .ok_or_else(|| PreparedEffectInvariant::PrincipalConfirmation.into())
 }
 
