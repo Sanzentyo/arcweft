@@ -20058,6 +20058,19 @@ Sema全featureユニットは1,988件中1,875 PASS、113 FAIL。段階適用し�
 
 Coreの全featureユニット2,367件と公開効果判定の統合2件が成功した。Semaの全featureユニット1,989件は1,895 PASS、94既知FAIL。前回からViewの既定引数の一般式・先行引数を検証する1件が復旧した。Compilerの6 targetは582件中577 PASS、5既知FAIL。`flow_wait` は32件すべて成功。Sema・Compilerで新規失敗は0。全workspace・全feature・全targetの `cargo check`、fmt、差分検査、構造ゲートは終了0。
 
-本番設定の作業上限4,096で、2個の callback を入れ替えるNative／AWBC実行と、3個を循環させるSemaケースは引き続き型検査で停止する。2個のNativeケースは効果制約のコンパイルを通過し、最小解の計算に入ってから上限に達した。3個のケースは効果制約をコンパイルする段階で停止した。Mapの既存失敗3件も残る。デバッガーでは、遅延効果のケースは固定入力の式を再照合する段階で、保持後の呼出し効果のケースは取込先の固定入力を再構成する段階で上限に達した。
+本番設定の作業上限4,096で、2個の callback を入れ替えるNative／AWBC実行と、3個を循環させるSemaケースは引き続き型検査で停止する。2個のNativeケースは効果制約のコンパイルを通過し、最小解の計算に入ってから上限に達した。3個のケースは効果制約をコンパイルする段階で停止した。Mapの既存失敗3件も残る。デバッガーでは、遅延効果のケースは固定入力の式を再照合する段階で、保持後の呼出し効果のケースは取込先の効果行を再構成する段階で上限に達した。
 
 [検証原本・公開照合](acceptance-evidence/task-callback-decision-projection.raw.zip) は28 entry、363,958 bytes、SHA256 `8143abff3c17045f544f194ded33d9287d0bcdab3282d3df51bcb45515be10ae`。各entryの長さとハッシュ、公開した4 Rust blobを照合した。記録時の `target` は24,031,856,219 bytesだった。
+
+<a id="effect-decision-projection-reverse"></a>
+## 2026-11-19 — 効果判定変更後の推移的逆依存を検証
+
+Source `630229b2eaa239a143765b2d2d5389ae00ffbb3b`。Cargoで `rdeps(=arcweft-core)` を選択した。CLIを除くライブラリ・統合テストは213バイナリで8,089件を実行し、7,983 PASS、106 FAIL、18 SKIP。失敗IDはSema全featureユニットの94件とCompilerの12件に一致した。CLIのライブラリ・バイナリ196件、規定の統合6 target 30件と、Coreのdoctest 81件が通過した。workspaceの全feature・全targetのcheckとClippyは終了0。
+
+Compilerの12件のうち5件は先に実行した582件でも確認した。残る7件は、宣言インスタンスキーが構造訪問13件の境界で14件目を要求する入力、静的セレクタの記述順2件、暗黙の引数から返したクロージャを使うtry pipe、Viewハンドラ捕捉、構造体・列挙型のView既定引数2件。7件すべてが変更直前の `bc6c6a4bf2c87be7832e77805b7f8f75206d2896` と実装Sourceの両方で失敗した。2026-11-14の `6cde3621e955a5798b8b1e978205410127c4f610` では同じIDが通過していた。[先行7件の原本](acceptance-evidence/task-analyzer-effect-declarations.raw.zip)。
+
+初回の逆依存ビルドはWindowsのページファイル割り当てエラー1455で停止した。キャッシュを残した再試行で、MSVCが `repl_tiering` 用のPDB破損をLNK1285で特定した。その生成済みファイル1点を削除してから同じコマンドを再実行し、ビルドとテスト実行を終えた。記録時の `target` は101,142,016,802 bytes。全体の `cargo clean` は実行していない。
+
+保持後のMap呼出しで上限に達した箇所は、取込先の効果行を再構成する処理だった。デバッガーでその時点の関数種別まで確認できなかったため、前節の記述をスタックから確認できた範囲に訂正した。
+
+[コマンド・終端結果・失敗ID・比較原本](acceptance-evidence/task-callback-decision-projection-reverse.raw.zip) は24 entry、1,376,088 bytes、SHA256 `fd1b289b9abe0e3c64dc0f16df58195b5549964bccdbf9bf955e37704f08c093`。各entryの長さとハッシュを照合した。
