@@ -574,12 +574,25 @@ impl<V: Clone + Ord> EffectDecision<V> {
     ) -> Result<EffectDecision<U>, C::Error> {
         let mut builder = DecisionBuilder::new(control);
         let mut indices = Vec::new();
-        for node in self.nodes.iter() {
+        let mut preserves_layout = true;
+        for (index, node) in self.nodes.iter().enumerate() {
             builder.control.charge(DecisionWork::Visit)?;
             let low = Self::mapped_root(node.low, &indices);
             let high = Self::mapped_root(node.high, &indices);
             let root = rebuild(&node.variable, low, high, &mut builder)?;
+            preserves_layout = preserves_layout
+                && root == Root::Branch(index)
+                && builder.nodes[index].low == low
+                && builder.nodes[index].high == high;
             indices.push(root);
+        }
+        // Matching every edge and index makes the input's canonical postorder
+        // the output's order as well. Move the admitted nodes into the output.
+        if preserves_layout && builder.nodes.len() == indices.len() {
+            return Ok(EffectDecision {
+                nodes: builder.nodes.into_boxed_slice(),
+                root: self.root,
+            });
         }
         builder.finish(Self::mapped_root(self.root, &indices))
     }

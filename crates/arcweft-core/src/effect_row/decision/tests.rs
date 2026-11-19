@@ -89,7 +89,7 @@ fn reference_mapping_builds_ordered_branches_directly_and_normalizes_other_mappi
     let mut setup = Meter::default();
     let source = atom(0).conditional(&atom(1), &atom(2), &mut setup).unwrap();
     let expected = atom(3).conditional(&atom(4), &atom(5), &mut setup).unwrap();
-    let required = 5 * source.node_count();
+    let required = 3 * source.node_count();
     let mut short = Meter {
         used: 0,
         limit: Some(required - 1),
@@ -115,6 +115,23 @@ fn reference_mapping_builds_ordered_branches_directly_and_normalizes_other_mappi
         source.map_references(&mut setup, &mut |variable, _| Ok((*variable == 2) as u8)),
         atom(0).or(&atom(1), &mut Meter::default()),
     );
+}
+
+#[test]
+fn rebuilding_a_decision_rechecks_order_when_existing_indices_gain_different_edges() {
+    let mut work = Meter::default();
+    let source = atom(0).conditional(&atom(1), &atom(2), &mut work).unwrap();
+    let expected = atom(0).conditional(&atom(2), &atom(1), &mut work).unwrap();
+    let rebuilt = source
+        .rebuild_nodes(&mut work, |&variable, low, high, builder| {
+            if variable == 0 {
+                builder.branch(variable, high, low)
+            } else {
+                builder.branch(variable, low, high)
+            }
+        })
+        .unwrap();
+    assert_eq!(rebuilt, expected);
 }
 
 #[test]
