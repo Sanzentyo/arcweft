@@ -19918,3 +19918,18 @@ Sema全featureユニットは1,983件中1,865 PASS、118 FAIL、0 SKIP。既存1
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時に変更6 blobを検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-late-continuation-body.raw.zip) は23 entry、474,243 bytes、SHA256 `056ce47b6d37567fa33f2f297293a5eff4c4fb916d441d9f34d0e51d430307eb`。各原本の長さとハッシュを照合した。
+
+<a id="correlated-continuation-body"></a>
+## 2026-11-19 — 入れ子の段階適用で引数制約を先に検査
+
+基点 `487320d053c35b24a0036874eaaf707068d877c4`。Source `4b624281c1237679d90e2740965daee4d56eb7f6`。別の呼出しの引数になる段階適用では、子候補の引数制約から残った経路を受け取り、その経路の効果読取りを確保してから、必要な宣言本体を親のトランザクションで準備する。兄弟候補はその準備を共有する。型が合わず経路が消えた子候補は、本体を要求せず親に拒否を返す。
+
+追加したSemaテストは、入れ子の再帰段階適用が `i64` の位置へ `String` を渡した場合に、親呼出しの引数が拒否され、親の値型や実行計画が発行されないことを検証する。外側の正しい呼出しでは先頭段階が空効果、終端が `log.write` となる。同じテストを基点の実装で実行すると `ExpressionCycle` で失敗した。
+
+初回の変更では読取りを保存する前に本体の準備がグラフを進めたため、将来の型引数を残す関数を別の関数の引数に渡す既存テストが `DeltaBase` で失敗した。子候補を調べた効果グラフの状態で読取りを保存し、その後で本体を準備するよう訂正した。初回のSemaは1,865 PASS、119 FAILだった。訂正後はこの既存テストと新規テストの2件がPASSした。
+
+最終のSema全featureユニットは1,984件中1,866 PASS、118 FAIL、0 SKIP。既存1,983件は直前の公開ソースと全ID・合否が一致した。Compiler統合5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中29 PASS、3 FAIL。Compilerでも全582件のID・合否が一致した。既存の代表的なSema失敗では、正しい引数で再帰本体から作る段階適用と純粋なcallbackへの再帰関数値の受け渡しが `ExpressionCycle`、再帰する attached default が `PendingCallableEffectProjection` だった。[先行する失敗の記録](#completed-call-result)。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。Sourceの公開時に変更2 blobを検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-correlated-continuation-body.raw.zip) は30 entry、558,631 bytes、SHA256 `fdc74198bd02b15ab53d598becaec5f32f92e23c1a63e48f042370c499062d24`。各原本の長さとハッシュを照合した。
