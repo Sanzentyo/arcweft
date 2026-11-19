@@ -19972,3 +19972,16 @@ Sema全featureユニットは1,985件中1,867 PASS、118 FAIL、0 SKIP。既存1
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。Sourceの公開時に変更8 blobを検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-continuation-effect-port.raw.zip) は27 entry、515,368 bytes、SHA256 `7e4352e298cb74ca08b1f97532f8f4ce42d8969ebfe489ad2dd6989e5a69df15`。各原本の長さとハッシュを照合した。
+
+<a id="continuation-result-effect-port"></a>
+## 2026-11-19 — 制約トランザクションで継続の終端効果を再照合
+
+基点 `d71f6391376550bb1d69ec0245e1e043378af269`。Source `5ce52d1130d13b573c39852a76506a498b3fbc07`。準備済みの型が持つ宣言の効果適用を、返り値の矢印上の位置と宣言の参照で保持する。候補が結果型を開いて制約トランザクションに登録し、単独および結合経路で元の効果関係を固定する前に、その位置の宣言と適用引数をライブのグラフで再照合する。これにより、スコープを移した適用の引数を元の型のグラフ内 ID に依存せずに読める。
+
+追加テストは、パラメータ側に同じ効果項があるときも返り値側だけを照合し、同じ宣言に対する別の適用が指定した引数順を保つことと、同じ引数を持つ別の宣言の適用を拒否することを確認した。最初のテストビルドは非公開の効果グラフ用テスト支援にアクセスしようとして E0603 で停止した。型側でテスト専用の制御を定義して修正した。
+
+Sema 全featureユニットは1,986件中1,868 PASS、118 FAIL、0 SKIP。既存1,985件は全IDと合否が前回と一致した。Compiler統合5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中29 PASS、3 FAIL。Compiler全582件は全IDと合否が前回と一致した。制約計算は継続の終端効果を観測するため、再帰する段階適用と純粋callbackへの引き渡しで `ExpressionCycle`、再帰する attached default で `PendingCallableEffectProjection` を引き続き再現した。次の変更では、返り値として保持する終端行と、型の照合や呼出しで観測する効果行を区別する必要がある。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実行。公開した変更の全14 blobを検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-continuation-result-effect-port.raw.zip) は23 entry、471,879 bytes、SHA256 `9fd3cb843d7d704761cb95b5622c1706b7a83421f5e4ae06f28404bab7766bf6`。各原本の長さとハッシュを照合した。
