@@ -19851,3 +19851,16 @@ Compilerの5 targetは550件中541 PASS、9 FAIL、`flow_wait` は32件中29 PAS
 SemaとCompilerの全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時にRustの8 blobを検証した入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-annotated-recursive-binding.raw.zip) は25 entry、594,570 bytes、SHA256 `46563bce5670d922ab655402e9c72b303ec435f00e446e5955e17eaab52603c3`。各原本の長さとハッシュを照合した。
+
+<a id="staged-call-input-admission"></a>
+## 2026-11-19 — 段階適用の入力を本体の検査より先に照合
+
+基点 `1066ed71ab16af8b444bac98070d2e93f14eed29`。Source `80fef368e9a6426975367586648c626057bf6c36`。候補に対応する引数・明示型引数・attached contentを同じマッパーで照合し、通った入力の遷移から、継続が公開する終端効果と推論済み戻り値型の前提を判断する。相関する候補では、通った入力が要求する宣言本体を元の親トランザクションで共有する。拒否・曖昧の診断が持つ引数とcalleeの座標は元のHIRから検査する。候補の結果型と実行計画は選ばれた適用が保持する。
+
+追加したSemaテストは、先行の公開ソースを同じfixtureで実行すると `ExpressionCycle` で失敗した。修正後は、ある宣言本体で同じ宣言の先頭グループに余分な引数を渡すと、単独の拒否診断が残り、その呼出しに値型と実行計画が発行されない。同じ宣言の正しい2グループ適用では、先頭グループの効果が空、終端グループの効果が `log.write` であることを確認した。最初の焦点測定では、既存の診断テストと追加テストを含む12件が通過した。
+
+Sema全featureユニットは1,982件中1,864 PASS、118 FAIL、0 SKIP。既存1,981件は先行runのRust入力 `d20ea61e2eaf45fd00c5d47fb864d1aaa45f87df` と全ID・合否が一致した。Compilerの5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中29 PASS、3 FAIL。Compiler全582件で全ID・合否が一致した。正しい引数で再帰本体から作る段階適用と再帰する attached default の解析循環は再現した。[既存の実行結果と失敗経路](#annotated-recursive-binding)。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時にRustの4 blobを検証した入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-staged-call-input-admission.raw.zip) は22 entry、492,769 bytes、SHA256 `d3b8aff76ad7e7f326057dc5238b3bdfb91742a83140ff76752ad5e5708a88dd`。各原本の長さとハッシュを照合した。
