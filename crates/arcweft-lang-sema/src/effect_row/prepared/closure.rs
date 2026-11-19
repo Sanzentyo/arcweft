@@ -43,11 +43,8 @@ use compilation::{ApplicationCells, Compilation};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Atom {
-    Cell {
-        scheme: u64,
-        class: usize,
-        mask: usize,
-    },
+    // Select table masks by their formal inputs before testing coefficients.
+    // Group coefficients that the same (class, mask) comparison reads.
     Formal {
         owner: FormalOwner,
         class: usize,
@@ -58,6 +55,11 @@ enum Atom {
     Presence {
         owner: FormalOwner,
         mask: usize,
+    },
+    Cell {
+        class: usize,
+        mask: usize,
+        scheme: u64,
     },
     Choice(u64),
 }

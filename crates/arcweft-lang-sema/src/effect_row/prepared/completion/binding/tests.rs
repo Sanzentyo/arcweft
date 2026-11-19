@@ -190,6 +190,64 @@ fn every_declared_argument_is_quantified_even_when_the_source_never_applies_it()
 }
 
 #[test]
+fn a_named_override_is_not_a_quantified_function_argument() {
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
+    let effect = parameter(&scope, 0);
+    let rigid = open(&effect);
+    for augmented in [false, true] {
+        let mut graph = PreparedEffectGraph::default();
+        let child = unknown(&mut graph, false, vec![effect.clone()]);
+        let child_row = graph
+            .unknown_application(&child, vec![rigid.clone()], &mut budget())
+            .unwrap();
+        equation(&mut graph, child_row, rigid.clone(), vec![effect.clone()]);
+        let original = freeze(&graph);
+        let imported = graph
+            .import_guarded_function(&original.unknown(&child).unwrap(), &[], &mut budget())
+            .unwrap();
+        let selected = graph
+            .imported_application(&imported, vec![rigid.clone()], &mut budget())
+            .unwrap();
+
+        let local = unknown(&mut graph, false, vec![effect.clone()]);
+        let argument = if augmented {
+            PreparedEffectRow::Canonical(EffectRow::open(
+                crate::effects::EffectSet::from_labels(["log.write"]).unwrap(),
+                effect.clone(),
+            ))
+        } else {
+            rigid.clone()
+        };
+        let actual = graph
+            .unknown_application(&local, vec![argument], &mut budget())
+            .unwrap();
+        equation(&mut graph, actual, selected, vec![effect.clone()]);
+        match graph.solve_principal(&mut budget()) {
+            Ok(closure) if !augmented => {
+                assert_eq!(
+                    closure
+                        .unknown(&local)
+                        .unwrap()
+                        .known()
+                        .unwrap()
+                        .single_reference(),
+                    Some(&effect)
+                );
+            }
+            Err(PreparedEffectFailure::Unsatisfiable) if augmented => {}
+            outcome => panic!(
+                "unexpected quantified function agreement: {}",
+                if outcome.is_ok() {
+                    "accepted"
+                } else {
+                    "rejected"
+                }
+            ),
+        }
+    }
+}
+
+#[test]
 fn an_original_future_stays_the_same_input_until_its_actual_row_is_supplied() {
     let mut graph = PreparedEffectGraph::default();
     let x = unknown(&mut graph, false, vec![]);

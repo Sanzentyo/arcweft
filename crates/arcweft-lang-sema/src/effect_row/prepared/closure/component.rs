@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::effect_row::prepared::completion::residual::{
-    EffectResidualProgram, ResidualNode, ResidualRowScope, ResidualSourcePredicate, source_body,
+    EffectResidualProgram, ResidualNode, ResidualPredicateSource, ResidualRowScope,
+    ResidualSourcePredicate, source_body,
 };
 
 #[cfg(test)]
@@ -266,7 +267,17 @@ fn compile_relation<C: DecisionControl>(
                         scoped.compiler.canonical_predicate(value, work)?
                     }
                     ResidualSourcePredicate::Prepared(value) => {
-                        scoped.compiler.predicate(value, work)?
+                        let agreement =
+                            match source {
+                                ResidualPredicateSource::ObligationConsequence(id) => scoped
+                                    .compiler
+                                    .extensional_agreement(&graph.obligations[*id], work)?,
+                                _ => None,
+                            };
+                        match agreement {
+                            Some(agreement) => agreement,
+                            None => scoped.compiler.predicate(value, work)?,
+                        }
                     }
                 }
             }

@@ -191,6 +191,105 @@ impl<'a> Compilation<'a> {
         }
     }
 
+    pub(super) fn extensional_agreement<C: DecisionControl>(
+        &self,
+        obligation: &ScopedObligation,
+        work: &mut Work<'_, C>,
+    ) -> Result<Option<Decision>, PreparedEffectFailure<C::Error>> {
+        let PreparedEffectPredicate::Canonical(domain) = &obligation.domain else {
+            return Ok(None);
+        };
+        if !domain.is_unconstrained() {
+            return Ok(None);
+        }
+        let PreparedEffectPredicate::Term(predicate) = &obligation.predicate else {
+            return Ok(None);
+        };
+        let PredicateTerm::Relation {
+            relation: PreparedEffectRelation::Equal,
+            actual: PreparedEffectRow::Term(actual),
+            permitted: PreparedEffectRow::Term(permitted),
+        } = self.graph.predicate(predicate)?
+        else {
+            return Ok(None);
+        };
+        let RowTerm::Application {
+            function: local @ FunctionRef::Unknown(_),
+            arguments: actual_arguments,
+        } = self.graph.row(actual)?
+        else {
+            return Ok(None);
+        };
+        let RowTerm::Application {
+            function: imported @ FunctionRef::Imported(_),
+            arguments: permitted_arguments,
+        } = self.graph.row(permitted)?
+        else {
+            return Ok(None);
+        };
+        self.graph.function(local)?;
+        let imported_definition = self.graph.function(imported)?;
+        if imported_definition
+            .domain()
+            .is_some_and(|domain| !domain.is_unconstrained())
+        {
+            return Ok(None);
+        }
+        let parameters = &obligation.parameters;
+        for arguments in [actual_arguments, permitted_arguments] {
+            if arguments.len() != parameters.len() {
+                return Ok(None);
+            }
+            for (argument, parameter) in arguments.iter().zip(parameters) {
+                work.charge(DecisionWork::Visit)?;
+                let PreparedEffectRow::Canonical(argument) = argument else {
+                    return Ok(None);
+                };
+                let argument = argument.known()?;
+                if argument.membership().overrides().next().is_some()
+                    || argument.single_reference() != Some(parameter)
+                {
+                    return Ok(None);
+                }
+            }
+        }
+        let local = local.reference().ordinal;
+        let imported = self
+            .layout
+            .imports
+            .functions
+            .get(&imported.reference().ordinal)
+            .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+        let table = self
+            .layout
+            .tables
+            .get(&local)
+            .copied()
+            .ok_or(PreparedEffectInvariant::StaleReference)?;
+        // The original obligation quantifies the complete argument tuple. Its
+        // equality holds exactly when every named and outside coefficient is
+        // equal and the imported relation admits its arguments.
+        let mut result = self
+            .cells
+            .complete_import(imported.relation.principal(), work)?;
+        for class in 0..self.layout.classes() {
+            for mask in 0..table {
+                let left = Decision::variable(
+                    Atom::Cell {
+                        scheme: local,
+                        class,
+                        mask,
+                    },
+                    work,
+                )?;
+                let right = imported.coefficient(class, mask)?;
+                let equal = left.conditional(right, &right.not(work)?, work)?;
+                result = result.and(&equal, work)?;
+            }
+        }
+        Ok(Some(result))
+    }
+
     pub(super) fn application<C: DecisionControl>(
         &self,
         scheme: u64,
