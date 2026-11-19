@@ -11,10 +11,9 @@ use super::super::{
 };
 use super::*;
 use crate::effect_row::prepared::{
-    BoundScopedEffectCompletion, PreparedEffectActualInputs, PreparedEffectGraph,
-    PreparedEffectPredicate, PreparedEffectRow, PreparedEffectRowProjection,
-    PreparedEffectScopedConstraint, PreparedEffectUnknownRef, PrincipalEffectClosure,
-    ScopedEffectCompletion,
+    BoundScopedEffectCompletion, PreparedEffectActualInputs, PreparedEffectCompletion,
+    PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow, PreparedEffectRowProjection,
+    PreparedEffectScopedConstraint, PreparedEffectUnknownRef, ScopedEffectCompletion,
 };
 use crate::effect_row::{EffectConstraintEnvironment, EffectPredicate, EffectRow};
 use crate::types::{GenericEffectReference, PreparedEffects, TypeProjectionControl};
@@ -94,8 +93,13 @@ pub(in crate::types::constraints) struct ConstraintEffectCompletionContext<D: Co
     scope: Arc<ConstraintLexicalScope>,
     origin: ConstraintEffectCompletionOrigin,
     domain: Arc<EffectPredicate>,
-    principal: Arc<PrincipalEffectClosure>,
+    completion: Arc<PreparedEffectCompletion>,
     source_constraint: PreparedEffectScopedConstraint,
+}
+
+enum ConstraintEffectInputs<'a> {
+    Actual(&'a PreparedEffectActualInputs<'a>),
+    Residual(&'a [GenericEffectReference]),
 }
 
 /// Move-only issuance couples the computed value to its exact narrowed Γ.
@@ -274,7 +278,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     pub(in crate::types::constraints) fn for_original_path<A: TypeConstraintAccounting>(
         path: &ConstraintPath<D>,
         original: PreparedConstraintEffects,
-        inputs: &[(&PreparedEffectUnknownRef, &EffectRow)],
+        residual: &[GenericEffectReference],
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<Self>, TypeConstraintError> {
@@ -282,14 +286,20 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         for _ in path.lineage.scope.shape().binders() {
             context.enter_node()?;
         }
-        let inputs = graph.read().actual_inputs(inputs, context)?;
+        let actual;
+        let inputs = if residual.is_empty() {
+            actual = graph.read().actual_inputs(&[], context)?;
+            ConstraintEffectInputs::Actual(&actual)
+        } else {
+            ConstraintEffectInputs::Residual(residual)
+        };
         Self::complete_branch(
             path,
             Arc::new(path.lineage.scope.clone()),
             ConstraintEffectCompletionOrigin::Source(path.lineage.original.clone()),
             &original.bound,
             &original.constraint,
-            &inputs,
+            inputs,
             graph,
             context,
         )
@@ -317,7 +327,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 ConstraintEffectCompletionOrigin::Source(path.lineage.original.clone()),
                 original,
                 &constraint,
-                &inputs,
+                ConstraintEffectInputs::Actual(&inputs),
                 graph,
                 context,
             )
@@ -345,7 +355,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
             ConstraintEffectCompletionOrigin::Joint(sources),
             &original.bound,
             &original.constraint,
-            inputs,
+            ConstraintEffectInputs::Actual(inputs),
             graph,
             context,
         )
@@ -357,7 +367,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         origin: ConstraintEffectCompletionOrigin,
         original: &BoundScopedEffectCompletion,
         source_constraint: &PreparedEffectScopedConstraint,
-        inputs: &PreparedEffectActualInputs<'_>,
+        inputs: ConstraintEffectInputs<'_>,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<Self>, TypeConstraintError> {
@@ -389,28 +399,53 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 context.enter_node()?;
                 ports.push(row);
             }
-            let principal = original.close_original_with_inputs(
-                graph.read(),
-                &ports,
-                &[source_constraint.domain(), source_constraint.predicate()],
-                inputs,
-                context,
-            )?;
-            let domain = principal.confirm_scoped_constraint(source_constraint, context)?;
+            let predicates = [source_constraint.domain(), source_constraint.predicate()];
+            let (completion, domain) = match inputs {
+                ConstraintEffectInputs::Actual(inputs) => {
+                    let principal = original.close_original_with_inputs(
+                        graph.read(),
+                        &ports,
+                        &predicates,
+                        inputs,
+                        context,
+                    )?;
+                    let domain = principal.confirm_scoped_constraint(source_constraint, context)?;
+                    (PreparedEffectCompletion::Closed(principal), domain)
+                }
+                ConstraintEffectInputs::Residual(references) => {
+                    let mut retained = Vec::new();
+                    for (key, function, _) in &queries {
+                        context.enter_node()?;
+                        if references.binary_search(key).is_ok() {
+                            context.enter_node()?;
+                            retained.push((function, key));
+                        }
+                    }
+                    let residual = original.complete_residual_rows(
+                        graph.read(),
+                        &ports,
+                        &predicates,
+                        &retained,
+                        context,
+                    )?;
+                    let domain = residual.domain().copy_with_control(context)?;
+                    (PreparedEffectCompletion::Residual(residual), domain)
+                }
+            };
             let owner = Arc::new(ConstraintEffectCompletionContext {
                 constraints: branch.effects.clone(),
                 applications: Arc::clone(&branch.applications),
                 scope,
                 origin,
                 domain: Arc::new(domain),
-                principal: Arc::new(principal),
+                completion: Arc::new(completion),
                 source_constraint: source_constraint.clone(),
             });
             let predicate =
                 owner.seal(Arc::clone(&owner.domain), owner.domain.variables(), context)?;
             let mut rows = BTreeMap::new();
             for (key, function, query) in queries {
-                let row = Arc::new(owner.principal.resolve_row(&query, context)?);
+                let row = Arc::new(owner.completion.terms().resolve_row(&query, context)?);
                 let value = owner.seal(Arc::clone(&row), row.variables()?, context)?;
                 context.enter_node()?;
                 rows.insert(key, ConstraintEffectBinding { function, value });
@@ -475,7 +510,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         scope: &crate::types::GenericScope,
         context: &mut C,
     ) -> Result<crate::types::TypeKind, TypeConstraintError> {
-        ty.project_canonical_effects(scope, &self.context.principal, context)
+        ty.project_effect_terms(scope, self.context.completion.terms(), context)
             .map_err(TypeConstraintError::from)
     }
 
@@ -484,7 +519,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     ) -> ConstraintEffectProjection<D> {
         ConstraintEffectProjection {
             owner: Arc::clone(self),
-            rows: self.context.principal.project_rows(),
+            rows: self.context.completion.project_rows(),
         }
     }
 }
@@ -627,7 +662,11 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 if let Some(row_keys) = row_keys
                     && !self.substitution.is_empty()
                 {
-                    let uses = self.context.principal.row_function_uses(row, context)?;
+                    let uses = self
+                        .context
+                        .completion
+                        .terms()
+                        .row_function_uses(row, context)?;
                     for (key, binding) in &self.substitution {
                         context.enter_node()?;
                         if uses.contains_unknown(&binding.function)? {
@@ -650,7 +689,8 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                 {
                     let uses = self
                         .context
-                        .principal
+                        .completion
+                        .terms()
                         .predicate_function_uses(predicate, context)?;
                     for (key, binding) in &self.substitution {
                         context.enter_node()?;
@@ -660,7 +700,8 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                     }
                 }
                 self.context
-                    .principal
+                    .completion
+                    .terms()
                     .resolve_predicate(predicate, context)?
             }
         };

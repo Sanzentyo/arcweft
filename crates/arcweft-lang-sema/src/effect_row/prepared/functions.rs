@@ -17,6 +17,10 @@ pub(super) struct ParameterOrigin {
 }
 
 impl ParameterOrigin {
+    pub(super) fn variable(&self) -> &GenericEffectReference {
+        &self.variable
+    }
+
     pub(super) fn same_origin<C: DecisionControl>(
         &self,
         other: &Self,

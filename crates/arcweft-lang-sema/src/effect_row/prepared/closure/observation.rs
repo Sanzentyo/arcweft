@@ -4,8 +4,10 @@ use super::*;
 
 #[cfg(test)]
 mod predicate_tests;
+mod residual;
 #[cfg(test)]
 mod tests;
+pub(crate) use residual::ResidualEffectClosure;
 
 #[derive(Clone, Copy)]
 enum Root<'a> {
@@ -155,32 +157,9 @@ impl<'g> EffectPredicateObservation<'g> {
         if self.invariant.is_constant(false) {
             return Ok(None);
         }
-        let predicate = if self.yes.is_constant(false) {
-            EffectPredicate::impossible()
-        } else {
-            // The strongest pointwise conjunction accepting every positive
-            // valuation permits each local input pattern occurring in one.
-            // It is representable iff that conjunction rejects every negative.
-            let default =
-                self.layout
-                    .local(&self.yes.and(&self.probe, &mut work)?, 0, &mut work)?;
-            let mut violations = EffectFormula::builder(default.not(&mut work)?, &mut work)?;
-            for (index, label) in self.layout.labels.iter().enumerate() {
-                let allowed = self.layout.local(&self.yes, index + 1, &mut work)?;
-                violations.set(label, allowed.not(&mut work)?, &mut work)?;
-            }
-            let empty = EffectFormula::from_set(&crate::effects::EffectSet::new(), &mut work)?;
-            violations.finish().subset(&empty, &mut work)?
-        };
-        let actual = self.layout.guard(&predicate, &mut work)?;
-        if !self
-            .yes
-            .and(&actual.not(&mut work)?, &mut work)?
-            .is_constant(false)
-            || !self.no.and(&actual, &mut work)?.is_constant(false)
-        {
-            return Err(PreparedEffectFailure::NonPointwiseObservation);
-        }
+        let predicate = self
+            .layout
+            .canonical_guard(&self.yes, &self.no, &self.probe, &mut work)?;
         Ok(Some(GuardedEffectPredicate {
             observation: self,
             predicate,
@@ -189,6 +168,37 @@ impl<'g> EffectPredicateObservation<'g> {
 }
 
 impl ObservationLayout {
+    fn canonical_guard<C: DecisionControl>(
+        &self,
+        yes: &Decision,
+        no: &Decision,
+        probe: &Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<EffectPredicate, PreparedEffectFailure<C::Error>> {
+        let predicate = if yes.is_constant(false) {
+            EffectPredicate::impossible()
+        } else {
+            // The strongest pointwise conjunction accepting every positive
+            // valuation permits each local input pattern occurring in one.
+            // It is representable iff that conjunction rejects every negative.
+            let default = self.local(&yes.and(probe, work)?, 0, work)?;
+            let mut violations = EffectFormula::builder(default.not(work)?, work)?;
+            for (index, label) in self.labels.iter().enumerate() {
+                let allowed = self.local(yes, index + 1, work)?;
+                violations.set(label, allowed.not(work)?, work)?;
+            }
+            let empty = EffectFormula::from_set(&crate::effects::EffectSet::new(), work)?;
+            violations.finish().subset(&empty, work)?
+        };
+        let actual = self.guard(&predicate, work)?;
+        if !yes.and(&actual.not(work)?, work)?.is_constant(false)
+            || !no.and(&actual, work)?.is_constant(false)
+        {
+            return Err(PreparedEffectFailure::NonPointwiseObservation);
+        }
+        Ok(predicate)
+    }
+
     fn local<C: DecisionControl>(
         &self,
         decision: &Decision,

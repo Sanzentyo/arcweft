@@ -46,6 +46,7 @@ pub(super) struct Compilation<'a> {
     owner: FormalOwner,
     parameters: &'a [GenericEffectReference],
     cells: ApplicationCells<'a>,
+    residual_rows: Option<&'a BTreeMap<u64, GenericEffectReference>>,
     rows: BTreeMap<u64, Arc<CompiledRow>>,
     predicates: BTreeMap<u64, Decision>,
 }
@@ -64,9 +65,18 @@ impl<'a> Compilation<'a> {
             owner,
             parameters,
             cells,
+            residual_rows: None,
             rows: BTreeMap::new(),
             predicates: BTreeMap::new(),
         }
+    }
+
+    pub(super) fn with_residual_rows(
+        mut self,
+        rows: &'a BTreeMap<u64, GenericEffectReference>,
+    ) -> Self {
+        self.residual_rows = Some(rows);
+        self
     }
 
     pub(super) fn valuation(&self) -> FiniteRowValuation<'_> {
@@ -187,6 +197,28 @@ impl<'a> Compilation<'a> {
         arguments: &[impl Borrow<CompiledRow>],
         work: &mut Work<'_, C>,
     ) -> Result<Vec<Decision>, PreparedEffectFailure<C::Error>> {
+        if let Some(reference) = self.residual_rows.and_then(|rows| rows.get(&scheme)) {
+            if !arguments.is_empty() {
+                return Err(PreparedEffectInvariant::ApplicationArity.into());
+            }
+            let parameter = self
+                .parameters
+                .binary_search(reference)
+                .map_err(|_| PreparedEffectInvariant::UndeclaredParameter(reference.clone()))?;
+            return (0..self.layout.classes())
+                .map(|class| {
+                    work.charge(DecisionWork::Node)?;
+                    Decision::variable(
+                        Atom::Formal {
+                            owner: self.owner,
+                            class,
+                            parameter,
+                        },
+                        work,
+                    )
+                })
+                .collect();
+        }
         let table = *self
             .layout
             .tables

@@ -51,7 +51,9 @@ fn resolved_row_reuse_checks_graph_ownership_and_copy_budget() {
         "ui.write",
     );
     assert_eq!(original.0.ordinal, foreign.0.ordinal);
-    let principal = Arc::new(graph.solve_principal(&mut control).unwrap());
+    let principal = Arc::new(PreparedEffectCompletion::Closed(
+        graph.solve_principal(&mut control).unwrap(),
+    ));
     let mut projection = principal.project_rows();
     let expected = EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap());
     assert_eq!(

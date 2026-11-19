@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::effect_row::prepared::{
-    PreparedEffectInvariant, PreparedEffectReadView, PrincipalEffectClosure,
+    PreparedEffectInvariant, PreparedEffectReadView, PreparedEffectTerms, PrincipalEffectClosure,
 };
 #[cfg(test)]
 use crate::effect_row::prepared::{PreparedEffectUnknownRef, ScopedEffectCompletion};
@@ -30,7 +30,7 @@ impl OriginalTypeEffectProjection {
 }
 
 struct Canonicalization<'a, C> {
-    principal: Option<&'a PrincipalEffectClosure>,
+    principal: Option<PreparedEffectTerms<'a>>,
     control: &'a mut C,
     depth: u64,
 }
@@ -65,7 +65,7 @@ impl<'a, C: TypeProjectionControl> Canonicalization<'a, C> {
     fn principal(
         &self,
     ) -> Result<
-        &'a PrincipalEffectClosure,
+        PreparedEffectTerms<'a>,
         TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>,
     > {
         self.principal.ok_or_else(|| {
@@ -204,7 +204,11 @@ impl TypeKind<PreparedEffects> {
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
         let principal = observe_type_roots([self], graph, control)?;
-        self.project_effects_with_principal(scope, principal.as_ref(), control)
+        self.project_effects_with_principal(
+            scope,
+            principal.as_ref().map(PreparedEffectTerms::Closed),
+            control,
+        )
     }
 
     /// Observe both sides in one principal. Preparing a dependency needed by
@@ -220,8 +224,9 @@ impl TypeKind<PreparedEffects> {
         TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>,
     > {
         let principal = observe_type_roots([self, actual], graph, control)?;
-        let expected = self.project_effects_with_principal(scope, principal.as_ref(), control)?;
-        let actual = actual.project_effects_with_principal(scope, principal.as_ref(), control)?;
+        let terms = principal.as_ref().map(PreparedEffectTerms::Closed);
+        let expected = self.project_effects_with_principal(scope, terms, control)?;
+        let actual = actual.project_effects_with_principal(scope, terms, control)?;
         Ok((expected, actual))
     }
 
@@ -275,13 +280,22 @@ impl TypeKind<PreparedEffects> {
         principal: &PrincipalEffectClosure,
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
-        self.project_effects_with_principal(scope, Some(principal), control)
+        self.project_effect_terms(scope, PreparedEffectTerms::Closed(principal), control)
+    }
+
+    pub(crate) fn project_effect_terms<C: TypeProjectionControl>(
+        &self,
+        scope: &GenericScope,
+        terms: PreparedEffectTerms<'_>,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
+        self.project_effects_with_principal(scope, Some(terms), control)
     }
 
     fn project_effects_with_principal<C: TypeProjectionControl>(
         &self,
         scope: &GenericScope,
-        principal: Option<&PrincipalEffectClosure>,
+        principal: Option<PreparedEffectTerms<'_>>,
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<PreparedTypeEffectProjectionFailure<C::Error>>> {
         self.project_effect_domain(

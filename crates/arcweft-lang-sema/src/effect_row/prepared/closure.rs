@@ -18,7 +18,7 @@ mod observation;
 mod reification;
 pub(crate) use observation::{
     EffectPredicateObservation, EffectPredicateRegion, EffectRowObservation, EffectRowRegion,
-    GuardedEffectPredicate, GuardedEffectRow,
+    GuardedEffectPredicate, GuardedEffectRow, ResidualEffectClosure,
 };
 mod valuation;
 use valuation::FiniteRowValuation;
@@ -67,6 +67,7 @@ enum FormalOwner {
     Scheme(u64),
     Obligation(usize),
     Observation,
+    Residual,
 }
 
 type Decision = EffectDecision<Atom>;
@@ -382,17 +383,65 @@ pub(crate) struct PrincipalEffectClosure {
     input_bindings: BTreeMap<u64, EffectRow>,
 }
 
-/// Reuses total row resolutions during one ordered projection of a candidate.
-/// The completed principal is immutable and never retains this working state.
+pub(crate) enum PreparedEffectCompletion {
+    Closed(PrincipalEffectClosure),
+    Residual(ResidualEffectClosure),
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum PreparedEffectTerms<'a> {
+    Closed(&'a PrincipalEffectClosure),
+    Residual(&'a ResidualEffectClosure),
+}
+
+impl<'a> PreparedEffectTerms<'a> {
+    fn definitions(self) -> &'a PreparedEffectDefinitions {
+        match self {
+            Self::Closed(principal) => &principal.graph,
+            Self::Residual(residual) => residual.definitions(),
+        }
+    }
+
+    pub(crate) fn resolve_row<C: DecisionControl>(
+        self,
+        row: &PreparedEffectRow,
+        control: &mut C,
+    ) -> Result<EffectRow, PreparedEffectFailure<C::Error>> {
+        match self {
+            Self::Closed(principal) => principal.resolve_row(row, control),
+            Self::Residual(residual) => residual.resolve_row(row, control),
+        }
+    }
+
+    pub(crate) fn resolve_predicate<C: DecisionControl>(
+        self,
+        predicate: &PreparedEffectPredicate,
+        control: &mut C,
+    ) -> Result<EffectPredicate, PreparedEffectFailure<C::Error>> {
+        match self {
+            Self::Closed(principal) => principal.resolve_predicate(predicate, control),
+            Self::Residual(residual) => residual.resolve_predicate(predicate, control),
+        }
+    }
+}
+
+/// Reuse resolutions within one ordered projection of an immutable relation.
 pub(crate) struct PreparedEffectRowProjection {
-    principal: Arc<PrincipalEffectClosure>,
+    completion: Arc<PreparedEffectCompletion>,
     rows: BTreeMap<u64, EffectRow>,
 }
 
-impl PrincipalEffectClosure {
+impl PreparedEffectCompletion {
+    pub(crate) fn terms(&self) -> PreparedEffectTerms<'_> {
+        match self {
+            Self::Closed(principal) => PreparedEffectTerms::Closed(principal),
+            Self::Residual(residual) => PreparedEffectTerms::Residual(residual),
+        }
+    }
+
     pub(crate) fn project_rows(self: &Arc<Self>) -> PreparedEffectRowProjection {
         PreparedEffectRowProjection {
-            principal: Arc::clone(self),
+            completion: Arc::clone(self),
             rows: BTreeMap::new(),
         }
     }
@@ -410,12 +459,13 @@ impl PreparedEffectRowProjection {
             Entry::Occupied(entry) => {
                 let mut work = Work(control);
                 work.charge(DecisionWork::Visit)?;
-                self.principal.graph.row(reference)?;
+                self.completion.terms().definitions().row(reference)?;
                 entry.get().copy_with_control(&mut work)
             }
             Entry::Vacant(entry) => {
                 let row = self
-                    .principal
+                    .completion
+                    .terms()
                     .resolve_row(&PreparedEffectRow::Term(reference.clone()), control)?;
                 let mut work = Work(control);
                 work.charge(DecisionWork::Node)?;
@@ -445,35 +495,39 @@ impl PreparedEffectFunctionUses<'_> {
     }
 }
 
-impl PrincipalEffectClosure {
+impl<'a> PreparedEffectTerms<'a> {
     pub(crate) fn row_function_uses<C: DecisionControl>(
-        &self,
+        self,
         row: &PreparedEffectRow,
         control: &mut C,
-    ) -> Result<PreparedEffectFunctionUses<'_>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PreparedEffectFunctionUses<'a>, PreparedEffectFailure<C::Error>> {
         use super::read::dependencies::{Dependency, Reachable, SchemeDependencies};
-        let mut reachable = Reachable::new(self.graph.read(), SchemeDependencies::Headers);
+        let graph = self.definitions();
+        let mut reachable = Reachable::new(graph.read(), SchemeDependencies::Headers);
         reachable.push(Dependency::Row(row), control)?;
         Ok(PreparedEffectFunctionUses {
-            graph: &self.graph,
+            graph,
             functions: reachable.collect(control)?.functions,
         })
     }
 
     pub(crate) fn predicate_function_uses<C: DecisionControl>(
-        &self,
+        self,
         predicate: &PreparedEffectPredicate,
         control: &mut C,
-    ) -> Result<PreparedEffectFunctionUses<'_>, PreparedEffectFailure<C::Error>> {
+    ) -> Result<PreparedEffectFunctionUses<'a>, PreparedEffectFailure<C::Error>> {
         use super::read::dependencies::{Dependency, Reachable, SchemeDependencies};
-        let mut reachable = Reachable::new(self.graph.read(), SchemeDependencies::Headers);
+        let graph = self.definitions();
+        let mut reachable = Reachable::new(graph.read(), SchemeDependencies::Headers);
         reachable.push(Dependency::Predicate(predicate), control)?;
         Ok(PreparedEffectFunctionUses {
-            graph: &self.graph,
+            graph,
             functions: reachable.collect(control)?.functions,
         })
     }
+}
 
+impl PrincipalEffectClosure {
     /// Replay an additional typed source fact against the same canonical tuple
     /// and every retained witness. A successful result is the proved whole
     /// fact ∀Γ.(D ⇒ R), rather than a guessed pointwise projection of R.

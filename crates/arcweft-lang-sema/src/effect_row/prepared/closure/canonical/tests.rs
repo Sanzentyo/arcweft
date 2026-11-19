@@ -151,7 +151,9 @@ fn query_function_uses_follow_actual_arguments_and_validate_owner_identity() {
         .unknown_application(&outer, vec![inner], &mut control)
         .unwrap();
     let principal = graph.solve_principal(&mut control).unwrap();
-    let uses = principal.row_function_uses(&row, &mut control).unwrap();
+    let uses = PreparedEffectTerms::Closed(&principal)
+        .row_function_uses(&row, &mut control)
+        .unwrap();
     assert!(uses.contains_unknown(&used).unwrap());
     assert!(uses.contains_unknown(&outer).unwrap());
     assert!(!uses.contains_unknown(&unused).unwrap());

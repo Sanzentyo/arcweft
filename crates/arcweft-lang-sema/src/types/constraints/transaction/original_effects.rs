@@ -11,8 +11,8 @@ use crate::{
 };
 
 impl<D: ConstraintDomain> ConstraintPath<D> {
-    /// Complete the source relation from within its original read scope.
-    /// A direct terminal calculation has no caller-provided Future rows.
+    /// Complete the source relation within its original read scope. Only an
+    /// application issuing a continuation can retain its own Future rows.
     pub(in crate::types::constraints) fn close_original_path_effects<
         A: TypeConstraintAccounting,
     >(
@@ -21,7 +21,28 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<ConstraintClosedEffects<D>>, TypeConstraintError> {
         let original = self.prepare_original_path_effects(graph, context)?;
-        ConstraintClosedEffects::for_original_path(self, original, &[], graph, context)
+        let mut residual = BTreeSet::new();
+        for request in self.lineage.projections.iter().filter(|request| {
+            request.closure == TypeConstraintProjectionClosure::AllowFutureEligible
+        }) {
+            context.enter_node()?;
+            let application = self.applications.require_application(request.application)?;
+            for row in application.effects().variables() {
+                context.enter_node()?;
+                if row.eligibility()
+                    == crate::effect_row::EffectConstraintEligibility::FutureEligible
+                {
+                    let reference = application
+                        .parameters()
+                        .effect_reference(row.variable())
+                        .ok_or(TypeConstraintInvariant::OriginalProducer)?;
+                    context.enter_node()?;
+                    residual.insert(reference);
+                }
+            }
+        }
+        let residual = residual.into_iter().collect::<Vec<_>>();
+        ConstraintClosedEffects::for_original_path(self, original, &residual, graph, context)
     }
 
     pub(super) fn collect_original_effect_types<'a, A: TypeConstraintAccounting>(

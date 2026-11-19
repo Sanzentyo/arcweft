@@ -76,6 +76,18 @@ impl ScopedEffectCompletion {
 }
 
 impl BoundScopedEffectCompletion {
+    pub(crate) fn complete_residual_rows<C: DecisionControl>(
+        &self,
+        receiving: PreparedEffectReadView<'_>,
+        query_rows: &[&PreparedEffectRow],
+        query_predicates: &[&PreparedEffectPredicate],
+        ports: &[(&PreparedEffectUnknownRef, &GenericEffectReference)],
+        control: &mut C,
+    ) -> Result<super::closure::ResidualEffectClosure, PreparedEffectFailure<C::Error>> {
+        self.final_definitions(receiving, query_rows, query_predicates, control)?
+            .complete_residual_rows(ports, control)
+    }
+
     pub(crate) fn close_original_with_inputs<C: DecisionControl>(
         &self,
         receiving: PreparedEffectReadView<'_>,
