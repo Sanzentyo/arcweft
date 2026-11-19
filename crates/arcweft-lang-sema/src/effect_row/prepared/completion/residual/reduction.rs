@@ -250,21 +250,20 @@ struct PointwiseMinimum {
 /// counterexamples is empty. If its default fails at all-zero inputs, infinitely
 /// many labels violate it, so the whole predicate is false.
 fn predicate_from_decisions<C: DecisionControl>(
-    mut values: Vec<Decision>,
+    values: Vec<Decision>,
     labels: &[EffectId],
     work: &mut Work<'_, C>,
 ) -> Result<Predicate, PreparedEffectFailure<C::Error>> {
-    let default = values.remove(0);
+    let mut values = values.into_iter();
+    let default = values.next().ok_or(PreparedEffectInvariant::UnclosedCell)?;
     if !default.evaluate_with_control(|_| false, work)? {
         return Ok(Predicate::impossible());
     }
-    let mut overrides = BTreeMap::new();
+    let mut bad = Formula::builder(default.not(work)?, work)?;
     for (label, value) in labels.iter().zip(values) {
-        work.charge(DecisionWork::Node)?;
-        overrides.insert(label.clone(), value.not(work)?);
+        bad.set(label, value.not(work)?, work)?;
     }
-    let bad = Formula::try_from_decisions(default.not(work)?, overrides, work)?;
-    bad.subset(&Formula::empty(), work)
+    bad.finish().subset(&Formula::empty(), work)
 }
 
 fn minimize_pointwise<C: DecisionControl>(
@@ -349,16 +348,15 @@ fn minimize_pointwise<C: DecisionControl>(
     let satisfiable = predicate_from_decisions(satisfiable, &labels, work)?;
     let principal = predicate_from_decisions(principal, &labels, work)?;
     let mut lower = BTreeMap::new();
-    for (variable, mut values) in rows {
-        let default = values.remove(0);
-        let mut overrides = BTreeMap::new();
+    for (variable, values) in rows {
+        let mut values = values.into_iter();
+        let default = values.next().ok_or(PreparedEffectInvariant::UnclosedCell)?;
+        let mut formula = Formula::builder(default, work)?;
         for (label, value) in labels.iter().zip(values) {
-            work.charge(DecisionWork::Node)?;
-            overrides.insert(label.clone(), value);
+            formula.set(label, value, work)?;
         }
-        let value = Formula::try_from_decisions(default, overrides, work)?;
         work.charge(DecisionWork::Node)?;
-        lower.insert(variable, value);
+        lower.insert(variable, formula.finish());
     }
     Ok(PointwiseMinimum {
         satisfiable,

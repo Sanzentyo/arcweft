@@ -164,16 +164,13 @@ impl<'g> EffectPredicateObservation<'g> {
             let default =
                 self.layout
                     .local(&self.yes.and(&self.probe, &mut work)?, 0, &mut work)?;
-            let mut violations = BTreeMap::new();
+            let mut violations = EffectFormula::builder(default.not(&mut work)?, &mut work)?;
             for (index, label) in self.layout.labels.iter().enumerate() {
                 let allowed = self.layout.local(&self.yes, index + 1, &mut work)?;
-                work.charge(DecisionWork::Node)?;
-                violations.insert(label.clone(), allowed.not(&mut work)?);
+                violations.set(label, allowed.not(&mut work)?, &mut work)?;
             }
-            let violations =
-                EffectFormula::try_from_decisions(default.not(&mut work)?, violations, &mut work)?;
             let empty = EffectFormula::from_set(&crate::effects::EffectSet::new(), &mut work)?;
-            violations.subset(&empty, &mut work)?
+            violations.finish().subset(&empty, &mut work)?
         };
         let actual = self.layout.guard(&predicate, &mut work)?;
         if !self
@@ -254,13 +251,12 @@ impl ObservationLayout {
         let default = members
             .next()
             .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-        let mut overrides = BTreeMap::new();
+        let mut formula = EffectFormula::builder(default, work)?;
         for (label, member) in self.labels.iter().zip(members) {
-            work.charge(DecisionWork::Node)?;
-            overrides.insert(label.clone(), member);
+            formula.set(label, member, work)?;
         }
         Ok(EffectRow {
-            formula: Some(EffectFormula::try_from_decisions(default, overrides, work)?),
+            formula: Some(formula.finish()),
         })
     }
 

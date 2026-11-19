@@ -273,19 +273,19 @@ impl<'a> CanonicalReplay<'a> {
                         work.charge(DecisionWork::Node)?;
                         labels.insert(label);
                     }
-                    let mut overrides = BTreeMap::new();
+                    let mut formula = Formula::builder(default, work)?;
                     for label in labels {
-                        work.charge(DecisionWork::Node)?;
-                        overrides.insert(
-                            label.clone(),
+                        formula.set(
+                            label,
                             bit.conditional(
                                 yes.formula.membership().at(label),
                                 no.formula.membership().at(label),
                                 work,
                             )?,
-                        );
+                            work,
+                        )?;
                     }
-                    let formula = Formula::try_from_decisions(default, overrides, work)?;
+                    let formula = formula.finish();
                     let admitted = Decision::variable(Atom::Choice(choice.0.ordinal), work)?
                         .conditional(&yes.admitted, &no.admitted, work)?;
                     Row { formula, admitted }

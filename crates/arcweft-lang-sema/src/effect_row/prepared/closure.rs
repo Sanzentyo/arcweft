@@ -627,32 +627,28 @@ impl PrincipalEffectClosure {
                 },
             );
             let parameters = compilation.parameters(work)?;
-            let membership = compilation.application(id, &parameters, work)?;
-            let mut output = Vec::new();
-            for decision in membership {
-                let mapped = decision.map_references(work, &mut |atom, _| match atom {
-                    Atom::Formal {
-                        owner: FormalOwner::Scheme(owner),
-                        parameter,
-                        ..
-                    } if *owner == id => Ok(function.parameters()[*parameter].clone()),
-                    _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
-                })?;
-                work.charge(DecisionWork::Node)?;
-                output.push(mapped);
+            let mut membership = compilation.application(id, &parameters, work)?.into_iter();
+            let mut project = |atom: &Atom, _: &mut Work<'_, C>| match atom {
+                Atom::Formal {
+                    owner: FormalOwner::Scheme(owner),
+                    parameter,
+                    ..
+                } if *owner == id => Ok(function.parameters()[*parameter].clone()),
+                _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
+            };
+            let default = membership
+                .next()
+                .ok_or(PreparedEffectInvariant::UnclosedCell)?
+                .map_references(work, &mut project)?;
+            let mut formula = EffectFormula::builder(default, work)?;
+            for (label, decision) in layout.labels.iter().zip(membership) {
+                formula.set(label, decision.map_references(work, &mut project)?, work)?;
             }
-            let mut output = output.into_iter();
-            let default = output.next().ok_or(PreparedEffectInvariant::UnclosedCell)?;
-            let mut overrides = BTreeMap::new();
-            for (label, decision) in layout.labels.iter().zip(output) {
-                work.charge(DecisionWork::Node)?;
-                overrides.insert(label.clone(), decision);
-            }
-            let formula = EffectFormula::try_from_decisions(default, overrides, work)?;
+            work.charge(DecisionWork::Node)?;
             functions.insert(
                 id,
                 EffectRow {
-                    formula: Some(formula),
+                    formula: Some(formula.finish()),
                 },
             );
         }

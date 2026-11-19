@@ -5,7 +5,10 @@
 //! support of its inputs; a predicate must hold at every label, including the
 //! infinitely many labels outside that support.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use super::decision::{DecisionControl, DecisionEncoding, DecisionWork, EffectDecision};
 use super::{EffectDeclarationError, EffectSet};
@@ -27,6 +30,47 @@ pub(super) struct Membership<V> {
 /// A symbolic finite effect set over scoped row references.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectFormula<V>(pub(super) Membership<V>);
+
+/// Incremental assembly with an admitted finite default and canonical overrides.
+pub struct EffectFormulaBuilder<V>(Membership<V>);
+
+impl<V: Clone + Ord> EffectFormulaBuilder<V> {
+    /// Assigns one label. Assigning the default clears that label's override.
+    pub fn set<C: DecisionControl>(
+        &mut self,
+        label: &EffectId,
+        decision: EffectDecision<V>,
+        control: &mut C,
+    ) -> Result<(), C::Error> {
+        self.set_label(Cow::Borrowed(label), decision, control)
+    }
+
+    fn set_label<C: DecisionControl>(
+        &mut self,
+        label: Cow<'_, EffectId>,
+        decision: EffectDecision<V>,
+        control: &mut C,
+    ) -> Result<(), C::Error> {
+        decision.encode(&mut super::EffectEqualityControl(control))?;
+        self.0
+            .default
+            .encode(&mut super::EffectEqualityControl(control))?;
+        control.charge(DecisionWork::Visit)?;
+        if decision == self.0.default {
+            self.0.overrides.remove(label.as_ref());
+        } else {
+            control.charge(DecisionWork::Node)?;
+            self.0.overrides.insert(label.into_owned(), decision);
+        }
+        Ok(())
+    }
+
+    /// Returns the finite row with its canonical label overrides.
+    #[must_use]
+    pub fn finish(self) -> EffectFormula<V> {
+        EffectFormula(self.0)
+    }
+}
 
 /// A relation that must hold for every effect label under finite row valuations.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -241,11 +285,26 @@ impl<V: Clone + Ord> EffectFormula<V> {
         }
     }
 
-    /// Assembles a finite row from already canonical Boolean decisions.
-    ///
-    /// A default that is true when all surviving input rows are empty denotes
-    /// an infinite output and is rejected. Redundant overrides are normalized
-    /// by the existing membership owner; its decision visits remain controlled.
+    /// Admits the outside-support decision before assembling label overrides.
+    /// At the all-empty valuation the default must be false.
+    pub fn builder<C: DecisionControl>(
+        default: EffectDecision<V>,
+        control: &mut C,
+    ) -> Result<EffectFormulaBuilder<V>, C::Error>
+    where
+        C::Error: From<EffectDeclarationError>,
+    {
+        control.charge(DecisionWork::Visit)?;
+        if default.evaluate_with_control(|_| false, control)? {
+            return Err(EffectDeclarationError::InfiniteRow.into());
+        }
+        Ok(EffectFormulaBuilder(Membership {
+            default,
+            overrides: BTreeMap::new(),
+        }))
+    }
+
+    /// Assembles a finite row from a map of already canonical Boolean decisions.
     pub fn try_from_decisions<C: DecisionControl>(
         default: EffectDecision<V>,
         overrides: BTreeMap<EffectId, EffectDecision<V>>,
@@ -254,24 +313,11 @@ impl<V: Clone + Ord> EffectFormula<V> {
     where
         C::Error: From<EffectDeclarationError>,
     {
-        control.charge(DecisionWork::Visit)?;
-        if default.evaluate_with_control(|_| false, control)? {
-            return Err(EffectDeclarationError::InfiniteRow.into());
-        }
-        let mut membership = Membership {
-            default,
-            overrides: BTreeMap::new(),
-        };
+        let mut builder = Self::builder(default, control)?;
         for (label, decision) in overrides {
-            // Admission covers the immutable graphs before equality inspection
-            // and map growth, including redundant overrides.
-            decision.encode(&mut super::EffectEqualityControl(control))?;
-            membership
-                .default
-                .encode(&mut super::EffectEqualityControl(control))?;
-            membership.insert_override(label, decision, control)?;
+            builder.set_label(Cow::Owned(label), decision, control)?;
         }
-        Ok(Self(membership))
+        Ok(builder.finish())
     }
 
     pub(crate) fn try_visit_semantic_child_counts<E>(

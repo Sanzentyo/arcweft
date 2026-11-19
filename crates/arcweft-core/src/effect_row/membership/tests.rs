@@ -176,6 +176,33 @@ fn decision_assembly_normalizes_overrides_and_aborts_before_unadmitted_growth() 
 }
 
 #[test]
+fn incremental_assembly_admits_label_updates_before_mutating_the_row() {
+    let keep = EffectId::parse("fs.read").unwrap();
+    let clear = EffectId::parse("fs.write").unwrap();
+    let mut full = AssemblyControl::default();
+    let mut builder =
+        EffectFormula::<u8>::builder(EffectDecision::constant(false), &mut full).unwrap();
+    builder
+        .set(&keep, EffectDecision::constant(true), &mut full)
+        .unwrap();
+    builder
+        .set(&clear, EffectDecision::constant(true), &mut full)
+        .unwrap();
+    let mut exhausted = AssemblyControl {
+        limit: Some(0),
+        ..AssemblyControl::default()
+    };
+    assert_eq!(
+        builder.set(&keep, EffectDecision::constant(false), &mut exhausted),
+        Err(AssemblyError::Limit { used: 1, limit: 0 })
+    );
+    builder
+        .set(&clear, EffectDecision::constant(false), &mut full)
+        .unwrap();
+    assert_eq!(builder.finish(), row(&["fs.read"]));
+}
+
+#[test]
 fn local_universal_rows_are_eliminated_before_input_existentials() {
     let mut meter = Meter::default();
     let equality = variable(0)

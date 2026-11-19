@@ -19,7 +19,8 @@ pub use declaration::{
     EffectDeclarationError, EffectMembershipDeclaration,
 };
 pub use membership::{
-    EffectCompletion, EffectFormula, EffectMembershipView, EffectPredicate, MembershipEncoding,
+    EffectCompletion, EffectFormula, EffectFormulaBuilder, EffectMembershipView, EffectPredicate,
+    MembershipEncoding,
 };
 pub use set::{EffectSet, EffectSetParseError};
 
