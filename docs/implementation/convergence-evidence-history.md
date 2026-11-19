@@ -20028,3 +20028,14 @@ Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終�
 [検証原本と公開照合](acceptance-evidence/task-attached-callback-closure.raw.zip) は 31 entry、701,676 bytes、SHA256 `75b4cf11960dabd161fb1879c543b9463420b847a605e49d35aeb48316a84292`。各原本の長さとハッシュを照合した。
 
 現状一覧で「共有 prefix の後段 callback 効果」の2件に残っていた作業上限の記述を、同じテストの成功に基づいて訂正した。作業上限に達した公開SHAと失敗条件は[先行の検証](#joint-effect-projection-reuse)と検証原本で追跡できる。
+
+<a id="recursive-callback-coefficients"></a>
+## 2026-11-19 — 再帰 callback の効果行を係数で照合
+
+基点 `cf03c62c7db6a81dd091b2b40a66d89bbdea282e`。Source `8da875f97326b66b31c752fa78c39f9e01ab5c41`。効果成分の判定木は、束縛引数を係数より先に置き、同じラベルクラス・引数パターンで使う係数を隣接させる。元の引数をすべてそのまま両方に渡し、無条件で比較する効果関数の等式は、各係数の一致と取り込んだ関係の許容条件に変換する。名前付きラベルを足した引数と宣言の追加条件を持つ関数は通常の効果式として評価する。元の条件は保持し、確定した効果行を元の式で再照合する。
+
+2つの callback を入れ替える Native／AWBC 実行は既定の作業上限4,096で型検査を中断する。修正前のデバッガーでは、元制約を閉じる過程で、取り込んだ効果関数の適用を構築中に上限に達した。上限16,384の診断ビルドでは元の実行2件が成功した。同じ入力で候補の最大作業量は14,224、束縛引数を先に置いた試作は11,479、ラベルクラス順と係数照合を組み合わせた試作は9,312だった。本番の上限4,096で最終検証した。ラベルを足した引数は有限行の全称比較で矛盾し、元の引数を渡す対応ケースは元効果行を推論することを追加テストで確認した。
+
+Sema全featureユニットは1,988件中1,875 PASS、113 FAIL。段階適用した Map の callback の await と、View default の別名が前段の効果を保持する2件が成功へ移行した。新規失敗は0。Compilerの6 targetは582件中573 PASS、9 FAIL。`flow_wait` 32件はすべて成功した。2つの callback を入れ替えるNative／AWBC実行2件は引き続き型検査で失敗した。最終バイナリのデバッガーでは、2個の Native テストは条件の論理積を構築中に、3個を循環させるSemaテストは元制約の読み取り範囲を検査中に上限に達した。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実施。Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。公開した4 Rust blobを照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-callback-permutation-compilation.raw.zip) は 29 entry、579,783 bytes、SHA256 `ee897ba0c0470efb0af01161638aa3990b17f05b91f9ad44f93531ae589d1556`。各原本の長さとハッシュを照合した。
