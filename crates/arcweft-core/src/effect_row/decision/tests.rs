@@ -34,7 +34,7 @@ fn truth_table(decision: &EffectDecision<u8>, variables: u8) -> Vec<bool> {
 fn fallible_evaluation_loads_only_admitted_references_on_the_selected_path() {
     let decision = atom(0).and(&atom(1), &mut Meter::default()).unwrap();
     let mut lookups = Vec::new();
-    let mut lookup = |&reference| {
+    let mut lookup = |&reference: &u8| {
         lookups.push(reference);
         if reference == 0 {
             Ok(false)
