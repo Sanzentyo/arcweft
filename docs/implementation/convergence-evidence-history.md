@@ -20074,3 +20074,12 @@ Compilerの12件のうち5件は先に実行した582件でも確認した。残
 保持後のMap呼出しで上限に達した箇所は、取込先の効果行を再構成する処理だった。デバッガーでその時点の関数種別まで確認できなかったため、前節の記述をスタックから確認できた範囲に訂正した。
 
 [コマンド・終端結果・失敗ID・比較原本](acceptance-evidence/task-callback-decision-projection-reverse.raw.zip) は24 entry、1,376,088 bytes、SHA256 `fd1b289b9abe0e3c64dc0f16df58195b5549964bccdbf9bf955e37704f08c093`。各entryの長さとハッシュを照合した。
+
+<a id="fixed-effect-input-authority"></a>
+## 2026-11-19 — 確定した効果入力を閉包に渡す
+
+基点 `9ab98eb5814c51de098aadd4a66b7a34a621771f`、Source `0587135370052dc0d7befae6ad3dc85407cc652e`。Futureと名前付き宣言の確定入力を、係数から正準式へ組み直さずに閉包の関数表へ移す。型が有限性を保証し、閉包の公開前に入力のID、ラベル・仮引数の範囲、全係数との一致を検査する。宣言本体と義務は元の型付き式で再照合する。ラベルを保ちながら引数への依存だけを消した入力を拒否する回帰テストを追加した。
+
+Semaの全featureユニット1,990件は1,896 PASS、94既知FAIL。既存IDに変化はなく、追加テストは通過した。Compilerの6 targetは582件中577 PASS、5既知FAILで、`flow_wait` の32件は通過した。Mapの3件は引き続き既定の作業上限4,096に達する。デバッガーでは、遅延効果のケースは元の義務を準備する段階、保持後の呼出し効果のケースは閉包の行の照合、純粋呼出しの拒否ケースは元の型制約を閉じる段階で停止した。
+
+workspaceの全feature・全targetのcheckとClippy、fmt、差分検査、構造ゲートは終了0。全逆依存の終端実測は[先行Sourceの記録](#effect-decision-projection-reverse)を参照する。[今回の検証原本と公開照合](acceptance-evidence/task-callback-fixed-input-authority.raw.zip) は28 entry、1,119,481 bytes、SHA256 `cb7f2e6584b1b26b236edd249422cf78e5428505d017a457e3794f74b815752e`。各entryの長さとハッシュ、公開した4 Rust blobを照合した。
