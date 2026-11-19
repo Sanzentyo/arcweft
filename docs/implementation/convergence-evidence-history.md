@@ -19625,3 +19625,16 @@ Compilerの全548 IDを比較し、531成功・17失敗、新規失敗0件。分
 Semaの全feature checkではライブラリを生成し、テスト対象は終了101・817エラー・33警告だった。前回とエラーのコード・ファイル別内訳が一致した。SemaライブラリのClippy、fmt、差分検査、構造ゲートは終了0、構造阻害0件。Cargoの全feature逆依存は起点込み 22 package。Sema単体テスト、全逆依存のテスト、workspace全targetのcheck／Clippy、Native／Web最終受入は未実行。公開されたRust 3 blobを照合した。`target` は `12891084080` bytes。
 
 [LLDBの計測、CompilerとSemaの検証原本、公開照合](acceptance-evidence/task-observe-control-result-types.raw.zip) は 27 entry、613198 bytes、SHA256 `cb619592b5056699043feb123fc45d5e72e3cdae98df1c413bfcf859a77c2e2f`。各原本の長さとハッシュを照合した。
+
+<a id="fixture-original-effect-completion"></a>
+## 2026-11-19 — 継続候補と作用述語のテストを元の作用関係へ移行
+
+基点 `674e1603ee6025df5d4c1ab26617f4e51049927b` を計測用にビルドし、`UnresolvedFuture` の6件と複数の適用を比較する1件を再実行した。7件とも失敗し、10回の計測で、満足可能領域と主解の存在領域がどちらもFuture入力の有限性条件と一致した。計測した関係のラベル基底は空、未確定の関数は引数なしのFuture 1個、離散選択と確定済み入力は0個だった。既存の継続契約には、後段の作用を `fs.read` へ制限する条件を後続の関数型の条件と併せて保持する例がある。計測用の変更は正規化した差分を逆適用して作業ツリーから除去した。
+
+Source `d0e3fe240572ff749811a84eb0f2c6d3ea22f243` では、単独の候補を閉じる本番経路とテストが同じ元の作用関係を使う。型・定数の継続テストを実際のグラフと宣言に属する入力へ移行した。作用述語のテストでは許容・禁止を関係の確定時に確認し、残余の条件を持つケースを実際の継続投影要求に移行した。作用を具体化する実引数を渡さずに残余条件を保持する既存の期待を保った。
+
+Compilerの548 IDは531成功・17失敗。前回から全IDと合否が一致し、後段作用の `UnresolvedFuture` は6件。Sema全feature checkはライブラリの生成に成功し、テスト対象は終了101・794エラー・33警告。移行した2ファイルの23エラーが解消し、他ファイルのコード・ファイル別内訳は一致した。Sema単体テストは未実行。
+
+SemaライブラリのClippy、fmt、差分検査と構造ゲートは終了0、構造阻害0件。Cargoの全feature逆依存は起点込み 22 package。全逆依存のテスト、workspace全targetのcheck／ClippyとNative／Web最終受入は未実行。公開されたRust 5 blobを照合した。`target` は `12890937239` bytes。
+
+[計測パッチ、CompilerとSemaの検証原本、公開照合](acceptance-evidence/task-fixture-original-effect-completion.raw.zip) は 25 entry、958492 bytes、SHA256 `e46e98eca634b84e552d45bf8eb3a6a44944b57192a0d5347c74e3e06dfd4ab0`。各原本の長さとハッシュを照合した。
