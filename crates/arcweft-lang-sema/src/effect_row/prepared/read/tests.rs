@@ -173,6 +173,35 @@ fn parameter_reads_admit_actuals_and_unsubstituted_references_without_reading_bo
 }
 
 #[test]
+fn parameter_reads_stream_wide_application_arguments_in_source_order() {
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 32));
+    let parameters = (0..16)
+        .map(|index| scope.bound_effect(0, index).unwrap())
+        .collect();
+    let actuals: Vec<_> = (16..32)
+        .rev()
+        .map(|index| scope.bound_effect(0, index).unwrap())
+        .collect();
+    let mut graph = PreparedEffectGraph::default();
+    let mut setup = budget();
+    let declaration = graph
+        .declare(parameters, EffectPredicate::unconstrained(), &mut setup)
+        .unwrap();
+    let row = graph
+        .application(&declaration, actuals.iter().map(open).collect(), &mut setup)
+        .unwrap();
+    let mut observed = Vec::new();
+    graph
+        .read()
+        .visit_row_parameters(&row, &mut Budget(35), &mut |parameter, _| {
+            observed.push(parameter.clone());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(observed, actuals);
+}
+
+#[test]
 fn parameter_reads_use_the_exact_view_and_original_abort_control() {
     let mut graph = PreparedEffectGraph::default();
     let mut work = budget();

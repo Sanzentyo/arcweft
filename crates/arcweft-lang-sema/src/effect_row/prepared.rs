@@ -364,19 +364,43 @@ enum RowTerm {
     },
 }
 
+enum RowChildren<'a> {
+    Slice(std::slice::Iter<'a, PreparedEffectRow>),
+    Arguments(std::collections::btree_map::Values<'a, GenericEffectReference, PreparedEffectRow>),
+    Pair(std::array::IntoIter<&'a PreparedEffectRow, 2>),
+}
+
+impl RowChildren<'_> {
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::Slice(rows) => rows.as_slice().is_empty(),
+            Self::Arguments(rows) => rows.len() == 0,
+            Self::Pair(rows) => rows.as_slice().is_empty(),
+        }
+    }
+}
+
+impl<'a> Iterator for RowChildren<'a> {
+    type Item = &'a PreparedEffectRow;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Slice(rows) => rows.next(),
+            Self::Arguments(rows) => rows.next(),
+            Self::Pair(rows) => rows.next(),
+        }
+    }
+}
+
 impl RowTerm {
-    fn children(&self) -> impl DoubleEndedIterator<Item = &PreparedEffectRow> {
-        let (slice, map, pair) = match self {
+    fn children(&self) -> RowChildren<'_> {
+        match self {
             Self::Application { arguments, .. } | Self::Union(arguments) => {
-                (arguments.as_ref(), None, [None, None])
+                RowChildren::Slice(arguments.iter())
             }
-            Self::Substitution { arguments, .. } => (&[][..], Some(arguments), [None, None]),
-            Self::Select { yes, no, .. } => (&[][..], None, [Some(yes), Some(no)]),
-        };
-        slice
-            .iter()
-            .chain(map.into_iter().flat_map(BTreeMap::values))
-            .chain(pair.into_iter().flatten())
+            Self::Substitution { arguments, .. } => RowChildren::Arguments(arguments.values()),
+            Self::Select { yes, no, .. } => RowChildren::Pair([yes, no].into_iter()),
+        }
     }
 }
 

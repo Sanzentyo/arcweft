@@ -7,6 +7,37 @@ enum ParameterInput<'a> {
     Predicate(&'a PreparedEffectPredicate),
 }
 
+enum ParameterChildren<'a> {
+    None,
+    Rows(RowChildren<'a>),
+    Predicates(std::slice::Iter<'a, PreparedEffectPredicate>),
+    PredicatePair(std::array::IntoIter<&'a PreparedEffectPredicate, 2>),
+}
+
+impl ParameterChildren<'_> {
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::None => true,
+            Self::Rows(rows) => rows.is_empty(),
+            Self::Predicates(predicates) => predicates.as_slice().is_empty(),
+            Self::PredicatePair(predicates) => predicates.as_slice().is_empty(),
+        }
+    }
+}
+
+impl<'a> Iterator for ParameterChildren<'a> {
+    type Item = ParameterInput<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::None => None,
+            Self::Rows(rows) => rows.next().map(ParameterInput::Row),
+            Self::Predicates(predicates) => predicates.next().map(ParameterInput::Predicate),
+            Self::PredicatePair(predicates) => predicates.next().map(ParameterInput::Predicate),
+        }
+    }
+}
+
 impl PreparedEffectReadView<'_> {
     /// Unknown annotations have no declared references to admit. This visit
     /// does not close them or establish that they denote the empty row.
@@ -35,18 +66,30 @@ impl PreparedEffectReadView<'_> {
         visit: &mut impl FnMut(&GenericEffectReference, &mut C) -> Result<(), C::Error>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        work.charge(DecisionWork::Node)?;
-        let mut pending = vec![root];
+        let mut next = Some(root);
+        let mut pending: Vec<ParameterChildren<'_>> = Vec::new();
         let mut rows = BTreeSet::new();
         let mut predicates = BTreeSet::new();
-        while let Some(input) = pending.pop() {
+        loop {
+            let input = if let Some(input) = next.take() {
+                input
+            } else if let Some(siblings) = pending.last_mut() {
+                let Some(input) = siblings.next() else {
+                    pending.pop();
+                    continue;
+                };
+                input
+            } else {
+                return Ok(());
+            };
             work.charge(DecisionWork::Visit)?;
-            match input {
+            let mut children = match input {
                 ParameterInput::Row(PreparedEffectRow::Canonical(row)) => {
                     for parameter in row.formula().into_iter().flat_map(EffectFormula::variables) {
                         work.charge(DecisionWork::Visit)?;
                         visit(parameter, work.0).map_err(PreparedEffectFailure::Control)?;
                     }
+                    ParameterChildren::None
                 }
                 ParameterInput::Row(PreparedEffectRow::Term(reference)) => {
                     let term = self.row(reference)?;
@@ -73,16 +116,14 @@ impl PreparedEffectReadView<'_> {
                         RowTerm::Select { choice, .. } => self.validate_choice(choice)?,
                         RowTerm::Union(_) => {}
                     }
-                    for child in term.children().rev() {
-                        work.charge(DecisionWork::Node)?;
-                        pending.push(ParameterInput::Row(child));
-                    }
+                    ParameterChildren::Rows(term.children())
                 }
                 ParameterInput::Predicate(PreparedEffectPredicate::Canonical(predicate)) => {
                     for parameter in predicate.variables() {
                         work.charge(DecisionWork::Visit)?;
                         visit(parameter, work.0).map_err(PreparedEffectFailure::Control)?;
                     }
+                    ParameterChildren::None
                 }
                 ParameterInput::Predicate(PreparedEffectPredicate::Term(reference)) => {
                     let term = self.predicate(reference)?;
@@ -94,6 +135,7 @@ impl PreparedEffectReadView<'_> {
                     match term {
                         PredicateTerm::ImportedPrincipal(imported) => {
                             imported.validate(self, work.0)?;
+                            ParameterChildren::None
                         }
                         PredicateTerm::Substitution {
                             predicate,
@@ -106,40 +148,33 @@ impl PreparedEffectReadView<'_> {
                                         .map_err(PreparedEffectFailure::Control)?;
                                 }
                             }
-                            for row in arguments.values().rev() {
-                                work.charge(DecisionWork::Node)?;
-                                pending.push(ParameterInput::Row(row));
-                            }
+                            ParameterChildren::Rows(RowChildren::Arguments(arguments.values()))
                         }
                         PredicateTerm::Relation {
                             actual, permitted, ..
-                        } => {
-                            for row in [actual, permitted].into_iter().rev() {
-                                work.charge(DecisionWork::Node)?;
-                                pending.push(ParameterInput::Row(row));
-                            }
-                        }
+                        } => ParameterChildren::Rows(RowChildren::Pair(
+                            [actual, permitted].into_iter(),
+                        )),
                         PredicateTerm::And(children) | PredicateTerm::Or(children) => {
-                            for child in children.iter().rev() {
-                                work.charge(DecisionWork::Node)?;
-                                pending.push(ParameterInput::Predicate(child));
-                            }
+                            ParameterChildren::Predicates(children.iter())
                         }
                         PredicateTerm::Not(child) => {
-                            work.charge(DecisionWork::Node)?;
-                            pending.push(ParameterInput::Predicate(child));
+                            ParameterChildren::Predicates(std::slice::from_ref(child).iter())
                         }
                         PredicateTerm::Select { choice, yes, no } => {
                             self.validate_choice(choice)?;
-                            for child in [yes, no].into_iter().rev() {
-                                work.charge(DecisionWork::Node)?;
-                                pending.push(ParameterInput::Predicate(child));
-                            }
+                            ParameterChildren::PredicatePair([yes, no].into_iter())
                         }
                     }
                 }
+            };
+            next = children.next();
+            // Keep a borrowed cursor for siblings. A wide term does not need
+            // one queued allocation per edge, and unary terms need no frame.
+            if !children.is_empty() {
+                work.charge(DecisionWork::Node)?;
+                pending.push(children);
             }
         }
-        Ok(())
     }
 }
