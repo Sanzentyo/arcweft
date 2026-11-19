@@ -411,6 +411,32 @@ fn substitution_borrows_target_formulas_and_resolves_each_source_reference_once(
 }
 
 #[test]
+fn substitution_of_a_reference_admits_the_canonical_replacement_directly() {
+    let mut setup = Meter::default();
+    let source = atom(0);
+    let operands = (1..=32).map(atom).collect::<Vec<_>>();
+    let replacement = EffectDecision::all(&operands, &mut setup).unwrap();
+    let limit = replacement.node_count() + 2;
+    let mut short = Meter {
+        used: 0,
+        limit: Some(limit - 1),
+    };
+    let mut exact = Meter {
+        used: 0,
+        limit: Some(limit),
+    };
+    let bind = |_: &u8, _: &mut Meter| Ok(EffectDecisionReplacement::Decision(&replacement));
+    assert_eq!(
+        source.substitute_references(&mut short, bind),
+        Err((limit, limit - 1))
+    );
+    assert_eq!(
+        source.substitute_references(&mut exact, bind).unwrap(),
+        replacement
+    );
+}
+
+#[test]
 fn substitution_work_depends_only_on_reachable_replacements() {
     let source = atom(0);
     let replacement = atom(1);

@@ -538,6 +538,16 @@ impl<V: Clone + Ord> EffectDecision<V> {
         mut binding: impl FnMut(&V, &mut C) -> Result<EffectDecisionReplacement<'r, U>, C::Error>,
     ) -> Result<EffectDecision<U>, C::Error> {
         control.charge(DecisionWork::Visit)?;
+        if let Some(reference) = self.single_reference() {
+            return match binding(reference, control)? {
+                EffectDecisionReplacement::Constant(value) => Ok(EffectDecision::constant(value)),
+                EffectDecisionReplacement::Variable(variable) => {
+                    control.charge(DecisionWork::Node)?;
+                    Ok(EffectDecision::reference(variable))
+                }
+                EffectDecisionReplacement::Decision(value) => value.copy_with_control(control),
+            };
+        }
         let mut replacements = BTreeMap::<&V, Root>::new();
         self.rebuild_references(control, |reference, builder| {
             if let Some(&root) = replacements.get(&reference) {
@@ -557,17 +567,16 @@ impl<V: Clone + Ord> EffectDecision<V> {
         mut resolve: impl FnMut(&'s V, &mut DecisionBuilder<'_, U, C>) -> Result<Root, C::Error>,
     ) -> Result<EffectDecision<U>, C::Error> {
         let mut builder = DecisionBuilder::new(control);
-        let mut indices = BTreeMap::new();
-        for (index, node) in self.nodes.iter().enumerate() {
+        let mut indices = Vec::new();
+        for node in self.nodes.iter() {
             builder.control.charge(DecisionWork::Visit)?;
             let condition = resolve(&node.variable, &mut builder)?;
-            let low = DecisionBuilder::<U, C>::remap(node.low, &indices);
-            let high = DecisionBuilder::<U, C>::remap(node.high, &indices);
+            let low = Self::mapped_root(node.low, &indices);
+            let high = Self::mapped_root(node.high, &indices);
             let root = builder.conditional(Conditional::new(condition, high, low))?;
-            indices.insert(index, root);
+            indices.push(root);
         }
-        let root = DecisionBuilder::<U, C>::remap(self.root, &indices);
-        builder.finish(root)
+        builder.finish(Self::mapped_root(self.root, &indices))
     }
 
     /// `self ? yes : no` is the only Boolean construction primitive.
@@ -1201,11 +1210,14 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             self.node(high)
                 .is_none_or(|child| child.variable > variable)
         );
-        let node = Node {
+        self.intern_branch(Node {
             variable,
             low,
             high,
-        };
+        })
+    }
+
+    fn intern_branch(&mut self, node: Node<V>) -> Result<Root, C::Error> {
         if let Some(&root) = self.interned.get(&node) {
             return Ok(root);
         }
@@ -1224,14 +1236,21 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     }
 
     fn import(&mut self, decision: &EffectDecision<V>) -> Result<Root, C::Error> {
-        let mut indices = BTreeMap::new();
-        for (index, node) in decision.nodes.iter().enumerate() {
+        let mut indices = Vec::new();
+        for node in decision.nodes.iter() {
             self.control.charge(DecisionWork::Visit)?;
-            let low = Self::remap(node.low, &indices);
-            let high = Self::remap(node.high, &indices);
-            indices.insert(index, self.branch(node.variable.clone(), low, high)?);
+            // This source is canonical. Remapping its child indices in order
+            // preserves the variable order and keeps distinct children distinct.
+            let low = EffectDecision::<V>::mapped_root(node.low, &indices);
+            let high = EffectDecision::<V>::mapped_root(node.high, &indices);
+            let root = self.intern_branch(Node {
+                variable: node.variable.clone(),
+                low,
+                high,
+            })?;
+            indices.push(root);
         }
-        Ok(Self::remap(decision.root, &indices))
+        Ok(EffectDecision::<V>::mapped_root(decision.root, &indices))
     }
 
     fn operand(&mut self, operand: EffectDecisionReplacement<'_, V>) -> Result<Root, C::Error> {
@@ -1259,6 +1278,23 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     fn conditional(&mut self, key: Conditional) -> Result<Root, C::Error> {
         if let Some(root) = self.known(key) {
             return Ok(root);
+        }
+        if let Some(condition) = self.node(key.condition)
+            && matches!(
+                (condition.low, condition.high),
+                (Root::False, Root::True) | (Root::True, Root::False)
+            )
+            && [key.no, key.yes].into_iter().all(|root| {
+                self.node(root)
+                    .is_none_or(|child| child.variable > condition.variable)
+            })
+        {
+            let (low, high) = if condition.low == Root::False {
+                (key.no, key.yes)
+            } else {
+                (key.yes, key.no)
+            };
+            return self.branch(condition.variable.clone(), low, high);
         }
         self.control.charge(DecisionWork::Visit)?;
         let mut pending = vec![ConditionalTask::Enter(key)];
