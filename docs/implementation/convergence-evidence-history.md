@@ -19664,3 +19664,16 @@ Compilerは5 targetの548件で531成功・17失敗。前回と全IDおよび合
 Sema全feature checkはライブラリを生成した。テスト対象は終了101、前回と同じ794エラー・33警告。Coreの全target・全feature Clippy、fmt、構造ゲートは終了0。今回抽出した2関数の引数名に `clippy::similar_names` の指摘が増えた。`decision.rs` は 840→922 物理行。所有する決定図内で部分グラフを再利用する。全featureのCargo逆依存は起点込み 52 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 1 blobを照合した。`target` は `12891614470` bytes。
 
 [比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-lower-envelope.raw.zip) は 44 entry、886617 bytes、SHA256 `0a34ebc288e222e9f0144cbbc6f0990e83a5b0a28556771d36c7ae1b2820eb8a`。各原本の長さとハッシュを照合した。
+
+<a id="effect-sparse-coefficients"></a>
+## 2026-11-19 — 作用の最小解を座標の範囲と必要な決定で保持
+
+基点 `013dbec41dbd95623ed2227da6d27d7f867b7e0f` は、最小解の全座標に個別の決定を作成し、Semaでも複製していた。Source `ead7a5459e594cac2af0524df353a39923ab0b03` は、量化した座標の範囲と、恒偽を除いた決定を保持する。範囲内で決定を省略した座標は偽で、範囲外の参照は自由変数として扱う。確定入力は座標に対応する真偽値として一度保持する。取込関係の主解・選択の証拠・独立した元の制約の再検査は、同じ確定入力を使う。
+
+7変数の320比較で、満足可能領域・主解領域・全座標の下限が一致した。作業計数は172件で減少し、148件では1増えた。4,096座標中1座標だけが決定に現れる比較では、最小解計算の作業計数が8,219から30になった。Core全featureの単体2,362件・公開API統合2件は前回と全IDおよび合否が一致し、doctest 1件も成功した。
+
+Compilerは5 targetの548件で531成功・17失敗。前回と全IDおよび合否が一致した。コールバック作用を後段で決める6件は `UnresolvedFuture` が残る。標準Mapの27入力のうち、失敗で中断するまでに23入力の実行検証を通過した。SourceSetRevisionとHIRデータベースIDの照合で、最初の失敗を24番目と確認した。別のMap部分適用では、作業上限に達する箇所が最小解の決定の出力から、その最小解を元の作用関係へ適用して証拠を生成する処理へ移った。保持した不透明Mapは元の作用述語の正準形での再照合、Traversalは型投影の作用述語の符号化、再帰コールバックは形式引数に関する独立性判定で上限に達した。
+
+Sema全feature checkはライブラリのコンパイルに成功した。テスト側に残っていた移行前のフィールド参照1件を修正し、最終checkのテスト対象は終了101で前回と同じ794エラー・33警告だった。修正の対象はSemaのtest構成。CompilerとCoreの実行は共通の本番コードを検証した。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、fmt、構造ゲートは終了0。CoreのClippyで前回増えた2件の引数名の指摘を解消した。13 Rust pathで200物理行増。全featureの逆依存は起点込みでCore 52、Sema 22 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 13 blobを照合した。`target` は `12893512542` bytes。
+
+[比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-sparse-coefficients.raw.zip) は 50 entry、1408978 bytes、SHA256 `6c4efa748b7896ff1ffc17b8bf310e32e676586b90026bf31746904abfda49c4`。各原本の長さとハッシュを照合した。
