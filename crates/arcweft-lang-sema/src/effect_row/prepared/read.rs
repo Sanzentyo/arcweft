@@ -175,7 +175,7 @@ impl<'a> PreparedEffectReadView<'a> {
         self.validate_retained_row(row)?;
         match row {
             PreparedEffectRow::Canonical(row) => row
-                .encode(&mut super::super::EffectEqualityControl(control))
+                .encode(&mut super::super::EffectGraphAdmission(control))
                 .map_err(PreparedEffectFailure::Control)?,
             PreparedEffectRow::Term(_) => control
                 .charge(DecisionWork::Visit)
@@ -192,7 +192,7 @@ impl<'a> PreparedEffectReadView<'a> {
         self.validate_retained_predicate(predicate)?;
         match predicate {
             PreparedEffectPredicate::Canonical(predicate) => predicate
-                .encode(&mut super::super::EffectEqualityControl(control))
+                .encode(&mut super::super::EffectGraphAdmission(control))
                 .map_err(PreparedEffectFailure::Control)?,
             PreparedEffectPredicate::Term(_) => control
                 .charge(DecisionWork::Visit)

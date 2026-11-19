@@ -51,12 +51,9 @@ impl<V: Clone + Ord> EffectFormulaBuilder<V> {
         decision: EffectDecision<V>,
         control: &mut C,
     ) -> Result<(), C::Error> {
-        decision.encode(&mut super::EffectEqualityControl(control))?;
-        self.0
-            .default
-            .encode(&mut super::EffectEqualityControl(control))?;
+        let is_default = decision.equal_with(&self.0.default, control)?;
         control.charge(DecisionWork::Visit)?;
-        if decision == self.0.default {
+        if is_default {
             self.0.overrides.remove(label.as_ref());
         } else {
             control.charge(DecisionWork::Node)?;
@@ -124,6 +121,28 @@ enum Operation {
 }
 
 impl<V: Clone + Ord> Membership<V> {
+    fn equal_with<C: DecisionControl>(
+        &self,
+        other: &Self,
+        control: &mut C,
+    ) -> Result<bool, C::Error> {
+        control.charge(DecisionWork::Visit)?;
+        if self.overrides.len() != other.overrides.len()
+            || !self.default.equal_with(&other.default, control)?
+        {
+            return Ok(false);
+        }
+        for ((left_label, left), (right_label, right)) in
+            self.overrides.iter().zip(&other.overrides)
+        {
+            control.charge(DecisionWork::Visit)?;
+            if left_label != right_label || !left.equal_with(right, control)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     fn admit_copy<C: DecisionControl>(&self, control: &mut C) -> Result<(), C::Error> {
         self.default.admit_copy(control)?;
         for decision in self.overrides.values() {
@@ -276,6 +295,15 @@ impl<V: Clone + Ord> EffectFormula<V> {
     pub fn copy_with_control<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
         self.0.admit_copy(control)?;
         Ok(self.clone())
+    }
+
+    /// Compares canonical membership, charging each inspected pair of labels or nodes.
+    pub fn equal_with<C: DecisionControl>(
+        &self,
+        other: &Self,
+        control: &mut C,
+    ) -> Result<bool, C::Error> {
+        self.0.equal_with(&other.0, control)
     }
 
     /// Borrows the canonical decisions without copying their graphs.
@@ -519,14 +547,13 @@ impl<V: Clone + Ord> EffectPredicate<V> {
         self.substitute(&replacements, control)
     }
 
+    /// Compares canonical membership, charging each inspected pair of labels or nodes.
     pub fn equal_with<C: DecisionControl>(
         &self,
         other: &Self,
         control: &mut C,
     ) -> Result<bool, C::Error> {
-        self.encode(&mut super::EffectEqualityControl(control))?;
-        other.encode(&mut super::EffectEqualityControl(control))?;
-        Ok(self == other)
+        self.0.equal_with(&other.0, control)
     }
 
     pub fn encode<E: MembershipEncoding<V>>(&self, encoder: &mut E) -> Result<(), E::Error> {

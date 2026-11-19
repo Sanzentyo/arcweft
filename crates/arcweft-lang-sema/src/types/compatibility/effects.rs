@@ -61,7 +61,7 @@ fn canonical_rows_compatible<C: DecisionControl>(
     work: &mut C,
 ) -> Result<bool, C::Error> {
     if structural {
-        return Ok(expected == actual);
+        return expected.equal_with(actual, work);
     }
     // Strict policies reject unknown annotations during prevalidation.
     if !expected.is_known() || !actual.is_known() {

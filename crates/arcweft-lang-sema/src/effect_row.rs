@@ -15,11 +15,10 @@ pub(crate) mod prepared;
 #[cfg(test)]
 mod scope_tests;
 
-/// Equality visits the canonical graph grammar before inspecting its immutable
-/// rows. It consumes the same surrounding decision budget as construction.
-struct EffectEqualityControl<'a, C>(&'a mut C);
+/// Admits a retained row copy through the canonical graph grammar.
+struct EffectGraphAdmission<'a, C>(&'a mut C);
 
-impl<V, C: DecisionControl> DecisionEncoding<V> for EffectEqualityControl<'_, C> {
+impl<V, C: DecisionControl> DecisionEncoding<V> for EffectGraphAdmission<'_, C> {
     type Error = C::Error;
 
     fn tag(&mut self, _: u8) -> Result<(), Self::Error> {
@@ -35,7 +34,7 @@ impl<V, C: DecisionControl> DecisionEncoding<V> for EffectEqualityControl<'_, C>
     }
 }
 
-impl<V, C: DecisionControl> MembershipEncoding<V> for EffectEqualityControl<'_, C> {
+impl<V, C: DecisionControl> MembershipEncoding<V> for EffectGraphAdmission<'_, C> {
     fn effect(&mut self, _: &crate::effects::EffectId) -> Result<(), Self::Error> {
         self.0.charge(DecisionWork::Visit)
     }
@@ -229,19 +228,12 @@ impl EffectRow {
         Ok(Self { formula })
     }
 
-    pub(crate) fn try_clone_with_control<C: DecisionControl>(
-        &self,
-        control: &mut C,
-    ) -> Result<Self, C::Error> {
-        self.encode(&mut EffectEqualityControl(control))?;
-        Ok(self.clone())
-    }
     /// Admits the canonical graph before copying its retained row storage.
     pub(crate) fn clone_with_control<C: DecisionControl>(
         &self,
         control: &mut C,
     ) -> Result<Self, C::Error> {
-        self.encode(&mut EffectEqualityControl(control))?;
+        self.encode(&mut EffectGraphAdmission(control))?;
         Ok(self.clone())
     }
 
@@ -250,9 +242,12 @@ impl EffectRow {
         other: &Self,
         control: &mut C,
     ) -> Result<bool, C::Error> {
-        self.encode(&mut EffectEqualityControl(control))?;
-        other.encode(&mut EffectEqualityControl(control))?;
-        Ok(self == other)
+        control.charge(DecisionWork::Visit)?;
+        match (&self.formula, &other.formula) {
+            (Some(left), Some(right)) => left.equal_with(right, control),
+            (None, None) => Ok(true),
+            _ => Ok(false),
+        }
     }
 
     /// Encodes the complete formula through its owning transcript's primitives.

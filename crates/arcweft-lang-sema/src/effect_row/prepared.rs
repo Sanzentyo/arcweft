@@ -455,7 +455,7 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<PreparedEffectSchemeRef, PreparedEffectFailure<C::Error>> {
         domain
-            .encode(&mut super::EffectEqualityControl(control))
+            .encode(&mut super::EffectGraphAdmission(control))
             .map_err(PreparedEffectFailure::Control)?;
         self.declare(parameters, domain.clone(), control)
     }

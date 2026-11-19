@@ -227,7 +227,7 @@ impl PreparedCallableEffectDeclarations {
             + DecisionControl<Error = <C as crate::types::TypeProjectionControl>::Error>,
     {
         let row = row
-            .try_clone_with_control(control)
+            .clone_with_control(control)
             .map_err(PreparedEffectFailure::Control)?;
         Ok(schema.prepare_function_type_with_result_from_position(
             position,

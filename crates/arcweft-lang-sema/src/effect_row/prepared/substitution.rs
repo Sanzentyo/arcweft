@@ -4,7 +4,7 @@
 //! replacement belongs to the destination scope and is not substituted again.
 
 use super::*;
-use crate::effect_row::EffectEqualityControl;
+use crate::effect_row::EffectGraphAdmission;
 
 #[cfg(test)]
 mod tests;
@@ -24,7 +24,7 @@ fn copy_annotation<C: DecisionControl>(
 ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
     match row {
         PreparedEffectRow::Canonical(row) => row
-            .encode(&mut EffectEqualityControl(control))
+            .encode(&mut EffectGraphAdmission(control))
             .map_err(PreparedEffectFailure::Control)?,
         PreparedEffectRow::Term(_) => control
             .charge(DecisionWork::Visit)
@@ -104,13 +104,13 @@ where
         match row {
             PreparedEffectRow::Canonical(row) => {
                 let Some(formula) = row.formula() else {
-                    row.encode(&mut EffectEqualityControl(self.control))
+                    row.encode(&mut EffectGraphAdmission(self.control))
                         .map_err(PreparedEffectFailure::Control)?;
                     return Ok(PreparedEffectRow::Canonical(row.clone()));
                 };
                 let arguments = self.bindings(formula.variables(), BTreeMap::new())?;
                 formula
-                    .encode(&mut EffectEqualityControl(self.control))
+                    .encode(&mut EffectGraphAdmission(self.control))
                     .map_err(PreparedEffectFailure::Control)?;
                 if arguments.is_empty() {
                     Ok(PreparedEffectRow::Canonical(row.clone()))
@@ -199,7 +199,7 @@ where
                     }
                     let mapped = self.bindings(formula.variables(), mapped)?;
                     formula
-                        .encode(&mut EffectEqualityControl(self.control))
+                        .encode(&mut EffectGraphAdmission(self.control))
                         .map_err(PreparedEffectFailure::Control)?;
                     self.graph
                         .apply_formula(formula.clone(), mapped, self.control)?
@@ -219,7 +219,7 @@ where
             PreparedEffectPredicate::Canonical(predicate) => {
                 let mapped = self.bindings(predicate.variables(), BTreeMap::new())?;
                 predicate
-                    .encode(&mut EffectEqualityControl(self.control))
+                    .encode(&mut EffectGraphAdmission(self.control))
                     .map_err(PreparedEffectFailure::Control)?;
                 if mapped.is_empty() {
                     Ok(PreparedEffectPredicate::Canonical(predicate.clone()))
@@ -346,7 +346,7 @@ where
                     }
                     let mapped = self.bindings(predicate.variables(), mapped)?;
                     predicate
-                        .encode(&mut EffectEqualityControl(self.control))
+                        .encode(&mut EffectGraphAdmission(self.control))
                         .map_err(PreparedEffectFailure::Control)?;
                     self.graph
                         .apply_predicate(predicate.clone(), mapped, self.control)?

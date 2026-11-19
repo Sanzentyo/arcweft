@@ -203,6 +203,46 @@ fn incremental_assembly_admits_label_updates_before_mutating_the_row() {
 }
 
 #[test]
+fn membership_equality_stops_at_a_difference_and_admits_each_compared_node() {
+    let left = variable(0);
+    let same = variable(0);
+    let different = variable(1);
+    let with_override = left
+        .union(&row(&["fs.read"]), &mut Meter::default())
+        .unwrap();
+    let left_predicate = left.subset(&row(&[]), &mut Meter::default()).unwrap();
+    let different_predicate = different.subset(&row(&[]), &mut Meter::default()).unwrap();
+    let mut shape_only = AssemblyControl {
+        limit: Some(1),
+        ..AssemblyControl::default()
+    };
+    assert!(!left.equal_with(&with_override, &mut shape_only).unwrap());
+
+    let mut no_node = AssemblyControl {
+        limit: Some(2),
+        ..AssemblyControl::default()
+    };
+    assert_eq!(
+        left.equal_with(&different, &mut no_node),
+        Err(AssemblyError::Limit { used: 3, limit: 2 })
+    );
+
+    let mut full = Meter::default();
+    assert!(left.equal_with(&same, &mut full).unwrap());
+    assert!(!left.equal_with(&different, &mut full).unwrap());
+    assert!(
+        left_predicate
+            .equal_with(&left_predicate.clone(), &mut full)
+            .unwrap()
+    );
+    assert!(
+        !left_predicate
+            .equal_with(&different_predicate, &mut full)
+            .unwrap()
+    );
+}
+
+#[test]
 fn local_universal_rows_are_eliminated_before_input_existentials() {
     let mut meter = Meter::default();
     let equality = variable(0)

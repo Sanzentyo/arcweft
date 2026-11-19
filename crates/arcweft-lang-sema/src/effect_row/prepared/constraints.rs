@@ -41,7 +41,7 @@ impl EffectConstraintEnvironment<PreparedEffects> {
                     .get(variable)
                     .map(|row| {
                         if let PreparedEffectRow::Canonical(row) = row {
-                            row.encode(&mut super::super::EffectEqualityControl(control))
+                            row.encode(&mut super::super::EffectGraphAdmission(control))
                                 .map_err(PreparedEffectFailure::Control)?;
                         }
                         Ok(row.clone())

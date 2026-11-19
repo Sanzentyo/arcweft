@@ -298,6 +298,26 @@ impl<V: Clone + Ord> EffectDecision<V> {
         Ok(self.clone())
     }
 
+    /// Canonical postorder makes the roots and corresponding nodes sufficient
+    /// for equality. Charge each comparison before inspecting the pair.
+    pub(super) fn equal_with<C: DecisionControl>(
+        &self,
+        other: &Self,
+        control: &mut C,
+    ) -> Result<bool, C::Error> {
+        control.charge(DecisionWork::Visit)?;
+        if self.root != other.root || self.nodes.len() != other.nodes.len() {
+            return Ok(false);
+        }
+        for (left, right) in self.nodes.iter().zip(&other.nodes) {
+            control.charge(DecisionWork::Visit)?;
+            if left != right {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     pub(super) fn encode<E: DecisionEncoding<V>>(&self, encoder: &mut E) -> Result<(), E::Error> {
         fn reference<V, E: DecisionEncoding<V>>(
             root: Root,

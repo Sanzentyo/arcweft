@@ -307,12 +307,8 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
         left: &crate::effect_row::EffectFormula<crate::types::GenericEffectReference>,
         right: &crate::effect_row::EffectFormula<crate::types::GenericEffectReference>,
     ) -> Result<bool, PreparedEffectFailure<C::Error>> {
-        left.encode(&mut crate::effect_row::EffectEqualityControl(self.control))
-            .map_err(PreparedEffectFailure::Control)?;
-        right
-            .encode(&mut crate::effect_row::EffectEqualityControl(self.control))
-            .map_err(PreparedEffectFailure::Control)?;
-        Ok(left == right)
+        left.equal_with(right, self.control)
+            .map_err(PreparedEffectFailure::Control)
     }
 
     fn function_reference(
