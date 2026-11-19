@@ -141,7 +141,7 @@ impl Analyzer<'_, '_, '_> {
     pub(super) fn prepared_body_expression_edges(
         &self,
         owner: ExprId,
-        current: (ExprId, &PreparedExpressionFact),
+        current: Option<(ExprId, &PreparedExpressionFact)>,
     ) -> Result<Box<[HirExpressionEvaluationEdge]>, FinalSemanticAnalysisError> {
         let module = self.module(owner.module())?;
         let expression = module
@@ -154,7 +154,7 @@ impl Analyzer<'_, '_, '_> {
             CompletionQuery {
                 purpose: CompletionQueryPurpose::CheckedResults,
                 callable: None,
-                current_expression: Some(current),
+                current_expression: current,
             },
         )
         .map_err(|error| error.into_public(owner))

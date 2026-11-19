@@ -533,6 +533,7 @@ pub(crate) fn prepare_declaration_execution_effects(
 /// callable value is still being inferred. The source lends existing facts
 /// and HIR-selected edges; the execution fold below remains the authority.
 pub(crate) trait PreparedExpressionEffectSource {
+    fn enter_effect_owner(&self) -> Result<(), FinalSemanticAnalysisError>;
     fn expression(&self, owner: ExprId) -> Option<&PreparedExpressionFact>;
     fn expression_edges(
         &self,
@@ -563,6 +564,80 @@ pub(crate) fn prepare_expression_body_effects<'a>(
     )?
     .seal_expression(owner)
     .map(|row| row.effects)
+}
+
+/// Definite contributions of already checked declaration members. Each comes
+/// from a complete execution fold of that member. An unavailable member
+/// supplies no evidence, so this value can disprove a bound but cannot close
+/// a declaration or authorize a callable application.
+pub(crate) struct KnownDeclarationEffects(EffectSet);
+
+impl KnownDeclarationEffects {
+    pub(crate) fn exceeds<C: crate::effect_row::DecisionControl>(
+        self,
+        permitted: &EffectRow,
+        work: &mut C,
+    ) -> Result<bool, C::Error> {
+        Ok(!EffectRow::closed(self.0).is_covered_by(permitted, work)?)
+    }
+}
+
+pub(crate) fn known_declaration_effects<'a>(
+    modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
+    topology: &'a HirProjectEvaluationTopology,
+    source: &'a dyn PreparedExpressionEffectSource,
+    call_effects: &'a BTreeMap<ExprId, PreparedCallExecutionRow>,
+    declaration: &CallableDeclarationKey,
+    control: FinalSemanticAnalysisControl<'a>,
+) -> Result<KnownDeclarationEffects, FinalSemanticAnalysisError> {
+    let topology_body = topology
+        .declaration(declaration)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+    let mut known = EffectSet::new();
+    let mut collect = |child| {
+        control.check()?;
+        // A failed fold may have entered several execution owners. Isolate
+        // each member so its unfinished traversal cannot affect the others.
+        let mut sealer = PreparedExecutionEffectSealer::from_facts(
+            modules,
+            topology,
+            PreparedEffectSelection::ExpressionBody(source),
+            call_effects,
+            &[],
+            &[],
+            control,
+        )?;
+        sealer.active_declaration = Some(declaration.clone());
+        match sealer.fold_body_child(child) {
+            Ok(row) => {
+                known.union_with(&row.effects.constant_effects()?);
+            }
+            Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. }) => {}
+            Err(error) => return Err(error),
+        }
+        Ok::<_, FinalSemanticAnalysisError>(())
+    };
+    for phase in topology_body.body().phases() {
+        match phase {
+            HirDeclarationEvaluationPhase::Parameter(root) => {
+                if let HirDeclarationParameterRootChild::Expression(owner) = root.child() {
+                    collect(HirBodyChild::Expression(owner))?;
+                }
+            }
+            HirDeclarationEvaluationPhase::AttachedContent(root) => {
+                if let Some(owner) = root.default_value() {
+                    collect(HirBodyChild::Expression(owner))?;
+                }
+            }
+            HirDeclarationEvaluationPhase::Contract(_) => {}
+            HirDeclarationEvaluationPhase::Body(root) => {
+                for edge in root.projection().children() {
+                    collect(edge.child())?;
+                }
+            }
+        }
+    }
+    Ok(KnownDeclarationEffects(known))
 }
 
 #[derive(Clone, Copy)]
@@ -898,13 +973,20 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
     ) -> Result<PreparedExecutionEffectRow, FinalSemanticAnalysisError> {
         let mut row = PreparedExecutionEffectRow::default();
         for edge in body.children() {
-            let child = match edge.child() {
-                HirBodyChild::Expression(owner) => self.seal_expression(owner)?,
-                HirBodyChild::Statement(owner) => self.seal_statement(owner)?,
-            };
+            let child = self.fold_body_child(edge.child())?;
             row.union_with(&child, self.control)?;
         }
         Ok(row)
+    }
+
+    fn fold_body_child(
+        &mut self,
+        child: HirBodyChild,
+    ) -> Result<PreparedExecutionEffectRow, FinalSemanticAnalysisError> {
+        match child {
+            HirBodyChild::Expression(owner) => self.seal_expression(owner),
+            HirBodyChild::Statement(owner) => self.seal_statement(owner),
+        }
     }
 
     fn expression_fact(&self, owner: ExprId) -> Option<&'a PreparedExpressionFact> {
@@ -920,6 +1002,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
     ) -> Result<PreparedExecutionEffectRow, FinalSemanticAnalysisError> {
         if let Some(row) = self.expression_rows.get(&owner) {
             return Ok(row.clone());
+        }
+        if let Some(source) = self.selected.expression_source() {
+            source.enter_effect_owner()?;
         }
         if !self.active_expressions.insert(owner) {
             return Err(FinalSemanticAnalysisError::ExpressionCycle { owner });
@@ -1243,6 +1328,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
     ) -> Result<PreparedExecutionEffectRow, FinalSemanticAnalysisError> {
         if let Some(row) = self.statement_rows.get(&owner) {
             return Ok(row.clone());
+        }
+        if let Some(source) = self.selected.expression_source() {
+            source.enter_effect_owner()?;
         }
         if !self.active_statements.insert(owner) {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);

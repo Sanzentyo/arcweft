@@ -363,36 +363,40 @@ fn answer() -> i64 {
 
 #[test]
 fn recursive_body_value_cannot_satisfy_a_pure_callback_contract() {
-    let fixture = fixture(
-        r#"
-fn pure(handler: (i64, i64) -> i64 effects {}) -> Unit { () }
-fn descend(value: i64, remaining: i64) -> i64 {
+    for permitted in ["", "fs.read"] {
+        let source = format!(
+            r#"
+fn accept(handler: (i64, i64) -> i64 effects {{ {permitted} }}) -> Unit {{ () }}
+fn descend(value: i64, remaining: i64) -> i64 {{
     log.info("visit")
-    if remaining > 0i64 {
+    if remaining > 0i64 {{
         let recur = descend
-        pure(recur);
-    }
+        accept(recur);
+    }}
     value
-}
-flow main() -> i64 { return descend(42i64, 1i64) }
-"#,
-        None,
-    );
-    let analysis = analyze(&fixture).expect("effect mismatch remains a typed call rejection");
-    let rejected = analysis
-        .calls()
-        .filter_map(|(owner, call)| {
-            matches!(
-                call.outcome(),
-                crate::callable::CallAnalysisOutcome::Rejected(_)
-            )
-            .then_some(owner)
-        })
-        .collect::<Vec<_>>();
-    let [owner] = rejected.as_slice() else {
-        panic!("the pure callback invocation is the only rejection: {rejected:?}");
-    };
-    super::callable_values::assert_unselected_call_has_no_execution(&analysis, *owner);
+}}
+flow main() -> i64 {{ return descend(42i64, 1i64) }}
+"#
+        );
+        let fixture = fixture(&source, None);
+        let analysis = analyze(&fixture).expect("effect mismatch remains a typed call rejection");
+        let rejected = analysis
+            .calls()
+            .filter_map(|(owner, call)| {
+                matches!(
+                    call.outcome(),
+                    crate::callable::CallAnalysisOutcome::Rejected(_)
+                )
+                .then_some(owner)
+            })
+            .collect::<Vec<_>>();
+        let [owner] = rejected.as_slice() else {
+            panic!(
+                "the callback invocation is the only rejection for {{{permitted}}}: {rejected:?}"
+            );
+        };
+        super::callable_values::assert_unselected_call_has_no_execution(&analysis, *owner);
+    }
 }
 
 #[test]

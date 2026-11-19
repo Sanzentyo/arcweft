@@ -12,7 +12,7 @@ use crate::{
         PreparedApplicationResultEffect, PreparedCallableEffectProjectionSite,
         PreparedResolvedCallable,
     },
-    effect_row::EffectRow,
+    effect_row::{DecisionControl, DecisionWork, EffectRow},
     final_analysis::{
         FinalSemanticAnalysisError,
         statement_effects::{
@@ -92,6 +92,71 @@ pub(super) enum SourceTypeDecisionUse {
 }
 
 impl Analyzer<'_, '_, '_> {
+    /// A closed callback allowance can already be disproved by a checked
+    /// contribution of an active declaration. Keep all other cases on the
+    /// normal complete-body observation path.
+    pub(super) fn proven_callback_effect_mismatch(
+        &self,
+        expected: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
+        mut work: super::preparation_work::AnalyzerPreparationWork<'_>,
+    ) -> Result<bool, FinalSemanticAnalysisError> {
+        use crate::effect_row::prepared::{
+            PreparedEffectFailure, PreparedEffectPredicate, PreparedEffectRow,
+        };
+        let (
+            TypeKind::Function {
+                predicate: PreparedEffectPredicate::Canonical(domain),
+                effects: PreparedEffectRow::Canonical(permitted),
+                ..
+            },
+            TypeKind::Function {
+                effects: actual, ..
+            },
+        ) = (expected, actual)
+        else {
+            return Ok(false);
+        };
+        if !domain.is_unconstrained() || !permitted.is_closed() {
+            return Ok(false);
+        }
+        let declarations = self.facts.effect_declarations()?;
+        let graph = declarations.read();
+        let Some(scheme) = graph
+            .named_application_scheme(actual)
+            .map_err(PreparedEffectFailure::Invariant)?
+        else {
+            return Ok(false);
+        };
+        if graph
+            .scheme_body_is_prepared(scheme)
+            .map_err(PreparedEffectFailure::Invariant)?
+        {
+            return Ok(false);
+        }
+        let callable = declarations.observation_dependency_owner(scheme, &mut work)?;
+        let CheckedCallableDeclaration::Project(declaration) = callable.declaration() else {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+        };
+        let topology = self
+            .topology
+            .declaration(declaration)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+        for owner in self.facts.active_expressions() {
+            work.charge(DecisionWork::Visit)?;
+            if topology
+                .paths()
+                .expression(owner)
+                .is_some_and(|path| path.is_declaration_invocation())
+            {
+                return self
+                    .known_callable_body_effects(declaration, &mut work)?
+                    .exceeds(permitted, &mut work);
+            }
+        }
+        Ok(false)
+    }
+
     pub(super) fn source_type_accepts(
         &mut self,
         context: &super::expression_error::AnalyzerExpressionContext<'_>,

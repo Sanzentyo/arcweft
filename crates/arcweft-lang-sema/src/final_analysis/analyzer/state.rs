@@ -1924,6 +1924,10 @@ impl SemanticFactState {
         self.expression_stack.remove(&owner);
     }
 
+    pub(super) fn active_expressions(&self) -> impl Iterator<Item = ExprId> + '_ {
+        self.expression_stack.iter().copied()
+    }
+
     /// Starts one candidate transaction and mints its move-only checkpoint.
     fn begin_candidate_transaction<C: crate::effect_row::DecisionControl>(
         &mut self,

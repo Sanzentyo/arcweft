@@ -2169,6 +2169,9 @@ impl<'a, 'project, 'catalog, 'control>
                 return Err(AnalyzerCallCheckFailure::Mismatch);
             }
         }
+        let callback_target = (phase == SourcePhase::Probe && parent_probe.is_some())
+            .then(|| expectation.function_value_target())
+            .flatten();
         let result = self.analyzer.evaluate_call_constraint_source(
             &child_context,
             source,
@@ -2192,6 +2195,12 @@ impl<'a, 'project, 'catalog, 'control>
                 let Some(checked_type) = checked.value_type() else {
                     return Err(AnalyzerCallCheckFailure::Mismatch);
                 };
+                if let Some(target) = callback_target
+                    && self.analyzer.proven_callback_effect_mismatch(target, checked_type, child_context.work())
+                    .map_err(|error| AnalyzerCallCheckFailure::expression(source_id, phase, AnalyzerExpressionError::fatal(error)))?
+                {
+                    return Err(AnalyzerCallCheckFailure::Mismatch);
+                }
                 if function_value_use
                     && matches!(checked_type, TypeKind::Function { binder, .. } if !binder.is_empty())
                     && let Some(probe) = parent_probe.as_deref_mut()

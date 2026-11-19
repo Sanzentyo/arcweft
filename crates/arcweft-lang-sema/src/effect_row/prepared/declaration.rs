@@ -102,6 +102,28 @@ impl PreparedEffectGraph {
     }
 }
 
+impl<'g> PreparedEffectReadView<'g> {
+    /// Read the declaration identity of an actual application without asking
+    /// for the meaning of its body or of any argument row.
+    pub(crate) fn named_application_scheme(
+        self,
+        row: &PreparedEffectRow,
+    ) -> Result<Option<&'g PreparedEffectSchemeRef>, PreparedEffectInvariant> {
+        let PreparedEffectRow::Term(reference) = row else {
+            return Ok(None);
+        };
+        let RowTerm::Application {
+            function: FunctionRef::Scheme(scheme),
+            ..
+        } = self.row(reference)?
+        else {
+            return Ok(None);
+        };
+        self.scheme(scheme)?;
+        Ok(Some(scheme))
+    }
+}
+
 impl PreparedEffectReadView<'_> {
     pub(crate) fn declaration<C: DecisionControl>(
         self,
