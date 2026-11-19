@@ -19677,3 +19677,16 @@ Compilerは5 targetの548件で531成功・17失敗。前回と全IDおよび合
 Sema全feature checkはライブラリのコンパイルに成功した。テスト側に残っていた移行前のフィールド参照1件を修正し、最終checkのテスト対象は終了101で前回と同じ794エラー・33警告だった。修正の対象はSemaのtest構成。CompilerとCoreの実行は共通の本番コードを検証した。Coreの全target・全feature Clippy、Semaライブラリの全feature Clippy、fmt、構造ゲートは終了0。CoreのClippyで前回増えた2件の引数名の指摘を解消した。13 Rust pathで200物理行増。全featureの逆依存は起点込みでCore 52、Sema 22 package。全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 13 blobを照合した。`target` は `12893512542` bytes。
 
 [比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-sparse-coefficients.raw.zip) は 50 entry、1408978 bytes、SHA256 `6c4efa748b7896ff1ffc17b8bf310e32e676586b90026bf31746904abfda49c4`。各原本の長さとハッシュを照合した。
+
+<a id="effect-choice-witnesses"></a>
+## 2026-11-19 — 選択肢のない作用関係で主解領域を再利用
+
+基点 `8a72c8e8107064ddae836c59a94ed3fa0b2403ad` は、選択肢の有無にかかわらず、最小解を元の関係に再適用して証拠の決定図を生成していた。Source `5a9352b2d1df5e910f79f072571943bfbeee44e8` は、選択肢のない関係では、最小解を代入したときに元の関係が成立する領域として、計算済みの主解領域を使う。離散選択がある関係では、ラベル全体に共通する選択の証拠を保持し、その存在量化が主解領域と一致することを検査する。確定した証拠を型で表し、入力を固定した領域と選択の範囲を検査してから元の関係を保持する。正準形による独立した再検査も行う。
+
+3変数の全6,912比較で、選択肢なし2,048件は主解領域と再適用した証拠が一致した。選択肢あり4,864件は証拠の存在量化が主解領域と一致し、4,202件の証拠に選択変数が残った。再適用を省いた作業計数は2,048件の合計43,374、1件あたり最大73だった。
+
+Compilerは5 targetの548件で531成功・17失敗。前回と全IDおよび合否が一致した。コールバック作用を後段で決める6件は `UnresolvedFuture` が残る。標準Mapの27入力のうち、失敗で中断するまでに23入力の実行検証を通過した。SourceSetRevisionとHIRデータベースIDの照合で、最初の失敗を24番目と確認した。別のMap部分適用は、作業上限に達する箇所が最小解による証拠の生成から、作用行を再構成するラベル別決定の格納へ移った。Traversalの再現では、型投影の作用述語の符号化から、確定した作用行の参照を移し替える箇所まで進んだ。保持した不透明Mapは正準形での再照合、再帰コールバックは形式引数の独立性判定で上限に達した。コールバック作用の7入力を比較するテストは、同じ4入力で型検査に失敗した。
+
+Sema全feature checkはライブラリのコンパイルに成功した。テスト対象は終了101で前回と同じ794エラー・33警告。Semaライブラリの全feature Clippy、fmt、構造ゲートは終了0。6 Rust pathで73物理行増。Semaの全feature逆依存は起点込みで22 package。Coreの単体2,362件・公開API統合2件・doctest 1件は、同じCoreソースを検証した `ead7a5459e594cac2af0524df353a39923ab0b03` の実測を参照する。今回の全逆依存のテスト、Sema単体、workspace全targetのcheck／Clippy、最終受入は未実行。公開されたRust 6 blobを照合した。`target` は `12893946799` bytes。
+
+[比較用コード、検証原本、公開照合](acceptance-evidence/task-effect-choice-witnesses.raw.zip) は 33 entry、590944 bytes、SHA256 `407961bb348ab741245a2e3a71fa4be715f1ea6cc2ab6f97653f105b7adec33b`。各原本の長さとハッシュを照合した。
