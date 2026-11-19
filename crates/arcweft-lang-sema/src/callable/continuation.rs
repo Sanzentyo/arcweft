@@ -592,7 +592,6 @@ pub(crate) struct PreparedContinuationCandidateSeed {
     base: Arc<super::PreparedResolvedCallableDefinition>,
     reference: PreparedCallContinuationRef,
     position: CallableParameterCoordinate,
-    function_type: TypeKind,
 }
 
 impl PreparedContinuationCandidateSeed {
@@ -602,15 +601,13 @@ impl PreparedContinuationCandidateSeed {
         Arc<super::PreparedResolvedCallableDefinition>,
         PreparedCallContinuationRef,
         CallableParameterCoordinate,
-        TypeKind,
     ) {
         let Self {
             base,
             reference,
             position,
-            function_type,
         } = self;
-        (base, reference, position, function_type)
+        (base, reference, position)
     }
 }
 
@@ -1237,7 +1234,7 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 let reference = PreparedCallContinuationRef(continuation.coordinate.clone());
                 self.graph.validate_continuation_chain(&reference)?;
                 continuation.prefix.validate_site(site)?;
-                let result = continuation.prefix.application().function_type()?;
+                let result = continuation.prefix.application().function_type()?.clone();
                 Ok((PreparedCallSiteDelivery::Continuation(reference), result))
             }
             PreparedCallNodePayload::SelectedValue { prefix, result } => {
@@ -2068,13 +2065,9 @@ impl<P, U> PreparedCallGraph<P, U> {
         } else {
             None
         };
-        if let Some(sealed) = self.reconcile_selected_site(
-            site,
-            &dependencies,
-            &prefix,
-            &result,
-            function_type.as_ref(),
-        )? {
+        if let Some(sealed) =
+            self.reconcile_selected_site(site, &dependencies, &prefix, &result, function_type)?
+        {
             return Ok(sealed);
         }
         let node = self.allocate_node()?;
@@ -2156,8 +2149,8 @@ impl<P, U> PreparedCallGraph<P, U> {
             }
             (PreparedCallNodePayload::SelectedContinuation(sealed), Some(function_type))
                 if sealed.prefix.replay_eq(prefix)
-                    && matches!(result, CallableResultSchema::Value(value) if sealed.prefix.application().result_type()? == *value)
-                    && sealed.prefix.application().function_type()? == *function_type
+                    && matches!(result, CallableResultSchema::Value(value) if sealed.prefix.application().result_type()? == value)
+                    && sealed.prefix.application().function_type()? == function_type
                     && Arc::ptr_eq(&sealed.coordinate.issuer, &self.issuer)
                     && sealed.coordinate.node == node_id =>
             {
@@ -2269,10 +2262,6 @@ impl<P, U> PreparedCallGraph<P, U> {
         if selected.position() != parent_next {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
-        let parent_function_type = parent_application.function_type()?;
-        if selected.prepared_function_type() != Some(&parent_function_type) {
-            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
-        }
         Ok(())
     }
 
@@ -2320,7 +2309,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             PreparedCallNodePayload::SelectedContinuation(_) => {
                 let function_type = application.function_type()?;
                 if continuation_position.is_none()
-                    || !matches!(&result, CallableResultSchema::Value(value) if function_type == *value)
+                    || !matches!(&result, CallableResultSchema::Value(value) if function_type == value)
                     || !matches!(function_type, TypeKind::Function { .. })
                 {
                     return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
@@ -2396,10 +2385,6 @@ impl<P, U> PreparedCallGraph<P, U> {
         if candidate.position() != expected_next {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
-        let function_type = application.function_type()?;
-        if candidate.prepared_function_type() != Some(&function_type) {
-            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
-        }
         Ok(PreparedCallContinuationSeed {
             coordinate: continuation.coordinate.clone(),
             solution: Arc::clone(application.solution()),
@@ -2414,31 +2399,38 @@ impl<P, U> PreparedCallGraph<P, U> {
     pub(crate) fn continuation_candidate_seed(
         &self,
         reference: &PreparedCallContinuationRef,
+        actual: &TypeKind,
     ) -> Result<PreparedContinuationCandidateSeed, CallConstraintInvariant>
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
-        self.validate_continuation_chain(reference)?;
-        let Some(node) = self.nodes.get(&reference.0.node) else {
-            return Err(CallConstraintInvariant::MissingOrStalePreparedNode);
-        };
-        let PreparedCallNodePayload::SelectedContinuation(continuation) = &node.payload else {
-            return Err(CallConstraintInvariant::InvalidPreparedNodeState);
-        };
-        debug_assert!(Arc::ptr_eq(&continuation.coordinate.issuer, &self.issuer));
-        debug_assert_eq!(continuation.coordinate.node, reference.0.node);
-        let application = continuation.prefix.application();
+        let application = self.require_continuation_operand(reference, actual)?;
         let selected = application.selected();
         let position = application
             .continuation_position()
             .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
-        let function_type = application.function_type()?;
         Ok(PreparedContinuationCandidateSeed {
             base: selected.definition(),
-            reference: PreparedCallContinuationRef(continuation.coordinate.clone()),
+            reference: reference.clone(),
             position,
-            function_type,
         })
+    }
+
+    /// Authenticate a value operand against the continuation that produced it.
+    /// Source resolution and constraint admission both use the original result.
+    pub(crate) fn require_continuation_operand(
+        &self,
+        reference: &PreparedCallContinuationRef,
+        actual: &TypeKind,
+    ) -> Result<&super::PreparedCallableApplication, CallConstraintInvariant>
+    where
+        P: PreparedCallPrefixPayload<Unselected = U>,
+    {
+        let application = self.continuation_prefix(reference)?.application();
+        if application.function_type()? != actual {
+            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        }
+        Ok(application)
     }
 
     /// Derive the lower parameter scope from the mapped application and pair

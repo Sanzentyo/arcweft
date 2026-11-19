@@ -6244,9 +6244,19 @@ pub(super) fn validate_and_prepare_call_constraints(
                 crate::callable::PreparedFunctionValueOperand::Observed(operand),
             ),
             CallableInstantiation::None,
+        ) if let Some(reference) = candidate.prepared_continuation() => {
+            graph
+                .require_continuation_operand(reference, operand.observed())
+                .map_err(CallConstraintPreparationFailure::Invariant)?;
+        }
+        (
+            PreparedCallCalleeConstraintInputs::FunctionValue(
+                crate::callable::PreparedFunctionValueOperand::Observed(operand),
+            ),
+            CallableInstantiation::None,
         ) => {
             let constraint = candidate
-                .prepare_function_value_constraint(group, operand.observed(), terminal_effects)
+                .prepare_base_function_value_constraint(group, operand.observed(), terminal_effects)
                 .map_err(CallConstraintPreparationFailure::Invariant)?
                 .into_ready()
                 .map_err(CallConstraintPreparationFailure::Invariant)?;

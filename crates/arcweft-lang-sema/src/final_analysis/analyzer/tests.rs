@@ -1088,7 +1088,7 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
             )
             .value_delivery_at(
                 crate::callable::CheckedCallSite::HirCall(call_owner),
-                &actual,
+                actual,
             ) {
                 Ok(crate::callable::PreparedCallSiteDelivery::Continuation(reference)) => reference,
                 Ok(crate::callable::PreparedCallSiteDelivery::Value) => {
@@ -1110,6 +1110,17 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
                     });
                 }
             };
+            let graph = this.facts.prepared_calls().expect("prepared call graph");
+            let different_result = TypeKind::function(vec![TypeKind::I64], TypeKind::Bool);
+            assert!(matches!(
+                graph.require_continuation_operand(&reference, &different_result),
+                Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch)
+            ));
+            assert!(
+                graph
+                    .require_continuation_operand(&reference, actual)
+                    .is_ok()
+            );
             *captured_for_transaction.borrow_mut() = Some(reference.clone());
             Ok::<_, AnalyzerExpressionError>(CandidateFactTransactionAction::Rollback(reference))
         })

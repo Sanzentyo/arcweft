@@ -832,11 +832,9 @@ impl ResolvedCallable {
         base: Arc<ResolvedCallableBase>,
         continuation: Arc<CheckedCallContinuation>,
         prepared_position: CallableParameterCoordinate,
-        prepared_function_type: &TypeKind,
     ) -> Result<Arc<Self>, CallConstraintInvariant> {
         if !Arc::ptr_eq(&base, continuation.base())
             || continuation.next_position() != prepared_position
-            || continuation.function_type() != prepared_function_type
         {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }

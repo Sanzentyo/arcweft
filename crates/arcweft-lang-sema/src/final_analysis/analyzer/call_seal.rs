@@ -117,7 +117,7 @@ pub(super) fn detach_prepared_call_graph(
             }
             PreparedCallGraphSealPayload::SelectedContinuation { prefix } => {
                 let (application, record) = prefix.into_parts();
-                let result = application.function_type()?;
+                let result = application.function_type()?.clone();
                 let application = application.detach(&mut arena)?;
                 let record = record.into_parts().detach(&mut arena)?;
                 DetachedAnalyzerCallPayload::Selected {
@@ -200,7 +200,6 @@ fn seal_resolved_callable(
         crate::callable::DetachedPreparedResolvedCallable::PreparedContinuation {
             reference,
             position,
-            function_type,
             ..
         } => {
             let dependency = authority
@@ -227,7 +226,7 @@ fn seal_resolved_callable(
                         CallConstraintInvariant::MissingOrStalePreparedNode,
                     )
                 })?;
-            ResolvedCallable::try_from_continuation(base, continuation, position, &function_type)
+            ResolvedCallable::try_from_continuation(base, continuation, position)
                 .map_err(|error| final_call_seal_error(location, error))
         }
     }

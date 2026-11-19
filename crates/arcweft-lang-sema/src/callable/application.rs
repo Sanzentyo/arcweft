@@ -209,14 +209,13 @@ impl PreparedCallableApplication {
         Ok(self.result.clone())
     }
 
-    pub(crate) fn result_type(&self) -> Result<TypeKind, CallConstraintInvariant> {
-        self.result_schema()?
+    pub(crate) fn result_type(&self) -> Result<&TypeKind, CallConstraintInvariant> {
+        self.result
             .value_type()
-            .cloned()
             .ok_or(CallConstraintInvariant::PreparedFunctionTypeMismatch)
     }
 
-    pub(crate) fn function_type(&self) -> Result<TypeKind, CallConstraintInvariant> {
+    pub(crate) fn function_type(&self) -> Result<&TypeKind, CallConstraintInvariant> {
         let result = self.result_type()?;
         if !matches!(result, TypeKind::Function { .. }) {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);

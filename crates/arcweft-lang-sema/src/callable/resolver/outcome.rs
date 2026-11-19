@@ -71,7 +71,6 @@ enum PreparedResolvedCallableState {
     PreparedContinuation {
         reference: super::super::PreparedCallContinuationRef,
         position: CallableParameterCoordinate,
-        function_type: TypeKind,
     },
 }
 
@@ -216,18 +215,12 @@ impl PreparedResolvedCallable {
                 PreparedResolvedCallableState::PreparedContinuation {
                     reference: left_reference,
                     position: left_position,
-                    function_type: left_type,
                 },
                 PreparedResolvedCallableState::PreparedContinuation {
                     reference: right_reference,
                     position: right_position,
-                    function_type: right_type,
                 },
-            ) => {
-                left_reference == right_reference
-                    && left_position == right_position
-                    && left_type == right_type
-            }
+            ) => left_reference == right_reference && left_position == right_position,
             _ => false,
         }
     }
@@ -281,9 +274,8 @@ impl PreparedResolvedCallableDefinitionSealInput {
 
 /// Stage-one detached candidate.  The opaque definition key is the only
 /// retained relation between candidates that shared one prepared definition.
-/// A continuation additionally carries only its issuer-bound graph reference
-/// and the preparation-time projections that the dependency-first sealer must
-/// compare with the already checked continuation.
+/// A continuation adds the issuer-bound graph reference and next position
+/// used by the dependency-first sealer to read the checked continuation.
 pub(crate) enum DetachedPreparedResolvedCallable {
     Base {
         definition: PreparedCallableDefinitionKey,
@@ -292,7 +284,6 @@ pub(crate) enum DetachedPreparedResolvedCallable {
         definition: PreparedCallableDefinitionKey,
         reference: super::super::PreparedCallContinuationRef,
         position: CallableParameterCoordinate,
-        function_type: TypeKind,
     },
 }
 
@@ -335,12 +326,10 @@ impl PreparedResolvedCallableDetachArena {
             PreparedResolvedCallableState::PreparedContinuation {
                 reference,
                 position,
-                function_type,
             } => DetachedPreparedResolvedCallable::PreparedContinuation {
                 definition: key,
                 reference,
                 position,
-                function_type,
             },
         })
     }
@@ -485,15 +474,6 @@ impl PreparedResolvedCallable {
         }
     }
 
-    pub(crate) fn prepared_function_type(&self) -> Option<&TypeKind> {
-        match &self.state {
-            PreparedResolvedCallableState::Base => None,
-            PreparedResolvedCallableState::PreparedContinuation { function_type, .. } => {
-                Some(function_type)
-            }
-        }
-    }
-
     /// The sole prepared-stage classification of runtime value dispatch.
     /// Continuations are invoked through the prior application value; lexical
     /// and independent function-value identities are value callees at their
@@ -529,17 +509,13 @@ impl PreparedResolvedCallable {
     where
         P: super::super::PreparedCallPrefixPayload<Unselected = U>,
     {
-        let seed = graph.continuation_candidate_seed(reference)?;
-        let (definition, reference, position, function_type) = seed.into_candidate_parts();
-        if &function_type != actual {
-            return Err(super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch);
-        }
+        let seed = graph.continuation_candidate_seed(reference, actual)?;
+        let (definition, reference, position) = seed.into_candidate_parts();
         Ok(Self {
             definition,
             state: PreparedResolvedCallableState::PreparedContinuation {
                 reference,
                 position,
-                function_type,
             },
         })
     }
@@ -910,7 +886,7 @@ impl PreparedResolvedCallable {
     /// solution; its next application opens that solution, not the value's
     /// quantifiers through a second structural constraint. An independent
     /// function value still supplies its source effects to the base schema.
-    pub(crate) fn prepare_function_value_constraint(
+    pub(crate) fn prepare_base_function_value_constraint(
         &self,
         current_group: CallableGroupIndex,
         actual: &TypeKind,
@@ -920,13 +896,8 @@ impl PreparedResolvedCallable {
             return Err(super::super::CallConstraintInvariant::PreparedGroupMismatch);
         }
         match &self.state {
-            PreparedResolvedCallableState::PreparedContinuation { function_type, .. } => {
-                if actual != function_type {
-                    return Err(
-                        super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch,
-                    );
-                }
-                Ok(CallableProjection::Ready(None))
+            PreparedResolvedCallableState::PreparedContinuation { .. } => {
+                Err(super::super::CallConstraintInvariant::PreparedBaseMismatch)
             }
             PreparedResolvedCallableState::Base => match terminal_effects {
                 CallableTerminalEffectProjection::Known { effects, .. } => {
