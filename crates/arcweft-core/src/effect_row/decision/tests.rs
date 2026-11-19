@@ -77,6 +77,11 @@ fn shared_conjunction_has_the_same_result_as_pairwise_conjunction() {
         EffectDecision::all([&left, &right, &last], &mut work).unwrap(),
         expected
     );
+    let not_right = right.not(&mut work).unwrap();
+    assert_eq!(
+        left.equivalent(&right, &mut work).unwrap(),
+        left.conditional(&right, &not_right, &mut work).unwrap()
+    );
 }
 
 #[test]

@@ -166,6 +166,9 @@ impl<'a> CanonicalReplay<'a> {
         root: &PreparedEffectRow,
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        if matches!(root, PreparedEffectRow::Canonical(_)) {
+            return Ok(());
+        }
         let mut todo = vec![root];
         let mut reachable = BTreeSet::new();
         while let Some(row) = todo.pop() {
@@ -423,6 +426,10 @@ impl<'a> CanonicalReplay<'a> {
         work: &mut Work<'_, C>,
     ) -> Result<Cow<'_, Decision>, PreparedEffectFailure<C::Error>> {
         match predicate {
+            PreparedEffectPredicate::Canonical(predicate) if predicate.is_unconstrained() => {
+                work.charge(DecisionWork::Visit)?;
+                Ok(Cow::Owned(Decision::constant(true)))
+            }
             PreparedEffectPredicate::Canonical(predicate) => self
                 .guard(&self.canonical_predicate(predicate, work)?, work)
                 .map(Cow::Owned),
@@ -443,6 +450,9 @@ impl<'a> CanonicalReplay<'a> {
         root: &PreparedEffectPredicate,
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        if matches!(root, PreparedEffectPredicate::Canonical(_)) {
+            return Ok(());
+        }
         let mut todo = vec![root];
         let mut reachable = BTreeSet::new();
         while let Some(predicate) = todo.pop() {
@@ -567,16 +577,7 @@ impl<'a> CanonicalReplay<'a> {
             work,
         )?;
         let expected = domain.conditional(&expected, &Decision::constant(true), work)?;
-        if !self
-            .principal
-            .witnesses
-            .relation()
-            .and(&expected.not(work)?, work)?
-            .is_constant(false)
-        {
-            return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
-        }
-        Ok(())
+        self.confirm_expected(&expected, work)
     }
 
     pub(super) fn confirm_obligation<C: DecisionControl>(
@@ -589,12 +590,22 @@ impl<'a> CanonicalReplay<'a> {
         let domain = self.read_predicate(&obligation.domain, work)?;
         let predicate = self.read_predicate(&obligation.predicate, work)?;
         let expected = domain.conditional(&predicate, &Decision::constant(true), work)?;
-        if !self
-            .principal
-            .witnesses
-            .relation()
-            .and(&expected.not(work)?, work)?
-            .is_constant(false)
+        self.confirm_expected(&expected, work)
+    }
+
+    fn confirm_expected<C: DecisionControl>(
+        &self,
+        expected: &Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        if expected.is_constant(true) {
+            return Ok(());
+        }
+        let witnesses = self.principal.witnesses.relation();
+        if witnesses.is_constant(true)
+            || !witnesses
+                .and(&expected.not(work)?, work)?
+                .is_constant(false)
         {
             return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
         }

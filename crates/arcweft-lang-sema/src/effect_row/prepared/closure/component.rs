@@ -300,7 +300,7 @@ fn compile_relation<C: DecisionControl>(
                     let mut members = Vec::new();
                     for (left, right) in own.iter().zip(&body.membership) {
                         work.charge(DecisionWork::Node)?;
-                        members.push(left.conditional(right, &right.not(work)?, work)?);
+                        members.push(left.equivalent(right, work)?);
                     }
                     scoped.compiler.whole(&members, work)?
                 }

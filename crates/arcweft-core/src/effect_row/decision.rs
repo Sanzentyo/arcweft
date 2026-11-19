@@ -511,6 +511,19 @@ impl<V: Clone + Ord> EffectDecision<V> {
         control: &mut C,
         mapping: &mut impl FnMut(&V, &mut C) -> Result<U, C::Error>,
     ) -> Result<EffectDecision<U>, C::Error> {
+        if let [node] = self.nodes.as_ref() {
+            control.charge(DecisionWork::Visit)?;
+            let variable = mapping(&node.variable, control)?;
+            control.charge(DecisionWork::Node)?;
+            return Ok(EffectDecision {
+                nodes: Box::new([Node {
+                    variable,
+                    low: node.low,
+                    high: node.high,
+                }]),
+                root: self.root,
+            });
+        }
         self.rebuild_references(control, |reference, builder| {
             let variable = mapping(reference, builder.control)?;
             builder.branch(variable, Root::False, Root::True)
@@ -687,13 +700,15 @@ impl<V: Clone + Ord> EffectDecision<V> {
             let value = entry(index, builder.control)?;
             frontier.push(builder.operand(value)?);
         }
-        for bit in 0..selectors {
+        // Fold the most significant selectors first. When selectors follow
+        // the reference order, their decisions then wrap already-later roots.
+        for bit in (0..selectors).rev() {
             let mut condition = None;
             let next_count = frontier.len() / 2;
             for index in 0..next_count {
                 builder.control.charge(DecisionWork::Visit)?;
-                let low = frontier[2 * index];
-                let high = frontier[2 * index + 1];
+                let low = frontier[index];
+                let high = frontier[index + next_count];
                 frontier[index] = if low == high {
                     low
                 } else {
@@ -716,6 +731,23 @@ impl<V: Clone + Ord> EffectDecision<V> {
     /// Disjoins two functions using the shared controlled decision builder.
     pub fn or<C: DecisionControl>(&self, other: &Self, control: &mut C) -> Result<Self, C::Error> {
         self.conditional(&Self::constant(true), other, control)
+    }
+
+    /// The valuations under which both functions return the same value.
+    pub fn equivalent<C: DecisionControl>(
+        &self,
+        other: &Self,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        let mut builder = DecisionBuilder::new(control);
+        let left = builder.import(self)?;
+        let right = builder.import(other)?;
+        if left == right {
+            return Ok(Self::constant(true));
+        }
+        let negated = builder.conditional(Conditional::new(right, Root::False, Root::True))?;
+        let same = builder.conditional(Conditional::new(left, right, negated))?;
+        builder.finish(same)
     }
 
     /// Complements a Boolean function without interpreting it as a finite row.

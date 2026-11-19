@@ -269,9 +269,10 @@ impl<'a> Compilation<'a> {
         // The original obligation quantifies the complete argument tuple. Its
         // equality holds exactly when every named and outside coefficient is
         // equal and the imported relation admits its arguments.
-        let mut result = self
+        let admitted = self
             .cells
             .complete_import(imported.relation.principal(), work)?;
+        let mut equations = Vec::new();
         for class in 0..self.layout.classes() {
             for mask in 0..table {
                 let left = Decision::variable(
@@ -283,11 +284,11 @@ impl<'a> Compilation<'a> {
                     work,
                 )?;
                 let right = imported.coefficient(class, mask)?;
-                let equal = left.conditional(right, &right.not(work)?, work)?;
-                result = result.and(&equal, work)?;
+                work.charge(DecisionWork::Node)?;
+                equations.push(left.equivalent(right, work)?);
             }
         }
-        Ok(Some(result))
+        Decision::all(std::iter::once(&admitted).chain(&equations), work).map(Some)
     }
 
     pub(super) fn application<C: DecisionControl>(
