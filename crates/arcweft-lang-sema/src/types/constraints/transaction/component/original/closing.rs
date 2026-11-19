@@ -109,11 +109,15 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                                         graph.read(),
                                         context,
                                     )
-                                    .map_err(|error| {
-                                        reject(
-                                            OriginalProductCheck::MemberCompletion(*member),
-                                            error,
-                                        )
+                                    .map_err(|failure| {
+                                        let check = match failure.equation {
+                                            Some(equation) => OriginalProductCheck::Equation {
+                                                member: *member,
+                                                equation,
+                                            },
+                                            None => OriginalProductCheck::MemberCompletion(*member),
+                                        };
+                                        reject(check, failure.error)
                                     })?;
                                     context.enter_node()?;
                                     completed.push(CompletedOriginalMember {

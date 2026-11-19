@@ -13,7 +13,7 @@ use crate::{
         GenericBinder, MapKind, PreparedEffects, ScopedTypeView,
         constraints::{
             ConstraintAcceptance, ConstraintSourceContainerPolicy, NoConstraintClient,
-            TypeConstraintInvariant,
+            TypeConstraintInvariant, TypeConstraintRejection,
             context::{LocalConstraintAccounting, TypeConstraintLimits},
             test_support::ConstraintTestSetup,
             transaction::{
@@ -80,6 +80,45 @@ fn function(row: PreparedEffectRow) -> TypeKind<PreparedEffects> {
         TypeKind::Unit,
         row,
     )
+}
+
+#[test]
+fn materialization_reports_the_original_equation_that_rejects_a_member() {
+    let cancellation = AtomicBool::new(false);
+    let mut graph = PreparedEffectGraph::default();
+    let (mut context, mut path) = setup(&cancellation, GenericBinder::EMPTY, &mut graph);
+    let original = original(&path, &[], &mut graph, &mut context);
+    let effects =
+        ConstraintClosedEffects::for_path(&path, &original, &[], &mut graph, &mut context).unwrap();
+    let application = path.root_id();
+    let ordinal = ConstraintEquationId {
+        application,
+        ordinal: 0,
+    };
+    path.equations.push(PendingEquation {
+        ordinal,
+        direction: ConstraintAcceptance::PatternAcceptsActual,
+        pattern: context.fixture_operand(TypeKind::Bool),
+        actual: context.fixture_operand(TypeKind::I64),
+        source_ordinal: None,
+        timing: ConstraintEquationTiming::Immediate,
+    });
+
+    let Err(failure) = MaterializationInput::from_closed_original(
+        &path,
+        application,
+        &path,
+        &mut effects.projection(),
+        graph.read(),
+        &mut context,
+    ) else {
+        panic!("an incompatible equation cannot authorize materialization");
+    };
+    assert_eq!(failure.equation, Some(ordinal));
+    assert!(matches!(
+        failure.error,
+        TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch)
+    ));
 }
 
 #[test]

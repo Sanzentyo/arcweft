@@ -2641,6 +2641,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         graph.read(),
                         context,
                     )
+                    .map_err(TypeConstraintError::from)
                 },
             )
         })

@@ -378,6 +378,7 @@ mod retained_preparation {
                             graph.read(),
                             context,
                         )
+                        .map_err(TypeConstraintError::from)
                     },
                 )
                 .unwrap();

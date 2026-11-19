@@ -3,6 +3,33 @@
 use super::*;
 use crate::effect_row::prepared::PreparedEffectReadView;
 
+#[derive(Debug)]
+pub(super) struct MaterializationInputFailure {
+    pub(super) equation: Option<ConstraintEquationId>,
+    pub(super) error: TypeConstraintError,
+}
+
+impl From<TypeConstraintError> for MaterializationInputFailure {
+    fn from(error: TypeConstraintError) -> Self {
+        Self {
+            equation: None,
+            error,
+        }
+    }
+}
+
+impl From<TypeConstraintInvariant> for MaterializationInputFailure {
+    fn from(invariant: TypeConstraintInvariant) -> Self {
+        Self::from(TypeConstraintError::from(invariant))
+    }
+}
+
+impl From<MaterializationInputFailure> for TypeConstraintError {
+    fn from(failure: MaterializationInputFailure) -> Self {
+        failure.error
+    }
+}
+
 impl<D: ConstraintDomain> MaterializationInput<D> {
     pub(in crate::types::constraints::transaction) fn from_closed_original<
         A: TypeConstraintAccounting,
@@ -14,7 +41,7 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
         projection: &mut ConstraintEffectProjection<D>,
         graph: PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Self, TypeConstraintError> {
+    ) -> Result<Self, MaterializationInputFailure> {
         context.check_cancelled()?;
         projection.owner().require_branch(branch)?;
         ensure_unique_sources(source)?;
@@ -53,7 +80,7 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
             .close_trace(branch, projection, graph, context)?;
         for equation in &source.equations {
             context.enter_node()?;
-            match equation.source_ordinal {
+            let result = match equation.source_ordinal {
                 Some(ordinal) => {
                     let mut found = None;
                     for probe in closed_sources.sources() {
@@ -61,17 +88,21 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
                         if probe.ordinal() == ordinal && found.replace(probe).is_some() {
                             return Err(protocol_error(
                                 TypeConstraintSourceProtocolInvariant::WrongSource,
-                            ));
+                            )
+                            .into());
                         }
                     }
                     let closed = found.ok_or_else(|| {
                         protocol_error(TypeConstraintSourceProtocolInvariant::WrongSource)
                     })?;
-                    equation
-                        .validate_completed_source(closed, branch, projection, graph, context)?;
+                    equation.validate_completed_source(closed, branch, projection, graph, context)
                 }
-                None => equation.validate_completed(branch, projection, graph, context)?,
-            }
+                None => equation.validate_completed(branch, projection, graph, context),
+            };
+            result.map_err(|error| MaterializationInputFailure {
+                equation: Some(equation.ordinal),
+                error,
+            })?;
         }
         context.validate_type_and_const_completion(branch)?;
         let mut completed = BTreeMap::new();

@@ -633,16 +633,6 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     return Err(reject(check, TypeConstraintRejection::Mismatch.into()));
                 }
             }
-            for equation in &original.equations {
-                context.enter_node()?;
-                let check = OriginalProductCheck::Equation {
-                    member: *member,
-                    equation: equation.ordinal,
-                };
-                equation
-                    .validate_completed(branch, projection, graph.read(), context)
-                    .map_err(|error| reject(check, error))?;
-            }
         }
         Ok(())
     }
