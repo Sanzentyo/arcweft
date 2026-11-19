@@ -169,10 +169,11 @@ pub(in crate::types::constraints) use projection::seal_type_operand;
 mod effects;
 pub(in crate::types) use effects::ConstraintClosedEffects;
 pub(in crate::types::constraints) use effects::{
-    ConstraintClosedEffectHeader, ConstraintEffectProjection, ConstraintProjectedEffectHeader,
+    BoundConstraintEffects, ConstraintEffectCompletionContext, ConstraintEffectPrimitive,
+    PreparedConstraintEffects,
 };
 pub(in crate::types::constraints) use effects::{
-    ConstraintEffectCompletionContext, ConstraintEffectPrimitive, PreparedConstraintEffects,
+    ConstraintClosedEffectHeader, ConstraintEffectProjection, ConstraintProjectedEffectHeader,
 };
 pub(super) use projection::project_type;
 use projection::{project_array_length, project_type_inner};

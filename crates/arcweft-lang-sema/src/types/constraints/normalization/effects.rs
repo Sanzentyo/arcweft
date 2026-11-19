@@ -21,25 +21,45 @@ use crate::types::{GenericEffectReference, PreparedEffects, TypeProjectionContro
 
 mod scoped;
 
-/// The original relation and its exact source obligation travel together
-/// through the bound phase, before the final canonical closure is available.
+/// The immutable producer relation and the obligation it already retains.
+/// Preparing this value does not attach the relation to a live graph.
 pub(in crate::types::constraints) struct PreparedConstraintEffects {
+    original: Arc<ScopedEffectCompletion>,
+    constraint: PreparedEffectScopedConstraint,
+}
+
+/// A relation whose conditional minimum has been attached to the original
+/// inference functions for closure with actual inputs.
+pub(in crate::types::constraints) struct BoundConstraintEffects {
     bound: BoundScopedEffectCompletion,
     constraint: PreparedEffectScopedConstraint,
 }
 
 impl PreparedConstraintEffects {
-    pub(in crate::types::constraints) fn bind<A: TypeConstraintAccounting, D: ConstraintDomain>(
-        original: &Arc<ScopedEffectCompletion>,
+    pub(in crate::types::constraints) fn new<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        original: Arc<ScopedEffectCompletion>,
         constraint: PreparedEffectScopedConstraint,
-        graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError> {
+        original.require_retained_constraint(&constraint, context)?;
+        Ok(Self {
+            original,
+            constraint,
+        })
+    }
+
+    pub(in crate::types::constraints) fn bind<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        self,
+        graph: &mut PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<BoundConstraintEffects, TypeConstraintError> {
         context.with_effect_transaction(graph, |context, graph| {
-            original.require_retained_constraint(&constraint, context)?;
-            let binding = graph.bind_original_scoped(original, context)?;
+            let binding = graph.bind_original_scoped(&self.original, context)?;
             let bound = binding.freeze(graph.read(), context)?;
-            Ok(Self { bound, constraint })
+            Ok(BoundConstraintEffects {
+                bound,
+                constraint: self.constraint,
+            })
         })
     }
 }
@@ -253,11 +273,12 @@ impl<D: ConstraintDomain, E: crate::types::TypeEffectDomain>
 impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     pub(in crate::types::constraints) fn for_original_path<A: TypeConstraintAccounting>(
         path: &ConstraintPath<D>,
-        original: &PreparedConstraintEffects,
+        original: PreparedConstraintEffects,
         inputs: &[(&PreparedEffectUnknownRef, &EffectRow)],
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<Self>, TypeConstraintError> {
+        let original = original.bind(graph, context)?;
         for _ in path.lineage.scope.shape().binders() {
             context.enter_node()?;
         }
@@ -309,7 +330,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         branch: &ConstraintInferenceBranch<D, L>,
         scope: &ConstraintLexicalScope,
         sources: Arc<[OriginalProducerContext]>,
-        original: &PreparedConstraintEffects,
+        original: &BoundConstraintEffects,
         inputs: &PreparedEffectActualInputs<'_>,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,

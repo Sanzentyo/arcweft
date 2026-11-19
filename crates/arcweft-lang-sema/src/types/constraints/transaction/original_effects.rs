@@ -20,8 +20,8 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<ConstraintClosedEffects<D>>, TypeConstraintError> {
-        let original = self.bind_original_path_effects(graph, context)?;
-        ConstraintClosedEffects::for_original_path(self, &original, &[], graph, context)
+        let original = self.prepare_original_path_effects(graph, context)?;
+        ConstraintClosedEffects::for_original_path(self, original, &[], graph, context)
     }
 
     pub(super) fn collect_original_effect_types<'a, A: TypeConstraintAccounting>(
@@ -57,7 +57,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         Ok(())
     }
 
-    pub(super) fn bind_original_path_effects<A: TypeConstraintAccounting>(
+    pub(super) fn prepare_original_path_effects<A: TypeConstraintAccounting>(
         &self,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -78,7 +78,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             graph,
             context,
         )?;
-        PreparedConstraintEffects::bind(&original, constraint, graph, context)
+        PreparedConstraintEffects::new(original, constraint, context)
     }
 }
 

@@ -349,10 +349,10 @@ mod retained_preparation {
                     &mut graph,
                     path.lineage.probe_effect_reads(),
                     |context, graph| {
-                        let original = path.bind_original_path_effects(graph, context)?;
+                        let original = path.prepare_original_path_effects(graph, context)?;
                         let effects = ConstraintClosedEffects::for_original_path(
                             path,
-                            &original,
+                            original,
                             &[],
                             graph,
                             context,
@@ -579,10 +579,10 @@ fn an_unclosed_probe_preparation_cannot_issue_a_completed_source() {
     let mut probe = source(&context, path.root_id(), TypeKind::I32);
     probe.branch = SourceProbeObservation::new(());
     let original = path
-        .bind_original_path_effects(&mut graph, &mut context)
+        .prepare_original_path_effects(&mut graph, &mut context)
         .unwrap();
     let effects =
-        ConstraintClosedEffects::for_original_path(&path, &original, &[], &mut graph, &mut context)
+        ConstraintClosedEffects::for_original_path(&path, original, &[], &mut graph, &mut context)
             .unwrap();
     assert!(matches!(
         probe.close(&path, &mut effects.projection(), graph.read(), &mut context),
