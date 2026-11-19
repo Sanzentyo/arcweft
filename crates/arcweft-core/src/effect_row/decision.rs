@@ -1357,36 +1357,6 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         Ok(self.known(key).expect("root conditional completed"))
     }
 
-    /// Iterative traversal returns only the reachable child-first inventory.
-    fn postorder(&mut self, root: Root) -> Result<Vec<usize>, C::Error> {
-        if !matches!(root, Root::Branch(_)) {
-            return Ok(Vec::new());
-        }
-        self.control.charge(DecisionWork::Visit)?;
-        let mut pending = vec![(root, false)];
-        let mut seen = BTreeSet::new();
-        let mut ordered = Vec::new();
-        while let Some((root, joined)) = pending.pop() {
-            self.control.charge(DecisionWork::Visit)?;
-            let Root::Branch(index) = root else {
-                continue;
-            };
-            if seen.contains(&index) {
-                continue;
-            }
-            if joined {
-                seen.insert(index);
-                ordered.push(index);
-            } else {
-                let node = &self.nodes[index];
-                pending.push((root, true));
-                pending.push((node.high, false));
-                pending.push((node.low, false));
-            }
-        }
-        Ok(ordered)
-    }
-
     /// Compile an already child-first decision without interning the source.
     /// Intermediate roots index the builder and the input indices stay local
     /// to the canonical decision.
@@ -1452,19 +1422,48 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     }
 
     fn finish(&mut self, root: Root) -> Result<EffectDecision<V>, C::Error> {
-        let order = self.postorder(root)?;
+        enum Task {
+            Visit(usize),
+            Emit(usize),
+        }
+
+        let Root::Branch(index) = root else {
+            return Ok(EffectDecision::constant(root == Root::True));
+        };
+        let mut task = Task::Visit(index);
+        let mut pending = Vec::new();
         let mut nodes = Vec::new();
         let mut indices = BTreeMap::new();
-        for index in order {
-            self.control.charge(DecisionWork::Node)?;
-            let node = &self.nodes[index];
-            let mapped = Node {
-                variable: node.variable.clone(),
-                low: Self::remap(node.low, &indices),
-                high: Self::remap(node.high, &indices),
+        loop {
+            match task {
+                Task::Visit(index) if !indices.contains_key(&index) => {
+                    // One visit admits this branch and its two child edges.
+                    self.control.charge(DecisionWork::Visit)?;
+                    let node = &self.nodes[index];
+                    pending.push(Task::Emit(index));
+                    for child in [node.high, node.low] {
+                        if let Root::Branch(child) = child {
+                            pending.push(Task::Visit(child));
+                        }
+                    }
+                }
+                Task::Visit(_) => {}
+                Task::Emit(index) => {
+                    self.control.charge(DecisionWork::Node)?;
+                    let node = &self.nodes[index];
+                    let mapped = Node {
+                        variable: node.variable.clone(),
+                        low: Self::remap(node.low, &indices),
+                        high: Self::remap(node.high, &indices),
+                    };
+                    indices.insert(index, Root::Branch(nodes.len()));
+                    nodes.push(mapped);
+                }
+            }
+            let Some(next) = pending.pop() else {
+                break;
             };
-            indices.insert(index, Root::Branch(nodes.len()));
-            nodes.push(mapped);
+            task = next;
         }
         Ok(EffectDecision {
             nodes: nodes.into_boxed_slice(),

@@ -31,6 +31,60 @@ fn truth_table(decision: &EffectDecision<u8>, variables: u8) -> Vec<bool> {
 }
 
 #[test]
+fn finalization_emits_only_reachable_branches_in_low_before_high_order() {
+    let mut work = Meter::default();
+    let mut builder = DecisionBuilder::new(&mut work);
+    let shared = builder.branch(3, Root::False, Root::True).unwrap();
+    let high = builder.branch(2, Root::True, shared).unwrap();
+    builder.branch(4, Root::False, Root::True).unwrap();
+    let low = builder.branch(1, shared, Root::False).unwrap();
+    let root = builder.branch(0, low, high).unwrap();
+    let expected = EffectDecision {
+        nodes: Box::new([
+            Node {
+                variable: 3,
+                low: Root::False,
+                high: Root::True,
+            },
+            Node {
+                variable: 1,
+                low: Root::Branch(0),
+                high: Root::False,
+            },
+            Node {
+                variable: 2,
+                low: Root::True,
+                high: Root::Branch(0),
+            },
+            Node {
+                variable: 0,
+                low: Root::Branch(1),
+                high: Root::Branch(2),
+            },
+        ]),
+        root: Root::Branch(3),
+    };
+    let required = 2 * expected.node_count();
+    for limit in 0..required {
+        *builder.control = Meter {
+            used: 0,
+            limit: Some(limit),
+        };
+        assert_eq!(builder.finish(root), Err((limit + 1, limit)));
+    }
+    *builder.control = Meter {
+        used: 0,
+        limit: Some(required),
+    };
+    assert_eq!(builder.finish(root).unwrap(), expected);
+    assert_eq!(
+        builder.finish(Root::False).unwrap(),
+        EffectDecision::constant(false)
+    );
+    assert_eq!(builder.control.used, required);
+}
+
+#[test]
 fn table_selection_preserves_correlated_selectors_and_entry_references() {
     let mut work = Meter::default();
     let bit = atom(0);
