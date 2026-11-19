@@ -19864,3 +19864,14 @@ Sema全featureユニットは1,982件中1,864 PASS、118 FAIL、0 SKIP。既存1
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時にRustの4 blobを検証した入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-staged-call-input-admission.raw.zip) は22 entry、492,769 bytes、SHA256 `d3b8aff76ad7e7f326057dc5238b3bdfb91742a83140ff76752ad5e5708a88dd`。各原本の長さとハッシュを照合した。
+
+<a id="completed-call-result"></a>
+## 2026-11-19 — 制約計算が確定した呼出し結果を引き継ぐ
+
+基点 `d141eb8f510e4f004e2a9a2dfdb769df2415b3d3`。Source `ef93879c1e94e7e9ae02977711a8d77c6e9b5d08`。選んだ呼出しと入れ子の呼出しは、同じ完了済み制約適用から結果と型解を取得する。継続の場合は残りの引数グループと関数型を照合する。値を返さない content 呼出しは、照合済みの署名にある操作を保持する。準備グラフへの登録時に宣言側の終端効果と結果型を再投影する経路を削除した。公開時は確定した宣言から結果を導出し、継続・通常値・content 操作が引き継いだ結果に一致することを検査する。
+
+Sema全featureユニットは1,982件中1,864 PASS、118 FAIL、0 SKIP。Compilerの5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中29 PASS、3 FAIL。全2,564件で直前の検証結果とテストID・合否が一致した。正しい引数で再帰本体から作る段階適用と、再帰する attached default の解析には、結果を準備する時点で終端効果を要求する経路が残る。[既存の失敗経路](#annotated-recursive-binding)。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時に変更6 blobを検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-completed-call-result.raw.zip) は18 entry、452,499 bytes、SHA256 `bda255b2bfc61b0c66dcb165e3083492b05d679ba3afd21e5273a4f6f83e80c3`。各原本の長さとハッシュを照合した。
