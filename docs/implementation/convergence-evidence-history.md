@@ -20039,3 +20039,14 @@ Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終�
 Sema全featureユニットは1,988件中1,875 PASS、113 FAIL。段階適用した Map の callback の await と、View default の別名が前段の効果を保持する2件が成功へ移行した。新規失敗は0。Compilerの6 targetは582件中573 PASS、9 FAIL。`flow_wait` 32件はすべて成功した。2つの callback を入れ替えるNative／AWBC実行2件は引き続き型検査で失敗した。最終バイナリのデバッガーでは、2個の Native テストは条件の論理積を構築中に、3個を循環させるSemaテストは元制約の読み取り範囲を検査中に上限に達した。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実施。Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。公開した4 Rust blobを照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-callback-permutation-compilation.raw.zip) は 29 entry、579,783 bytes、SHA256 `ee897ba0c0470efb0af01161638aa3990b17f05b91f9ad44f93531ae589d1556`。各原本の長さとハッシュを照合した。
+
+<a id="retained-effect-relation"></a>
+## 2026-11-19 — 元の効果制約を再利用して Source traverse と Map を復旧
+
+基点 `07682e7787f94a3019ce85642c8ca16210d9e24b`。Source `33c8f9ec369ebd2b77e856b56af2a1215871f605`。効果行を確定するまで元の制約の所有者を保持する。新たな入力、制約、量化する選択、効果ラベルの範囲に差がないことを、受け手の定義と同一性から確認できる場合は、元の関係を一度だけ解く。条件が変わる場合は、元の条件付き最小効果と受け手の条件を同時に検証し、一時定義をロールバックする。保留した結果の量化や、後から確定した宣言本体の検査も同じ所有者を通す。追加条件で元の最小効果を広げることはできず、拒否後に受け手の状態が一致することを回帰テストで確認した。効果述語の計算結果を参照で再利用し、読み取り範囲の構成では定義を確認する箇所で作業を計上する。
+
+作業上限を32,768に設定した診断ビルドでは、2つの callback を入れ替えるNative／AWBCの2件が通過した。先行の診断値9,312と8,576に対して、再帰本体の候補は5,487、名前付き関数を渡す入口側は8,456だった。本番の上限4,096ではこの実行2件は型検査で停止する。診断中の設定と計測コードは最終差分から除いた。
+
+最終のCompiler 582件は 577 PASS、5 FAIL。Source traverse の3件がNativeと正準復号したAWBCで成功へ移行し、4種類のcollection、計算したreceiverとcallback、callback本体に入らない構築を再確認した。checked ingress を通すMapの1件も成功へ移行し、両実行系で写像の評価順、6回のcallback、結果18を確認した。`flow_wait` の32件はすべて通過した。最終のSema全featureユニット1,989件は 1,894 PASS、95 FAIL。Sema の既存18件が成功に移行した。両スイートの新規失敗は0。3個の callback のSemaケースは、先行の読み取り範囲の構成を通過し、最終バイナリでは効果制約をコンパイルする段階で作業上限に達した。callback 2個のNativeテストもこの段階で止まった。Mapの遅延効果と保持後の呼出し効果の2件では、元の最小効果と受け手の条件を結合した関係を解く過程で上限に達した。Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。全逆依存テスト、全workspaceのcheck／Clippy、Tier 2の最終受入は今回未実施。公開した9 Rust blobを照合した。
+
+[検証原本・公開照合](acceptance-evidence/task-callback-retained-relation.raw.zip) は 29 entry、539,865 bytes、SHA256 `20d8594e57082353d9ec2770bb8bf360af4b259634a85b252f561495ace1b90e`。各原本の長さとハッシュを照合した。
