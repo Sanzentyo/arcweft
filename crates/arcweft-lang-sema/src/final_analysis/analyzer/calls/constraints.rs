@@ -6241,14 +6241,10 @@ pub(super) fn validate_and_prepare_call_constraints(
             && candidate.prepared_continuation().is_none() => {}
         (
             PreparedCallCalleeConstraintInputs::FunctionValue(
-                crate::callable::PreparedFunctionValueOperand::Observed(operand),
+                crate::callable::PreparedFunctionValueOperand::Continuation(operand),
             ),
             CallableInstantiation::None,
-        ) if let Some(reference) = candidate.prepared_continuation() => {
-            graph
-                .require_continuation_operand(reference, operand.observed())
-                .map_err(CallConstraintPreparationFailure::Invariant)?;
-        }
+        ) if candidate.prepared_continuation() == Some(operand.reference()) => {}
         (
             PreparedCallCalleeConstraintInputs::FunctionValue(
                 crate::callable::PreparedFunctionValueOperand::Observed(operand),

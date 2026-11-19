@@ -295,13 +295,30 @@ pub(crate) enum PreparedFunctionValueOperand {
         original: Arc<TypeKind<PreparedEffects>>,
         declaration: PreparedFunctionValueDeclaration,
     },
+    Continuation(PreparedContinuationOperand),
     Observed(PreparedCallValueOperand),
+}
+
+/// An expression whose prepared function type matches the value issued by
+/// this exact call-graph continuation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedContinuationOperand {
+    source: ExprId,
+    original: Arc<TypeKind<PreparedEffects>>,
+    reference: super::PreparedCallContinuationRef,
+}
+
+impl PreparedContinuationOperand {
+    pub(crate) const fn reference(&self) -> &super::PreparedCallContinuationRef {
+        &self.reference
+    }
 }
 
 impl PreparedFunctionValueOperand {
     pub(crate) const fn source(&self) -> ExprId {
         match self {
             Self::Declared { source, .. } => *source,
+            Self::Continuation(operand) => operand.source,
             Self::Observed(operand) => operand.source(),
         }
     }
@@ -309,6 +326,7 @@ impl PreparedFunctionValueOperand {
     pub(crate) const fn original(&self) -> &Arc<TypeKind<PreparedEffects>> {
         match self {
             Self::Declared { original, .. } => original,
+            Self::Continuation(operand) => &operand.original,
             Self::Observed(operand) => operand.original(),
         }
     }
@@ -829,9 +847,13 @@ type FinalCallRetainedValuePreparation<'a> = dyn Fn(
     ) -> Result<TypeKind<PreparedEffects>, FinalSemanticAnalysisError>
     + 'a;
 
+type FinalCallResultRetention<'a> =
+    dyn Fn(ExprId, &TypeKind) -> Result<TypeKind<PreparedEffects>, FinalSemanticAnalysisError> + 'a;
+
 pub(crate) struct FinalCallValueOperandPreparation<'a> {
     pub(crate) observe: &'a FinalCallObservedValuePreparation<'a>,
     pub(crate) retain: &'a FinalCallRetainedValuePreparation<'a>,
+    pub(crate) retain_result: &'a FinalCallResultRetention<'a>,
 }
 
 /// Immutable child facts needed to prepare one final-HIR call.
@@ -1186,9 +1208,7 @@ pub(crate) enum ResolvedFunctionValueSeed {
         schema: CallableSignatureSchema,
         effect_callable: Option<CallableId>,
     },
-    PreparedContinuation {
-        reference: super::PreparedCallContinuationRef,
-    },
+    PreparedContinuation,
 }
 
 #[derive(Debug, Eq, Error, PartialEq)]

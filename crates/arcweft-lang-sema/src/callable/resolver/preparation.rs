@@ -10,14 +10,15 @@ use super::{
     HirAssociatedSeparator, HirCallArgument, HirCallCallee, HirCallInvocation, HirExpr,
     HirExprKind, HirExprSourceRole, HirModule, HirPath, HirPathRoot, HirPathSegment, HirPathValue,
     HirRecoveredName, HirSelectedMember, HirSourceQuery, PrepareFinalCallCalleeError,
-    PreparedCallCallee, PreparedCallValueOperand, PreparedFinalCallCallee, PreparedFreeCallContext,
-    PreparedFreeCallScope, PreparedFunctionValueCallee, PreparedFunctionValueDeclaration,
-    PreparedFunctionValueOperand, PreparedFunctionValueOriginEvidence,
-    PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
-    PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQuery,
-    PreparedFunctionValueOriginQueryError, PresentationCallableId, ProjectValueLookup,
-    PromotionCallableId, ResolveCallError, ResolvedAssociatedTypeReceiver,
-    ResolvedFunctionValueSeed, TypeId, TypeKind, TypeResolutionReport,
+    PreparedCallCallee, PreparedCallValueOperand, PreparedContinuationOperand,
+    PreparedFinalCallCallee, PreparedFreeCallContext, PreparedFreeCallScope,
+    PreparedFunctionValueCallee, PreparedFunctionValueDeclaration, PreparedFunctionValueOperand,
+    PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginProducer,
+    PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginPurpose,
+    PreparedFunctionValueOriginQuery, PreparedFunctionValueOriginQueryError,
+    PresentationCallableId, ProjectValueLookup, PromotionCallableId, ResolveCallError,
+    ResolvedAssociatedTypeReceiver, ResolvedFunctionValueSeed, TypeId, TypeKind,
+    TypeResolutionReport,
 };
 use crate::{
     callable::{
@@ -351,6 +352,35 @@ where
         PrepareFinalCallCalleeError::MissingFunctionValueOrigin { expression: value };
     match (checked_type, facts.function_value_origin.as_ref()) {
         (TypeKind::Function { .. }, Some(origin)) => {
+            let delivery = if let PreparedFunctionValueOriginProducer::Call(
+                site @ super::super::CheckedCallSite::HirCall(_),
+            ) = origin.producer()
+            {
+                Some((
+                    *site,
+                    facts
+                        .prepared_calls
+                        .selected_value_delivery(*site)
+                        .map_err(PrepareFinalCallCalleeError::PreparedContinuationInvariant)?,
+                ))
+            } else {
+                None
+            };
+            if let Some((site, (PreparedCallSiteDelivery::Continuation(reference), expected))) =
+                delivery
+            {
+                let value = prepare_continuation_callee(
+                    value,
+                    checked_type,
+                    site,
+                    reference,
+                    expected,
+                    facts,
+                )?;
+                return Ok(PreparedFinalCallCallee::FunctionValue {
+                    value: Box::new(value),
+                });
+            }
             let declared = match origin.producer() {
                 PreparedFunctionValueOriginProducer::Declaration {
                     producer,
@@ -422,6 +452,13 @@ where
                 )
             } else {
                 let operand = facts.prepare_value_operand(value, checked_type)?;
+                if let Some((_, (PreparedCallSiteDelivery::Value, expected))) = delivery
+                    && operand.observed() != expected
+                {
+                    return Err(PrepareFinalCallCalleeError::PreparedContinuationInvariant(
+                        super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                    ));
+                }
                 let mut origin = facts.function_value_origin.take().ok_or(missing_origin)?;
                 if let PreparedFunctionValueOriginProducer::Declaration {
                     producer,
@@ -431,7 +468,7 @@ where
                     origin.producer =
                         PreparedFunctionValueOriginProducer::IndependentExpression { producer };
                 }
-                prepare_function_value(operand, origin, facts.prepared_calls, limits)?
+                prepare_function_value(operand, origin, limits)?
             };
             Ok(PreparedFinalCallCallee::FunctionValue {
                 value: Box::new(value),
@@ -451,6 +488,50 @@ where
             ),
         }),
     }
+}
+
+fn prepare_continuation_callee<P, U>(
+    source: ExprId,
+    checked_type: &TypeKind<crate::types::PreparedEffects>,
+    site: super::super::CheckedCallSite,
+    reference: super::super::PreparedCallContinuationRef,
+    result: &TypeKind,
+    facts: FinalCallCalleeFacts<'_, '_, P, U>,
+) -> Result<PreparedFunctionValueCallee, PrepareFinalCallCalleeError> {
+    let missing_origin =
+        || PrepareFinalCallCalleeError::MissingFunctionValueOrigin { expression: source };
+    let origin = facts
+        .function_value_origin
+        .as_ref()
+        .ok_or_else(missing_origin)?;
+    if origin.callee() != source || !origin.captures().is_empty() {
+        return Err(PrepareFinalCallCalleeError::InvalidFunctionValueOrigin { expression: source });
+    }
+    let source_error = |error| PrepareFinalCallCalleeError::SourceType {
+        expression: source,
+        error: Box::new(error),
+    };
+    let expected = (facts.value_operand.retain_result)(source, result).map_err(source_error)?;
+    let original = (facts.value_operand.retain)(source, checked_type).map_err(source_error)?;
+    if original != expected {
+        return Err(PrepareFinalCallCalleeError::PreparedContinuationInvariant(
+            super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch,
+        ));
+    }
+    let mut origin = facts
+        .function_value_origin
+        .take()
+        .ok_or_else(missing_origin)?;
+    origin.producer = PreparedFunctionValueOriginProducer::PreparedContinuation(site);
+    Ok(PreparedFunctionValueCallee::new(
+        PreparedFunctionValueOperand::Continuation(PreparedContinuationOperand {
+            source,
+            original: super::Arc::new(original),
+            reference,
+        }),
+        origin,
+        ResolvedFunctionValueSeed::PreparedContinuation,
+    ))
 }
 
 /// A value apply can select its declaration as the terminal body only when
@@ -818,15 +899,11 @@ fn prepare_associated_callee<'a>(
     })
 }
 
-fn prepare_function_value<'a, P, U>(
+fn prepare_function_value(
     operand: PreparedCallValueOperand,
     origin: PreparedFunctionValueOriginEvidence,
-    prepared_calls: super::super::PreparedCallGraphIngress<'a, P, U>,
     limits: &CallableLimits,
-) -> Result<PreparedFunctionValueCallee, PrepareFinalCallCalleeError>
-where
-    P: PreparedCallPrefixPayload<Unselected = U>,
-{
+) -> Result<PreparedFunctionValueCallee, PrepareFinalCallCalleeError> {
     let expression = operand.source();
     let ty = operand.observed();
     if !matches!(ty, TypeKind::Function { .. }) {
@@ -837,44 +914,6 @@ where
         return Err(PrepareFinalCallCalleeError::InvalidFunctionValueOrigin { expression });
     }
     let (seed, origin) = match producer {
-        PreparedFunctionValueOriginProducer::Call(super::super::CheckedCallSite::HirCall(
-            producer,
-        )) => {
-            let site = super::super::CheckedCallSite::HirCall(producer);
-            let continuation = prepared_calls
-                .value_delivery_at(site, ty)
-                .map_err(PrepareFinalCallCalleeError::PreparedContinuationInvariant)?;
-            match continuation {
-                PreparedCallSiteDelivery::Continuation(reference) => (
-                    ResolvedFunctionValueSeed::PreparedContinuation { reference },
-                    PreparedFunctionValueOriginEvidence::new(
-                        origin_callee,
-                        PreparedFunctionValueOriginProducer::PreparedContinuation(site),
-                        captures,
-                    ),
-                ),
-                PreparedCallSiteDelivery::Value => {
-                    let ordinal = super::FunctionValueOrdinal::try_from_usize(0).map_err(|_| {
-                        PrepareFinalCallCalleeError::InvalidFunctionValue { expression }
-                    })?;
-                    let id = FunctionValueSignatureId::new(producer, ordinal);
-                    let schema = CallableSignatureSchema::for_function_value(ty, limits)
-                        .map_err(|_| PrepareFinalCallCalleeError::InvalidFunctionSchema)?;
-                    (
-                        ResolvedFunctionValueSeed::Independent {
-                            id,
-                            schema,
-                            effect_callable: None,
-                        },
-                        PreparedFunctionValueOriginEvidence::new(
-                            origin_callee,
-                            PreparedFunctionValueOriginProducer::IndependentExpression { producer },
-                            captures,
-                        ),
-                    )
-                }
-            }
-        }
         PreparedFunctionValueOriginProducer::Call(
             super::super::CheckedCallSite::AttachedContentApplication { .. },
         ) => return Err(PrepareFinalCallCalleeError::InvalidFunctionValue { expression }),
@@ -897,7 +936,10 @@ where
                 ),
             )
         }
-        PreparedFunctionValueOriginProducer::IndependentExpression { producer } => {
+        PreparedFunctionValueOriginProducer::IndependentExpression { producer }
+        | PreparedFunctionValueOriginProducer::Call(super::super::CheckedCallSite::HirCall(
+            producer,
+        )) => {
             let ordinal = super::FunctionValueOrdinal::try_from_usize(0)
                 .map_err(|_| PrepareFinalCallCalleeError::InvalidFunctionValue { expression })?;
             let id = FunctionValueSignatureId::new(producer, ordinal);

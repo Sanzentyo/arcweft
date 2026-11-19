@@ -374,6 +374,14 @@ fn checked_callee_execution(
     let mut source_types = sources.types.source(source)?;
     let actual = source_types.canonical(source_type)?;
     match operand {
+        PreparedFunctionValueOperand::Continuation(_) => {
+            let ResolvedCallableState::Continuation(continuation) = selected.state() else {
+                return Err(mismatch());
+            };
+            if &actual != continuation.function_type() {
+                return Err(mismatch());
+            }
+        }
         PreparedFunctionValueOperand::Observed(operand) => {
             if &actual != operand.observed() {
                 return Err(mismatch());

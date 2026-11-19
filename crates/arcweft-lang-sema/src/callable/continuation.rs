@@ -1184,8 +1184,7 @@ pub(crate) struct PreparedCallGraphIngress<'a, P, U = ()> {
 pub(crate) trait PreparedCallContinuationAuthority {
     fn resolve_prepared_continuation(
         &self,
-        reference: &PreparedCallContinuationRef,
-        actual: &TypeKind,
+        operand: &super::resolver::PreparedContinuationOperand,
     ) -> Result<super::PreparedResolvedCallable, CallConstraintInvariant>;
 }
 
@@ -1194,30 +1193,13 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
         Self { graph }
     }
 
-    /// Authenticates the selected result at this site and distinguishes a
-    /// retained application prefix from a terminal value.
-    pub(crate) fn value_delivery_at(
-        &self,
-        site: CheckedCallSite,
-        actual: &TypeKind,
-    ) -> Result<PreparedCallSiteDelivery, CallConstraintInvariant>
-    where
-        P: PreparedCallPrefixPayload<Unselected = U>,
-    {
-        let (delivery, result) = self.selected_value_delivery(site)?;
-        if actual != &result {
-            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
-        }
-        Ok(delivery)
-    }
-
     /// Read the original result validated by the graph at this exact site.
     /// A consumer comparing a prepared expression must retain this result
     /// under the expression's source owner before comparing its source type.
     pub(crate) fn selected_value_delivery(
         &self,
         site: CheckedCallSite,
-    ) -> Result<(PreparedCallSiteDelivery, TypeKind), CallConstraintInvariant>
+    ) -> Result<(PreparedCallSiteDelivery, &'a TypeKind), CallConstraintInvariant>
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
@@ -1234,20 +1216,21 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 let reference = PreparedCallContinuationRef(continuation.coordinate.clone());
                 self.graph.validate_continuation_chain(&reference)?;
                 continuation.prefix.validate_site(site)?;
-                let result = continuation.prefix.application().function_type()?.clone();
+                let result = continuation.prefix.application().function_type()?;
                 Ok((PreparedCallSiteDelivery::Continuation(reference), result))
             }
             PreparedCallNodePayload::SelectedValue { prefix, result } => {
                 prefix.validate_site(site)?;
                 self.graph.validate_prefix(prefix)?;
                 let application = prefix.application();
-                let sealed_result = application.result_schema()?;
-                if *result != sealed_result || application.continuation_position().is_some() {
-                    return Err(CallConstraintInvariant::InvalidPreparedNodeState);
-                }
-                let CallableResultSchema::Value(result) = sealed_result else {
+                let CallableResultSchema::Value(result) = result else {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 };
+                if result != application.result_type()?
+                    || application.continuation_position().is_some()
+                {
+                    return Err(CallConstraintInvariant::InvalidPreparedNodeState);
+                }
                 Ok((PreparedCallSiteDelivery::Value, result))
             }
             PreparedCallNodePayload::Unselected(_) => {
@@ -2399,12 +2382,11 @@ impl<P, U> PreparedCallGraph<P, U> {
     pub(crate) fn continuation_candidate_seed(
         &self,
         reference: &PreparedCallContinuationRef,
-        actual: &TypeKind,
     ) -> Result<PreparedContinuationCandidateSeed, CallConstraintInvariant>
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
-        let application = self.require_continuation_operand(reference, actual)?;
+        let application = self.continuation_prefix(reference)?.application();
         let selected = application.selected();
         let position = application
             .continuation_position()
@@ -2414,23 +2396,6 @@ impl<P, U> PreparedCallGraph<P, U> {
             reference: reference.clone(),
             position,
         })
-    }
-
-    /// Authenticate a value operand against the continuation that produced it.
-    /// Source resolution and constraint admission both use the original result.
-    pub(crate) fn require_continuation_operand(
-        &self,
-        reference: &PreparedCallContinuationRef,
-        actual: &TypeKind,
-    ) -> Result<&super::PreparedCallableApplication, CallConstraintInvariant>
-    where
-        P: PreparedCallPrefixPayload<Unselected = U>,
-    {
-        let application = self.continuation_prefix(reference)?.application();
-        if application.function_type()? != actual {
-            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
-        }
-        Ok(application)
     }
 
     /// Derive the lower parameter scope from the mapped application and pair
@@ -2511,10 +2476,9 @@ where
 {
     fn resolve_prepared_continuation(
         &self,
-        reference: &PreparedCallContinuationRef,
-        actual: &TypeKind,
+        operand: &super::resolver::PreparedContinuationOperand,
     ) -> Result<super::PreparedResolvedCallable, CallConstraintInvariant> {
-        super::PreparedResolvedCallable::try_from_prepared_continuation(self, reference, actual)
+        super::PreparedResolvedCallable::try_from_prepared_continuation(self, operand.reference())
     }
 }
 

@@ -1979,6 +1979,7 @@ impl Analyzer<'_, '_, '_> {
                 let retained_value = |owner, ty: &TypeKind<PreparedEffects>| {
                     types.retain_prepared(owner, ty, self.facts.effect_declarations()?.read())
                 };
+                let retained_result = |owner, ty: &TypeKind| types.retain(owner, ty);
                 prepare_final_call_callee(
                     authority,
                     source.owner,
@@ -1996,6 +1997,7 @@ impl Analyzer<'_, '_, '_> {
                         crate::callable::FinalCallValueOperandPreparation {
                             observe: &value_operand,
                             retain: &retained_value,
+                            retain_result: &retained_result,
                         },
                     )
                     .with_flow_transfer(flow_transfer),

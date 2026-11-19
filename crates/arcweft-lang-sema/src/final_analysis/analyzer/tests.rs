@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     rc::Rc,
     sync::{Arc, atomic::AtomicBool},
 };
@@ -1019,10 +1018,20 @@ fn block_local_inference_rolls_back_with_its_candidate_expression() {
 
 #[test]
 fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
+    use crate::callable::{
+        CallConstraintInvariant, CallResolverAuthority, CharacterDialoguePatchContext,
+        FinalCallCalleeFacts, FinalCallValueOperandPreparation, PrepareFinalCallCalleeError,
+        PreparedCallCalleeConstraintInputs, PreparedCallContinuationAuthority,
+        PreparedCallGraphIngress, PreparedFunctionValueOperand,
+        PreparedFunctionValueOriginProgress, prepare_final_call_callee,
+        prepare_function_value_origin_query,
+    };
+    use arcweft_lang_hir::expr::HirCallCallee;
+
     let fixture = crate::final_analysis::tests::fixture(
         concat!(
             "fn make(first: i64)(second: i64) -> i64 { second }\n",
-            "fn caller() { make(1i64); }\n",
+            "fn caller() { make(1i64)(42i64); }\n",
         ),
         None,
     );
@@ -1032,12 +1041,22 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
-    let call_owner = module
+    let (invocation, call_owner) = module
         .expressions()
         .find_map(|(owner, expression)| {
-            matches!(expression.kind(), HirExprKind::Call(_)).then_some(owner)
+            let HirExprKind::Call(call) = expression.kind() else {
+                return None;
+            };
+            let HirCallCallee::Value { value } = call.callee() else {
+                return None;
+            };
+            matches!(
+                module.resolve_expr(*value).ok()?.kind(),
+                HirExprKind::Call(_)
+            )
+            .then_some((owner, *value))
         })
-        .expect("call expression");
+        .expect("invocation and the staged call supplying its callee");
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
         fixture.project.analysis_view().expect("executable HIR"),
@@ -1060,75 +1079,87 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
         .expect("locals");
     analyzer.infer_statement_bindings().expect("bindings");
 
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_transaction = Rc::clone(&captured);
-    let captured_actual = Rc::new(RefCell::new(None));
-    let captured_actual_for_transaction = Rc::clone(&captured_actual);
     let work = analyzer.published_expression_context().work();
     let outcome = analyzer
         .run_candidate_fact_transaction(work.clone(), |this, authority, _transaction| {
             let context =
                 AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames), work);
             this.evaluate_expression(&context, call_owner, None)?;
-            drop(context);
-            let actual = this
-                .facts
-                .prepared_calls()
-                .expect("prepared call graph")
-                .selected_nodes()
-                .find(|node| node.site() == crate::callable::CheckedCallSite::HirCall(call_owner))
-                .expect("candidate call graph node")
-                .prefix()
-                .application()
-                .result_type()
-                .expect("candidate call result type");
-            *captured_actual_for_transaction.borrow_mut() = Some(actual.clone());
-            let reference = match crate::callable::PreparedCallGraphIngress::new(
-                this.facts.prepared_calls().expect("prepared call graph"),
-            )
-            .value_delivery_at(
-                crate::callable::CheckedCallSite::HirCall(call_owner),
-                actual,
-            ) {
-                Ok(crate::callable::PreparedCallSiteDelivery::Continuation(reference)) => reference,
-                Ok(crate::callable::PreparedCallSiteDelivery::Value) => {
-                    return Err(AnalyzerExpressionError::Call {
-                        owner: call_owner,
-                        failure: CallAnalysisFailure::Invariant(
-                            super::calls::CallAnalysisInvariant::Constraint(
-                                crate::callable::CallConstraintInvariant::InvalidPreparedNodeState,
-                            ),
-                        ),
-                    });
-                }
-                Err(invariant) => {
-                    return Err(AnalyzerExpressionError::Call {
-                        owner: call_owner,
-                        failure: CallAnalysisFailure::Invariant(
-                            super::calls::CallAnalysisInvariant::Constraint(invariant),
-                        ),
-                    });
-                }
-            };
             let graph = this.facts.prepared_calls().expect("prepared call graph");
+            let expressions = this.facts.expressions();
+            let types = this
+                .source_type_preparation(context.work())
+                .expect("source types");
+            let prepare = |override_result: Option<&TypeKind>| {
+                let PreparedFunctionValueOriginProgress::Ready(origin) =
+                    prepare_function_value_origin_query(
+                        Arc::clone(&this.topology),
+                        module,
+                        call_owner,
+                        expressions,
+                    )
+                    .expect("call origin")
+                else {
+                    panic!("a resolved call is its own origin");
+                };
+                let mut origin = Some(origin);
+                let callee = prepare_final_call_callee(
+                    CallResolverAuthority::accepted(
+                        this.project,
+                        module,
+                        this.symbols,
+                        this.catalogs.world,
+                    ),
+                    invocation,
+                    FinalCallCalleeFacts::new(
+                        expressions,
+                        PreparedCallGraphIngress::new(graph),
+                        &this.type_reports,
+                        &this.types,
+                        &mut origin,
+                        &|owner, ty| types.project_annotations(owner, ty),
+                        FinalCallValueOperandPreparation {
+                            observe: &|_, _| {
+                                panic!("continuation lookup observes no canonical operand")
+                            },
+                            retain: &|owner, ty| {
+                                types.retain_prepared(
+                                    owner,
+                                    ty,
+                                    this.facts.effect_declarations()?.read(),
+                                )
+                            },
+                            retain_result: &|owner, ty| {
+                                types.retain(owner, override_result.unwrap_or(ty))
+                            },
+                        },
+                    ),
+                    CharacterDialoguePatchContext::ReusableValue,
+                    &this.catalogs.callable_limits,
+                )?;
+                let PreparedCallCalleeConstraintInputs::FunctionValue(
+                    PreparedFunctionValueOperand::Continuation(operand),
+                ) = callee.constraint_inputs()
+                else {
+                    panic!("the call uses the original continuation");
+                };
+                Ok(operand)
+            };
             let different_result = TypeKind::function(vec![TypeKind::I64], TypeKind::Bool);
             assert!(matches!(
-                graph.require_continuation_operand(&reference, &different_result),
-                Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch)
+                prepare(Some(&different_result)),
+                Err(PrepareFinalCallCalleeError::PreparedContinuationInvariant(
+                    CallConstraintInvariant::PreparedFunctionTypeMismatch
+                ))
             ));
-            assert!(
-                graph
-                    .require_continuation_operand(&reference, actual)
-                    .is_ok()
-            );
-            *captured_for_transaction.borrow_mut() = Some(reference.clone());
-            Ok::<_, AnalyzerExpressionError>(CandidateFactTransactionAction::Rollback(reference))
+            let operand = prepare(None).expect("prepared continuation type agrees with its source");
+            assert!(graph.resolve_prepared_continuation(&operand).is_ok());
+            Ok::<_, AnalyzerExpressionError>(CandidateFactTransactionAction::Rollback(operand))
         })
         .expect("candidate rollback");
-    assert!(matches!(
-        outcome,
-        super::state::CandidateFactTransactionOutcome::RolledBack(_)
-    ));
+    let super::state::CandidateFactTransactionOutcome::RolledBack(stale) = outcome else {
+        panic!("candidate transaction must roll back");
+    };
     assert_eq!(
         analyzer
             .facts
@@ -1150,18 +1181,11 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
         0,
         "rollback also removes the inferred body prerequisite"
     );
-    let stale = captured.borrow_mut().take().expect("captured continuation");
-    let result = crate::callable::PreparedCallContinuationAuthority::resolve_prepared_continuation(
-        analyzer
-            .facts
-            .prepared_calls()
-            .expect("prepared call graph"),
-        &stale,
-        &captured_actual
-            .borrow_mut()
-            .take()
-            .expect("captured call result type"),
-    );
+    let result = analyzer
+        .facts
+        .prepared_calls()
+        .expect("prepared call graph")
+        .resolve_prepared_continuation(&stale);
     assert!(matches!(
         result,
         Err(crate::callable::CallConstraintInvariant::MissingOrStalePreparedNode)

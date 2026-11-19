@@ -535,7 +535,7 @@ impl Analyzer<'_, '_, '_> {
         let (stage, result) = PreparedCallGraphIngress::new(graph)
             .selected_value_delivery(site)
             .map_err(|error| call_storage_error(site, error))?;
-        let retained = self.retain_source_value_type(context, owner, &result)?;
+        let retained = self.retain_source_value_type(context, owner, result)?;
         if source != &retained {
             return Err(call_storage_error(
                 site,

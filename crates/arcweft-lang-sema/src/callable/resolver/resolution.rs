@@ -397,13 +397,13 @@ fn resolve_function_value(
             schema,
             effect_callable: _,
         } => (id, schema),
-        ResolvedFunctionValueSeed::PreparedContinuation { reference } => {
-            let PreparedFunctionValueOperand::Observed(operand) = value.operand() else {
+        ResolvedFunctionValueSeed::PreparedContinuation => {
+            let PreparedFunctionValueOperand::Continuation(operand) = value.operand() else {
                 return Err(ResolveCallError::InvalidResolvedCallable.into());
             };
             let candidate = request
                 .prepared_continuations
-                .resolve_prepared_continuation(reference, operand.observed())
+                .resolve_prepared_continuation(operand)
                 .map_err(ResolveFunctionValueError::Invariant)?;
             return NonEmptyResolvedCandidates::try_new_prepared(vec![candidate], request.limits)
                 .map(ResolvedCallTarget::Candidates)

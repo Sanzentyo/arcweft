@@ -504,12 +504,11 @@ impl PreparedResolvedCallable {
     pub(crate) fn try_from_prepared_continuation<P, U>(
         graph: &super::super::PreparedCallGraph<P, U>,
         reference: &super::super::PreparedCallContinuationRef,
-        actual: &TypeKind,
     ) -> Result<Self, super::super::CallConstraintInvariant>
     where
         P: super::super::PreparedCallPrefixPayload<Unselected = U>,
     {
-        let seed = graph.continuation_candidate_seed(reference, actual)?;
+        let seed = graph.continuation_candidate_seed(reference)?;
         let (definition, reference, position) = seed.into_candidate_parts();
         Ok(Self {
             definition,
