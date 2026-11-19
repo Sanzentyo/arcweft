@@ -19762,3 +19762,12 @@ Compilerの5 target、548件は539成功・9失敗・0 skip。Source `5b08a96a23
 量化処理を同じCore決定図へ接続した独立ハーネスで、外部ラベルの出現に関する256通りの真理値表を照合した。244通りの量化結果が一致し、12通りが外部ラベルの個数で結果が変わることを検出した。決定図の複数ノードに出現する同一座標は、一度だけ数える。Sema全feature checkはライブラリ成功。テスト対象は終了101、既存794エラー・33警告で、コード・ファイル別の内訳は基点と一致した。Semaライブラリの全feature Clippy、fmt、差分検査、構造ゲートは終了0。Sema単体、全逆依存、workspace全targetのcheck／Clippy、最終受入は未実行。公開後にRust 12 blobを照合した。`target` は12,900,406,314 bytes。
 
 [検証原本と公開照合](acceptance-evidence/task-effect-continuation-rows.raw.zip) は26 entry、614,617 bytes、SHA256 `c8013560c5578641a0688213dacf21aec25fc2e9099a54886bd21c824fec1691`。各原本の長さとハッシュを照合した。
+
+<a id="sema-fixtures-own-graph"></a>
+## 2026-11-19 — Semaテストを適用元の作用グラフへ移行
+
+基点 `eaa8003f9c90e21e08ee6b225efe1aa26643ba44`。Source `6d14a3eec492d82333c9448f722d85aedbe31ccc` は、Semaテストの候補作成、プローブ、元の作用制約の確定に、同じ準備済み作用グラフを渡す。コールバックのテストは作用宣言とグラフを所有するクライアントを使う。制約と投影は現行の確定処理に通す。変更した30 Rustファイルで324個のテスト関数の名前と件数を照合した。変更範囲はテストとテスト用ヘルパー。
+
+locked Sema全feature checkはライブラリ成功。テスト対象は終了101、210エラー・36警告。基点の794エラーのうち、引数不一致は647件から47件へ減少した。現在は正準型と準備済み型の境界、ソースの投影とコールバックの型の移行が残る。Sema単体と全逆依存テストは未実行。fmt、差分検査、構造ゲートは終了0。Cargo全feature逆依存は起点込みでSema 22 package。前回のCompiler実行結果を保管した。公開後にRustの30 blobを照合した。`target` は12,897,630,460 bytes。
+
+[コンパイル診断、差分、公開照合](acceptance-evidence/task-sema-fixtures-graph.raw.zip) は17 entry、261,244 bytes、SHA256 `56d3e81f15f4030b5b118848951851dfc94822e4b10fc6116c1b656501d304df`。各原本の長さとハッシュを照合した。
