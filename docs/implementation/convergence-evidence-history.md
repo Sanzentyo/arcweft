@@ -19836,3 +19836,18 @@ Compilerの5 targetは550件中541 PASS、9 FAIL、`flow_wait` は31件中28 PAS
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時にRustの9 blobを検証した入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-original-binding-comparison.raw.zip) は24 entry、529,784 bytes、SHA256 `011a2940ccdff0d3e443fce8d65d82f642ba61d6d058cfcb00ab815c275f1d0e`。各原本の長さとハッシュを照合した。
+
+<a id="annotated-recursive-binding"></a>
+## 2026-11-19 — 型注釈付き再帰関数値の適合検査と待機復元
+
+基点 `fa06a108d13d3af025594eddd1d908e176f815e5`。Source `d20ea61e2eaf45fd00c5d47fb864d1aaa45f87df`。注釈付き束縛は注釈の型で本体を検査する。実際の値との適合が未確定の効果に依存するときは、元の二つの型と適合が必須であることを初期化式のトランザクションに保持する。初期化式を再読込する場合も注釈由来の期待を継承する。選ばれた候補の確定と公開時に閉じた効果で照合し、実際の値が合わなければ初期化式を拒否する。ソースの選択が効果照合の真偽に依存する場合は、観測した真偽を保持する。
+
+先行runのRust入力 `dec2123b7eb68a08c843c463a6a00807ef13163f` では、型注釈付きの自己再帰を検査中に `ExpressionCycle` が発生した。初回修正で束縛の照合を後へ送った後も、キャッシュ読込の `evaluate_cached_expression` が検査中の宣言本体を再び要求し、`PendingCallableEffectProjection` になった。デバッガーの記録を保持した。初期化式の期待に注釈の役割を持たせて両経路を揃えた。
+
+Sema全featureユニットは1,981件中1,863 PASS、118 FAIL、0 SKIP。前回失敗した型注釈付きの自己再帰テストが通過し、同じ効果付き関数を純粋と注釈した初期化式を拒否する追加テストも通過した。残る再帰本体の直接的な段階適用、再帰する attached default、純粋な callback 引数への型付き拒否は焦点測定で失敗した。
+
+Compilerの5 targetは550件中541 PASS、9 FAIL、`flow_wait` は32件中29 PASS、3 FAIL。既存581件は全ID・合否一致。追加1件は、型注釈付き関数値を保持して100 ms待機し、最大1操作ずつ進めるNativeと、正準AWBCを復号して毎ステップ公開保存・復元するexecutorの双方で、待機前のログ1回、待機後の再帰ログ3回、戻り値42を確認した。`flow_wait` の既存3 FAILは再帰する attached default の解析循環1件と、コールバックの元の型制約を照合する作業上限2件。[先行の再現と分類](#joint-effect-projection-reuse)。
+
+SemaとCompilerの全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時にRustの8 blobを検証した入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-annotated-recursive-binding.raw.zip) は25 entry、594,570 bytes、SHA256 `46563bce5670d922ab655402e9c72b303ec435f00e446e5955e17eaab52603c3`。各原本の長さとハッシュを照合した。
