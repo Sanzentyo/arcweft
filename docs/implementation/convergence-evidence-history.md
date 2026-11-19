@@ -20179,3 +20179,14 @@ Semaの全featureユニットは1,991件中1,899 PASS、92既知FAIL。追加1�
 2 callback のNative／AWBCとSemaは元の効果参照の検査を通過し、元の型等式を照合する互換性検査で既定上限4,096に達した。3 callback のSemaは、元の述語を処理する過程で効果関数の判定図を確定する段階で同上限に達した。Mapの遅延効果と純粋呼出しの拒否は型束縛の投影、保持後の呼出しは候補の初期化で局所の作業上限に達した。いずれも要求される実行または拒否診断は未達。
 
 検証中に `5a2cb5267508e26a5032134677690f2330e31f26` の資料を先に公開したため、公開前に基点間の全差分が資料だけであることと、検証した3 RustファイルのSHA256が一致することを照合した。[検証原本・公開照合](acceptance-evidence/task-callback-stream-parameter-admission.raw.zip) は37 entry、1,113,052 bytes、SHA256 `48b8277aaca26678ee41c5f645377016a5968c3bd599b5de40c180fa5f03f924`。各entryの長さとハッシュ、公開した3 Rust blobを照合した。記録時の `target` は101,351,639,659 bytes。
+
+<a id="reachable-effect-decision-finalization"></a>
+## 2026-11-20 — 到達可能な効果判定図を一度の走査で確定する
+
+検証基点 `22eeba476bf0e13117a1a16a065dc0e793565203`、Source `61ba3e59b1c965f470633934c720a0f32feae4db`。Coreの判定図を、到達順を別に保持してから再構築する方式から、低枝、高枝、親の正規順で逐次確定する方式に変更した。到達分岐の訪問と出力確保を各一度計上する。分岐が共有される4ノードの判定図で、静的な正規形、未到達分岐の除外、8作業単位での成功、0〜7作業単位での拒否、同じbuilderでの再実行を確認した。Coreの全feature libraryと `effect_decision` は2,375件すべて通過した。
+
+Supersedes [効果参照の逐次走査時点の現状](#prepared-effect-parameter-stream)。Compilerの統合6 targetは582件中580 PASS、2 FAIL。効果付きMapの既知失敗3件が通過したため、現状一覧から作業上限で停止する旨を除いた。prefix作成時はNative／AWBCで呼出し値が生成されcallbackの効果は遅延する。保持したprefixの適用では、Nativeとデコード済みAWBCが1ステップ最大1操作で9を返し、ログは `values, 1, 2, 3` の順だった。純粋な呼出しはメソッド形式、直接の段階適用、保持したprefixの適用の3形式で `log.write` を含む `EffectUpperBoundExceeded` に到達した。既存の `flow_wait` 32件はすべて通過した。
+
+Semaの全featureユニットは1,991件中1,899 PASS、92既知FAIL。SemaとCompilerで新規失敗は0。既定上限4,096での再調査では、2 callback のSemaとNative／AWBCは元の型等式の事前走査を越え、確定したソースの具体的な型照合で停止した。3 callback を循環させるSemaは、元の効果義務を処理する判定図の出力ノード確保で停止した。
+
+workspace全target・全feature check、fmt、差分、推移的逆依存のCargo graph、構造ゲートは終了0。公開した2ファイルの内容を検証入力と照合した。Clippyと推移的逆依存テストは実行中。[検証原本・公開照合](acceptance-evidence/task-callback-decision-finalization.raw.zip) は30 entry、350,215 bytes、SHA256 `a22f161c82b5462c3e498eae013cead6096b98cb9a102f2cb25aa048da6325b7`。各entryの長さとハッシュを照合した。記録時の `target` は100,338,718,086 bytes。
