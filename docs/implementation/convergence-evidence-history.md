@@ -19795,3 +19795,18 @@ Sema全featureの同じユニット1,979件で1,858 PASS、121 FAIL、0 SKIP。�
 Compilerの5 target、548件は539 PASS、9 FAIL、0 SKIPで、Source `01a15d0dbf42104b132ecfab0231f2ac1ec523f7` の全IDと合否に一致した。再帰ジェネリック、共有prefixの独立した後段型、後段コールバックを含むNative／AWBCテストを実行した。Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全feature逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、最終受入は今回未実行。公開したRust 7 blobを照合した。`target` は15,032,175,137 bytes。
 
 [テスト全件、デバッガーの観測、公開照合](acceptance-evidence/task-function-specialization-effect-source.raw.zip) は29 entry、804,125 bytes、SHA256 `18f03c32752b6e3d2224b4bebade4a33268fe8f456f06374c5a0af272cf1d537`。各原本の長さとハッシュを照合した。
+
+<a id="declaration-backed-function-values"></a>
+## 2026-11-19 — 宣言を保持する関数値の再帰呼び出しを確定
+
+基点 `a354c23fef456fc39bd9fcba3927afe3861ac469`。Source `f242cb5acf57ad77cd282ae9bf87a685920b31b3`。宣言を保持する不変の別名を完全な固定位置引数で呼び出す場合、元の準備済み関数型と宣言を照合して候補を選ぶ。作用本体を要求する観測を最終確定へ移し、選んだ宣言の型引数と作用行を元の値の型に照合する。実行計画はcallee式に付いた特殊化と同じ状態を入力として要求し、その特殊化は評価順どおりに一度だけ実行する。段階適用と同一グループ内の部分適用は、保持する値自身の関数型を使う。
+
+Sema全featureユニットは1,979件中1,860 PASS、119 FAIL、0 SKIP。比較元 `5c7985a8afc82de5915f10ebb6b60ada041fa9df` から自己再帰・相互再帰の2件が成功へ移行し、新規失敗0。Compilerの5 targetは550件中541 PASS、9 FAIL、0 SKIP。比較元の548件は全ID・合否一致。追加の2件は別々の具体型で作用を持つ相互再帰をNativeと正準符号化を往復したAWBCで実行した。部分適用を含む焦点23件は全件PASS。Runtime Planの全featureユニットは134件実行、134 PASS、1 SKIP。変更3 crateの全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全feature逆依存は起点込みでSema 22、Runtime Plan 16パッケージ。全workspaceのcheck／Clippy、全逆依存テスト、Tier 2の最終受入は今回未実行。
+
+中間のCompiler広域テストでは、保持する別名の部分適用を宣言の直接適用と同じ形で生成し、既存21件を追加で失敗させた。完全な位置引数適用に宣言選択を限定して解消した。追加の相互再帰はNativeとAWBCの両方で、calleeの特殊化済み状態9に対して選択したcall state 1を要求して失敗した。選択済みの特殊化を実行計画で参照し、両実行の同じ入力が通過した。不変別名の既存テストは、選ばれた宣言と値dispatchを確認するアサーションへ更新し、非停止の実行契約を確認するアサーションを保持した。
+
+残る4件のうち、型注釈付き局所別名は束縛の `source_type_accepts`、段階適用は候補の `prepare_pending_result_projection`、純粋コールバックへの引数拒否は候補プローブの `prepare_source_effect_bodies` が、検査中の本体を再び要求する。再帰する attached default の失敗は `PendingCallableEffectProjection`。焦点テストとデバッガーの実測を保持する。
+
+現状表の長い移行説明と実行結果の重複は、現在の適用範囲と残った失敗経路に置き換えた。以前の実測と公開SHAは上記の各Sourceの章と原本から追跡できる。公開したRust 19 blobを検証時の入力と照合した。検証後の `target` は16,761,453,470 bytes。
+
+[検証原本と公開照合](acceptance-evidence/task-declaration-backed-function-values.raw.zip) は37 entry、789645 bytes、SHA256 `cab08458fb094d5b2cf32b955502a7b8c0302fcf1d45a91f924f8c92d0f46183`。収録原本の長さとハッシュを照合した。
