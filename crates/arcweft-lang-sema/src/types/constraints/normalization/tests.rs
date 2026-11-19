@@ -9,19 +9,19 @@ use std::{
 
 use super::{completed_types_equal, occurs_in_type, validate_type};
 use crate::{
-    effect_row::EffectRow,
+    effect_row::{EffectRow, prepared::PreparedEffectRow},
     effects::EffectSet,
     types::{
         ArrayLength, DetachedGenericOwnerId, GenericBinder, GenericConstParameterId,
         GenericConstReference, GenericParameterOwnerId, GenericScope, GenericTypeParameterId,
-        GenericTypeReference, TypeKind,
+        GenericTypeReference, PreparedEffects, TypeKind, UnmeteredTypeProjection,
         constraints::{
             ConstraintAcceptance, NoConstraintClient, TypeConstraintAbort,
             TypeConstraintConstEligibility, TypeConstraintError, TypeConstraintInvariant,
             TypeConstraintParameterEligibility, TypeConstraintParameterScope,
             TypeConstraintParameterScopeInvariant, TypeConstraintRejection,
             context::{LocalConstraintAccounting, TypeConstraintLimits},
-            fixture_relate_selected_call,
+            relate_selected_call,
         },
     },
 };
@@ -70,6 +70,12 @@ fn nested_function() -> TypeKind {
     )
 }
 
+fn prepared_nested_function() -> TypeKind<PreparedEffects> {
+    nested_function()
+        .prepare_effects(&GenericScope::default(), &mut UnmeteredTypeProjection)
+        .expect("the authored function fixture has valid binders")
+}
+
 #[test]
 fn equality_enters_function_type_and_constant_binders() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
@@ -78,8 +84,18 @@ fn equality_enters_function_type_and_constant_binders() {
         context(empty_scope(), &cancellation, 256).into_path(&mut effect_graph);
     let left = nested_function();
     let right = nested_function();
-    validate_type(&left, path.projection_view(), &mut context).expect("left binder scope");
-    validate_type(&right, path.projection_view(), &mut context).expect("right binder scope");
+    for function in [&left, &right] {
+        let prepared = function
+            .prepare_effects(&GenericScope::default(), &mut UnmeteredTypeProjection)
+            .unwrap();
+        validate_type(
+            &prepared,
+            path.projection_view(),
+            effect_graph.read(),
+            &mut context,
+        )
+        .expect("binder scope");
+    }
     assert!(
         completed_types_equal(&left, &right, &mut context).expect("bound references are in scope")
     );
@@ -126,11 +142,12 @@ fn validation_and_selected_relation_reject_escaped_type_and_length_references() 
             Err(error.clone())
         );
         let path = context.fork_path(&path).expect("empty path");
+        let operand = context.fixture_operand(ty);
         assert_eq!(
-            fixture_relate_selected_call(
+            relate_selected_call(
                 &mut effect_graph,
-                &ty,
-                &ty,
+                &operand.view(),
+                &operand.view(),
                 path,
                 &mut context,
                 ConstraintAcceptance::PatternAcceptsActual,
@@ -277,7 +294,7 @@ fn projection_preserves_nested_function_binders() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path) =
         context(empty_scope(), &cancellation, 256).into_path(&mut effect_graph);
-    let function = nested_function();
+    let function = prepared_nested_function();
     let projected = super::project_type(
         &function,
         path.projection_view(),
@@ -297,7 +314,8 @@ fn projection_future_preserves_unknown_function_effects_without_closing_them() {
     let cancellation = AtomicBool::new(false);
     let (mut context, path) =
         context(empty_scope(), &cancellation, 256).into_path(&mut effect_graph);
-    let function = TypeKind::function_with_effects([], TypeKind::I64, EffectRow::unknown());
+    let function =
+        TypeKind::function_with_canonical_effects([], TypeKind::I64, EffectRow::unknown());
 
     let projected = super::project_type(
         &function,
@@ -310,7 +328,11 @@ fn projection_future_preserves_unknown_function_effects_without_closing_them() {
 
     assert_eq!(projected.value, function);
     assert!(projected.remaining.is_empty());
-    let TypeKind::Function { effects, .. } = projected.value else {
+    let TypeKind::Function {
+        effects: PreparedEffectRow::Canonical(effects),
+        ..
+    } = projected.value
+    else {
         panic!("projected source remains a function type")
     };
     assert!(!effects.is_known());
@@ -434,7 +456,7 @@ fn projection_restores_enclosing_scope_and_seeded_guards_after_nested_abort() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (scope, parameters) = type_inventory(2);
-    let bindings = BTreeMap::from([(parameters[0].clone(), nested_function())]);
+    let bindings = BTreeMap::from([(parameters[0].clone(), prepared_nested_function())]);
     let seed = BTreeSet::from([parameters[1].clone()]);
     let mut visiting = seed.clone();
     let mut remaining = BTreeSet::new();
@@ -447,6 +469,7 @@ fn projection_restores_enclosing_scope_and_seeded_guards_after_nested_abort() {
                 &TypeKind::GenericParam(parameters[0].clone()),
                 path.projection_view(),
                 super::ConstraintClosurePolicy::ProjectionClosed,
+                &mut effect_graph,
                 context,
                 &mut visiting,
                 &mut remaining,
@@ -495,6 +518,7 @@ fn projection_cycle_policy_preserves_caller_guards_for_both_parameter_kinds() {
             &TypeKind::GenericParam(parameters[0].clone()),
             path.projection_view(),
             policy,
+            &mut effect_graph,
             &mut context,
             &mut visiting,
             &mut remaining,

@@ -555,7 +555,7 @@ fn context(cancellation: &AtomicBool) -> TestContext<'_> {
 fn source(
     context: &TypeConstraintContext<'_, LocalConstraintAccounting<'_>, NoConstraintClient>,
     application: ConstraintApplicationId,
-    actual: TypeKind,
+    actual: TypeKind<PreparedEffects>,
 ) -> ActiveConstraintProbe<NoConstraintClient> {
     ActiveConstraintProbe {
         source: ConstraintSourceId::new(application, ()),
@@ -609,13 +609,15 @@ fn source_operand_cannot_retain_an_unowned_future_type_reference() {
         path.root_id(),
         TypeKind::GenericParam(future.clone()),
     );
+    let effects = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     assert_eq!(
         probe
             .close(
                 &path,
-                &path
-                    .close_original_path_effects(&mut effect_graph, &mut context)
-                    .unwrap(),
+                &mut effects.projection(),
+                effect_graph.read(),
                 &mut context
             )
             .err()
@@ -643,12 +645,15 @@ fn source_function_value_retains_its_own_type_and_constant_binder() {
     );
     let cancellation = AtomicBool::new(false);
     let (mut context, path) = context(&cancellation).into_path(&mut effect_graph);
-    let closed = source(&context, path.root_id(), function.clone())
+    let prepared = context.prepare_fixture_type(&function).unwrap();
+    let effects = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
+    let closed = source(&context, path.root_id(), prepared)
         .close(
             &path,
-            &path
-                .close_original_path_effects(&mut effect_graph, &mut context)
-                .unwrap(),
+            &mut effects.projection(),
+            effect_graph.read(),
             &mut context,
         )
         .unwrap_or_else(|error| panic!("an operand's own quantifiers must remain valid: {error}"));
@@ -696,12 +701,14 @@ fn closed_source_owns_the_normalized_actual_expectation_and_container() {
     };
     path.bindings
         .insert(parameter, context.fixture_operand(TypeKind::I64));
+    let effects = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     let closed = probe
         .close(
             &path,
-            &path
-                .close_original_path_effects(&mut effect_graph, &mut context)
-                .unwrap(),
+            &mut effects.projection(),
+            effect_graph.read(),
             &mut context,
         )
         .unwrap_or_else(|error| panic!("normalized source: {error}"));
@@ -841,6 +848,7 @@ fn completion_transforms_observed_evidence_into_its_distinct_checked_type() {
         tag: 7,
     };
     assert!(observed.owner.semantic_identity_digest().is_err());
+    let actual = context.prepare_fixture_type(&actual).unwrap();
     let probe = ActiveConstraintProbe {
         source: ConstraintSourceId::new(path.root_id(), 2),
         source_ordinal: PreparedSourceOrdinal {
@@ -858,12 +866,14 @@ fn completion_transforms_observed_evidence_into_its_distinct_checked_type() {
     };
     path.bindings
         .insert(reference, context.fixture_operand(TypeKind::I64));
+    let effects = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     let closed = probe
         .close(
             &path,
-            &path
-                .close_original_path_effects(&mut effect_graph, &mut context)
-                .unwrap(),
+            &mut effects.projection(),
+            effect_graph.read(),
             &mut context,
         )
         .unwrap_or_else(|error| panic!("complete source evidence: {error}"));

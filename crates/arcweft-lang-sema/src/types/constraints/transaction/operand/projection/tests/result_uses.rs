@@ -1,4 +1,9 @@
 use super::*;
+use crate::effect_row::{
+    EffectPredicate, EffectRow,
+    prepared::{PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow},
+};
+use crate::types::PreparedEffects;
 use crate::types::constraints::transaction::{
     TypeConstraintTransaction, tests::ApplicationSourceDomain,
 };
@@ -68,11 +73,12 @@ fn a_result_use_retains_the_selected_request_and_the_binding_that_normalized_its
         &mut context,
         &mut effect_graph,
         (),
-        &TypeKind::function_with_binder(
+        &TypeKind::function_with_contract(
             binder,
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
             [TypeKind::GenericParam(local.clone())],
             TypeKind::Tuple(vec![TypeKind::GenericParam(reference)]),
-            crate::effect_row::EffectRow::closed(crate::effects::EffectSet::new()),
+            PreparedEffectRow::Canonical(EffectRow::closed(crate::effects::EffectSet::new())),
         ),
         crate::types::constraints::TypeConstraintProjectionClosure::Closed,
     );
@@ -82,10 +88,12 @@ fn a_result_use_retains_the_selected_request_and_the_binding_that_normalized_its
             &mut context,
             &mut effect_graph,
             (),
-            &TypeKind::function_with_effects(
+            &TypeKind::function_with_contract(
+                GenericBinder::EMPTY,
+                PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
                 [TypeKind::String],
                 TypeKind::Tuple(vec![TypeKind::I64]),
-                crate::effect_row::EffectRow::closed(crate::effects::EffectSet::new()),
+                PreparedEffectRow::Canonical(EffectRow::closed(crate::effects::EffectSet::new())),
             ),
             |source, _graph, context| {
                 let TypeKind::Function {
@@ -97,7 +105,9 @@ fn a_result_use_retains_the_selected_request_and_the_binding_that_normalized_its
                 else {
                     panic!("scheme source")
                 };
-                let template = TypeKind::function_with_effects(
+                let template = TypeKind::function_with_contract(
+                    GenericBinder::EMPTY,
+                    PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
                     params.clone(),
                     return_type.as_ref().clone(),
                     effects.clone(),
@@ -124,11 +134,12 @@ fn a_result_use_retains_the_selected_request_and_the_binding_that_normalized_its
     );
     assert_eq!(
         input.value(),
-        &TypeKind::function_with_binder(
+        &TypeKind::function_with_contract(
             binder,
+            PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
             [TypeKind::GenericParam(local)],
             TypeKind::Tuple(vec![TypeKind::I64]),
-            crate::effect_row::EffectRow::closed(crate::effects::EffectSet::new())
+            PreparedEffectRow::Canonical(EffectRow::closed(crate::effects::EffectSet::new()))
         )
     );
     let ConstraintOperandOrigin::FunctionSchemeInstantiation {
@@ -186,12 +197,13 @@ fn a_result_use_retains_the_selected_request_and_the_binding_that_normalized_its
 type ResultContext<'a> =
     TypeConstraintContext<'a, LocalConstraintAccounting<'a>, ApplicationSourceDomain>;
 
-fn function_result(
-    cancellation: &AtomicBool,
+fn function_result<'a>(
+    cancellation: &'a AtomicBool,
+    graph: &mut PreparedEffectGraph,
 ) -> (
-    ResultContext<'_>,
+    ResultContext<'a>,
     TypeConstraintTransaction<ApplicationSourceDomain>,
-    TypeKind,
+    TypeKind<PreparedEffects>,
 ) {
     let (mut context, parameters) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, ApplicationSourceDomain>::new(
@@ -204,16 +216,19 @@ fn function_result(
         .with_binder(binder)
         .bound_type(0, 0)
         .unwrap();
-    let scheme = TypeKind::function_with_binder(
+    let scheme = TypeKind::function_with_contract(
         binder,
+        PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
         [TypeKind::GenericParam(local)],
         TypeKind::I64,
-        crate::effect_row::EffectRow::closed(crate::effects::EffectSet::new()),
+        PreparedEffectRow::Canonical(EffectRow::closed(crate::effects::EffectSet::new())),
     );
     let mut transaction =
-        TypeConstraintTransaction::initialize_fixture(&mut context, 0, parameters, None).unwrap();
+        TypeConstraintTransaction::initialize_fixture(&mut context, graph, 0, parameters, None)
+            .unwrap();
     transaction.request_projection(
         &mut context,
+        graph,
         (),
         &scheme,
         crate::types::constraints::TypeConstraintProjectionClosure::Closed,
@@ -226,7 +241,8 @@ fn a_scheme_opening_rejects_changed_value_ports_headers_and_parameter_roles() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     for case in 0..5 {
         let cancellation = AtomicBool::new(false);
-        let (mut context, mut transaction, scheme) = function_result(&cancellation);
+        let (mut context, mut transaction, scheme) =
+            function_result(&cancellation, &mut effect_graph);
         let result = transaction.constrain_result_use(
             &mut context,
             &mut effect_graph,
@@ -245,23 +261,30 @@ fn a_scheme_opening_rejects_changed_value_ports_headers_and_parameter_roles() {
                 };
                 let template = match case {
                     0 => TypeKind::String,
-                    1 => TypeKind::function_with_effects(
+                    1 => TypeKind::function_with_contract(
+                        GenericBinder::EMPTY,
+                        PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
                         [TypeKind::Bool],
                         return_type.as_ref().clone(),
                         effects.clone(),
                     ),
-                    2 => TypeKind::function_with_effects(
+                    2 => TypeKind::function_with_contract(
+                        GenericBinder::EMPTY,
+                        PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
                         params.clone(),
                         TypeKind::Bool,
                         effects.clone(),
                     ),
-                    3 => TypeKind::function_with_binder(
+                    3 => TypeKind::function_with_contract(
                         *binder,
+                        PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
                         params.clone(),
                         return_type.as_ref().clone(),
                         effects.clone(),
                     ),
-                    _ => TypeKind::function_with_effects(
+                    _ => TypeKind::function_with_contract(
+                        GenericBinder::EMPTY,
+                        PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
                         params.clone(),
                         return_type.as_ref().clone(),
                         effects.clone(),
@@ -295,7 +318,7 @@ fn a_scheme_opening_rejects_changed_value_ports_headers_and_parameter_roles() {
 fn equal_result_types_cannot_exchange_their_prepared_scheme_openings() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut transaction, scheme) = function_result(&cancellation);
+    let (mut context, mut transaction, scheme) = function_result(&cancellation, &mut effect_graph);
     let second = context.fork_path(&transaction.frontier[0]).unwrap();
     transaction.frontier.push(second);
     let mut retained = None;
@@ -319,7 +342,9 @@ fn equal_result_types_cannot_exchange_their_prepared_scheme_openings() {
             else {
                 panic!("scheme")
             };
-            let template = TypeKind::function_with_effects(
+            let template = TypeKind::function_with_contract(
+                GenericBinder::EMPTY,
+                PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
                 params.clone(),
                 return_type.as_ref().clone(),
                 effects.clone(),
@@ -343,10 +368,7 @@ fn equal_result_types_cannot_exchange_their_prepared_scheme_openings() {
 #[test]
 fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_contract() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
-    use crate::effect_row::{
-        EffectConstraintEligibility, EffectConstraintVariable, EffectFormula, EffectPredicate,
-        EffectRow,
-    };
+    use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable, EffectFormula};
     use crate::effects::EffectSet;
     use crate::types::constraints::TypeConstraintEffectScope;
 
@@ -369,10 +391,10 @@ fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_cont
         .unwrap();
     let scheme = TypeKind::function_with_contract(
         binder,
-        predicate.clone(),
+        PreparedEffectPredicate::Canonical(predicate.clone()),
         [],
         TypeKind::I64,
-        EffectRow::open(EffectSet::new(), variable.clone()),
+        PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), variable.clone())),
     );
     let mut transaction = TypeConstraintTransaction::initialize_fixture(
         &mut context,
@@ -394,10 +416,12 @@ fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_cont
             &mut context,
             &mut effect_graph,
             (),
-            &TypeKind::function_with_effects(
+            &TypeKind::function_with_contract(
+                GenericBinder::EMPTY,
+                PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
                 [],
                 TypeKind::I64,
-                EffectRow::closed(EffectSet::new()),
+                PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new())),
             ),
             |source, _graph, context| {
                 let parameters = |predicate| {
@@ -419,10 +443,15 @@ fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_cont
                     )
                     .unwrap()
                 };
-                let template = TypeKind::function_with_effects(
+                let template = TypeKind::function_with_contract(
+                    GenericBinder::EMPTY,
+                    PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
                     [],
                     TypeKind::I64,
-                    EffectRow::open(EffectSet::new(), variable.clone()),
+                    PreparedEffectRow::Canonical(EffectRow::open(
+                        EffectSet::new(),
+                        variable.clone(),
+                    )),
                 );
                 assert!(matches!(
                     source.prepare_function_scheme(

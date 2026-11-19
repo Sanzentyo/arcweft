@@ -30,16 +30,24 @@ fn context(cancellation: &AtomicBool) -> Context<'_> {
 
 fn root(
     context: &mut Context<'_>,
-    ty: &TypeKind,
+    effects: &mut PreparedEffectGraph,
+    ty: &TypeKind<PreparedEffects>,
 ) -> SuspendedConstraintFrontier<NoConstraintClient> {
     let mut lower = TypeConstraintTransaction::initialize_fixture(
         context,
+        effects,
         (),
         TypeConstraintParameterScope::empty(),
         None,
     )
     .unwrap();
-    lower.request_projection(context, (), ty, TypeConstraintProjectionClosure::Closed);
+    lower.request_projection(
+        context,
+        effects,
+        (),
+        ty,
+        TypeConstraintProjectionClosure::Closed,
+    );
     lower.suspend_result(context, ()).unwrap()
 }
 
@@ -69,8 +77,8 @@ fn original_source_context_is_retained_and_current_registration_scope_cannot_rep
                 ),
                 0,
             );
-            let template = TypeKind::generic_parameter(parameter.clone());
-            let make = |context: &mut Context<'_>| {
+            let template = TypeKind::GenericParam(parameter.clone().into());
+            let mut make = |context: &mut Context<'_>| {
                 let mut transaction = TypeConstraintTransaction::initialize(
                     context,
                     &mut effects,
@@ -180,8 +188,8 @@ fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
     let roots = vec![
-        root(&mut context, &TypeKind::I32),
-        root(&mut context, &TypeKind::String),
+        root(&mut context, &mut effects, &TypeKind::I32),
+        root(&mut context, &mut effects, &TypeKind::String),
     ];
     let value = component
         .admit_fixture_roots(&mut context, &mut effects, roots, "initializer")
@@ -461,7 +469,7 @@ fn independent_origins_form_a_product_but_derived_values_keep_shared_origins() {
     let mut component = Component::new(&mut context, &effects).unwrap();
     let mut values = Vec::new();
     for _ in 0..2 {
-        let roots = vec![root(&mut context, &TypeKind::I32)];
+        let roots = vec![root(&mut context, &mut effects, &TypeKind::I32)];
         values.push(
             component
                 .admit_fixture_roots(&mut context, &mut effects, roots, "root")
@@ -641,11 +649,11 @@ fn failed_retention_rolls_back_effect_terms_and_publishes_no_value() {
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
     let roots = vec![
-        root(&mut context, &TypeKind::I32),
-        root(&mut context, &TypeKind::String),
+        root(&mut context, &mut effects, &TypeKind::I32),
+        root(&mut context, &mut effects, &TypeKind::String),
     ];
     let producer = component
-        .admit_fixture_roots(&mut context, roots, "producer")
+        .admit_fixture_roots(&mut context, &mut effects, roots, "producer")
         .unwrap();
     let local_fits = effects.not(Component::always(), &mut context).unwrap();
     let foreign_fits = PreparedEffectGraph::default()
@@ -1535,7 +1543,7 @@ fn derived_value_reads_visit_one_original_path_and_do_not_invent_diagnostic_path
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
-    let root = root(&mut context, &TypeKind::I32);
+    let root = root(&mut context, &mut effects, &TypeKind::I32);
     let producer = component
         .admit_fixture_roots(&mut context, &mut effects, vec![root], "original")
         .unwrap();
@@ -1600,7 +1608,7 @@ fn original_constraint_observation_validates_authority_and_cancellation_before_v
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
-    let root = root(&mut context, &TypeKind::I32);
+    let root = root(&mut context, &mut effects, &TypeKind::I32);
     let producer = component
         .admit_fixture_roots(&mut context, &mut effects, vec![root], "original")
         .unwrap();

@@ -1,6 +1,9 @@
 use super::*;
 use crate::{
-    effect_row::{EffectConstraintEligibility, EffectConstraintVariable, EffectFormula, EffectRow},
+    effect_row::{
+        EffectConstraintEligibility, EffectConstraintVariable, EffectFormula, EffectRow,
+        prepared::{PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow},
+    },
     effects::EffectSet,
     types::{
         DetachedGenericOwnerId, GenericEffectParameterId, GenericEffectReference,
@@ -16,10 +19,11 @@ use crate::{
     },
 };
 
-fn fixture(
-    cancellation: &AtomicBool,
+fn fixture<'a>(
+    cancellation: &'a AtomicBool,
+    graph: &mut PreparedEffectGraph,
 ) -> (
-    Context<'_>,
+    Context<'a>,
     ConstraintPath<NoConstraintClient>,
     [GenericEffectReference; 2],
     [GenericEffectReference; 2],
@@ -53,7 +57,7 @@ fn fixture(
         cancellation,
         parameters,
     )
-    .into_path();
+    .into_path(graph);
     (context, path, rigid, keys)
 }
 
@@ -63,14 +67,13 @@ fn row(reference: &GenericEffectReference) -> EffectRow {
 
 #[test]
 fn prepared_headers_admit_their_own_gamma_before_body_preparation_or_erasure() {
-    use crate::effect_row::prepared::{
-        PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRelation, PreparedEffectRow,
-    };
+    use crate::effect_row::prepared::PreparedEffectRelation;
     use crate::types::constraints::transaction::operand::ConstraintEffectPhase;
     use crate::types::{GenericScope, PreparedEffects};
 
     let cancellation = AtomicBool::new(false);
-    let (mut context, _, rigid, _) = fixture(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let (mut context, _, rigid, _) = fixture(&cancellation, &mut graph);
     let original = context
         .fixture_original_context_with_rigid(OriginalRigidScope {
             types: &[],
@@ -79,7 +82,6 @@ fn prepared_headers_admit_their_own_gamma_before_body_preparation_or_erasure() {
             imported: None,
         })
         .unwrap();
-    let mut graph = PreparedEffectGraph::default();
     let formal = GenericScope::default()
         .with_binder(GenericBinder::new(0, 0, 1))
         .bound_effect(0, 0)
@@ -184,7 +186,7 @@ fn prepared_headers_admit_their_own_gamma_before_body_preparation_or_erasure() {
 fn computed_effect_primitives_retain_only_their_own_used_gamma() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path, rigid, keys) = fixture(&cancellation);
+    let (mut context, mut path, rigid, keys) = fixture(&cancellation, &mut effect_graph);
     for index in 0..2 {
         path.effects
             .constrain_fixture_subset(
@@ -231,7 +233,7 @@ fn computed_effect_primitives_retain_only_their_own_used_gamma() {
 fn original_effect_header_admission_precedes_substitution_and_canonical_erasure() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, path, rigid, keys) = fixture(&cancellation);
+    let (mut context, path, rigid, keys) = fixture(&cancellation, &mut effect_graph);
     let original = context
         .fixture_original_context_with_rigid(OriginalRigidScope {
             types: &[],
@@ -241,12 +243,13 @@ fn original_effect_header_admission_precedes_substitution_and_canonical_erasure(
         })
         .unwrap();
     let mut input = context
-        .fixture_operand_in(
+        .fixture_prepared_operand_in(
             &original,
-            &TypeKind::function_with_effects([], TypeKind::Unit, row(&rigid[0])),
+            &TypeKind::function_with_canonical_effects([], TypeKind::Unit, row(&rigid[0])),
+            &mut effect_graph,
         )
         .unwrap();
-    input.value = Arc::new(TypeKind::function_with_effects(
+    input.value = Arc::new(TypeKind::function_with_canonical_effects(
         [],
         TypeKind::Unit,
         row(&rigid[1]),
@@ -271,10 +274,10 @@ fn original_effect_header_admission_precedes_substitution_and_canonical_erasure(
         .unwrap();
     input.value = Arc::new(TypeKind::function_with_contract(
         GenericBinder::EMPTY,
-        predicate,
+        PreparedEffectPredicate::Canonical(predicate),
         [],
         TypeKind::Unit,
-        row(&rigid[0]),
+        PreparedEffectRow::Canonical(row(&rigid[0])),
     ));
     let inspected = project_closed_type(
         input.value(),
@@ -298,7 +301,7 @@ fn original_effect_header_admission_precedes_substitution_and_canonical_erasure(
 fn completed_header_gamma_is_field_specific_and_survives_reprojection() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path, rigid, keys) = fixture(&cancellation);
+    let (mut context, mut path, rigid, keys) = fixture(&cancellation, &mut effect_graph);
     for index in 0..2 {
         path.effects
             .constrain_fixture_subset(
@@ -312,16 +315,18 @@ fn completed_header_gamma_is_field_specific_and_survives_reprojection() {
     let input = ConstraintOperand::fixture_template(
         TypeKind::function_with_contract(
             GenericBinder::EMPTY,
-            EffectFormula::variable(keys[1].clone(), &mut context)
-                .unwrap()
-                .subset(
-                    &EffectFormula::literal(EffectSet::new(), None),
-                    &mut context,
-                )
-                .unwrap(),
+            PreparedEffectPredicate::Canonical(
+                EffectFormula::variable(keys[1].clone(), &mut context)
+                    .unwrap()
+                    .subset(
+                        &EffectFormula::literal(EffectSet::new(), None),
+                        &mut context,
+                    )
+                    .unwrap(),
+            ),
             [],
             TypeKind::Unit,
-            row(&keys[0]),
+            PreparedEffectRow::Canonical(row(&keys[0])),
         ),
         Arc::new(context.capture_lexical_scope().unwrap()),
         path.applications

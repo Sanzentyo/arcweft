@@ -5,7 +5,10 @@ use std::{
 
 use super::*;
 use crate::{
-    effect_row::{EffectConstraintEligibility, EffectConstraintVariable, EffectRow},
+    effect_row::{
+        EffectConstraintEligibility, EffectConstraintVariable, EffectRow,
+        prepared::PreparedEffectRow,
+    },
     effects::EffectSet,
     types::{
         ArrayLength, DetachedGenericOwnerId, GenericBinder, GenericConstParameterId,
@@ -286,6 +289,8 @@ fn imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_
     );
     let child = relation(&mut effect_graph, child, &expected, &actual, &mut context);
     let child = seal_path(child, &mut effect_graph, &mut context).unwrap();
+    let expected = context.prepare_fixture_type(&expected).unwrap();
+    let actual = context.prepare_fixture_type(&actual).unwrap();
     let projected = crate::types::constraints::seal_type(
         &expected,
         child.projection_view(),
@@ -301,7 +306,7 @@ fn imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_
         },
         TypeKind::Function {
             return_type: actual_result,
-            effects: actual_effects,
+            effects: PreparedEffectRow::Canonical(actual_effects),
             ..
         },
     ) = (&projected, &actual)
@@ -309,9 +314,12 @@ fn imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_
         unreachable!()
     };
     assert_eq!(projected_result, actual_result);
+    let child_effects = child
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     assert_eq!(
-        child.effects.bindings(&mut context).unwrap(),
-        vec![(parent_effect, actual_effects.clone())]
+        child_effects.row(&parent_effect).map(|row| row.value()),
+        Some(actual_effects)
     );
     let solution = TypeConstraintSolution::complete_fixture_application(
         &child,
@@ -326,6 +334,7 @@ fn imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_
     assert!(parent.bindings.is_empty());
     assert!(parent.const_bindings.is_empty());
     assert_eq!(parent.effects, parent_effects);
+    let parent_array = context.prepare_fixture_type(&parent_array).unwrap();
     assert_eq!(
         crate::types::constraints::seal_type(
             &parent_array,
@@ -386,12 +395,9 @@ fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
         let ty = scope.type_reference(&ty).unwrap_or(ty);
         let length = scope.const_reference(&length).unwrap_or(length);
         let effect = scope.effect_reference(&effect).unwrap_or(effect);
-        let parent = context
-            .start_path(
-                ConstraintApplicationScope::test_root(0, scope, &mut effect_graph, &mut context),
-                &mut effect_graph,
-            )
-            .unwrap();
+        let parent =
+            ConstraintApplicationScope::test_root(0, scope, &mut effect_graph, &mut context);
+        let parent = context.start_path(parent, &mut effect_graph).unwrap();
         let parameters = [
             super::super::ConstraintGenericParameterId::Type(ty.clone()),
             super::super::ConstraintGenericParameterId::Const(length.clone()),
@@ -403,16 +409,14 @@ fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
                 .iter()
                 .all(|parameter| !imported.permits_local_inference(parameter))
         );
+        let child = ConstraintApplicationScope::test_root(
+            1,
+            TypeConstraintParameterScope::empty(),
+            &mut effect_graph,
+            &mut context,
+        );
         let child = context
-            .start_fixture_path_with_imported(
-                ConstraintApplicationScope::test_root(
-                    1,
-                    TypeConstraintParameterScope::empty(),
-                    &mut effect_graph,
-                    &mut context,
-                ),
-                Some(imported),
-            )
+            .start_fixture_path_with_imported(child, Some(imported), &mut effect_graph)
             .unwrap();
         assert_eq!(
             context.parameter_eligibility(&ty, child.projection_view()),
@@ -452,10 +456,17 @@ fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
             ),
         ] {
             let original = child.lineage.original.clone();
-            let expected = context.fixture_operand_in(&original, &expected).unwrap();
-            let actual = context.fixture_operand_in(&original, &actual).unwrap();
+            let expected = context.prepare_fixture_type(&expected).unwrap();
+            let actual = context.prepare_fixture_type(&actual).unwrap();
+            let expected = context
+                .fixture_prepared_operand_in(&original, &expected, &mut effect_graph)
+                .unwrap();
+            let actual = context
+                .fixture_prepared_operand_in(&original, &actual, &mut effect_graph)
+                .unwrap();
             assert!(
                 crate::types::constraints::relate_selected_call(
+                    &mut effect_graph,
                     &expected.view(),
                     &actual.view(),
                     context.fork_path(&child).unwrap(),
@@ -636,6 +647,7 @@ fn a_child_transaction_opens_projects_and_seals_its_own_parameters() {
             None,
         )
         .unwrap();
+    let parent_array = context.prepare_fixture_type(&parent_array).unwrap();
     parent_transaction.request_projection(
         &mut context,
         &mut effect_graph,
@@ -724,6 +736,13 @@ fn a_child_transaction_opens_projects_and_seals_its_own_parameters() {
         &child_template,
         crate::types::constraints::TypeConstraintProjectionClosure::Closed,
     );
+    let child_completed_type = child_value
+        .project_effect_annotations(
+            context.lexical_scope(),
+            &mut crate::types::UnmeteredTypeProjection,
+        )
+        .unwrap()
+        .unwrap();
     let mut materialization = transaction
         .next_materialization_ticket(&mut context, &mut effect_graph)
         .unwrap()
@@ -735,7 +754,7 @@ fn a_child_transaction_opens_projects_and_seals_its_own_parameters() {
     );
     let request = materialization.requests().next().unwrap();
     assert_eq!(request.component().applications().len(), 2);
-    for (application, expected) in [(0, &parent_value), (1, &child_value)] {
+    for (application, expected) in [(0, &parent_value), (1, &child_completed_type)] {
         let completed = request.component().application(application).unwrap();
         assert_eq!(completed.projections().len(), 1);
         assert_eq!(completed.projections()[0].key(), &());
@@ -906,6 +925,8 @@ fn inherited_child_bindings_restore_without_replacing_the_parent() {
             Some(&Arc::new(inherited)),
         )
         .unwrap();
+    let parent_array = context.prepare_fixture_type(&parent_array).unwrap();
+    let parent_value = context.prepare_fixture_type(&parent_value).unwrap();
     assert_eq!(
         crate::types::constraints::seal_type(
             &parent_array,
@@ -917,6 +938,7 @@ fn inherited_child_bindings_restore_without_replacing_the_parent() {
         .unwrap(),
         parent_value
     );
+    let child_array = context.prepare_fixture_type(&child_array).unwrap();
     transaction.request_projection(
         &mut context,
         &mut effect_graph,
@@ -1023,7 +1045,14 @@ fn a_child_scope_is_ineligible_on_an_unchosen_sibling_path() {
     assert!(
         sibling
             .effects
-            .validate_row(&EffectRow::open(EffectSet::new(), child_effect.clone()))
+            .validate_row(
+                &PreparedEffectRow::Canonical(EffectRow::open(
+                    EffectSet::new(),
+                    child_effect.clone()
+                )),
+                effect_graph.read(),
+                &mut context
+            )
             .is_err()
     );
 }
@@ -1034,7 +1063,9 @@ fn admitted_children_retain_their_rigid_type_and_constant_references() {
     let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(90_100));
     let type_reference = GenericTypeReference::Free(GenericTypeParameterId::new(owner.clone(), 0));
     let const_reference = GenericConstReference::Free(GenericConstParameterId::new(owner, 0));
-    let captured_scope = |application| {
+    let captured_scope = |application,
+                          graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+                          context: &mut Context<'_>| {
         ConstraintApplicationScope::test_root(
             application,
             TypeConstraintParameterScope::seal_call_scope(
@@ -1053,8 +1084,8 @@ fn admitted_children_retain_their_rigid_type_and_constant_references() {
                 [],
             )
             .unwrap(),
-            &mut effect_graph,
-            &mut context,
+            graph,
+            context,
         )
     };
     let cancellation = AtomicBool::new(false);
@@ -1067,8 +1098,9 @@ fn admitted_children_retain_their_rigid_type_and_constant_references() {
     // Several applications may capture the same declaration-owned rigid
     // reference. Admission never turns that reference into an inference slot.
     for application in [1, 2] {
+        let child = captured_scope(application, &mut effect_graph, &mut context);
         chosen = context
-            .admit_application(chosen, captured_scope(application), &mut effect_graph)
+            .admit_application(chosen, child, &mut effect_graph)
             .unwrap();
         assert_eq!(
             context.parameter_eligibility(&type_reference, chosen.projection_view()),
@@ -1244,9 +1276,14 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
             imported: None,
         })
         .unwrap();
-    let captured_operand = context.fixture_operand_in(&original, &captured).unwrap();
+    let captured = context.prepare_fixture_type(&captured).unwrap();
+    let captured_operand = context
+        .fixture_prepared_operand_in(&original, &captured, &mut effect_graph)
+        .unwrap();
+    let parent_array = context.prepare_fixture_type(&parent_array).unwrap();
     let pattern = context.fixture_operand(parent_array);
     let mut paths = crate::types::constraints::relate_selected_call(
+        &mut effect_graph,
         &pattern.view(),
         &captured_operand.view(),
         parent,
@@ -1303,12 +1340,9 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
         const_keys.iter().cloned(),
     )
     .unwrap();
-    let next = context
-        .start_path(
-            ConstraintApplicationScope::test_root(2, continuation, &mut effect_graph, &mut context),
-            &mut effect_graph,
-        )
-        .unwrap();
+    let next =
+        ConstraintApplicationScope::test_root(2, continuation, &mut effect_graph, &mut context);
+    let next = context.start_path(next, &mut effect_graph).unwrap();
     assert_eq!(
         context.parameter_eligibility(&ty, next.projection_view()),
         None
@@ -1413,14 +1447,13 @@ fn completed_parent_does_not_export_unused_child_declarations() {
         &mut effect_graph,
         &mut context,
     );
-    let parent = context
-        .start_path(ConstraintApplicationScope::test_root(
-            0,
-            TypeConstraintParameterScope::empty(),
-            &mut effect_graph,
-            &mut context,
-        ))
-        .unwrap();
+    let parent = ConstraintApplicationScope::test_root(
+        0,
+        TypeConstraintParameterScope::empty(),
+        &mut effect_graph,
+        &mut context,
+    );
+    let parent = context.start_path(parent, &mut effect_graph).unwrap();
     let parent = context
         .admit_application(parent, child, &mut effect_graph)
         .unwrap();
@@ -1435,14 +1468,13 @@ fn completed_parent_does_not_export_unused_child_declarations() {
         )
         .unwrap(),
     );
-    let next = context
-        .start_path(ConstraintApplicationScope::test_root(
-            2,
-            TypeConstraintParameterScope::empty(),
-            &mut effect_graph,
-            &mut context,
-        ))
-        .unwrap();
+    let next = ConstraintApplicationScope::test_root(
+        2,
+        TypeConstraintParameterScope::empty(),
+        &mut effect_graph,
+        &mut context,
+    );
+    let next = context.start_path(next, &mut effect_graph).unwrap();
     let next = solution
         .restore_inherited_path(next.root_id(), next, &mut effect_graph, &mut context)
         .unwrap();
@@ -1466,7 +1498,11 @@ fn completed_parent_does_not_export_unused_child_declarations() {
     );
     assert!(
         next.effects
-            .validate_row(&EffectRow::open(EffectSet::new(), row))
+            .validate_row(
+                &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), row)),
+                effect_graph.read(),
+                &mut context
+            )
             .is_err()
     );
 }
@@ -1520,15 +1556,26 @@ fn repeated_effect_declarations_open_independently_in_distinct_applications() {
             .expect("child effect parameter")
             .variable()
     );
-    assert_ne!(effect(&parent), effect(&child));
+    let parent_effect = effect(&parent);
+    let child_effect = effect(&child);
+    assert_ne!(parent_effect, child_effect);
     let root = context.start_path(parent, &mut effect_graph).unwrap();
     let sibling = context.fork_path(&root).unwrap();
     let combined = context
         .admit_application(sibling, child, &mut effect_graph)
         .unwrap();
-    assert_eq!(combined.effects.bindings(&mut context).unwrap().len(), 2);
+    let combined_effects = combined
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
+    for effect in [&parent_effect, &child_effect] {
+        assert!(combined_effects.row(effect).is_some());
+    }
     assert_eq!(root.applications.len(), 1);
-    assert_eq!(root.effects.bindings(&mut context).unwrap().len(), 1);
+    let root_effects = root
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
+    assert!(root_effects.row(&parent_effect).is_some());
+    assert!(root_effects.row(&child_effect).is_none());
 }
 
 #[test]
@@ -1567,20 +1614,24 @@ fn admission_charges_the_shared_context_and_observes_cancellation() {
 #[test]
 fn equal_binding_values_do_not_erase_different_application_membership() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
-    fn empty(application: u32) -> ConstraintApplicationScope<Domain> {
-        ConstraintApplicationScope::test_root(application, TypeConstraintParameterScope::empty())
-    }
-
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation, 2048);
-    let root = context.start_path(empty(0), &mut effect_graph).unwrap();
+    let [root, first, second] = [0, 1, 2].map(|application| {
+        ConstraintApplicationScope::test_root(
+            application,
+            TypeConstraintParameterScope::empty(),
+            &mut effect_graph,
+            &mut context,
+        )
+    });
+    let root = context.start_path(root, &mut effect_graph).unwrap();
     let first_seed = context.fork_path(&root).unwrap();
     let first = context
-        .admit_application(first_seed, empty(1), &mut effect_graph)
+        .admit_application(first_seed, first, &mut effect_graph)
         .unwrap();
     let second_seed = context.fork_path(&root).unwrap();
     let second = context
-        .admit_application(second_seed, empty(2), &mut effect_graph)
+        .admit_application(second_seed, second, &mut effect_graph)
         .unwrap();
     let same = context.fork_path(&first).unwrap();
     let application = first

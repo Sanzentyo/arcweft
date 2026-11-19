@@ -1,6 +1,8 @@
 use super::*;
 use crate::effect_row::{
-    EffectConstraintEligibility, EffectConstraintVariable, EffectFormula, EffectRow,
+    EffectConstraintEligibility, EffectConstraintVariable, EffectFormula, EffectPredicate,
+    EffectRow,
+    prepared::{PreparedEffectPredicate, PreparedEffectRow},
 };
 use crate::effects::EffectSet;
 use crate::types::constraints::{
@@ -79,10 +81,10 @@ fn closed_headers_lift_the_used_completion_row_through_the_actual_local_binder()
         .unwrap();
     let input = context.fixture_operand(TypeKind::function_with_contract(
         local,
-        predicate,
+        PreparedEffectPredicate::Canonical(predicate),
         [],
         TypeKind::I64,
-        EffectRow::open(EffectSet::new(), keys[0].clone()),
+        PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), keys[0].clone())),
     ));
     let retained_input = Arc::downgrade(&input.value);
     let effects = path
@@ -174,7 +176,7 @@ fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_befo
     let input = context.fixture_operand(TypeKind::Tuple(
         keys.iter()
             .map(|key| {
-                TypeKind::function_with_effects(
+                TypeKind::function_with_canonical_effects(
                     [],
                     TypeKind::Unit,
                     EffectRow::open(EffectSet::new(), key.clone()),
@@ -262,7 +264,7 @@ fn a_function_header_rejects_an_equally_shaped_foreign_contents_scope() {
     let mut context = context(&cancellation);
     let binder = GenericBinder::new(0, 0, 1);
     let enclosing = context.enter_binder_scope(binder);
-    let input = context.fixture_operand(TypeKind::function_with_effects(
+    let input = context.fixture_operand(TypeKind::function_with_canonical_effects(
         [],
         TypeKind::Unit,
         EffectRow::closed(EffectSet::new()),
@@ -433,7 +435,6 @@ fn closing_an_observed_value_does_not_replace_its_association_with_an_alias_resu
 #[test]
 fn read_only_closure_keeps_ambient_effects_outside_both_nested_local_binders() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
-    use crate::effect_row::EffectPredicate;
     use crate::types::constraints::{ConstraintClosurePolicy, normalization::project_closed_type};
 
     let cancellation = AtomicBool::new(false);
@@ -464,16 +465,16 @@ fn read_only_closure_keeps_ambient_effects_outside_both_nested_local_binders() {
         .unwrap();
     let input = TypeKind::function_with_contract(
         local,
-        EffectPredicate::unconstrained(),
+        PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
         [],
         TypeKind::function_with_contract(
             local,
-            predicate,
+            PreparedEffectPredicate::Canonical(predicate),
             [],
             TypeKind::I64,
-            EffectRow::open(EffectSet::new(), keys[0].clone()),
+            PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), keys[0].clone())),
         ),
-        EffectRow::open(EffectSet::new(), keys[0].clone()),
+        PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), keys[0].clone())),
     );
     let completion = path
         .close_original_path_effects(&mut effect_graph, &mut context)
@@ -590,7 +591,7 @@ fn future_closure_preserves_the_unknown_source_effect_header() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let (path, _) = path(&mut context, &mut effect_graph);
-    let input = TypeKind::function_with_effects([], TypeKind::I64, EffectRow::unknown());
+    let input = TypeKind::function_with_canonical_effects([], TypeKind::I64, EffectRow::unknown());
     let completion = path
         .close_original_path_effects(&mut effect_graph, &mut context)
         .unwrap();
@@ -634,11 +635,12 @@ fn completed_equations_distinguish_the_ambient_effect_from_the_local_binder() {
         .unwrap();
     let local = GenericBinder::new(0, 0, 1);
     let contents = context.lexical_scope().with_binder(local);
-    let actual = context.fixture_operand(TypeKind::function_with_binder(
+    let actual = context.fixture_operand(TypeKind::function_with_contract(
         local,
+        PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
         [],
         TypeKind::I64,
-        EffectRow::open(EffectSet::new(), keys[0].clone()),
+        PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), keys[0].clone())),
     ));
     let completion = path
         .close_original_path_effects(&mut effect_graph, &mut context)
@@ -650,21 +652,24 @@ fn completed_equations_distinguish_the_ambient_effect_from_the_local_binder() {
                 ordinal: 0,
             },
             direction: ConstraintAcceptance::PatternAcceptsActual,
-            pattern: context.fixture_operand(TypeKind::function_with_binder(
+            pattern: context.fixture_operand(TypeKind::function_with_contract(
                 local,
+                PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained()),
                 [],
                 TypeKind::I64,
-                EffectRow::open(EffectSet::new(), contents.bound_effect(depth, 0).unwrap()),
+                PreparedEffectRow::Canonical(EffectRow::open(
+                    EffectSet::new(),
+                    contents.bound_effect(depth, 0).unwrap(),
+                )),
             )),
             actual: actual.clone(),
             source_ordinal: None,
             timing: ConstraintEquationTiming::Immediate,
         };
-        let graph = crate::effect_row::prepared::PreparedEffectGraph::default();
         let result = equation.validate_completed(
             &path,
             &mut completion.projection(),
-            graph.read(),
+            effect_graph.read(),
             &mut context,
         );
         if accepted {
