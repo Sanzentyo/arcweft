@@ -83,6 +83,48 @@ fn original_private_constraints_cannot_disappear_at_final_closure() {
 }
 
 #[test]
+fn a_later_demand_cannot_replace_the_frozen_relation_least_row() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let local = graph
+        .declare_unknown(
+            vec![],
+            PreparedEffectUnknownEligibility::Bindable,
+            &mut work,
+        )
+        .unwrap();
+    let row = graph
+        .unknown_application(&local, vec![], &mut work)
+        .unwrap();
+    let source =
+        BoundScopedEffectCompletion::pending(freeze(&graph, &[&row]), graph.read(), &mut work)
+            .unwrap();
+    let inputs = graph.read().actual_inputs(&[], &mut work).unwrap();
+    let closed = source
+        .close_original_with_inputs(&mut graph, &[&row], &[], &inputs, &mut work)
+        .unwrap();
+    assert_eq!(closed.unknown(&local).unwrap(), &literal_row(&[]));
+
+    let demand = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            row.clone(),
+            literal(&["later.label"]),
+            &mut work,
+        )
+        .unwrap();
+    graph
+        .add_scoped_obligation(vec![], truth(), demand, &mut work)
+        .unwrap();
+    let state = graph.state;
+    assert!(matches!(
+        source.close_original_with_inputs(&mut graph, &[&row], &[], &inputs, &mut work),
+        Err(PreparedEffectFailure::Unsatisfiable)
+    ));
+    assert_eq!(graph.state, state);
+}
+
+#[test]
 fn final_closure_waits_for_the_original_named_body_and_never_prepares_it() {
     let mut graph = PreparedEffectGraph::default();
     let named = graph

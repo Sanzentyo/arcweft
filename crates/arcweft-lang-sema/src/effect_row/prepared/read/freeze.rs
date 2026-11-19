@@ -14,6 +14,7 @@ pub(in crate::effect_row::prepared) enum SnapshotSource<'a> {
     Bound(&'a ScopedEffectCompletion),
     #[cfg(test)]
     Final(&'a PreparedEffectDefinitions),
+    FinalOriginal(&'a ScopedEffectCompletion),
     FinalBound(&'a BoundScopedEffectCompletion),
     Observation(&'a [&'a PreparedEffectSchemeRef]),
 }
@@ -74,19 +75,25 @@ impl PreparedEffectReadView<'_> {
         let schemes = match source {
             #[cfg(test)]
             SnapshotSource::Final(_) => SchemeDependencies::Bodies,
-            SnapshotSource::FinalBound(_) => SchemeDependencies::Bodies,
+            SnapshotSource::FinalOriginal(_) | SnapshotSource::FinalBound(_) => {
+                SchemeDependencies::Bodies
+            }
             SnapshotSource::Observation(_) => SchemeDependencies::Observation,
             _ => SchemeDependencies::Headers,
         };
         let original = match source {
-            SnapshotSource::Bound(original) => Some(original.definitions()),
+            SnapshotSource::Bound(original) | SnapshotSource::FinalOriginal(original) => {
+                Some(original.definitions())
+            }
             #[cfg(test)]
             SnapshotSource::Final(original) => Some(original),
             SnapshotSource::FinalBound(bound) => Some(bound.definitions()),
             _ => None,
         };
         let reuse_reachable = match source {
-            SnapshotSource::Bound(original) => original.has_verified_reachability(),
+            SnapshotSource::Bound(original) | SnapshotSource::FinalOriginal(original) => {
+                original.has_verified_reachability()
+            }
             SnapshotSource::FinalBound(_) => true,
             _ => false,
         };

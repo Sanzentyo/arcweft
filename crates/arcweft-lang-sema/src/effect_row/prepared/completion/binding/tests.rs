@@ -393,7 +393,7 @@ fn bound_freeze_preserves_original_query_ports_and_keeps_its_facts_out_of_siblin
     equation(&mut graph, value, literal(&["later.consumer"]), vec![]);
     let bound = binding.freeze(graph.read(), &mut budget()).unwrap();
     let closed = bound
-        .graph
+        .definitions()
         .specialize_principal(&[], &mut budget())
         .unwrap();
     assert_eq!(
@@ -442,7 +442,12 @@ fn bound_freeze_rejects_foreign_or_rolled_back_ports_and_spends_work_on_each_pre
     let mut measured = Budget(10_000);
     let bound = binding.freeze(graph.read(), &mut measured).unwrap();
     let needed = 10_000 - measured.0;
-    assert!(bound.graph.specialize_principal(&[], &mut budget()).is_ok());
+    assert!(
+        bound
+            .definitions()
+            .specialize_principal(&[], &mut budget())
+            .is_ok()
+    );
     graph.rollback(&mut outer).unwrap();
     for available in 0..needed {
         let mut outer = graph.checkpoint(&mut budget()).unwrap();

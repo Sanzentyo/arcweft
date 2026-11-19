@@ -461,6 +461,15 @@ impl PreparedEffectGraph {
         delta: &PreparedEffectDelta,
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        self.validate_delta_base(delta, control)?;
+        Self::charge_delta_contents(delta, control)
+    }
+
+    pub(super) fn validate_delta_base<C: DecisionControl>(
+        &self,
+        delta: &PreparedEffectDelta,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
         self.validate_delta_issuer(delta, control)?;
         if self.state != delta.data.base {
             return Err(PreparedEffectInvariant::DeltaBase.into());
@@ -468,7 +477,7 @@ impl PreparedEffectGraph {
         if let Some(scope) = &delta.dependencies {
             scope.validate_ancestry(self, |_| false, control)?;
         }
-        Self::charge_delta_contents(delta, control)
+        Ok(())
     }
 
     fn validate_delta_issuer<C: DecisionControl>(

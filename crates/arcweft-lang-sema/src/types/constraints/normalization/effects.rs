@@ -52,13 +52,10 @@ impl PreparedConstraintEffects {
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<BoundConstraintEffects, TypeConstraintError> {
-        context.with_effect_transaction(graph, |context, graph| {
-            let binding = graph.bind_original_scoped(&self.original, context)?;
-            let bound = binding.freeze(graph.read(), context)?;
-            Ok(BoundConstraintEffects {
-                bound,
-                constraint: self.constraint,
-            })
+        let bound = BoundScopedEffectCompletion::pending(self.original, graph.read(), context)?;
+        Ok(BoundConstraintEffects {
+            bound,
+            constraint: self.constraint,
         })
     }
 }
@@ -411,7 +408,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
             let (completion, domain) = match inputs {
                 ConstraintEffectInputs::Actual(inputs) => {
                     let principal = original.close_original_with_inputs(
-                        graph.read(),
+                        graph,
                         &ports,
                         &predicates,
                         inputs,
@@ -430,7 +427,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                         }
                     }
                     let residual = original.complete_residual_rows(
-                        graph.read(),
+                        graph,
                         &ports,
                         &predicates,
                         &retained,

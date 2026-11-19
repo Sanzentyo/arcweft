@@ -121,7 +121,8 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
         self.delta_scope_data(inputs, control, |input, control| {
-            self.validate_delta(input, control)
+            // The assembled view meters the definitions it actually inspects.
+            self.validate_delta_base(input, control)
         })
         .map(|data| PreparedEffectReadScope {
             data: Arc::new(data),

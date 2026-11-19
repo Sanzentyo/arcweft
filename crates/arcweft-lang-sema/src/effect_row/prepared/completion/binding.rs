@@ -15,23 +15,51 @@ pub(crate) struct PreparedEffectScopedBinding {
     agreements: Box<[PreparedEffectScopedConstraint]>,
 }
 
-/// The source definitions with its local functions tied to the conditional
-/// minimum. These definitions are inputs to final closure.
+/// Preserve the source whose conditional minimum governs local functions.
+/// Close against that source or attach its obligations to a receiving graph.
 #[derive(Debug)]
 pub(crate) struct BoundScopedEffectCompletion {
-    pub(super) graph: PreparedEffectDefinitions,
+    pub(super) binding: ScopedCompletionBinding,
+}
+
+#[derive(Debug)]
+pub(super) enum ScopedCompletionBinding {
+    Original(Arc<ScopedEffectCompletion>),
+    Attached(PreparedEffectDefinitions),
 }
 
 impl BoundScopedEffectCompletion {
+    pub(crate) fn pending<C: DecisionControl>(
+        original: Arc<ScopedEffectCompletion>,
+        receiving: PreparedEffectReadView<'_>,
+        control: &mut C,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        control
+            .charge(DecisionWork::Visit)
+            .map_err(PreparedEffectFailure::Control)?;
+        receiving.validate_owner(&PreparedEffectGraphOwner(Arc::clone(
+            &original.graph.issuer,
+        )))?;
+        if !original.fixed.is_empty() {
+            return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
+        }
+        Ok(Self {
+            binding: ScopedCompletionBinding::Original(original),
+        })
+    }
+
     pub(in crate::effect_row::prepared) fn definitions(&self) -> &PreparedEffectDefinitions {
-        &self.graph
+        match &self.binding {
+            ScopedCompletionBinding::Original(original) => original.definitions(),
+            ScopedCompletionBinding::Attached(graph) => graph,
+        }
     }
 
     pub(crate) fn require_unknown(
         &self,
         reference: &PreparedEffectUnknownRef,
     ) -> Result<(), PreparedEffectInvariant> {
-        self.graph
+        self.definitions()
             .function(&FunctionRef::Unknown(reference.clone()))
             .map(|_| ())
     }
@@ -41,7 +69,10 @@ impl BoundScopedEffectCompletion {
         self,
         control: &mut C,
     ) -> Result<Arc<ScopedEffectCompletion>, PreparedEffectFailure<C::Error>> {
-        self.graph.complete_scoped(control)
+        let ScopedCompletionBinding::Attached(graph) = self.binding else {
+            return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
+        };
+        graph.complete_scoped(control)
     }
 }
 
@@ -77,7 +108,9 @@ impl PreparedEffectScopedBinding {
             SnapshotSource::Bound(original),
             control,
         )?;
-        Ok(BoundScopedEffectCompletion { graph })
+        Ok(BoundScopedEffectCompletion {
+            binding: ScopedCompletionBinding::Attached(graph),
+        })
     }
 }
 

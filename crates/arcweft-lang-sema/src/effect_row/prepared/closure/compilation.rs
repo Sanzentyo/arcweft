@@ -2,7 +2,7 @@
 
 use super::*;
 use arcweft_core::effect_row::EffectDecisionReplacement;
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 
 pub(super) struct CompiledRow {
     pub(super) membership: Vec<Decision>,
@@ -646,18 +646,18 @@ impl<'a> Compilation<'a> {
         &self,
         predicate: &PreparedEffectPredicate,
         work: &mut Work<'_, C>,
-    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Cow<'_, Decision>, PreparedEffectFailure<C::Error>> {
         match predicate {
             PreparedEffectPredicate::Canonical(predicate) => {
-                self.canonical_predicate(predicate, work)
+                self.canonical_predicate(predicate, work).map(Cow::Owned)
             }
             PreparedEffectPredicate::Term(reference) => {
                 self.graph.predicate(reference)?;
-                work.copy_decision(
-                    self.predicates
-                        .get(&reference.0.ordinal)
-                        .ok_or(PreparedEffectInvariant::StaleReference)?,
-                )
+                work.charge(DecisionWork::Visit)?;
+                self.predicates
+                    .get(&reference.0.ordinal)
+                    .map(Cow::Borrowed)
+                    .ok_or_else(|| PreparedEffectInvariant::StaleReference.into())
             }
         }
     }
@@ -753,16 +753,18 @@ impl<'a> Compilation<'a> {
                 PredicateTerm::Not(child) => self.read_predicate(child, work)?.not(work)?,
                 PredicateTerm::Select { choice, yes, no } => {
                     self.graph.validate_choice(choice)?;
-                    Decision::variable(Atom::Choice(choice.0.ordinal), work)?.conditional(
-                        &self.read_predicate(yes, work)?,
-                        &self.read_predicate(no, work)?,
-                        work,
-                    )?
+                    let condition = Decision::variable(Atom::Choice(choice.0.ordinal), work)?;
+                    let yes = self.read_predicate(yes, work)?;
+                    let no = self.read_predicate(no, work)?;
+                    condition.conditional(&yes, &no, work)?
                 }
             };
             work.charge(DecisionWork::Node)?;
             self.predicates.insert(id, value);
         }
-        self.read_predicate(root, work)
+        match self.read_predicate(root, work)? {
+            Cow::Borrowed(predicate) => work.copy_decision(predicate),
+            Cow::Owned(predicate) => Ok(predicate),
+        }
     }
 }
