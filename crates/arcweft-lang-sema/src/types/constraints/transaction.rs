@@ -1820,6 +1820,15 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         }
     }
 
+    /// A producer without a remaining constraint path cannot demand its result.
+    pub(crate) fn viable_result_source(
+        &self,
+        source: D::Source,
+    ) -> Option<ConstraintSourceId<D::Source>> {
+        (!self.closed && self.first_failure.is_none() && !self.frontier.is_empty())
+            .then(|| ConstraintSourceId::new(self.application, source))
+    }
+
     /// The only source entry point: a callable mapper supplies the complete
     /// prepared source constraint before any callback can run.
     pub(crate) fn begin_prepared_probe<A>(

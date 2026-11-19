@@ -6518,6 +6518,7 @@ fn prepare_parameter_source_constraint(
 pub(crate) fn run_prepared_candidate(
     analyzer: &mut super::super::Analyzer<'_, '_, '_>,
     application: ExprId,
+    site: CheckedCallSite,
     work: &mut crate::callable::ResolverWork,
     context: &AnalyzerExpressionContext<'_>,
     attempt: Option<PhysicalCallAttemptId>,
@@ -6540,6 +6541,7 @@ pub(crate) fn run_prepared_candidate(
         type_application_constraints,
         receiver_constraints,
         initialization,
+        retains_inputs,
         ..
     } = set;
     let PreparedCallConstraintInitialization::Root(initialization) = initialization else {
@@ -6602,6 +6604,26 @@ pub(crate) fn run_prepared_candidate(
                     driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
                 }
                 output.request(&mut driver, application, &enclosing, &limits)?;
+                if retains_inputs {
+                    driver.prepare_viable_result(
+                        AnalyzerCallConstraintSource::Result {
+                            source: application,
+                        },
+                        |client| {
+                            client
+                                .operations
+                                .analyzer
+                                .prepare_continuation_result_effects(
+                                    site,
+                                    &candidate,
+                                    inputs.mapping(),
+                                )
+                                .map_err(|error| {
+                                    AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error))
+                                })
+                        },
+                    );
+                }
                 match (&output.result, output.closure) {
                     (PreparedCallOutput::Value { .. }, TypeConstraintProjectionClosure::Closed) => {
                         driver.finish_original_result(AnalyzerCallProjection::Result, &[])

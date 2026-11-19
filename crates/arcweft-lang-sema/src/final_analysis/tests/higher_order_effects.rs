@@ -250,9 +250,7 @@ fn right<T>(value: T, remaining: i64) -> T {
 
 #[test]
 fn recursive_staged_call_with_wrong_arity_retains_its_rejection() {
-    use crate::callable::CallAnalysisOutcome;
-
-    let fixture = fixture(
+    assert_rejected_recursive_staged_call(
         r#"
 fn staged<T>(value: T)(answer: i64) -> i64 {
     staged(value, 0i64);
@@ -261,8 +259,27 @@ fn staged<T>(value: T)(answer: i64) -> i64 {
 }
 flow main() -> i64 { return staged("saved")(42i64) }
 "#,
-        None,
     );
+}
+
+#[test]
+fn recursive_staged_call_with_wrong_type_retains_its_rejection() {
+    assert_rejected_recursive_staged_call(
+        r#"
+fn staged<T>(value: T, count: i64)(answer: i64) -> i64 {
+    staged(value, "not a number");
+    log.info("body")
+    answer + count
+}
+flow main() -> i64 { return staged("saved", 0i64)(42i64) }
+"#,
+    );
+}
+
+fn assert_rejected_recursive_staged_call(source: &str) {
+    use crate::callable::CallAnalysisOutcome;
+
+    let fixture = fixture(source, None);
     let analysis = analyze(&fixture).expect("the rejected prefix remains a call diagnostic");
     let rejected = analysis
         .calls()
@@ -272,7 +289,7 @@ flow main() -> i64 { return staged("saved")(42i64) }
         })
         .collect::<Vec<_>>();
     let [(owner, evidence)] = rejected.as_slice() else {
-        panic!("only the wrong-arity prefix is rejected");
+        panic!("only the invalid prefix is rejected");
     };
     let [candidate] = evidence.candidates() else {
         panic!("the staged declaration is the only candidate");

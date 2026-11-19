@@ -827,6 +827,25 @@ where
         self.finish_alternatives()?.into_unique()
     }
 
+    /// Prepare the result's external dependencies after its argument probes.
+    /// Keep the accepted frontier and the same callback accounting for closure.
+    pub(crate) fn prepare_viable_result(
+        &mut self,
+        source: D::Source,
+        prepare: impl FnOnce(&mut C) -> Result<(), D::SourceErrorCause>,
+    ) {
+        if let Some(source) = self.lower.viable_result_source(source)
+            && let Err(cause) = prepare(&mut self.callbacks.client)
+        {
+            self.lower
+                .record_failure(TypeConstraintFailure::fatal_source(SourceError::new(
+                    source,
+                    SourcePhase::Materialize,
+                    cause,
+                )));
+        }
+    }
+
     pub(crate) fn finish_alternatives(
         mut self,
     ) -> Result<CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>> {

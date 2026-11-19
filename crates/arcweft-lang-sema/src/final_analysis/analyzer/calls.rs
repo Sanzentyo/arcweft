@@ -1326,7 +1326,14 @@ impl Analyzer<'_, '_, '_> {
             };
             // Sibling probes share declaration-body preparations owned by
             // their parent source transaction.
-            self.prepare_application_result_dependencies(source.site, candidate, inputs.mapping())
+            self.prepare_application_result_schema(source.site, candidate)
+                .and_then(|()| {
+                    self.prepare_continuation_result_effects(
+                        source.site,
+                        candidate,
+                        inputs.mapping(),
+                    )
+                })
                 .map_err(AnalyzerExpressionError::fatal)?;
             let prepared = self
                 .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
@@ -4735,12 +4742,8 @@ impl Analyzer<'_, '_, '_> {
                 });
             }
         };
-        self.prepare_application_result_dependencies(
-            request.site,
-            &request.candidate,
-            inputs.mapping(),
-        )
-        .map_err(AnalyzerExpressionError::fatal)?;
+        self.prepare_application_result_schema(request.site, &request.candidate)
+            .map_err(AnalyzerExpressionError::fatal)?;
         match self.prepare_candidate_impl(request, inputs, work, None)? {
             PreparedCandidatePreparationOutcome::Accepted { transaction, rank } => {
                 Ok(PreparedCandidateRunOutcome::Accepted { transaction, rank })
@@ -5139,6 +5142,7 @@ impl Analyzer<'_, '_, '_> {
             None => run_prepared_candidate(
                 self,
                 owner,
+                site,
                 work,
                 context,
                 attempt.cloned(),

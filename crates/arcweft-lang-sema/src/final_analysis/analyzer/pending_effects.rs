@@ -335,9 +335,26 @@ impl Analyzer<'_, '_, '_> {
             .map_err(FinalSemanticAnalysisError::from)
             .map_err(AnalyzerExpressionError::fatal)
     }
-    /// A mapped continuation exposes the latent invocation row. A terminal
-    /// application with a complete result type retains its effect edge.
-    pub(super) fn prepare_application_result_dependencies(
+    /// Omitted effect annotations inside the return type require its inferred
+    /// schema before the candidate can constrain that result.
+    pub(super) fn prepare_application_result_schema(
+        &mut self,
+        site: CheckedCallSite,
+        candidate: &PreparedResolvedCallable,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        if result_schema_has_omitted_function_rows(candidate.schema())
+            && self
+                .source_callable_terminal_effects(candidate)?
+                .inferred_result_schema()
+                .is_none()
+        {
+            self.prepare_callable_body_effects(site.into(), candidate)?;
+        }
+        Ok(())
+    }
+
+    /// A viable continuation result exposes the latent invocation row.
+    pub(super) fn prepare_continuation_result_effects(
         &mut self,
         site: CheckedCallSite,
         candidate: &PreparedResolvedCallable,
@@ -349,10 +366,8 @@ impl Analyzer<'_, '_, '_> {
             }
         })?;
         let effects = self.source_callable_terminal_effects(candidate)?;
-        if (transition.remaining_position().is_some()
-            && matches!(effects, CallableTerminalEffectProjection::Pending(_)))
-            || (result_schema_has_omitted_function_rows(candidate.schema())
-                && effects.inferred_result_schema().is_none())
+        if transition.remaining_position().is_some()
+            && matches!(effects, CallableTerminalEffectProjection::Pending(_))
         {
             self.prepare_callable_body_effects(site.into(), candidate)?;
         }
