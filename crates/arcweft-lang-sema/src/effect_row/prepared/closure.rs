@@ -382,7 +382,6 @@ pub(crate) struct PrincipalEffectClosure {
     functions: BTreeMap<u64, EffectRow>,
     coefficients: ClosedEffectCoefficients,
     witnesses: ClosedEffectWitnesses,
-    input_bindings: BTreeMap<u64, EffectRow>,
 }
 
 pub(crate) enum PreparedEffectCompletion {
@@ -663,12 +662,37 @@ impl PrincipalEffectClosure {
         layout: Arc<Layout>,
         coefficients: ClosedEffectCoefficients,
         witnesses: ClosedEffectWitnesses,
-        input_bindings: BTreeMap<u64, EffectRow>,
+        fixed: BTreeMap<u64, EffectRow>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
-        let mut functions = BTreeMap::new();
+        // Fixed inputs arrived as canonical finite rows. Keep those rows in
+        // the result and check their cells against the solved tuple in confirm.
+        let mut functions = fixed;
+        for id in functions.keys() {
+            work.charge(DecisionWork::Visit)?;
+            if !layout.tables.contains_key(id)
+                || !graph
+                    .functions
+                    .get(id)
+                    .is_some_and(|function| function.is_input())
+            {
+                return Err(PreparedEffectInvariant::FutureBinding.into());
+            }
+        }
         for (&id, function) in &graph.functions {
             if !layout.tables.contains_key(&id) {
+                continue;
+            }
+            if function.is_input() {
+                work.charge(DecisionWork::Visit)?;
+                if !functions.contains_key(&id) {
+                    return Err(if function.is_future() {
+                        PreparedEffectInvariant::UnresolvedFuture
+                    } else {
+                        PreparedEffectInvariant::UnresolvedSchemeInput
+                    }
+                    .into());
+                }
                 continue;
             }
             let compilation = Compilation::new(
@@ -713,7 +737,6 @@ impl PrincipalEffectClosure {
             functions,
             coefficients,
             witnesses,
-            input_bindings,
         })
     }
 }

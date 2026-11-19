@@ -37,6 +37,37 @@ fn confirmation_rejects_a_larger_fixed_point_than_the_retained_least_tuple() {
 }
 
 #[test]
+fn confirmation_rejects_a_different_row_for_a_fixed_input() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let scope = crate::types::GenericScope::default()
+        .with_binder(crate::types::GenericBinder::new(0, 0, 1));
+    let reference = parameter(&scope, 0);
+    let input = graph
+        .declare_unknown(
+            vec![reference.clone()],
+            PreparedEffectUnknownEligibility::Future,
+            &mut work,
+        )
+        .unwrap();
+    let effects = EffectSet::from_labels(["fs.read"]).unwrap();
+    let row = EffectRow::open(effects.clone(), reference);
+    let mut closed = graph
+        .specialize_principal(&[(&input, &row)], &mut work)
+        .unwrap();
+    assert_eq!(closed.unknown(&input).unwrap(), &row);
+
+    let id = FunctionRef::Unknown(input).reference().ordinal;
+    closed.functions.insert(id, EffectRow::closed(effects));
+    assert!(matches!(
+        closed.confirm(&mut Work(&mut work)),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::PrincipalConfirmation
+        ))
+    ));
+}
+
+#[test]
 fn a_uniform_choice_is_not_a_finite_effect_row_variable() {
     let graph = PreparedEffectGraph::default();
     let mut control = budget();

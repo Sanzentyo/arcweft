@@ -71,9 +71,9 @@ impl PrincipalEffectClosure {
                     slot.insert(index);
                 }
             }
-            // Fixed-point replay alone would also accept a larger solution to
-            // S=S. Check that every canonical table entry is the retained least
-            // cell before independently replaying the original typed terms.
+            // Compare the original finite inputs with their admitted cells and
+            // the reconstructed outputs with the least tuple. Fixed-point
+            // replay alone would also accept a larger solution to S=S.
             for mask in 0..self.layout.tables[&id] {
                 for class in 0..self.layout.view().classes() {
                     let value = self
@@ -105,19 +105,13 @@ impl PrincipalEffectClosure {
                     }
                 }
             }
-            let scope = FiniteRowValuation {
-                classes: self.layout.view().label_classes(),
-                owner: FormalOwner::Scheme(id),
-                parameters: function.parameters(),
-            };
             if let Function::Scheme(scheme) = function.as_ref() {
+                let scope = FiniteRowValuation {
+                    classes: self.layout.view().label_classes(),
+                    owner: FormalOwner::Scheme(id),
+                    parameters: function.parameters(),
+                };
                 canonical::CanonicalReplay::new(self, scope).confirm(id, scheme, work)?;
-            } else if function.is_input() {
-                let row = self
-                    .input_bindings
-                    .get(&id)
-                    .ok_or(PreparedEffectInvariant::UnresolvedFuture)?;
-                canonical::CanonicalReplay::new(self, scope).confirm_fixed(id, row, work)?;
             }
         }
         let mut replays = BTreeMap::new();
