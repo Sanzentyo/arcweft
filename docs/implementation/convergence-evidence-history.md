@@ -20293,3 +20293,14 @@ Supersedes [係数共有時点の停止位置](#shared-least-effect-coefficients
 Sema全featureの1,994件は1,902 PASS、92既知FAIL。Compilerの統合6 targetの582件は580 PASS、2既知FAIL。Mapの修復3件と `flow_wait` の32件は通過した。両対象で前回の全IDと合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。推移的逆依存全件の実測は[先行Source](#shared-least-effect-coefficients)に保持した。
 
 [検証原本・公開照合](acceptance-evidence/task-direct-future-effect-closure.raw.zip) は31 entry、1,105,329 bytes、SHA256 `f4e43d016d6bfd4114cd9bc0af9dd416bcefdaade7ce69a66726bb3a98e5b846`。各entryの長さとハッシュ、公開Sourceの2ファイルを照合した。記録時の `target` は101,562,534,793 bytes。
+
+<a id="validated-effect-component-inputs"></a>
+## 2026-11-20 — 元の効果制約で参照する座標を検証する
+
+検証基点 `795f70ce92c0db05f73efded45e1fa73d9a9dd4d`、Source `6b86d984f2bc7d26a93d9e7250e17449927d89bd`。実引数を反映した元の制約を、layoutのセルと宣言済みの選択肢に照合してから射影・最小化する。射影と最小化の結果はこの参照集合の部分集合に収まる。取り込み元と受け手の入力の対応は同じ所有型が保持し、受け手の関数を検証した結果、入力番号がすべて一致する場合は元の局所係数と主条件を共有する。主条件が常に真でも、係数がlayoutの範囲外のラベルクラスを指す場合に、制約の確定を拒否するテストを追加した。入力番号が変わる場合の付け替えと、元の制約との独立照合も通過した。
+
+Supersedes [実引数の直接適用時点の停止位置](#direct-future-effect-closure)。既定上限4,096で2 callback のSemaとNative／AWBCは効果の確定を通過し、候補の効果グラフ差分を取り出す最初の作業計上に到達した。3 callback のSemaは真理値表から判定図の出力ノードを確保する段階で同上限に達した。
+
+実Cargo graphでSemaの逆依存22パッケージを対象に選び、CLIを除く4,305件で4,205 PASS、100既知FAIL、1 SKIP。先行のCore全逆依存結果を同じパッケージに絞った4,304件と全IDの合否が一致し、追加1件が通過した。CLI library／binary 196件、規定の統合6 target 30件はすべてPASS。Semaの全featureユニット1,995件は1,903 PASS／92既知FAIL、Compilerの統合6 targetは582件で580 PASS／2既知FAIL。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+[検証原本・全失敗ID](acceptance-evidence/task-validate-effect-component-inputs.raw.zip) は38 entry、1,342,516 bytes、SHA256 `44360421a8674fba1257d7bc51dfa55b09a9eb0c5153ec758d5ff72bc20c3258`。各entryの長さとハッシュ、公開Sourceの11ファイルを照合した。記録時の `target` は101,589,953,992 bytes。
