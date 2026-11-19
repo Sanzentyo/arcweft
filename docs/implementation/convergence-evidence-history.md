@@ -20341,3 +20341,16 @@ Supersedes [外側ラベルごとの枝を共有した時点の停止位置](#gu
 Cargo graphから求めたSemaの逆依存は22パッケージ。CLIを除く4,306件で4,206 PASS、100既知FAIL、1 SKIP。比較元 `a84dbf28f0efc003fa2348797035035f014e9190` のCore逆依存を同じパッケージに絞った4,305件と、全IDの合否が一致し、追加1件が通過した。CLI library／binary 196件と規定の統合6 target 30件はすべてPASS。Sema全featureの1,996件は1,904 PASS、92既知FAILで、追加1件が通過し、既存IDの合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
 
 [検証原本・全失敗ID](acceptance-evidence/task-single-traversal-effect-imports.raw.zip) は38 entry、1,327,488 bytes、SHA256 `ec8a3aa8ef7ed23911afa2d4f623c6b31f0e9f920457003871960aa086a432f2`。各entryの長さとハッシュ、公開Sourceの3ファイルを照合した。記録時の `target` は101,633,559,720 bytes。
+
+<a id="typed-scoped-effect-clauses"></a>
+## 2026-11-20 — 効果の各量化節を元の宣言から直接処理する
+
+検証基点 `d59e9bea04e41ff714fc21ba21ae017197bdbf78`、Source `f9ee3a1f4a826118d91fa20203064a16d40101f4`。スキームと個別の義務は、元の宣言を指す型付きの量化節として保持する。スキームの帰結は本体との等式、本体の許可条件、本体内の義務を含む。有限行の判定では適用条件が成立する場合に帰結を要求し、元の順序付き引数を量化する。記号的な縮約と検査用ビューは同じ節から元の適用条件と帰結を取得する。検査用ビューの利用側を新しい型へ揃え、適用条件・帰結・含意・量化に分けて格納する旧ノードを削除した。
+
+元の義務を32件追加すると、残余プログラムの構築作業は32単位増えた。検査用ビューでスキームの本体と引数、個別の義務の両辺と量化引数、外側の一様な選択を確認した。量化節を定数真へ改変したテストでは、元の制約を独立に再検査して拒否した。
+
+Supersedes [効果関係を一度の走査で取り込んだ時点の停止位置](#single-traversal-effect-imports)。2 callback のSemaは `main` の呼び出し（式75）、Native／AWBCは型検査の式76で、義務の組み立てを通過し、関数本体の効果項を辿る段階で既定上限4,096に達した。3 callback のSemaは `rotate` の再帰分岐（式26）で、包含判定の右辺からマスクに対応する枝を選ぶ段階で同上限に達した。Native／AWBCの対象2件を直接実行し、失敗式と停止箇所を確認した。
+
+Cargo graphから求めたSemaの逆依存は22パッケージ。CLIを除く4,307件で4,213 PASS、94既知FAIL、1 SKIP。比較元 `351900274456fee74da72b18b3a670add9e059e3` から6件がFAILからPASSへ移り、追加1件が通過した。CLI library／binary 196件と規定の統合6 target 30件はすべてPASS。Sema全featureの1,997件は1,911 PASS、86既知FAIL。追加1件と、作業量の引き継ぎ、型引数の射影、候補キーを検証する既存6件が通過した。既存のPASSからFAILへの変化は0件。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+[検証原本・回復した全ID・全失敗ID](acceptance-evidence/task-typed-scoped-effect-clauses.raw.zip) は38 entry、1,329,473 bytes、SHA256 `6472bb112297131efcc4407c698a35b53ff6e451e1d3d422fdfe804739918e0a`。各entryの長さとハッシュ、公開Sourceの8ファイルを照合した。記録時の `target` は101,635,522,013 bytes。
