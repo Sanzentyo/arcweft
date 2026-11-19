@@ -20103,3 +20103,32 @@ Coreのユニット・統合2,371件が通過した。Semaの全featureユニッ
 既定の4,096作業単位で、2 callback のNativeとSemaは必須値の計算を終え、元の効果制約に代入して照合する段階で停止した。2 callback のAWBC、3 callback を循環させるSema、効果付きMapの3件も引き続き型検査を通過していない。記録時の `target` は101,147,304,909 bytes。
 
 [検証原本・公開照合](acceptance-evidence/task-callback-bound-witness.raw.zip) は28 entry、1,185,629 bytes、SHA256 `6766feb3b08bd85787f2fe1d7fcf0df5ef73e1c75579208539ffe42501a1047c`。各entryの長さとハッシュ、公開した2 Rust blobを照合した。
+
+<a id="shared-effect-decision-composition"></a>
+## 2026-11-19 — 効果関数の係数表と論理積を一度組み立てる
+
+基点 `8d1e6c577217a29f3e47144cb6755d325b46da4b`、Source `4e01264b73710b8258b07fcf74d6cb9a73c3cd66`。効果関数の定義と有限行による元の義務の再照合は、同じ方法で係数表から判定図を構築する。係数表の形をオペランド解決前に検査し、互いに依存する引数と判定を含む係数も扱う。複数条件の論理積には同じ構築領域を使う。合成入力の出力は従来と一致した。4引数16係数の作業量は1,194から446、6引数64係数では7,178から2,388、32条件の論理積では7,163から3,668。
+
+Coreの全featureユニットと効果判定の統合テスト2,373件が通過した。Semaの全featureユニットは1,990件中1,896 PASS、94既知FAIL。Compilerの統合6 targetは582件中577 PASS、5既知FAILで、`flow_wait` の32件はすべて通過した。先行の失敗IDに変化はない。workspaceの全feature・全target checkとClippy、fmt、差分検査、構造ゲートは終了0。Cargoの逆依存グラフを取得し、全逆依存の実行結果は[先行Sourceの実測](#effect-decision-projection-reverse)を保持した。
+
+既定上限4,096で、2 callback のNativeは最小解の計算と評価を通過し、元の義務を再照合する段階で停止した。Mapの遅延効果ケースは型投影に必要な効果関数依存の列挙、保持後の呼出しケースは実行用の投影のadmissionに進んで停止した。パスが変わったケースも型検査で停止しており、この観測で実行の受入を更新していない。[検証原本・公開照合](acceptance-evidence/task-callback-shared-composition.raw.zip) は30 entry、1,190,456 bytes、SHA256 `73df0c8144b906cc813ed73b9d0968f4e96630a3985b8762becae6d0f0af10de`。各entryの長さとハッシュ、公開した5 Rust blobを照合した。
+
+<a id="effect-coefficient-equivalence"></a>
+## 2026-11-19 — 係数表の参照順と正準な効果証明を再利用する
+
+基点 `4e01264b73710b8258b07fcf74d6cb9a73c3cd66`、Source `2133b50509ad9ad86d653004aa5fcdc1637f698d`。ビットの係数を保ったまま参照順に沿って表を組み立て、係数の等値は一つの判定図演算で作る。元の義務を再照合するとき、正準性が確定した行と述語をコピーせずに参照する。すべての変数が検査済みの同じ入力であることを判定できる同値式を直接照合する。前節と同じ合成入力の出力が一致し、4引数16係数は446から276、6引数64係数は2,388から1,098作業単位に減った。
+
+Coreの2,373件、Semaの1,896 PASS／94既知FAIL、Compilerの577 PASS／5既知FAILの件数と該当する失敗IDは前節と同じ。`flow_wait` は32件すべて通過。workspaceの全feature・全target checkとClippy、fmt、差分検査、構造ゲートは終了0。既定上限4,096で、2 callback のNativeとSemaは元の義務に渡す行の準備、3 callback のSemaは効果制約のコンパイルで停止した。Mapの遅延効果ケースは投影済み関数型の比較、保持後の呼出しケースは完了した式を実行用に取り出す処理まで進んだ。
+
+[検証原本・公開照合](acceptance-evidence/task-callback-coefficient-equivalence.raw.zip) は30 entry、1,191,135 bytes、SHA256 `90f703f60ed90b5cd01be4816720648915b3e9baa687783939e26d15b65fcdff`。各entryの長さとハッシュ、公開した5 Rust blobを照合した。記録時の `target` は101,156,177,569 bytes。
+
+<a id="residual-effect-decision-identity"></a>
+## 2026-11-19 — 残余効果式で同じ判定図を参照する
+
+基点 `2133b50509ad9ad86d653004aa5fcdc1637f698d`、Source `961947dc6ff676f47899335c6da430ce2bfe7536`。単項の論理積、結果が同じと確定できる含意、束縛なしまたは定数の全称量化は、計算済みの正準判定図を参照する。参照先は元の値の位置に解決し、残余式の各ノードの訪問と登録は引き続き作業に計上する。
+
+Semaの全featureユニットは1,990件中1,896 PASS、94既知FAIL。Compilerの統合6 targetは582件中577 PASS、5既知FAILで、`flow_wait` の32件はすべて通過した。両スイートの全IDと合否は前節と一致した。workspaceの全feature・全target checkとClippy、fmt、差分検査、構造ゲートは終了0。全逆依存とTier 2の最終受入は今回未実行。Coreの直接検証は前節に記録した。
+
+2 callback のNative／AWBCとSemaは、元の義務へ代入する判定図を取り込む段階で既定上限4,096に達した。3 callback のSemaは、残余効果式をコンパイルして判定図を登録する段階で引き続き停止した。Mapの遅延効果と保持後の呼出しは、元の型等式を再照合するために完了型を投影する段階で上限に達した。純粋呼出しの拒否テストは、最初の `values.map(logging_increment)` で通常の `CallResolutionFailed` を返した。監視した3箇所の作業上限の分岐には到達せず、期待する `log.write` を含む `EffectUpperBoundExceeded` は返らなかった。この入力も受入条件を満たしていない。
+
+[検証原本・公開照合](acceptance-evidence/task-callback-residual-decision-identity.raw.zip) は39 entry、1,113,279 bytes、SHA256 `fc532d851b76c3d9024d370e655ae4610e084aee76cf4f947ed6091fd78e5acb`。各entryの長さとハッシュ、公開したRust blobを照合した。記録時の `target` は101,156,926,028 bytesで、全体の `cargo clean` は実行していない。
