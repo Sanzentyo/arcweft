@@ -71,6 +71,19 @@ pub enum EffectDecisionReplacement<'a, V> {
     Decision(&'a EffectDecision<V>),
 }
 
+impl<V> EffectDecisionReplacement<'_, V> {
+    fn first_reference(&self) -> Option<&V> {
+        match self {
+            Self::Constant(_) => None,
+            Self::Variable(variable) => Some(variable),
+            Self::Decision(decision) => match decision.root {
+                Root::Branch(index) => Some(&decision.nodes[index].variable),
+                Root::False | Root::True => None,
+            },
+        }
+    }
+}
+
 /// Exact projection of a relation onto its unquantified references, together
 /// with its pointwise least witnesses when those witnesses satisfy the relation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -692,7 +705,8 @@ impl<V: Clone + Ord> EffectDecision<V> {
 
     /// Select an entry in a Boolean truth table. Selector zero supplies the
     /// least significant bit of the entry index. Every operand lives in the
-    /// same reference scope, and only the final result is materialized.
+    /// same reference scope. Entries are read in mask order, then selector
+    /// descriptors are read once in descending bit order for a nonuniform table.
     /// Returns `None` if the table size is not exactly two to the power of
     /// the selector count.
     pub fn select_table<'a, C: DecisionControl>(
@@ -722,27 +736,58 @@ impl<V: Clone + Ord> EffectDecision<V> {
 
         let mut builder = DecisionBuilder::new(control);
         let mut frontier = Vec::new();
+        let mut uniform = true;
         for index in 0..entries {
             builder.control.charge(DecisionWork::Node)?;
             let value = entry(index, builder.control)?;
-            frontier.push(builder.operand(value)?);
+            let root = builder.operand(value)?;
+            uniform &= frontier.first().is_none_or(|first| *first == root);
+            frontier.push(root);
         }
-        // Fold the most significant selectors first. When selectors follow
-        // the reference order, their decisions then wrap already-later roots.
+        if uniform {
+            return builder.finish(frontier[0]).map(Some);
+        }
+
+        // Fold constants first, then later references before earlier ones.
+        // Table coordinates stay fixed even when arguments permute the formals.
+        let mut order = Vec::new();
         for bit in (0..selectors).rev() {
+            builder.control.charge(DecisionWork::Node)?;
+            order.push((bit, selector(bit)));
+        }
+        order.sort_unstable_by(|(left_bit, left), (right_bit, right)| {
+            let left = left.first_reference();
+            let right = right.first_reference();
+            left.is_some()
+                .cmp(&right.is_some())
+                .then_with(|| right.cmp(&left))
+                .then_with(|| right_bit.cmp(left_bit))
+        });
+        let mut remaining = entries - 1;
+        for (bit, selector) in order {
+            let source_bit = 1usize << bit;
+            let position = (remaining & (source_bit - 1)).count_ones();
+            let high_bit = 1usize << position;
+            let lower_bits = high_bit - 1;
+            remaining &= !source_bit;
             let mut condition = None;
+            let mut selector = Some(selector);
             let next_count = frontier.len() / 2;
             for index in 0..next_count {
                 builder.control.charge(DecisionWork::Visit)?;
-                let low = frontier[index];
-                let high = frontier[index + next_count];
+                // Insert this axis back into the compacted index. The low
+                // index is at least `index`, so writing in place is safe.
+                let low_index = (index & lower_bits) | ((index & !lower_bits) << 1);
+                let low = frontier[low_index];
+                let high = frontier[low_index | high_bit];
                 frontier[index] = if low == high {
                     low
                 } else {
                     let test = match condition {
                         Some(test) => test,
                         None => {
-                            let test = builder.operand(selector(bit))?;
+                            let test = builder
+                                .operand(selector.take().expect("selector is lowered once"))?;
                             condition = Some(test);
                             test
                         }

@@ -167,6 +167,72 @@ fn table_selection_preserves_correlated_selectors_and_entry_references() {
 }
 
 #[test]
+fn truth_table_uses_the_same_work_for_permuted_literal_selectors() {
+    let mut ordered = Meter::default();
+    let expected = EffectDecision::select_table(
+        3,
+        8,
+        &mut ordered,
+        |bit| EffectDecisionReplacement::Variable(bit as u8),
+        |mask, _| Ok(EffectDecisionReplacement::Variable(8 + mask as u8)),
+    )
+    .unwrap()
+    .unwrap();
+
+    let permutation = [2, 0, 1];
+    let selectors = permutation.map(atom);
+    let mut work = Meter::default();
+    let selected = EffectDecision::select_table(
+        3,
+        8,
+        &mut work,
+        |bit| EffectDecisionReplacement::Decision(&selectors[bit]),
+        |mask, _| {
+            let value = permutation
+                .iter()
+                .enumerate()
+                .map(|(bit, reference)| ((mask as u8 >> bit) & 1) << reference)
+                .sum::<u8>();
+            Ok(EffectDecisionReplacement::Variable(8 + value))
+        },
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(selected, expected);
+    assert_eq!(work.used, ordered.used);
+    for mask in 0..8u8 {
+        for cell in 0..8u8 {
+            let value = selected.evaluate(|&reference| {
+                if reference < 3 {
+                    mask & (1 << reference) != 0
+                } else {
+                    reference == 8 + cell
+                }
+            });
+            assert_eq!(value, mask == cell, "mask {mask}, coefficient {cell}");
+        }
+    }
+}
+
+#[test]
+fn uniform_truth_table_reads_all_entries_without_loading_selectors() {
+    let mut seen = Vec::new();
+    let selected = EffectDecision::<u8>::select_table(
+        3,
+        8,
+        &mut Meter::default(),
+        |_| panic!("uniform table does not use selectors"),
+        |mask, _| {
+            seen.push(mask);
+            Ok(EffectDecisionReplacement::Constant(true))
+        },
+    )
+    .unwrap();
+    assert_eq!(seen, (0..8).collect::<Vec<_>>());
+    assert_eq!(selected, Some(EffectDecision::constant(true)));
+}
+
+#[test]
 fn shared_conjunction_has_the_same_result_as_pairwise_conjunction() {
     let mut work = Meter::default();
     let left = atom(0).or(&atom(1), &mut work).unwrap();
