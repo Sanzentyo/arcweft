@@ -581,13 +581,33 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         relation: Root,
         quantified: &BTreeSet<V>,
     ) -> Result<CompletionRoots<V>, C::Error> {
-        let admissibility = self.quantify(relation, quantified, Quantifier::Exists)?;
+        if quantified.is_empty() {
+            return Ok(CompletionRoots {
+                admissibility: relation,
+                replacements: BTreeMap::new(),
+                instantiated: relation,
+            });
+        }
+        let order = self.postorder(relation)?;
+        let projected = self.quantified_roots(&order, quantified, Quantifier::Exists)?;
+        let admissibility = Self::remap(relation, &projected);
+        let mut present = BTreeSet::new();
+        for &index in &order {
+            self.control.charge(DecisionWork::Visit)?;
+            let variable = &self.nodes[index].variable;
+            if quantified.contains(variable) && !present.contains(variable) {
+                self.control.charge(DecisionWork::Node)?;
+                present.insert(variable.clone());
+            }
+        }
         let mut replacements = BTreeMap::new();
         for variable in quantified {
             self.control.charge(DecisionWork::Visit)?;
-            let atom = self.branch(variable.clone(), Root::False, Root::True)?;
-            let without = self.conditional(Conditional::new(atom, Root::False, relation))?;
-            let possible_without = self.quantify(without, quantified, Quantifier::Exists)?;
+            let possible_without = if present.contains(variable) {
+                self.project_with_false(relation, &order, &projected, quantified, variable)?
+            } else {
+                admissibility
+            };
             let required = self.conditional(Conditional::new(
                 possible_without,
                 Root::False,
@@ -601,6 +621,48 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             replacements,
             instantiated,
         })
+    }
+
+    /// Existential projection with one quantified variable fixed to false.
+    /// An ordered subgraph below that variable already has the exact projection.
+    /// Keep only cofactors which differ from the ordinary existential result.
+    fn project_with_false(
+        &mut self,
+        relation: Root,
+        order: &[usize],
+        projected: &BTreeMap<usize, Root>,
+        quantified: &BTreeSet<V>,
+        variable: &V,
+    ) -> Result<Root, C::Error> {
+        let mut changes = BTreeMap::new();
+        let cofactor = |root, changes: &BTreeMap<usize, Root>| match root {
+            Root::Branch(index) => changes.get(&index).copied().unwrap_or(projected[&index]),
+            terminal => terminal,
+        };
+        for &index in order {
+            self.control.charge(DecisionWork::Visit)?;
+            let node = &self.nodes[index];
+            let mapped = match node.variable.cmp(variable) {
+                std::cmp::Ordering::Greater => continue,
+                std::cmp::Ordering::Equal => Self::remap(node.low, projected),
+                std::cmp::Ordering::Less => {
+                    let low = cofactor(node.low, &changes);
+                    let high = cofactor(node.high, &changes);
+                    if low == Self::remap(node.low, projected)
+                        && high == Self::remap(node.high, projected)
+                    {
+                        continue;
+                    }
+                    let variable = node.variable.clone();
+                    self.project_branch(variable, low, high, quantified, Quantifier::Exists)?
+                }
+            };
+            if mapped != projected[&index] {
+                self.control.charge(DecisionWork::Node)?;
+                changes.insert(index, mapped);
+            }
+        }
+        Ok(cofactor(relation, &changes))
     }
 
     fn new(control: &'c mut C) -> Self {
@@ -775,24 +837,44 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         quantifier: Quantifier,
     ) -> Result<Root, C::Error> {
         let order = self.postorder(root)?;
+        let indices = self.quantified_roots(&order, quantified, quantifier)?;
+        Ok(Self::remap(root, &indices))
+    }
+
+    fn quantified_roots(
+        &mut self,
+        order: &[usize],
+        quantified: &BTreeSet<V>,
+        quantifier: Quantifier,
+    ) -> Result<BTreeMap<usize, Root>, C::Error> {
         let mut indices = BTreeMap::new();
-        for index in order {
+        for &index in order {
             self.control.charge(DecisionWork::Visit)?;
             let node = self.nodes[index].clone();
             let low = Self::remap(node.low, &indices);
             let high = Self::remap(node.high, &indices);
-            let mapped = if quantified.contains(&node.variable) {
-                let combine = match quantifier {
-                    Quantifier::Exists => Conditional::new(low, Root::True, high),
-                    Quantifier::ForAll => Conditional::new(low, high, Root::False),
-                };
-                self.conditional(combine)?
-            } else {
-                self.branch(node.variable, low, high)?
-            };
+            let mapped = self.project_branch(node.variable, low, high, quantified, quantifier)?;
             indices.insert(index, mapped);
         }
-        Ok(Self::remap(root, &indices))
+        Ok(indices)
+    }
+
+    fn project_branch(
+        &mut self,
+        variable: V,
+        low: Root,
+        high: Root,
+        quantified: &BTreeSet<V>,
+        quantifier: Quantifier,
+    ) -> Result<Root, C::Error> {
+        if !quantified.contains(&variable) {
+            return self.branch(variable, low, high);
+        }
+        let combine = match quantifier {
+            Quantifier::Exists => Conditional::new(low, Root::True, high),
+            Quantifier::ForAll => Conditional::new(low, high, Root::False),
+        };
+        self.conditional(combine)
     }
 
     fn substitute(
