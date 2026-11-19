@@ -19751,3 +19751,14 @@ Sema全feature checkはライブラリのコンパイルに成功した。テス
 Compilerの5 target、548件は532成功・16失敗で、前回と全IDおよび合否が一致した。`UnresolvedFuture` は6件。標準Mapは27入力ともNativeと正準符号化を往復したAWBCの実行検証を通過した。Sema全feature checkはライブラリ成功。テスト対象は終了101、既存794エラーと33警告で、コード・ファイル別の増減0。Semaライブラリの全feature Clippy、整形、差分検査、構造ゲートは終了0。Cargo全feature逆依存は起点込みでCore 52、Sema 22 package。Sema単体、全逆依存テスト、workspace全targetのcheck／Clippy、最終受入は未実行。公開後に変更したRust 5 blobを照合した。`target` は12,895,473,525 bytes。
 
 [検証原本と公開照合](acceptance-evidence/task-effect-retain-original.raw.zip) は20 entry、575,087 bytes、SHA256 `bef493fb554d41891d5619f3d95d2abf440e3e13ce71185b9e35d898b961136a`。各原本の長さとハッシュを照合した。
+
+<a id="effect-continuation-rows"></a>
+## 2026-11-19 — 部分適用が後段コールバックの作用行を保持
+
+基点 `74acdbb46a3dd5d6cd7a669f062fef08941b8684`。Source `01a15d0dbf42104b132ecfab0231f2ac1ec523f7` では、部分適用を要求する適用元が所有する作用入力を、継続の有限行として投影する。元の量化された義務は、未確定入力から独立して確定できる作用関数の検査と、継続の作用行が満たす条件を求めるために使う。戻り値の関数型に収める条件は正準な作用述語と照合する。後段の適用は公開された継続を新しく開き、その回のコールバックから作用を確定する。今回検証した領域は引数を持たない作用入力と、未確定入力から独立した最小解。これらを同時に解く必要がある関係と形式引数を持つ作用入力には、引き続き投影の証明が必要。
+
+Compilerの5 target、548件は539成功・9失敗・0 skip。Source `5b08a96a238011b4db25d50a9dcb9251a178c47c` と全IDが一致し、既知の `UnresolvedFuture` のNative／AWBC 6件と、7入力を比較するコンパイルテスト1件が成功へ移行した。新規失敗は0。標準Mapの27入力はNativeの値とコールバック回数、正準符号化を往復したAWBCの値とプログラム呼出し回数を確認した。残る9件のIDを原本に保持した。
+
+量化処理を同じCore決定図へ接続した独立ハーネスで、外部ラベルの出現に関する256通りの真理値表を照合した。244通りの量化結果が一致し、12通りが外部ラベルの個数で結果が変わることを検出した。決定図の複数ノードに出現する同一座標は、一度だけ数える。Sema全feature checkはライブラリ成功。テスト対象は終了101、既存794エラー・33警告で、コード・ファイル別の内訳は基点と一致した。Semaライブラリの全feature Clippy、fmt、差分検査、構造ゲートは終了0。Sema単体、全逆依存、workspace全targetのcheck／Clippy、最終受入は未実行。公開後にRust 12 blobを照合した。`target` は12,900,406,314 bytes。
+
+[検証原本と公開照合](acceptance-evidence/task-effect-continuation-rows.raw.zip) は26 entry、614,617 bytes、SHA256 `c8013560c5578641a0688213dacf21aec25fc2e9099a54886bd21c824fec1691`。各原本の長さとハッシュを照合した。
