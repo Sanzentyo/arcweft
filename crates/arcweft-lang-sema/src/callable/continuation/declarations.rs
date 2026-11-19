@@ -37,8 +37,56 @@ pub(crate) enum PreparedCallableValueTypeFailure<E: std::error::Error + 'static>
 /// Value results enter inference with their live effect terms. A content
 /// emission has no value projection; its operation belongs to the schema.
 pub(crate) enum PreparedApplicationResult {
-    Value(TypeKind<crate::types::PreparedEffects>),
+    Value {
+        ty: TypeKind<crate::types::PreparedEffects>,
+        result_effect: Option<PreparedApplicationResultEffect>,
+    },
     ContentEmission,
+}
+
+/// Identifies the Named application carried by the terminal arrow of a
+/// retaining application. A callable returned by invoking the body has its own
+/// result type and no such port.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedApplicationResultEffect {
+    owner: CheckedCallableId,
+    declaration: PreparedEffectDeclaration,
+    terminal_arrow: usize,
+}
+
+impl PreparedApplicationResultEffect {
+    pub(crate) fn owner(&self) -> &CheckedCallableId {
+        &self.owner
+    }
+
+    pub(crate) fn declaration(&self) -> &PreparedEffectDeclaration {
+        &self.declaration
+    }
+
+    pub(crate) fn terminal_row<'a, C: DecisionControl>(
+        &self,
+        mut ty: &'a TypeKind<crate::types::PreparedEffects>,
+        control: &mut C,
+    ) -> Result<&'a PreparedEffectRow, PreparedEffectFailure<C::Error>> {
+        for arrow in 0..=self.terminal_arrow {
+            control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?;
+            let TypeKind::Function {
+                effects,
+                return_type,
+                ..
+            } = ty
+            else {
+                return Err(PreparedEffectInvariant::ApplicationArity.into());
+            };
+            if arrow == self.terminal_arrow {
+                return Ok(effects);
+            }
+            ty = return_type;
+        }
+        unreachable!("the terminal arrow is included")
+    }
 }
 
 pub(crate) struct PreparedCallableEffectDeclarations {
@@ -406,8 +454,8 @@ impl<P, U> PreparedCallGraph<P, U> {
                 .inferred_result_schema()
                 .unwrap_or_else(|| schema.result_schema());
             return Ok(match result {
-                CallableResultSchema::Value(value) => PreparedApplicationResult::Value(
-                    value
+                CallableResultSchema::Value(value) => PreparedApplicationResult::Value {
+                    ty: value
                         .prepare_effects(schema.generic_inventory().template_scope(), control)
                         .map_err(
                             super::super::schema::PreparedCallableFunctionTypeFailure::Projection,
@@ -415,7 +463,8 @@ impl<P, U> PreparedCallGraph<P, U> {
                         .map_err(
                             super::super::schema::CallableFunctionTypeProjectionError::Projection,
                         )?,
-                ),
+                    result_effect: None,
+                },
                 CallableResultSchema::ContentEmission(_) => {
                     PreparedApplicationResult::ContentEmission
                 }
@@ -425,9 +474,37 @@ impl<P, U> PreparedCallGraph<P, U> {
             .declarations
             .as_ref()
             .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)?;
-        let value =
+        let ty =
             declarations.prepare_callable_arrow(builder, candidate, next, terminal, control)?;
-        Ok(PreparedApplicationResult::Value(value))
+        let result_effect = if let Some(owner) = candidate.checked()
+            && let Some(named) = declarations.declarations.get(owner)
+        {
+            let terminal_arrow = schema
+                .groups()
+                .len()
+                .checked_sub(next.group().get() + 1)
+                .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
+            let port = PreparedApplicationResultEffect {
+                owner: owner.clone(),
+                declaration: named
+                    .validate_schema(schema)
+                    .map_err(PreparedEffectFailure::Invariant)?
+                    .clone(),
+                terminal_arrow,
+            };
+            match port.terminal_row(&ty, control)? {
+                PreparedEffectRow::Canonical(_) => None,
+                row @ PreparedEffectRow::Term(_) => {
+                    port.declaration
+                        .application_arguments(declarations.read(), row)
+                        .map_err(PreparedEffectFailure::Invariant)?;
+                    Some(port)
+                }
+            }
+        } else {
+            None
+        };
+        Ok(PreparedApplicationResult::Value { ty, result_effect })
     }
 
     pub(crate) fn effect_declarations(

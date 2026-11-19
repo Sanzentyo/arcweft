@@ -9,7 +9,7 @@ use crate::{
     callable::{
         CallableCandidateId, CallableInstantiation, CallableTerminalEffectProjection,
         CheckedCallSite, CheckedCallableDeclaration, CheckedCallableId, EffectPermission,
-        PreparedCallArgumentMapping, PreparedCallableEffectProjectionSite,
+        PreparedApplicationResultEffect, PreparedCallableEffectProjectionSite,
         PreparedResolvedCallable,
     },
     effect_row::EffectRow,
@@ -353,22 +353,25 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    /// A viable continuation result exposes the latent invocation row.
-    pub(super) fn prepare_continuation_result_effects(
+    /// A viable retaining result exposes the latent invocation row.
+    pub(super) fn prepare_application_result_effects(
         &mut self,
         site: CheckedCallSite,
         candidate: &PreparedResolvedCallable,
-        mapping: &PreparedCallArgumentMapping,
+        effect: &PreparedApplicationResultEffect,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let transition = candidate.application_transition(mapping).map_err(|_| {
-            FinalSemanticAnalysisError::CallResolutionFailed {
-                owner: site.expression(),
-            }
-        })?;
-        let effects = self.source_callable_terminal_effects(candidate)?;
-        if transition.remaining_position().is_some()
-            && matches!(effects, CallableTerminalEffectProjection::Pending(_))
-        {
+        if candidate.checked() != Some(effect.owner()) {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+        }
+        let graph = self.facts.effect_declarations()?.read();
+        let declaration = effect.declaration();
+        declaration
+            .validate_read(graph)
+            .map_err(crate::effect_row::prepared::PreparedEffectFailure::Invariant)?;
+        if matches!(
+            self.source_callable_terminal_effects(candidate)?,
+            CallableTerminalEffectProjection::Pending(_)
+        ) {
             self.prepare_callable_body_effects(site.into(), candidate)?;
         }
         Ok(())

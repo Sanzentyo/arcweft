@@ -281,6 +281,7 @@ enum PreparedCallCandidateExecution {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct PreparedCallCandidateRecipe {
+    result_effect: Option<crate::callable::PreparedApplicationResultEffect>,
     candidate: Arc<PreparedResolvedCallable>,
     group: CallableGroupIndex,
     consumer: constraints::AnalyzerCallConsumerAdmission,
@@ -1393,12 +1394,15 @@ impl Analyzer<'_, '_, '_> {
                         &mut candidate_pending,
                         &mut source_context.work(),
                     )?;
-                    self.prepare_continuation_result_effects(
-                        source.site,
-                        &recipe.candidate,
-                        recipe.inputs.mapping(),
-                    )
-                    .map_err(AnalyzerExpressionError::fatal)
+                    if let Some(effect) = &recipe.result_effect {
+                        self.prepare_application_result_effects(
+                            source.site,
+                            &recipe.candidate,
+                            effect,
+                        )
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                    }
+                    Ok(())
                 })();
                 if let Err(error) = prepared {
                     self.facts
@@ -5060,6 +5064,7 @@ impl Analyzer<'_, '_, '_> {
                 .read(),
         )?;
         let child_recipe = parent_source.as_ref().map(|_| PreparedCallCandidateRecipe {
+            result_effect: output.result_effect().cloned(),
             candidate: Arc::clone(&candidate),
             group: current_group,
             consumer,

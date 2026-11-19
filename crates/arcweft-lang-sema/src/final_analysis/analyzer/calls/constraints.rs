@@ -3565,6 +3565,7 @@ impl PreparedCallResultConstraint<'_> {
 enum PreparedCallOutput<'a> {
     Value {
         ty: TypeKind<PreparedEffects>,
+        result_effect: Option<crate::callable::PreparedApplicationResultEffect>,
         expected: Option<PreparedCallResultConstraint<'a>>,
         next_parameters: Option<(TypeKind<PreparedEffects>, TypeKind<PreparedEffects>)>,
     },
@@ -3579,6 +3580,15 @@ pub(super) struct PreparedCallOutputProjections<'a> {
 }
 
 impl PreparedCallOutputProjections<'_> {
+    pub(super) fn result_effect(
+        &self,
+    ) -> Option<&crate::callable::PreparedApplicationResultEffect> {
+        match &self.result {
+            PreparedCallOutput::Value { result_effect, .. } => result_effect.as_ref(),
+            PreparedCallOutput::ContentEmission => None,
+        }
+    }
+
     fn constrain_context<C: TypeConstraintClient<AnalyzerCallConstraintDomain>>(
         &self,
         driver: &mut CandidateConstraintDriver<'_, '_, AnalyzerCallConstraintDomain, C>,
@@ -3587,6 +3597,7 @@ impl PreparedCallOutputProjections<'_> {
             ty,
             expected,
             next_parameters,
+            ..
         } = &self.result
         {
             if let Some((pattern, actual)) = next_parameters {
@@ -3876,7 +3887,7 @@ impl PreparedCallConstraintSet {
             base.push(value);
         }
         let result = match result {
-            PreparedApplicationResult::Value(ty) => {
+            PreparedApplicationResult::Value { ty, result_effect } => {
                 let mut expected = expected_result.map(|ty| (PreparedCallResultTarget::Whole, ty));
                 let mut next_parameters = None;
                 if let Some(next) = expected_application_callee
@@ -3941,6 +3952,7 @@ impl PreparedCallConstraintSet {
                 };
                 PreparedCallOutput::Value {
                     ty,
+                    result_effect,
                     expected,
                     next_parameters,
                 }
@@ -6577,7 +6589,6 @@ pub(crate) fn run_prepared_candidate(
         type_application_constraints,
         receiver_constraints,
         initialization,
-        retains_inputs,
         ..
     } = set;
     let PreparedCallConstraintInitialization::Root(initialization) = initialization else {
@@ -6640,7 +6651,7 @@ pub(crate) fn run_prepared_candidate(
                     driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
                 }
                 output.request(&mut driver, application, &enclosing, &limits)?;
-                if retains_inputs {
+                if let Some(effect) = output.result_effect() {
                     driver.prepare_viable_result(
                         AnalyzerCallConstraintSource::Result {
                             source: application,
@@ -6649,11 +6660,7 @@ pub(crate) fn run_prepared_candidate(
                             client
                                 .operations
                                 .analyzer
-                                .prepare_continuation_result_effects(
-                                    site,
-                                    &candidate,
-                                    inputs.mapping(),
-                                )
+                                .prepare_application_result_effects(site, &candidate, effect)
                                 .map_err(|error| {
                                     AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error))
                                 })

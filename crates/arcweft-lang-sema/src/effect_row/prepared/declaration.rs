@@ -59,6 +59,31 @@ impl PreparedEffectDeclaration {
         }
         Ok(())
     }
+
+    /// A declaration's header can authenticate an application while its body
+    /// is still open. The ordered operands belong to this exact application.
+    pub(crate) fn application_arguments<'a>(
+        &self,
+        view: PreparedEffectReadView<'a>,
+        row: &PreparedEffectRow,
+    ) -> Result<&'a [PreparedEffectRow], PreparedEffectInvariant> {
+        self.validate_read(view)?;
+        let PreparedEffectRow::Term(row) = row else {
+            return Err(PreparedEffectInvariant::StaleReference);
+        };
+        match view.row(row)? {
+            RowTerm::Application {
+                function: FunctionRef::Scheme(reference),
+                arguments,
+            } if reference == self.scheme() => {
+                if arguments.len() != self.parameters().len() {
+                    return Err(PreparedEffectInvariant::ApplicationArity);
+                }
+                Ok(arguments)
+            }
+            _ => Err(PreparedEffectInvariant::StaleReference),
+        }
+    }
 }
 
 impl PreparedEffectGraph {
@@ -179,5 +204,50 @@ mod tests {
             .unwrap()
             .validate(&graph)
             .unwrap();
+    }
+
+    #[test]
+    fn open_declaration_authenticates_only_its_own_ordered_application() {
+        let mut work = budget();
+        let mut graph = PreparedEffectGraph::default();
+        let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 2));
+        let formals = vec![
+            scope.bound_effect(0, 0).unwrap(),
+            scope.bound_effect(0, 1).unwrap(),
+        ];
+        let scheme = graph
+            .declare(formals.clone(), EffectPredicate::unconstrained(), &mut work)
+            .unwrap();
+        let other = graph
+            .declare(formals, EffectPredicate::unconstrained(), &mut work)
+            .unwrap();
+        let declaration = graph.declaration(&scheme, &mut work).unwrap();
+        let arguments = [literal(&["fs.read"]), literal(&["log.write"])];
+        let named = graph
+            .application(&scheme, arguments.to_vec(), &mut work)
+            .unwrap();
+        let unrelated = graph
+            .application(&other, arguments.to_vec(), &mut work)
+            .unwrap();
+        assert!(!graph.read().scheme_body_is_prepared(&scheme).unwrap());
+        assert_eq!(
+            declaration
+                .application_arguments(graph.read(), &named)
+                .unwrap(),
+            &arguments
+        );
+        assert_eq!(
+            declaration.application_arguments(graph.read(), &unrelated),
+            Err(PreparedEffectInvariant::StaleReference)
+        );
+        let mut checkpoint = graph.checkpoint(&mut work).unwrap();
+        let temporary = graph
+            .application(&scheme, arguments.to_vec(), &mut work)
+            .unwrap();
+        graph.rollback(&mut checkpoint).unwrap();
+        assert_eq!(
+            declaration.application_arguments(graph.read(), &temporary),
+            Err(PreparedEffectInvariant::StaleReference)
+        );
     }
 }

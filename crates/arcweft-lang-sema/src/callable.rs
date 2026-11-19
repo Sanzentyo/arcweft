@@ -111,15 +111,16 @@ pub(crate) use constraints::{
 };
 pub(crate) use continuation::{
     CallConstraintInvariant, CallableConstraintApplication, EnclosingGenericParameterScope,
-    PreparedApplicationResult, PreparedCallContinuationAuthority, PreparedCallContinuationRef,
-    PreparedCallGraph, PreparedCallGraphCheckpoint, PreparedCallGraphDelta,
-    PreparedCallGraphIngress, PreparedCallGraphMutationFailure, PreparedCallGraphReplayMismatch,
-    PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
-    PreparedCallGraphSelectedNode, PreparedCallGraphSiteState, PreparedCallPrefixPayload,
-    PreparedCallPrefixReplayMismatch, PreparedCallResultRef, PreparedCallSiteDelivery,
-    PreparedCallableEffectDeclarations, PreparedCallableEffectProjectionSite,
-    PreparedCallableEffectView, PreparedCallableValueTypeFailure,
-    PreparedChildConstraintInitialization, PreparedConstraintInitialization,
+    PreparedApplicationResult, PreparedApplicationResultEffect, PreparedCallContinuationAuthority,
+    PreparedCallContinuationRef, PreparedCallGraph, PreparedCallGraphCheckpoint,
+    PreparedCallGraphDelta, PreparedCallGraphIngress, PreparedCallGraphMutationFailure,
+    PreparedCallGraphReplayMismatch, PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey,
+    PreparedCallGraphSealPayload, PreparedCallGraphSelectedNode, PreparedCallGraphSiteState,
+    PreparedCallPrefixPayload, PreparedCallPrefixReplayMismatch, PreparedCallResultRef,
+    PreparedCallSiteDelivery, PreparedCallableEffectDeclarations,
+    PreparedCallableEffectProjectionSite, PreparedCallableEffectView,
+    PreparedCallableValueTypeFailure, PreparedChildConstraintInitialization,
+    PreparedConstraintInitialization,
 };
 pub use continuation::{
     CheckedAttachedContentApplicationFamily, CheckedCallSite, PreparedCallGraphInvariant,

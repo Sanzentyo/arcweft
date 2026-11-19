@@ -404,9 +404,20 @@ mod tests {
             .unwrap();
         let closed = effects_graph.solve_principal(&mut control).unwrap();
         for (result, value) in [(pending, pending_value), (cached, cached_value)] {
-            let PreparedApplicationResult::Value(remaining) = result else {
+            let PreparedApplicationResult::Value {
+                ty: remaining,
+                result_effect: Some(port),
+            } = result
+            else {
                 panic!("remaining invocation arrow");
             };
+            assert_eq!(port.owner(), id);
+            let terminal = port.terminal_row(&remaining, &mut control).unwrap();
+            let arguments = port
+                .declaration()
+                .application_arguments(effects_graph.read(), terminal)
+                .unwrap();
+            assert!(arguments.is_empty());
             let TypeKind::Function {
                 params,
                 return_type,
