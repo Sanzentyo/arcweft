@@ -20226,3 +20226,12 @@ Semaの全featureユニットは1,992件中1,900 PASS、92既知FAIL。Compiler�
 Supersedes [対で構築した時点の停止箇所](#paired-source-materialization)。2 callback のSemaとNative／AWBCは候補の確定を経て、効果関係を取り込む判定図の参照付け替えで既定上限4,096に達した。3 callback のSemaは判定図の出力ノード確保で同上限に達する。
 
 Semaの全featureユニットは1,993件中1,901 PASS、92既知FAIL。Compilerの統合6 targetは582件中580 PASS、2既知FAIL。新規失敗は0。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。初回の型付きエラー変換によるcompile failureを修復し、そのログと成功した検証を[検証原本・公開照合](acceptance-evidence/task-canonical-member-equations.raw.zip)に保持した。原本は33 entry、1,114,235 bytes、SHA256 `e1a9e2505a4e7dc5e3268fc13366488f9a431df8c0c1474d833ea7905c5a42af`。公開6ファイルと各entryを照合した。記録時の `target` は101,368,151,502 bytes。
+
+<a id="mapped-effect-references"></a>
+## 2026-11-20 — 効果判定図の参照付け替えで順序を保てる枝を直接構築する
+
+検証基点 `72a4f2c2b34a984c73a3412e81695a8157c5c39c`、Source `c70bc4ab48d9f78f4644a0f31faeefc7048627e0`。参照を付け替えた枝は、子の順序が正規形に従う場合、その枝を直接組み立てる。順序が変わる場合は同じbuilderで正規化する。3ノードの順序保存と15作業単位での成功・14での拒否、順序の反転、参照の統合を確認した。
+
+Coreの全feature library／`effect_decision` は2,376件すべて通過。Semaの全featureユニットは1,993件中1,901 PASS、92既知FAIL。Compiler統合6 targetは582件中580 PASS、2既知FAIL。実行したSemaとCompilerで全IDの合否は前回と一致した。2 callback のSemaとNative／AWBCは効果判定図を取り込む際の参照付け替え、3 callback のSemaは判定図の出力ノード確保で既定上限4,096に達した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+[検証原本・公開照合](acceptance-evidence/task-map-effect-references.raw.zip) は32 entry、1,188,141 bytes、SHA256 `597617e8a1041d6d1dacb9ae5a1ab52f5918006f8d296331a8da92e53d00b20d`。公開2ファイルと各entryを照合した。記録時の `target` は100,906,927,826 bytes。直近の[全逆依存結果](#reachable-effect-decision-reverse)に続き、現行Sourceの同範囲を実行中。
