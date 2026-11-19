@@ -210,9 +210,8 @@ impl<'a> CanonicalReplay<'a> {
                             .functions
                             .get(&function.reference().ordinal)
                             .ok_or(PreparedEffectInvariant::PrincipalConfirmation)?;
-                        let guard = imported
-                            .principal(self.principal.layout.view(), work)?
-                            .substitute(&self.principal.coefficients, work)?;
+                        let guard = imported.principal(self.principal.layout.view(), work)?;
+                        let guard = self.principal.coefficients.substitute(&guard, work)?;
                         admitted = admitted.and(&guard, work)?;
                     }
                     let formula = self
@@ -462,13 +461,15 @@ impl<'a> CanonicalReplay<'a> {
         for id in reachable {
             let term = self.principal.graph.predicates[&id].as_ref();
             let value = match term {
-                PredicateTerm::ImportedPrincipal(imported) => self
-                    .principal
-                    .layout
-                    .imports
-                    .relation(imported, work)?
-                    .principal(self.principal.layout.view(), work)?
-                    .substitute(&self.principal.coefficients, work)?,
+                PredicateTerm::ImportedPrincipal(imported) => {
+                    let guard = self
+                        .principal
+                        .layout
+                        .imports
+                        .relation(imported, work)?
+                        .principal(self.principal.layout.view(), work)?;
+                    self.principal.coefficients.substitute(&guard, work)?
+                }
                 PredicateTerm::Substitution {
                     predicate,
                     arguments,

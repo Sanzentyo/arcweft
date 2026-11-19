@@ -1,7 +1,7 @@
 //! Joint closure of issuer-owned, parameterized effect schemes.
 
 use arcweft_core::effect_row::{
-    ConditionalDecisionCompletion, EffectDecision, EffectMembershipView,
+    DecisionLowerEnvelope, EffectDecision, EffectDecisionReplacement, EffectMembershipView,
 };
 
 use super::*;
@@ -11,7 +11,7 @@ mod canonical;
 mod compilation;
 mod component;
 pub(crate) use component::PreparedEffectActualInputs;
-use component::{CompiledComponent, ComponentCompletion};
+use component::{CompiledComponent, ComponentCompletion, EffectCoefficients};
 mod imports;
 use imports::ImportedRelations;
 mod observation;
@@ -376,7 +376,7 @@ pub(crate) struct PrincipalEffectClosure {
     graph: Arc<PreparedEffectDefinitions>,
     layout: Arc<Layout>,
     functions: BTreeMap<u64, EffectRow>,
-    coefficients: BTreeMap<Atom, Decision>,
+    coefficients: EffectCoefficients,
     choices: BTreeSet<Atom>,
     witnesses: Decision,
     input_bindings: BTreeMap<u64, EffectRow>,
@@ -570,16 +570,17 @@ impl PreparedEffectDefinitions {
         }
         let ComponentCompletion {
             layout,
-            completion,
+            satisfiable,
+            principal,
             coefficients,
             choices,
             witnesses,
         } = CompiledComponent::with_inventory(self, &fixed, inventory, &mut work)?
             .complete(&mut work)?;
-        if !completion.satisfiable().is_constant(true) {
+        if !satisfiable.is_constant(true) {
             return Err(PreparedEffectFailure::Unsatisfiable);
         }
-        if !completion.principal().is_constant(true) {
+        if !principal.is_constant(true) {
             return Err(PreparedEffectFailure::NonPrincipal);
         }
         for atom in witnesses.variables() {
@@ -611,7 +612,7 @@ impl PrincipalEffectClosure {
     fn reify<C: DecisionControl>(
         graph: Arc<PreparedEffectDefinitions>,
         layout: Arc<Layout>,
-        coefficients: BTreeMap<Atom, Decision>,
+        coefficients: EffectCoefficients,
         choices: BTreeSet<Atom>,
         witnesses: Decision,
         input_bindings: BTreeMap<u64, EffectRow>,

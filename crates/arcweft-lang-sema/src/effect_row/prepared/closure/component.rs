@@ -11,7 +11,7 @@ mod tests;
 pub(super) struct CompiledComponent {
     pub(super) layout: Layout,
     pub(super) relation: Decision,
-    fixed: BTreeMap<Atom, Decision>,
+    fixed: BTreeMap<Atom, bool>,
     minimized: BTreeSet<Atom>,
     choices: BTreeSet<Atom>,
 }
@@ -20,10 +20,79 @@ pub(super) struct CompiledComponent {
 /// least tuple and its principal domain; they are never minimized with locals.
 pub(super) struct ComponentCompletion {
     pub(super) layout: Arc<Layout>,
-    pub(super) completion: ConditionalDecisionCompletion<Atom>,
-    pub(super) coefficients: BTreeMap<Atom, Decision>,
+    pub(super) satisfiable: Decision,
+    pub(super) principal: Decision,
+    pub(super) coefficients: EffectCoefficients,
     pub(super) choices: BTreeSet<Atom>,
     pub(super) witnesses: Decision,
+}
+
+/// Fixed inputs and the least tuple have disjoint domains. Any cell outside
+/// both domains still requires an actual input or belongs to another relation.
+pub(super) struct EffectCoefficients {
+    fixed: BTreeMap<Atom, bool>,
+    least: DecisionLowerEnvelope<Atom>,
+    zero: Decision,
+    one: Decision,
+}
+
+impl EffectCoefficients {
+    fn new(fixed: BTreeMap<Atom, bool>, least: DecisionLowerEnvelope<Atom>) -> Self {
+        Self {
+            fixed,
+            least,
+            zero: Decision::constant(false),
+            one: Decision::constant(true),
+        }
+    }
+
+    pub(super) fn get(&self, cell: &Atom) -> Option<&Decision> {
+        self.fixed
+            .get(cell)
+            .map(|&value| if value { &self.one } else { &self.zero })
+            .or_else(|| self.least.get(cell))
+    }
+
+    pub(super) fn substitute<C: DecisionControl>(
+        &self,
+        decision: &Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        if decision.node_count() == 0 {
+            return work.copy_decision(decision);
+        }
+        decision.substitute_references(work, |atom, _| {
+            Ok(match self.get(atom) {
+                Some(value) => EffectDecisionReplacement::Decision(value),
+                None => EffectDecisionReplacement::Variable(atom.clone()),
+            })
+        })
+    }
+
+    pub(super) fn specialize<C: DecisionControl>(
+        &self,
+        mut actuals: BTreeMap<Atom, bool>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        let least = self.least.specialize(&actuals, work)?;
+        if !least.is_closed(work)? {
+            return Err(PreparedEffectInvariant::UnclosedCell.into());
+        }
+        for (cell, &value) in &self.fixed {
+            work.charge(DecisionWork::Node)?;
+            if let std::collections::btree_map::Entry::Vacant(entry) = actuals.entry(cell.clone()) {
+                entry.insert(value);
+            } else {
+                return Err(PreparedEffectInvariant::DuplicateFutureBinding.into());
+            }
+        }
+        Ok(Self::new(actuals, least))
+    }
+
+    #[cfg(test)]
+    pub(super) fn inject_coefficient_for_replay_test(&mut self, cell: Atom, value: bool) {
+        self.fixed.insert(cell, value);
+    }
 }
 
 struct RelationScope<'a> {
@@ -218,7 +287,7 @@ impl CompiledComponent {
                             class,
                             mask,
                         },
-                        Decision::constant(value),
+                        value,
                     );
                 }
             }
@@ -257,25 +326,26 @@ impl CompiledComponent {
         let relation = if self.fixed.is_empty() || self.relation.node_count() == 0 {
             self.relation
         } else {
-            self.relation.substitute(&self.fixed, work)?
+            self.relation.restrict(&self.fixed, work)?
         };
         let projected = if self.choices.is_empty() {
             None
         } else {
             Some(relation.exists(&self.choices, work)?)
         };
-        let completion = projected
+        let (satisfiable, principal, least) = projected
             .as_ref()
             .unwrap_or(&relation)
-            .complete_conditionally(&self.minimized, work)?;
-        let witnesses = if completion.lower_envelope().is_empty() || relation.node_count() == 0 {
+            .complete_conditionally(self.minimized, work)?
+            .into_parts();
+        let witnesses = if least.domain().is_empty() || relation.node_count() == 0 {
             relation
         } else {
-            relation.substitute(completion.lower_envelope(), work)?
+            least.instantiate(&relation, work)?
         };
         for atom in witnesses.variables() {
             work.charge(DecisionWork::Visit)?;
-            let future = self.layout.cells.contains(atom) && !self.minimized.contains(atom);
+            let future = self.layout.cells.contains(atom) && !least.domain().contains(atom);
             if !self.choices.contains(atom) && !future {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());
             }
@@ -283,22 +353,18 @@ impl CompiledComponent {
         // The guard and all remaining discrete witnesses describe the same
         // region. A caller may restrict that region, never re-minimize locals.
         let confirmed = if self.choices.is_empty() {
-            &witnesses == completion.principal()
+            witnesses == principal
         } else {
-            witnesses.exists(&self.choices, work)? == *completion.principal()
+            witnesses.exists(&self.choices, work)? == principal
         };
         if !confirmed {
             return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
         }
-        let mut coefficients = self.fixed;
-        for (cell, decision) in completion.lower_envelope() {
-            work.charge(DecisionWork::Node)?;
-            coefficients.insert(cell.clone(), work.copy_decision(decision)?);
-        }
         Ok(ComponentCompletion {
             layout: Arc::new(self.layout),
-            completion,
-            coefficients,
+            satisfiable,
+            principal,
+            coefficients: EffectCoefficients::new(self.fixed, least),
             choices: self.choices,
             witnesses,
         })

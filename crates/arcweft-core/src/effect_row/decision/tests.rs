@@ -363,17 +363,18 @@ fn completion_matches_exhaustive_models_of_every_three_variable_relation() {
             );
             let completed = relation.complete(&quantified, &mut meter).unwrap();
             let conditional = relation
-                .complete_conditionally(&quantified, &mut meter)
+                .complete_conditionally(quantified.clone(), &mut meter)
                 .unwrap();
             assert_eq!(conditional.satisfiable(), &completed.admissibility);
+            let envelope = conditional.lower_envelope();
+            assert_eq!(envelope.domain(), &quantified);
             assert_eq!(
-                conditional
-                    .lower_envelope()
-                    .keys()
-                    .copied()
-                    .collect::<BTreeSet<_>>(),
-                quantified
+                &envelope.instantiate(&relation, &mut meter).unwrap(),
+                conditional.principal()
             );
+            for rigid in (0..3u8).filter(|variable| !quantified.contains(variable)) {
+                assert!(envelope.get(&rigid).is_none());
+            }
             assert!(
                 completed
                     .admissibility
@@ -411,6 +412,13 @@ fn completion_matches_exhaustive_models_of_every_three_variable_relation() {
                     has_least &= models.contains(&least);
                 }
                 let meet = least_models[usize::from(rigid)];
+                let assignment = (0..3u8)
+                    .filter(|variable| !quantified.contains(variable))
+                    .map(|variable| (variable, rigid & (1 << variable) != 0))
+                    .collect();
+                let specialized = envelope.specialize(&assignment, &mut meter).unwrap();
+                assert!(specialized.is_closed(&mut meter).unwrap());
+                assert_eq!(specialized.domain(), &quantified);
                 assert_eq!(
                     conditional
                         .principal()
@@ -419,7 +427,13 @@ fn completion_matches_exhaustive_models_of_every_three_variable_relation() {
                     "conditional principal: table {table}, mask {quantified_mask}, rigid {rigid}"
                 );
                 for variable in &quantified {
-                    let value = &conditional.lower_envelope()[variable];
+                    let value = envelope.get(variable).unwrap();
+                    assert!(
+                        specialized
+                            .get(variable)
+                            .unwrap()
+                            .is_constant(meet & (1 << variable) != 0)
+                    );
                     assert!(
                         value
                             .variables()
@@ -468,16 +482,11 @@ fn conditional_completion_retains_exact_principal_and_unsatisfiable_domains() {
     let relation = parameter.or(&exclusive, &mut meter).unwrap();
     let quantified = BTreeSet::from([1, 2]);
     let conditional = relation
-        .complete_conditionally(&quantified, &mut meter)
+        .complete_conditionally(quantified.clone(), &mut meter)
         .unwrap();
     assert!(conditional.satisfiable().is_constant(true));
     assert_eq!(conditional.principal(), &parameter);
-    assert!(
-        conditional
-            .lower_envelope()
-            .values()
-            .all(|value| value.is_constant(false))
-    );
+    assert!(conditional.lower_envelope().nonzero.is_empty());
     assert!(
         relation
             .complete(&quantified, &mut meter)
@@ -487,12 +496,12 @@ fn conditional_completion_retains_exact_principal_and_unsatisfiable_domains() {
     );
 
     let incomparable = exclusive
-        .complete_conditionally(&quantified, &mut meter)
+        .complete_conditionally(quantified.clone(), &mut meter)
         .unwrap();
     assert!(incomparable.satisfiable().is_constant(true));
     assert!(incomparable.principal().is_constant(false));
     let impossible = EffectDecision::constant(false)
-        .complete_conditionally(&quantified, &mut meter)
+        .complete_conditionally(quantified.clone(), &mut meter)
         .unwrap();
     assert!(impossible.satisfiable().is_constant(false));
     assert!(impossible.principal().is_constant(false));
@@ -506,7 +515,7 @@ fn conditional_completion_aborts_at_every_budget_boundary_without_mutating_input
     let quantified = BTreeSet::from([1]);
     let mut full = Meter::default();
     let expected = relation
-        .complete_conditionally(&quantified, &mut full)
+        .complete_conditionally(quantified.clone(), &mut full)
         .unwrap();
     for limit in 0..full.used {
         let mut limited = Meter {
@@ -515,7 +524,7 @@ fn conditional_completion_aborts_at_every_budget_boundary_without_mutating_input
         };
         assert_eq!(
             relation
-                .complete_conditionally(&quantified, &mut limited)
+                .complete_conditionally(quantified.clone(), &mut limited)
                 .unwrap_err(),
             (limit + 1, limit)
         );
@@ -527,7 +536,7 @@ fn conditional_completion_aborts_at_every_budget_boundary_without_mutating_input
     };
     assert_eq!(
         relation
-            .complete_conditionally(&quantified, &mut exact)
+            .complete_conditionally(quantified.clone(), &mut exact)
             .unwrap(),
         expected
     );

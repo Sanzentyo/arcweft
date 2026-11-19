@@ -14,7 +14,7 @@ pub(super) enum ApplicationCells<'a> {
     Variables,
     Solved {
         basis: ClassLayout<'a>,
-        coefficients: &'a BTreeMap<Atom, Decision>,
+        coefficients: &'a EffectCoefficients,
     },
 }
 
@@ -34,7 +34,7 @@ impl<'a> ApplicationCells<'a> {
         match self {
             Self::Variables => Ok(decision),
             Self::Solved { coefficients, .. } => {
-                let value = decision.substitute(coefficients, work)?;
+                let value = coefficients.substitute(&decision, work)?;
                 if !value.is_constant(false) && !value.is_constant(true) {
                     return Err(PreparedEffectInvariant::UnclosedCell.into());
                 }

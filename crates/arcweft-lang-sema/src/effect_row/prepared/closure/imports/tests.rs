@@ -496,13 +496,13 @@ fn independent_replay_rejects_a_corrupted_child_lowering_even_if_the_parent_agre
     let table = imports.functions.get_mut(&id(&imported)).unwrap();
     let cached = Arc::get_mut(&mut Arc::get_mut(&mut table.relation).unwrap().child).unwrap();
     let x_id = FunctionRef::Unknown(x).reference().ordinal;
-    cached.coefficients.insert(
+    cached.coefficients.inject_coefficient_for_replay_test(
         Atom::Cell {
             scheme: x_id,
             class: 1,
             mask: 0,
         },
-        Decision::constant(true),
+        true,
     );
     table.membership[1][0] = Decision::constant(true);
     imports

@@ -86,9 +86,13 @@ impl PrincipalEffectClosure {
                         )?;
                     let imported;
                     let least = if matches!(function.as_ref(), Function::Imported(_)) {
-                        imported = self.layout.imports.functions[&id]
-                            .coefficient(self.layout.view(), class, mask, work)?
-                            .substitute(&self.coefficients, work)?;
+                        let coefficient = self.layout.imports.functions[&id].coefficient(
+                            self.layout.view(),
+                            class,
+                            mask,
+                            work,
+                        )?;
+                        imported = self.coefficients.substitute(&coefficient, work)?;
                         &imported
                     } else {
                         self.coefficients

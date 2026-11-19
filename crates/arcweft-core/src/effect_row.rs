@@ -11,8 +11,8 @@ mod membership;
 mod set;
 
 pub use decision::{
-    ConditionalDecisionCompletion, DecisionControl, DecisionEncoding, DecisionWork, EffectDecision,
-    EffectDecisionReplacement,
+    ConditionalDecisionCompletion, DecisionControl, DecisionEncoding, DecisionLowerEnvelope,
+    DecisionWork, EffectDecision, EffectDecisionReplacement,
 };
 pub use declaration::{
     EffectDecisionDeclaration, EffectDecisionNodeDeclaration, EffectDecisionTarget,

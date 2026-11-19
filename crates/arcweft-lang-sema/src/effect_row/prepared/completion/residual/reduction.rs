@@ -289,8 +289,10 @@ fn minimize_pointwise<C: DecisionControl>(
         work.charge(DecisionWork::Node)?;
         labels.push(label.clone());
     }
+    work.charge(DecisionWork::Node)?;
+    let locals = Arc::new(locals);
     let mut rows: BTreeMap<Variable, Vec<Decision>> = BTreeMap::new();
-    for local in &locals {
+    for local in locals.iter() {
         work.charge(DecisionWork::Node)?;
         rows.insert(local.clone(), Vec::new());
     }
@@ -308,7 +310,7 @@ fn minimize_pointwise<C: DecisionControl>(
             for future in &free {
                 supported = supported.or(&Decision::variable(future.clone(), work)?, work)?;
             }
-            for local in &locals {
+            for local in locals.iter() {
                 predicate = predicate.and(
                     &Decision::variable(local.clone(), work)?.conditional(
                         &supported,
@@ -319,11 +321,12 @@ fn minimize_pointwise<C: DecisionControl>(
                 )?;
             }
         }
-        let completed = predicate.complete_conditionally(&locals, work)?;
+        let (admissible, principal_guard, lower) = predicate
+            .complete_conditionally(Arc::clone(&locals), work)?
+            .into_parts();
         let mut different = Decision::constant(false);
-        for local in &locals {
-            let lower = completed
-                .lower_envelope()
+        for local in locals.iter() {
+            let lower = lower
                 .get(local)
                 .ok_or(PreparedEffectInvariant::UnclosedCell)?;
             let variable = Decision::variable(local.clone(), work)?;
@@ -339,9 +342,9 @@ fn minimize_pointwise<C: DecisionControl>(
             .exists(&locals, work)?
             .is_constant(false);
         work.charge(DecisionWork::Node)?;
-        satisfiable.push(work.copy_decision(completed.satisfiable())?);
+        satisfiable.push(admissible);
         work.charge(DecisionWork::Node)?;
-        principal.push(work.copy_decision(completed.principal())?);
+        principal.push(principal_guard);
     }
     let satisfiable = predicate_from_decisions(satisfiable, &labels, work)?;
     let principal = predicate_from_decisions(principal, &labels, work)?;

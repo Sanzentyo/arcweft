@@ -60,7 +60,7 @@ fn one_discrete_choice_cannot_supply_different_winners_for_different_labels() {
     assert_eq!(view.overrides().len(), 2);
     let joint = view.at(&read).and(view.at(&write), &mut control).unwrap();
     let completion = joint
-        .complete_conditionally(&BTreeSet::from([0]), &mut control)
+        .complete_conditionally(BTreeSet::from([0]), &mut control)
         .unwrap();
     assert!(completion.satisfiable().is_constant(false));
     assert!(completion.principal().is_constant(false));

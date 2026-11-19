@@ -68,13 +68,13 @@ fn conditional_completion_keeps_future_cells_free_in_the_least_function() {
         .unwrap()
         .not(&mut Work(&mut work))
         .unwrap();
-    assert_eq!(result.completion.principal(), &finite);
-    assert_eq!(result.completion.satisfiable(), &finite);
+    assert_eq!(&result.principal, &finite);
+    assert_eq!(&result.satisfiable, &finite);
     assert_eq!(
-        result.coefficients[&cell(&x, 1)],
-        finite.and(&future, &mut Work(&mut work)).unwrap()
+        result.coefficients.get(&cell(&x, 1)).unwrap(),
+        &finite.and(&future, &mut Work(&mut work)).unwrap()
     );
-    assert!(!result.coefficients.contains_key(&cell(&f, 1)));
+    assert!(result.coefficients.get(&cell(&f, 1)).is_none());
     assert_eq!(result.witnesses, finite);
 }
 
@@ -117,8 +117,7 @@ fn a_parent_restriction_cannot_rescue_a_nonprincipal_child_completion() {
     let result = component.complete(&mut Work(&mut work)).unwrap();
     assert!(
         result
-            .completion
-            .principal()
+            .principal
             .substitute(&parent, &mut Work(&mut work))
             .unwrap()
             .is_constant(false)
@@ -129,14 +128,25 @@ fn a_parent_restriction_cannot_rescue_a_nonprincipal_child_completion() {
     ]);
     assert!(
         result
-            .completion
-            .principal()
+            .principal
             .substitute(&empty, &mut Work(&mut work))
             .unwrap()
             .is_constant(true)
     );
-    assert!(result.coefficients[&cell(&x, 1)].is_constant(false));
-    assert!(result.coefficients[&cell(&y, 1)].is_constant(false));
+    assert!(
+        result
+            .coefficients
+            .get(&cell(&x, 1))
+            .unwrap()
+            .is_constant(false)
+    );
+    assert!(
+        result
+            .coefficients
+            .get(&cell(&y, 1))
+            .unwrap()
+            .is_constant(false)
+    );
 }
 
 #[test]
@@ -196,8 +206,7 @@ fn conditional_completion_preserves_one_choice_for_the_whole_future_row() {
         ]);
         assert!(
             result
-                .completion
-                .principal()
+                .principal
                 .substitute(&actual, &mut Work(&mut work))
                 .unwrap()
                 .is_constant(admitted)

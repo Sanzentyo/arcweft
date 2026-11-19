@@ -165,7 +165,7 @@ fn attach<C: DecisionControl>(
             }
         }
     }
-    let principal = child.completion.principal().substitute(&bindings, work)?;
+    let principal = child.principal.substitute(&bindings, work)?;
     work.charge(DecisionWork::Node)?;
     let table = Arc::new(ImportedRelationTable {
         child: Arc::clone(child),
@@ -243,9 +243,8 @@ impl ImportedRelationTable {
         parent: &PrincipalEffectClosure,
         work: &mut Work<'_, C>,
     ) -> Result<Option<PrincipalEffectClosure>, PreparedEffectFailure<C::Error>> {
-        let guard = self
-            .principal(parent.layout.view(), work)?
-            .substitute(&parent.coefficients, work)?;
+        let guard = self.principal(parent.layout.view(), work)?;
+        let guard = parent.coefficients.substitute(&guard, work)?;
         if guard.is_constant(false) {
             return Ok(None);
         }
@@ -294,7 +293,7 @@ impl ImportedRelationTable {
                             class,
                             mask,
                         },
-                        Decision::constant(value),
+                        value,
                     );
                 }
             }
@@ -306,20 +305,8 @@ impl ImportedRelationTable {
                 },
             );
         }
-        let mut completed = BTreeMap::new();
-        for (cell, value) in &self.child.coefficients {
-            let value = value.substitute(&coefficients, work)?;
-            if !value.is_constant(true) && !value.is_constant(false) {
-                return Err(PreparedEffectInvariant::UnclosedCell.into());
-            }
-            work.charge(DecisionWork::Node)?;
-            completed.insert(cell.clone(), value);
-        }
-        let witnesses = self.child.witnesses.substitute(&coefficients, work)?;
-        for (cell, value) in coefficients {
-            work.charge(DecisionWork::Node)?;
-            completed.insert(cell, value);
-        }
+        let witnesses = self.child.witnesses.restrict(&coefficients, work)?;
+        let completed = self.child.coefficients.specialize(coefficients, work)?;
         let mut choices = BTreeSet::new();
         for choice in &self.child.choices {
             work.charge(DecisionWork::Node)?;

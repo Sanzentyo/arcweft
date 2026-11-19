@@ -5,7 +5,10 @@
 //! inference owners can also relate several classes in one decision. All graphs
 //! are reduced, ordered and numbered by reachable low-before-high postorder.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 #[cfg(test)]
 mod tests;
@@ -83,7 +86,7 @@ pub(super) struct DecisionCompletion<V> {
 pub struct ConditionalDecisionCompletion<V> {
     satisfiable: EffectDecision<V>,
     principal: EffectDecision<V>,
-    lower_envelope: BTreeMap<V, EffectDecision<V>>,
+    lower_envelope: DecisionLowerEnvelope<V>,
 }
 
 impl<V> ConditionalDecisionCompletion<V> {
@@ -98,8 +101,94 @@ impl<V> ConditionalDecisionCompletion<V> {
     }
 
     /// Coordinatewise meets of all witnesses, valid as a tuple only under `principal`.
-    pub const fn lower_envelope(&self) -> &BTreeMap<V, EffectDecision<V>> {
+    pub const fn lower_envelope(&self) -> &DecisionLowerEnvelope<V> {
         &self.lower_envelope
+    }
+
+    /// Moves the satisfiable domain, principal domain, and coordinatewise meet.
+    pub fn into_parts(
+        self,
+    ) -> (
+        EffectDecision<V>,
+        EffectDecision<V>,
+        DecisionLowerEnvelope<V>,
+    ) {
+        (self.satisfiable, self.principal, self.lower_envelope)
+    }
+}
+
+/// A total tuple over the admitted coordinates, stored by nonzero support.
+/// An admitted coordinate with no stored decision is always false. A reference
+/// outside the bound domain is not a coefficient of this tuple.
+#[derive(Debug, Eq, PartialEq)]
+pub struct DecisionLowerEnvelope<V> {
+    domain: Arc<BTreeSet<V>>,
+    nonzero: BTreeMap<V, EffectDecision<V>>,
+    zero: EffectDecision<V>,
+}
+
+impl<V: Clone + Ord> DecisionLowerEnvelope<V> {
+    /// All coordinates admitted for minimization, including constant false values.
+    pub fn domain(&self) -> &BTreeSet<V> {
+        &self.domain
+    }
+
+    /// The coordinate's decision, or `None` outside the admitted domain.
+    pub fn get(&self, coordinate: &V) -> Option<&EffectDecision<V>> {
+        self.nonzero
+            .get(coordinate)
+            .or_else(|| self.domain.contains(coordinate).then_some(&self.zero))
+    }
+
+    /// Simultaneously instantiates the bound coordinates in a relation.
+    pub fn instantiate<C: DecisionControl>(
+        &self,
+        relation: &EffectDecision<V>,
+        control: &mut C,
+    ) -> Result<EffectDecision<V>, C::Error> {
+        if self.domain.is_empty() || relation.node_count() == 0 {
+            return relation.copy_with_control(control);
+        }
+        relation.substitute_references(control, |coordinate, _| {
+            Ok(match self.get(coordinate) {
+                Some(value) => EffectDecisionReplacement::Decision(value),
+                None => EffectDecisionReplacement::Variable(coordinate.clone()),
+            })
+        })
+    }
+
+    /// Fixes free references to Boolean values while retaining the bound domain.
+    pub fn specialize<C: DecisionControl>(
+        &self,
+        assignment: &BTreeMap<V, bool>,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        let mut nonzero = BTreeMap::new();
+        for (coordinate, value) in &self.nonzero {
+            control.charge(DecisionWork::Visit)?;
+            let value = value.restrict(assignment, control)?;
+            if !value.is_constant(false) {
+                control.charge(DecisionWork::Node)?;
+                nonzero.insert(coordinate.clone(), value);
+            }
+        }
+        control.charge(DecisionWork::Node)?;
+        Ok(Self {
+            domain: Arc::clone(&self.domain),
+            nonzero,
+            zero: EffectDecision::constant(false),
+        })
+    }
+
+    /// Whether the tuple has any coefficient that still depends on a reference.
+    pub fn is_closed<C: DecisionControl>(&self, control: &mut C) -> Result<bool, C::Error> {
+        for value in self.nonzero.values() {
+            control.charge(DecisionWork::Visit)?;
+            if value.node_count() != 0 {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }
 
@@ -505,6 +594,26 @@ impl<V: Clone + Ord> EffectDecision<V> {
         })
     }
 
+    /// Assigns Boolean values simultaneously. Unassigned references remain free.
+    pub fn restrict<C: DecisionControl>(
+        &self,
+        assignment: &BTreeMap<V, bool>,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        if assignment.is_empty() || self.nodes.is_empty() {
+            return self.copy_with_control(control);
+        }
+        let zero = Self::constant(false);
+        let one = Self::constant(true);
+        self.substitute_references(control, |variable, _| {
+            Ok(match assignment.get(variable) {
+                Some(false) => EffectDecisionReplacement::Decision(&zero),
+                Some(true) => EffectDecisionReplacement::Decision(&one),
+                None => EffectDecisionReplacement::Variable(variable.clone()),
+            })
+        })
+    }
+
     /// Eliminate current existential references without selecting an arbitrary
     /// witness. `least == None` means the intersection of all solutions is not
     /// itself a solution on the admitted domain.
@@ -528,9 +637,10 @@ impl<V: Clone + Ord> EffectDecision<V> {
             builder.conditional(Conditional::new(admissibility, instantiated, Root::True))?;
         let least = if check == Root::True {
             let mut least = BTreeMap::new();
-            for (variable, root) in replacements {
+            for variable in quantified {
                 builder.control.charge(DecisionWork::Visit)?;
-                least.insert(variable, builder.finish(root)?);
+                let root = replacements.get(variable).copied().unwrap_or(Root::False);
+                least.insert(variable.clone(), builder.finish(root)?);
             }
             Some(least)
         } else {
@@ -549,27 +659,33 @@ impl<V: Clone + Ord> EffectDecision<V> {
     /// variables are resolved; unsatisfiable and non-principal domains stay distinct.
     pub fn complete_conditionally<C: DecisionControl>(
         &self,
-        quantified: &BTreeSet<V>,
+        quantified: impl Into<Arc<BTreeSet<V>>>,
         control: &mut C,
     ) -> Result<ConditionalDecisionCompletion<V>, C::Error> {
+        control.charge(DecisionWork::Node)?;
+        let quantified = quantified.into();
         let mut builder = DecisionBuilder::new(control);
         let relation = builder.import(self)?;
         let CompletionRoots {
             admissibility,
             replacements,
             instantiated,
-        } = builder.completion_roots(relation, quantified)?;
+        } = builder.completion_roots(relation, &quantified)?;
         let principal =
             builder.conditional(Conditional::new(admissibility, instantiated, Root::False))?;
-        let mut lower_envelope = BTreeMap::new();
+        let mut nonzero = BTreeMap::new();
         for (variable, root) in replacements {
-            builder.control.charge(DecisionWork::Visit)?;
-            lower_envelope.insert(variable, builder.finish(root)?);
+            builder.control.charge(DecisionWork::Node)?;
+            nonzero.insert(variable, builder.finish(root)?);
         }
         Ok(ConditionalDecisionCompletion {
             satisfiable: builder.finish(admissibility)?,
             principal: builder.finish(principal)?,
-            lower_envelope,
+            lower_envelope: DecisionLowerEnvelope {
+                domain: quantified,
+                nonzero,
+                zero: Self::constant(false),
+            },
         })
     }
 }
@@ -601,21 +717,20 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             }
         }
         let mut replacements = BTreeMap::new();
-        for variable in quantified {
+        for variable in present {
             self.control.charge(DecisionWork::Visit)?;
-            let possible_without = if present.contains(variable) {
-                self.project_with_false(relation, &order, &projected, quantified, variable)?
-            } else {
-                admissibility
-            };
+            let possible_without =
+                self.project_with_false(relation, &order, &projected, quantified, &variable)?;
             let required = self.conditional(Conditional::new(
                 possible_without,
                 Root::False,
                 admissibility,
             ))?;
-            replacements.insert(variable.clone(), required);
+            if required != Root::False {
+                replacements.insert(variable, required);
+            }
         }
-        let instantiated = self.substitute(relation, &replacements)?;
+        let instantiated = self.instantiate(relation, quantified, &replacements)?;
         Ok(CompletionRoots {
             admissibility,
             replacements,
@@ -844,7 +959,7 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     fn quantified_roots(
         &mut self,
         order: &[usize],
-        quantified: &BTreeSet<V>,
+        bound: &BTreeSet<V>,
         quantifier: Quantifier,
     ) -> Result<BTreeMap<usize, Root>, C::Error> {
         let mut indices = BTreeMap::new();
@@ -853,7 +968,7 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             let node = self.nodes[index].clone();
             let low = Self::remap(node.low, &indices);
             let high = Self::remap(node.high, &indices);
-            let mapped = self.project_branch(node.variable, low, high, quantified, quantifier)?;
+            let mapped = self.project_branch(node.variable, low, high, bound, quantifier)?;
             indices.insert(index, mapped);
         }
         Ok(indices)
@@ -864,10 +979,10 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         variable: V,
         low: Root,
         high: Root,
-        quantified: &BTreeSet<V>,
+        bound: &BTreeSet<V>,
         quantifier: Quantifier,
     ) -> Result<Root, C::Error> {
-        if !quantified.contains(&variable) {
+        if !bound.contains(&variable) {
             return self.branch(variable, low, high);
         }
         let combine = match quantifier {
@@ -877,9 +992,10 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         self.conditional(combine)
     }
 
-    fn substitute(
+    fn instantiate(
         &mut self,
         root: Root,
+        bound: &BTreeSet<V>,
         replacements: &BTreeMap<V, Root>,
     ) -> Result<Root, C::Error> {
         let order = self.postorder(root)?;
@@ -889,9 +1005,13 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             let node = self.nodes[index].clone();
             let low = Self::remap(node.low, &indices);
             let high = Self::remap(node.high, &indices);
-            let condition = match replacements.get(&node.variable) {
-                Some(&replacement) => replacement,
-                None => self.branch(node.variable, Root::False, Root::True)?,
+            let condition = if bound.contains(&node.variable) {
+                replacements
+                    .get(&node.variable)
+                    .copied()
+                    .unwrap_or(Root::False)
+            } else {
+                self.branch(node.variable, Root::False, Root::True)?
             };
             let mapped = self.conditional(Conditional::new(condition, high, low))?;
             indices.insert(index, mapped);
