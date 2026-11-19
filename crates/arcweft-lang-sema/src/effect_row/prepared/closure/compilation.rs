@@ -501,10 +501,21 @@ impl<'a> Compilation<'a> {
             members.push(test);
         }
         let exact = self.whole(&members, work)?;
+        let admitted = |result: Decision, work: &mut Work<'_, C>| {
+            result
+                .and(&actual.admitted, work)?
+                .and(&permitted.admitted, work)
+        };
         let result = if relation == PreparedEffectRelation::AdmittedSubset {
-            let closed = self
-                .closed(&actual.membership, work)?
-                .and(&self.closed(&permitted.membership, work)?, work)?;
+            // Capability coverage applies only when both rows can be closed.
+            let actual_closed = self.closed(&actual.membership, work)?;
+            if actual_closed.is_constant(false) {
+                return admitted(exact, work);
+            }
+            let closed = actual_closed.and(&self.closed(&permitted.membership, work)?, work)?;
+            if closed.is_constant(false) {
+                return admitted(exact, work);
+            }
             let mut covered = self
                 .valuation()
                 .outside(&actual.membership[0].not(work)?, work)?;
@@ -529,9 +540,7 @@ impl<'a> Compilation<'a> {
         } else {
             exact
         };
-        result
-            .and(&actual.admitted, work)?
-            .and(&permitted.admitted, work)
+        admitted(result, work)
     }
 
     fn read_predicate<C: DecisionControl>(

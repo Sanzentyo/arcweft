@@ -167,38 +167,53 @@ impl ClosedEffectCoefficients {
 struct RelationScope<'a> {
     compiler: Compilation<'a>,
     body: Option<Arc<compilation::CompiledRow>>,
+    formals: Option<BTreeSet<Atom>>,
+}
+
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+enum RelationScopeKey<'a> {
+    Scheme(u64),
+    Obligation(&'a [GenericEffectReference]),
 }
 
 fn relation_scope<'g, 's, C: DecisionControl>(
-    scopes: &'s mut BTreeMap<ResidualRowScope, RelationScope<'g>>,
+    scopes: &'s mut BTreeMap<RelationScopeKey<'g>, RelationScope<'g>>,
     graph: &'g PreparedEffectDefinitions,
     layout: ClassLayout<'g>,
     scope: ResidualRowScope,
     work: &mut Work<'_, C>,
 ) -> Result<&'s mut RelationScope<'g>, PreparedEffectFailure<C::Error>> {
-    if let std::collections::btree_map::Entry::Vacant(entry) = scopes.entry(scope) {
-        let owner = match scope {
-            ResidualRowScope::Scheme(id) => FormalOwner::Scheme(id),
-            ResidualRowScope::Obligation(id) => FormalOwner::Obligation(id),
-            ResidualRowScope::Output(_) => {
-                return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
-            }
-        };
-        work.charge(DecisionWork::Node)?;
-        entry.insert(RelationScope {
-            compiler: Compilation::new(
-                graph,
-                layout,
-                owner,
-                scope.parameters(graph),
-                ApplicationCells::Variables,
-            ),
-            body: None,
-        });
+    let parameters = scope.parameters(graph);
+    // Each obligation still quantifies its whole implication separately.
+    // Identical ordered parameters can use the same local numbering and term
+    // compilation because no formal survives that quantifier.
+    let (key, owner) = match scope {
+        ResidualRowScope::Scheme(id) => (RelationScopeKey::Scheme(id), FormalOwner::Scheme(id)),
+        ResidualRowScope::Obligation(id) => (
+            RelationScopeKey::Obligation(parameters),
+            FormalOwner::Obligation(id),
+        ),
+        ResidualRowScope::Output(_) => {
+            return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+        }
+    };
+    match scopes.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            work.charge(DecisionWork::Node)?;
+            Ok(entry.insert(RelationScope {
+                compiler: Compilation::new(
+                    graph,
+                    layout,
+                    owner,
+                    parameters,
+                    ApplicationCells::Variables,
+                ),
+                body: None,
+                formals: None,
+            }))
+        }
     }
-    Ok(scopes
-        .get_mut(&scope)
-        .expect("the actual relation scope was inserted"))
 }
 
 fn compile_relation<C: DecisionControl>(
@@ -235,7 +250,13 @@ fn compile_relation<C: DecisionControl>(
                     work.copy_decision(body)?
                 } else {
                     let scoped = relation_scope(&mut scopes, graph, layout, *scope, work)?;
-                    body.forall(&scoped.compiler.formals(work)?, work)?
+                    if scoped.formals.is_none() {
+                        scoped.formals = Some(scoped.compiler.formals(work)?);
+                    }
+                    body.forall(
+                        scoped.formals.as_ref().expect("formals were computed"),
+                        work,
+                    )?
                 }
             }
             ResidualNode::SourcePredicate(source) => {

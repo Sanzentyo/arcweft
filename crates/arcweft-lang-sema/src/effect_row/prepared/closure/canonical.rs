@@ -395,10 +395,20 @@ impl<'a> CanonicalReplay<'a> {
             subset
         };
         let exact = self.guard(&predicate, work)?;
+        let admitted = |result: Decision, work: &mut Work<'_, C>| {
+            result
+                .and(&actual.admitted, work)?
+                .and(&permitted.admitted, work)
+        };
         let result = if relation == PreparedEffectRelation::AdmittedSubset {
-            let closed = self
-                .closed(&actual.formula, work)?
-                .and(&self.closed(&permitted.formula, work)?, work)?;
+            let actual_closed = self.closed(&actual.formula, work)?;
+            if actual_closed.is_constant(false) {
+                return admitted(exact, work);
+            }
+            let closed = actual_closed.and(&self.closed(&permitted.formula, work)?, work)?;
+            if closed.is_constant(false) {
+                return admitted(exact, work);
+            }
             closed.conditional(
                 &self.covered(&actual.formula, &permitted.formula, work)?,
                 &exact,
@@ -407,9 +417,7 @@ impl<'a> CanonicalReplay<'a> {
         } else {
             exact
         };
-        result
-            .and(&actual.admitted, work)?
-            .and(&permitted.admitted, work)
+        admitted(result, work)
     }
 
     fn read_predicate<C: DecisionControl>(
