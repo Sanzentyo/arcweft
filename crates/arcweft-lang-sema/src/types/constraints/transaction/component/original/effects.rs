@@ -116,7 +116,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             }
             for member in members {
                 let path = self.original_path(*member)?;
-                path.collect_original_effect_types(&mut types, context)?;
+                path.collect_original_effect_types(&mut types, graph.read(), context)?;
             }
             for binding in branch.bindings.values() {
                 context.enter_node()?;

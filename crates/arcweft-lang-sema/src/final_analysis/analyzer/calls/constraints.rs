@@ -3668,7 +3668,20 @@ impl PreparedCallOutputProjections<'_> {
         limits: &crate::callable::CallableLimits,
     ) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
         self.visit_projections(|key, value, closure, input| {
-            driver.request_projection(key, value, closure, input);
+            let named_effect = if matches!(key, AnalyzerCallProjection::Result) {
+                self.result_effect().map(|effect| effect.port())
+            } else {
+                None
+            };
+            driver.request_projection(
+                key,
+                value,
+                crate::types::constraints::transaction::TypeConstraintProjectionOptions {
+                    closure,
+                    input,
+                    named_effect,
+                },
+            );
         });
         if let PreparedCallOutput::Value {
             expected: Some(expected),

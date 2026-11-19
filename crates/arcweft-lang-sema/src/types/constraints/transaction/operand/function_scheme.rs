@@ -149,6 +149,7 @@ impl<D: ConstraintDomain> PreparedConstraintFunctionScheme<D> {
             closure: TypeConstraintProjectionClosure::Closed,
             source: Some(source_projection),
             input: Some(Arc::clone(&self.source)),
+            named_effect: None,
         }));
         let (value, instance) = ResolvedConstraintResult::resolve(
             ConstraintResultProjection { application, key },

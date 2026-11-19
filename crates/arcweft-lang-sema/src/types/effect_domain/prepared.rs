@@ -17,6 +17,8 @@ mod type_arguments;
 pub(crate) use type_arguments::{PreparedNominalArgumentInference, PreparedTypeArguments};
 mod roots;
 pub(crate) use roots::PreparedTypeEffectRoots;
+mod named_port;
+pub(crate) use named_port::PreparedNamedEffectPort;
 
 /// Prepared identity is operational. This domain cannot issue a checked type
 /// digest, specialization, runtime projection or completed constraint solution.

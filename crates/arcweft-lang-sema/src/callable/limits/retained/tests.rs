@@ -136,8 +136,12 @@ fn a_root_frontier_outlives_its_driver_and_publication_reads_the_live_original_l
                     driver.request_projection(
                         (),
                         &TypeKind::I32,
-                        crate::types::constraints::TypeConstraintProjectionClosure::Closed,
-                        None,
+                        crate::types::constraints::transaction::TypeConstraintProjectionOptions {
+                            closure:
+                                crate::types::constraints::TypeConstraintProjectionClosure::Closed,
+                            input: None,
+                            named_effect: None,
+                        },
                     );
                     driver.suspend_result(()).unwrap()
                 },

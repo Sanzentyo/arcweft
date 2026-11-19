@@ -412,10 +412,10 @@ mod tests {
                 panic!("remaining invocation arrow");
             };
             assert_eq!(port.owner(), id);
-            let terminal = port.terminal_row(&remaining, &mut control).unwrap();
             let arguments = port
-                .declaration()
-                .application_arguments(effects_graph.read(), terminal)
+                .port()
+                .arguments(&remaining, effects_graph.read(), &mut control)
+                .unwrap()
                 .unwrap();
             assert!(arguments.is_empty());
             let TypeKind::Function {

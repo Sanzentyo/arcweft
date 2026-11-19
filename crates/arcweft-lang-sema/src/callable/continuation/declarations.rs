@@ -12,6 +12,7 @@ use crate::{
         PreparedEffectInvariant, PreparedEffectRow,
     },
     effect_row::{DecisionControl, DecisionWork},
+    types::PreparedNamedEffectPort,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -50,8 +51,7 @@ pub(crate) enum PreparedApplicationResult {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedApplicationResultEffect {
     owner: CheckedCallableId,
-    declaration: PreparedEffectDeclaration,
-    terminal_arrow: usize,
+    port: PreparedNamedEffectPort,
 }
 
 impl PreparedApplicationResultEffect {
@@ -60,32 +60,11 @@ impl PreparedApplicationResultEffect {
     }
 
     pub(crate) fn declaration(&self) -> &PreparedEffectDeclaration {
-        &self.declaration
+        self.port.declaration()
     }
 
-    pub(crate) fn terminal_row<'a, C: DecisionControl>(
-        &self,
-        mut ty: &'a TypeKind<crate::types::PreparedEffects>,
-        control: &mut C,
-    ) -> Result<&'a PreparedEffectRow, PreparedEffectFailure<C::Error>> {
-        for arrow in 0..=self.terminal_arrow {
-            control
-                .charge(DecisionWork::Visit)
-                .map_err(PreparedEffectFailure::Control)?;
-            let TypeKind::Function {
-                effects,
-                return_type,
-                ..
-            } = ty
-            else {
-                return Err(PreparedEffectInvariant::ApplicationArity.into());
-            };
-            if arrow == self.terminal_arrow {
-                return Ok(effects);
-            }
-            ty = return_type;
-        }
-        unreachable!("the terminal arrow is included")
+    pub(crate) fn port(&self) -> &PreparedNamedEffectPort {
+        &self.port
     }
 }
 
@@ -484,23 +463,20 @@ impl<P, U> PreparedCallGraph<P, U> {
                 .len()
                 .checked_sub(next.group().get() + 1)
                 .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
-            let port = PreparedApplicationResultEffect {
-                owner: owner.clone(),
-                declaration: named
-                    .validate_schema(schema)
-                    .map_err(PreparedEffectFailure::Invariant)?
-                    .clone(),
+            let declaration = named
+                .validate_schema(schema)
+                .map_err(PreparedEffectFailure::Invariant)?;
+            PreparedNamedEffectPort::for_type(
+                declaration,
                 terminal_arrow,
-            };
-            match port.terminal_row(&ty, control)? {
-                PreparedEffectRow::Canonical(_) => None,
-                row @ PreparedEffectRow::Term(_) => {
-                    port.declaration
-                        .application_arguments(declarations.read(), row)
-                        .map_err(PreparedEffectFailure::Invariant)?;
-                    Some(port)
-                }
-            }
+                &ty,
+                declarations.read(),
+                control,
+            )?
+            .map(|port| PreparedApplicationResultEffect {
+                owner: owner.clone(),
+                port,
+            })
         } else {
             None
         };

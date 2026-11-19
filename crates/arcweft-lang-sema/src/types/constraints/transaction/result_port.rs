@@ -183,6 +183,7 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
                 closure: TypeConstraintProjectionClosure::Closed,
                 source: Some(self.alternative.result.clone()),
                 input: Some(Arc::clone(&self.source)),
+                named_effect: None,
             }));
         }
         let mut pending = transaction

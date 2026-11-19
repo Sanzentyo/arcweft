@@ -14,7 +14,7 @@ use crate::types::constraints::context::TypeConstraintContext;
 use crate::types::constraints::transaction::{
     ClosedMaterialization, ConstraintMaterialization, MaterializationCallbackBinding,
     MaterializationTicket, ProbeStart, ProbeSubmission, ProbeTicket, ResolvedResultProbe,
-    SuspendedConstraintFrontier, TypeConstraintTransaction,
+    SuspendedConstraintFrontier, TypeConstraintProjectionOptions, TypeConstraintTransaction,
 };
 use crate::types::constraints::{
     ClosedMaterializationSubmission, CompletedCandidateAlternatives, ConstraintDomain,
@@ -650,11 +650,10 @@ where
         &mut self,
         key: D::Projection,
         value: &TypeKind<PreparedEffects>,
-        closure: crate::types::constraints::TypeConstraintProjectionClosure,
-        input: Option<&TypeKind<PreparedEffects>>,
+        options: TypeConstraintProjectionOptions<'_>,
     ) {
         if let Err(error) = self.with_effect_relation(|lower, context, graph| {
-            lower.request_projection_with_input(context, graph, key, value, closure, input);
+            lower.request_projection_with_options(context, graph, key, value, options);
         }) {
             self.lower.record_failure(error);
         }

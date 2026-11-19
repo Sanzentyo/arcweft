@@ -4,8 +4,8 @@ use super::super::normalization::{ConstraintClosedEffects, PreparedConstraintEff
 use super::*;
 use crate::{
     effect_row::prepared::{
-        PreparedEffectFailure, PreparedEffectGraph, PreparedEffectScopedConstraint,
-        ScopedEffectCompletion,
+        PreparedEffectFailure, PreparedEffectGraph, PreparedEffectInvariant,
+        PreparedEffectReadView, PreparedEffectScopedConstraint, ScopedEffectCompletion,
     },
     types::{GenericEffectReference, TypeProjectionError, effect_domain::PreparedTypeEffectRoots},
 };
@@ -61,11 +61,19 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
     pub(super) fn collect_original_effect_types<'a, A: TypeConstraintAccounting>(
         &'a self,
         types: &mut Vec<&'a TypeKind<PreparedEffects>>,
+        graph: PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         for request in &self.lineage.projections {
             context.enter_node()?;
-            types.push(request.value.value());
+            let value = request.value.value();
+            if let Some(port) = &request.named_effect {
+                port.arguments(value, graph, context)?
+                    .ok_or(PreparedEffectFailure::Invariant(
+                        PreparedEffectInvariant::StaleReference,
+                    ))?;
+            }
+            types.push(value);
             if let Some(input) = &request.input {
                 context.enter_node()?;
                 types.push(input.value());
@@ -98,7 +106,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
     ) -> Result<PreparedConstraintEffects, TypeConstraintError> {
         let constraint = self.prepare_effect_constraint(graph, context)?;
         let mut types = Vec::new();
-        self.collect_original_effect_types(&mut types, context)?;
+        self.collect_original_effect_types(&mut types, graph.read(), context)?;
         let roots =
             PreparedTypeEffectRoots::collect(types, [], context).map_err(|error| match error {
                 TypeProjectionError::Control(error) => error,

@@ -1,6 +1,6 @@
 //! Candidate-wide equations, prepared source traces, and finalization.
 
-use crate::types::PreparedEffects;
+use crate::types::{PreparedEffects, PreparedNamedEffectPort};
 
 #[cfg(test)]
 mod tests;
@@ -1117,6 +1117,12 @@ fn materialization_identity_matches(
     Arc::ptr_eq(&left.issuer, &right.issuer) && left.ordinal == right.ordinal
 }
 
+pub(crate) struct TypeConstraintProjectionOptions<'a> {
+    pub(crate) closure: TypeConstraintProjectionClosure,
+    pub(crate) input: Option<&'a TypeKind<PreparedEffects>>,
+    pub(crate) named_effect: Option<&'a PreparedNamedEffectPort>,
+}
+
 pub(super) struct ProjectionRequest<D: ConstraintDomain> {
     application: ConstraintApplicationId,
     key: Arc<D::Projection>,
@@ -1124,6 +1130,7 @@ pub(super) struct ProjectionRequest<D: ConstraintDomain> {
     closure: TypeConstraintProjectionClosure,
     source: Option<ConstraintResultProjection<D>>,
     input: Option<Arc<ConstraintOperand<D>>>,
+    named_effect: Option<PreparedNamedEffectPort>,
 }
 
 struct ProbeOperation<D: ConstraintDomain> {
@@ -1741,6 +1748,32 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         closure: TypeConstraintProjectionClosure,
         input: Option<&TypeKind<PreparedEffects>>,
     ) {
+        self.request_projection_with_options(
+            context,
+            graph,
+            key,
+            value,
+            TypeConstraintProjectionOptions {
+                closure,
+                input,
+                named_effect: None,
+            },
+        );
+    }
+
+    pub(crate) fn request_projection_with_options<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        key: D::Projection,
+        value: &TypeKind<PreparedEffects>,
+        options: TypeConstraintProjectionOptions<'_>,
+    ) {
+        let TypeConstraintProjectionOptions {
+            closure,
+            input,
+            named_effect,
+        } = options;
         if self.first_failure.is_none() && !self.closed {
             if self.probe.is_some() || self.probe_group.is_some() {
                 self.record_failure(
@@ -1785,6 +1818,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                                 closure,
                                 source: None,
                                 input,
+                                named_effect: named_effect.cloned(),
                             }))
                         },
                     )?;
