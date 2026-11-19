@@ -68,6 +68,46 @@ fn child_equality() -> (
 }
 
 #[test]
+fn lowering_visits_unrelated_declarations_once_when_resuming_an_import() {
+    let (child, local, future) = child_equality();
+    let mut parent = PreparedEffectGraph::default();
+    let actual = unknown(&mut parent, false, vec![]);
+    let attachment = parent
+        .import_scoped_relation(&child, &[(&future, &actual)], &mut budget())
+        .unwrap();
+    let output = parent
+        .import_relation_function(&attachment, &child.unknown(&local).unwrap(), &mut budget())
+        .unwrap();
+    let _principal = parent
+        .imported_principal(&attachment, &mut budget())
+        .unwrap();
+
+    let lower = |graph: &PreparedEffectDefinitions, budget: &mut Budget| {
+        lower_selected_imports(
+            graph,
+            &Arc::from([]),
+            FunctionInventory::All,
+            &mut Work(budget),
+        )
+        .unwrap()
+    };
+    let mut initial = budget();
+    let original = lower(&parent.relation, &mut initial);
+    let unrelated = 32;
+    for _ in 0..unrelated {
+        unknown(&mut parent, false, vec![]);
+    }
+    let mut expanded = budget();
+    let result = lower(&parent.relation, &mut expanded);
+    assert_eq!(expanded.0 + unrelated, initial.0);
+    assert_eq!(result.relations.len(), 1);
+    assert_eq!(
+        result.functions[&id(&output)].coefficient(0, 0).unwrap(),
+        original.functions[&id(&output)].coefficient(0, 0).unwrap(),
+    );
+}
+
+#[test]
 fn imported_future_functions_are_symbolic_parent_coefficients_not_closed_rows() {
     let (child, x, f) = child_equality();
     let guarded = child.unknown(&x).unwrap();
@@ -491,8 +531,7 @@ fn independent_replay_rejects_a_corrupted_child_lowering_even_if_the_parent_agre
     let mut closed = parent.solve_principal(&mut budget()).unwrap();
     let imports = &mut Arc::get_mut(&mut closed.layout).unwrap().imports;
     assert_eq!(imports.relations.len(), 1);
-    let (origin, duplicate) = imports.relations.pop().unwrap();
-    drop(duplicate);
+    drop(imports.relations.pop().unwrap());
     let table = imports.functions.get_mut(&id(&imported)).unwrap();
     let cached = Arc::get_mut(&mut Arc::get_mut(&mut table.relation).unwrap().child).unwrap();
     let x_id = FunctionRef::Unknown(x).reference().ordinal;
@@ -508,9 +547,7 @@ fn independent_replay_rejects_a_corrupted_child_lowering_even_if_the_parent_agre
         panic!("the actual input moves the child's Future cell");
     };
     membership[1][0] = Decision::constant(true);
-    imports
-        .relations
-        .push((origin, Arc::clone(&table.relation)));
+    imports.relations.push(Arc::clone(&table.relation));
     closed.functions.insert(
         id(&imported),
         EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap()),

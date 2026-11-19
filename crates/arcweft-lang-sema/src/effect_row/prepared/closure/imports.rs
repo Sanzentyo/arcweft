@@ -1,7 +1,8 @@
 //! One conditional minimization per immutable relation and receiving label basis.
 
 use super::*;
-use crate::effect_row::prepared::completion::ImportedEffectRelation;
+use crate::effect_row::prepared::completion::{ImportedEffectFunction, ImportedEffectRelation};
+use std::collections::btree_map;
 
 #[cfg(test)]
 mod tests;
@@ -17,6 +18,7 @@ enum ImportedMembership {
 }
 
 pub(super) struct ImportedRelationTable {
+    source: Arc<ImportedEffectRelation>,
     pub(super) child: Arc<ComponentCompletion>,
     // Absent when all receiving input cells keep the child's coordinates.
     rebound_principal: Option<Decision>,
@@ -25,7 +27,7 @@ pub(super) struct ImportedRelationTable {
 #[derive(Default)]
 pub(super) struct ImportedRelations {
     pub(super) functions: BTreeMap<u64, ImportedFunctionTable>,
-    relations: Vec<(Arc<ImportedEffectRelation>, Arc<ImportedRelationTable>)>,
+    relations: Vec<Arc<ImportedRelationTable>>,
 }
 
 impl ImportedRelations {
@@ -34,13 +36,17 @@ impl ImportedRelations {
         source: &Arc<ImportedEffectRelation>,
         work: &mut Work<'_, C>,
     ) -> Result<&ImportedRelationTable, PreparedEffectFailure<C::Error>> {
-        for (original, table) in &self.relations {
+        for table in &self.relations {
             work.charge(DecisionWork::Visit)?;
-            if Arc::ptr_eq(original, source) {
+            if Arc::ptr_eq(&table.source, source) {
                 return Ok(table);
             }
         }
         Err(PreparedEffectInvariant::UnclosedCell.into())
+    }
+
+    pub(super) fn attachments(&self) -> impl Iterator<Item = &ImportedRelationTable> {
+        self.relations.iter().map(Arc::as_ref)
     }
 }
 
@@ -60,57 +66,111 @@ fn cached<'a, C: DecisionControl>(
     Ok(None)
 }
 
-fn enqueue<C: DecisionControl>(
-    graph: &PreparedEffectDefinitions,
-    inventory: FunctionInventory<'_>,
-    pending: &mut Vec<(Arc<ScopedEffectCompletion>, bool)>,
-    work: &mut Work<'_, C>,
-) -> Result<(), PreparedEffectFailure<C::Error>> {
-    for (id, function) in &graph.functions {
-        work.charge(DecisionWork::Visit)?;
-        if inventory.contains(*id) {
-            if let Function::Imported(imported) = function.as_ref() {
-                work.charge(DecisionWork::Node)?;
-                pending.push((Arc::clone(imported.relation.completion()), false));
+enum ImportSite<'a> {
+    Function(u64, &'a ImportedEffectFunction),
+    Principal(&'a Arc<ImportedEffectRelation>),
+}
+
+impl<'a> ImportSite<'a> {
+    fn relation(&self) -> &'a Arc<ImportedEffectRelation> {
+        match self {
+            Self::Function(_, function) => &function.relation,
+            Self::Principal(relation) => relation,
+        }
+    }
+}
+
+/// Resume immediately after the import that needed a child completion. Each
+/// graph's declarations and predicates are inspected once in ordinal order.
+struct ImportScope<'a> {
+    graph: &'a PreparedEffectDefinitions,
+    inventory: FunctionInventory<'a>,
+    functions: btree_map::Iter<'a, u64, Arc<Function>>,
+    predicates: btree_map::Values<'a, u64, Arc<PredicateTerm>>,
+    tables: ImportedRelations,
+}
+
+impl<'a> ImportScope<'a> {
+    fn new(graph: &'a PreparedEffectDefinitions, inventory: FunctionInventory<'a>) -> Self {
+        Self {
+            graph,
+            inventory,
+            functions: graph.functions.iter(),
+            predicates: graph.predicates.values(),
+            tables: ImportedRelations::default(),
+        }
+    }
+
+    fn next<C: DecisionControl>(
+        &mut self,
+        work: &mut Work<'_, C>,
+    ) -> Result<Option<ImportSite<'a>>, PreparedEffectFailure<C::Error>> {
+        for (&id, function) in self.functions.by_ref() {
+            work.charge(DecisionWork::Visit)?;
+            if self.inventory.contains(id)
+                && let Function::Imported(imported) = function.as_ref()
+            {
+                return Ok(Some(ImportSite::Function(id, imported)));
             }
         }
-    }
-    for predicate in graph.predicates.values() {
-        work.charge(DecisionWork::Visit)?;
-        if let PredicateTerm::ImportedPrincipal(imported) = predicate.as_ref() {
-            work.charge(DecisionWork::Node)?;
-            pending.push((Arc::clone(imported.completion()), false));
+        for predicate in self.predicates.by_ref() {
+            work.charge(DecisionWork::Visit)?;
+            if let PredicateTerm::ImportedPrincipal(imported) = predicate.as_ref() {
+                return Ok(Some(ImportSite::Principal(imported)));
+            }
         }
+        Ok(None)
     }
-    Ok(())
+
+    fn install<C: DecisionControl>(
+        &mut self,
+        site: ImportSite<'a>,
+        child: &Arc<ComponentCompletion>,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        let relation = self
+            .tables
+            .attach(self.graph, site.relation(), child, work)?;
+        if let ImportSite::Function(id, imported) = site {
+            let table = ImportedFunctionTable::new(imported, relation, work)?;
+            work.charge(DecisionWork::Node)?;
+            self.tables.functions.insert(id, table);
+        }
+        Ok(())
+    }
 }
 
 /// Actual input support is admitted by the root completion boundary. Every
 /// nested relation keeps its own quantifiers, uniform choices and late inputs.
-pub(super) fn lower_selected_imports<C: DecisionControl>(
-    graph: &PreparedEffectDefinitions,
+pub(super) fn lower_selected_imports<'a, C: DecisionControl>(
+    graph: &'a PreparedEffectDefinitions,
     labels: &Arc<[EffectId]>,
-    inventory: FunctionInventory<'_>,
+    inventory: FunctionInventory<'a>,
     work: &mut Work<'_, C>,
 ) -> Result<ImportedRelations, PreparedEffectFailure<C::Error>> {
     let mut cache = Vec::new();
     let mut pending = Vec::new();
-    enqueue(graph, inventory, &mut pending, work)?;
-    while let Some((source, ready)) = pending.pop() {
-        work.charge(DecisionWork::Visit)?;
-        if cached(&cache, &source, work)?.is_some() {
+    let mut scope = ImportScope::new(graph, inventory);
+    loop {
+        if let Some(site) = scope.next(work)? {
+            let source = site.relation().completion();
+            if let Some(child) = cached(&cache, source, work)? {
+                scope.install(site, child, work)?;
+            } else {
+                work.charge(DecisionWork::Node)?;
+                pending.push((scope, site));
+                scope = ImportScope::new(&source.graph, FunctionInventory::All);
+            }
             continue;
         }
-        if !ready {
-            work.charge(DecisionWork::Node)?;
-            pending.push((Arc::clone(&source), true));
-            enqueue(&source.graph, FunctionInventory::All, &mut pending, work)?;
-            continue;
-        }
+        let Some((mut parent, site)) = pending.pop() else {
+            return Ok(scope.tables);
+        };
+        let source = site.relation().completion();
         // Every table reached by this lowering shares the root basis.
         // Observation labels are projected into this basis by the caller.
         let mut layout = Layout::with_shared_labels(&source.graph, Arc::clone(labels), work)?;
-        layout.imports = assemble_selected(&source.graph, &cache, FunctionInventory::All, work)?;
+        layout.imports = scope.tables;
         let mut component = CompiledComponent::compile(
             &source.graph,
             &source.program,
@@ -121,9 +181,11 @@ pub(super) fn lower_selected_imports<C: DecisionControl>(
         component.restrict_support(&source.graph, &source.support, work)?;
         let completed = component.complete(work)?;
         work.charge(DecisionWork::Node)?;
-        cache.push((source, Arc::new(completed)));
+        let completed = Arc::new(completed);
+        cache.push((Arc::clone(source), Arc::clone(&completed)));
+        parent.install(site, &completed, work)?;
+        scope = parent;
     }
-    assemble_selected(graph, &cache, inventory, work)
 }
 
 impl ImportedEffectRelation {
@@ -158,113 +220,91 @@ impl ImportedEffectRelation {
     }
 }
 
-fn attach<C: DecisionControl>(
-    graph: &PreparedEffectDefinitions,
-    tables: &mut ImportedRelations,
-    imported: &Arc<ImportedEffectRelation>,
-    cache: &Cache,
-    work: &mut Work<'_, C>,
-) -> Result<Arc<ImportedRelationTable>, PreparedEffectFailure<C::Error>> {
-    for (source, table) in &tables.relations {
-        work.charge(DecisionWork::Visit)?;
-        if Arc::ptr_eq(source, imported) {
-            work.charge(DecisionWork::Node)?;
-            return Ok(Arc::clone(table));
+impl ImportedRelations {
+    fn attach<C: DecisionControl>(
+        &mut self,
+        graph: &PreparedEffectDefinitions,
+        imported: &Arc<ImportedEffectRelation>,
+        child: &Arc<ComponentCompletion>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Arc<ImportedRelationTable>, PreparedEffectFailure<C::Error>> {
+        for table in &self.relations {
+            work.charge(DecisionWork::Visit)?;
+            if Arc::ptr_eq(&table.source, imported) {
+                return Ok(Arc::clone(table));
+            }
         }
+        let mut same_coordinates = true;
+        for (&original, actual) in imported.inputs() {
+            work.charge(DecisionWork::Visit)?;
+            graph.function(actual)?;
+            same_coordinates &= actual.reference().ordinal == original;
+        }
+        // The completed child can reference only unresolved inputs. Its binding
+        // covers those inputs, so matching ordinals preserve all child cells.
+        let rebound_principal = (!same_coordinates)
+            .then(|| imported.bind_decision(&child.principal, work))
+            .transpose()?;
+        work.charge(DecisionWork::Node)?;
+        let table = Arc::new(ImportedRelationTable {
+            source: Arc::clone(imported),
+            child: Arc::clone(child),
+            rebound_principal,
+        });
+        work.charge(DecisionWork::Node)?;
+        self.relations.push(Arc::clone(&table));
+        Ok(table)
     }
-    let child =
-        cached(cache, imported.completion(), work)?.ok_or(PreparedEffectInvariant::UnclosedCell)?;
-    let mut same_coordinates = true;
-    for (&original, actual) in imported.inputs() {
-        work.charge(DecisionWork::Visit)?;
-        graph.function(actual)?;
-        same_coordinates &= actual.reference().ordinal == original;
-    }
-    // The completed child can reference only unresolved inputs. Its binding
-    // covers those inputs, so matching ordinals preserve all child cells.
-    let rebound_principal = (!same_coordinates)
-        .then(|| imported.bind_decision(&child.principal, work))
-        .transpose()?;
-    work.charge(DecisionWork::Node)?;
-    let table = Arc::new(ImportedRelationTable {
-        child: Arc::clone(child),
-        rebound_principal,
-    });
-    work.charge(DecisionWork::Node)?;
-    tables
-        .relations
-        .push((Arc::clone(imported), Arc::clone(&table)));
-    Ok(table)
 }
 
-fn assemble_selected<C: DecisionControl>(
-    graph: &PreparedEffectDefinitions,
-    cache: &Cache,
-    inventory: FunctionInventory<'_>,
-    work: &mut Work<'_, C>,
-) -> Result<ImportedRelations, PreparedEffectFailure<C::Error>> {
-    let mut result = ImportedRelations::default();
-    for (&id, function) in &graph.functions {
-        work.charge(DecisionWork::Visit)?;
-        if !inventory.contains(id) {
-            continue;
-        }
-        if let Function::Imported(imported) = function.as_ref() {
-            let relation = attach(graph, &mut result, &imported.relation, cache, work)?;
-            let selected = imported.selected.reference().ordinal;
-            let is_input = imported.definition().is_input();
-            let masks = *relation
-                .child
-                .layout
-                .tables
-                .get(&selected)
-                .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-            let membership = if relation.rebound_principal.is_none() && !is_input {
-                // The selected reference names a declaration in the full
-                // child layout. Every cell of a local declaration belongs to
-                // the completed tuple, including implicit false coefficients.
-                ImportedMembership::Child(selected)
-            } else {
-                let mut membership = Vec::new();
-                for class in 0..relation.child.layout.view().classes() {
-                    let mut cells = Vec::new();
-                    for mask in 0..masks {
-                        let cell = Atom::Cell {
-                            scheme: selected,
-                            class,
-                            mask,
-                        };
-                        let value = if let Some(value) = relation.child.coefficients.get(&cell) {
-                            imported.relation.bind_decision(value, work)?
-                        } else if is_input {
-                            Decision::variable(imported.relation.bind_cell(&cell)?, work)?
-                        } else {
-                            return Err(PreparedEffectInvariant::UnclosedCell.into());
-                        };
-                        work.charge(DecisionWork::Node)?;
-                        cells.push(value);
-                    }
-                    membership.push(cells.into_boxed_slice());
+impl ImportedFunctionTable {
+    fn new<C: DecisionControl>(
+        imported: &ImportedEffectFunction,
+        relation: Arc<ImportedRelationTable>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        let selected = imported.selected.reference().ordinal;
+        let is_input = imported.definition().is_input();
+        let masks = *relation
+            .child
+            .layout
+            .tables
+            .get(&selected)
+            .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+        let membership = if relation.rebound_principal.is_none() && !is_input {
+            // The selected reference names a declaration in the full
+            // child layout. Every cell of a local declaration belongs to
+            // the completed tuple, including implicit false coefficients.
+            ImportedMembership::Child(selected)
+        } else {
+            let mut membership = Vec::new();
+            for class in 0..relation.child.layout.view().classes() {
+                let mut cells = Vec::new();
+                for mask in 0..masks {
+                    let cell = Atom::Cell {
+                        scheme: selected,
+                        class,
+                        mask,
+                    };
+                    let value = if let Some(value) = relation.child.coefficients.get(&cell) {
+                        relation.source.bind_decision(value, work)?
+                    } else if is_input {
+                        Decision::variable(relation.source.bind_cell(&cell)?, work)?
+                    } else {
+                        return Err(PreparedEffectInvariant::UnclosedCell.into());
+                    };
+                    work.charge(DecisionWork::Node)?;
+                    cells.push(value);
                 }
-                ImportedMembership::Rebound(membership.into_boxed_slice())
-            };
-            work.charge(DecisionWork::Node)?;
-            result.functions.insert(
-                id,
-                ImportedFunctionTable {
-                    relation,
-                    membership,
-                },
-            );
-        }
+                membership.push(cells.into_boxed_slice());
+            }
+            ImportedMembership::Rebound(membership.into_boxed_slice())
+        };
+        Ok(Self {
+            relation,
+            membership,
+        })
     }
-    for predicate in graph.predicates.values() {
-        work.charge(DecisionWork::Visit)?;
-        if let PredicateTerm::ImportedPrincipal(imported) = predicate.as_ref() {
-            attach(graph, &mut result, imported, cache, work)?;
-        }
-    }
-    Ok(result)
 }
 
 impl ImportedRelationTable {
@@ -272,14 +312,13 @@ impl ImportedRelationTable {
     /// replay its original program. This operation never minimizes again.
     pub(super) fn specialize<C: DecisionControl>(
         &self,
-        imported: &ImportedEffectRelation,
         parent: &PrincipalEffectClosure,
         work: &mut Work<'_, C>,
     ) -> Result<Option<PrincipalEffectClosure>, PreparedEffectFailure<C::Error>> {
         if !parent.coefficients.evaluate(self.principal(), work)? {
             return Ok(None);
         }
-        let completion = imported.completion();
+        let completion = self.source.completion();
         let graph = &completion.graph;
         let mut fixed = BTreeMap::new();
         for (&future, row) in &completion.fixed {
@@ -293,7 +332,7 @@ impl ImportedRelationTable {
             );
         }
         let mut coefficients = BTreeMap::new();
-        for (&future, actual) in imported.inputs() {
+        for (&future, actual) in self.source.inputs() {
             let actual = actual.clone();
             let actual_definition = parent.graph.function(&actual)?;
             let parameters = graph.functions[&future].parameters();
