@@ -261,6 +261,39 @@ fn restriction_retains_free_branches_without_visiting_excluded_subgraphs() {
 }
 
 #[test]
+fn least_witnesses_for_disjoint_cofactors_fit_the_work_limit() {
+    let mut setup = Meter::default();
+    let selectors = 5;
+    let candidates = 1u8 << selectors;
+    let witnesses = selectors..selectors + candidates;
+    let mut frontier: Vec<_> = witnesses.clone().map(atom).collect();
+    for selector in 0..selectors {
+        let bit = atom(selector);
+        frontier = frontier
+            .chunks_exact(2)
+            .map(|pair| bit.conditional(&pair[1], &pair[0], &mut setup).unwrap())
+            .collect();
+    }
+    let relation = frontier.pop().unwrap();
+    let mut work = Meter {
+        limit: Some(3000),
+        ..Meter::default()
+    };
+    let completed = relation
+        .complete_conditionally(witnesses.clone().collect::<BTreeSet<_>>(), &mut work)
+        .unwrap();
+    assert!(completed.satisfiable().is_constant(true));
+    assert!(completed.principal().is_constant(true));
+    for variable in witnesses {
+        let decision = completed.lower_envelope().get(&variable).unwrap();
+        let expected: Vec<_> = (0..candidates)
+            .map(|mask| mask == variable - selectors)
+            .collect();
+        assert_eq!(truth_table(decision, selectors), expected);
+    }
+}
+
+#[test]
 fn substitution_borrows_target_formulas_and_resolves_each_source_reference_once() {
     let mut meter = Meter::default();
     let (a, b) = (atom(0), atom(1));

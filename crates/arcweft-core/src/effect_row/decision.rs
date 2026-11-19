@@ -6,7 +6,8 @@
 //! are reduced, ordered and numbered by reachable low-before-high postorder.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    cmp::Reverse,
+    collections::{BTreeMap, BTreeSet, BinaryHeap},
     sync::Arc,
 };
 
@@ -276,6 +277,65 @@ struct DecisionBuilder<'c, V, C> {
     interned: BTreeMap<Node<V>, Root>,
     conditionals: BTreeMap<Conditional, Root>,
     control: &'c mut C,
+}
+
+#[derive(Clone, Copy, Default)]
+struct CofactorChange {
+    sweep: usize,
+    result: Option<Root>,
+}
+
+/// Reusable storage for one false cofactor at a time. Scheduling each source
+/// index at most once per sweep bounds both tables by the source node count.
+struct CofactorSweep {
+    parents: Vec<Vec<usize>>,
+    changes: Vec<CofactorChange>,
+    pending: BinaryHeap<Reverse<usize>>,
+    number: usize,
+}
+
+impl CofactorSweep {
+    fn new<C: DecisionControl>(
+        parents: Vec<Vec<usize>>,
+        control: &mut C,
+    ) -> Result<Self, C::Error> {
+        let count = parents.len();
+        for _ in 0..count {
+            control.charge(DecisionWork::Node)?;
+            control.charge(DecisionWork::Node)?;
+        }
+        Ok(Self {
+            parents,
+            changes: vec![CofactorChange::default(); count],
+            pending: BinaryHeap::with_capacity(count),
+            number: 0,
+        })
+    }
+
+    fn schedule(&mut self, index: usize) {
+        let change = &mut self.changes[index];
+        if change.sweep != self.number {
+            *change = CofactorChange {
+                sweep: self.number,
+                result: None,
+            };
+            self.pending.push(Reverse(index));
+        }
+    }
+
+    fn projection(&self, root: Root, ordinary: &[Root]) -> Root {
+        match root {
+            Root::Branch(index) => {
+                let change = &self.changes[index];
+                if change.sweep == self.number {
+                    change.result.unwrap_or(ordinary[index])
+                } else {
+                    ordinary[index]
+                }
+            }
+            terminal => terminal,
+        }
+    }
 }
 
 impl<V: Clone + Ord> EffectDecision<V> {
@@ -791,27 +851,51 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         }
         let projected = self.project(relation, quantified, Quantifier::Exists)?;
         let admissibility = EffectDecision::<V>::mapped_root(relation.root, &projected);
-        let mut present = BTreeSet::new();
-        for node in relation.nodes.iter() {
+        let mut seeds = BTreeMap::<&V, Vec<usize>>::new();
+        for (index, node) in relation.nodes.iter().enumerate() {
             self.control.charge(DecisionWork::Visit)?;
-            let variable = &node.variable;
-            if quantified.contains(variable) && !present.contains(variable) {
+            if quantified.contains(&node.variable)
+                && EffectDecision::<V>::mapped_root(node.low, &projected) != projected[index]
+            {
+                let entries = match seeds.entry(&node.variable) {
+                    std::collections::btree_map::Entry::Occupied(slot) => slot.into_mut(),
+                    std::collections::btree_map::Entry::Vacant(slot) => {
+                        self.control.charge(DecisionWork::Node)?;
+                        slot.insert(Vec::new())
+                    }
+                };
                 self.control.charge(DecisionWork::Node)?;
-                present.insert(variable.clone());
+                entries.push(index);
             }
         }
         let mut replacements = BTreeMap::new();
-        for variable in present {
-            self.control.charge(DecisionWork::Visit)?;
-            let possible_without =
-                self.project_with_false(relation, &projected, quantified, &variable)?;
-            let required = self.conditional(Conditional::new(
-                possible_without,
-                Root::False,
-                admissibility,
-            ))?;
-            if required != Root::False {
-                replacements.insert(variable, required);
+        if !seeds.is_empty() {
+            let mut parents = Vec::<Vec<usize>>::new();
+            for (index, node) in relation.nodes.iter().enumerate() {
+                self.control.charge(DecisionWork::Visit)?;
+                for child in [node.low, node.high] {
+                    if let Root::Branch(child) = child {
+                        self.control.charge(DecisionWork::Node)?;
+                        parents[child].push(index);
+                    }
+                }
+                parents.push(Vec::new());
+            }
+            let mut sweep = CofactorSweep::new(parents, self.control)?;
+            for (variable, seeds) in seeds {
+                self.control.charge(DecisionWork::Visit)?;
+                let possible_without = self.project_with_false(
+                    relation, &projected, quantified, variable, &mut sweep, seeds,
+                )?;
+                let required = self.conditional(Conditional::new(
+                    possible_without,
+                    Root::False,
+                    admissibility,
+                ))?;
+                if required != Root::False {
+                    self.control.charge(DecisionWork::Node)?;
+                    replacements.insert(variable.clone(), required);
+                }
             }
         }
         let instantiated = self.instantiate(relation, quantified, &replacements)?;
@@ -823,43 +907,50 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     }
 
     /// Existential projection with one quantified variable fixed to false.
-    /// An ordered subgraph below that variable already has the exact projection.
-    /// Keep only cofactors which differ from the ordinary existential result.
+    /// Propagate departures from the ordinary projection only to their parents.
+    /// The source indices are child-first, so a parent's changed children have
+    /// all been visited by the time the parent is popped.
     fn project_with_false(
         &mut self,
         relation: &EffectDecision<V>,
         projected: &[Root],
         quantified: &BTreeSet<V>,
         variable: &V,
+        sweep: &mut CofactorSweep,
+        seeds: Vec<usize>,
     ) -> Result<Root, C::Error> {
-        let mut changes = BTreeMap::new();
-        let cofactor = |root, changes: &BTreeMap<usize, Root>| match root {
-            Root::Branch(index) => changes.get(&index).copied().unwrap_or(projected[index]),
-            terminal => terminal,
-        };
-        for (index, node) in relation.nodes.iter().enumerate() {
+        debug_assert!(sweep.pending.is_empty());
+        sweep.number += 1;
+        for seed in seeds {
             self.control.charge(DecisionWork::Visit)?;
-            let mapped = match node.variable.cmp(variable) {
-                std::cmp::Ordering::Greater => continue,
-                std::cmp::Ordering::Equal => EffectDecision::<V>::mapped_root(node.low, projected),
-                std::cmp::Ordering::Less => {
-                    let low = cofactor(node.low, &changes);
-                    let high = cofactor(node.high, &changes);
-                    if low == EffectDecision::<V>::mapped_root(node.low, projected)
-                        && high == EffectDecision::<V>::mapped_root(node.high, projected)
-                    {
-                        continue;
-                    }
-                    let variable = node.variable.clone();
-                    self.project_branch(variable, low, high, quantified, Quantifier::Exists)?
-                }
+            sweep.schedule(seed);
+        }
+        while let Some(Reverse(index)) = sweep.pending.pop() {
+            self.control.charge(DecisionWork::Visit)?;
+            let node = &relation.nodes[index];
+            let mapped = if &node.variable == variable {
+                EffectDecision::<V>::mapped_root(node.low, projected)
+            } else {
+                debug_assert!(&node.variable < variable);
+                let low = sweep.projection(node.low, projected);
+                let high = sweep.projection(node.high, projected);
+                self.project_branch(
+                    node.variable.clone(),
+                    low,
+                    high,
+                    quantified,
+                    Quantifier::Exists,
+                )?
             };
             if mapped != projected[index] {
-                self.control.charge(DecisionWork::Node)?;
-                changes.insert(index, mapped);
+                sweep.changes[index].result = Some(mapped);
+                for slot in 0..sweep.parents[index].len() {
+                    self.control.charge(DecisionWork::Visit)?;
+                    sweep.schedule(sweep.parents[index][slot]);
+                }
             }
         }
-        Ok(cofactor(relation.root, &changes))
+        Ok(sweep.projection(relation.root, projected))
     }
 
     fn new(control: &'c mut C) -> Self {
