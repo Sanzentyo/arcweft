@@ -19892,3 +19892,16 @@ Sema全featureユニットは1,982件中1,864 PASS、118 FAIL、0 SKIP。Compile
 Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時に変更7 blobを検証入力と照合した。
 
 [検証原本と公開照合](acceptance-evidence/task-continuation-operand-owner.raw.zip) は20 entry、465,654 bytes、SHA256 `ef8a64878ac0053af2968ca14b1b25ccd1c983b16f7b52a83b2d715977c73841`。各原本の長さとハッシュを照合した。
+
+<a id="prepared-continuation-operand"></a>
+## 2026-11-19 — 継続の呼出し先を準備済みの型で照合
+
+基点 `ec629d553427841bbd527cf94589392e7301ad2c`。Source `27839a3ee0943831c2847bf9071dcc69733dbc3e`。通常の値から呼出し先を調べる入口で、発行元のグラフから継続か終端値かを先に判定する。継続では、元の適用が発行した結果と実際の値を同じソーススコープへ保持して照合し、型と発行元参照を組にして名前解決と制約計算へ渡す。公開時は、ソース型を確定して依存先の検証済み継続型に照合する。独立した関数値と、終端適用が返した関数値は従来の型観測を使う。
+
+既存のロールバックテストを実際の二段階呼出しに変更した。呼出し先の準備で型観測のコールバックを呼ぶと失敗する条件で、戻り値型の差し替えを拒否し、正しい型と発行元を受理した。ロールバック後の参照は同じグラフで失効として拒否した。
+
+Sema全featureユニットは1,982件中1,864 PASS、118 FAIL、0 SKIP。Compilerの5 targetは550件中541 PASS、9 FAIL。`flow_wait` は32件中29 PASS、3 FAIL。全2,564件で直前の検証結果とテストID・合否が一致した。正しい再帰段階適用と再帰する attached default の既存失敗は残る。元の適用が結果を発行する段階では、制約計算が終端効果の確定を求める。[元の試験と失敗経路](#completed-call-result)。
+
+Sema全target・全feature Clippy、fmt、差分検査、構造ゲートは終了0。Cargo全featureの推移的逆依存は起点込みSema 22パッケージ。全逆依存テスト、workspace全targetのcheck／Clippy、Tier 2の最終受入は今回未実行。公開時に変更10 blobを検証入力と照合した。
+
+[検証原本と公開照合](acceptance-evidence/task-prepared-continuation-operand.raw.zip) は24 entry、684,355 bytes、SHA256 `0326e0d3fd574d88c580aa5e7b28517ca673a10954b06ef00cc29721d03801e3`。各原本の長さとハッシュを照合した。
