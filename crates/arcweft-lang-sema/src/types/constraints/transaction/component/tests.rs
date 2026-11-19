@@ -54,7 +54,7 @@ fn output(context: &mut Context<'_>, ty: &TypeKind) -> PreparedValueOutput<&'sta
 
 #[test]
 fn original_source_context_is_retained_and_current_registration_scope_cannot_replace_it() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
@@ -73,6 +73,7 @@ fn original_source_context_is_retained_and_current_registration_scope_cannot_rep
             let make = |context: &mut Context<'_>| {
                 let mut transaction = TypeConstraintTransaction::initialize(
                     context,
+                    &mut effects,
                     original.clone(),
                     (),
                     TypeConstraintParameterScope::new([(
@@ -85,12 +86,14 @@ fn original_source_context_is_retained_and_current_registration_scope_cannot_rep
                 .unwrap();
                 transaction.constrain(
                     context,
+                    &mut effects,
                     &template,
                     &ty,
                     ConstraintAcceptance::PatternAcceptsActual,
                 );
                 transaction.request_projection(
                     context,
+                    &mut effects,
                     (),
                     &template,
                     TypeConstraintProjectionClosure::Closed,
@@ -111,13 +114,19 @@ fn original_source_context_is_retained_and_current_registration_scope_cannot_rep
             assert_eq!(unrelated.scope(), original.scope());
             assert_ne!(unrelated, original);
             assert!(matches!(
-                component.admit_roots(context, unrelated, vec![first], "foreign"),
+                component.admit_roots(context, &mut effects, unrelated, vec![first], "foreign"),
                 Err(PreparedValueFailure::ProducerContext)
             ));
             assert!(component.values.is_empty());
             assert_eq!(component.next_value, 0);
             let value = component
-                .admit_roots(context, original.clone(), vec![second], "original")
+                .admit_roots(
+                    context,
+                    &mut effects,
+                    original.clone(),
+                    vec![second],
+                    "original",
+                )
                 .unwrap();
             let retained = component.value(&value).unwrap();
             assert_eq!(retained.original, original);
@@ -135,13 +144,19 @@ fn original_source_context_is_retained_and_current_registration_scope_cannot_rep
 
 #[test]
 fn original_source_context_is_required_even_when_no_candidate_frontier_exists() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let original = context.fixture_original_context(None).unwrap();
     let mut component = Component::new(&mut context, &effects).unwrap();
     let value = component
-        .admit_roots(&mut context, original.clone(), Vec::new(), "diagnostic")
+        .admit_roots(
+            &mut context,
+            &mut effects,
+            original.clone(),
+            Vec::new(),
+            "diagnostic",
+        )
         .unwrap();
     let retained = component.value(&value).unwrap();
     let ValueDefinition::Constraint { frontiers } = &retained.definition else {
@@ -169,7 +184,7 @@ fn repeated_reads_are_correlated_without_copying_or_filtering_the_producer() {
         root(&mut context, &TypeKind::String),
     ];
     let value = component
-        .admit_fixture_roots(&mut context, roots, "initializer")
+        .admit_fixture_roots(&mut context, &mut effects, roots, "initializer")
         .unwrap();
     let mut use_ = component
         .issue_fixture_use(&mut context, &[value.clone(), value.clone()])
@@ -449,7 +464,7 @@ fn independent_origins_form_a_product_but_derived_values_keep_shared_origins() {
         let roots = vec![root(&mut context, &TypeKind::I32)];
         values.push(
             component
-                .admit_fixture_roots(&mut context, roots, "root")
+                .admit_fixture_roots(&mut context, &mut effects, roots, "root")
                 .unwrap(),
         );
     }
@@ -1093,7 +1108,7 @@ impl ConstraintDomain for Applications {
 
 #[test]
 fn producer_registration_preserves_parent_correlation_and_one_semantic_application() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     use crate::types::constraints::{
         ConstraintAcceptance, PreparedConstraintSourceProjection, PreparedSourceConstraint,
     };
@@ -1111,6 +1126,7 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
     for application in [0, 1] {
         let mut root = TypeConstraintTransaction::initialize_fixture(
             &mut context,
+            &mut effects,
             application,
             TypeConstraintParameterScope::empty(),
             None,
@@ -1118,6 +1134,7 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
         .unwrap();
         root.request_projection(
             &mut context,
+            &mut effects,
             (),
             &TypeKind::I32,
             TypeConstraintProjectionClosure::Closed,
@@ -1125,11 +1142,12 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
         roots.push(root.suspend_result(&mut context, ()).unwrap());
     }
     assert!(matches!(
-        component.admit_fixture_roots(&mut context, roots, ()),
+        component.admit_fixture_roots(&mut context, &mut effects, roots, ()),
         Err(PreparedValueFailure::ProducerApplication)
     ));
     let mut parent = TypeConstraintTransaction::initialize_fixture(
         &mut context,
+        &mut effects,
         2,
         TypeConstraintParameterScope::empty(),
         None,
@@ -1142,10 +1160,14 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .unwrap();
-    let ticket = parent.next_probe(&mut context).unwrap().unwrap();
+    let ticket = parent
+        .next_probe(&mut context, &mut effects)
+        .unwrap()
+        .unwrap();
     let nested = ticket.fork_for_child(&mut context).unwrap();
     let mut child = TypeConstraintTransaction::initialize_from_nested_path(
         &mut context,
+        &mut effects,
         nested.original_context().unwrap().clone(),
         3,
         TypeConstraintParameterScope::empty(),
@@ -1155,13 +1177,14 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
     .unwrap();
     child.request_projection(
         &mut context,
+        &mut effects,
         (),
         &TypeKind::I32,
         TypeConstraintProjectionClosure::Closed,
     );
     let child = child.suspend_result(&mut context, ()).unwrap();
     assert!(matches!(
-        component.admit_fixture_roots(&mut context, vec![child], ()),
+        component.admit_fixture_roots(&mut context, &mut effects, vec![child], ()),
         Err(PreparedValueFailure::DependentRoot)
     ));
     assert!(component.values.is_empty());
@@ -1170,7 +1193,7 @@ fn producer_registration_preserves_parent_correlation_and_one_semantic_applicati
 
 #[test]
 fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     use crate::types::constraints::application::ConstraintApplicationScope;
 
     let cancellation = AtomicBool::new(false);
@@ -1182,31 +1205,46 @@ fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root
     .0;
     let mut component =
         OpenConstraintComponent::<Applications, ()>::new(&mut context, &effects).unwrap();
-    let parent = ConstraintApplicationScope::test_root(0, TypeConstraintParameterScope::empty());
+    let parent = ConstraintApplicationScope::test_root(
+        0,
+        TypeConstraintParameterScope::empty(),
+        &mut effects,
+        &mut context,
+    );
     let parent_id = parent.id();
-    let path = context.start_path(parent).unwrap();
-    let child = ConstraintApplicationScope::test_root(1, TypeConstraintParameterScope::empty());
+    let path = context.start_path(parent, &mut effects).unwrap();
+    let child = ConstraintApplicationScope::test_root(
+        1,
+        TypeConstraintParameterScope::empty(),
+        &mut effects,
+        &mut context,
+    );
     let child_id = child.id();
-    let path = context.admit_application(path, child).unwrap();
+    let path = context
+        .admit_application(path, child, &mut effects)
+        .unwrap();
     assert_eq!(path.root_id(), parent_id);
     let mut child =
-        TypeConstraintTransaction::from_path(&mut context, child_id, path, None).unwrap();
+        TypeConstraintTransaction::from_path(&mut context, &mut effects, child_id, path, None)
+            .unwrap();
     assert!(child.parent_receipt.is_none());
     child.request_projection(
         &mut context,
+        &mut effects,
         (),
         &TypeKind::I32,
         TypeConstraintProjectionClosure::Closed,
     );
     let child = child.suspend_result(&mut context, ()).unwrap();
     assert!(matches!(
-        component.admit_fixture_roots(&mut context, vec![child], ()),
+        component.admit_fixture_roots(&mut context, &mut effects, vec![child], ()),
         Err(PreparedValueFailure::DependentRoot)
     ));
     assert!(component.values.is_empty());
     assert_eq!(component.next_value, 0);
     let mut root = TypeConstraintTransaction::initialize_fixture(
         &mut context,
+        &mut effects,
         2,
         TypeConstraintParameterScope::empty(),
         None,
@@ -1214,13 +1252,14 @@ fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root
     .unwrap();
     root.request_projection(
         &mut context,
+        &mut effects,
         (),
         &TypeKind::Bool,
         TypeConstraintProjectionClosure::Closed,
     );
     let root = root.suspend_result(&mut context, ()).unwrap();
     let registered = component
-        .admit_fixture_roots(&mut context, vec![root], ())
+        .admit_fixture_roots(&mut context, &mut effects, vec![root], ())
         .unwrap();
     assert_eq!(registered.ordinal, 0);
     assert_eq!(component.values.len(), 1);
@@ -1228,7 +1267,7 @@ fn descendant_without_parent_receipt_cannot_be_registered_as_an_independent_root
 
 #[test]
 fn imported_opening_cannot_change_semantic_application_when_original_roots_join() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     use crate::types::{
         DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId,
         constraints::{
@@ -1265,24 +1304,35 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
         )
         .unwrap();
         let reference = parameters.type_reference(&key.into()).unwrap();
-        let parent = context
-            .start_path(ConstraintApplicationScope::test_root(1, parameters.clone()))
-            .unwrap();
+        let opening = ConstraintApplicationScope::test_root(
+            1,
+            parameters.clone(),
+            &mut effects,
+            &mut context,
+        );
+        let parent = context.start_path(opening, &mut effects).unwrap();
         let lease = parent
             .applications
             .import_parameters(&[ConstraintGenericParameterId::Type(reference.clone())])
             .unwrap();
-        let mut owner =
-            TypeConstraintTransaction::initialize_fixture(&mut context, 0, parameters, None)
-                .unwrap();
+        let mut owner = TypeConstraintTransaction::initialize_fixture(
+            &mut context,
+            &mut effects,
+            0,
+            parameters,
+            None,
+        )
+        .unwrap();
         owner.constrain(
             &mut context,
+            &mut effects,
             &TypeKind::GenericParam(reference),
             &TypeKind::Bool,
             ConstraintAcceptance::PatternAcceptsActual,
         );
         owner.request_projection(
             &mut context,
+            &mut effects,
             (),
             &TypeKind::I64,
             TypeConstraintProjectionClosure::Closed,
@@ -1290,6 +1340,7 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
         let owner = owner.suspend_result(&mut context, ()).unwrap();
         let mut imported = TypeConstraintTransaction::initialize_with_imported_fixture(
             &mut context,
+            &mut effects,
             2,
             TypeConstraintParameterScope::empty(),
             None,
@@ -1298,6 +1349,7 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
         .unwrap();
         imported.request_projection(
             &mut context,
+            &mut effects,
             (),
             &TypeKind::I64,
             TypeConstraintProjectionClosure::Closed,
@@ -1310,11 +1362,11 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
         };
         for root in roots {
             component
-                .admit_fixture_roots(&mut context, vec![root], ())
+                .admit_fixture_roots(&mut context, &mut effects, vec![root], ())
                 .unwrap();
         }
         assert!(matches!(
-            component.infer_original_products(&mut context),
+            component.infer_original_products(&mut context, &mut effects),
             Err(PreparedValueFailure::Constraint(
                 TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
                     TypeConstraintParameterScopeInvariant::ApplicationContractConflict
@@ -1369,10 +1421,17 @@ fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() 
     let length = parameters.const_reference(&length.into()).unwrap();
     let binder = GenericBinder::new(1, 0, 0);
     let enclosing = context.enter_binder_scope(binder);
-    let mut lower =
-        TypeConstraintTransaction::initialize_fixture(&mut context, (), parameters, None).unwrap();
+    let mut lower = TypeConstraintTransaction::initialize_fixture(
+        &mut context,
+        &mut effects,
+        (),
+        parameters,
+        None,
+    )
+    .unwrap();
     lower.constrain(
         &mut context,
+        &mut effects,
         &TypeKind::Tuple(vec![
             TypeKind::GenericParam(bound.clone()),
             TypeKind::Array {
@@ -1391,13 +1450,19 @@ fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() 
     );
     lower.request_projection(
         &mut context,
+        &mut effects,
         (),
         &TypeKind::I64,
         TypeConstraintProjectionClosure::Closed,
     );
     let root = lower.suspend_result(&mut context, ()).unwrap();
     let value = component
-        .admit_fixture_roots(&mut context, vec![root], "original initializer")
+        .admit_fixture_roots(
+            &mut context,
+            &mut effects,
+            vec![root],
+            "original initializer",
+        )
         .unwrap();
     context.restore_binder_scope(enclosing);
     assert!(context.lexical_scope().binders().is_empty());
@@ -1454,6 +1519,7 @@ fn original_binding_inputs_retain_hidden_type_const_absence_and_lexical_scope() 
                 &TypeKind::GenericParam(bound.clone()),
                 original.projection_view(),
                 ConstraintClosurePolicy::Hint,
+                &mut effects,
                 context,
             )?;
             assert_eq!(projected.value, TypeKind::String);
@@ -1471,7 +1537,7 @@ fn derived_value_reads_visit_one_original_path_and_do_not_invent_diagnostic_path
     let mut component = Component::new(&mut context, &effects).unwrap();
     let root = root(&mut context, &TypeKind::I32);
     let producer = component
-        .admit_fixture_roots(&mut context, vec![root], "original")
+        .admit_fixture_roots(&mut context, &mut effects, vec![root], "original")
         .unwrap();
     let mut first = component
         .issue_fixture_use(&mut context, &[producer.clone()])
@@ -1536,7 +1602,7 @@ fn original_constraint_observation_validates_authority_and_cancellation_before_v
     let mut component = Component::new(&mut context, &effects).unwrap();
     let root = root(&mut context, &TypeKind::I32);
     let producer = component
-        .admit_fixture_roots(&mut context, vec![root], "original")
+        .admit_fixture_roots(&mut context, &mut effects, vec![root], "original")
         .unwrap();
     let mut use_ = component
         .issue_fixture_use(&mut context, &[producer])

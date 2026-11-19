@@ -175,6 +175,7 @@ fn values(keys: &[ConstraintGenericParameterId; 3], context: &mut Context<'_>) -
 
 #[test]
 fn a_template_cannot_borrow_another_applications_rigid_or_inference_inventory() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     for eligibility in [
         TypeConstraintParameterEligibility::Rigid,
         TypeConstraintParameterEligibility::Bindable,
@@ -183,18 +184,24 @@ fn a_template_cannot_borrow_another_applications_rigid_or_inference_inventory() 
         let cancellation = AtomicBool::new(false);
         let mut context = context(&cancellation);
         let root = context
-            .fixture_application_scope(0, TypeConstraintParameterScope::empty())
+            .fixture_application_scope(0, TypeConstraintParameterScope::empty(), &mut effect_graph)
             .unwrap();
         let root_id = root.id();
-        let mut path = context.start_path(root).unwrap();
+        let mut path = context.start_path(root, &mut effect_graph).unwrap();
         let (parameters, keys) = scope(eligibility);
         let expected = opened(&parameters, &keys, eligibility);
-        let child = context.fixture_application_scope(1, parameters).unwrap();
+        let child = context
+            .fixture_application_scope(1, parameters, &mut effect_graph)
+            .unwrap();
         let child_id = child.id();
-        path = context.admit_application(path, child).unwrap();
+        path = context
+            .admit_application(path, child, &mut effect_graph)
+            .unwrap();
         for (index, value) in values(&expected, &mut context).into_iter().enumerate() {
             assert_eq!(
-                context.open_template_type(&value, &path, child_id).unwrap(),
+                context
+                    .open_fixture_template_type(&value, &path, child_id, &mut effect_graph)
+                    .unwrap(),
                 value
             );
             let [
@@ -212,7 +219,7 @@ fn a_template_cannot_borrow_another_applications_rigid_or_inference_inventory() 
                 _ => unreachable!(),
             };
             assert_eq!(
-                context.open_template_type(&value, &path, root_id),
+                context.open_fixture_template_type(&value, &path, root_id, &mut effect_graph),
                 Err(error)
             );
         }
@@ -221,6 +228,7 @@ fn a_template_cannot_borrow_another_applications_rigid_or_inference_inventory() 
 
 #[test]
 fn a_template_can_read_its_original_sources_exact_imported_scope() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     for eligibility in [
         TypeConstraintParameterEligibility::Rigid,
         TypeConstraintParameterEligibility::Bindable,
@@ -230,17 +238,26 @@ fn a_template_can_read_its_original_sources_exact_imported_scope() {
         let mut context = context(&cancellation);
         let (parameters, keys) = scope(eligibility);
         let expected = opened(&parameters, &keys, eligibility);
-        let root = context.fixture_application_scope(0, parameters).unwrap();
-        let mut path = context.start_path(root).unwrap();
+        let root = context
+            .fixture_application_scope(0, parameters, &mut effect_graph)
+            .unwrap();
+        let mut path = context.start_path(root, &mut effect_graph).unwrap();
         let lease = path.applications.import_parameters(&expected).unwrap();
         let original = context.fixture_original_context(Some(&lease)).unwrap();
-        let child = ConstraintApplicationScope::test_root(1, TypeConstraintParameterScope::empty())
-            .with_fixture_original(original);
+        let child = ConstraintApplicationScope::test_root(
+            1,
+            TypeConstraintParameterScope::empty(),
+            &mut effect_graph,
+            &mut context,
+        )
+        .with_fixture_original(original);
         let child_id = child.id();
         path = context.admit_application(path, child).unwrap();
         for value in values(&expected, &mut context) {
             assert_eq!(
-                context.open_template_type(&value, &path, child_id).unwrap(),
+                context
+                    .open_fixture_template_type(&value, &path, child_id, &mut effect_graph)
+                    .unwrap(),
                 value
             );
         }
@@ -249,15 +266,16 @@ fn a_template_can_read_its_original_sources_exact_imported_scope() {
 
 #[test]
 fn template_opening_retains_function_local_binders_and_restores_actual_ambient_frames() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let binder = GenericBinder::new(1, 1, 1);
     let outer = context.enter_binder_scope(binder);
     let ambient = context.lexical_frames().clone();
     let root = context
-        .fixture_application_scope(0, TypeConstraintParameterScope::empty())
+        .fixture_application_scope(0, TypeConstraintParameterScope::empty(), &mut effect_graph)
         .unwrap();
-    let path = context.start_path(root).unwrap();
+    let path = context.start_path(root, &mut effect_graph).unwrap();
     let local = GenericScope::default().with_binder(binder);
     let predicate = EffectFormula::variable(local.bound_effect(0, 0).unwrap(), &mut context)
         .unwrap()
@@ -275,7 +293,7 @@ fn template_opening_retains_function_local_binders_and_restores_actual_ambient_f
     );
     assert_eq!(
         context
-            .open_template_type(&value, &path, path.root_id())
+            .open_template_type(&value, &path, path.root_id(), &mut effect_graph)
             .unwrap(),
         value
     );
@@ -284,7 +302,7 @@ fn template_opening_retains_function_local_binders_and_restores_actual_ambient_f
     for value in values(&keys, &mut context) {
         assert!(
             context
-                .open_template_type(&value, &path, path.root_id())
+                .open_fixture_template_type(&value, &path, path.root_id(), &mut effect_graph)
                 .is_err()
         );
         assert_eq!(context.lexical_frames(), &ambient);

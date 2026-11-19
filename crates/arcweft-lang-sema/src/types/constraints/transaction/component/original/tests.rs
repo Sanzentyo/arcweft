@@ -182,7 +182,7 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
         ],
     );
     let first = component
-        .admit_fixture_roots(&mut context, vec![first], "T=U,N=M")
+        .admit_fixture_roots(&mut context, &mut effects, vec![first], "T=U,N=M")
         .unwrap();
     let second = frontier_application(
         &mut context,
@@ -196,9 +196,11 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
         ],
     );
     component
-        .admit_fixture_roots(&mut context, vec![second], "T=bool,N=7")
+        .admit_fixture_roots(&mut context, &mut effects, vec![second], "T=bool,N=7")
         .unwrap();
-    let forest = component.infer_original_products(&mut context).unwrap();
+    let forest = component
+        .infer_original_products(&mut context, &mut effects)
+        .unwrap();
     assert_eq!(forest.products.len(), 1);
     let product = &forest.products[0];
     assert_eq!(product.members.len(), 2);
@@ -250,7 +252,7 @@ fn shared_original_type_and_const_aliases_are_unified_without_overwriting_either
 
 #[test]
 fn original_products_keep_conflict_addresses_and_exclude_diagnostic_witnesses() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
@@ -266,7 +268,7 @@ fn original_products_keep_conflict_addresses_and_exclude_diagnostic_witnesses() 
     };
     let root = frontier(&mut context, scope.clone(), &equations(TypeKind::Bool, 3));
     component
-        .admit_fixture_roots(&mut context, vec![root], "first")
+        .admit_fixture_roots(&mut context, &mut effects, vec![root], "first")
         .unwrap();
     let mut roots = Vec::new();
     for (value, count) in [
@@ -281,9 +283,11 @@ fn original_products_keep_conflict_addresses_and_exclude_diagnostic_witnesses() 
         ));
     }
     let second = component
-        .admit_fixture_roots(&mut context, roots, "second")
+        .admit_fixture_roots(&mut context, &mut effects, roots, "second")
         .unwrap();
-    let forest = component.infer_original_products(&mut context).unwrap();
+    let forest = component
+        .infer_original_products(&mut context, &mut effects)
+        .unwrap();
     assert_eq!(forest.products.len(), 3);
     assert!(forest.products[0].result.is_ok());
     let failure = forest.products[1].result.as_ref().err().unwrap();
@@ -300,7 +304,7 @@ fn original_products_keep_conflict_addresses_and_exclude_diagnostic_witnesses() 
 
 #[test]
 fn cross_root_structural_occurs_cycles_remain_original_product_rejections() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
@@ -317,10 +321,12 @@ fn cross_root_structural_occurs_cycles_remain_original_product_rejections() {
             EquationOrigin::Application,
         );
         component
-            .admit_fixture_roots(&mut context, vec![root], "acyclic original")
+            .admit_fixture_roots(&mut context, &mut effects, vec![root], "acyclic original")
             .unwrap();
     }
-    let forest = component.infer_original_products(&mut context).unwrap();
+    let forest = component
+        .infer_original_products(&mut context, &mut effects)
+        .unwrap();
     assert_eq!(forest.products.len(), 1);
     assert!(matches!(
         forest.products[0].result.as_ref().err().unwrap().reason,
@@ -331,7 +337,7 @@ fn cross_root_structural_occurs_cycles_remain_original_product_rejections() {
 
 #[test]
 fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
@@ -342,9 +348,16 @@ fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
     let second = frontier(&mut context, scope, &[]);
     let second_id = second.transaction.application;
     component
-        .admit_fixture_roots(&mut context, vec![first, second], "initializer")
+        .admit_fixture_roots(
+            &mut context,
+            &mut effects,
+            vec![first, second],
+            "initializer",
+        )
         .unwrap();
-    let forest = component.infer_original_products(&mut context).unwrap();
+    let forest = component
+        .infer_original_products(&mut context, &mut effects)
+        .unwrap();
     assert_eq!(forest.products.len(), 2);
     let solved = &forest.products[0].result.as_ref().ok().unwrap()[0];
     assert!(solved.branch.applications.application(first_id).is_some());
@@ -355,11 +368,17 @@ fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
     let original = context.fixture_original_context(None).unwrap();
     let mut component = Component::new(&mut context, &effects).unwrap();
     component
-        .admit_roots(&mut context, original, Vec::new(), "rejected original")
+        .admit_roots(
+            &mut context,
+            &mut effects,
+            original,
+            Vec::new(),
+            "rejected original",
+        )
         .unwrap();
     assert!(
         component
-            .infer_original_products(&mut context)
+            .infer_original_products(&mut context, &mut effects)
             .unwrap()
             .products
             .is_empty()
@@ -368,7 +387,7 @@ fn an_unchosen_original_cannot_lend_required_parameters_to_another_product() {
 
 #[test]
 fn one_application_opening_cannot_claim_independently_opened_ambient_binders() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
@@ -382,11 +401,11 @@ fn one_application_opening_cannot_claim_independently_opened_ambient_binders() {
             &[(TypeKind::GenericParam(ty[0].clone()), value)],
         );
         component
-            .admit_fixture_roots(&mut context, vec![root], "ambient")
+            .admit_fixture_roots(&mut context, &mut effects, vec![root], "ambient")
             .unwrap();
         context.restore_binder_scope(enclosing);
     }
-    assert!(matches!(component.infer_original_products(&mut context),
+    assert!(matches!(component.infer_original_products(&mut context, &mut effects),
         Err(PreparedValueFailure::Constraint(TypeConstraintError::Invariant(
             crate::types::constraints::TypeConstraintInvariant::ParameterScope(
                 crate::types::constraints::TypeConstraintParameterScopeInvariant::ApplicationContractConflict
@@ -440,7 +459,7 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
         .import_parameters(&[ty[0].clone().into()])
         .unwrap();
     component
-        .admit_fixture_roots(&mut context, vec![first], "outer")
+        .admit_fixture_roots(&mut context, &mut effects, vec![first], "outer")
         .unwrap();
     let outer = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
     let expected = scoped_function(context.lexical_scope(), 2);
@@ -451,11 +470,18 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
         Some(lease),
     );
     component
-        .admit_fixture_roots(&mut context, vec![second], "outer beneath another frame")
+        .admit_fixture_roots(
+            &mut context,
+            &mut effects,
+            vec![second],
+            "outer beneath another frame",
+        )
         .unwrap();
     context.restore_binder_scope(outer);
     context.restore_binder_scope(root_scope);
-    let forest = component.infer_original_products(&mut context).unwrap();
+    let forest = component
+        .infer_original_products(&mut context, &mut effects)
+        .unwrap();
     let product = &forest.products[0];
     assert_eq!(product.scope.shape().binders().len(), 2);
     let solution = &product
@@ -477,6 +503,7 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
                 &TypeKind::GenericParam(ty[0].clone()),
                 solution.branch.projection_view(),
                 crate::types::constraints::ConstraintClosurePolicy::ProjectionClosed,
+                &mut effects,
                 context,
             )
         })
@@ -487,24 +514,24 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
 
 #[test]
 fn live_use_tickets_and_cancellation_cannot_publish_a_partial_original_forest() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
     let root = frontier(&mut context, TypeConstraintParameterScope::empty(), &[]);
     let value = component
-        .admit_fixture_roots(&mut context, vec![root], "initializer")
+        .admit_fixture_roots(&mut context, &mut effects, vec![root], "initializer")
         .unwrap();
     let use_ = component.issue_fixture_use(&mut context, &[value]).unwrap();
     assert!(matches!(
-        component.infer_original_products(&mut context),
+        component.infer_original_products(&mut context, &mut effects),
         Err(PreparedValueFailure::UseState)
     ));
     drop(use_);
     let component = Component::new(&mut context, &effects).unwrap();
     cancellation.store(true, Ordering::Relaxed);
     assert!(matches!(
-        component.infer_original_products(&mut context),
+        component.infer_original_products(&mut context, &mut effects),
         Err(PreparedValueFailure::Constraint(
             TypeConstraintError::Abort(_)
         ))
@@ -515,7 +542,7 @@ fn live_use_tickets_and_cancellation_cannot_publish_a_partial_original_forest() 
 
 #[test]
 fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_root() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     use crate::types::constraints::{
         ConstraintGenericParameterId, application::ConstraintApplicationScope,
     };
@@ -523,9 +550,8 @@ fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_roo
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
     let (scope, ty, _) = parameters(2, 0);
-    let parent = context
-        .start_path(ConstraintApplicationScope::test_root((), scope))
-        .unwrap();
+    let opening = ConstraintApplicationScope::test_root((), scope, &mut effects, &mut context);
+    let parent = context.start_path(opening, &mut effects).unwrap();
     let parent_id = parent.root_id();
     let lease = parent
         .applications
@@ -540,6 +566,7 @@ fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_roo
     for actual in [TypeKind::GenericParam(ty[1].clone()), TypeKind::Bool] {
         let mut lower = TypeConstraintTransaction::initialize_with_imported_fixture(
             &mut context,
+            &mut effects,
             (),
             TypeConstraintParameterScope::empty(),
             None,
@@ -548,22 +575,26 @@ fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_roo
         .unwrap();
         lower.constrain(
             &mut context,
+            &mut effects,
             &TypeKind::GenericParam(ty[0].clone()),
             &actual,
             ConstraintAcceptance::PatternAcceptsActual,
         );
         lower.request_projection(
             &mut context,
+            &mut effects,
             (),
             &TypeKind::I64,
             TypeConstraintProjectionClosure::Closed,
         );
         let root = lower.suspend_result(&mut context, ()).unwrap();
         component
-            .admit_fixture_roots(&mut context, vec![root], "imported original")
+            .admit_fixture_roots(&mut context, &mut effects, vec![root], "imported original")
             .unwrap();
     }
-    let forest = component.infer_original_products(&mut context).unwrap();
+    let forest = component
+        .infer_original_products(&mut context, &mut effects)
+        .unwrap();
     assert_eq!(forest.products.len(), 1);
     assert_eq!(forest.products[0].members.len(), 2);
     let solution = &forest.products[0].result.as_ref().ok().unwrap()[0];
@@ -588,7 +619,7 @@ fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_roo
 
 #[test]
 fn exact_agreement_keeps_whole_choice_types_and_rejects_bottom_subtyping() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let choice = TypeKind::Tuple(vec![TypeKind::Choice(vec![
         TypeKind::Bool,
@@ -610,10 +641,12 @@ fn exact_agreement_keeps_whole_choice_types_and_rejects_bottom_subtyping() {
                 &[(TypeKind::GenericParam(ty[0].clone()), value)],
             );
             component
-                .admit_fixture_roots(&mut context, vec![root], "whole type")
+                .admit_fixture_roots(&mut context, &mut effects, vec![root], "whole type")
                 .unwrap();
         }
-        let forest = component.infer_original_products(&mut context).unwrap();
+        let forest = component
+            .infer_original_products(&mut context, &mut effects)
+            .unwrap();
         assert_eq!(forest.products.len(), 1);
         assert_eq!(forest.products[0].result.is_ok(), succeeds);
         if !succeeds {
@@ -677,14 +710,19 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
     let union = row(0).union(&row(1), &mut context).unwrap();
     first.transaction.frontier[0]
         .effects
-        .constrain_subset(&log, &union, &mut context)
+        .constrain_fixture_subset(&mut effects, &log, &union, &mut context)
         .unwrap();
     assert!(matches!(
         first.transaction.frontier[0].effects.complete(&mut context),
         Err(TypeConstraintError::Rejected(_))
     ));
     let first = component
-        .admit_fixture_roots(&mut context, vec![first], "original disjunction")
+        .admit_fixture_roots(
+            &mut context,
+            &mut effects,
+            vec![first],
+            "original disjunction",
+        )
         .unwrap();
     let second = frontier_application(
         &mut context,
@@ -692,9 +730,16 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
         &[(TypeKind::GenericParam(ty), function(log.clone()))],
     );
     component
-        .admit_fixture_roots(&mut context, vec![second], "original resolves e1")
+        .admit_fixture_roots(
+            &mut context,
+            &mut effects,
+            vec![second],
+            "original resolves e1",
+        )
         .unwrap();
-    let forest = component.infer_original_products(&mut context).unwrap();
+    let forest = component
+        .infer_original_products(&mut context, &mut effects)
+        .unwrap();
     let solution = &forest.products[0]
         .result
         .as_ref()
@@ -734,7 +779,7 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
         &[(TypeKind::GenericParam(ty[0].clone()), TypeKind::Bool)],
     );
     let producer = component
-        .admit_fixture_roots(&mut context, vec![root], "original")
+        .admit_fixture_roots(&mut context, &mut effects, vec![root], "original")
         .unwrap();
     let mut use_ = component
         .issue_fixture_use(&mut context, &[producer])
@@ -766,7 +811,9 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
     component
         .retain_use(&mut context, &mut effects, use_)
         .unwrap();
-    let forest = component.infer_original_products(&mut context).unwrap();
+    let forest = component
+        .infer_original_products(&mut context, &mut effects)
+        .unwrap();
     assert_eq!(forest.products.len(), 1);
     let solution = &forest.products[0].result.as_ref().ok().unwrap()[0];
     assert_eq!(
@@ -782,7 +829,7 @@ fn a_later_false_fit_and_different_use_result_do_not_constrain_original_inferenc
 
 #[test]
 fn original_product_publication_obeys_an_inclusive_shared_node_budget() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     use crate::types::constraints::context::{
         TypeConstraintAccounting, TypeConstraintContextIssuer, TypeConstraintWorkReport,
     };
@@ -812,7 +859,7 @@ fn original_product_publication_obeys_an_inclusive_shared_node_budget() {
         }
     }
     let cancellation = AtomicBool::new(false);
-    let execute = |limit| {
+    let mut execute = |limit| {
         let nodes = Rc::new(Cell::new(0));
         let mut context =
             TypeConstraintContext::<_, NoConstraintClient>::with_accounting(Accounting {
@@ -821,7 +868,7 @@ fn original_product_publication_obeys_an_inclusive_shared_node_budget() {
                 limits: TypeConstraintLimits::new(65536, limit, 1024, 1024),
             });
         let component = Component::new(&mut context, &effects).unwrap();
-        let result = component.infer_original_products(&mut context);
+        let result = component.infer_original_products(&mut context, &mut effects);
         (nodes.get(), result)
     };
     let (required, result) = execute(65536);
@@ -843,7 +890,7 @@ fn original_product_publication_obeys_an_inclusive_shared_node_budget() {
 
 #[test]
 fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_original() {
-    let effects = PreparedEffectGraph::default();
+    let mut effects = PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut component = Component::new(&mut context, &effects).unwrap();
@@ -857,11 +904,17 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
         .unwrap();
     let actual = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
     component
-        .admit_fixture_roots(&mut context, vec![first], "no binding in its own frame")
+        .admit_fixture_roots(
+            &mut context,
+            &mut effects,
+            vec![first],
+            "no binding in its own frame",
+        )
         .unwrap();
     context.restore_binder_scope(enclosing);
     let mut lower = TypeConstraintTransaction::initialize_with_imported_fixture(
         &mut context,
+        &mut effects,
         (),
         TypeConstraintParameterScope::empty(),
         None,
@@ -872,6 +925,7 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
         .with_original_scope(owner, |context| {
             lower.constrain(
                 context,
+                &mut effects,
                 &TypeKind::GenericParam(ty[0].clone()),
                 &actual,
                 ConstraintAcceptance::PatternAcceptsActual,
@@ -881,6 +935,7 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
         .unwrap();
     lower.request_projection(
         &mut context,
+        &mut effects,
         (),
         &TypeKind::I64,
         TypeConstraintProjectionClosure::Closed,
@@ -897,11 +952,14 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
     component
         .admit_fixture_roots(
             &mut context,
+            &mut effects,
             vec![second],
             "receiver retains the original owner's lease",
         )
         .unwrap();
-    let forest = component.infer_original_products(&mut context).unwrap();
+    let forest = component
+        .infer_original_products(&mut context, &mut effects)
+        .unwrap();
     let solutions = forest.products[0]
         .result
         .as_ref()

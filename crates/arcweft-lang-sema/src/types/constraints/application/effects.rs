@@ -19,6 +19,7 @@ use crate::{effect_row::EffectConstraintEnvironment, types::PreparedEffects};
 
 /// The function's identity is issued by the graph. Its application is derived
 /// only from the actual introduction Γ, before any candidate solution exists.
+#[cfg_attr(test, derive(Clone))]
 pub(in crate::types::constraints) struct ConstraintEffectFunction {
     function: PreparedEffectUnknownRef,
     application: PreparedEffectRow,

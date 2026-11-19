@@ -72,8 +72,10 @@ fn nested_function() -> TypeKind {
 
 #[test]
 fn equality_enters_function_type_and_constant_binders() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, path) = context(empty_scope(), &cancellation, 256).into_path();
+    let (mut context, path) =
+        context(empty_scope(), &cancellation, 256).into_path(&mut effect_graph);
     let left = nested_function();
     let right = nested_function();
     validate_type(&left, path.projection_view(), &mut context).expect("left binder scope");
@@ -86,6 +88,7 @@ fn equality_enters_function_type_and_constant_binders() {
 
 #[test]
 fn validation_and_selected_relation_reject_escaped_type_and_length_references() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let source_scope = GenericScope::default().with_binder(GenericBinder::new(1, 1, 0));
     let escaped_type = source_scope.bound_type(0, 0).expect("source type slot");
     let escaped_const = source_scope
@@ -109,16 +112,23 @@ fn validation_and_selected_relation_reject_escaped_type_and_length_references() 
             },
         ),
     ] {
-        let (mut context, path) = context(empty_scope(), &cancellation, 256).into_path();
+        let (mut context, path) =
+            context(empty_scope(), &cancellation, 256).into_path(&mut effect_graph);
         let error =
             TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(expected));
         assert_eq!(
-            validate_type(&ty, path.projection_view(), &mut context),
+            validate_type(
+                &ty,
+                path.projection_view(),
+                effect_graph.read(),
+                &mut context
+            ),
             Err(error.clone())
         );
         let path = context.fork_path(&path).expect("empty path");
         assert_eq!(
             fixture_relate_selected_call(
+                &mut effect_graph,
                 &ty,
                 &ty,
                 path,
@@ -185,14 +195,21 @@ fn function_comparison_restores_scope_after_budget_failure() {
 
 #[test]
 fn unresolved_array_lengths_cannot_reach_completed_type_comparison() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, path) = context(empty_scope(), &cancellation, 256).into_path();
+    let (mut context, path) =
+        context(empty_scope(), &cancellation, 256).into_path(&mut effect_graph);
     let unresolved = TypeKind::Array {
         item: Box::new(TypeKind::Bool),
         len: ArrayLength::Inferred,
     };
     assert_eq!(
-        validate_type(&unresolved, path.projection_view(), &mut context),
+        validate_type(
+            &unresolved,
+            path.projection_view(),
+            effect_graph.read(),
+            &mut context
+        ),
         Err(TypeConstraintError::Rejected(
             TypeConstraintRejection::UnresolvedType
         )),
@@ -256,13 +273,16 @@ fn const_inventory(count: u16) -> (TypeConstraintParameterScope, Vec<GenericCons
 
 #[test]
 fn projection_preserves_nested_function_binders() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, path) = context(empty_scope(), &cancellation, 256).into_path();
+    let (mut context, path) =
+        context(empty_scope(), &cancellation, 256).into_path(&mut effect_graph);
     let function = nested_function();
     let projected = super::project_type(
         &function,
         path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionClosed,
+        &mut effect_graph,
         &mut context,
     )
     .expect("function-local variables remain rigid under their binders");
@@ -273,14 +293,17 @@ fn projection_preserves_nested_function_binders() {
 
 #[test]
 fn projection_future_preserves_unknown_function_effects_without_closing_them() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, path) = context(empty_scope(), &cancellation, 256).into_path();
+    let (mut context, path) =
+        context(empty_scope(), &cancellation, 256).into_path(&mut effect_graph);
     let function = TypeKind::function_with_effects([], TypeKind::I64, EffectRow::unknown());
 
     let projected = super::project_type(
         &function,
         path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionFuture,
+        &mut effect_graph,
         &mut context,
     )
     .expect("future projection preserves an unresolved source effect row");
@@ -296,6 +319,7 @@ fn projection_future_preserves_unknown_function_effects_without_closing_them() {
 
 #[test]
 fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (scope, parameters) = type_inventory(10_000);
     let bindings = parameters
@@ -311,12 +335,13 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
         )
         .collect::<BTreeMap<_, _>>();
     let (mut type_context, mut type_context_path) =
-        context(scope, &cancellation, 10_001).into_path();
+        context(scope, &cancellation, 10_001).into_path(&mut effect_graph);
     type_context_path.bindings = type_context.fixture_bindings(bindings);
     let projected = super::project_type(
         &TypeKind::GenericParam(parameters[0].clone()),
         type_context_path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionClosed,
+        &mut effect_graph,
         &mut type_context,
     )
     .expect("transitive type aliases do not consume the Rust call stack");
@@ -342,7 +367,7 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
         )
         .collect::<BTreeMap<_, _>>();
     let (mut const_context, mut const_context_path) =
-        context(scope, &cancellation, 10_001).into_path();
+        context(scope, &cancellation, 10_001).into_path(&mut effect_graph);
     const_context_path.const_bindings = const_context.fixture_bindings(bindings);
     let input = const_context.fixture_operand(ArrayLength::Generic(parameters[0].clone()));
     let projected = super::project_const_operand(
@@ -359,22 +384,25 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
 
 #[test]
 fn projection_rebuilds_deep_types_and_rejects_exhausted_work_before_the_leaf() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut ty = (0..10_000).fold(TypeKind::I64, |ty, _| TypeKind::Vec(Box::new(ty)));
     let (mut complete_context, complete_context_path) =
-        context(empty_scope(), &cancellation, 10_001).into_path();
+        context(empty_scope(), &cancellation, 10_001).into_path(&mut effect_graph);
     let complete = super::project_type(
         &ty,
         complete_context_path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionClosed,
+        &mut effect_graph,
         &mut complete_context,
     );
     let (mut limited_context, limited_context_path) =
-        context(empty_scope(), &cancellation, 32).into_path();
+        context(empty_scope(), &cancellation, 32).into_path(&mut effect_graph);
     let limited = super::project_type(
         &ty,
         limited_context_path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionClosed,
+        &mut effect_graph,
         &mut limited_context,
     );
     // Deliberately extreme test values are also consumed iteratively: their
@@ -403,13 +431,14 @@ fn projection_rebuilds_deep_types_and_rejects_exhausted_work_before_the_leaf() {
 
 #[test]
 fn projection_restores_enclosing_scope_and_seeded_guards_after_nested_abort() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (scope, parameters) = type_inventory(2);
     let bindings = BTreeMap::from([(parameters[0].clone(), nested_function())]);
     let seed = BTreeSet::from([parameters[1].clone()]);
     let mut visiting = seed.clone();
     let mut remaining = BTreeSet::new();
-    let (mut context, mut path) = context(scope, &cancellation, 2).into_path();
+    let (mut context, mut path) = context(scope, &cancellation, 2).into_path(&mut effect_graph);
     path.bindings = context.fixture_bindings(bindings);
     let outer = GenericBinder::new(1, 1, 0);
     context
@@ -439,6 +468,7 @@ fn projection_restores_enclosing_scope_and_seeded_guards_after_nested_abort() {
 
 #[test]
 fn projection_cycle_policy_preserves_caller_guards_for_both_parameter_kinds() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (scope, parameters) = type_inventory(3);
     let bindings = BTreeMap::from([
@@ -458,7 +488,8 @@ fn projection_cycle_policy_preserves_caller_guards_for_both_parameter_kinds() {
     ] {
         let mut visiting = seed.clone();
         let mut remaining = BTreeSet::new();
-        let (mut context, mut path) = context(scope.clone(), &cancellation, 16).into_path();
+        let (mut context, mut path) =
+            context(scope.clone(), &cancellation, 16).into_path(&mut effect_graph);
         path.bindings = context.fixture_bindings(bindings.clone());
         let result = super::project_type_inner(
             &TypeKind::GenericParam(parameters[0].clone()),
@@ -508,7 +539,8 @@ fn projection_cycle_policy_preserves_caller_guards_for_both_parameter_kinds() {
     ] {
         let mut visiting = seed.clone();
         let mut remaining = BTreeSet::new();
-        let (mut context, mut path) = context(scope.clone(), &cancellation, 16).into_path();
+        let (mut context, mut path) =
+            context(scope.clone(), &cancellation, 16).into_path(&mut effect_graph);
         path.const_bindings = context.fixture_bindings(bindings.clone());
         let result = super::project_array_length(
             &ArrayLength::Generic(parameters[0].clone()),
@@ -543,6 +575,7 @@ fn projection_cycle_policy_preserves_caller_guards_for_both_parameter_kinds() {
 
 #[test]
 fn projection_validates_array_length_before_descending_into_the_item() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let source_scope = GenericScope::default().with_binder(GenericBinder::new(1, 0, 0));
     let ty = TypeKind::Array {
@@ -551,13 +584,14 @@ fn projection_validates_array_length_before_descending_into_the_item() {
         )),
         len: ArrayLength::Inferred,
     };
-    let (mut context, path) = context(empty_scope(), &cancellation, 2).into_path();
+    let (mut context, path) = context(empty_scope(), &cancellation, 2).into_path(&mut effect_graph);
     assert_eq!(
         super::project_type(
             &ty,
             path.projection_view(),
             super::ConstraintClosurePolicy::ProjectionClosed,
-            &mut context
+            &mut effect_graph,
+            &mut context,
         ),
         Err(TypeConstraintError::Rejected(
             TypeConstraintRejection::UnresolvedType

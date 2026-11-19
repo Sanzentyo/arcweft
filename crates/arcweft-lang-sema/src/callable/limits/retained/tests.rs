@@ -95,7 +95,7 @@ fn resumed_constraint_sessions_keep_original_work_and_physical_source_counts() {
             .with_fixture_driver::<crate::types::NoConstraintClient, _, _>(
                 (),
                 crate::callable::constraints::tests::no_constraint_initialization(),
-                crate::types::NoConstraintClient,
+                crate::callable::constraints::NoSourceConstraintClient::default(),
                 |mut driver| {
                     driver.constrain(
                         &TypeKind::I32,
@@ -131,7 +131,7 @@ fn a_root_frontier_outlives_its_driver_and_publication_reads_the_live_original_l
             .with_fixture_driver::<crate::types::NoConstraintClient, _, _>(
                 (),
                 crate::callable::constraints::tests::no_constraint_initialization(),
-                crate::types::NoConstraintClient,
+                crate::callable::constraints::NoSourceConstraintClient::default(),
                 |mut driver| {
                     driver.request_projection(
                         (),

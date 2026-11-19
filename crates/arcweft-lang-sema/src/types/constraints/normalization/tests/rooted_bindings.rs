@@ -13,9 +13,11 @@ fn escaping(parameter: impl Into<ConstraintGenericParameterId>) -> TypeConstrain
 
 #[test]
 fn provenance_projection_releases_ten_thousand_aliases_with_the_exact_shared_node_budget() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (scope, parameters) = type_inventory(10_000);
-    let (mut context, mut path) = context(scope, &cancellation, 10_001).into_path();
+    let (mut context, mut path) =
+        context(scope, &cancellation, 10_001).into_path(&mut effect_graph);
     path.bindings = context.fixture_bindings(
         parameters.iter().cloned().zip(
             parameters
@@ -31,6 +33,7 @@ fn provenance_projection_releases_ten_thousand_aliases_with_the_exact_shared_nod
         input.view(),
         path.projection_view(),
         &mut BTreeSet::new(),
+        &mut effect_graph,
         &mut context,
     )
     .unwrap();
@@ -49,13 +52,15 @@ fn provenance_projection_releases_ten_thousand_aliases_with_the_exact_shared_nod
 
 #[test]
 fn outer_type_and_const_bindings_reject_new_inner_formals() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (scope, types) = type_inventory(1);
-    let (mut context, path) = context(scope, &cancellation, 4096).into_path();
+    let (mut context, path) = context(scope, &cancellation, 4096).into_path(&mut effect_graph);
     context
         .with_binder(GenericBinder::new(1, 0, 0), |context| {
             let value = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
-            let result = context.fixture_add_binding(path, types[0].clone(), &value);
+            let result =
+                context.fixture_add_binding(path, types[0].clone(), &value, &mut effect_graph);
             assert!(matches!(result, Err(error) if error == escaping(types[0].clone())));
             Ok(())
         })
@@ -63,7 +68,8 @@ fn outer_type_and_const_bindings_reject_new_inner_formals() {
     assert!(context.lexical_scope().binders().is_empty());
 
     let (scope, lengths) = const_inventory(1);
-    let (mut context, path) = super::context(scope, &cancellation, 4096).into_path();
+    let (mut context, path) =
+        super::context(scope, &cancellation, 4096).into_path(&mut effect_graph);
     context
         .with_binder(GenericBinder::new(0, 1, 0), |context| {
             let value = ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap());
@@ -77,9 +83,10 @@ fn outer_type_and_const_bindings_reject_new_inner_formals() {
 
 #[test]
 fn outer_binding_cannot_capture_an_inner_effect_through_a_function_type() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (scope, types) = type_inventory(1);
-    let (mut context, path) = context(scope, &cancellation, 4096).into_path();
+    let (mut context, path) = context(scope, &cancellation, 4096).into_path(&mut effect_graph);
     context
         .with_binder(GenericBinder::new(0, 0, 1), |context| {
             let value = TypeKind::function_with_binder(
@@ -91,7 +98,8 @@ fn outer_binding_cannot_capture_an_inner_effect_through_a_function_type() {
                     context.lexical_scope().bound_effect(0, 0).unwrap(),
                 ),
             );
-            let result = context.fixture_add_binding(path, types[0].clone(), &value);
+            let result =
+                context.fixture_add_binding(path, types[0].clone(), &value, &mut effect_graph);
             assert!(matches!(result, Err(error) if error == escaping(types[0].clone())));
             Ok(())
         })
@@ -100,12 +108,15 @@ fn outer_binding_cannot_capture_an_inner_effect_through_a_function_type() {
 
 #[test]
 fn projecting_an_outer_binding_under_a_function_lifts_its_type_and_const_references() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (scope, types) = type_inventory(1);
     let (mut context, parameters) = context(scope, &cancellation, 4096).into_parts();
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 1, 0));
-    let application = context.fixture_application_scope((), parameters).unwrap();
-    let path = context.start_path(application).unwrap();
+    let application = context
+        .fixture_application_scope((), parameters, &mut effect_graph)
+        .unwrap();
+    let path = context.start_path(application, &mut effect_graph).unwrap();
     let value = TypeKind::Array {
         item: Box::new(TypeKind::GenericParam(
             context.lexical_scope().bound_type(0, 0).unwrap(),
@@ -113,7 +124,7 @@ fn projecting_an_outer_binding_under_a_function_lifts_its_type_and_const_referen
         len: ArrayLength::Generic(context.lexical_scope().bound_const(0, 0).unwrap()),
     };
     let path = context
-        .fixture_add_binding(path, types[0].clone(), &value)
+        .fixture_add_binding(path, types[0].clone(), &value, &mut effect_graph)
         .unwrap()
         .unwrap();
     let binder = GenericBinder::new(1, 1, 0);
@@ -138,6 +149,7 @@ fn projecting_an_outer_binding_under_a_function_lifts_its_type_and_const_referen
         &input,
         path.projection_view(),
         ConstraintClosurePolicy::ProjectionClosed,
+        &mut effect_graph,
         &mut context,
     )
     .unwrap();
@@ -152,9 +164,10 @@ fn projecting_an_outer_binding_under_a_function_lifts_its_type_and_const_referen
 
 #[test]
 fn a_binding_may_own_its_own_polymorphic_function_binder() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (scope, types) = type_inventory(1);
-    let (mut context, path) = context(scope, &cancellation, 4096).into_path();
+    let (mut context, path) = context(scope, &cancellation, 4096).into_path(&mut effect_graph);
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 1, 1));
     let binder = GenericBinder::new(1, 1, 1);
     let own = context.lexical_scope().with_binder(binder);
@@ -169,15 +182,16 @@ fn a_binding_may_own_its_own_polymorphic_function_binder() {
         EffectRow::open(EffectSet::new(), own.bound_effect(0, 0).unwrap()),
     );
     let path = context
-        .fixture_add_binding(path, types[0].clone(), &value)
+        .fixture_add_binding(path, types[0].clone(), &value, &mut effect_graph)
         .unwrap()
         .unwrap();
     context.restore_binder_scope(enclosing);
-    let path = seal_path(path, &mut context).unwrap();
+    let path = seal_path(path, &mut effect_graph, &mut context).unwrap();
     let projected = project_type(
         &TypeKind::GenericParam(types[0].clone()),
         path.projection_view(),
         ConstraintClosurePolicy::ProjectionClosed,
+        &mut effect_graph,
         &mut context,
     )
     .unwrap();
@@ -187,9 +201,11 @@ fn a_binding_may_own_its_own_polymorphic_function_binder() {
 
 #[test]
 fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (parent_parameters, outer_types) = type_inventory(1);
-    let (mut context, parent) = context(parent_parameters, &cancellation, 4096).into_path();
+    let (mut context, parent) =
+        context(parent_parameters, &cancellation, 4096).into_path(&mut effect_graph);
     let lease = parent
         .applications
         .import_parameters(&[outer_types[0].clone().into()])
@@ -197,19 +213,19 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
     let (child_parameters, inner_types) = type_inventory(1);
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
     let child_application = context
-        .fixture_application_scope((), child_parameters)
+        .fixture_application_scope((), child_parameters, &mut effect_graph)
         .unwrap();
     let child = context
-        .start_fixture_path_with_imported(child_application, Some(lease))
+        .start_fixture_path_with_imported(child_application, Some(lease), &mut effect_graph)
         .unwrap();
     let alias = TypeKind::GenericParam(inner_types[0].clone());
     let child = context
-        .fixture_add_binding(child, outer_types[0].clone(), &alias)
+        .fixture_add_binding(child, outer_types[0].clone(), &alias, &mut effect_graph)
         .unwrap()
         .unwrap();
     let inner = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
     let child = context
-        .fixture_add_binding(child, inner_types[0].clone(), &inner)
+        .fixture_add_binding(child, inner_types[0].clone(), &inner, &mut effect_graph)
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -218,19 +234,21 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
                 .fixture_operand(TypeKind::GenericParam(outer_types[0].clone()))
                 .view(),
             &child,
-            &mut context
+            &mut effect_graph,
+            &mut context,
         )
         .err(),
         Some(escaping(inner_types[0].clone()))
     );
     assert!(
-        matches!(seal_path(child, &mut context), Err(error) if error == escaping(inner_types[0].clone()))
+        matches!(seal_path(child, &mut effect_graph, &mut context), Err(error) if error == escaping(inner_types[0].clone()))
     );
     context.restore_binder_scope(enclosing);
     assert!(parent.bindings.is_empty());
 
     let (parent_parameters, outer_lengths) = const_inventory(1);
-    let (mut context, parent) = super::context(parent_parameters, &cancellation, 4096).into_path();
+    let (mut context, parent) =
+        super::context(parent_parameters, &cancellation, 4096).into_path(&mut effect_graph);
     let lease = parent
         .applications
         .import_parameters(&[outer_lengths[0].clone().into()])
@@ -238,10 +256,10 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
     let (child_parameters, inner_lengths) = const_inventory(1);
     let enclosing = context.enter_binder_scope(GenericBinder::new(0, 1, 0));
     let application = context
-        .fixture_application_scope((), child_parameters)
+        .fixture_application_scope((), child_parameters, &mut effect_graph)
         .unwrap();
     let child = context
-        .start_fixture_path_with_imported(application, Some(lease))
+        .start_fixture_path_with_imported(application, Some(lease), &mut effect_graph)
         .unwrap();
     let child = context
         .fixture_add_const_binding(
@@ -268,7 +286,7 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
         Some(escaping(inner_lengths[0].clone()))
     );
     assert!(
-        matches!(seal_path(child, &mut context), Err(error) if error == escaping(inner_lengths[0].clone()))
+        matches!(seal_path(child, &mut effect_graph, &mut context), Err(error) if error == escaping(inner_lengths[0].clone()))
     );
     context.restore_binder_scope(enclosing);
     assert!(parent.const_bindings.is_empty());
@@ -276,12 +294,15 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
 
 #[test]
 fn an_imported_owner_retains_its_frame_but_does_not_authorize_an_unrelated_export() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (parameters, types) = type_inventory(1);
     let (mut context, parameters) = context(parameters, &cancellation, 4096).into_parts();
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
-    let application = context.fixture_application_scope((), parameters).unwrap();
-    let parent = context.start_path(application).unwrap();
+    let application = context
+        .fixture_application_scope((), parameters, &mut effect_graph)
+        .unwrap();
+    let parent = context.start_path(application, &mut effect_graph).unwrap();
     let owner = parent.lineage.scope.clone();
     let lease = parent
         .applications
@@ -290,25 +311,26 @@ fn an_imported_owner_retains_its_frame_but_does_not_authorize_an_unrelated_expor
     let value = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
     context.restore_binder_scope(enclosing);
     let application = context
-        .fixture_application_scope((), empty_scope())
+        .fixture_application_scope((), empty_scope(), &mut effect_graph)
         .unwrap();
     let child = context
-        .start_fixture_path_with_imported(application, Some(lease))
+        .start_fixture_path_with_imported(application, Some(lease), &mut effect_graph)
         .unwrap();
     let child = context
         .with_original_scope(owner.clone(), |context| {
-            context.fixture_add_binding(child, types[0].clone(), &value)
+            context.fixture_add_binding(child, types[0].clone(), &value, &mut effect_graph)
         })
         .unwrap()
         .unwrap();
-    let child = seal_path(child, &mut context).unwrap();
+    let child = seal_path(child, &mut effect_graph, &mut context).unwrap();
     let input = TypeKind::GenericParam(types[0].clone());
     assert_eq!(
         project_type(
             &input,
             child.projection_view(),
             ConstraintClosurePolicy::ProjectionClosed,
-            &mut context
+            &mut effect_graph,
+            &mut context,
         ),
         Err(escaping(types[0].clone()))
     );
@@ -318,6 +340,7 @@ fn an_imported_owner_retains_its_frame_but_does_not_authorize_an_unrelated_expor
                 &input,
                 child.projection_view(),
                 ConstraintClosurePolicy::ProjectionClosed,
+                &mut effect_graph,
                 context,
             )
         })

@@ -134,6 +134,7 @@ fn completed_type_and_const_values_cannot_reopen_with_a_siblings_capture() {
 
 #[test]
 fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, parameters) = crate::types::constraints::test_support::ConstraintTestSetup::<
         LocalConstraintAccounting<'_>,
@@ -144,8 +145,10 @@ fn reification_uses_the_operands_actual_frames_and_restores_the_receiver() {
     )
     .into_parts();
     let outer = context.enter_binder_scope(GenericBinder::new(1, 1, 1));
-    let application = context.fixture_application_scope((), parameters).unwrap();
-    let path = context.start_path(application).unwrap();
+    let application = context
+        .fixture_application_scope((), parameters, &mut effect_graph)
+        .unwrap();
+    let path = context.start_path(application, &mut effect_graph).unwrap();
     let application = path.root_scope();
     let generic =
         CompletedGenericContext::for_application(&path, application, &mut context).unwrap();

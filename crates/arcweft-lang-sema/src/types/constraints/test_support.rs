@@ -4,8 +4,16 @@
 
 use std::sync::atomic::AtomicBool;
 
+use crate::effect_row::{
+    DecisionControl, EffectConstraintEnvironment, EffectConstraintEnvironmentError, EffectRow,
+    prepared::{
+        PreparedEffectFailure, PreparedEffectGraph, PreparedEffectRelation, PreparedEffectRow,
+    },
+};
+use crate::types::{PreparedEffects, TypeKind, TypeProjectionError};
+
 use super::{
-    ConstraintDomain, TypeConstraintParameterScope,
+    ConstraintDomain, TypeConstraintError, TypeConstraintInvariant, TypeConstraintParameterScope,
     context::{
         LocalConstraintAccounting, TypeConstraintAccounting, TypeConstraintContext,
         TypeConstraintContextIssuer, TypeConstraintLimits,
@@ -21,8 +29,9 @@ pub(crate) fn source_id<S: Copy>(local: S) -> super::ConstraintSourceId<S> {
 }
 
 pub(in crate::types) fn fixture_relate_selected_call<A, D, L: Clone>(
-    pattern: &crate::types::TypeKind,
-    actual: &crate::types::TypeKind,
+    graph: &mut PreparedEffectGraph,
+    pattern: &TypeKind,
+    actual: &TypeKind,
     path: super::transaction::ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
     acceptance: super::ConstraintAcceptance,
@@ -31,9 +40,77 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    let pattern = context.fixture_operand(pattern.clone());
-    let actual = context.fixture_operand(actual.clone());
-    super::relate_selected_call(&pattern.view(), &actual.view(), path, context, acceptance)
+    let pattern = context.prepare_fixture_type(pattern)?;
+    let actual = context.prepare_fixture_type(actual)?;
+    let pattern = context.fixture_operand(pattern);
+    let actual = context.fixture_operand(actual);
+    super::relate_selected_call(
+        graph,
+        &pattern.view(),
+        &actual.view(),
+        path,
+        context,
+        acceptance,
+    )
+}
+
+impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_, A, D> {
+    pub(in crate::types::constraints) fn prepare_fixture_type(
+        &mut self,
+        value: &TypeKind,
+    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
+        let scope = self.lexical_scope().clone();
+        value
+            .prepare_effects(&scope, self)
+            .map_err(|error| match error {
+                TypeProjectionError::Control(error) => error,
+                TypeProjectionError::Instantiation(error) => {
+                    TypeConstraintInvariant::Instantiation(error).into()
+                }
+            })
+    }
+
+    pub(in crate::types::constraints) fn open_fixture_template_type<L>(
+        &mut self,
+        value: &TypeKind,
+        path: &super::transaction::ConstraintInferenceBranch<D, L>,
+        application: super::application::ConstraintApplicationId,
+        graph: &mut PreparedEffectGraph,
+    ) -> Result<TypeKind<PreparedEffects>, TypeConstraintError> {
+        let prepared = self.prepare_fixture_type(value)?;
+        self.open_template_type(&prepared, path, application, graph)
+    }
+}
+
+impl EffectConstraintEnvironment<PreparedEffects> {
+    pub(in crate::types) fn constrain_fixture_subset<C: DecisionControl>(
+        &mut self,
+        graph: &mut PreparedEffectGraph,
+        actual: &EffectRow,
+        permitted: &EffectRow,
+        control: &mut C,
+    ) -> Result<(), PreparedEffectFailure<C::Error>>
+    where
+        C::Error: From<EffectConstraintEnvironmentError>,
+    {
+        let actual = PreparedEffectRow::Canonical(
+            actual
+                .copy_with_control(control)
+                .map_err(PreparedEffectFailure::Control)?,
+        );
+        let permitted = PreparedEffectRow::Canonical(
+            permitted
+                .copy_with_control(control)
+                .map_err(PreparedEffectFailure::Control)?,
+        );
+        self.constrain_relation(
+            graph,
+            PreparedEffectRelation::AdmittedSubset,
+            &actual,
+            &permitted,
+            control,
+        )
+    }
 }
 
 pub(crate) struct ConstraintTestSetup<'c, A: TypeConstraintAccounting, D: ConstraintDomain> {

@@ -324,6 +324,21 @@ impl TypeConstraintSolution {
     }
 
     #[cfg(test)]
+    pub(super) fn complete_fixture_application<A, D>(
+        path: &ConstraintPath<D>,
+        application: super::application::ConstraintApplicationId,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError>
+    where
+        A: TypeConstraintAccounting,
+        D: ConstraintDomain,
+    {
+        let effects = path.close_original_path_effects(graph, context)?;
+        Self::complete_application(path, application, &effects, graph.read(), context)
+    }
+
+    #[cfg(test)]
     pub(super) fn complete_application<A, D, L>(
         path: &ConstraintInferenceBranch<D, L>,
         application: super::application::ConstraintApplicationId,

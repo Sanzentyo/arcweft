@@ -1653,7 +1653,7 @@ mod final_call_accounting_tests {
             .with_fixture_driver::<crate::types::NoConstraintClient, _, _>(
                 (),
                 super::super::constraints::tests::no_constraint_initialization(),
-                crate::types::NoConstraintClient,
+                crate::callable::constraints::NoSourceConstraintClient::default(),
                 |mut driver| {
                     driver.constrain(
                         &TypeKind::I32,
@@ -1687,7 +1687,7 @@ mod final_call_accounting_tests {
             session.with_fixture_driver::<crate::types::NoConstraintClient, _, _>(
                 (),
                 super::super::constraints::tests::no_constraint_initialization(),
-                crate::types::NoConstraintClient,
+                crate::callable::constraints::NoSourceConstraintClient::default(),
                 |_driver| (),
             ),
             Err(
@@ -1730,7 +1730,7 @@ mod final_call_accounting_tests {
             .with_fixture_driver::<crate::types::NoConstraintClient, _, _>(
                 (),
                 super::super::constraints::tests::no_constraint_initialization(),
-                crate::types::NoConstraintClient,
+                crate::callable::constraints::NoSourceConstraintClient::default(),
                 |mut driver| {
                     driver.constrain(
                         &TypeKind::I32,

@@ -173,11 +173,13 @@ fn project_specialization_preserves_nested_binders_and_enforces_the_source_predi
 
 #[test]
 fn project_specialization_composes_residual_rows_and_recursive_caller_values_simultaneously() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let caller = complete(scope(false, false), TypeKind::String, ArrayLength::Const(5))
         .close_instantiation(None)
         .unwrap();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path) = context(scope(true, true), &cancellation).into_path();
+    let (mut context, mut path) =
+        context(scope(true, true), &cancellation).into_path(&mut effect_graph);
     let opening = path.root_scope().parameters();
     let first = opening.type_reference(&parameter(0).into()).unwrap();
     let future = opening.type_reference(&parameter(1).into()).unwrap();
@@ -199,8 +201,13 @@ fn project_specialization_composes_residual_rows_and_recursive_caller_values_sim
                 .unwrap(),
         ),
     );
-    let prefix =
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context).unwrap();
+    let prefix = TypeConstraintSolution::complete_fixture_application(
+        &path,
+        path.root_id(),
+        &mut effect_graph,
+        &mut context,
+    )
+    .unwrap();
     let supplied = arguments(GenericBinder::new(1, 1, 0), &[]);
     let mut completed = prefix
         .close_residual_with_control(&supplied, Some(&caller), &mut UnmeteredTypeProjection)

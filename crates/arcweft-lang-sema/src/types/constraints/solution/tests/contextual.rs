@@ -142,6 +142,7 @@ fn result_quantification_generalizes_only_residuals_and_retains_ambient_frames()
 
 #[test]
 fn flat_instance_closure_cannot_substitute_an_unrelated_same_shaped_caller() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let (solution, _, _) = complete_ambient(false, false);
     let binder = GenericBinder::new(1, 1, 0);
     let template = GenericScope::default().with_binder(binder);
@@ -157,7 +158,7 @@ fn flat_instance_closure_cannot_substitute_an_unrelated_same_shaped_caller() {
     )
     .unwrap();
     let cancellation = AtomicBool::new(false);
-    let (mut work, mut path) = context(parameters, &cancellation).into_path();
+    let (mut work, mut path) = context(parameters, &cancellation).into_path(&mut effect_graph);
     let type_key = path.root_scope().parameters().type_reference(&ty).unwrap();
     let const_key = path
         .root_scope()
@@ -168,10 +169,15 @@ fn flat_instance_closure_cannot_substitute_an_unrelated_same_shaped_caller() {
         .insert(type_key, work.fixture_operand(TypeKind::I64));
     path.const_bindings
         .insert(const_key, work.fixture_operand(ArrayLength::Const(7)));
-    let caller = TypeConstraintSolution::complete_application(&path, path.root_id(), &mut work)
-        .unwrap()
-        .close_instantiation(None)
-        .unwrap();
+    let caller = TypeConstraintSolution::complete_fixture_application(
+        &path,
+        path.root_id(),
+        &mut effect_graph,
+        &mut work,
+    )
+    .unwrap()
+    .close_instantiation(None)
+    .unwrap();
     assert!(matches!(
         solution.close_instantiation(Some(&caller)),
         Err(TypeInstantiationError::Scope(_))
@@ -195,28 +201,36 @@ fn continuation_parameters() -> TypeConstraintParameterScope {
 
 #[test]
 fn reopening_preserves_actual_ambient_frames_and_opens_residuals_freshly() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut work, parameters) = context(scope(false, true), &cancellation).into_parts();
     let outer = work.enter_binder_scope(GenericBinder::new(1, 1, 0));
-    let application = work.fixture_application_scope((), parameters).unwrap();
+    let application = work
+        .fixture_application_scope((), parameters, &mut effect_graph)
+        .unwrap();
     let key = application
         .parameters()
         .type_reference(&parameter(0).into())
         .unwrap();
-    let mut path = work.start_path(application).unwrap();
+    let mut path = work.start_path(application, &mut effect_graph).unwrap();
     let value = ambient_value(work.lexical_scope(), 0, true);
     path = work
-        .fixture_add_binding(path, key, &value)
+        .fixture_add_binding(path, key, &value, &mut effect_graph)
         .unwrap()
         .unwrap();
-    let solution =
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut work).unwrap();
+    let solution = TypeConstraintSolution::complete_fixture_application(
+        &path,
+        path.root_id(),
+        &mut effect_graph,
+        &mut work,
+    )
+    .unwrap();
     let solution = Arc::new(solution);
     let inner = work.enter_binder_scope(GenericBinder::new(1, 1, 0));
     let mut previous = None;
     for _ in 0..2 {
         let application = work
-            .fixture_application_scope((), continuation_parameters())
+            .fixture_application_scope((), continuation_parameters(), &mut effect_graph)
             .unwrap();
         let future = application
             .parameters()
@@ -225,12 +239,17 @@ fn reopening_preserves_actual_ambient_frames_and_opens_residuals_freshly() {
         if let Some(previous) = previous.replace(future.clone()) {
             assert_ne!(previous, future);
         }
-        let path = work.start_path(application).unwrap();
+        let path = work.start_path(application, &mut effect_graph).unwrap();
         let path = solution
-            .restore_inherited_path(path.root_id(), path, &mut work)
+            .restore_inherited_path(path.root_id(), path, &mut effect_graph, &mut work)
             .unwrap();
-        let completed =
-            TypeConstraintSolution::complete_application(&path, path.root_id(), &mut work).unwrap();
+        let completed = TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut work,
+        )
+        .unwrap();
         let (_, value) = completed.bindings().next().unwrap();
         assert_eq!(value.value(), &ambient_value(value.scope(), 2, true));
         assert_eq!(value.scope().binders().len(), 3);
@@ -241,14 +260,22 @@ fn reopening_preserves_actual_ambient_frames_and_opens_residuals_freshly() {
 
 #[test]
 fn equally_shaped_unrelated_ambient_frames_do_not_authorize_reopening() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let (solution, _, _) = complete_ambient(true, false);
     let cancellation = AtomicBool::new(false);
     let (mut work, parameters) = context(continuation_parameters(), &cancellation).into_parts();
     let outer = work.enter_binder_scope(GenericBinder::new(1, 1, 0));
-    let application = work.fixture_application_scope((), parameters).unwrap();
-    let path = work.start_path(application).unwrap();
+    let application = work
+        .fixture_application_scope((), parameters, &mut effect_graph)
+        .unwrap();
+    let path = work.start_path(application, &mut effect_graph).unwrap();
     assert!(matches!(
-        Arc::new(solution).restore_inherited_path(path.root_id(), path, &mut work),
+        Arc::new(solution).restore_inherited_path(
+            path.root_id(),
+            path,
+            &mut effect_graph,
+            &mut work
+        ),
         Err(crate::types::constraints::TypeConstraintError::Rejected(
             crate::types::constraints::TypeConstraintRejection::EscapingInstantiation { .. }
         ))
@@ -259,6 +286,7 @@ fn equally_shaped_unrelated_ambient_frames_do_not_authorize_reopening() {
 
 #[test]
 fn ambient_residual_and_function_owned_effects_keep_distinct_owners() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable, EffectFormula};
     use crate::types::constraints::{ConstraintClosurePolicy, TypeConstraintEffectScope};
     use crate::types::{GenericEffectParameterId, GenericEffectReference};
@@ -285,13 +313,15 @@ fn ambient_residual_and_function_owned_effects_keep_distinct_owners() {
     .unwrap();
     let (mut work, parameters) = context(parameters, &cancellation).into_parts();
     let outer = work.enter_binder_scope(GenericBinder::new(0, 0, 1));
-    let application = work.fixture_application_scope((), parameters).unwrap();
+    let application = work
+        .fixture_application_scope((), parameters, &mut effect_graph)
+        .unwrap();
     let key = application
         .parameters()
         .type_reference(&parameter(0).into())
         .unwrap();
     let future = application.parameters().effect_reference(&effect).unwrap();
-    let mut path = work.start_path(application).unwrap();
+    let mut path = work.start_path(application, &mut effect_graph).unwrap();
     let own = GenericBinder::new(0, 0, 1);
     let nested = work.lexical_scope().with_binder(own);
     let ambient = nested.bound_effect(1, 0).unwrap();
@@ -309,11 +339,16 @@ fn ambient_residual_and_function_owned_effects_keep_distinct_owners() {
         .unwrap();
     let value = TypeKind::function_with_contract(own, predicate, [], TypeKind::Unit, effects);
     path = work
-        .fixture_add_binding(path, key, &value)
+        .fixture_add_binding(path, key, &value, &mut effect_graph)
         .unwrap()
         .unwrap();
-    let solution =
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut work).unwrap();
+    let solution = TypeConstraintSolution::complete_fixture_application(
+        &path,
+        path.root_id(),
+        &mut effect_graph,
+        &mut work,
+    )
+    .unwrap();
     let (_, completed) = solution.bindings().next().unwrap();
     let TypeKind::Function {
         effects, predicate, ..

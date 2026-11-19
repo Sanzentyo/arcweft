@@ -1,6 +1,7 @@
 use super::*;
 use crate::types::{
-    DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId, TypeKind,
+    DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId, PreparedEffects,
+    TypeKind,
     constraints::{
         ConstraintAcceptance, NoConstraintClient, PreparedConstraintSourceProjection,
         PreparedSourceConstraint, SourceProbeResult, TypeConstraintAbort, TypeConstraintInvariant,
@@ -17,6 +18,7 @@ type Transaction = TypeConstraintTransaction<NoConstraintClient>;
 
 fn root<'a>(
     cancellation: &'a AtomicBool,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     parameters: TypeConstraintParameterScope,
     work: u64,
 ) -> (Context<'a>, Transaction) {
@@ -26,13 +28,20 @@ fn root<'a>(
         parameters,
     )
     .into_parts();
-    let transaction = Transaction::initialize_fixture(&mut context, (), parameters, None).unwrap();
+    let transaction =
+        Transaction::initialize_fixture(&mut context, graph, (), parameters, None).unwrap();
     (context, transaction)
 }
 
-fn result(context: &mut Context<'_>, transaction: &mut Transaction, ty: &TypeKind) {
+fn result(
+    context: &mut Context<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+    transaction: &mut Transaction,
+    ty: &TypeKind<PreparedEffects>,
+) {
     transaction.request_projection(
         context,
+        graph,
         (),
         ty,
         super::super::super::TypeConstraintProjectionClosure::Closed,
@@ -41,6 +50,7 @@ fn result(context: &mut Context<'_>, transaction: &mut Transaction, ty: &TypeKin
 
 #[test]
 fn an_unbound_root_resumes_without_issuing_an_early_solution_or_replacing_its_opening() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let parameter = GenericTypeParameterId::new(
         GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(913)),
@@ -51,9 +61,9 @@ fn an_unbound_root_resumes_without_issuing_an_early_solution_or_replacing_its_op
         TypeConstraintParameterEligibility::Bindable,
     )])
     .unwrap();
-    let template = TypeKind::generic_parameter(parameter);
-    let (mut context, mut transaction) = root(&cancellation, parameters, 1024);
-    result(&mut context, &mut transaction, &template);
+    let template = TypeKind::GenericParam(parameter.into());
+    let (mut context, mut transaction) = root(&cancellation, &mut effect_graph, parameters, 1024);
+    result(&mut context, &mut effect_graph, &mut transaction, &template);
     let opening = transaction.application;
     let issuer = Arc::clone(transaction.materialization.ticket_issuer());
     let equation = transaction.next_equation;
@@ -70,13 +80,16 @@ fn an_unbound_root_resumes_without_issuing_an_early_solution_or_replacing_its_op
     assert_eq!(resumed.next_equation, equation);
     resumed.constrain(
         &mut context,
+        &mut effect_graph,
         &template,
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert_eq!(resumed.next_equation, equation + 1);
     let solved = resumed
-        .finish(&mut context, |left, right, _| Ok(left == right))
+        .finish(&mut context, &mut effect_graph, |left, right, _| {
+            Ok(left == right)
+        })
         .unwrap();
     assert_eq!(
         solved
@@ -92,10 +105,20 @@ fn an_unbound_root_resumes_without_issuing_an_early_solution_or_replacing_its_op
 
 #[test]
 fn suspension_retains_the_original_source_trace_scope_and_source_ordinal() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut transaction) =
-        root(&cancellation, TypeConstraintParameterScope::empty(), 1024);
-    result(&mut context, &mut transaction, &TypeKind::I32);
+    let (mut context, mut transaction) = root(
+        &cancellation,
+        &mut effect_graph,
+        TypeConstraintParameterScope::empty(),
+        1024,
+    );
+    result(
+        &mut context,
+        &mut effect_graph,
+        &mut transaction,
+        &TypeKind::I32,
+    );
     transaction
         .begin_prepared_probe(
             &mut context,
@@ -103,10 +126,14 @@ fn suspension_retains_the_original_source_trace_scope_and_source_ordinal() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .unwrap();
-    let mut ticket = transaction.next_probe(&mut context).unwrap().unwrap();
+    let mut ticket = transaction
+        .next_probe(&mut context, &mut effect_graph)
+        .unwrap()
+        .unwrap();
     transaction
         .submit_probe(
             &mut context,
+            &mut effect_graph,
             ticket.input(),
             ProbeSubmission::Accepted(
                 (ticket
@@ -116,7 +143,12 @@ fn suspension_retains_the_original_source_trace_scope_and_source_ordinal() {
             ),
         )
         .unwrap();
-    assert!(transaction.next_probe(&mut context).unwrap().is_none());
+    assert!(
+        transaction
+            .next_probe(&mut context, &mut effect_graph)
+            .unwrap()
+            .is_none()
+    );
     let scopes = Arc::clone(&transaction.frontier[0].applications);
     let prepared = transaction.prepared_sources.clone();
     let ordinal = transaction.next_source_ordinal;
@@ -126,7 +158,7 @@ fn suspension_retains_the_original_source_trace_scope_and_source_ordinal() {
     assert_eq!(resumed.prepared_sources, prepared);
     assert_eq!(resumed.next_source_ordinal, ordinal);
     let materialization = resumed
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut effect_graph)
         .unwrap()
         .unwrap();
     let requests = materialization.requests().collect::<Vec<_>>();
@@ -137,10 +169,20 @@ fn suspension_retains_the_original_source_trace_scope_and_source_ordinal() {
 
 #[test]
 fn a_root_cannot_be_attached_as_an_unrelated_parent_source_or_suspended_after_closure() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut transaction) =
-        root(&cancellation, TypeConstraintParameterScope::empty(), 1024);
-    result(&mut context, &mut transaction, &TypeKind::I32);
+    let (mut context, mut transaction) = root(
+        &cancellation,
+        &mut effect_graph,
+        TypeConstraintParameterScope::empty(),
+        1024,
+    );
+    result(
+        &mut context,
+        &mut effect_graph,
+        &mut transaction,
+        &TypeKind::I32,
+    );
     let suspended = transaction.suspend_result(&mut context, ()).unwrap();
     assert!(matches!(
         suspended.into_child(&mut context),
@@ -152,12 +194,21 @@ fn a_root_cannot_be_attached_as_an_unrelated_parent_source_or_suspended_after_cl
             )
         ))
     ));
-    let (mut context, mut transaction) =
-        root(&cancellation, TypeConstraintParameterScope::empty(), 1024);
-    result(&mut context, &mut transaction, &TypeKind::I32);
+    let (mut context, mut transaction) = root(
+        &cancellation,
+        &mut effect_graph,
+        TypeConstraintParameterScope::empty(),
+        1024,
+    );
+    result(
+        &mut context,
+        &mut effect_graph,
+        &mut transaction,
+        &TypeKind::I32,
+    );
     assert!(
         transaction
-            .next_materialization_ticket(&mut context)
+            .next_materialization_ticket(&mut context, &mut effect_graph)
             .unwrap()
             .is_none()
     );
@@ -169,12 +220,22 @@ fn a_root_cannot_be_attached_as_an_unrelated_parent_source_or_suspended_after_cl
 
 #[test]
 fn suspension_checks_unique_projections_cancellation_and_the_original_inclusive_budget() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     for count in [0, 2] {
-        let (mut context, mut transaction) =
-            root(&cancellation, TypeConstraintParameterScope::empty(), 1024);
+        let (mut context, mut transaction) = root(
+            &cancellation,
+            &mut effect_graph,
+            TypeConstraintParameterScope::empty(),
+            1024,
+        );
         for _ in 0..count {
-            result(&mut context, &mut transaction, &TypeKind::I32);
+            result(
+                &mut context,
+                &mut effect_graph,
+                &mut transaction,
+                &TypeKind::I32,
+            );
         }
         assert!(matches!(
             transaction.suspend_result(&mut context, ()),
@@ -191,9 +252,21 @@ fn suspension_checks_unique_projections_cancellation_and_the_original_inclusive_
         .into_parts();
         let original =
             super::super::super::OriginalProducerContext::ground_fixture(Default::default());
-        let mut transaction =
-            Transaction::initialize(&mut context, original, (), parameters, None).unwrap();
-        result(&mut context, &mut transaction, &TypeKind::I32);
+        let mut transaction = Transaction::initialize(
+            &mut context,
+            &mut effect_graph,
+            original,
+            (),
+            parameters,
+            None,
+        )
+        .unwrap();
+        result(
+            &mut context,
+            &mut effect_graph,
+            &mut transaction,
+            &TypeKind::I32,
+        );
         let suspended = transaction.suspend_result(&mut context, ());
         assert_eq!(suspended.is_ok(), succeeds);
         if !succeeds {
@@ -209,9 +282,18 @@ fn suspension_checks_unique_projections_cancellation_and_the_original_inclusive_
             ));
         }
     }
-    let (mut context, mut transaction) =
-        root(&cancellation, TypeConstraintParameterScope::empty(), 1024);
-    result(&mut context, &mut transaction, &TypeKind::I32);
+    let (mut context, mut transaction) = root(
+        &cancellation,
+        &mut effect_graph,
+        TypeConstraintParameterScope::empty(),
+        1024,
+    );
+    result(
+        &mut context,
+        &mut effect_graph,
+        &mut transaction,
+        &TypeKind::I32,
+    );
     cancellation.store(true, Ordering::Release);
     assert!(matches!(
         transaction.suspend_result(&mut context, ()),
@@ -221,12 +303,22 @@ fn suspension_checks_unique_projections_cancellation_and_the_original_inclusive_
 
 #[test]
 fn independent_roots_with_equal_result_shapes_keep_distinct_projection_authorities() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut roots = Vec::new();
     for _ in 0..2 {
-        let (mut context, mut transaction) =
-            root(&cancellation, TypeConstraintParameterScope::empty(), 1024);
-        result(&mut context, &mut transaction, &TypeKind::I32);
+        let (mut context, mut transaction) = root(
+            &cancellation,
+            &mut effect_graph,
+            TypeConstraintParameterScope::empty(),
+            1024,
+        );
+        result(
+            &mut context,
+            &mut effect_graph,
+            &mut transaction,
+            &TypeKind::I32,
+        );
         roots.push(transaction.suspend_result(&mut context, ()).unwrap());
     }
     assert!(roots[0].result() != roots[1].result());

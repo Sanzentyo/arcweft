@@ -28,6 +28,7 @@ fn vector(dimensions: VectorDimensions, component: TypeKind) -> TypeKind {
 
 #[test]
 fn vector_components_open_and_complete_through_the_lower_constraint_authority() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     for dimensions in [
         VectorDimensions::Two,
         VectorDimensions::Three,
@@ -45,12 +46,13 @@ fn vector_components_open_and_complete_through_the_lower_constraint_authority() 
                 &cancellation,
                 scope,
             )
-            .into_path();
+            .into_path(&mut effect_graph);
         let opened_vector = context
-            .open_template_type(
+            .open_fixture_template_type(
                 &vector(dimensions, TypeKind::generic_parameter(parameter(1))),
                 &path,
                 path.root_id(),
+                &mut effect_graph,
             )
             .expect("component opens in the same template scope");
         let value = path
@@ -71,7 +73,12 @@ fn vector_components_open_and_complete_through_the_lower_constraint_authority() 
             path.bindings =
                 context.fixture_bindings([(value, opened_vector), (component, TypeKind::F32)]);
             path.const_bindings = BTreeMap::new();
-            TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+            TypeConstraintSolution::complete_fixture_application(
+                &path,
+                path.root_id(),
+                &mut effect_graph,
+                &mut context,
+            )
         }
         .expect("component alias is normalized before completion");
         let (_, value) = solution
@@ -85,6 +92,7 @@ fn vector_components_open_and_complete_through_the_lower_constraint_authority() 
 
 #[test]
 fn cyclic_vector_component_is_rejected_before_a_solution_can_publish() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let scope = TypeConstraintParameterScope::new([(
         parameter(0),
         TypeConstraintParameterEligibility::Bindable,
@@ -97,7 +105,7 @@ fn cyclic_vector_component_is_rejected_before_a_solution_can_publish() {
             &cancellation,
             scope,
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     let reference = path
         .root_scope()
         .parameters()
@@ -109,7 +117,12 @@ fn cyclic_vector_component_is_rejected_before_a_solution_can_publish() {
             vector(VectorDimensions::Three, TypeKind::GenericParam(reference)),
         )]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut context,
+        )
     }
     .expect_err("a component cycle is not an opaque leaf");
     assert!(matches!(
@@ -180,6 +193,7 @@ fn identical_payload_fields_do_not_widen_their_dependent_owner() {
 
 #[test]
 fn payload_relation_infers_parameters_used_only_by_the_owner() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::types::constraints::{ConstraintAcceptance, fixture_relate_selected_call};
 
     let scope = TypeConstraintParameterScope::new([(
@@ -194,17 +208,19 @@ fn payload_relation_infers_parameters_used_only_by_the_owner() {
             &cancellation,
             scope,
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     let expected = context
-        .open_template_type(
+        .open_fixture_template_type(
             &error_payload(TypeKind::generic_parameter(parameter(0))),
             &path,
             path.root_id(),
+            &mut effect_graph,
         )
         .expect("open payload owner");
     let actual = error_payload(TypeKind::I64);
     let path = context.fork_path(&path).expect("candidate path");
     let mut paths = fixture_relate_selected_call(
+        &mut effect_graph,
         &expected,
         &actual,
         path,
@@ -214,9 +230,15 @@ fn payload_relation_infers_parameters_used_only_by_the_owner() {
     .expect("payload relation");
     assert_eq!(paths.len(), 1);
     let path = paths.pop().expect("selected path");
-    let solution =
-        { TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context) }
-            .expect("owner parameter is closed by the relation");
+    let solution = {
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut context,
+        )
+    }
+    .expect("owner parameter is closed by the relation");
     let (bound, value) = solution.bindings().next().expect("inferred owner argument");
     assert_eq!(bound.value(), &parameter(0).into());
     assert_eq!(value.value(), &TypeKind::I64);
@@ -225,6 +247,7 @@ fn payload_relation_infers_parameters_used_only_by_the_owner() {
 
 #[test]
 fn payload_owner_arguments_open_normalize_and_reseal_with_the_fields() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let scope = TypeConstraintParameterScope::new([
         (parameter(0), TypeConstraintParameterEligibility::Bindable),
         (parameter(1), TypeConstraintParameterEligibility::Bindable),
@@ -237,14 +260,14 @@ fn payload_owner_arguments_open_normalize_and_reseal_with_the_fields() {
             &cancellation,
             scope,
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     let declared = error_payload(TypeKind::generic_parameter(parameter(1)));
     let TypeKind::VariantPayload(before) = &declared else {
         panic!("payload fixture")
     };
     let before = before.try_seal().expect("declaration payload");
     let opened = context
-        .open_template_type(&declared, &path, path.root_id())
+        .open_fixture_template_type(&declared, &path, path.root_id(), &mut effect_graph)
         .expect("logical owner can contain inference");
     assert!(matches!(
         opened.semantic_identity_digest(),
@@ -263,7 +286,12 @@ fn payload_owner_arguments_open_normalize_and_reseal_with_the_fields() {
     let solution = {
         path.bindings = context.fixture_bindings([(root, opened), (argument, TypeKind::I64)]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut context,
+        )
     }
     .expect("the owner and fields close together");
     let (_, value) = solution
@@ -295,6 +323,7 @@ fn payload_owner_arguments_open_normalize_and_reseal_with_the_fields() {
 
 #[test]
 fn occurs_check_includes_parameters_used_only_by_the_payload_owner() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let scope = TypeConstraintParameterScope::new([(
         parameter(0),
         TypeConstraintParameterEligibility::Bindable,
@@ -307,12 +336,13 @@ fn occurs_check_includes_parameters_used_only_by_the_payload_owner() {
             &cancellation,
             scope,
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     let opened = context
-        .open_template_type(
+        .open_fixture_template_type(
             &error_payload(TypeKind::generic_parameter(parameter(0))),
             &path,
             path.root_id(),
+            &mut effect_graph,
         )
         .expect("logical payload owner");
     let reference = path
@@ -323,7 +353,12 @@ fn occurs_check_includes_parameters_used_only_by_the_payload_owner() {
     let error = {
         path.bindings = context.fixture_bindings([(reference, opened)]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut context,
+        )
     }
     .expect_err("a phantom owner parameter still participates in occurs checks");
     assert!(matches!(
@@ -334,6 +369,7 @@ fn occurs_check_includes_parameters_used_only_by_the_payload_owner() {
 
 #[test]
 fn residual_payload_owner_requires_its_retained_type_and_const_scope() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::types::constraints::TypeConstraintConstEligibility;
     use crate::types::{ArrayLength, GenericConstParameterId};
     let constant = GenericConstParameterId::new(
@@ -361,13 +397,13 @@ fn residual_payload_owner_requires_its_retained_type_and_const_scope() {
             &cancellation,
             scope,
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     let declared = error_payload(TypeKind::Array {
         item: Box::new(TypeKind::generic_parameter(parameter(1))),
         len: ArrayLength::generic_parameter(constant),
     });
     let opened = context
-        .open_template_type(&declared, &path, path.root_id())
+        .open_fixture_template_type(&declared, &path, path.root_id(), &mut effect_graph)
         .expect("open owner arguments");
     let root = path
         .root_scope()
@@ -377,7 +413,12 @@ fn residual_payload_owner_requires_its_retained_type_and_const_scope() {
     let solution = {
         path.bindings = context.fixture_bindings([(root, opened)]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut context,
+        )
     }
     .expect("future owner arguments become residual bound references");
     let (_, value) = solution.bindings().next().expect("payload binding");

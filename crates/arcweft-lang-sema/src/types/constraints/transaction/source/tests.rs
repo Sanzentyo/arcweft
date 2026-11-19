@@ -596,8 +596,9 @@ fn an_unclosed_probe_preparation_cannot_issue_a_completed_source() {
 
 #[test]
 fn source_operand_cannot_retain_an_unowned_future_type_reference() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, path) = context(&cancellation).into_path();
+    let (mut context, path) = context(&cancellation).into_path(&mut effect_graph);
     let future = path
         .root_scope()
         .parameters()
@@ -612,7 +613,9 @@ fn source_operand_cannot_retain_an_unowned_future_type_reference() {
         probe
             .close(
                 &path,
-                &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
+                &path
+                    .close_original_path_effects(&mut effect_graph, &mut context)
+                    .unwrap(),
                 &mut context
             )
             .err()
@@ -625,6 +628,7 @@ fn source_operand_cannot_retain_an_unowned_future_type_reference() {
 
 #[test]
 fn source_function_value_retains_its_own_type_and_constant_binder() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let binder = GenericBinder::new(1, 1, 0);
     let scope = GenericScope::default().with_binder(binder);
     let parameter = TypeKind::GenericParam(scope.bound_type(0, 0).expect("function type slot"));
@@ -638,11 +642,13 @@ fn source_function_value_retains_its_own_type_and_constant_binder() {
         EffectRow::closed(EffectSet::new()),
     );
     let cancellation = AtomicBool::new(false);
-    let (mut context, path) = context(&cancellation).into_path();
+    let (mut context, path) = context(&cancellation).into_path(&mut effect_graph);
     let closed = source(&context, path.root_id(), function.clone())
         .close(
             &path,
-            &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
+            &path
+                .close_original_path_effects(&mut effect_graph, &mut context)
+                .unwrap(),
             &mut context,
         )
         .unwrap_or_else(|error| panic!("an operand's own quantifiers must remain valid: {error}"));
@@ -659,8 +665,9 @@ fn source_function_value_retains_its_own_type_and_constant_binder() {
 
 #[test]
 fn closed_source_owns_the_normalized_actual_expectation_and_container() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path) = context(&cancellation).into_path();
+    let (mut context, mut path) = context(&cancellation).into_path(&mut effect_graph);
     let parameter = path
         .root_scope()
         .parameters()
@@ -692,7 +699,9 @@ fn closed_source_owns_the_normalized_actual_expectation_and_container() {
     let closed = probe
         .close(
             &path,
-            &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
+            &path
+                .close_original_path_effects(&mut effect_graph, &mut context)
+                .unwrap(),
             &mut context,
         )
         .unwrap_or_else(|error| panic!("normalized source: {error}"));
@@ -808,6 +817,7 @@ impl ConstraintDomain for EvidenceDomain {
 
 #[test]
 fn completion_transforms_observed_evidence_into_its_distinct_checked_type() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let parameter = future_parameter();
     let scope = TypeConstraintParameterScope::new([(
@@ -824,7 +834,7 @@ fn completion_transforms_observed_evidence_into_its_distinct_checked_type() {
             &cancellation,
             scope,
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     let actual = TypeKind::Option(Box::new(TypeKind::GenericParam(reference.clone())));
     let observed = ObservedCase {
         owner: actual.clone(),
@@ -851,7 +861,9 @@ fn completion_transforms_observed_evidence_into_its_distinct_checked_type() {
     let closed = probe
         .close(
             &path,
-            &ConstraintClosedEffects::for_path(&path, &mut context).unwrap(),
+            &path
+                .close_original_path_effects(&mut effect_graph, &mut context)
+                .unwrap(),
             &mut context,
         )
         .unwrap_or_else(|error| panic!("complete source evidence: {error}"));

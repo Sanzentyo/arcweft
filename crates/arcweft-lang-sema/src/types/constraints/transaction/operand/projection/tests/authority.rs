@@ -8,6 +8,7 @@ use crate::types::constraints::{
 
 #[test]
 fn rebuilt_children_keep_their_own_alias_terminal_and_length_authorities() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path, types, lengths) = setup(&cancellation, 2, 1);
     let tuple = context.fixture_operand(TypeKind::Tuple(vec![
@@ -22,7 +23,7 @@ fn rebuilt_children_keep_their_own_alias_terminal_and_length_authorities() {
     path.bindings.insert(types[0].clone(), tuple);
     path.bindings.insert(types[1].clone(), array);
     path.const_bindings.insert(lengths[0].clone(), length);
-    let sealed = seal_path(path, &mut context).unwrap();
+    let sealed = seal_path(path, &mut effect_graph, &mut context).unwrap();
     let value = &sealed.bindings[&types[0]];
     let ConstraintOperandOrigin::Rebuilt { children, .. } = value.origin.as_ref() else {
         panic!("rebuilt tuple")

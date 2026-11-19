@@ -964,10 +964,21 @@ fn materialization_immediate_from_failure<D: ConstraintDomain>(
 }
 
 #[cfg(test)]
-impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::NoConstraintClient {
+#[derive(Default)]
+pub(super) struct NoSourceConstraintClient(crate::effect_row::prepared::PreparedEffectGraph);
+
+#[cfg(test)]
+impl TypeConstraintClient<crate::types::NoConstraintClient> for NoSourceConstraintClient {
     type ProbeCheckpoint = ();
     type MaterializationCheckpoint = ();
     type PreparedSealedBranchValue = ();
+    fn with_effect_relation<R>(
+        &mut self,
+        _: CandidateConstraintEffectAccess<'_>,
+        operation: impl FnOnce(&mut crate::effect_row::prepared::PreparedEffectGraph) -> R,
+    ) -> Result<R, SourceCheckpointFailure<crate::types::NoConstraintClient>> {
+        Ok(operation(&mut self.0))
+    }
 
     fn record_resolved_probe_results(
         &mut self,
@@ -1407,12 +1418,32 @@ pub(crate) mod tests {
     struct Client {
         counts: Arc<Counts>,
         mode: CallbackMode,
+        declarations: crate::callable::PreparedCallableEffectDeclarations,
+    }
+
+    impl Client {
+        fn new(counts: Arc<Counts>, mode: CallbackMode) -> Self {
+            Self {
+                counts,
+                mode,
+                declarations: crate::callable::PreparedCallableEffectDeclarations::empty_for_test(),
+            }
+        }
     }
 
     impl TypeConstraintClient<Domain> for Client {
         type ProbeCheckpoint = u8;
         type MaterializationCheckpoint = u8;
         type PreparedSealedBranchValue = u8;
+
+        fn with_effect_relation<R>(
+            &mut self,
+            _: CandidateConstraintEffectAccess<'_>,
+            operation: impl FnOnce(&mut PreparedEffectGraph) -> R,
+        ) -> Result<R, SourceCheckpointFailure<Domain>> {
+            let (graph, _) = self.declarations.relation();
+            Ok(operation(graph))
+        }
 
         fn record_resolved_probe_results(
             &mut self,
@@ -1443,9 +1474,10 @@ pub(crate) mod tests {
                     return Ok(SourceProbeOutcome::Rejected("group head rejection"));
                 }
                 return match self.mode {
-                    CallbackMode::GroupRejectedThenSuccess => {
-                        probe.observe(SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()))
-                    }
+                    CallbackMode::GroupRejectedThenSuccess => probe.observe(
+                        &mut self.declarations,
+                        SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()),
+                    ),
                     CallbackMode::GroupRejectedThenFatal => Err(SourceCallbackFailure::fatal(
                         SourceError::new(source, SourcePhase::Probe, "group tail fatal"),
                     )),
@@ -1475,18 +1507,18 @@ pub(crate) mod tests {
                             alternative.validate_graph(&foreign_graph),
                             Err(CallConstraintInvariant::ForeignPreparedIssuer)
                         );
-                        alternative.observe(SourceProbeResult::checked(
-                            TypeKind::I32,
-                            Branch,
-                            0,
-                            (),
-                        ))
+                        alternative.observe(
+                            &mut self.declarations,
+                            SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()),
+                        )
                     })?;
                     let SourceProbeOutcome::Accepted(mut first) = first else {
                         unreachable!("observed branch")
                     };
-                    let SourceProbeOutcome::Accepted(second) =
-                        probe.observe(SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()))?
+                    let SourceProbeOutcome::Accepted(second) = probe.observe(
+                        &mut self.declarations,
+                        SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()),
+                    )?
                     else {
                         unreachable!("observed branch")
                     };
@@ -1511,9 +1543,10 @@ pub(crate) mod tests {
                 | CallbackMode::GroupRejectedThenSuccess
                 | CallbackMode::GroupRejectedThenFatal
                 | CallbackMode::GroupRejectedThenAbort
-                | CallbackMode::GroupRejectedThenInvariant => {
-                    probe.observe(SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()))
-                }
+                | CallbackMode::GroupRejectedThenInvariant => probe.observe(
+                    &mut self.declarations,
+                    SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()),
+                ),
                 CallbackMode::Rejected | CallbackMode::UnexpectedProbePreparation => {
                     Ok(SourceProbeOutcome::Rejected("rejected"))
                 }
@@ -1794,7 +1827,7 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
-                Client { counts, mode },
+                Client::new(counts, mode),
                 |mut driver| {
                     let result = match driver.probe_prepared_source(
                         prepared(),
@@ -1899,10 +1932,7 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization,
-                Client {
-                    counts: Arc::clone(&counts),
-                    mode: CallbackMode::SourceAlternatives,
-                },
+                Client::new(Arc::clone(&counts), CallbackMode::SourceAlternatives),
                 |mut driver| {
                     assert_eq!(
                         graph.validate_constraint_authority(&driver.callbacks.authority),
@@ -2088,7 +2118,7 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
-                Client { counts, mode },
+                Client::new(counts, mode),
                 |mut driver| {
                     let group = PreparedSourceConstraintGroup::seal([
                         prepared_source(1),
@@ -2157,10 +2187,7 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
-                Client {
-                    counts: Arc::clone(&counts),
-                    mode: CallbackMode::Success,
-                },
+                Client::new(Arc::clone(&counts), CallbackMode::Success),
                 |mut driver| {
                     let failure = driver
                         .probe_prepared_source(
@@ -2196,10 +2223,7 @@ pub(crate) mod tests {
         let result = session.with_fixture_driver::<Domain, _, _>(
             0,
             initialization(TypeConstraintParameterScope::empty()),
-            Client {
-                counts: Arc::clone(&counts),
-                mode: CallbackMode::Success,
-            },
+            Client::new(Arc::clone(&counts), CallbackMode::Success),
             |_driver| (),
         );
         assert!(matches!(
@@ -2227,10 +2251,7 @@ pub(crate) mod tests {
         let result = session.with_fixture_driver::<Domain, _, _>(
             0,
             initialization(TypeConstraintParameterScope::empty()),
-            Client {
-                counts: Arc::clone(&counts),
-                mode: CallbackMode::Success,
-            },
+            Client::new(Arc::clone(&counts), CallbackMode::Success),
             |_driver| (),
         );
         assert!(matches!(
@@ -2272,10 +2293,7 @@ pub(crate) mod tests {
             original,
             0,
             initialization(TypeConstraintParameterScope::empty()),
-            Client {
-                counts: Arc::clone(&counts),
-                mode: CallbackMode::Success,
-            },
+            Client::new(Arc::clone(&counts), CallbackMode::Success),
             |_driver| panic!("a foreign source must not start the driver"),
         );
         assert!(matches!(
@@ -2316,10 +2334,7 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(scope),
-                Client {
-                    counts: Arc::clone(&counts),
-                    mode: CallbackMode::Success,
-                },
+                Client::new(Arc::clone(&counts), CallbackMode::Success),
                 |mut driver| {
                     driver.constrain(
                         &TypeKind::Choice(vec![
@@ -2386,10 +2401,7 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
-                Client {
-                    counts: Arc::clone(&counts),
-                    mode: CallbackMode::Success,
-                },
+                Client::new(Arc::clone(&counts), CallbackMode::Success),
                 |mut driver| {
                     driver
                         .probe_prepared_source(
@@ -2398,8 +2410,10 @@ pub(crate) mod tests {
                         )
                         .expect("prepared source probe");
                     let mut lower_ticket = driver
-                        .lower
-                        .next_materialization_ticket(driver.callbacks.context)
+                        .with_effect_relation(|lower, context, graph| {
+                            lower.next_materialization_ticket(context, graph)
+                        })
+                        .expect("fixture effect graph")
                         .expect("lower materialization ticket")
                         .expect("one materialization ticket");
 
@@ -2485,10 +2499,10 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(scope),
-                Client {
-                    counts: Arc::clone(&counts),
-                    mode: CallbackMode::MaterializationReversedFatal,
-                },
+                Client::new(
+                    Arc::clone(&counts),
+                    CallbackMode::MaterializationReversedFatal,
+                ),
                 |mut driver| {
                     driver.constrain(
                         &TypeKind::Choice(vec![
@@ -2789,10 +2803,7 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
-                Client {
-                    counts: Arc::clone(&counts),
-                    mode: CallbackMode::Success,
-                },
+                Client::new(Arc::clone(&counts), CallbackMode::Success),
                 |mut driver| {
                     let (ticket, checkpoint) = driver
                         .callbacks
@@ -2857,10 +2868,7 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
-                Client {
-                    counts: Arc::clone(&counts),
-                    mode: CallbackMode::Success,
-                },
+                Client::new(Arc::clone(&counts), CallbackMode::Success),
                 |mut driver| {
                     let (ticket, mut checkpoint) = driver
                         .callbacks
@@ -2919,10 +2927,7 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
-                Client {
-                    counts: Arc::clone(&counts),
-                    mode: CallbackMode::Success,
-                },
+                Client::new(Arc::clone(&counts), CallbackMode::Success),
                 |mut driver| {
                     driver
                         .probe_prepared_source(
@@ -2931,8 +2936,10 @@ pub(crate) mod tests {
                         )
                         .expect("prepared source probe");
                     let mut materialization = driver
-                        .lower
-                        .next_materialization_ticket(driver.callbacks.context)
+                        .with_effect_relation(|lower, context, graph| {
+                            lower.next_materialization_ticket(context, graph)
+                        })
+                        .expect("fixture effect graph")
                         .expect("lower materialization ticket")
                         .expect("one materialization ticket");
                     let (_valid_ticket, checkpoint) = driver
@@ -2997,10 +3004,7 @@ pub(crate) mod tests {
             .with_fixture_driver::<Domain, _, _>(
                 0,
                 initialization(TypeConstraintParameterScope::empty()),
-                Client {
-                    counts: Arc::clone(&counts),
-                    mode: CallbackMode::Success,
-                },
+                Client::new(Arc::clone(&counts), CallbackMode::Success),
                 |mut driver| {
                     driver
                         .probe_prepared_source(
@@ -3009,8 +3013,10 @@ pub(crate) mod tests {
                         )
                         .expect("second prepared source probe");
                     let mut materialization = driver
-                        .lower
-                        .next_materialization_ticket(driver.callbacks.context)
+                        .with_effect_relation(|lower, context, graph| {
+                            lower.next_materialization_ticket(context, graph)
+                        })
+                        .expect("fixture effect graph")
                         .expect("second lower materialization ticket")
                         .expect("one second materialization ticket");
                     let (ticket, mut checkpoint) = driver

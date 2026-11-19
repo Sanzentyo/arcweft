@@ -40,24 +40,29 @@ fn parameters() -> (TypeConstraintParameterScope, [GenericEffectReference; 2]) {
 
 fn path(
     context: &mut Context<'_>,
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
 ) -> (
     ConstraintPath<NoConstraintClient>,
     [GenericEffectReference; 2],
 ) {
     let (parameters, keys) = parameters();
-    let scope = context.fixture_application_scope((), parameters).unwrap();
-    (context.start_path(scope).unwrap(), keys)
+    let scope = context
+        .fixture_application_scope((), parameters, graph)
+        .unwrap();
+    (context.start_path(scope, graph).unwrap(), keys)
 }
 
 #[test]
 fn closed_headers_lift_the_used_completion_row_through_the_actual_local_binder() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let ambient = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
     let ambient_effect = context.lexical_scope().bound_effect(0, 0).unwrap();
-    let (mut path, keys) = path(&mut context);
+    let (mut path, keys) = path(&mut context, &mut effect_graph);
     path.effects
-        .constrain_subset(
+        .constrain_fixture_subset(
+            &mut effect_graph,
             &EffectRow::open(EffectSet::new(), ambient_effect),
             &EffectRow::open(EffectSet::new(), keys[0].clone()),
             &mut context,
@@ -80,9 +85,18 @@ fn closed_headers_lift_the_used_completion_row_through_the_actual_local_binder()
         EffectRow::open(EffectSet::new(), keys[0].clone()),
     ));
     let retained_input = Arc::downgrade(&input.value);
-    let effects = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    let effects = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     let retained_effects = Arc::downgrade(&effects);
-    let closed = close_type_operand(input.view(), &path, &effects, &mut context).unwrap();
+    let closed = close_type_operand(
+        input.view(),
+        &path,
+        &effects,
+        effect_graph.read(),
+        &mut context,
+    )
+    .unwrap();
     let TypeKind::Function {
         effects: row,
         predicate,
@@ -142,13 +156,15 @@ fn closed_headers_lift_the_used_completion_row_through_the_actual_local_binder()
 
 #[test]
 fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_before_finish() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let (mut path, keys) = path(&mut context);
+    let (mut path, keys) = path(&mut context, &mut effect_graph);
     let expected = ["fs.read", "ui.write"].map(|label| EffectSet::from_labels([label]).unwrap());
     for (key, effects) in keys.iter().zip(&expected) {
         path.effects
-            .constrain_subset(
+            .constrain_fixture_subset(
+                &mut effect_graph,
                 &EffectRow::closed(effects.clone()),
                 &EffectRow::open(EffectSet::new(), key.clone()),
                 &mut context,
@@ -181,7 +197,9 @@ fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_befo
         .function_header()
         .unwrap()
         .unwrap();
-    let effects = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    let effects = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     let graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let left_header = left_header
         .admit_for_test(graph.read(), &mut context)
@@ -195,7 +213,9 @@ fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_befo
         .unwrap();
     assert_eq!(
         incomplete.take_row(left_header.view().row()),
-        EffectRow::closed(expected[0].clone())
+        crate::effect_row::prepared::PreparedEffectRow::Canonical(EffectRow::closed(
+            expected[0].clone()
+        ))
     );
     assert!(matches!(
         incomplete.finish(),
@@ -208,7 +228,9 @@ fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_befo
         let header = admitted.view();
         assert_eq!(
             projected.take_row(header.row()),
-            EffectRow::closed(expected[index].clone())
+            crate::effect_row::prepared::PreparedEffectRow::Canonical(EffectRow::closed(
+                expected[index].clone()
+            ))
         );
         assert_eq!(
             projected.take_predicate(header.predicate()),
@@ -266,45 +288,70 @@ fn a_function_header_rejects_an_equally_shaped_foreign_contents_scope() {
 
 #[test]
 fn a_closed_effect_owner_rejects_changed_premises_and_another_application_inventory() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let (path, keys) = path(&mut context);
+    let (path, keys) = path(&mut context, &mut effect_graph);
     let input = context.fixture_operand(TypeKind::I64);
-    let effects = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    let effects = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     let mut changed = context.fork_path(&path).unwrap();
     changed
         .effects
-        .constrain_subset(
+        .constrain_fixture_subset(
+            &mut effect_graph,
             &EffectRow::open(EffectSet::new(), keys[0].clone()),
             &EffectRow::open(EffectSet::new(), keys[1].clone()),
             &mut context,
         )
         .unwrap();
     assert!(matches!(
-        close_type_operand(input.view(), &changed, &effects, &mut context),
+        close_type_operand(
+            input.view(),
+            &changed,
+            &effects,
+            effect_graph.read(),
+            &mut context
+        ),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::OriginalProducer
         ))
     ));
     let (parameters, _) = parameters();
-    let scope = context.fixture_application_scope((), parameters).unwrap();
-    let foreign = context.start_path(scope).unwrap();
+    let scope = context
+        .fixture_application_scope((), parameters, &mut effect_graph)
+        .unwrap();
+    let foreign = context.start_path(scope, &mut effect_graph).unwrap();
     assert!(matches!(
-        close_type_operand(input.view(), &foreign, &effects, &mut context),
+        close_type_operand(
+            input.view(),
+            &foreign,
+            &effects,
+            effect_graph.read(),
+            &mut context
+        ),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::OriginalProducer
         ))
     ));
     assert_eq!(
-        close_type_operand(input.view(), &path, &effects, &mut context)
-            .unwrap()
-            .value(),
+        close_type_operand(
+            input.view(),
+            &path,
+            &effects,
+            effect_graph.read(),
+            &mut context
+        )
+        .unwrap()
+        .value(),
         &TypeKind::I64
     );
 }
 
 #[test]
 fn closing_an_observed_value_does_not_replace_its_association_with_an_alias_result() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::types::constraints::transaction::{
         ConstraintResultProjection, TypeConstraintTransaction,
     };
@@ -315,10 +362,17 @@ fn closing_an_observed_value_does_not_replace_its_association_with_an_alias_resu
     let cancellation = AtomicBool::new(false);
     let (mut context, path, parameters, _) = super::bindings::setup(&cancellation, 1, 0);
     let application = path.root_id();
-    let mut transaction =
-        TypeConstraintTransaction::from_path(&mut context, application, path, None).unwrap();
+    let mut transaction = TypeConstraintTransaction::from_path(
+        &mut context,
+        &mut effect_graph,
+        application,
+        path,
+        None,
+    )
+    .unwrap();
     transaction.request_projection(
         &mut context,
+        &mut effect_graph,
         (),
         &TypeKind::I64,
         TypeConstraintProjectionClosure::Closed,
@@ -330,14 +384,18 @@ fn closing_an_observed_value_does_not_replace_its_association_with_an_alias_resu
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .unwrap();
-    let mut ticket = transaction.next_probe(&mut context).unwrap().unwrap();
+    let mut ticket = transaction
+        .next_probe(&mut context, &mut effect_graph)
+        .unwrap()
+        .unwrap();
     let receipt = ticket.receipt();
     let mut path = ticket.fork_for_child(&mut context).unwrap().path;
     let result = ConstraintResultProjection {
         application,
         key: Arc::new(()),
     };
-    let (value, result) = ResolvedConstraintResult::resolve(result, &path, &mut context).unwrap();
+    let (value, result) =
+        ResolvedConstraintResult::resolve(result, &path, &mut effect_graph, &mut context).unwrap();
     let scope = Arc::new(context.capture_lexical_scope().unwrap());
     path.bindings.insert(
         parameters[0].clone(),
@@ -350,8 +408,17 @@ fn closing_an_observed_value_does_not_replace_its_association_with_an_alias_resu
         receipt,
         ResolvedConstraintSource::Fixture,
     );
-    let effects = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
-    let closed = close_type_operand(actual.view(), &path, &effects, &mut context).unwrap();
+    let effects = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
+    let closed = close_type_operand(
+        actual.view(),
+        &path,
+        &effects,
+        effect_graph.read(),
+        &mut context,
+    )
+    .unwrap();
     assert_eq!(closed.value(), &TypeKind::I64);
     let ConstraintOperandOrigin::TypeAlias { terminal, .. } = closed.origin.as_ref() else {
         panic!("the result was reached through an alias")
@@ -365,6 +432,7 @@ fn closing_an_observed_value_does_not_replace_its_association_with_an_alias_resu
 
 #[test]
 fn read_only_closure_keeps_ambient_effects_outside_both_nested_local_binders() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::effect_row::EffectPredicate;
     use crate::types::constraints::{ConstraintClosurePolicy, normalization::project_closed_type};
 
@@ -372,9 +440,10 @@ fn read_only_closure_keeps_ambient_effects_outside_both_nested_local_binders() {
     let mut context = context(&cancellation);
     let outer = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
     let ambient_scope = context.capture_lexical_scope().unwrap();
-    let (mut path, keys) = path(&mut context);
+    let (mut path, keys) = path(&mut context, &mut effect_graph);
     path.effects
-        .constrain_subset(
+        .constrain_fixture_subset(
+            &mut effect_graph,
             &EffectRow::open(
                 EffectSet::new(),
                 context.lexical_scope().bound_effect(0, 0).unwrap(),
@@ -406,12 +475,15 @@ fn read_only_closure_keeps_ambient_effects_outside_both_nested_local_binders() {
         ),
         EffectRow::open(EffectSet::new(), keys[0].clone()),
     );
-    let completion = ConstraintClosedEffects::for_branch(&path, &mut context).unwrap();
+    let completion = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     let closed = project_closed_type(
         &input,
         &path,
         ConstraintClosurePolicy::ProjectionClosed,
         &completion,
+        effect_graph.read(),
         &mut context,
     )
     .unwrap();
@@ -451,15 +523,24 @@ fn read_only_closure_keeps_ambient_effects_outside_both_nested_local_binders() {
 
 #[test]
 fn a_relation_completion_cannot_impersonate_a_source_or_change_its_constraints() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::types::constraints::{ConstraintClosurePolicy, normalization::project_closed_type};
 
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let (path, keys) = path(&mut context);
+    let (path, keys) = path(&mut context, &mut effect_graph);
     let input = context.fixture_operand(TypeKind::I64);
-    let completion = ConstraintClosedEffects::for_branch(&path, &mut context).unwrap();
+    let completion = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     assert!(matches!(
-        close_type_operand(input.view(), &path, &completion, &mut context),
+        close_type_operand(
+            input.view(),
+            &path,
+            &completion,
+            effect_graph.read(),
+            &mut context
+        ),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::OriginalProducer
         ))
@@ -470,7 +551,8 @@ fn a_relation_completion_cannot_impersonate_a_source_or_change_its_constraints()
             &path,
             ConstraintClosurePolicy::ProjectionClosed,
             &completion,
-            &mut context
+            effect_graph.read(),
+            &mut context,
         )
         .unwrap(),
         TypeKind::I64
@@ -478,7 +560,8 @@ fn a_relation_completion_cannot_impersonate_a_source_or_change_its_constraints()
     let mut changed = context.fork_path(&path).unwrap();
     changed
         .effects
-        .constrain_subset(
+        .constrain_fixture_subset(
+            &mut effect_graph,
             &EffectRow::open(EffectSet::new(), keys[0].clone()),
             &EffectRow::open(EffectSet::new(), keys[1].clone()),
             &mut context,
@@ -490,7 +573,8 @@ fn a_relation_completion_cannot_impersonate_a_source_or_change_its_constraints()
             &changed,
             ConstraintClosurePolicy::ProjectionClosed,
             &completion,
-            &mut context
+            effect_graph.read(),
+            &mut context,
         ),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::OriginalProducer
@@ -500,18 +584,22 @@ fn a_relation_completion_cannot_impersonate_a_source_or_change_its_constraints()
 
 #[test]
 fn future_closure_preserves_the_unknown_source_effect_header() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::types::constraints::{ConstraintClosurePolicy, normalization::project_closed_type};
 
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
-    let (path, _) = path(&mut context);
+    let (path, _) = path(&mut context, &mut effect_graph);
     let input = TypeKind::function_with_effects([], TypeKind::I64, EffectRow::unknown());
-    let completion = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    let completion = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     let projected = project_closed_type(
         &input,
         &path,
         ConstraintClosurePolicy::ProjectionFuture,
         &completion,
+        effect_graph.read(),
         &mut context,
     )
     .unwrap();
@@ -524,6 +612,7 @@ fn future_closure_preserves_the_unknown_source_effect_header() {
 
 #[test]
 fn completed_equations_distinguish_the_ambient_effect_from_the_local_binder() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::types::constraints::transaction::{
         ConstraintEquationId, ConstraintEquationTiming, PendingEquation,
     };
@@ -531,9 +620,10 @@ fn completed_equations_distinguish_the_ambient_effect_from_the_local_binder() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let outer = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
-    let (mut path, keys) = path(&mut context);
+    let (mut path, keys) = path(&mut context, &mut effect_graph);
     path.effects
-        .constrain_subset(
+        .constrain_fixture_subset(
+            &mut effect_graph,
             &EffectRow::open(
                 EffectSet::new(),
                 context.lexical_scope().bound_effect(0, 0).unwrap(),
@@ -550,7 +640,9 @@ fn completed_equations_distinguish_the_ambient_effect_from_the_local_binder() {
         TypeKind::I64,
         EffectRow::open(EffectSet::new(), keys[0].clone()),
     ));
-    let completion = ConstraintClosedEffects::for_path(&path, &mut context).unwrap();
+    let completion = path
+        .close_original_path_effects(&mut effect_graph, &mut context)
+        .unwrap();
     for (depth, accepted) in [(1, true), (0, false)] {
         let equation = PendingEquation {
             ordinal: ConstraintEquationId {

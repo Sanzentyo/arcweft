@@ -290,6 +290,7 @@ fn a_nested_function_keeps_local_quantifiers_and_checks_free_predicate_variables
 
 #[test]
 fn a_candidates_rigid_inventory_cannot_admit_a_foreign_original_value() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::types::constraints::{
         TypeConstraintEffectScope, TypeConstraintParameterEligibility,
         TypeConstraintParameterScope, context::TypeConstraintTypeParameterScopeRow,
@@ -313,9 +314,15 @@ fn a_candidates_rigid_inventory_cannot_admit_a_foreign_original_value() {
         [],
     )
     .unwrap();
-    let transaction =
-        TypeConstraintTransaction::initialize(&mut context, original.clone(), (), parameters, None)
-            .unwrap();
+    let transaction = TypeConstraintTransaction::initialize(
+        &mut context,
+        &mut effect_graph,
+        original.clone(),
+        (),
+        parameters,
+        None,
+    )
+    .unwrap();
     assert_eq!(
         context.parameter_eligibility(
             &candidate.types[0],
@@ -592,6 +599,7 @@ fn inference_parameters(
 
 #[test]
 fn original_inference_references_require_the_sources_actual_import_lease() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let source = Source::new(9015);
@@ -601,10 +609,10 @@ fn original_inference_references_require_the_sources_actual_import_lease() {
     let length = parameters.const_reference(&source.consts[0]).unwrap();
     let effect = parameters.effect_reference(&source.effects[0]).unwrap();
     let application = context
-        .application_scope((), parameters, original.clone())
+        .application_scope((), parameters, original.clone(), &mut effect_graph)
         .unwrap();
     let path = context
-        .start_path_with_imported(application, None, original.clone())
+        .start_path_with_imported(application, None, original.clone(), effect_graph.read())
         .unwrap();
     let predicate = crate::effect_row::EffectFormula::variable(effect.clone(), &mut context)
         .unwrap()
@@ -669,6 +677,7 @@ fn original_inference_references_require_the_sources_actual_import_lease() {
 
 #[test]
 fn introduced_parameter_operands_keep_the_exact_lease_across_child_imports() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let source = Source::new(9016);
@@ -677,10 +686,10 @@ fn introduced_parameter_operands_keep_the_exact_lease_across_child_imports() {
     let ty = parameters.type_reference(&source.types[0]).unwrap();
     let length = parameters.const_reference(&source.consts[0]).unwrap();
     let application = context
-        .application_scope((), parameters, original.clone())
+        .application_scope((), parameters, original.clone(), &mut effect_graph)
         .unwrap();
     let path = context
-        .start_path_with_imported(application, None, original.clone())
+        .start_path_with_imported(application, None, original.clone(), effect_graph.read())
         .unwrap();
     let imported = path
         .applications
@@ -692,10 +701,16 @@ fn introduced_parameter_operands_keep_the_exact_lease_across_child_imports() {
             (),
             crate::types::constraints::TypeConstraintParameterScope::empty(),
             child_original.clone(),
+            &mut effect_graph,
         )
         .unwrap();
     let child = context
-        .start_path_with_imported(child_owner, Some(imported), child_original)
+        .start_path_with_imported(
+            child_owner,
+            Some(imported),
+            child_original,
+            effect_graph.read(),
+        )
         .unwrap();
     let target = Arc::new(context.capture_lexical_scope().unwrap());
     let owner = child
@@ -738,6 +753,7 @@ fn introduced_parameter_operands_keep_the_exact_lease_across_child_imports() {
 
 #[test]
 fn introduced_parameter_admission_observes_budget_and_cancellation() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::types::constraints::TypeConstraintAbort;
     use std::sync::atomic::Ordering;
 
@@ -747,8 +763,10 @@ fn introduced_parameter_admission_observes_budget_and_cancellation() {
     let parameters = inference_parameters(&source);
     let ty = parameters.type_reference(&source.types[0]).unwrap();
     let length = parameters.const_reference(&source.consts[0]).unwrap();
-    let application = context.fixture_application_scope((), parameters).unwrap();
-    let path = context.start_path(application).unwrap();
+    let application = context
+        .fixture_application_scope((), parameters, &mut effect_graph)
+        .unwrap();
+    let path = context.start_path(application, &mut effect_graph).unwrap();
     let target = Arc::new(context.capture_lexical_scope().unwrap());
     for cancelled in [false, true] {
         let mut stopped = TypeConstraintContext::with_accounting(LocalConstraintAccounting::new(
@@ -786,6 +804,7 @@ fn introduced_parameter_admission_observes_budget_and_cancellation() {
 
 #[test]
 fn result_equation_hints_read_the_checked_operands_receiving_frames() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::types::constraints::{ConstraintAcceptance, transaction::TypeConstraintTransaction};
 
     let cancellation = AtomicBool::new(false);
@@ -796,13 +815,20 @@ fn result_equation_hints_read_the_checked_operands_receiving_frames() {
     let parameters = inference_parameters(&source);
     let parameter = parameters.type_reference(&source.types[0]).unwrap();
     let actual = TypeKind::GenericParam(original.scope().bound_type(0, 0).unwrap());
-    let mut transaction =
-        TypeConstraintTransaction::initialize(&mut context, original, (), parameters, None)
-            .unwrap();
+    let mut transaction = TypeConstraintTransaction::initialize(
+        &mut context,
+        &mut effect_graph,
+        original,
+        (),
+        parameters,
+        None,
+    )
+    .unwrap();
     let nested = context.enter_binder_scope(GenericBinder::new(0, 1, 0));
     let expected = TypeKind::GenericParam(context.lexical_scope().bound_type(1, 0).unwrap());
     transaction.constrain_result(
         &mut context,
+        &mut effect_graph,
         &TypeKind::GenericParam(parameter),
         &actual,
         ConstraintAcceptance::PatternAcceptsActual,

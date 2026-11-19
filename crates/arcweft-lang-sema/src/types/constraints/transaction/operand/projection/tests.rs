@@ -56,6 +56,7 @@ fn source_steps(
 
 #[test]
 fn tuple_children_borrow_the_root_and_retain_distinct_exact_addresses() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let scope = Arc::new(context.capture_lexical_scope().unwrap());
@@ -77,8 +78,12 @@ fn tuple_children_borrow_the_root_and_retain_distinct_exact_addresses() {
     assert!(children.next().is_none());
     assert!(std::ptr::eq(first.value(), &values[0]));
     assert!(std::ptr::eq(second.value(), &values[1]));
-    let first = first.transport(&scope, &mut context).unwrap();
-    let second = second.transport(&scope, &mut context).unwrap();
+    let first = first
+        .transport(&scope, &mut effect_graph, &mut context)
+        .unwrap();
+    let second = second
+        .transport(&scope, &mut effect_graph, &mut context)
+        .unwrap();
     assert_eq!(
         steps(&first),
         [ConstraintOperandProjectionStep::TypeChild(0)]
@@ -107,6 +112,7 @@ fn tuple_children_borrow_the_root_and_retain_distinct_exact_addresses() {
 
 #[test]
 fn an_array_item_and_its_length_have_distinct_type_and_const_projections() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let outer = context.enter_binder_scope(GenericBinder::new(1, 1, 0));
@@ -131,7 +137,7 @@ fn an_array_item_and_its_length_have_distinct_type_and_const_projections() {
         .next()
         .unwrap()
         .unwrap()
-        .transport(&scope, &mut context)
+        .transport(&scope, &mut effect_graph, &mut context)
         .unwrap();
     let len = view
         .array_length()
@@ -182,6 +188,7 @@ fn a_stored_constant_has_its_own_borrowed_view_without_a_synthetic_type() {
 
 #[test]
 fn function_children_retain_the_actual_local_binder_and_reject_equal_shaped_foreign_frames() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let ambient = GenericBinder::new(1, 0, 0);
@@ -208,9 +215,17 @@ fn function_children_retain_the_actual_local_binder_and_reject_equal_shaped_fore
     let mut children = view.children(&mut context).unwrap();
     let parameter = children.next().unwrap().unwrap();
     let result = children.next().unwrap().unwrap();
-    assert!(parameter.transport(&scope, &mut context).is_err());
-    let parameter = parameter.transport(&local_scope, &mut context).unwrap();
-    let result = result.transport(&scope, &mut context).unwrap();
+    assert!(
+        parameter
+            .transport(&scope, &mut effect_graph, &mut context)
+            .is_err()
+    );
+    let parameter = parameter
+        .transport(&local_scope, &mut effect_graph, &mut context)
+        .unwrap();
+    let result = result
+        .transport(&scope, &mut effect_graph, &mut context)
+        .unwrap();
     assert_eq!(
         result.value(),
         &TypeKind::GenericParam(scope.shape().bound_type(0, 0).unwrap())
@@ -223,7 +238,11 @@ fn function_children_retain_the_actual_local_binder_and_reject_equal_shaped_fore
     let foreign_local = context.enter_binder_scope(ambient);
     let foreign_scope = Arc::new(context.capture_lexical_scope().unwrap());
     assert_eq!(foreign_scope.shape(), local_scope.shape());
-    assert!(parameter.transport(&foreign_scope, &mut context).is_err());
+    assert!(
+        parameter
+            .transport(&foreign_scope, &mut effect_graph, &mut context)
+            .is_err()
+    );
     context.restore_binder_scope(foreign_local);
     context.restore_binder_scope(outer);
     let unrelated = context.enter_binder_scope(ambient);

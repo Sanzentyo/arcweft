@@ -526,6 +526,7 @@ fn effect_binder_fusion_preserves_local_and_incoming_owners() {
 
 #[test]
 fn type_replacement_retains_caller_effect_reference_without_callee_substitution() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::effect_row::{EffectConstraintEligibility as EffectRole, EffectConstraintVariable};
     let reference =
         crate::types::GenericEffectReference::Free(crate::types::GenericEffectParameterId::new(
@@ -558,7 +559,7 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
         )
         .expect("parameter scope");
         let cancellation = AtomicBool::new(false);
-        let (mut context, mut path) = context(scope, &cancellation).into_path();
+        let (mut context, mut path) = context(scope, &cancellation).into_path(&mut effect_graph);
         if let Some(ty) = ty {
             let key = path
                 .root_scope()
@@ -587,13 +588,18 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
         let bound =
             EffectRow::closed(crate::effects::EffectSet::from_labels([effect]).expect("effect"));
         path.effects
-            .constrain_subset(&opened, &bound, &mut context)
+            .constrain_fixture_subset(&mut effect_graph, &opened, &bound, &mut context)
             .expect("effect upper bound");
         path.effects
-            .constrain_subset(&bound, &opened, &mut context)
+            .constrain_fixture_subset(&mut effect_graph, &bound, &opened, &mut context)
             .expect("effect lower bound");
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
-            .expect("simultaneous effect solution")
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut context,
+        )
+        .expect("simultaneous effect solution")
     };
     let solution = complete_effect(Some(actual.clone()), "log.write");
     let projected = solution
@@ -640,6 +646,7 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
 
 #[test]
 fn residual_effect_replacements_lift_through_existing_function_binders() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable};
     let effect =
         crate::types::GenericEffectReference::Free(crate::types::GenericEffectParameterId::new(
@@ -663,7 +670,7 @@ fn residual_effect_replacements_lift_through_existing_function_binders() {
     )
     .expect("parameter scope");
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path) = context(scope, &cancellation).into_path();
+    let (mut context, mut path) = context(scope, &cancellation).into_path(&mut effect_graph);
     let opening = path.root_scope().parameters();
     let effect_key = opening.effect_reference(&effect).expect("effect opening");
     let type_key = opening
@@ -677,9 +684,13 @@ fn residual_effect_replacements_lift_through_existing_function_binders() {
             EffectRow::open(crate::effects::EffectSet::new(), effect_key),
         )),
     );
-    let solution =
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
-            .expect("residual function binding");
+    let solution = TypeConstraintSolution::complete_fixture_application(
+        &path,
+        path.root_id(),
+        &mut effect_graph,
+        &mut context,
+    )
+    .expect("residual function binding");
     let own = GenericBinder::new(0, 0, 1);
     let local = GenericScope::default().with_binder(own);
     let template = TypeKind::function_with_binder(
@@ -733,13 +744,14 @@ fn residual_effect_replacements_lift_through_existing_function_binders() {
 
 #[test]
 fn closed_instantiation_enforces_retained_effect_predicate_and_work_limits() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::effect_row::{EffectConstraintEligibility as Role, EffectConstraintVariable};
     let reference =
         crate::types::GenericEffectReference::Free(crate::types::GenericEffectParameterId::new(
             GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(735)),
             0,
         ));
-    let solve = |role, labels: &[&str]| {
+    let mut solve = |role, labels: &[&str]| {
         let scope = TypeConstraintParameterScope::seal_call_scope(
             GenericBinder::EMPTY,
             [],
@@ -754,7 +766,7 @@ fn closed_instantiation_enforces_retained_effect_predicate_and_work_limits() {
         )
         .expect("parameter scope");
         let cancellation = AtomicBool::new(false);
-        let (mut context, mut path) = context(scope, &cancellation).into_path();
+        let (mut context, mut path) = context(scope, &cancellation).into_path(&mut effect_graph);
         let variable = if role == Role::Rigid {
             reference.clone()
         } else {
@@ -768,15 +780,20 @@ fn closed_instantiation_enforces_retained_effect_predicate_and_work_limits() {
             crate::effects::EffectSet::from_labels(labels.iter().copied()).expect("effects"),
         );
         path.effects
-            .constrain_subset(&row, &permitted, &mut context)
+            .constrain_fixture_subset(&mut effect_graph, &row, &permitted, &mut context)
             .expect("upper bound");
         if role == Role::Bindable {
             path.effects
-                .constrain_subset(&permitted, &row, &mut context)
+                .constrain_fixture_subset(&mut effect_graph, &permitted, &row, &mut context)
                 .expect("exact binding");
         }
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
-            .expect("retained predicate")
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut context,
+        )
+        .expect("retained predicate")
     };
     let restricted = solve(Role::Rigid, &["fs.read"]);
     assert!(matches!(
@@ -821,8 +838,10 @@ fn closed_instantiation_enforces_retained_effect_predicate_and_work_limits() {
 
 #[test]
 fn residual_replacement_is_lifted_beneath_existing_template_binders() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path) = context(scope(false, true), &cancellation).into_path();
+    let (mut context, mut path) =
+        context(scope(false, true), &cancellation).into_path(&mut effect_graph);
     let future = path
         .root_scope()
         .parameters()
@@ -845,7 +864,12 @@ fn residual_replacement_is_lifted_beneath_existing_template_binders() {
             },
         )]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut context,
+        )
     }
     .expect("residual solution");
     assert!(matches!(
@@ -909,6 +933,7 @@ fn quantifier_transfer_reports_arity_overflow() {
 
 #[test]
 fn anonymous_scheme_slots_open_freshly_and_preserve_nested_function_variables() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let binder = GenericBinder::new(1, 1, 0);
     let template_scope = GenericScope::default().with_binder(binder);
     let type_key = template_scope.bound_type(0, 0).expect("scheme type slot");
@@ -939,7 +964,7 @@ fn anonymous_scheme_slots_open_freshly_and_preserve_nested_function_variables() 
     assert_eq!(first.eligibility(&foreign), None);
 
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path) = context(first, &cancellation).into_path();
+    let (mut context, mut path) = context(first, &cancellation).into_path(&mut effect_graph);
     let local_binder = GenericBinder::new(1, 0, 0);
     let nested = template_scope.with_binder(local_binder);
     let template = TypeKind::function_with_binder(
@@ -956,7 +981,7 @@ fn anonymous_scheme_slots_open_freshly_and_preserve_nested_function_variables() 
         EffectRow::closed(crate::effects::EffectSet::new()),
     );
     let opened = context
-        .open_template_type(&template, &path, path.root_id())
+        .open_fixture_template_type(&template, &path, path.root_id(), &mut effect_graph)
         .expect("opened template");
     let TypeKind::Function {
         params,
@@ -996,7 +1021,12 @@ fn anonymous_scheme_slots_open_freshly_and_preserve_nested_function_variables() 
     let solution = {
         path.bindings = context.fixture_bindings([(inferred_type, TypeKind::I64)]);
         path.const_bindings = context.fixture_bindings([(inferred_const, ArrayLength::Const(4))]);
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut context,
+        )
     }
     .expect("completed scheme instance");
     let (key, value) = solution.bindings().next().expect("type binding");
@@ -1037,6 +1067,7 @@ fn anonymous_scheme_slots_open_freshly_and_preserve_nested_function_variables() 
 
 #[test]
 fn caller_scheme_keys_do_not_capture_quantifiers_inside_an_operand() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let binder = GenericBinder::new(1, 0, 0);
     let template_scope = GenericScope::default().with_binder(binder);
     let key = template_scope.bound_type(0, 0).expect("scheme slot");
@@ -1051,7 +1082,8 @@ fn caller_scheme_keys_do_not_capture_quantifiers_inside_an_operand() {
     )
     .expect("scheme scope");
     let cancellation = AtomicBool::new(false);
-    let (mut context, mut path) = context(parameter_scope, &cancellation).into_path();
+    let (mut context, mut path) =
+        context(parameter_scope, &cancellation).into_path(&mut effect_graph);
     let caller = {
         path.bindings = context.fixture_bindings([(
             path.root_scope()
@@ -1061,7 +1093,12 @@ fn caller_scheme_keys_do_not_capture_quantifiers_inside_an_operand() {
             TypeKind::I64,
         )]);
         path.const_bindings = BTreeMap::new();
-        TypeConstraintSolution::complete_application(&path, path.root_id(), &mut context)
+        TypeConstraintSolution::complete_fixture_application(
+            &path,
+            path.root_id(),
+            &mut effect_graph,
+            &mut context,
+        )
     }
     .expect("caller solution")
     .close_instantiation(None)

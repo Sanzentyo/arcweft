@@ -1267,6 +1267,7 @@ fn function_effect_subset_failure_is_an_ordinary_candidate_rejection() {
 
 #[test]
 fn transitive_bindings_are_sealed_and_move_only() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let first = owned_parameter(1, 0);
     let second = owned_parameter(1, 1);
     let outcome = {
@@ -1289,10 +1290,11 @@ fn transitive_bindings_are_sealed_and_move_only() {
         );
         let actual = transaction
             .context
-            .open_template_type(
+            .open_fixture_template_type(
                 &actual,
                 transaction.lower.test_single_path(),
                 transaction.lower.test_single_path().root_id(),
+                &mut effect_graph,
             )
             .expect("equation RHS uses the same active parameter namespace");
         transaction.constrain_opened(
@@ -1532,6 +1534,7 @@ fn directional_relation_binds_the_active_actual_when_pattern_is_concrete() {
 
 #[test]
 fn a_rigid_actual_is_not_bound_to_a_concrete_pattern() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let rigid = owned_parameter(206, 0);
     let scope = TypeConstraintParameterScope::new([(
         rigid.clone(),
@@ -1550,18 +1553,28 @@ fn a_rigid_actual_is_not_bound_to_a_concrete_pattern() {
     let source = crate::callable::EnclosingGenericParameterScope::sealed([rigid], [], [])
         .expect("the original source owns this fixed reference");
     let original = source.original_context(&mut context).unwrap();
-    let mut transaction =
-        TypeConstraintTransaction::initialize(&mut context, original, (), scope, None).unwrap();
+    let mut transaction = TypeConstraintTransaction::initialize(
+        &mut context,
+        &mut effect_graph,
+        original,
+        (),
+        scope,
+        None,
+    )
+    .unwrap();
 
     transaction.constrain(
         &mut context,
+        &mut effect_graph,
         &TypeKind::I64,
         &actual,
         ConstraintAcceptance::ActualAcceptsPattern,
     );
 
     assert!(matches!(
-        transaction.finish(&mut context, |left, right, _| Ok(left == right)),
+        transaction.finish(&mut context, &mut effect_graph, |left, right, _| Ok(
+            left == right
+        )),
         Err(TypeConstraintFailure::Rejected(
             TypeConstraintCandidateFailure::Constraint(_)
         ))
@@ -1897,6 +1910,7 @@ fn rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned() {
 
 #[test]
 fn acyclic_choice_sibling_survives_a_deferred_cycle() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let parameter = owned_parameter(13, 0);
     let pattern = TypeKind::Choice(vec![
         TypeKind::generic_parameter(parameter.clone()),
@@ -1918,10 +1932,11 @@ fn acyclic_choice_sibling_survives_a_deferred_cycle() {
     );
     let actual = transaction
         .context
-        .open_template_type(
+        .open_fixture_template_type(
             &actual,
             transaction.lower.test_single_path(),
             transaction.lower.test_single_path().root_id(),
+            &mut effect_graph,
         )
         .expect("equation RHS uses the same active parameter namespace");
     transaction.constrain_opened(
@@ -1988,6 +2003,7 @@ fn forbidden_completed_rows_are_solution_owner_invariants() {
 
 #[test]
 fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let t = owned_parameter(15, 0);
     let u = owned_parameter(15, 1);
     let expected_rows = vec![
@@ -2005,7 +2021,7 @@ fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() 
             ])
             .expect("claimed completed scope"),
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     let expected_key = path
         .root_scope()
         .parameters()
@@ -2028,6 +2044,7 @@ fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() 
 
 #[test]
 fn inherited_rigid_binding_is_an_initialization_invariant() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let parameter = owned_parameter(150, 0);
     let scope = TypeConstraintParameterScope::new([(
         parameter.clone(),
@@ -2044,7 +2061,7 @@ fn inherited_rigid_binding_is_an_initialization_invariant() {
         )
         .into_parts();
     assert!(matches!(
-        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, (), test_parameters, Some(Arc::new(inherited))),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, &mut effect_graph, (), test_parameters, Some(Arc::new(inherited))),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::RigidBinding,
@@ -2188,6 +2205,7 @@ fn sealed_call_scope_distinguishes_duplicate_from_unordered_rows() {
 
 #[test]
 fn required_inherited_missing_key_is_a_behavioral_unclosed_invariant() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let parameter = owned_parameter(161, 0);
     let scope = TypeConstraintParameterScope::seal_call_scope(
         crate::types::GenericBinder::EMPTY,
@@ -2211,7 +2229,7 @@ fn required_inherited_missing_key_is_a_behavioral_unclosed_invariant() {
         )
         .into_parts();
     assert!(matches!(
-        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, (), test_parameters, None),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, &mut effect_graph, (), test_parameters, None),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::Unclosed,
@@ -2223,6 +2241,7 @@ fn required_inherited_missing_key_is_a_behavioral_unclosed_invariant() {
 
 #[test]
 fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let required = owned_parameter(162, 0);
     let extra = owned_parameter(162, 1);
     let scope = TypeConstraintParameterScope::seal_call_scope(
@@ -2260,7 +2279,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
         )
         .into_parts();
     assert!(matches!(
-        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, (), test_parameters, Some(Arc::new(inherited))),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, &mut effect_graph, (), test_parameters, Some(Arc::new(inherited))),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::UnexpectedKey,
@@ -2301,7 +2320,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
         )
         .into_parts();
     assert!(matches!(
-        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, (), test_parameters, Some(Arc::new(inherited))),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(&mut context, &mut effect_graph, (), test_parameters, Some(Arc::new(inherited))),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::RigidBinding,
@@ -2464,6 +2483,7 @@ fn strict_final_projections_reject_forbidden_semantic_carriers() {
 
 #[test]
 fn foreign_binding_value_is_rejected_before_solution_publish() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let local = owned_parameter(200, 0);
     let foreign = owned_parameter(201, 0);
     let scope = TypeConstraintParameterScope::new([(
@@ -2486,9 +2506,10 @@ fn foreign_binding_value_is_rejected_before_solution_publish() {
     assert!(matches!(
         TypeConstraintTransaction::<NoConstraintClient>::initialize_fixture(
             &mut context,
+            &mut effect_graph,
             (),
             test_parameters,
-            Some(Arc::new(inherited))
+            Some(Arc::new(inherited)),
         ),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
@@ -2501,6 +2522,7 @@ fn foreign_binding_value_is_rejected_before_solution_publish() {
 
 #[test]
 fn foreign_nested_hint_is_rejected_before_source_callback_boundary() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let foreign = owned_parameter(202, 0);
     let expected = TypeKind::Vec(Box::new(TypeKind::generic_parameter(foreign)));
     let cancellation = AtomicBool::new(false);
@@ -2513,6 +2535,7 @@ fn foreign_nested_hint_is_rejected_before_source_callback_boundary() {
         .into_parts();
     let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -2532,7 +2555,7 @@ fn foreign_nested_hint_is_rejected_before_source_callback_boundary() {
         )
         .expect("begin foreign hint probe");
     assert!(matches!(
-        transaction.next_probe(&mut context),
+        transaction.next_probe(&mut context, &mut effect_graph),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::ParameterScope(
                 TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope { .. },
@@ -2878,6 +2901,7 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
 
 #[test]
 fn hint_projection_cancellation_is_checked_before_descent() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(true);
     let (mut context, path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -2885,13 +2909,14 @@ fn hint_projection_cancellation_is_checked_before_descent() {
             &cancellation,
             TypeConstraintParameterScope::empty(),
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::Vec(Box::new(TypeKind::I32)),
             path.projection_view(),
             super::ConstraintClosurePolicy::Hint,
-            &mut context
+            &mut effect_graph,
+            &mut context,
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
@@ -2899,6 +2924,7 @@ fn hint_projection_cancellation_is_checked_before_descent() {
 
 #[test]
 fn final_projection_cancellation_is_checked_before_descent() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(true);
     let (mut context, path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -2906,13 +2932,14 @@ fn final_projection_cancellation_is_checked_before_descent() {
             &cancellation,
             TypeConstraintParameterScope::empty(),
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::I32,
             path.projection_view(),
             super::ConstraintClosurePolicy::ProjectionClosed,
-            &mut context
+            &mut effect_graph,
+            &mut context,
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
@@ -2920,6 +2947,7 @@ fn final_projection_cancellation_is_checked_before_descent() {
 
 #[test]
 fn projected_type_node_limit_accepts_exact_and_rejects_one_over() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut exact, exact_path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -2927,13 +2955,14 @@ fn projected_type_node_limit_accepts_exact_and_rejects_one_over() {
             &cancellation,
             TypeConstraintParameterScope::empty(),
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     assert!(
         super::normalization::project_type(
             &TypeKind::I32,
             exact_path.projection_view(),
             super::ConstraintClosurePolicy::Hint,
-            &mut exact
+            &mut effect_graph,
+            &mut exact,
         )
         .is_ok()
     );
@@ -2944,13 +2973,14 @@ fn projected_type_node_limit_accepts_exact_and_rejects_one_over() {
             &cancellation,
             TypeConstraintParameterScope::empty(),
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::I32,
             one_over_path.projection_view(),
             super::ConstraintClosurePolicy::Hint,
-            &mut one_over
+            &mut effect_graph,
+            &mut one_over,
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
             actual: 1,
@@ -2961,6 +2991,7 @@ fn projected_type_node_limit_accepts_exact_and_rejects_one_over() {
 
 #[test]
 fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let constant = GenericConstParameterId::new(
         GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(208)),
@@ -3003,13 +3034,14 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
                 &cancellation,
                 scope.clone(),
             )
-            .into_path();
+            .into_path(&mut effect_graph);
             assert!(
                 super::normalization::project_type(
                     &array,
                     exact_path.projection_view(),
                     policy,
-                    &mut exact
+                    &mut effect_graph,
+                    &mut exact,
                 )
                 .is_ok()
             );
@@ -3022,13 +3054,14 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
                 &cancellation,
                 scope.clone(),
             )
-            .into_path();
+            .into_path(&mut effect_graph);
             assert!(matches!(
                 super::normalization::project_type(
                     &array,
                     one_over_path.projection_view(),
                     policy,
-                    &mut one_over
+                    &mut effect_graph,
+                    &mut one_over,
                 ),
                 Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
                     actual: 3,
@@ -3041,6 +3074,7 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
 
 #[test]
 fn unresolved_array_length_charges_container_and_header_before_rejection() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let cases = [
         super::super::ArrayLength::Error(TypePoisonId::from_index(209)),
@@ -3066,13 +3100,14 @@ fn unresolved_array_length_charges_container_and_header_before_rejection() {
                 &cancellation,
                 TypeConstraintParameterScope::empty(),
             )
-            .into_path();
+            .into_path(&mut effect_graph);
             assert!(matches!(
                 super::normalization::project_type(
                     &array,
                     exact_path.projection_view(),
                     policy,
-                    &mut exact
+                    &mut effect_graph,
+                    &mut exact,
                 ),
                 Err(TypeConstraintError::Rejected(
                     TypeConstraintRejection::UnresolvedType
@@ -3087,13 +3122,14 @@ fn unresolved_array_length_charges_container_and_header_before_rejection() {
                 &cancellation,
                 TypeConstraintParameterScope::empty(),
             )
-            .into_path();
+            .into_path(&mut effect_graph);
             assert!(matches!(
                 super::normalization::project_type(
                     &array,
                     one_over_path.projection_view(),
                     policy,
-                    &mut one_over
+                    &mut effect_graph,
+                    &mut one_over,
                 ),
                 Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
                     actual: 2,
@@ -3136,6 +3172,7 @@ impl<'a> TypeConstraintContextIssuer<'a> for CancelAfterContainer<'a> {
 
 #[test]
 fn array_header_observes_cancellation_after_container_charge() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let accounting = CancelAfterContainer {
         cancellation: &cancellation,
@@ -3146,7 +3183,7 @@ fn array_header_observes_cancellation_after_container_charge() {
             accounting,
             TypeConstraintParameterScope::empty(),
         )
-        .into_path();
+        .into_path(&mut effect_graph);
     let array = TypeKind::Array {
         item: Box::new(TypeKind::I32),
         len: super::super::ArrayLength::Const(3),
@@ -3156,7 +3193,8 @@ fn array_header_observes_cancellation_after_container_charge() {
             &array,
             path.projection_view(),
             super::ConstraintClosurePolicy::Hint,
-            &mut context
+            &mut effect_graph,
+            &mut context,
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
@@ -3248,6 +3286,7 @@ impl SyntheticClient {
 
 #[test]
 fn probe_alternatives_keep_distinct_actuals_branches_and_evidence() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     for reversed in [false, true] {
         let cancellation = AtomicBool::new(false);
         let (mut context, parameters) =
@@ -3256,9 +3295,14 @@ fn probe_alternatives_keep_distinct_actuals_branches_and_evidence() {
                 &cancellation,
             )
             .into_parts();
-        let mut transaction =
-            TypeConstraintTransaction::initialize_fixture(&mut context, (), parameters, None)
-                .unwrap();
+        let mut transaction = TypeConstraintTransaction::initialize_fixture(
+            &mut context,
+            &mut effect_graph,
+            (),
+            parameters,
+            None,
+        )
+        .unwrap();
         transaction
             .begin_prepared_probe(
                 &mut context,
@@ -3272,7 +3316,10 @@ fn probe_alternatives_keep_distinct_actuals_branches_and_evidence() {
                 ConstraintAcceptance::PatternAcceptsActual,
             )
             .unwrap();
-        let mut first = transaction.next_probe(&mut context).unwrap().unwrap();
+        let mut first = transaction
+            .next_probe(&mut context, &mut effect_graph)
+            .unwrap()
+            .unwrap();
         let input = first.input();
         let mut second = first.fork(&mut context).unwrap();
         let first_result = first
@@ -3290,14 +3337,20 @@ fn probe_alternatives_keep_distinct_actuals_branches_and_evidence() {
         transaction
             .submit_probe(
                 &mut context,
+                &mut effect_graph,
                 input,
                 ProbeSubmission::Accepted((contribution).close_preparation(())),
             )
             .unwrap();
-        assert!(transaction.next_probe(&mut context).unwrap().is_none());
+        assert!(
+            transaction
+                .next_probe(&mut context, &mut effect_graph)
+                .unwrap()
+                .is_none()
+        );
         let mut observed = Vec::new();
         while let Some(mut ticket) = transaction
-            .next_materialization_ticket(&mut context)
+            .next_materialization_ticket(&mut context, &mut effect_graph)
             .unwrap()
         {
             {
@@ -3342,6 +3395,7 @@ fn source_choice_alternatives() -> (
     Arc<AtomicUsize>,
     Arc<AtomicUsize>,
 ) {
+    let mut graph = PreparedEffectGraph::default();
     let first = owned_parameter(4, 0);
     let second = owned_parameter(4, 1);
     let probes = Arc::new(AtomicUsize::new(0));
@@ -3369,6 +3423,7 @@ fn source_choice_alternatives() -> (
         .into_parts();
     let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
+        &mut graph,
         (),
         test_parameters,
         None,
@@ -3376,6 +3431,7 @@ fn source_choice_alternatives() -> (
     .expect("valid test initialization");
     transaction.constrain(
         &mut context,
+        &mut graph,
         &TypeKind::Choice(vec![
             TypeKind::generic_parameter(first),
             TypeKind::generic_parameter(second),
@@ -3402,20 +3458,24 @@ fn source_choice_alternatives() -> (
         cancellation: Arc::new(AtomicBool::new(false)),
         reject_probe: false,
     };
-    while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+    while let Some(mut ticket) = transaction
+        .next_probe(&mut context, &mut graph)
+        .expect("probe ticket")
+    {
         let submission = client.probe(&mut ticket);
         transaction
-            .submit_probe(&mut context, ticket.input(), submission)
+            .submit_probe(&mut context, &mut graph, ticket.input(), submission)
             .expect("submit probe");
     }
     transaction.request_projection(
         &mut context,
+        &mut graph,
         5,
         &TypeKind::I32,
         TypeConstraintProjectionClosure::Closed,
     );
     while let Some(mut ticket) = transaction
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut graph)
         .expect("materialization ticket")
     {
         let submission = client.materialize(&ticket);
@@ -3425,7 +3485,7 @@ fn source_choice_alternatives() -> (
             .expect("submit materialization");
     }
     let alternatives = transaction
-        .finish_alternatives(&mut context, |left, right, _| Ok(left == right))
+        .finish_alternatives(&mut context, &mut graph, |left, right, _| Ok(left == right))
         .expect("the completed frontier retains both distinct branches");
     (alternatives, probes, materializations)
 }
@@ -3479,6 +3539,7 @@ fn failed_frontier_cleanup_returns_no_selected_candidate() {
 
 #[test]
 fn source_rejection_is_typed_and_does_not_use_fatal_phase() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let probes = Arc::new(AtomicUsize::new(0));
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = ConstraintTestSetup::<
@@ -3491,6 +3552,7 @@ fn source_rejection_is_typed_and_does_not_use_fatal_phase() {
     .into_parts();
     let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -3515,13 +3577,18 @@ fn source_rejection_is_typed_and_does_not_use_fatal_phase() {
         cancellation: Arc::new(AtomicBool::new(false)),
         reject_probe: true,
     };
-    while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+    while let Some(mut ticket) = transaction
+        .next_probe(&mut context, &mut effect_graph)
+        .expect("probe ticket")
+    {
         let submission = client.probe(&mut ticket);
         transaction
-            .submit_probe(&mut context, ticket.input(), submission)
+            .submit_probe(&mut context, &mut effect_graph, ticket.input(), submission)
             .expect("submit probe");
     }
-    let outcome = transaction.finish(&mut context, |left, right, _| Ok(left == right));
+    let outcome = transaction.finish(&mut context, &mut effect_graph, |left, right, _| {
+        Ok(left == right)
+    });
     assert_eq!(probes.load(Ordering::Relaxed), 1);
     assert!(matches!(
         outcome,
@@ -3534,6 +3601,7 @@ fn source_rejection_is_typed_and_does_not_use_fatal_phase() {
 
 #[test]
 fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let first = owned_parameter(17, 0);
     let second = owned_parameter(17, 1);
     let cancellation = AtomicBool::new(false);
@@ -3558,6 +3626,7 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
         .into_parts();
     let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -3565,6 +3634,7 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
     .expect("valid test initialization");
     transaction.constrain(
         &mut context,
+        &mut effect_graph,
         &TypeKind::Choice(vec![
             TypeKind::generic_parameter(first),
             TypeKind::generic_parameter(second),
@@ -3586,10 +3656,14 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
                 ConstraintAcceptance::PatternAcceptsActual,
             )
             .expect("begin authored source");
-        while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+        while let Some(mut ticket) = transaction
+            .next_probe(&mut context, &mut effect_graph)
+            .expect("probe ticket")
+        {
             transaction
                 .submit_probe(
                     &mut context,
+                    &mut effect_graph,
                     ticket.input(),
                     ProbeSubmission::Accepted(
                         (ticket
@@ -3604,7 +3678,7 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
 
     let mut traces = 0;
     while let Some(mut ticket) = transaction
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut effect_graph)
         .expect("materialization ticket")
     {
         let source_id = |local| {
@@ -3628,7 +3702,9 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
             .expect("fatal materialization is retained");
     }
     assert_eq!(traces, 2, "fatal must not stop later trace materialization");
-    match transaction.finish(&mut context, |left, right, _| Ok(left == right)) {
+    match transaction.finish(&mut context, &mut effect_graph, |left, right, _| {
+        Ok(left == right)
+    }) {
         Err(TypeConstraintFailure::FatalSource(error)) => {
             assert_eq!(error.source().local(), 10);
             assert_eq!(error.cause(), &"earlier source");
@@ -3639,6 +3715,7 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
 
 #[test]
 fn materialization_rejections_aggregate_only_the_earliest_source() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let parameters = [
         owned_parameter(18, 0),
         owned_parameter(18, 1),
@@ -3663,6 +3740,7 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
         .into_parts();
     let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -3670,6 +3748,7 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
     .expect("valid test initialization");
     transaction.constrain(
         &mut context,
+        &mut effect_graph,
         &TypeKind::Choice(
             parameters
                 .iter()
@@ -3694,10 +3773,14 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
                 ConstraintAcceptance::PatternAcceptsActual,
             )
             .expect("begin authored source");
-        while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+        while let Some(mut ticket) = transaction
+            .next_probe(&mut context, &mut effect_graph)
+            .expect("probe ticket")
+        {
             transaction
                 .submit_probe(
                     &mut context,
+                    &mut effect_graph,
                     ticket.input(),
                     ProbeSubmission::Accepted(
                         (ticket
@@ -3712,7 +3795,7 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
 
     let mut traces = 0;
     while let Some(mut ticket) = transaction
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut effect_graph)
         .expect("materialization ticket")
     {
         let (source, cause) = match traces {
@@ -3740,7 +3823,9 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
             .expect("rejection is retained");
     }
     assert_eq!(traces, 3);
-    match transaction.finish(&mut context, |left, right, _| Ok(left == right)) {
+    match transaction.finish(&mut context, &mut effect_graph, |left, right, _| {
+        Ok(left == right)
+    }) {
         Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::Source(error))) => {
             assert_eq!(error.source().local(), 10);
             assert_eq!(error.cause().as_ref(), &["first cause", "second cause"]);
@@ -3751,6 +3836,7 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
 
 #[test]
 fn zero_materialization_limit_precedes_ticket_sealing_and_callback() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let materializations = Arc::new(AtomicUsize::new(0));
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) =
@@ -3764,6 +3850,7 @@ fn zero_materialization_limit_precedes_ticket_sealing_and_callback() {
         .into_parts();
     let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -3771,6 +3858,7 @@ fn zero_materialization_limit_precedes_ticket_sealing_and_callback() {
     .expect("valid test initialization");
     transaction.constrain(
         &mut context,
+        &mut effect_graph,
         &TypeKind::I32,
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -3788,10 +3876,14 @@ fn zero_materialization_limit_precedes_ticket_sealing_and_callback() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("begin probe");
-    while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+    while let Some(mut ticket) = transaction
+        .next_probe(&mut context, &mut effect_graph)
+        .expect("probe ticket")
+    {
         transaction
             .submit_probe(
                 &mut context,
+                &mut effect_graph,
                 ticket.input(),
                 ProbeSubmission::Accepted(
                     (ticket
@@ -3803,7 +3895,7 @@ fn zero_materialization_limit_precedes_ticket_sealing_and_callback() {
             .expect("accepted source");
     }
     let ticket = transaction
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut effect_graph)
         .expect("lower preparation does not charge materialization")
         .expect("lower still yields the ready ticket");
     assert_eq!(ticket.requests().len(), 1);
@@ -4037,6 +4129,7 @@ fn final_equation_replays_choice_after_later_binding() {
 
 #[test]
 fn deferred_cycle_is_reported_only_after_close() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let parameter = owned_parameter(11, 0);
     let pattern = TypeKind::generic_parameter(parameter.clone());
     let actual = TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter.clone())));
@@ -4051,10 +4144,11 @@ fn deferred_cycle_is_reported_only_after_close() {
     );
     let actual = transaction
         .context
-        .open_template_type(
+        .open_fixture_template_type(
             &actual,
             transaction.lower.test_single_path(),
             transaction.lower.test_single_path().root_id(),
+            &mut effect_graph,
         )
         .expect("equation RHS uses the same active parameter namespace");
     transaction.constrain_opened(
@@ -4159,10 +4253,12 @@ fn checked_prepared_source(
 
 #[test]
 fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -4176,7 +4272,7 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
         )
         .expect("prepared probe starts");
     let mut ticket = transaction
-        .next_probe(&mut context)
+        .next_probe(&mut context, &mut effect_graph)
         .expect("hint projection")
         .expect("one source row");
     ticket.input().with_hint(|hint| {
@@ -4194,6 +4290,7 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
     transaction
         .submit_probe(
             &mut context,
+            &mut effect_graph,
             ticket.input(),
             ProbeSubmission::Accepted(
                 (ticket
@@ -4210,12 +4307,12 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
         .expect("checked evidence accepted");
     assert!(
         transaction
-            .next_probe(&mut context)
+            .next_probe(&mut context, &mut effect_graph)
             .expect("finish source probe")
             .is_none()
     );
     while let Some(mut ticket) = transaction
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut effect_graph)
         .expect("materialization ticket")
     {
         let rows = ticket.requests().collect::<Vec<_>>();
@@ -4229,7 +4326,9 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
             .expect("materialization accepted");
     }
     let solved = transaction
-        .finish(&mut context, |left, right, _| Ok(left == right))
+        .finish(&mut context, &mut effect_graph, |left, right, _| {
+            Ok(left == right)
+        })
         .expect("prepared source solves");
     assert_eq!(solved.component.sources().all().len(), 1);
     let row = &solved.component.sources().all()[0];
@@ -4240,10 +4339,12 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
 
 #[test]
 fn rejected_source_projection_retains_exact_lower_relation_authority() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -4263,12 +4364,13 @@ fn rejected_source_projection_retains_exact_lower_relation_authority() {
         )
         .expect("prepared probe starts");
     let mut ticket = transaction
-        .next_probe(&mut context)
+        .next_probe(&mut context, &mut effect_graph)
         .expect("probe ticket")
         .expect("one source row");
     transaction
         .submit_probe(
             &mut context,
+            &mut effect_graph,
             ticket.input(),
             ProbeSubmission::Accepted(
                 (ticket
@@ -4285,14 +4387,16 @@ fn rejected_source_projection_retains_exact_lower_relation_authority() {
         .expect("typed mismatch is retained until lower closes the row");
     assert!(
         transaction
-            .next_probe(&mut context)
+            .next_probe(&mut context, &mut effect_graph)
             .expect("close probe")
             .is_none()
     );
 
     let Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::SourceProjection(
         rejected,
-    ))) = transaction.finish(&mut context, |left, right, _| Ok(left == right))
+    ))) = transaction.finish(&mut context, &mut effect_graph, |left, right, _| {
+        Ok(left == right)
+    })
     else {
         panic!("source relation mismatch must retain a typed rejected projection")
     };
@@ -4312,10 +4416,12 @@ fn rejected_source_projection_retains_exact_lower_relation_authority() {
 
 #[test]
 fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -4323,6 +4429,7 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
     .expect("valid test initialization");
     transaction.constrain(
         &mut context,
+        &mut effect_graph,
         &TypeKind::Choice(vec![TypeKind::String, TypeKind::Bool]),
         &TypeKind::Never,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -4345,7 +4452,10 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
         )
         .expect("prepared probe starts");
     let mut row = 0_u8;
-    while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+    while let Some(mut ticket) = transaction
+        .next_probe(&mut context, &mut effect_graph)
+        .expect("probe ticket")
+    {
         let (alternative, evidence) = if row == 0 {
             (0, PreparedRule::Tag(1))
         } else {
@@ -4354,6 +4464,7 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
         transaction
             .submit_probe(
                 &mut context,
+                &mut effect_graph,
                 ticket.input(),
                 ProbeSubmission::Accepted(
                     (ticket
@@ -4372,7 +4483,7 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
     }
     assert_eq!(row, 2);
     while let Some(mut ticket) = transaction
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut effect_graph)
         .expect("materialization ticket")
     {
         let closed = close_materialization_ticket(
@@ -4384,7 +4495,9 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
             .expect("seal surviving sibling");
     }
     let solved = transaction
-        .finish(&mut context, |left, right, _| Ok(left == right))
+        .finish(&mut context, &mut effect_graph, |left, right, _| {
+            Ok(left == right)
+        })
         .expect("one live sibling must keep the ordinary candidate viable");
     assert_eq!(solved.component.sources().all().len(), 1);
     assert_eq!(
@@ -4397,10 +4510,12 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
 
 #[test]
 fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -4408,6 +4523,7 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
     .expect("valid test initialization");
     transaction.constrain(
         &mut context,
+        &mut effect_graph,
         &TypeKind::Choice(vec![TypeKind::String, TypeKind::Bool]),
         &TypeKind::Never,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -4430,7 +4546,10 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
         )
         .expect("prepared probe starts");
     let mut row = 0_u8;
-    while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+    while let Some(mut ticket) = transaction
+        .next_probe(&mut context, &mut effect_graph)
+        .expect("probe ticket")
+    {
         let (actual, alternative, evidence) = if row == 0 {
             (TypeKind::I32, 0, PreparedRule::Tag(1))
         } else {
@@ -4439,6 +4558,7 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
         transaction
             .submit_probe(
                 &mut context,
+                &mut effect_graph,
                 ticket.input(),
                 ProbeSubmission::Accepted(
                     (ticket
@@ -4458,7 +4578,9 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
     assert_eq!(row, 2);
     let Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::SourceProjection(
         rejected,
-    ))) = transaction.finish(&mut context, |left, right, _| Ok(left == right))
+    ))) = transaction.finish(&mut context, &mut effect_graph, |left, right, _| {
+        Ok(left == right)
+    })
     else {
         panic!("all rejected frontiers must retain the deterministic first row")
     };
@@ -4470,10 +4592,12 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
 
 #[test]
 fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -4487,7 +4611,7 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
         )
         .expect("unchecked probe starts");
     let mut ticket = transaction
-        .next_probe(&mut context)
+        .next_probe(&mut context, &mut effect_graph)
         .expect("unchecked hint projection")
         .expect("one unchecked source row");
     ticket
@@ -4496,6 +4620,7 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
     transaction
         .submit_probe(
             &mut context,
+            &mut effect_graph,
             ticket.input(),
             ProbeSubmission::Accepted(
                 (ticket
@@ -4510,12 +4635,12 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
         .expect("unchecked source accepted");
     assert!(
         transaction
-            .next_probe(&mut context)
+            .next_probe(&mut context, &mut effect_graph)
             .expect("finish unchecked probe")
             .is_none()
     );
     while let Some(mut ticket) = transaction
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut effect_graph)
         .expect("unchecked materialization ticket")
     {
         let rows = ticket.requests().collect::<Vec<_>>();
@@ -4536,7 +4661,9 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
             .expect("unchecked materialization accepted");
     }
     let solved = transaction
-        .finish(&mut context, |left, right, _| Ok(left == right))
+        .finish(&mut context, &mut effect_graph, |left, right, _| {
+            Ok(left == right)
+        })
         .expect("unchecked source solves");
     let [row] = solved.component.sources().all() else {
         panic!("one unchecked closed source")
@@ -4552,10 +4679,12 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
 
 #[test]
 fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -4578,12 +4707,13 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
         )
         .expect("rest probe starts");
     let mut ticket = transaction
-        .next_probe(&mut context)
+        .next_probe(&mut context, &mut effect_graph)
         .expect("rest hint")
         .expect("one rest row");
     transaction
         .submit_probe(
             &mut context,
+            &mut effect_graph,
             ticket.input(),
             ProbeSubmission::Accepted(
                 (ticket
@@ -4603,12 +4733,12 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
         .expect("rest actual accepted");
     assert!(
         transaction
-            .next_probe(&mut context)
+            .next_probe(&mut context, &mut effect_graph)
             .expect("finish rest probe")
             .is_none()
     );
     let mut ticket = transaction
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut effect_graph)
         .expect("rest materialization")
         .expect("rest trace");
     let rows = ticket.requests().collect::<Vec<_>>();
@@ -4629,7 +4759,9 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
         .submit_closed_materialization(ticket, closed)
         .expect("rest materialization accepted");
     let solved = transaction
-        .finish(&mut context, |left, right, _| Ok(left == right))
+        .finish(&mut context, &mut effect_graph, |left, right, _| {
+            Ok(left == right)
+        })
         .expect("rest solves");
     assert_eq!(
         solved.component.sources().all()[0].final_expected(),
@@ -4642,6 +4774,7 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
 
 #[test]
 fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let parameter = owned_parameter(309, 0);
     let scope = TypeConstraintParameterScope::new([(
         parameter.clone(),
@@ -4658,6 +4791,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
         .into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -4674,6 +4808,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
     .expect("typed rest has one explicit fallback");
     transaction.constrain(
         &mut context,
+        &mut effect_graph,
         &TypeKind::generic_parameter(parameter.clone()),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -4686,7 +4821,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
         )
         .expect("generic rest probe starts");
     let mut ticket = transaction
-        .next_probe(&mut context)
+        .next_probe(&mut context, &mut effect_graph)
         .expect("generic rest hint")
         .expect("one generic rest row");
     let actual = context
@@ -4697,11 +4832,13 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
             },
             ticket.test_path(),
             ticket.test_path().root_id(),
+            &mut effect_graph,
         )
         .expect("source observation carries an owned active reference");
     transaction
         .submit_probe(
             &mut context,
+            &mut effect_graph,
             ticket.input(),
             ProbeSubmission::Accepted(
                 (ticket
@@ -4718,13 +4855,13 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
         .expect("generic actual relates to item expected");
     assert!(
         transaction
-            .next_probe(&mut context)
+            .next_probe(&mut context, &mut effect_graph)
             .expect("finish generic rest probe")
             .is_none()
     );
 
     let mut ticket = transaction
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut effect_graph)
         .expect("generic rest materialization")
         .expect("generic rest trace");
     let requests = ticket.requests().collect::<Vec<_>>();
@@ -4750,7 +4887,9 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
         .submit_closed_materialization(ticket, closed)
         .expect("generic rest materialization accepted");
     let solved = transaction
-        .finish(&mut context, |left, right, _| Ok(left == right))
+        .finish(&mut context, &mut effect_graph, |left, right, _| {
+            Ok(left == right)
+        })
         .expect("generic rest solves");
     let trace = &solved.component.sources().all()[0];
     assert_eq!(
@@ -4779,6 +4918,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
 
 #[test]
 fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let parameter = owned_parameter(310, 0);
     let scope = TypeConstraintParameterScope::new([(
         parameter.clone(),
@@ -4795,6 +4935,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         .into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -4802,6 +4943,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
     .expect("valid test initialization");
     transaction.constrain(
         &mut context,
+        &mut effect_graph,
         &TypeKind::generic_parameter(parameter.clone()),
         &TypeKind::String,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -4823,7 +4965,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         )
         .expect("generic map rest probe starts");
     let mut ticket = transaction
-        .next_probe(&mut context)
+        .next_probe(&mut context, &mut effect_graph)
         .expect("generic map rest hint")
         .expect("one generic map rest row");
     let actual = context
@@ -4835,11 +4977,13 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
             },
             ticket.test_path(),
             ticket.test_path().root_id(),
+            &mut effect_graph,
         )
         .expect("source observation carries an owned active reference");
     transaction
         .submit_probe(
             &mut context,
+            &mut effect_graph,
             ticket.input(),
             ProbeSubmission::Accepted(
                 (ticket
@@ -4856,12 +5000,12 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         .expect("generic map actual relates to value expected");
     assert!(
         transaction
-            .next_probe(&mut context)
+            .next_probe(&mut context, &mut effect_graph)
             .expect("finish generic map rest probe")
             .is_none()
     );
     let mut ticket = transaction
-        .next_materialization_ticket(&mut context)
+        .next_materialization_ticket(&mut context, &mut effect_graph)
         .expect("generic map rest materialization")
         .expect("generic map rest trace");
     let requests = ticket.requests().collect::<Vec<_>>();
@@ -4889,7 +5033,9 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         .submit_closed_materialization(ticket, closed)
         .expect("generic map rest materialization accepted");
     let solved = transaction
-        .finish(&mut context, |left, right, _| Ok(left == right))
+        .finish(&mut context, &mut effect_graph, |left, right, _| {
+            Ok(left == right)
+        })
         .expect("generic map rest solves");
     let trace = &solved.component.sources().all()[0];
     assert_eq!(
@@ -4921,10 +5067,12 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
 
 #[test]
 fn otherwise_cannot_shortcut_a_matching_guard() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -4938,12 +5086,13 @@ fn otherwise_cannot_shortcut_a_matching_guard() {
         )
         .expect("first source starts");
     let mut ticket = transaction
-        .next_probe(&mut context)
+        .next_probe(&mut context, &mut effect_graph)
         .expect("first ticket")
         .expect("first row");
     assert!(matches!(
         transaction.submit_probe(
             &mut context,
+            &mut effect_graph,
             ticket.input(),
             ProbeSubmission::Accepted(
                 (ticket
@@ -4967,10 +5116,12 @@ fn otherwise_cannot_shortcut_a_matching_guard() {
 
 #[test]
 fn otherwise_is_selected_only_when_all_guarded_evidence_is_absent() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -4984,12 +5135,13 @@ fn otherwise_is_selected_only_when_all_guarded_evidence_is_absent() {
         )
         .expect("source starts");
     let mut ticket = transaction
-        .next_probe(&mut context)
+        .next_probe(&mut context, &mut effect_graph)
         .expect("ticket")
         .expect("source row");
     transaction
         .submit_probe(
             &mut context,
+            &mut effect_graph,
             ticket.input(),
             ProbeSubmission::Accepted(
                 (ticket
@@ -5006,7 +5158,7 @@ fn otherwise_is_selected_only_when_all_guarded_evidence_is_absent() {
         .expect("nonmatching evidence selects otherwise");
     assert!(
         transaction
-            .next_probe(&mut context)
+            .next_probe(&mut context, &mut effect_graph)
             .expect("probe closes")
             .is_none()
     );
@@ -5014,10 +5166,12 @@ fn otherwise_is_selected_only_when_all_guarded_evidence_is_absent() {
 
 #[test]
 fn duplicate_matching_guards_are_rejected_as_tampered_evidence() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,
@@ -5041,12 +5195,13 @@ fn duplicate_matching_guards_are_rejected_as_tampered_evidence() {
         )
         .expect("source starts");
     let mut ticket = transaction
-        .next_probe(&mut context)
+        .next_probe(&mut context, &mut effect_graph)
         .expect("ticket")
         .expect("source row");
     assert!(matches!(
         transaction.submit_probe(
             &mut context,
+            &mut effect_graph,
             ticket.input(),
             ProbeSubmission::Accepted(
                 (ticket
@@ -5070,6 +5225,7 @@ fn duplicate_matching_guards_are_rejected_as_tampered_evidence() {
 
 #[test]
 fn prepared_source_structurally_owns_otherwise_and_requires_exact_ordinals() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let gapped_ordinal = PreparedSourceConstraint::<PreparedDomain>::checked(
         12,
         PreparedConstraintSourceProjection::Scalar,
@@ -5091,6 +5247,7 @@ fn prepared_source_structurally_owns_otherwise_and_requires_exact_ordinals() {
     let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
     let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
         &mut context,
+        &mut effect_graph,
         (),
         test_parameters,
         None,

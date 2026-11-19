@@ -64,6 +64,7 @@ pub(super) fn setup_with_limits(
 
 #[test]
 fn a_selected_relation_keeps_each_binding_on_its_actual_tuple_child_through_seal_and_fork() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, path, parameters, _) = setup(&cancellation, 2, 0);
     let pattern = context.fixture_operand(TypeKind::Tuple(
@@ -76,6 +77,7 @@ fn a_selected_relation_keeps_each_binding_on_its_actual_tuple_child_through_seal
     let actual = context.fixture_operand(TypeKind::Tuple(vec![TypeKind::I64, TypeKind::String]));
     let retained_root = Arc::downgrade(&actual.value);
     let mut paths = relate_selected_call(
+        &mut effect_graph,
         &pattern.view(),
         &actual.view(),
         path,
@@ -117,6 +119,7 @@ fn a_selected_relation_keeps_each_binding_on_its_actual_tuple_child_through_seal
 
 #[test]
 fn structural_relations_keep_the_direct_child_and_slice_branch_budgets() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     for (case, branches, bindings) in [(0, 0, 0), (1, 0, 1), (2, 1, 2), (3, 2, 2)] {
         let (mut context, path, parameters, _) = setup_with_limits(
@@ -152,6 +155,7 @@ fn structural_relations_keep_the_direct_child_and_slice_branch_budgets() {
         let pattern = context.fixture_operand(pattern);
         let actual = context.fixture_operand(actual);
         let paths = relate_selected_call(
+            &mut effect_graph,
             &pattern.view(),
             &actual.view(),
             path,
@@ -174,6 +178,7 @@ fn structural_relations_keep_the_direct_child_and_slice_branch_budgets() {
     let actual = context.fixture_operand(TypeKind::Tuple(vec![TypeKind::I64, TypeKind::String]));
     assert!(matches!(
         relate_selected_call(
+            &mut effect_graph,
             &pattern.view(),
             &actual.view(),
             path,
@@ -191,6 +196,7 @@ fn structural_relations_keep_the_direct_child_and_slice_branch_budgets() {
 
 #[test]
 fn a_transitive_type_alias_retains_every_occurrence_and_the_exact_replacement_root() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, path, parameters, _) = setup(&cancellation, 3, 0);
     let root = context.fixture_operand(TypeKind::Tuple(vec![
@@ -206,22 +212,27 @@ fn a_transitive_type_alias_retains_every_occurrence_and_the_exact_replacement_ro
         .unwrap()
         .unwrap();
     let path = context
-        .add_binding(path, parameters[0].clone(), child)
+        .add_binding(path, parameters[0].clone(), child, &mut effect_graph)
         .unwrap()
         .unwrap();
     let next = context.fixture_operand(TypeKind::GenericParam(parameters[2].clone()));
     let path = context
-        .add_binding(path, parameters[1].clone(), next.view())
+        .add_binding(path, parameters[1].clone(), next.view(), &mut effect_graph)
         .unwrap()
         .unwrap();
     let terminal = context.fixture_operand(TypeKind::I64);
     let path = context
-        .add_binding(path, parameters[2].clone(), terminal.view())
+        .add_binding(
+            path,
+            parameters[2].clone(),
+            terminal.view(),
+            &mut effect_graph,
+        )
         .unwrap()
         .unwrap();
     let input = context.fixture_operand(TypeKind::GenericParam(parameters[0].clone()));
     let ConstraintAliasResolution::Value(resolved) =
-        resolve_type_alias(input.view(), &path, &mut context).unwrap()
+        resolve_type_alias(input.view(), &path, &mut effect_graph, &mut context).unwrap()
     else {
         panic!("a bound alias resolves to its retained term")
     };
@@ -340,6 +351,7 @@ fn a_binding_lookup_rejects_a_value_whose_actual_scope_disagrees_with_its_owner(
 
 #[test]
 fn ten_thousand_direct_aliases_retain_and_release_a_flat_proof_with_exact_node_admission() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, mut path, parameters, _) = setup_with_limits(
         &cancellation,
@@ -359,7 +371,7 @@ fn ten_thousand_direct_aliases_retain_and_release_a_flat_proof_with_exact_node_a
     );
     let input = context.fixture_operand(TypeKind::GenericParam(parameters[0].clone()));
     let ConstraintAliasResolution::Value(resolved) =
-        resolve_type_alias(input.view(), &path, &mut context).unwrap()
+        resolve_type_alias(input.view(), &path, &mut effect_graph, &mut context).unwrap()
     else {
         panic!("the entire direct alias chain closes")
     };

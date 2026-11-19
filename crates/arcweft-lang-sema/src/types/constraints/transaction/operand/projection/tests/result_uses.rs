@@ -26,6 +26,7 @@ fn scheme_parameters() -> TypeConstraintParameterScope {
 
 #[test]
 fn a_result_use_retains_the_selected_request_and_the_binding_that_normalized_its_input() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let key = GenericTypeParameterId::new(
         GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(792)),
@@ -44,8 +45,14 @@ fn a_result_use_retains_the_selected_request_and_the_binding_that_normalized_its
             parameters,
         )
         .into_parts();
-    let mut transaction =
-        TypeConstraintTransaction::initialize_fixture(&mut context, 0, parameters, None).unwrap();
+    let mut transaction = TypeConstraintTransaction::initialize_fixture(
+        &mut context,
+        &mut effect_graph,
+        0,
+        parameters,
+        None,
+    )
+    .unwrap();
     let application = transaction.application;
     let replacement = context.fixture_operand(TypeKind::I64);
     let retained_replacement = Arc::downgrade(&replacement.value);
@@ -59,6 +66,7 @@ fn a_result_use_retains_the_selected_request_and_the_binding_that_normalized_its
         .unwrap();
     transaction.request_projection(
         &mut context,
+        &mut effect_graph,
         (),
         &TypeKind::function_with_binder(
             binder,
@@ -72,6 +80,7 @@ fn a_result_use_retains_the_selected_request_and_the_binding_that_normalized_its
     transaction
         .constrain_result_use(
             &mut context,
+            &mut effect_graph,
             (),
             &TypeKind::function_with_effects(
                 [TypeKind::String],
@@ -214,11 +223,13 @@ fn function_result(
 
 #[test]
 fn a_scheme_opening_rejects_changed_value_ports_headers_and_parameter_roles() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     for case in 0..5 {
         let cancellation = AtomicBool::new(false);
         let (mut context, mut transaction, scheme) = function_result(&cancellation);
         let result = transaction.constrain_result_use(
             &mut context,
+            &mut effect_graph,
             (),
             &scheme,
             |source, _graph, context| {
@@ -282,14 +293,19 @@ fn a_scheme_opening_rejects_changed_value_ports_headers_and_parameter_roles() {
 
 #[test]
 fn equal_result_types_cannot_exchange_their_prepared_scheme_openings() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let (mut context, mut transaction, scheme) = function_result(&cancellation);
     let second = context.fork_path(&transaction.frontier[0]).unwrap();
     transaction.frontier.push(second);
     let mut retained = None;
     let mut visits = 0;
-    let result =
-        transaction.constrain_result_use(&mut context, (), &scheme, |source, _graph, context| {
+    let result = transaction.constrain_result_use(
+        &mut context,
+        &mut effect_graph,
+        (),
+        &scheme,
+        |source, _graph, context| {
             visits += 1;
             if let Some(prepared) = retained.take() {
                 return Ok(Some(prepared));
@@ -311,7 +327,8 @@ fn equal_result_types_cannot_exchange_their_prepared_scheme_openings() {
             retained =
                 Some(source.prepare_function_scheme(1, scheme_parameters(), template, context)?);
             Ok(None)
-        });
+        },
+    );
     assert_eq!(visits, 2);
     assert!(matches!(
         result,
@@ -325,6 +342,7 @@ fn equal_result_types_cannot_exchange_their_prepared_scheme_openings() {
 
 #[test]
 fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_contract() {
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     use crate::effect_row::{
         EffectConstraintEligibility, EffectConstraintVariable, EffectFormula, EffectPredicate,
         EffectRow,
@@ -356,10 +374,17 @@ fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_cont
         TypeKind::I64,
         EffectRow::open(EffectSet::new(), variable.clone()),
     );
-    let mut transaction =
-        TypeConstraintTransaction::initialize_fixture(&mut context, 0, parameters, None).unwrap();
+    let mut transaction = TypeConstraintTransaction::initialize_fixture(
+        &mut context,
+        &mut effect_graph,
+        0,
+        parameters,
+        None,
+    )
+    .unwrap();
     transaction.request_projection(
         &mut context,
+        &mut effect_graph,
         (),
         &scheme,
         crate::types::constraints::TypeConstraintProjectionClosure::Closed,
@@ -367,6 +392,7 @@ fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_cont
     transaction
         .constrain_result_use(
             &mut context,
+            &mut effect_graph,
             (),
             &TypeKind::function_with_effects(
                 [],
@@ -401,7 +427,11 @@ fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_cont
                 assert!(matches!(
                     source.prepare_function_scheme(
                         1,
-                        parameters(EffectPredicate::unconstrained()),
+                        parameters(
+                            crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
+                                EffectPredicate::unconstrained()
+                            )
+                        ),
                         template.clone(),
                         context
                     ),
@@ -411,7 +441,11 @@ fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_cont
                 ));
                 Ok(Some(source.prepare_function_scheme(
                     1,
-                    parameters(predicate.clone()),
+                    parameters(
+                        crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
+                            predicate.clone(),
+                        ),
+                    ),
                     template,
                     context,
                 )?))
@@ -419,7 +453,9 @@ fn a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_cont
         )
         .unwrap();
     let solved = transaction
-        .finish(&mut context, |left, right, _| Ok(left == right))
+        .finish(&mut context, &mut effect_graph, |left, right, _| {
+            Ok(left == right)
+        })
         .unwrap();
     let projected = solved
         .component

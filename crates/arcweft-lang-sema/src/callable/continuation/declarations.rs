@@ -67,6 +67,14 @@ impl PreparedCallableEffectDeclaration {
 }
 
 impl PreparedCallableEffectDeclarations {
+    #[cfg(test)]
+    pub(crate) fn empty_for_test() -> Self {
+        Self {
+            graph: PreparedEffectGraph::default(),
+            declarations: BTreeMap::new(),
+        }
+    }
+
     pub(crate) fn read(&self) -> crate::effect_row::prepared::PreparedEffectReadView<'_> {
         self.graph.read()
     }
