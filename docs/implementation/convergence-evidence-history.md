@@ -20382,3 +20382,20 @@ CLIを除くCoreの推移的逆依存は8,116件で8,022 PASS、94既知FAIL、1
 初回のCore逆依存ビルドは `arcweft-verify-lsp` のリンク時に `arcweft_core` の rlib が見つからず終了101。次の実行ではWindowsのページングファイル不足（OSエラー1455）で rlib のメモリマップに失敗し、複数の下流リンクと rustc の内部エラーが発生した。CLIとdoctestを終えてから、同じSourceと引数でCore逆依存を単独実行し、上記結果を取得した。
 
 [検証原本・全失敗ID](acceptance-evidence/task-guarded-effect-conjunction.raw.zip) は49 entry、1,575,641 bytes、SHA256 `a39e47cb14c8793273a83b8abbc39b038286ddb3862179e66f896e935676ff90`。各entryの長さとハッシュ、公開Sourceの3ファイルを照合した。記録時の `target` は101,656,664,049 bytes。
+
+<a id="unrestricted-scheme-equations"></a>
+## 2026-11-20 — 制約のない効果スキームを係数ごとに照合する
+
+検証基点 `af53affbaeaa74d23b544641ca6cc76309a90471`、Source `73b3ee8f8c577a5e8d784e7b93220ba802db4adb`。制約のないスキームは各ラベルクラスと入力マスクで、本体の所属判定を対応する係数と直接照合する。有限な入力行で各マスクを実現できるため、この照合は従来の真理値表の比較を全称量化した式と一致する。本体の admission と付随する義務も全入力で満たす。制約を持つスキームでは、宣言の許容範囲に従って式全体を量化する。4マスクを使ったCore回帰条件で従来の判定図と結果が一致し、作業計上が減ることを確認した。
+
+検証基点の一時的な計測では、Semaの対象2件が診断用上限16,384で既存のアサーションを通過した。上限を既定値と同じ4,096にした計測では、式75と式26でそれぞれ失敗した。計測記録の3 callback は、ある包含義務だけで6,801回、後続のスキーム自身を適用して本体と比較する工程で6,087回の作業計上を観測した。2 callback は取り込み時の追加ラベル制約で447回、後続のスキーム自身を適用して本体と比較する工程で2,827回だった。回数は各工程の開始と終了の差分で、診断用上限の結果は既定上限での受入に算入しない。一時的な計測コードはSourceから除いた。
+
+Supersedes [外側ラベルのガード付き条件を合成した時点の停止位置](#guarded-effect-conjunction)。現行Sourceの既定上限4,096で、2 callback のSemaは `main` の呼び出し（式75）、Native／AWBCは型検査の式76で停止した。3実行とも最初の本体効果項を読む段階まで進んだ。3 callback のSemaは `rotate` の再帰分岐（式26）で包含判定の出力ノードを作る段階で停止した。その包含義務は恒真の前提を持ち、停止した包含判定（述語41）は根（述語56）から論理積を5段辿った先にあった。述語の種類は実行ファイル側の列挙型の分岐と照合した。
+
+Core全feature library／`effect_decision` 2,388件、Core全feature doctest 81件、CLI library／binary 196件と規定の統合6 target 30件はすべてPASS。Sema全featureユニットの1,998件は1,912 PASS、86既知FAILで、比較元 `5bcf186d03bf4e83aedf858584fdfed722cee301` の全IDと合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の151条件を現行の逆依存ログと照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存がすべてPASS。Style Lengthの1件は、同じ入力と5個の数値を確認する[既記録の後継ID](acceptance-evidence/task-expression-value-scope.json)に読み替えた。
+
+CLIを除くCoreの推移的逆依存は8,117件で8,023 PASS、94既知FAIL、18 SKIP。比較元 `5bcf186d03bf4e83aedf858584fdfed722cee301` と既存IDの合否はすべて一致し、`prefix_table_equations_match_the_universal_relation` が追加で通過した。初回はWindowsのページングファイル不足（OSエラー1455）で依存rlibを読み込めず、ビルドが終了101となった。CLIとdoctestの完了後、同じテスト選択を `CARGO_BUILD_JOBS=4` で単独実行した。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-unrestricted-scheme-equations.raw.zip) は71 entry、1,669,299 bytes、SHA256 `841894fd5b52f23dabbb80d93ae8cf293d4c50dfb99fcf111d1dded5da94e8bf`。各entryの長さとハッシュ、公開Sourceの4ファイルを照合した。記録時の `target` は101,681,310,223 bytes。
