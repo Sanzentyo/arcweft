@@ -20663,3 +20663,20 @@ Coreの推移的逆依存はCargoで51パッケージを選定した。CLIを除
 Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[Style Lengthの後継1件](acceptance-evidence/task-expression-value-scope.json)で照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-ordered-effect-conjunction.raw.zip) は133 entry、2,018,437 bytes、SHA256 `343b295570cea8111517dd23149d3a647b51ddd9d356c46edcbd665cccbe3712`。各entryの長さとハッシュを照合した。記録時の `target` は134,391,219,135 bytes。
+
+<a id="assigned-effect-restriction"></a>
+## 2026-11-20 — 効果判定の割り当て済み先頭区間を直接たどる
+
+検証基点は `8669bf6b2d69909b975e0396ab618fb708dc6e01`。公開Sourceは `0213b4bf5a6ab3ba160497e85c28dfb39c1ec1e1`。決定グラフは参照順に並ぶため、最初の未割り当て参照より前のノードは残余グラフに現れない。割り当て済みの参照をたどり、終端を得た場合はその値を返す。未割り当ての参照が残る場合は、そのノードから従来の順で残余グラフを再構築する。各ノードと終端の訪問前に作業量を計上する。
+
+3変数の全256グラフと27通りの割り当てについて、変更前の実装と6,912件すべての正準結果が一致した。4,572件の作業量が減り、合計78,240→70,356単位。16ノードすべてが割り当て済みの経路は34→18単位で、上限に1単位足りない場合の拒否と、未割り当ての参照が残る場合の正準結果を回帰テストで確認した。
+
+同一SHA256のCLI入力を VM／AWBC Product とも1ステップ最大1操作で再実行した。既定上限4,096では1 callback が戻り値42、ログ `marker` で成功。2 callback は式75、過去の3 callback の2入力は式68、別の3 callback 入力は式69で両実行系とも意味解析に失敗した。診断専用の上限16,384では、2 callback が4,616→4,611単位、3 callback の2入力が7,616→7,609単位。診断実行で戻り値42、ログ順、1ステップ最大1操作、診断0を再確認した。
+
+Semaの診断用上限16,384では2 callback が4,617→4,612単位、3 callback が4,686→4,683単位。既定上限の停止位置は、2 callback が取り込んだ係数の特殊化、3 callback が正準述語の照合だった。
+
+3 callback の元の並び順に対する診断実行では、最大作業量7,609単位の候補の下位作業量は7,592単位だった。効果の成分準備は下位カウンター2,749→6,270で3,521単位、最小化は6,270→6,393で123単位、元の義務を照合する直前から完了までは6,504→7,054で550単位。実行ファイル・入力のSHA256と採取位置を検証原本に記録した。準備の内訳ではルートの関係コンパイル1,553単位、取り込んだ子の関係コンパイル686単位、子の効果ラベルの制約681単位を確認した。2 callback では同じ区間が860、407、339単位。3 callback の子とルートでは、係数の直接照合を使わない義務の結論をそれぞれ522単位で計算した箇所があった。係数の直接照合を使ったルートの3箇所は、結論の計算全体で236、108、108単位だった。
+
+Core全feature対象2,393件が通過し、先行実行との共通2,392 IDの合否は一致した。Sema全featureユニット2,009件は1,929 PASS／80既知FAILで、先行実行と全IDの合否が一致した。既定設定のCLIはライブラリ・バイナリ196件と統合6 target 30件すべてが通過した。統合テストの初回ビルドは、計測プロセスが実行ファイルを保持してWindowsのファイル共有エラー（OS 5）になった。同じ対象をプロセス終了後に再実行して通過した。workspace全target・全featureのcheck／Clippy、Core doctest 81件、書式、差分、Cargo graph、構造ゲートを通過した。51パッケージの全逆依存8,132件とGeneric Matchの151件は[先行Sourceの検証](convergence-evidence-history.md#ordered-effect-conjunction)に記録する。
+
+[検証原本と停止位置](acceptance-evidence/task-resolve-assigned-effect-prefix.raw.zip) は91 entry、1,449,569 bytes、SHA256 `f54126d572bb6ea37a7ae50bc08fb6317e07ac3483522428729df5888429c6bc`。各entryの長さとハッシュを照合した。記録時の `target` は138,376,416,077 bytes。
