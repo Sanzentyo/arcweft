@@ -20367,3 +20367,18 @@ Supersedes [義務を一つのノードで保持した時点の停止位置](#ty
 Cargo graphから求めたSemaの逆依存は22パッケージ。CLIを除く4,308件で4,214 PASS、94既知FAIL、1 SKIP。比較元 `f9ee3a1f4a826118d91fa20203064a16d40101f4` の全IDの合否が一致し、追加1件が通過した。CLI library／binary 196件と規定の統合6 target 30件はすべてPASS。Sema全featureの1,998件は1,912 PASS、86既知FAILで、追加1件が通過した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
 
 [検証原本・全失敗ID](acceptance-evidence/task-shared-prepared-effect-terms.raw.zip) は41 entry、1,342,673 bytes、SHA256 `008559bc18236f60a512ff5daf195323330180d23c13eda4064c7f056e7b940b`。各entryの長さとハッシュ、公開Sourceの4ファイルを照合した。記録時の `target` は101,641,001,309 bytes。
+
+<a id="guarded-effect-conjunction"></a>
+## 2026-11-20 — 外側ラベルのガード付き条件を一度の判定図走査で合成する
+
+検証基点 `66d5efb1bb1fae39eb247e5a6218cc29e4354dbe`、Source `5bcf186d03bf4e83aedf858584fdfed722cee301`。マスクの制限で得た条件をガード付きのまま集める。一度の変数順の走査で低・高の各分岐へ残る条件を求め、必要な出力だけを構築する。同じ条件集合が再び現れたときは結果を共有する。無条件に必要な判定がある分岐では、同じ判定のガード付き出現をまとめて落とす。マスク0は無条件、ほかのマスクは対応するラベルの存在を条件とする。
+
+16個のガードが同じ判定を要求する場合、同じビルダーで順次合成した結果と一致し、作業量が少ないことを確認した。既存テストで、ガードが判定の参照より前・同じ・後にある場合、包含の全4,096割当て、未選択の枝を読み込まずに済むことも確認した。初回ビルドは判定図を参照しながら作業量を計上する箇所の借用エラーで終了した。判定図と計上先のフィールドを個別に借用したSourceで以降の検証をやり直した。
+
+Supersedes [効果項の依存評価を共有した時点の停止位置](#shared-prepared-effect-terms)。2 callback のSemaは `main` の呼び出し（式75）、Native／AWBCは型検査の式76で、関数本体の最初の効果項を読む段階で既定上限4,096に達した。3 callback のSemaは `rotate` の再帰分岐（式26）で、マスクの条件を取り込んだ後、条件集合から出力ノードを組み立てる段階で同上限に達した。Native／AWBCの対象2件を直接実行し、失敗式と停止箇所を確認した。
+
+CLIを除くCoreの推移的逆依存は8,116件で8,022 PASS、94既知FAIL、18 SKIP。比較基準はCore全逆依存の `a84dbf28f0efc003fa2348797035035f014e9190` と、該当するパッケージに対する直近のSema逆依存 `1bf8e94fdc4d2859e3a46b1654d71294d6fd5ee8` のテストID別の結果。比較した全IDの合否が一致し、追加1件が通過した。CLI library／binary 196件と規定の統合6 target 30件、Core全feature library／`effect_decision` 2,387件、Core全feature doctest 81件はすべてPASS。Sema全featureユニットの1,998件は1,912 PASS、86既知FAILで、全IDの合否が一致した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+初回のCore逆依存ビルドは `arcweft-verify-lsp` のリンク時に `arcweft_core` の rlib が見つからず終了101。次の実行ではWindowsのページングファイル不足（OSエラー1455）で rlib のメモリマップに失敗し、複数の下流リンクと rustc の内部エラーが発生した。CLIとdoctestを終えてから、同じSourceと引数でCore逆依存を単独実行し、上記結果を取得した。
+
+[検証原本・全失敗ID](acceptance-evidence/task-guarded-effect-conjunction.raw.zip) は49 entry、1,575,641 bytes、SHA256 `a39e47cb14c8793273a83b8abbc39b038286ddb3862179e66f896e935676ff90`。各entryの長さとハッシュ、公開Sourceの3ファイルを照合した。記録時の `target` は101,656,664,049 bytes。
