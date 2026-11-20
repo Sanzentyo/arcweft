@@ -20529,3 +20529,26 @@ Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-
 Cargo graphから求めたSemaの推移的逆依存は22パッケージ。CLIを除く既定featureは4,313件で4,226 PASS、87既知FAIL、1 SKIP。比較元は[前回のCore全逆依存](#universal-effect-prefix) `99f7380ceb54088f5aec40c79fc42864435493c6` から同じ22パッケージに属する4,312 IDを抽出した。共通IDの合否は一致し、追加の回帰1件が通過した。CLIはライブラリ・バイナリ196件、規定の統合6 target 30件がすべてPASS。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-reachable-effect-inputs.raw.zip) は87 entry、1,437,986 bytes、SHA256 `fabddf51dbdb62ae639bb329ab0bdbb3fc3e6f80b10ebc980a63d9714439f172`。各entryの長さとハッシュを照合した。記録時の `target` は101,766,572,839 bytes。
+
+<a id="effect-predicate-identities-read-scope"></a>
+## 2026-11-20 — 効果述語の単位元と読み取りスコープの合成を簡約する
+
+検証基点 `ced42746fbb463cde2c210662d5c542a00a8ac52`。述語の公開Sourceは `d69b81814fdaf50983f9c7eefc370c6726f7d5c4`、読み取りスコープを合わせた公開Sourceは `fc689fa289c03c081de1555951a634fe311f37ac`。基点の追跡対象に差分はなく、既存の未追跡 `%SystemDrive%/` があった。Semaの4ファイルと2ファイルの検証用SHA256と公開blobをそれぞれ照合した。
+
+準備済み述語の組立てでは、全オペランドの発行元と生存を検査してから単位元を取り除く。残る述語が一つなら元の参照を保つ。初回のSema 2,004件は1,921 PASS／83 FAILだった。既存の拒否テスト2件が発行済み述語を作るために空の論理積を使っていたため、実際に発行される効果行の等値関係から外部・失効参照を作るようfixtureを修正した。発行元と失効の拒否、失敗時の状態保持のアサーションを再実行した。公開した述語の全featureユニットは2,004件で1,923 PASS／81既知FAIL。直前のSourceと共通の2,003 IDは合否が一致し、新規回帰テストが通過した。
+
+読み取りスコープの合成では、各レイヤーを同じ順序で証明と組立てに使う。現在のグラフが保持していない基点のうち、選択されたスコープやレイヤーが実際に要求するものを追跡する。選択レイヤーと基点を検証したうえで、その全体を含む現在のスコープを再利用する。既存の入れ子の基点テストに無関係な128リビジョンを加え、64作業単位で先行レイヤーからの証明を確認した。別のロールバック済み基点は、再利用候補があっても拒否した。最終のSema全featureユニットは述語Sourceと同じ2,004 ID・同じ合否だった。各Sourceのworkspace全target・全feature check、最終のworkspace Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+[測定基点のCLI](#reachable-effect-inputs)で旧3 callback の巡回入力を、同じ実行ファイルを使ってプロセス内の診断用上限16,384で実行した。下位制約処理が候補の累積作業量128単位の境界に達したときに、計130件のスタックを採取した。最大9,623単位を報告した候補の75件には、効果関係のコンパイル21件、読み取りスコープの合成14件、取り込んだ関係のラベル制約7件が含まれた。
+
+Semaの診断時の最大作業量は2 callback が5,671→5,317→4,953単位、3 callback が5,607→5,214→4,734単位。順に基点、述語Source、最終Sourceで、診断用上限16,384では既存アサーションが通過した。既定上限4,096では、2 callback のSemaは式75で解の定義を保持する途中に停止し、3 callback は式26で正準の解を元の義務と照合する途中に停止した。
+
+Compilerの `recursive_callbacks_keep_independent_effects` はNative／AWBCとも型検査の式76で失敗した。両方とも既定上限で、Semaの2 callback と同じく、解に残す関数定義の索引を作る作業の計上で停止した。
+
+[先行受入](#recursive-callback-effects-and-closed-instances)のCLI 4入力を、元のSHA256・引数・最大1操作で再実行した。既定上限の1 callback はVM／AWBC Productともに戻り値42とログ `marker` を確認した。2 callback は式75、3 callback の巡回順と元の順序は式68で、両実行系が `sema.final_analysis` を返し終了1となった。別の3 callback 入力は両実行系とも式69で終了1。失敗した先行3入力を同じ公開SourceのCLIのVMで診断用上限16,384にすると、候補の最大作業量は2 callback が5,670→4,952単位、3 callback の2入力がいずれも9,623→8,333単位になった。3入力の戻り値42、ログ順、最大1操作、診断0を確認した。
+
+Semaの推移的逆依存22パッケージの初回ビルドはWindowsのページファイル不足（OSエラー1455）で終了101。同一コマンドを再実行し、CLIを除く既定featureの4,314件が終端まで実行された。4,229 PASS／85既知FAIL／1 SKIP。比較元は[直前のSema逆依存](#reachable-effect-inputs)の4,313件。追加した述語の回帰1件が通過した。Compilerの `project_cache_transaction` では `static_selectors::external_callable_value_keeps_exact_source_order_in_native_and_awbc` と `static_selectors::static_selector_and_value_callee_keep_exact_source_order_in_native_and_awbc` がFAILからPASSへ移行した。ほかの共通IDは合否が一致した。CLIのライブラリ・バイナリ196件と規定の統合6 target 30件は全件PASS。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を記録したStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の計151件が全件PASS。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-effect-predicate-identities-read-scope.raw.zip) は97 entry、1,754,639 bytes、SHA256 `9af9772f66b09360429f488b1c1bcfd987fbe8ee52a04ee02375d2b36d0d6d2d`。各entryの長さとハッシュを照合した。記録時の `target` は101,774,312,792 bytes。
