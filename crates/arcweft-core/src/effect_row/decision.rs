@@ -706,6 +706,7 @@ impl<V: Clone + Ord> EffectDecision<V> {
     }
 
     /// Conjoin a sequence inside one interner, publishing only the final decision.
+    /// Conditions with the same leading reference are reduced together.
     pub fn all<'a, C: DecisionControl>(
         decisions: impl IntoIterator<Item = &'a Self>,
         control: &mut C,
@@ -738,21 +739,30 @@ impl<V: Clone + Ord> EffectDecision<V> {
         let mut builder = DecisionBuilder::new(control);
         let first = builder.import(first)?;
         let second = builder.import(second)?;
-        let mut root = builder.conditional(Conditional::new(first, second, Root::False))?;
+        let mut clauses = Vec::new();
         for decision in decisions {
-            if root == Root::False {
-                break;
-            }
             builder.control.charge(DecisionWork::Visit)?;
             match decision.root {
                 Root::False => return Ok(Self::constant(false)),
                 Root::True => {}
                 Root::Branch(_) => {
-                    let constraint = builder.import(decision)?;
-                    root = builder.conditional(Conditional::new(root, constraint, Root::False))?;
+                    let point = builder.import(decision)?;
+                    if point != first && point != second {
+                        builder.control.charge(DecisionWork::Node)?;
+                        clauses.push(point);
+                    }
                 }
             }
         }
+        let root = if clauses.is_empty() {
+            builder.conditional(Conditional::new(first, second, Root::False))?
+        } else {
+            for point in [first, second] {
+                builder.control.charge(DecisionWork::Node)?;
+                clauses.push(point);
+            }
+            builder.conjoin_ordered(clauses)?
+        };
         builder.finish(root)
     }
 

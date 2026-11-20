@@ -17,20 +17,66 @@ enum Task<'a, V> {
 }
 
 impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
+    pub(super) fn conjoin_ordered(&mut self, mut clauses: Vec<Root>) -> Result<Root, C::Error> {
+        // Attach later decisions first. Independent earlier conditions can
+        // then attach to the finished suffix without rebuilding an earlier
+        // prefix on each insertion.
+        let head = |point| &self.node(point).expect("a nonterminal conjunct").variable;
+        clauses.sort_unstable_by(|left, right| {
+            head(*right).cmp(head(*left)).then_with(|| left.cmp(right))
+        });
+        clauses.dedup();
+
+        let mut suffix = Root::True;
+        let mut remaining = clauses.as_slice();
+        while let Some(&first) = remaining.first() {
+            let end = remaining.partition_point(|&point| {
+                self.node(point).map(|node| &node.variable)
+                    == self.node(first).map(|node| &node.variable)
+            });
+            let (group, tail) = remaining.split_at(end);
+            let point = if let [point] = group {
+                *point
+            } else {
+                self.conjoin_points(
+                    group
+                        .iter()
+                        .map(|&point| GuardedPoint { guard: None, point }),
+                )?
+            };
+            suffix = self.conditional(Conditional::new(point, suffix, Root::False))?;
+            if suffix == Root::False {
+                break;
+            }
+            remaining = tail;
+        }
+        Ok(suffix)
+    }
+
     pub(super) fn conjoin_guarded(
         &mut self,
         clauses: &[GuardedPoint<V>],
     ) -> Result<Root, C::Error> {
-        if clauses.is_empty() {
-            return Ok(Root::True);
-        }
+        self.conjoin_points(clauses.iter().map(|clause| GuardedPoint {
+            guard: clause.guard.as_ref(),
+            point: clause.point,
+        }))
+    }
+
+    fn conjoin_points<'a>(
+        &mut self,
+        clauses: impl IntoIterator<Item = GuardedPoint<&'a V>>,
+    ) -> Result<Root, C::Error>
+    where
+        V: 'a,
+    {
         let mut initial = Vec::new();
         for clause in clauses {
             self.control.charge(DecisionWork::Visit)?;
-            initial.push(GuardedPoint {
-                guard: clause.guard.as_ref(),
-                point: clause.point,
-            });
+            initial.push(clause);
+        }
+        if initial.is_empty() {
+            return Ok(Root::True);
         }
         let mut tasks = vec![Task::Enter(initial)];
         let mut memo = BTreeMap::new();

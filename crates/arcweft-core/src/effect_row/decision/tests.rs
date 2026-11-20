@@ -578,6 +578,57 @@ fn shared_conjunction_has_the_same_result_as_pairwise_conjunction() {
 }
 
 #[test]
+fn ordered_conjunction_reduces_independent_groups_and_shared_heads_under_budget() {
+    let mut setup = Meter::default();
+    let independent: Vec<_> = (0..11)
+        .map(|index| {
+            atom(2 * index)
+                .equivalent(&atom(2 * index + 1), &mut setup)
+                .unwrap()
+        })
+        .collect();
+    let shared_head: Vec<_> = (1..12)
+        .map(|index| atom(0).or(&atom(index), &mut setup).unwrap())
+        .collect();
+    let shared_tail: Vec<_> = (0..11)
+        .map(|index| atom(index).or(&atom(12), &mut setup).unwrap())
+        .collect();
+    for operands in [independent, shared_head, shared_tail] {
+        let mut sequential = Meter::default();
+        let mut builder = DecisionBuilder::new(&mut sequential);
+        let mut root = Root::True;
+        for operand in &operands {
+            builder.control.charge(DecisionWork::Visit).unwrap();
+            let point = builder.import(operand).unwrap();
+            root = builder
+                .conditional(Conditional::new(root, point, Root::False))
+                .unwrap();
+        }
+        let expected = builder.finish(root).unwrap();
+        let mut work = Meter::default();
+        assert_eq!(EffectDecision::all(&operands, &mut work).unwrap(), expected);
+        assert_eq!(
+            EffectDecision::all(operands.iter().rev(), &mut Meter::default()).unwrap(),
+            expected
+        );
+        assert!(
+            work.used < sequential.used,
+            "{} < {}",
+            work.used,
+            sequential.used
+        );
+        let mut short = Meter {
+            used: 0,
+            limit: Some(work.used - 1),
+        };
+        assert_eq!(
+            EffectDecision::all(&operands, &mut short),
+            Err((work.used, work.used - 1))
+        );
+    }
+}
+
+#[test]
 fn equivalence_to_true_admits_only_a_copy_of_the_other_operand() {
     let mut setup = Meter::default();
     let effect = atom(0).and(&atom(1), &mut setup).unwrap();
