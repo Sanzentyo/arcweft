@@ -20604,3 +20604,24 @@ Coreの推移的逆依存はCargoで51パッケージを選定した。CLIを除
 Compilerの `recursive_callbacks_keep_independent_effects` はNative／AWBCとも式76の型検査で失敗した。既定上限でデバッガーを使い、Semaの2 callback と同じく、元の義務を照合する際に参照する効果行を準備する途中で停止したことを確認した。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-fixed-cells-and-row-equivalence.raw.zip) は129 entry、2,773,576 bytes、SHA256 `4e0276caa7075fbfa1b6c0072e561467c2cf404930b00aaf4c7ce749a548709f`。各entryの長さとハッシュを照合した。記録時の `target` は101,851,765,513 bytes。
+
+<a id="scoped-canonical-effect-labels"></a>
+## 2026-11-20 — 追加効果制約のラベルと正準効果行の再利用
+
+検証基点は `d05a5f1f906ca960bd628207d32c55b88e4d66e7`。公開Sourceは `912ff6516a26154d42ecc31a87ab91b6115ef095`。既存の解が `log.write` を含み、追加の名前付き制約だけが `fs.read` を含む場合に、前提が真なら必ず `fs.read` を持つという成立しない命題が通った。修正前の回帰が失敗した出力と、変更した4ファイルのハッシュを原本に保持した。
+
+追加照合は前提と結論の正準述語から名前付きラベルを集め、確定済みの解のラベル集合に加える。元の係数と選択証拠を使い、追加照合の中で有限な入力効果行を個別に評価する。回帰は、新旧ラベルを含む前提と結論の順序を変え、範囲外にも制約のある述語を含めて偽の4件を拒否する。真の1件は通過し、解のラベル集合も照合前後で一致した。
+
+独立照合では、確定した関数の効果行を一度だけ正準変数に写し、同じ解の中で再利用する。適用の引数とその制約は呼び出し元の形式変数で個別に評価する。引数を参照しない行や、置換する引数が存在しない行は再構築を省く。外側のラベルに制約がない述語は、名前付きラベルだけを確認する。回帰は、同じ実引数が形式引数の異なる位置にある二つのスコープで、同じ効果行と各スコープ固有の適用条件を照合した。
+
+Sema全featureユニットは2,008件で1,927 PASS／81既知FAIL。従来の2,006 IDはすべて合否が一致した。先行試行で3 callback の診断作業量が4,709→4,715単位となり、修正案を見直した。公開Sourceの診断では2 callback が4,730→4,703単位、3 callback は4,709単位だった。診断は上限16,384で実行し、両ケースとも既定上限4,096で停止した。
+
+先行CLIの4入力を元のファイルSHA256、引数、1ステップ最大1操作で再実行した。1 callback はVM／AWBC Productとも戻り値42、ログ `marker`。2 callback は式75、3 callback の2入力は式68で、両実行系とも `sema.final_analysis` を返した。別の3 callback 入力は両実行系の式69で失敗した。先行3入力の診断用上限16,384のVM実行では、2 callback が4,729→4,702単位、3 callback の両入力が7,953→7,915単位。戻り値42、元のログ順、1ステップ最大1操作、診断0を照合した。
+
+Compilerの `recursive_callbacks_keep_independent_effects` はNative／AWBCとも式76の型検査で停止した。既定上限4,096のスタックは両方とも、元の義務で効果行が形式引数に依存するかを確認する位置だった。旧3 callback 巡回入力では、診断用上限16,384で最大候補を512単位ごとに15点採取した。効果関係のコンパイル5点、下限の計算2点、関係のsnapshot、取り込み関係へのラベル制約、取り込み関係の決定済み係数の具体化が各1点だった。
+
+Semaの推移的逆依存はCargoで22パッケージを選定した。CLIを除く実行は4,318件で4,233 PASS／85既知FAIL／1 SKIP。先行Sourceと共通の4,316 IDは合否がすべて一致し、追加回帰2件がPASSした。規定CLIはライブラリ・バイナリ196件と統合6 target 30件がすべてPASS。workspace全target・全featureのcheck／Clippy、書式、差分、Cargo graph、構造ゲートを通過した。Core全逆依存の前回結果は[当時のSourceと実行履歴](#fixed-cells-and-row-equivalence)に保持する。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[Style Lengthの後継1件](acceptance-evidence/task-expression-value-scope.json)で照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-scoped-canonical-effect-labels.raw.zip) は80 entry、1,387,800 bytes、SHA256 `473717f8e358b5bce1ebacaafd77a0e91c6c936e3121c46a5ef7244bfa7ce382`。各entryの長さとハッシュを照合した。記録時の `target` は101,873,350,974 bytes。
