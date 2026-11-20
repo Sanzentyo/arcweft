@@ -1602,6 +1602,61 @@ fn conditional_completion_retains_exact_principal_and_unsatisfiable_domains() {
 }
 
 #[test]
+fn forced_prefix_keeps_rigid_guards_and_exact_lower_coefficients() {
+    let mut setup = Meter::default();
+    let rigid = atom(1).not(&mut setup).unwrap();
+    let negative_output = atom(2).not(&mut setup).unwrap();
+    let selected = atom(5).and(&atom(6), &mut setup).unwrap();
+    let exclusive = atom(5)
+        .conditional(&atom(6).not(&mut setup).unwrap(), &atom(6), &mut setup)
+        .unwrap();
+    let tail = atom(4)
+        .conditional(&selected, &exclusive, &mut setup)
+        .unwrap();
+    let relation = EffectDecision::all(
+        [&atom(0), &rigid, &negative_output, &atom(3), &tail],
+        &mut setup,
+    )
+    .unwrap();
+    let quantified = BTreeSet::from([0, 2, 5, 6, 7]);
+    let admissible = rigid.and(&atom(3), &mut setup).unwrap();
+    let principal = admissible.and(&atom(4), &mut setup).unwrap();
+
+    let mut work = Meter::default();
+    let result = relation
+        .complete_conditionally(quantified.clone(), &mut work)
+        .unwrap();
+    assert_eq!(result.satisfiable(), &admissible);
+    assert_eq!(result.principal(), &principal);
+    let envelope = result.lower_envelope();
+    assert_eq!(envelope.get(&0), Some(&admissible));
+    assert_eq!(envelope.get(&2), Some(&EffectDecision::constant(false)));
+    assert_eq!(envelope.get(&5), Some(&principal));
+    assert_eq!(envelope.get(&6), Some(&principal));
+    assert_eq!(envelope.get(&7), Some(&EffectDecision::constant(false)));
+    assert_eq!(
+        envelope.instantiate(&relation, &mut setup).unwrap(),
+        principal
+    );
+    assert!(
+        relation
+            .complete(&quantified, &mut setup)
+            .unwrap()
+            .least
+            .is_none()
+    );
+
+    let mut short = Meter {
+        limit: Some(work.used - 1),
+        ..Meter::default()
+    };
+    assert_eq!(
+        relation.complete_conditionally(quantified, &mut short),
+        Err((work.used, work.used - 1))
+    );
+}
+
+#[test]
 fn conditional_completion_specializes_shared_coefficients_once() {
     let mut setup = Meter::default();
     let required = atom(0).and(&atom(1), &mut setup).unwrap();

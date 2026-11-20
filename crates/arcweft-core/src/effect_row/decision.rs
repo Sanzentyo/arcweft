@@ -79,6 +79,59 @@ pub struct EffectDecision<V> {
     pub(super) root: Root,
 }
 
+struct DecisionView<'a, V> {
+    nodes: &'a [Node<V>],
+    root: Root,
+}
+
+impl<V> DecisionView<'_, V> {
+    fn try_evaluate<E>(
+        &self,
+        mut value: impl FnMut(&V) -> Result<bool, E>,
+        mut visit: impl FnMut() -> Result<(), E>,
+    ) -> Result<bool, E> {
+        let mut root = self.root;
+        loop {
+            visit()?;
+            match root {
+                Root::False => return Ok(false),
+                Root::True => return Ok(true),
+                Root::Branch(index) => {
+                    let node = &self.nodes[index];
+                    root = if value(&node.variable)? {
+                        node.high
+                    } else {
+                        node.low
+                    };
+                }
+            }
+        }
+    }
+
+    fn after_forced_prefix<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
+        let mut root = self.root;
+        while let Root::Branch(index) = root {
+            control.charge(DecisionWork::Visit)?;
+            let node = &self.nodes[index];
+            root = match (node.low, node.high) {
+                (Root::False, high) => high,
+                (low, Root::False) => low,
+                _ => break,
+            };
+        }
+        // Each skipped node has only one accepting edge. Its descendants
+        // occupy the entire canonical postorder preceding that node.
+        let end = match root {
+            Root::Branch(index) => index + 1,
+            Root::True | Root::False => 0,
+        };
+        Ok(Self {
+            nodes: &self.nodes[..end],
+            root,
+        })
+    }
+}
+
 /// A simultaneous replacement for one source reference in a decision.
 pub enum EffectDecisionReplacement<'a, V> {
     Constant(bool),
@@ -196,6 +249,13 @@ impl<V: Clone + Ord> DeferredEqualities<V> {
 }
 
 impl<V> EffectDecision<V> {
+    fn view(&self) -> DecisionView<'_, V> {
+        DecisionView {
+            nodes: &self.nodes,
+            root: self.root,
+        }
+    }
+
     fn literal(&self) -> Option<(&V, bool)> {
         match (self.root, self.nodes.as_ref()) {
             (Root::Branch(0), [node]) => Some((&node.variable, node.literal_polarity()?)),
@@ -627,25 +687,10 @@ impl<V: Clone + Ord> EffectDecision<V> {
 
     fn try_evaluate<E>(
         &self,
-        mut value: impl FnMut(&V) -> Result<bool, E>,
-        mut visit: impl FnMut() -> Result<(), E>,
+        value: impl FnMut(&V) -> Result<bool, E>,
+        visit: impl FnMut() -> Result<(), E>,
     ) -> Result<bool, E> {
-        let mut root = self.root;
-        loop {
-            visit()?;
-            match root {
-                Root::False => return Ok(false),
-                Root::True => return Ok(true),
-                Root::Branch(index) => {
-                    let node = &self.nodes[index];
-                    root = if value(&node.variable)? {
-                        node.high
-                    } else {
-                        node.low
-                    };
-                }
-            }
-        }
+        self.view().try_evaluate(value, visit)
     }
 
     /// Node references in canonical order; a variable may occur in several nodes.
@@ -1166,8 +1211,9 @@ impl<V: Clone + Ord> EffectDecision<V> {
             return Ok(Self::constant(true));
         }
         let mut builder = DecisionBuilder::new(control);
-        let possible = builder.project(self, quantified, Quantifier::Exists)?;
-        let necessary = builder.project(self, quantified, Quantifier::ForAll)?;
+        let relation = self.view();
+        let possible = builder.project(&relation, quantified, Quantifier::Exists, None)?;
+        let necessary = builder.project(&relation, quantified, Quantifier::ForAll, None)?;
         let possible = Self::mapped_root(self.root, &possible);
         let necessary = Self::mapped_root(self.root, &necessary);
         let region = builder.conditional(Conditional::new(possible, necessary, Root::True))?;
@@ -1189,7 +1235,7 @@ impl<V: Clone + Ord> EffectDecision<V> {
             return self.copy_with_control(control);
         }
         let mut builder = DecisionBuilder::new(control);
-        let indices = builder.project(self, quantified, quantifier)?;
+        let indices = builder.project(&self.view(), quantified, quantifier, None)?;
         builder.finish(Self::mapped_root(self.root, &indices))
     }
 
@@ -1401,28 +1447,62 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
                 instantiated: relation,
             });
         }
+        let relation = relation.view();
+        let tail = relation.after_forced_prefix(self.control)?;
+        let forced = &relation.nodes[tail.nodes.len()..];
+        let mut completion = self.complete_tail(&tail, quantified)?;
+        if forced.is_empty() || completion.admissibility == Root::False {
+            return Ok(completion);
+        }
+
+        let mut guard = Root::True;
+        for node in forced {
+            self.control.charge(DecisionWork::Visit)?;
+            if !quantified.contains(&node.variable) {
+                let (low, high) = if node.low == Root::False {
+                    (Root::False, guard)
+                } else {
+                    (guard, Root::False)
+                };
+                guard = self.branch(node.variable.clone(), low, high)?;
+            }
+        }
+        if guard != Root::True {
+            completion.admissibility = self.conditional(Conditional::new(
+                guard,
+                completion.admissibility,
+                Root::False,
+            ))?;
+            for root in completion.replacements.values_mut() {
+                self.control.charge(DecisionWork::Visit)?;
+                *root = self.conditional(Conditional::new(guard, *root, Root::False))?;
+            }
+        }
+        for node in forced {
+            self.control.charge(DecisionWork::Visit)?;
+            if node.low == Root::False && quantified.contains(&node.variable) {
+                self.control.charge(DecisionWork::Node)?;
+                completion
+                    .replacements
+                    .insert(node.variable.clone(), completion.admissibility);
+            }
+        }
+        // The reconstructed prefix already holds on the admissible domain.
+        // The tail's instantiated predicate suffices to check principality there.
+        Ok(completion)
+    }
+
+    fn complete_tail(
+        &mut self,
+        relation: &DecisionView<'_, V>,
+        quantified: &BTreeSet<V>,
+    ) -> Result<CompletionRoots<V>, C::Error> {
         if let Some(closed) = self.complete_bound_relation(relation, quantified)? {
             return Ok(closed);
         }
-        let projected = self.project(relation, quantified, Quantifier::Exists)?;
-        let admissibility = EffectDecision::<V>::mapped_root(relation.root, &projected);
         let mut seeds = BTreeMap::<&V, Vec<usize>>::new();
-        for (index, node) in relation.nodes.iter().enumerate() {
-            self.control.charge(DecisionWork::Visit)?;
-            if quantified.contains(&node.variable)
-                && EffectDecision::<V>::mapped_root(node.low, &projected) != projected[index]
-            {
-                let entries = match seeds.entry(&node.variable) {
-                    std::collections::btree_map::Entry::Occupied(slot) => slot.into_mut(),
-                    std::collections::btree_map::Entry::Vacant(slot) => {
-                        self.control.charge(DecisionWork::Node)?;
-                        slot.insert(Vec::new())
-                    }
-                };
-                self.control.charge(DecisionWork::Node)?;
-                entries.push(index);
-            }
-        }
+        let projected = self.project(relation, quantified, Quantifier::Exists, Some(&mut seeds))?;
+        let admissibility = EffectDecision::<V>::mapped_root(relation.root, &projected);
         let mut replacements = BTreeMap::new();
         if !seeds.is_empty() {
             let mut parents = Vec::<Vec<usize>>::new();
@@ -1468,7 +1548,7 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     /// accepting paths or projecting the relation once per variable.
     fn complete_bound_relation(
         &mut self,
-        relation: &EffectDecision<V>,
+        relation: &DecisionView<'_, V>,
         quantified: &BTreeSet<V>,
     ) -> Result<Option<CompletionRoots<V>>, C::Error> {
         if relation.nodes.is_empty() {
@@ -1523,9 +1603,10 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
                 replacements.insert(variable.clone(), Root::True);
             }
         }
-        let instantiated = if relation
-            .evaluate_with_control(|variable| replacements.contains_key(variable), self.control)?
-        {
+        let instantiated = if relation.try_evaluate(
+            |variable| Ok(replacements.contains_key(variable)),
+            || self.control.charge(DecisionWork::Visit),
+        )? {
             Root::True
         } else {
             Root::False
@@ -1543,7 +1624,7 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     /// all been visited by the time the parent is popped.
     fn project_with_false(
         &mut self,
-        relation: &EffectDecision<V>,
+        relation: &DecisionView<'_, V>,
         projected: &[Root],
         quantified: &BTreeSet<V>,
         variable: &V,
@@ -1566,10 +1647,10 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
                 let low = sweep.projection(node.low, projected);
                 let high = sweep.projection(node.high, projected);
                 self.project_branch(
-                    node.variable.clone(),
+                    &node.variable,
                     low,
                     high,
-                    quantified,
+                    quantified.contains(&node.variable),
                     Quantifier::Exists,
                 )?
             };
@@ -1871,19 +1952,36 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     /// Compile an already child-first decision without interning the source.
     /// Intermediate roots index the builder and the input indices stay local
     /// to the canonical decision.
-    fn project(
+    fn project<'a>(
         &mut self,
-        source: &EffectDecision<V>,
+        source: &DecisionView<'a, V>,
         bound: &BTreeSet<V>,
         quantifier: Quantifier,
+        mut false_cofactors: Option<&mut BTreeMap<&'a V, Vec<usize>>>,
     ) -> Result<Vec<Root>, C::Error> {
         let mut indices = Vec::new();
-        for node in source.nodes.iter() {
+        for (index, node) in source.nodes.iter().enumerate() {
             self.control.charge(DecisionWork::Visit)?;
             let low = EffectDecision::<V>::mapped_root(node.low, &indices);
             let high = EffectDecision::<V>::mapped_root(node.high, &indices);
-            let mapped =
-                self.project_branch(node.variable.clone(), low, high, bound, quantifier)?;
+            let quantified = bound.contains(&node.variable);
+            let mapped = self.project_branch(&node.variable, low, high, quantified, quantifier)?;
+            // A false cofactor only has to propagate from a tested variable
+            // when it changes that node's ordinary existential projection.
+            if quantified
+                && low != mapped
+                && let Some(seeds) = &mut false_cofactors
+            {
+                let entries = match seeds.entry(&node.variable) {
+                    Entry::Occupied(slot) => slot.into_mut(),
+                    Entry::Vacant(slot) => {
+                        self.control.charge(DecisionWork::Node)?;
+                        slot.insert(Vec::new())
+                    }
+                };
+                self.control.charge(DecisionWork::Node)?;
+                entries.push(index);
+            }
             indices.push(mapped);
         }
         Ok(indices)
@@ -1891,14 +1989,17 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
 
     fn project_branch(
         &mut self,
-        variable: V,
+        variable: &V,
         low: Root,
         high: Root,
-        bound: &BTreeSet<V>,
+        quantified: bool,
         quantifier: Quantifier,
     ) -> Result<Root, C::Error> {
-        if !bound.contains(&variable) {
-            return self.branch(variable, low, high);
+        if low == high {
+            return Ok(low);
+        }
+        if !quantified {
+            return self.branch(variable.clone(), low, high);
         }
         let combine = match quantifier {
             Quantifier::Exists => Conditional::new(low, Root::True, high),
@@ -1909,7 +2010,7 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
 
     fn instantiate(
         &mut self,
-        source: &EffectDecision<V>,
+        source: &DecisionView<'_, V>,
         bound: &BTreeSet<V>,
         replacements: &BTreeMap<V, Root>,
     ) -> Result<Root, C::Error> {
