@@ -1091,11 +1091,26 @@ impl<V: Clone + Ord> EffectDecision<V> {
             return self.copy_with_control(control);
         }
 
-        // Fixed variables select a single child. Discover only the remaining
-        // inventory before rebuilding it in the source's child-first order.
         control.charge(DecisionWork::Visit)?;
-        let mut pending = vec![self.root];
-        let mut selected = BTreeMap::new();
+        // An assigned prefix only selects branches. Its nodes cannot appear
+        // below the first unassigned node in the ordered graph.
+        let mut root = self.root;
+        let (first_free, node) = loop {
+            control.charge(DecisionWork::Visit)?;
+            let Root::Branch(index) = root else {
+                return Ok(Self::constant(root == Root::True));
+            };
+            let node = &self.nodes[index];
+            root = match assignment(&node.variable) {
+                Some(true) => node.high,
+                Some(false) => node.low,
+                None => break (index, node),
+            };
+        };
+
+        // Discover the residual graph before rebuilding it in child-first order.
+        let mut pending = vec![node.high, node.low];
+        let mut selected = BTreeMap::from([(first_free, None)]);
         while let Some(root) = pending.pop() {
             control.charge(DecisionWork::Visit)?;
             let Root::Branch(index) = root else {
@@ -1130,7 +1145,10 @@ impl<V: Clone + Ord> EffectDecision<V> {
             };
             indices.insert(index, restricted);
         }
-        builder.finish(DecisionBuilder::<V, C>::remap(self.root, &indices))
+        builder.finish(DecisionBuilder::<V, C>::remap(
+            Root::Branch(first_free),
+            &indices,
+        ))
     }
 
     /// Eliminate current existential references without selecting an arbitrary

@@ -873,6 +873,40 @@ fn restriction_retains_free_branches_without_visiting_excluded_subgraphs() {
 }
 
 #[test]
+fn restriction_only_rebuilds_after_the_assigned_prefix() {
+    let mut setup = Meter::default();
+    let decision = (0..16)
+        .rev()
+        .fold(EffectDecision::constant(true), |tail, variable| {
+            atom(variable).and(&tail, &mut setup).unwrap()
+        });
+    let limit = decision.node_count() + 2;
+    let mut work = Meter {
+        limit: Some(limit),
+        ..Meter::default()
+    };
+    assert!(
+        decision
+            .restrict_references(|_| Some(true), &mut work)
+            .unwrap()
+            .is_constant(true)
+    );
+    let mut short = Meter {
+        limit: Some(limit - 1),
+        ..Meter::default()
+    };
+    assert_eq!(
+        decision.restrict_references(|_| Some(true), &mut short),
+        Err((limit, limit - 1))
+    );
+
+    let residual = decision
+        .restrict_references(|&variable| (variable < 15).then_some(true), &mut setup)
+        .unwrap();
+    assert_eq!(residual, atom(15));
+}
+
+#[test]
 fn least_witnesses_for_disjoint_cofactors_fit_the_work_limit() {
     let mut setup = Meter::default();
     let selectors = 5;
