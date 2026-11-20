@@ -127,6 +127,38 @@ fn empty_substitution_admits_the_owned_decisions_and_label_before_copying() {
 }
 
 #[test]
+fn row_equivalence_preserves_named_and_outside_membership() {
+    let mut setup = Meter::default();
+    let left = variable(0)
+        .union(&row(&["fs.read", "log.write"]), &mut setup)
+        .unwrap();
+    let right = variable(1)
+        .union(&row(&["fs.write", "log.write"]), &mut setup)
+        .unwrap();
+    let mut separate = Meter::default();
+    let expected = left
+        .subset(&right, &mut separate)
+        .unwrap()
+        .and(&right.subset(&left, &mut separate).unwrap(), &mut separate)
+        .unwrap();
+    let mut joint = Meter::default();
+    let equivalent = left.equivalent(&right, &mut joint).unwrap();
+    assert_eq!(equivalent, expected);
+    assert!(joint.0 < separate.0);
+    let mut short = AssemblyControl {
+        limit: Some(joint.0 - 1),
+        ..AssemblyControl::default()
+    };
+    assert_eq!(
+        left.equivalent(&right, &mut short),
+        Err(AssemblyError::Limit {
+            used: joint.0,
+            limit: joint.0 - 1
+        })
+    );
+}
+
+#[test]
 fn substitution_borrows_bindings_and_ignores_unused_label_support() {
     let source = variable(0);
     let replacement = row(&["fs.read"]);

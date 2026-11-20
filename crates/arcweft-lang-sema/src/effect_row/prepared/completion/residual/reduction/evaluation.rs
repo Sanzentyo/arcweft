@@ -284,10 +284,7 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
                         match relation {
                             PreparedEffectRelation::Equal => {
                                 let value =
-                                    actual.formula.subset(&permitted.formula, self.work)?.and(
-                                        &permitted.formula.subset(&actual.formula, self.work)?,
-                                        self.work,
-                                    )?;
+                                    actual.formula.equivalent(&permitted.formula, self.work)?;
                                 self.arena.pointwise(value, self.work)?
                             }
                             PreparedEffectRelation::AdmittedSubset => {
@@ -341,10 +338,7 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
             } => {
                 let body = self.row(body, scope)?;
                 let function = self.function(id)?;
-                let equation = function.formula.subset(&body.formula, self.work)?.and(
-                    &body.formula.subset(&function.formula, self.work)?,
-                    self.work,
-                )?;
+                let equation = function.formula.equivalent(&body.formula, self.work)?;
                 let equation = self.arena.pointwise(equation, self.work)?;
                 let admission = ScalarArena::<Variable>::boolean(body.admitted);
                 let mut requirements = Vec::new();

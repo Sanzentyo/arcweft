@@ -393,11 +393,10 @@ impl<'a> CanonicalReplay<'a> {
             work,
             |row, work| self.closed(row, work),
             |work| {
-                let subset = actual.formula.subset(&permitted.formula, work)?;
                 let predicate = if relation == PreparedEffectRelation::Equal {
-                    subset.and(&permitted.formula.subset(&actual.formula, work)?, work)?
+                    actual.formula.equivalent(&permitted.formula, work)?
                 } else {
-                    subset
+                    actual.formula.subset(&permitted.formula, work)?
                 };
                 self.guard(&predicate, work)
             },
@@ -551,9 +550,7 @@ impl<'a> CanonicalReplay<'a> {
         self.prepare_row(body, work)?;
         let body = self.read_row(body, work)?;
         let own = self.formula(&self.principal.functions[&id], work)?;
-        let equal = own
-            .subset(&body.formula, work)?
-            .and(&body.formula.subset(&own, work)?, work)?;
+        let equal = own.equivalent(&body.formula, work)?;
         let mut expected = self.guard(&equal, work)?.and(&body.admitted, work)?;
         for obligation in obligations {
             self.prepare_predicate(obligation, work)?;

@@ -120,6 +120,7 @@ enum Operation {
     Intersection,
     Difference,
     Subset,
+    Equality,
 }
 
 impl<V: Clone + Ord> Membership<V> {
@@ -232,6 +233,7 @@ impl<V: Clone + Ord> Membership<V> {
                 Operation::Subset => {
                     left.conditional(right, &EffectDecision::constant(true), control)
                 }
+                Operation::Equality => left.equivalent(right, control),
             }
         };
         let default = apply(&self.default, &other.default, control)?;
@@ -492,6 +494,18 @@ impl<V: Clone + Ord> EffectFormula<V> {
     ) -> Result<EffectPredicate<V>, C::Error> {
         self.0
             .combine(&permitted.0, Operation::Subset, control)
+            .map(EffectPredicate::normalized)
+    }
+
+    /// The predicate under which both rows have the same membership at every
+    /// label, including labels outside their named support.
+    pub fn equivalent<C: DecisionControl>(
+        &self,
+        other: &Self,
+        control: &mut C,
+    ) -> Result<EffectPredicate<V>, C::Error> {
+        self.0
+            .combine(&other.0, Operation::Equality, control)
             .map(EffectPredicate::normalized)
     }
 
