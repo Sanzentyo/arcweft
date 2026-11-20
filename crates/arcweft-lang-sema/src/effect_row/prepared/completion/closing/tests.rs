@@ -332,12 +332,15 @@ fn final_closure_preserves_the_bound_original_identity_with_late_named_values() 
         .read()
         .scoped_constraint(&[], &truth(), &predicate, &mut budget())
         .unwrap();
-    let source = graph
+    let original = graph
         .read()
         .freeze_scoped(&[&output], &[], &[&receipt], &mut budget())
         .unwrap();
+    let pending =
+        BoundScopedEffectCompletion::pending(Arc::clone(&original), graph.read(), &mut budget())
+            .unwrap();
     let source = graph
-        .bind_original_scoped(&source, &mut budget())
+        .bind_original_scoped(&original, &mut budget())
         .unwrap()
         .freeze(graph.read(), &mut budget())
         .unwrap();
@@ -356,6 +359,15 @@ fn final_closure_preserves_the_bound_original_identity_with_late_named_values() 
             PreparedEffectInvariant::SchemeState
         ))
     ));
+    let inputs = graph.read().actual_inputs(&[], &mut budget()).unwrap();
+    let state = graph.state;
+    assert!(matches!(
+        pending.close_original_with_inputs(&mut graph, &[], &[], &inputs, &mut budget()),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::SchemeState
+        ))
+    ));
+    assert_eq!(graph.state, state);
     graph
         .prepare_body(&child, literal(&["late.named"]), vec![], &mut budget())
         .unwrap();
@@ -365,6 +377,32 @@ fn final_closure_preserves_the_bound_original_identity_with_late_named_values() 
     assert_eq!(
         principal.resolve_row(&output, &mut budget()).unwrap(),
         literal_row(&["late.named"])
+    );
+    let state = graph.state;
+    let mut staged_work = budget();
+    let mut checkpoint = graph.checkpoint(&mut staged_work).unwrap();
+    let staged = graph
+        .bind_original_scoped(&original, &mut staged_work)
+        .unwrap()
+        .freeze(graph.read(), &mut staged_work)
+        .unwrap()
+        .final_definitions(graph.read(), &[], &[], &mut staged_work)
+        .unwrap();
+    graph.rollback(&mut checkpoint).unwrap();
+    let mut direct_work = budget();
+    let direct = pending
+        .attached_definitions(&mut graph, &[], &[], &mut direct_work)
+        .unwrap();
+    assert_eq!(graph.state, state);
+    assert!(direct_work.0 > staged_work.0);
+    assert_eq!(direct.obligations.len(), staged.obligations.len());
+    assert!(Arc::ptr_eq(&direct.obligations[0], &staged.obligations[0]));
+    let direct = direct
+        .solve_with_actual_inputs(&inputs, &mut budget())
+        .unwrap();
+    assert_eq!(
+        direct.resolve_row(&output, &mut budget()).unwrap(),
+        principal.resolve_row(&output, &mut budget()).unwrap()
     );
     let demand = graph
         .relate(
@@ -381,6 +419,12 @@ fn final_closure_preserves_the_bound_original_identity_with_late_named_values() 
         source.close_original(graph.read(), &[], &[], &[], &mut budget()),
         Err(PreparedEffectFailure::Unsatisfiable)
     ));
+    let state = graph.state;
+    assert!(matches!(
+        pending.close_original_with_inputs(&mut graph, &[], &[], &inputs, &mut budget()),
+        Err(PreparedEffectFailure::Unsatisfiable)
+    ));
+    assert_eq!(graph.state, state);
     assert_eq!(
         principal.unknown(&local).unwrap(),
         &literal_row(&["late.named"])

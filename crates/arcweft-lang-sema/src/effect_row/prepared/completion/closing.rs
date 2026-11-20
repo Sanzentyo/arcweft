@@ -97,7 +97,7 @@ impl BoundScopedEffectCompletion {
         inputs: &PreparedEffectActualInputs<'_>,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
-        if let ScopedCompletionBinding::Original(original) = &self.binding
+        if let Some(original) = self.original()
             && let Some(definitions) = original.unchanged_relation(
                 receiving.read(),
                 query_rows,
@@ -124,6 +124,7 @@ impl BoundScopedEffectCompletion {
             .specialize_principal(bindings, control)
     }
 
+    #[cfg(test)]
     fn final_definitions<C: DecisionControl>(
         &self,
         receiving: PreparedEffectReadView<'_>,
@@ -131,14 +132,14 @@ impl BoundScopedEffectCompletion {
         query_predicates: &[&PreparedEffectPredicate],
         control: &mut C,
     ) -> Result<PreparedEffectDefinitions, PreparedEffectFailure<C::Error>> {
-        if !matches!(&self.binding, ScopedCompletionBinding::Attached(_)) {
+        let ScopedCompletionBinding::Attached(graph) = &self.binding else {
             return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
-        }
+        };
         receiving.snapshot(
             query_rows,
             query_predicates,
             &[],
-            SnapshotSource::FinalBound(self),
+            SnapshotSource::FinalBound(graph),
             control,
         )
     }
@@ -151,6 +152,7 @@ impl BoundScopedEffectCompletion {
         control: &mut C,
     ) -> Result<PreparedEffectDefinitions, PreparedEffectFailure<C::Error>> {
         match &self.binding {
+            #[cfg(test)]
             ScopedCompletionBinding::Attached(_) => {
                 self.final_definitions(receiving.read(), query_rows, query_predicates, control)
             }
@@ -159,7 +161,6 @@ impl BoundScopedEffectCompletion {
                 let definitions = (|| {
                     receiving
                         .bind_original_scoped(original, control)?
-                        .freeze(receiving.read(), control)?
                         .final_definitions(receiving.read(), query_rows, query_predicates, control)
                 })();
                 receiving.rollback(&mut checkpoint)?;
@@ -191,7 +192,10 @@ impl ScopedEffectCompletion {
             query_rows,
             query_predicates,
             &[],
-            SnapshotSource::FinalOriginal(self),
+            SnapshotSource::FinalOriginal {
+                original: self,
+                binding: &[],
+            },
             work.0,
         )?;
         if definitions.functions.len() != self.graph.functions.len()

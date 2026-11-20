@@ -11,11 +11,16 @@ pub(in crate::effect_row::prepared) enum SnapshotSource<'a> {
     #[cfg(test)]
     AllUnknowns,
     Product(&'a [&'a PreparedEffectUnknownRef]),
+    #[cfg(test)]
     Bound(&'a ScopedEffectCompletion),
     #[cfg(test)]
     Final(&'a PreparedEffectDefinitions),
-    FinalOriginal(&'a ScopedEffectCompletion),
-    FinalBound(&'a BoundScopedEffectCompletion),
+    FinalOriginal {
+        original: &'a ScopedEffectCompletion,
+        binding: &'a [&'a PreparedEffectScopedConstraint],
+    },
+    #[cfg(test)]
+    FinalBound(&'a PreparedEffectDefinitions),
     Observation(&'a [&'a PreparedEffectSchemeRef]),
 }
 
@@ -74,26 +79,26 @@ impl PreparedEffectReadView<'_> {
         let mut work = Work(control);
         let schemes = match source {
             #[cfg(test)]
-            SnapshotSource::Final(_) => SchemeDependencies::Bodies,
-            SnapshotSource::FinalOriginal(_) | SnapshotSource::FinalBound(_) => {
-                SchemeDependencies::Bodies
-            }
+            SnapshotSource::Final(_) | SnapshotSource::FinalBound(_) => SchemeDependencies::Bodies,
+            SnapshotSource::FinalOriginal { .. } => SchemeDependencies::Bodies,
             SnapshotSource::Observation(_) => SchemeDependencies::Observation,
             _ => SchemeDependencies::Headers,
         };
         let original = match source {
-            SnapshotSource::Bound(original) | SnapshotSource::FinalOriginal(original) => {
-                Some(original.definitions())
-            }
+            SnapshotSource::FinalOriginal { original, .. } => Some(original.definitions()),
             #[cfg(test)]
-            SnapshotSource::Final(original) => Some(original),
-            SnapshotSource::FinalBound(bound) => Some(bound.definitions()),
+            SnapshotSource::Bound(original) => Some(original.definitions()),
+            #[cfg(test)]
+            SnapshotSource::Final(original) | SnapshotSource::FinalBound(original) => {
+                Some(original)
+            }
             _ => None,
         };
         let reuse_reachable = match source {
-            SnapshotSource::Bound(original) | SnapshotSource::FinalOriginal(original) => {
-                original.has_verified_reachability()
-            }
+            SnapshotSource::FinalOriginal { original, .. } => original.has_verified_reachability(),
+            #[cfg(test)]
+            SnapshotSource::Bound(original) => original.has_verified_reachability(),
+            #[cfg(test)]
             SnapshotSource::FinalBound(_) => true,
             _ => false,
         };
@@ -163,17 +168,20 @@ impl PreparedEffectReadView<'_> {
                 }
             }
         }
-        if !matches!(source, SnapshotSource::Bound(_)) {
+        // Binding facts extend original C before any live obligations, just
+        // as they do when the attachment has already been frozen.
+        if let SnapshotSource::FinalOriginal { binding, .. } = source {
+            self.retain_constraints(binding, &mut obligations, &mut work)?;
+        }
+        let include_live = match source {
+            #[cfg(test)]
+            SnapshotSource::Bound(_) => false,
+            _ => true,
+        };
+        if include_live {
             self.retain_published_obligations(&mut obligations, &mut work)?;
         }
-        for constraint in constraints {
-            work.charge(DecisionWork::Visit)?;
-            self.validate_owner(&constraint.owner)?;
-            self.validate_retained_predicate(&constraint.obligation.domain)?;
-            self.validate_retained_predicate(&constraint.obligation.predicate)?;
-            work.charge(DecisionWork::Node)?;
-            obligations.push(Arc::clone(&constraint.obligation));
-        }
+        self.retain_constraints(constraints, &mut obligations, &mut work)?;
         for id in inventory {
             reachable.push(Dependency::Function(id), work.0)?;
         }
@@ -256,6 +264,23 @@ impl PreparedEffectReadView<'_> {
             rows,
             predicates,
         })
+    }
+
+    fn retain_constraints<C: DecisionControl>(
+        self,
+        constraints: &[&PreparedEffectScopedConstraint],
+        obligations: &mut Vec<Arc<ScopedObligation>>,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        for constraint in constraints {
+            work.charge(DecisionWork::Visit)?;
+            self.validate_owner(&constraint.owner)?;
+            self.validate_retained_predicate(&constraint.obligation.domain)?;
+            self.validate_retained_predicate(&constraint.obligation.predicate)?;
+            work.charge(DecisionWork::Node)?;
+            obligations.push(Arc::clone(&constraint.obligation));
+        }
+        Ok(())
     }
 
     fn retain_published_obligations<C: DecisionControl>(

@@ -25,6 +25,7 @@ pub(crate) struct BoundScopedEffectCompletion {
 #[derive(Debug)]
 pub(super) enum ScopedCompletionBinding {
     Original(Arc<ScopedEffectCompletion>),
+    #[cfg(test)]
     Attached(PreparedEffectDefinitions),
 }
 
@@ -51,7 +52,16 @@ impl BoundScopedEffectCompletion {
     pub(in crate::effect_row::prepared) fn definitions(&self) -> &PreparedEffectDefinitions {
         match &self.binding {
             ScopedCompletionBinding::Original(original) => original.definitions(),
+            #[cfg(test)]
             ScopedCompletionBinding::Attached(graph) => graph,
+        }
+    }
+
+    pub(super) fn original(&self) -> Option<&Arc<ScopedEffectCompletion>> {
+        match &self.binding {
+            ScopedCompletionBinding::Original(original) => Some(original),
+            #[cfg(test)]
+            ScopedCompletionBinding::Attached(_) => None,
         }
     }
 
@@ -77,15 +87,11 @@ impl BoundScopedEffectCompletion {
 }
 
 impl PreparedEffectScopedBinding {
-    /// Freeze all candidate facts together. Preserve the original retained
-    /// query ports by identity, including ports unrelated to an obligation.
-    /// The original snapshot already selected these terms; no source is read
-    /// or prepared again and no later value-use becomes a new inference input.
-    pub(crate) fn freeze<C: DecisionControl>(
-        self,
+    fn admit_constraints<C: DecisionControl>(
+        &self,
         graph: PreparedEffectReadView<'_>,
         control: &mut C,
-    ) -> Result<BoundScopedEffectCompletion, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Vec<&PreparedEffectScopedConstraint>, PreparedEffectFailure<C::Error>> {
         graph.validate_owner(&self.relation.owner)?;
         self.relation.relation.validate(graph, control)?;
         let original = self.relation.relation.completion();
@@ -101,11 +107,43 @@ impl PreparedEffectScopedBinding {
                 .map_err(PreparedEffectFailure::Control)?;
             constraints.push(constraint);
         }
+        Ok(constraints)
+    }
+
+    /// Retain original C and its authenticated attachment in the same final
+    /// snapshot that follows actual Named bodies and includes live obligations.
+    pub(super) fn final_definitions<C: DecisionControl>(
+        self,
+        graph: PreparedEffectReadView<'_>,
+        rows: &[&PreparedEffectRow],
+        predicates: &[&PreparedEffectPredicate],
+        control: &mut C,
+    ) -> Result<PreparedEffectDefinitions, PreparedEffectFailure<C::Error>> {
+        let constraints = self.admit_constraints(graph, control)?;
+        graph.snapshot(
+            rows,
+            predicates,
+            &[],
+            SnapshotSource::FinalOriginal {
+                original: self.relation.relation.completion(),
+                binding: &constraints,
+            },
+            control,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn freeze<C: DecisionControl>(
+        self,
+        graph: PreparedEffectReadView<'_>,
+        control: &mut C,
+    ) -> Result<BoundScopedEffectCompletion, PreparedEffectFailure<C::Error>> {
+        let constraints = self.admit_constraints(graph, control)?;
         let graph = graph.snapshot(
             &[],
             &[],
             &constraints,
-            SnapshotSource::Bound(original),
+            SnapshotSource::Bound(self.relation.relation.completion()),
             control,
         )?;
         Ok(BoundScopedEffectCompletion {
