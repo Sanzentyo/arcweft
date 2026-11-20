@@ -20552,3 +20552,32 @@ Semaの推移的逆依存22パッケージの初回ビルドはWindowsのペー�
 Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を記録したStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の計151件が全件PASS。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-effect-predicate-identities-read-scope.raw.zip) は97 entry、1,754,639 bytes、SHA256 `9af9772f66b09360429f488b1c1bcfd987fbe8ee52a04ee02375d2b36d0d6d2d`。各entryの長さとハッシュを照合した。記録時の `target` は101,774,312,792 bytes。
+
+<a id="owned-closure-and-effect-equalities"></a>
+## 2026-11-20 — 効果閉包の定義所有と係数の等式・含意
+
+検証基点は `4765f1cbe898f301f28c1a0dd2a62c6391ac83f2`。所有権の公開Sourceは `d78a3e4e6fad2f8ef4c61c0a9310a98f4f9cd0c7`。切り離した定義スナップショットは既存の索引ごと閉包へ移し、編集中のグラフを借りる閉包は必要な索引を複製する。両経路で元の発行元と定義を保持し、閉包の確認を通して同じ効果行を得た。追加回帰では、借用時に尽きる作業枠で所有済みスナップショットを閉じ、元のグラフを破棄した後に両方から同じ効果行を読み取った。Sema全featureユニットは2,005件で1,924 PASS／81既知FAIL。直前の2,004 IDは合否が一致した。Semaの全target・全feature checkとClippy、fmt、Cargo graph、構造ゲートは終了0。
+
+先行の3 callback CLI巡回入力を既公開Source `fc689fa289c03c081de1555951a634fe311f37ac` で実行し、候補の累積作業量128単位の境界で112件のスタックを採取した。最大8,333単位に至る区間では効果関係コンパイル21件と取り込んだ関係のラベル制約7件を採取した。サンプルは診断用上限16,384で採取した。
+
+係数の等式だけを一つにまとめた初回試行では、Core 2,390件、Sema 2,005件と規定CLI 226件を実行した。以前と共通のCore／Sema IDは合否が一致し、Coreの追加回帰も通過した。既定上限で旧CLI 4入力の結果は前回と一致した。診断用上限16,384で2 callback は4,952→4,901単位、3 callback の巡回順と元の順序は8,333→8,349単位だった。2入力の作業量増加を確認したため、最初の案の公開を見送った。試行の差分・実行原本・測定結果を保持する。
+
+修正版では、取り込んだ関係の係数等式と、その関係を利用できる条件を一つの判定に組み立てる。子の支持範囲外では、入力が既定クラスと一致すれば出力も一致するという含意を、入力側と出力側の等式から同じビルダー内で作る。元の関係と最小解の照合は同じ検証経路を通る。Coreの回帰は変数・定数・共有係数の真理値表、入力側の含意、計測した必要量に1単位足りない制御の拒否を確認する。
+
+現状一覧では、対話取消の行に重複していた別機能の判定を削除した。取消入力の追加検証条件と公開SHAは該当行に保持した。Generic Matchと既受入Line／initは各項目の証拠に基づいて判定する。
+
+係数判定の公開Sourceは `1ff77e9f9f587fc65275eea0ecdcd53697318dab`。Coreは全featureのlibとeffect_decisionで2,390件すべてPASS。Sema全featureユニットは所有権Sourceと同じ2,005 IDで、1,924 PASS／81既知FAIL。workspace全target・全featureのcheckとClippy、Core doctest 81件、fmt、差分、Cargo graph、構造ゲートは通過した。CLIはライブラリ・バイナリ196件、規定の統合6 target 30件が全件PASS。
+
+診断用上限16,384でSemaの2 callback は4,953→4,920→4,736単位、3 callback は4,734→4,709→4,709単位。順に[前回の公開Source](#effect-predicate-identities-read-scope)、所有権Source、係数判定Sourceで、両ケースとも既存アサーションが通過した。既定上限4,096では両ケースとも正準の解を元の義務と照合する途中で停止した。
+
+[先行受入](#recursive-callback-effects-and-closed-instances)のCLI 4入力を、元のSHA256・引数・1ステップ最大1操作で再実行した。1 callback はVM／AWBC Productで戻り値42・ログ `marker`。2 callback は式75、3 callback の2入力は式68で、両実行系が `sema.final_analysis` を返し終了1だった。別の3 callback 入力は両実行系とも式69で終了1。失敗した先行3入力を診断用上限16,384のVMで測ると、候補の最大作業量は前回の2 callback が4,952→4,735単位、3 callback の2入力はそれぞれ8,333→7,961単位だった。3入力の戻り値42、ログ順、最大1操作、診断0を確認した。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を記したStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件が全件PASS。
+
+Coreの推移的逆依存はCargoで51パッケージを選定した。CLIを除く既定featureは8,126件で8,041 PASS／85既知FAIL／18 SKIP。比較元の[Core全逆依存](#universal-effect-prefix)の8,122件と照合し、4件の回帰テストの追加と、Compilerで先行Sourceから通過していた2件のFAIL→PASSを確認した。Semaの逆依存22パッケージに属する4,315件をこの実行から抽出した。4,230 PASS／85既知FAILで、[直前のSema逆依存](#effect-predicate-identities-read-scope)の4,314 IDと合否が一致し、所有権の追加回帰が通過した。
+
+公開Sourceの旧3 callback 巡回入力を診断用上限16,384で実行し、最大候補の累積512単位の位置で15件のスタックを採取した。効果関係コンパイルが5件、取り込んだ関係の支持制約が1件だった。前回の採取から同じ間隔の位置を抽出した16件では、それぞれ6件と1件だった。
+
+Compilerの `recursive_callbacks_keep_independent_effects` はNative／AWBCとも式76の型検査で失敗した。既定上限でデバッガーを使い、Semaの2 callback と同じく、正準の解をスコープ内の元の義務と照合する作業の計上で停止したことを確認した。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-owned-closure-and-effect-equalities.raw.zip) は148 entry、3,804,463 bytes、SHA256 `fc9ed1d69a0f6165b0d0abd2d1e0e55a7168d0b6fa27f7dd13587047b8011591`。各entryの長さとハッシュを照合した。記録時の `target` は101,820,239,921 bytes。
