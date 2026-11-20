@@ -20852,3 +20852,24 @@ CLIのライブラリ・バイナリ196件、統合6対象の30件、Sema doctes
 Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-admitted-finite-effect-defaults.raw.zip) は86 entry、1,488,018 bytes、SHA256 `6cc7f92e1e852f267f1a138544cd5f7868e109b66b2d25c2600421c790e7d305`。各entryの長さとハッシュを照合した。記録時の `target` は134,866,638,940 bytes。
+
+<a id="forced-decision-prefix"></a>
+## 2026-11-21 — 真偽が必須の決定グラフ先頭を最小解探索から分離
+
+検証基点は `00efa71444390808b8e6b4e4ec8f32be12beb81a`。公開Sourceは `fa9ee2a34e25d4c1faa2d757b747f8f69ae83145`。低分岐か高分岐のいずれか一方にだけ充足値がある決定ノードが先頭に続く場合、正準の後順配列から残りのグラフを借用して最小解を求める。束縛していない変数の必須値を充足領域と係数に戻し、束縛した変数の必須の真は充足領域全体で有効にする。必要な偽固定時の射影の起点は、通常の存在射影を計算するときに記録する。追加回帰は、入力条件を満たさない評価、解はあるが最小解がない評価、最小解がある評価の係数を照合し、元の関係への代入と予算超過も検査した。
+
+5つの `.arcw` のSHA256を公開済み入力原本と照合した。既定上限4,096で1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで通過した。両方とも戻り値42、1ステップ最大1操作、診断0件。1 callback は `marker` を記録し、2 callback はログ0件だった。CLIの3 callback は3入力ともVM／AWBC Productで式95の意味解析に失敗した。
+
+診断専用上限16,384では、先頭を分離した初回試行、通常の存在射影へ走査を統合した公開版の順に、2 callback が2,985→2,904→2,893単位、3 callback の先行2入力が4,677→4,557→4,537単位、別の入力が4,534→4,414→4,394単位だった。すべてVMで戻り値42を確認した。先行順の3 callback では、子成分の最小解の計算開始から完了までが317→214単位になり、ルートの独立照合の開始点が3,725→3,585単位になった。
+
+Coreの対象52件、Core全featureユニットと `effect_decision` の2,402件がPASSした。全featureの先行2,401 IDの合否が一致し、追加した回帰1件がPASSした。Sema全featureユニットは1,938 PASS／76既知FAILで、先行の2,014 IDの合否が一致した。
+
+Coreの逆依存52パッケージをCargoの依存グラフから選定した。CLI以外の51パッケージでは8,147件を実行し、8,069 PASS／78既知FAILと、別に18件SKIPだった。先行Source `a686a8a79416614a8ca7984542bcadf6208be4d3` の8,146 IDの合否が一致し、新たな回帰1件がPASSした。Compilerの2 callback はNativeとデコード済みAWBCでPASSした。Semaでは開いた再帰宣言の3 callback の効果行伝播がPASSした。
+
+CLIのライブラリ・バイナリ196件、統合6対象の30件、Core doctest 81件、workspace全target・全featureのcheck／Clippy、書式、差分、構造ゲートが通過した。CLIの全 `check` テストは未再実行。
+
+全体Clippyで今回追加した名前の類似性に関する警告が2件出た。後続Source `9ef4797f02037f9fe4b4218d2e2469caaf91148f` は該当するローカル変数と引数の名前のみを変更した。Coreの書式、全feature・全targetのClippy、全featureの対象52件で再確認し、変更箇所の警告は解消した。
+
+Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-forced-decision-prefix.raw.zip) は117 entry、2,119,840 bytes、SHA256 `b804c99b8a73a4792a263e0a5441283252a3ba5839587c44ac81e20ed5b65701`。各entryの長さとハッシュを照合した。記録時の `target` は134,885,454,691 bytes。
