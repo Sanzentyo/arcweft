@@ -20581,3 +20581,26 @@ Coreの推移的逆依存はCargoで51パッケージを選定した。CLIを除
 Compilerの `recursive_callbacks_keep_independent_effects` はNative／AWBCとも式76の型検査で失敗した。既定上限でデバッガーを使い、Semaの2 callback と同じく、正準の解をスコープ内の元の義務と照合する作業の計上で停止したことを確認した。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-owned-closure-and-effect-equalities.raw.zip) は148 entry、3,804,463 bytes、SHA256 `fc9ed1d69a0f6165b0d0abd2d1e0e55a7168d0b6fa27f7dd13587047b8011591`。各entryの長さとハッシュを照合した。記録時の `target` は101,820,239,921 bytes。
+
+<a id="fixed-cells-and-row-equivalence"></a>
+## 2026-11-20 — 確定した入力セルのコンパイルと効果行の等値
+
+検証基点は `cb0f9a9fe345b142534f05d204b685e3018577c6`。確定セルの公開Sourceは `077fe01678a1d553105c5b175e6c48c585ed451c`。実引数の効果行を、ラベルクラスとマスクで索引付けした確定セルに変換し、関係の組み立て前に配置する。親への接続では該当セルを定数として渡し、子の原本の条件付き解と義務を照合用に保持する。親子で同じセル番号を使う場合に、親で確定した値が、取り込んだ出力と入力自身の両方に現れることを確認した。子の条件付き係数は引き続き記号を参照し、閉じた親から両方の効果行を取り出せた。
+
+このSourceのSema全featureユニットは2,006件で1,925 PASS／81既知FAIL。以前の2,005 IDは合否が一致し、確定セルの回帰1件が通過した。規定CLI 226件、workspace全target・全featureのcheckとClippy、fmt、構造ゲートを通過した。Semaの再帰2・3 callback を診断用上限16,384で実行し、確定行の処理が両方0件だったことを確認した。確定行を持つ回帰テストでは同じ観測点が1件を記録した。Semaの最大作業量は順に4,736と4,709単位で前回と一致した。旧CLIでも2 callback は4,735単位、3 callback の両入力は7,961単位で一致した。横断検証は後続の等値比較も含めたSourceで実行した。
+
+効果行の等値は、全ラベルの所属が一致する条件を直接組み立てる。名前付きラベルと範囲外ラベルを同じ所有型で扱い、正準の解の確認と残余の縮約でその演算を使う。Coreの回帰は、片方だけにあるラベル、共有ラベルと範囲外の記号値を含む等値が、両方向の包含の合成と同じ正準述語になることを確認する。制御の計上も比較し、必要量から1単位足りない入力を拒否した。
+
+等値比較の公開Sourceは `c06a98ba7c59c27db4aa35f2bdcccffe3ab7852b`。Coreの全feature対象は2,391件で全件PASS。以前の2,390 IDの合否は一致した。Sema全featureユニットの2,006 IDは確定セルSourceと合否が一致し、1,925 PASS／81既知FAIL。workspace全target・全featureのcheckとClippy、Core doctest 81件、書式、差分、Cargo graph、構造ゲートを通過した。CLIはライブラリ・バイナリ196件と規定の統合6 target 30件がすべてPASS。
+
+Semaの診断時の2 callback は4,736→4,730単位、3 callback は4,709単位で一致。診断用上限は16,384。両ケースの既定上限4,096では、スコープ内の元の義務を確認する作業で停止した。
+
+[先行受入](#recursive-callback-effects-and-closed-instances)のCLI 4入力を元のSHA256・引数・1ステップ最大1操作で再実行した。1 callback はVM／AWBC Productで戻り値42・ログ `marker`。2 callback は式75、3 callback の2入力は式68で、両実行系が `sema.final_analysis` を返し終了1だった。別の3 callback 入力は両実行系とも式69で終了1。失敗した先行3入力を診断用上限16,384のVMで測ると、2 callback は4,735→4,729単位、3 callback の2入力はそれぞれ7,961→7,953単位。3入力の戻り値42、ログ順、最大1操作、診断0を確認した。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を記したStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件が全件PASS。
+
+Coreの推移的逆依存はCargoで51パッケージを選定した。CLIを除く既定featureの8,128件で8,043 PASS／85既知FAIL／18 SKIP。[直前のCore全逆依存](#owned-closure-and-effect-equalities)と共通の8,126 IDは合否が一致し、確定セルと等値の追加回帰2件が通過した。同じ実行からSemaの逆依存22パッケージに属する4,316件を抽出し、4,231 PASS／85既知FAIL。前回の4,315 IDは合否が一致し、確定セルの追加回帰が通過した。
+
+Compilerの `recursive_callbacks_keep_independent_effects` はNative／AWBCとも式76の型検査で失敗した。既定上限でデバッガーを使い、Semaの2 callback と同じく、元の義務を照合する際に参照する効果行を準備する途中で停止したことを確認した。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-fixed-cells-and-row-equivalence.raw.zip) は129 entry、2,773,576 bytes、SHA256 `4e0276caa7075fbfa1b6c0072e561467c2cf404930b00aaf4c7ce749a548709f`。各entryの長さとハッシュを照合した。記録時の `target` は101,851,765,513 bytes。
