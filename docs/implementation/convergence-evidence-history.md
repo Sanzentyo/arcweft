@@ -20795,3 +20795,20 @@ CargoでCoreの推移的逆依存51パッケージを選定し、CLI以外で8,1
 Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-joint-guarded-support-constraints.raw.zip) は107 entry、1,722,788 bytes、SHA256 `cadfe72e86d5ab9179de19b052e92f7e8af31864e8631ca57a7ed9bf21597e11`。各entryの長さとハッシュを照合した。記録時の `target` は134,799,052,933 bytes。
+
+<a id="retained-source-effect-reads"></a>
+## 2026-11-21 — 受理した引数の効果の読み取り範囲を再利用
+
+検証基点は `65854643d555ea2fc8a350e4c65bc0fd06d4f11c`。公開Sourceは `f2f146a3516865fbe24d857e187104b8bcc1e363`。callbackの準備が参照する効果の定義を、引数を受理する経路がすでに持つ定義と合成して保持する。各候補の効果の参照先を照合してから観測を結び付け、受理した経路の読み取り範囲を次の引数、子の結果、元の制約推論に引き継ぐ。引数が整数など効果を持たない型でも、準備に含まれる定義の発行元を観測に結び付ける前に検査する。追加の回帰では別の効果グラフから来た準備を拒否し、観測への関連付け前に準備が破棄され、引数の受付が開いた状態を保つことを確認した。
+
+同一SHA256のCLI入力で、既定上限4,096の1 callback はVM／AWBC Productで `marker` を記録し、2 callback はVM／AOT／AWBC Productでログ0件だった。両方とも戻り値42、1ステップ最大1操作、診断0件。3 callback はVMとAWBC Productの3入力とも式95で失敗した。先行2入力の停止位置は式68から進んだ。回転順入力のVMでは、上限を変更せずに `CandidateConstraintWorkState::apply_lower_delta` が作業量超過を返す分岐へ到達することを確認した。
+
+診断専用上限16,384で、2 callback は3,411→3,276単位、先行の3 callback 2入力は5,481→5,178単位、別の3 callback 入力は5,267→5,035単位だった。VMで戻り値42を確認した。先行順の3 callback で、効果成分の構築に入る前の作業量は2,175→1,872単位になった。
+
+Sema全featureユニット2,014件は1,938 PASS／76既知FAIL。先行の全2,013 IDの合否が一致し、整数の引数で別グラフの準備を拒否する回帰がPASSした。CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外の4,324件は4,246 PASS／78既知FAILで、別に1件SKIP。先行Source `9dfc476e5aa2997e8c1569d96efc2616a0f7a4a4` の4,323 IDの合否が一致し、追加回帰がPASSした。Compilerの `recursive_callbacks_keep_independent_effects` はNative／デコード済みAWBCでPASSした。
+
+CLIのライブラリ・バイナリ196件、統合6対象の30件、Sema doctest 2件、workspace全target・全featureのcheck／Clippy、書式、差分、構造ゲートが通過した。CLIの全 `check` テストは未再実行。
+
+Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-retained-source-effect-reads.raw.zip) は67 entry、1,384,324 bytes、SHA256 `660a3f15e2d03254aac4c17abd6761f1561e0e0885a86e1a42274e1621ebebd8`。各entryの長さとハッシュを照合した。記録時の `target` は134,864,951,207 bytes。
