@@ -1964,11 +1964,11 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             self.control.charge(DecisionWork::Visit)?;
             let low = EffectDecision::<V>::mapped_root(node.low, &indices);
             let high = EffectDecision::<V>::mapped_root(node.high, &indices);
-            let quantified = bound.contains(&node.variable);
-            let mapped = self.project_branch(&node.variable, low, high, quantified, quantifier)?;
+            let is_bound = bound.contains(&node.variable);
+            let mapped = self.project_branch(&node.variable, low, high, is_bound, quantifier)?;
             // A false cofactor only has to propagate from a tested variable
             // when it changes that node's ordinary existential projection.
-            if quantified
+            if is_bound
                 && low != mapped
                 && let Some(seeds) = &mut false_cofactors
             {
@@ -1992,13 +1992,13 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         variable: &V,
         low: Root,
         high: Root,
-        quantified: bool,
+        is_bound: bool,
         quantifier: Quantifier,
     ) -> Result<Root, C::Error> {
         if low == high {
             return Ok(low);
         }
-        if !quantified {
+        if !is_bound {
             return self.branch(variable.clone(), low, high);
         }
         let combine = match quantifier {
