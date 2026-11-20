@@ -12,9 +12,87 @@ mod tests;
 pub(super) struct CompiledComponent {
     layout: Layout,
     relation: Decision,
-    fixed: BTreeMap<Atom, bool>,
+    fixed: FixedCells,
     minimized: BTreeSet<Atom>,
     choices: BTreeSet<Atom>,
+}
+
+/// Actual input coefficients in the class and mask coordinates of this layout.
+pub(super) struct FixedCells(BTreeMap<Atom, bool>);
+
+impl FixedCells {
+    pub(super) const EMPTY: Self = Self(BTreeMap::new());
+
+    pub(super) fn new<C: DecisionControl>(
+        graph: &PreparedEffectDefinitions,
+        rows: &BTreeMap<u64, EffectRow>,
+        layout: ClassLayout<'_>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        let mut fixed = Self::EMPTY;
+        for (&id, row) in rows {
+            let function = graph
+                .functions
+                .get(&id)
+                .filter(|function| function.is_input())
+                .ok_or(PreparedEffectInvariant::FutureBinding)?;
+            let parameters = function.parameters();
+            let table = *layout
+                .tables
+                .get(&id)
+                .ok_or(PreparedEffectInvariant::FutureBinding)?;
+            let membership = row.known()?.membership();
+            for class in 0..layout.classes() {
+                for mask in 0..table {
+                    let value = layout.at(membership, class).try_evaluate_with_control(
+                        |reference| {
+                            let parameter = parameters
+                                .iter()
+                                .position(|parameter| parameter == reference)
+                                .ok_or_else(|| {
+                                    PreparedEffectInvariant::UndeclaredParameter(reference.clone())
+                                })?;
+                            Ok(mask & (1usize << parameter) != 0)
+                        },
+                        work,
+                    )?;
+                    work.charge(DecisionWork::Node)?;
+                    fixed.0.insert(
+                        Atom::Cell {
+                            scheme: id,
+                            class,
+                            mask,
+                        },
+                        value,
+                    );
+                }
+            }
+        }
+        Ok(fixed)
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub(super) fn value(&self, cell: &Atom) -> Option<bool> {
+        self.0.get(cell).copied()
+    }
+
+    pub(super) fn contains_function(&self, scheme: u64) -> bool {
+        self.0.contains_key(&Atom::Cell {
+            scheme,
+            class: 0,
+            mask: 0,
+        })
+    }
+
+    pub(super) fn operand(&self, cell: Atom) -> EffectDecisionReplacement<'static, Atom> {
+        self.value(&cell).map_or(
+            EffectDecisionReplacement::Variable(cell),
+            EffectDecisionReplacement::Constant,
+        )
+    }
 }
 
 /// One completion boundary. Future coefficients remain parameters of both the
@@ -279,6 +357,7 @@ fn relation_scope<'g, 's, C: DecisionControl>(
     scopes: &'s mut BTreeMap<RelationScopeKey<'g>, RelationScope<'g>>,
     graph: &'g PreparedEffectDefinitions,
     layout: ClassLayout<'g>,
+    fixed: &'g FixedCells,
     scope: ResidualRowScope,
     work: &mut Work<'_, C>,
 ) -> Result<&'s mut RelationScope<'g>, PreparedEffectFailure<C::Error>> {
@@ -306,7 +385,7 @@ fn relation_scope<'g, 's, C: DecisionControl>(
                     layout,
                     owner,
                     parameters,
-                    ApplicationCells::Variables,
+                    ApplicationCells::Prepared(fixed),
                 ),
             }))
         }
@@ -317,6 +396,7 @@ fn compile_relation<C: DecisionControl>(
     graph: &PreparedEffectDefinitions,
     program: &EffectResidualProgram,
     layout: ClassLayout<'_>,
+    fixed: &FixedCells,
     work: &mut Work<'_, C>,
 ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
     let mut scopes = BTreeMap::new();
@@ -339,7 +419,8 @@ fn compile_relation<C: DecisionControl>(
             }
             ResidualNode::Guarded(clause) => {
                 let source = clause.source(graph)?;
-                let scoped = relation_scope(&mut scopes, graph, layout, clause.scope(), work)?;
+                let scoped =
+                    relation_scope(&mut scopes, graph, layout, fixed, clause.scope(), work)?;
                 match source {
                     ResidualClauseSource::Scheme {
                         id,
@@ -353,15 +434,16 @@ fn compile_relation<C: DecisionControl>(
                 }
             }
             ResidualNode::FiniteFunction(scheme) => {
-                let result = Decision::variable(
-                    Atom::Cell {
-                        scheme: *scheme,
-                        class: 0,
-                        mask: 0,
-                    },
-                    work,
-                )?
-                .not(work)?;
+                let cell = Atom::Cell {
+                    scheme: *scheme,
+                    class: 0,
+                    mask: 0,
+                };
+                let result = if let Some(value) = fixed.value(&cell) {
+                    Decision::constant(!value)
+                } else {
+                    Decision::variable(cell, work)?.not(work)?
+                };
                 work.share_decision(result)?
             }
             ResidualNode::ExistsLocalFunctions { .. }
@@ -400,8 +482,10 @@ impl CompiledComponent {
         inventory: FunctionInventory<'_>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
-        let mut layout = Layout::new(graph, fixed, inventory, work)?;
-        layout.imports = imports::lower_selected_imports(graph, &layout.labels, inventory, work)?;
+        let layout = Layout::new(graph, fixed, inventory, work)?;
+        let fixed = FixedCells::new(graph, fixed, layout.view(), work)?;
+        let (layout, fixed) =
+            imports::lower_selected_imports(graph, layout, fixed, inventory, work)?;
         let program = EffectResidualProgram::with_inventory(graph, inventory, work)?;
         Self::compile(graph, &program, fixed, layout, work)
     }
@@ -409,41 +493,11 @@ impl CompiledComponent {
     pub(super) fn compile<C: DecisionControl>(
         graph: &PreparedEffectDefinitions,
         program: &EffectResidualProgram,
-        fixed: &BTreeMap<u64, EffectRow>,
+        fixed: FixedCells,
         layout: Layout,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
-        let relation = compile_relation(graph, program, layout.view(), work)?;
-        let mut fixed_cells = BTreeMap::new();
-        for (&id, row) in fixed {
-            let parameters = graph.functions[&id].parameters();
-            for class in 0..layout.view().classes() {
-                for mask in 0..layout.tables[&id] {
-                    let value = layout
-                        .view()
-                        .at(row.known()?.membership(), class)
-                        .evaluate_with_control(
-                            |reference| {
-                                let parameter = parameters
-                                    .iter()
-                                    .position(|parameter| parameter == reference)
-                                    .expect("future binding dependencies were validated");
-                                mask & (1usize << parameter) != 0
-                            },
-                            work,
-                        )?;
-                    work.charge(DecisionWork::Node)?;
-                    fixed_cells.insert(
-                        Atom::Cell {
-                            scheme: id,
-                            class,
-                            mask,
-                        },
-                        value,
-                    );
-                }
-            }
-        }
+        let relation = compile_relation(graph, program, layout.view(), &fixed, work)?;
         let mut minimized = BTreeSet::new();
         for cell in &layout.cells {
             let Atom::Cell { scheme, .. } = cell else {
@@ -462,7 +516,7 @@ impl CompiledComponent {
         Ok(Self {
             layout,
             relation,
-            fixed: fixed_cells,
+            fixed,
             minimized,
             choices,
         })
@@ -472,19 +526,15 @@ impl CompiledComponent {
         self,
         work: &mut Work<'_, C>,
     ) -> Result<ComponentCompletion, PreparedEffectFailure<C::Error>> {
-        // Substitute actual Future functions before minimization. Unresolved
-        // Future cells stay free in the conditional result, including guards.
-        // Identity operations can move or borrow the already admitted relation.
-        let relation = if self.fixed.is_empty() || self.relation.node_count() == 0 {
-            self.relation
-        } else {
-            self.relation.restrict(&self.fixed, work)?
-        };
         // Every derived decision uses this same checked source vocabulary.
-        // Projection removes choices; minimization removes local cells.
+        // Fixed inputs were compiled as constants. Only unresolved input
+        // cells and choices can survive minimization of the local cells.
+        let relation = self.relation;
         for atom in relation.variables() {
             work.charge(DecisionWork::Visit)?;
-            if !self.layout.cells.contains(atom) && !self.choices.contains(atom) {
+            if self.fixed.value(atom).is_some()
+                || (!self.layout.cells.contains(atom) && !self.choices.contains(atom))
+            {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());
             }
         }
@@ -520,7 +570,7 @@ impl CompiledComponent {
             layout: Arc::new(self.layout),
             satisfiable,
             principal,
-            coefficients: EffectCoefficients::new(self.fixed, least),
+            coefficients: EffectCoefficients::new(self.fixed.0, least),
             choice_witnesses,
         })
     }
@@ -536,10 +586,6 @@ impl CompiledComponent {
         if self.minimized.is_empty() {
             return Ok(());
         }
-        let member = |cell: &Atom| match self.fixed.get(cell) {
-            Some(&value) => EffectDecisionReplacement::Constant(value),
-            None => EffectDecisionReplacement::Variable(cell.clone()),
-        };
         let mut restrictions = Vec::new();
         for (index, label) in self.layout.labels.iter().enumerate() {
             if support.contains(label) {
@@ -572,7 +618,10 @@ impl CompiledComponent {
                     mask: *mask,
                 };
                 work.charge(DecisionWork::Node)?;
-                let equation = [member(cell), member(&outside)];
+                let equation = [
+                    self.fixed.operand(cell.clone()),
+                    self.fixed.operand(outside),
+                ];
                 if self.minimized.contains(cell) {
                     outputs.push(equation);
                 } else {

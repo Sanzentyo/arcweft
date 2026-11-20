@@ -13,6 +13,7 @@ mod component;
 pub(crate) use component::PreparedEffectActualInputs;
 use component::{
     ClosedEffectCoefficients, ClosedEffectWitnesses, CompiledComponent, ComponentCompletion,
+    FixedCells,
 };
 mod imports;
 use imports::ImportedRelations;

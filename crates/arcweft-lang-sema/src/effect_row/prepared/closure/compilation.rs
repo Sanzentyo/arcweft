@@ -29,7 +29,7 @@ impl PredicateInputs {
 
 #[derive(Clone, Copy)]
 pub(super) enum ApplicationCells<'a> {
-    Variables,
+    Prepared(&'a FixedCells),
     Solved {
         basis: ClassLayout<'a>,
         coefficients: &'a ClosedEffectCoefficients,
@@ -39,7 +39,7 @@ pub(super) enum ApplicationCells<'a> {
 impl<'a> ApplicationCells<'a> {
     fn basis(self, receiving: ClassLayout<'a>) -> ClassLayout<'a> {
         match self {
-            Self::Variables => receiving,
+            Self::Prepared(_) => receiving,
             Self::Solved { basis, .. } => basis,
         }
     }
@@ -50,10 +50,22 @@ impl<'a> ApplicationCells<'a> {
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
         match self {
-            Self::Variables => work.copy_decision(decision),
+            Self::Prepared(_) => work.copy_decision(decision),
             Self::Solved { coefficients, .. } => {
                 Ok(Decision::constant(coefficients.evaluate(decision, work)?))
             }
+        }
+    }
+
+    fn local(
+        self,
+        cell: Atom,
+    ) -> Result<EffectDecisionReplacement<'static, Atom>, PreparedEffectInvariant> {
+        match self {
+            Self::Prepared(fixed) => Ok(fixed.operand(cell)),
+            Self::Solved { coefficients, .. } => Ok(EffectDecisionReplacement::Constant(
+                coefficients.value(&cell)?,
+            )),
         }
     }
 }
@@ -286,11 +298,11 @@ impl<'a> Compilation<'a> {
             .flat_map(|class| (0..table).map(move |mask| (class, mask)))
             .map(|(class, mask)| {
                 Ok([
-                    EffectDecisionReplacement::Variable(Atom::Cell {
+                    self.cells.local(Atom::Cell {
                         scheme: local,
                         class,
                         mask,
-                    }),
+                    })?,
                     EffectDecisionReplacement::Decision(imported.coefficient(class, mask)?),
                 ])
             });
@@ -372,13 +384,10 @@ impl<'a> Compilation<'a> {
                             mask,
                         };
                         Ok(match (self.cells, imported) {
-                            (ApplicationCells::Variables, Some(imported)) => {
+                            (ApplicationCells::Prepared(_), Some(imported)) => {
                                 EffectDecisionReplacement::Decision(
                                     imported.coefficient(basis_class, mask)?,
                                 )
-                            }
-                            (ApplicationCells::Variables, None) => {
-                                EffectDecisionReplacement::Variable(cell)
                             }
                             (ApplicationCells::Solved { coefficients, .. }, Some(imported)) => {
                                 let value = imported.coefficient(basis_class, mask)?;
@@ -386,9 +395,11 @@ impl<'a> Compilation<'a> {
                                     coefficients.evaluate(value, work)?,
                                 )
                             }
-                            (ApplicationCells::Solved { coefficients, .. }, None) => {
-                                work.charge(DecisionWork::Visit)?;
-                                EffectDecisionReplacement::Constant(coefficients.value(&cell)?)
+                            (_, None) => {
+                                if !matches!(self.cells, ApplicationCells::Prepared(fixed) if fixed.is_empty()) {
+                                    work.charge(DecisionWork::Visit)?;
+                                }
+                                self.cells.local(cell)?
                             }
                         })
                     },

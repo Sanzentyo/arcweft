@@ -199,12 +199,13 @@ mod tests {
         let work = &mut Work(&mut control);
         let layout = Layout::with_shared_labels(&graph.relation, Arc::from([]), work).unwrap();
         let parameters = [parameter];
+        let fixed = FixedCells::EMPTY;
         let mut compiler = Compilation::new(
             &graph.relation,
             layout.view(),
             FormalOwner::Observation,
             &parameters,
-            ApplicationCells::Variables,
+            ApplicationCells::Prepared(&fixed),
         );
         let formals = BTreeSet::from([
             Atom::Formal {
@@ -283,12 +284,13 @@ mod tests {
         let layout =
             Layout::with_shared_labels(&graph.relation, Arc::from([]), &mut Work(&mut work))
                 .unwrap();
+        let fixed = FixedCells::EMPTY;
         let mut compilation = Compilation::new(
             &graph.relation,
             layout.view(),
             FormalOwner::Observation,
             &[],
-            ApplicationCells::Variables,
+            ApplicationCells::Prepared(&fixed),
         );
 
         let original = compilation

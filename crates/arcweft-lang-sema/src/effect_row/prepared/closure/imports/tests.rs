@@ -82,14 +82,18 @@ fn lowering_visits_unrelated_declarations_once_when_resuming_an_import() {
         .imported_principal(&attachment, &mut budget())
         .unwrap();
 
-    let lower = |graph: &PreparedEffectDefinitions, budget: &mut Budget| {
-        lower_selected_imports(
+    let lower = |graph: &PreparedEffectDefinitions, control: &mut Budget| {
+        let layout =
+            Layout::with_shared_labels(graph, Arc::from([]), &mut Work(&mut budget())).unwrap();
+        let (layout, _) = lower_selected_imports(
             graph,
-            &Arc::from([]),
+            layout,
+            FixedCells::EMPTY,
             FunctionInventory::All,
-            &mut Work(budget),
+            &mut Work(control),
         )
-        .unwrap()
+        .unwrap();
+        layout.imports
     };
     let mut initial = budget();
     let original = lower(&parent.relation, &mut initial);
@@ -104,6 +108,76 @@ fn lowering_visits_unrelated_declarations_once_when_resuming_an_import() {
     assert_eq!(
         result.functions[&id(&output)].coefficient(0, 0).unwrap(),
         original.functions[&id(&output)].coefficient(0, 0).unwrap(),
+    );
+}
+
+#[test]
+fn fixed_parent_cells_specialize_an_import_with_the_same_ordinals() {
+    let (child, local, future) = child_equality();
+    let mut parent = PreparedEffectGraph::default();
+    let _unrelated = unknown(&mut parent, false, vec![]);
+    let actual = unknown(&mut parent, true, vec![]);
+    let actual_id = actual.reference().ordinal;
+    assert_eq!(actual_id, future.reference().ordinal);
+    let attachment = parent
+        .import_scoped_relation(&child, &[(&future, &actual)], &mut budget())
+        .unwrap();
+    let output = parent
+        .import_relation_function(&attachment, &child.unknown(&local).unwrap(), &mut budget())
+        .unwrap();
+    let input = parent
+        .import_relation_function(&attachment, &child.unknown(&future).unwrap(), &mut budget())
+        .unwrap();
+    let output_row = parent
+        .imported_application(&output, vec![], &mut budget())
+        .unwrap();
+    let input_row = parent
+        .imported_application(&input, vec![], &mut budget())
+        .unwrap();
+    let actual_row = EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap());
+    let rows = BTreeMap::from([(actual_id, actual_row.clone())]);
+    let work = &mut Work(&mut budget());
+    let layout = Layout::new(&parent.relation, &rows, FunctionInventory::All, work).unwrap();
+    let fixed = FixedCells::new(&parent.relation, &rows, layout.view(), work).unwrap();
+    let (layout, _) = lower_selected_imports(
+        &parent.relation,
+        layout,
+        fixed,
+        FunctionInventory::All,
+        work,
+    )
+    .unwrap();
+    for exported in [&output, &input] {
+        let imported = &layout.imports.functions[&id(exported)];
+        assert!(imported.coefficient(0, 0).unwrap().is_constant(false));
+        assert!(imported.coefficient(1, 0).unwrap().is_constant(true));
+    }
+    let symbolic = &layout.imports.functions[&id(&output)]
+        .relation
+        .child
+        .coefficients;
+    assert!(
+        symbolic
+            .get(&Atom::Cell {
+                scheme: local.reference().ordinal,
+                class: 1,
+                mask: 0
+            })
+            .unwrap()
+            .variables()
+            .next()
+            .is_some()
+    );
+    let closed = parent
+        .specialize_principal(&[(&actual, &actual_row)], &mut budget())
+        .unwrap();
+    assert_eq!(
+        closed.resolve_row(&output_row, &mut budget()).unwrap(),
+        actual_row
+    );
+    assert_eq!(
+        closed.resolve_row(&input_row, &mut budget()).unwrap(),
+        actual_row
     );
 }
 
