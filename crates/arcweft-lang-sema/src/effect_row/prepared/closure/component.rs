@@ -628,22 +628,33 @@ impl PreparedEffectDefinitions {
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         let inputs = self.read().actual_inputs(bindings, control)?;
-        self.solve_with_actual_inputs(&inputs, control)
+        ClosureDefinitions::Borrowed(self).solve_with_actual_inputs(&inputs, control)
     }
 
     /// Close one dependency component using the shared invocation's actuals.
     /// Other products can own distinct Future identities on the same graph.
     pub(in crate::effect_row::prepared) fn solve_with_actual_inputs<C: DecisionControl>(
-        &self,
+        self,
         inputs: &PreparedEffectActualInputs<'_>,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
-        self.read().validate_owner(&inputs.owner)?;
+        ClosureDefinitions::Owned(self).solve_with_actual_inputs(inputs, control)
+    }
+}
+
+impl ClosureDefinitions<'_> {
+    fn solve_with_actual_inputs<C: DecisionControl>(
+        self,
+        inputs: &PreparedEffectActualInputs<'_>,
+        control: &mut C,
+    ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
+        let definitions = self.definitions();
+        definitions.read().validate_owner(&inputs.owner)?;
         let mut fixed = BTreeMap::new();
         let mut work = Work(control);
         for (&id, input) in &inputs.rows {
             work.charge(DecisionWork::Visit)?;
-            if self.functions.contains_key(&id) {
+            if definitions.functions.contains_key(&id) {
                 let formula = work.copy_formula(input.known()?)?;
                 work.charge(DecisionWork::Node)?;
                 fixed.insert(
@@ -654,7 +665,7 @@ impl PreparedEffectDefinitions {
                 );
             }
         }
-        self.solve_with_bindings(fixed, control)
+        self.solve_inventory(fixed, FunctionInventory::All, control)
     }
 }
 

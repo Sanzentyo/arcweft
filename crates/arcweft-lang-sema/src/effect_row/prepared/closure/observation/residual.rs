@@ -116,7 +116,7 @@ impl PreparedEffectDefinitions {
                 .insert(id, Arc::clone(&self.predicates[&id]));
         }
 
-        let concrete = retained.solve_with_bindings(BTreeMap::new(), work.0)?;
+        let concrete = retained.close_principal(work.0)?;
         work.charge(DecisionWork::Node)?;
         let mut result = ResidualEffectClosure {
             graph: Arc::new(self),

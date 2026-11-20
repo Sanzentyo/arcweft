@@ -45,6 +45,50 @@ fn cell(reference: &PreparedEffectUnknownRef, class: usize) -> Atom {
 }
 
 #[test]
+fn owned_snapshot_closes_without_recopying_the_definitions() {
+    use crate::effect_row::prepared::read::SnapshotSource;
+
+    let mut graph = PreparedEffectGraph::default();
+    let future = unknown(&mut graph, PreparedEffectUnknownEligibility::Future);
+    let row = graph
+        .unknown_application(&future, vec![], &mut budget())
+        .unwrap();
+    let snapshot = graph
+        .read()
+        .snapshot(
+            &[&row],
+            &[],
+            &[],
+            SnapshotSource::Observation(&[]),
+            &mut budget(),
+        )
+        .unwrap();
+    let actual = EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap());
+    let inputs = graph
+        .read()
+        .actual_inputs(&[(&future, &actual)], &mut budget())
+        .unwrap();
+    let mut measured = budget();
+    let borrowed_work = measured.0;
+    let borrowed = ClosureDefinitions::Borrowed(&snapshot)
+        .solve_with_actual_inputs(&inputs, &mut measured)
+        .unwrap();
+    let available = borrowed_work - measured.0 - 1;
+    assert!(matches!(
+        ClosureDefinitions::Borrowed(&snapshot)
+            .solve_with_actual_inputs(&inputs, &mut Budget(available)),
+        Err(PreparedEffectFailure::Control(Exhausted))
+    ));
+    let owned = snapshot
+        .solve_with_actual_inputs(&inputs, &mut Budget(available))
+        .unwrap();
+
+    drop(graph);
+    assert_eq!(borrowed.resolve_row(&row, &mut budget()).unwrap(), actual);
+    assert_eq!(owned.resolve_row(&row, &mut budget()).unwrap(), actual);
+}
+
+#[test]
 fn conditional_completion_keeps_future_cells_free_in_the_least_function() {
     let mut graph = PreparedEffectGraph::default();
     let mut work = budget();

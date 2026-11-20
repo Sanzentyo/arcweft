@@ -32,7 +32,7 @@ impl PreparedEffectReadView<'_> {
             SnapshotSource::Observation(roots),
             control,
         )?
-        .solve_with_bindings(BTreeMap::new(), control)
+        .close_principal(control)
     }
 }
 

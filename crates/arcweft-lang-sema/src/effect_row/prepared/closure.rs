@@ -650,7 +650,7 @@ impl PreparedEffectGraph {
         if self.active_scope.is_some() {
             return Err(PreparedEffectInvariant::ReadScopeActive.into());
         }
-        self.relation.solve_inventory(fixed, inventory, control)
+        ClosureDefinitions::Borrowed(&self.relation).solve_inventory(fixed, inventory, control)
     }
 }
 
@@ -662,22 +662,55 @@ impl PreparedEffectDefinitions {
         Layout::support(self, &BTreeMap::new(), work)
     }
 
-    fn solve_with_bindings<C: DecisionControl>(
-        &self,
-        fixed: BTreeMap<u64, EffectRow>,
+    fn close_principal<C: DecisionControl>(
+        self,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
-        self.solve_inventory(fixed, FunctionInventory::All, control)
+        ClosureDefinitions::Owned(self).solve_inventory(
+            BTreeMap::new(),
+            FunctionInventory::All,
+            control,
+        )
+    }
+}
+
+/// Live preparation keeps its indexes. A detached snapshot can transfer them
+/// intact into the closure while its original terms remain immutable.
+enum ClosureDefinitions<'a> {
+    Borrowed(&'a PreparedEffectDefinitions),
+    Owned(PreparedEffectDefinitions),
+}
+
+impl ClosureDefinitions<'_> {
+    fn definitions(&self) -> &PreparedEffectDefinitions {
+        match self {
+            Self::Borrowed(definitions) => definitions,
+            Self::Owned(definitions) => definitions,
+        }
+    }
+
+    fn into_retained<C: DecisionControl>(
+        self,
+        work: &mut Work<'_, C>,
+    ) -> Result<Arc<PreparedEffectDefinitions>, PreparedEffectFailure<C::Error>> {
+        match self {
+            Self::Borrowed(definitions) => definitions.retain(work),
+            Self::Owned(definitions) => {
+                work.charge(DecisionWork::Node)?;
+                Ok(Arc::new(definitions))
+            }
+        }
     }
 
     fn solve_inventory<C: DecisionControl>(
-        &self,
+        self,
         fixed: BTreeMap<u64, EffectRow>,
         inventory: FunctionInventory<'_>,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        for (&id, function) in &self.functions {
+        let definitions = self.definitions();
+        for (&id, function) in &definitions.functions {
             if !inventory.contains(id) {
                 continue;
             }
@@ -695,7 +728,7 @@ impl PreparedEffectDefinitions {
             principal,
             coefficients,
             choice_witnesses,
-        } = CompiledComponent::with_inventory(self, &fixed, inventory, &mut work)?
+        } = CompiledComponent::with_inventory(definitions, &fixed, inventory, &mut work)?
             .complete(&mut work)?;
         if !satisfiable.is_constant(true) {
             return Err(PreparedEffectFailure::Unsatisfiable);
@@ -708,7 +741,7 @@ impl PreparedEffectDefinitions {
             None => ClosedEffectWitnesses::unique(),
         };
         let closed = PrincipalEffectClosure::reify(
-            self.retain(&mut work)?,
+            self.into_retained(&mut work)?,
             layout,
             coefficients.close(&mut work)?,
             witnesses,
