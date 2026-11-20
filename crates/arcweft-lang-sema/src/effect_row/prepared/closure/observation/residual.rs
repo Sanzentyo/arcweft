@@ -64,11 +64,11 @@ impl PreparedEffectDefinitions {
                 reach.push(Dependency::Predicate(predicate), work.0)?;
             }
             let reach = reach.collect(work.0)?;
-            if reach.functions.iter().any(|id| rows.contains_key(id)) {
+            if reach.functions.keys().any(|id| rows.contains_key(id)) {
                 // A residual obligation can restrict the input domain only
                 // after proving that it cannot change the least local tuple.
                 if !reach.choices.is_empty()
-                    || reach.functions.iter().any(|id| !rows.contains_key(id))
+                    || reach.functions.keys().any(|id| !rows.contains_key(id))
                 {
                     return Err(PreparedEffectFailure::NonPointwiseObservation);
                 }
@@ -83,7 +83,7 @@ impl PreparedEffectDefinitions {
             }
         }
         let concrete = concrete.collect(work.0)?;
-        if concrete.functions.iter().any(|id| rows.contains_key(id)) {
+        if concrete.functions.keys().any(|id| rows.contains_key(id)) {
             return Err(PreparedEffectFailure::NonPointwiseObservation);
         }
         let mut choices = BTreeSet::new();
@@ -91,30 +91,14 @@ impl PreparedEffectDefinitions {
             work.charge(DecisionWork::Node)?;
             choices.insert(choice);
         }
-        let mut retained = PreparedEffectDefinitions {
+        let retained = PreparedEffectDefinitions {
             issuer: Arc::clone(&self.issuer),
             choices,
-            functions: BTreeMap::new(),
+            functions: concrete.functions,
             obligations: concrete_obligations,
-            rows: BTreeMap::new(),
-            predicates: BTreeMap::new(),
+            rows: concrete.rows,
+            predicates: concrete.predicates,
         };
-        for id in concrete.functions {
-            work.charge(DecisionWork::Node)?;
-            retained
-                .functions
-                .insert(id, Arc::clone(&self.functions[&id]));
-        }
-        for id in concrete.rows {
-            work.charge(DecisionWork::Node)?;
-            retained.rows.insert(id, Arc::clone(&self.rows[&id]));
-        }
-        for id in concrete.predicates {
-            work.charge(DecisionWork::Node)?;
-            retained
-                .predicates
-                .insert(id, Arc::clone(&self.predicates[&id]));
-        }
 
         let concrete = retained.close_principal(work.0)?;
         work.charge(DecisionWork::Node)?;

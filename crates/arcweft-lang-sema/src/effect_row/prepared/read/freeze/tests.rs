@@ -126,6 +126,45 @@ fn freezing_a_named_value_keeps_a_scheme_input_before_and_after_its_body() {
 }
 
 #[test]
+fn shared_snapshot_roots_retain_one_definition_per_dependency() {
+    const ROOT_COUNT: usize = 8;
+    let mut graph = PreparedEffectGraph::default();
+    let (_, _, row) = constrained_named_value(&mut graph, false);
+    let predicate = graph
+        .relate(
+            PreparedEffectRelation::AdmittedSubset,
+            row.clone(),
+            literal(&[]),
+            &mut budget(),
+        )
+        .unwrap();
+    let read = graph.read();
+    let mut measured = budget();
+    let start = measured.0;
+    let single = read
+        .snapshot(
+            &[&row],
+            &[&predicate],
+            &[],
+            SnapshotSource::Product(&[]),
+            &mut measured,
+        )
+        .unwrap();
+    assert!(!single.rows.is_empty() && !single.predicates.is_empty());
+
+    let shared = read
+        .snapshot(
+            &[&row; ROOT_COUNT],
+            &[&predicate; ROOT_COUNT],
+            &[],
+            SnapshotSource::Product(&[]),
+            &mut Budget(start - measured.0 + 2 * (ROOT_COUNT - 1)),
+        )
+        .unwrap();
+    assert!(single.same_original(&shared, &mut budget()).unwrap());
+}
+
+#[test]
 fn original_relation_identity_distinguishes_new_constraints_on_the_same_issuer() {
     let mut graph = PreparedEffectGraph::default();
     let (_, _, row) = constrained_named_value(&mut graph, false);

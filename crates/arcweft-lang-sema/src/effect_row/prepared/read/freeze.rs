@@ -110,17 +110,16 @@ impl PreparedEffectReadView<'_> {
             self.validate_owner(&PreparedEffectGraphOwner(Arc::clone(&original.issuer)))?;
             for (&id, definition) in &original.functions {
                 work.charge(DecisionWork::Visit)?;
-                if let Function::SchemeInput(declaration) = definition.as_ref() {
-                    declaration.validate_read(self)?;
-                } else {
-                    let actual = self
-                        .function_definition(id)
-                        .ok_or(PreparedEffectInvariant::StaleReference)?;
-                    if !Arc::ptr_eq(definition, actual) {
+                let current = self
+                    .function_definition(id)
+                    .ok_or(PreparedEffectInvariant::StaleReference)?;
+                match definition.as_ref() {
+                    Function::SchemeInput(declaration) => declaration.validate_read(self)?,
+                    _ if !Arc::ptr_eq(definition, current) => {
                         return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
                     }
+                    _ => {}
                 }
-                work.charge(DecisionWork::Node)?;
                 if reuse_reachable
                     && (matches!(schemes, SchemeDependencies::Headers)
                         || !matches!(
@@ -128,8 +127,9 @@ impl PreparedEffectReadView<'_> {
                             Function::SchemeInput(_) | Function::Scheme(_)
                         ))
                 {
-                    reachable.functions.insert(id);
+                    reachable.retain_function(id, current, &mut work)?;
                 } else {
+                    work.charge(DecisionWork::Node)?;
                     inventory.insert(id);
                 }
             }
@@ -212,57 +212,28 @@ impl PreparedEffectReadView<'_> {
             reachable.push(Dependency::Predicate(&obligation.domain), work.0)?;
             reachable.push(Dependency::Predicate(&obligation.predicate), work.0)?;
         }
-        let reachable = reachable.collect(work.0)?;
-        let mut functions = BTreeMap::new();
-        for id in reachable.functions {
-            work.charge(DecisionWork::Node)?;
-            let definition = self
-                .function_definition(id)
-                .ok_or(PreparedEffectInvariant::StaleReference)?;
-            let value = match definition.as_ref() {
-                Function::Scheme(scheme) if matches!(schemes, SchemeDependencies::Headers) => {
+        let mut reachable = reachable.collect(work.0)?;
+        if matches!(schemes, SchemeDependencies::Headers) {
+            for (&id, definition) in &mut reachable.functions {
+                if let Function::Scheme(scheme) = definition.as_ref() {
                     work.charge(DecisionWork::Node)?;
-                    Arc::new(Function::SchemeInput(
+                    *definition = Arc::new(Function::SchemeInput(
                         PreparedEffectDeclaration::from_header(
                             PreparedEffectSchemeRef(self.relation.reference(id)),
                             Arc::clone(&scheme.header),
                         ),
-                    ))
+                    ));
                 }
-                _ => Arc::clone(definition),
-            };
-            functions.insert(id, value);
-        }
-        let mut rows = BTreeMap::new();
-        for id in reachable.rows {
-            work.charge(DecisionWork::Node)?;
-            rows.insert(
-                id,
-                Arc::clone(
-                    self.row_definition(id)
-                        .ok_or(PreparedEffectInvariant::StaleReference)?,
-                ),
-            );
-        }
-        let mut predicates = BTreeMap::new();
-        for id in reachable.predicates {
-            work.charge(DecisionWork::Node)?;
-            predicates.insert(
-                id,
-                Arc::clone(
-                    self.predicate_definition(id)
-                        .ok_or(PreparedEffectInvariant::StaleReference)?,
-                ),
-            );
+            }
         }
         work.charge(DecisionWork::Node)?;
         Ok(PreparedEffectDefinitions {
             issuer: Arc::clone(&self.relation.issuer),
             choices: reachable.choices,
-            functions,
+            functions: reachable.functions,
             obligations,
-            rows,
-            predicates,
+            rows: reachable.rows,
+            predicates: reachable.predicates,
         })
     }
 

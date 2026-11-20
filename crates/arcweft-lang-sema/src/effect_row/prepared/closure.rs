@@ -30,14 +30,14 @@ mod reachable;
 #[derive(Clone, Copy)]
 pub(in crate::effect_row::prepared) enum FunctionInventory<'a> {
     All,
-    Selected(&'a BTreeSet<u64>),
+    Selected(&'a BTreeMap<u64, Arc<Function>>),
 }
 
 impl FunctionInventory<'_> {
     pub(in crate::effect_row::prepared) fn contains(self, id: u64) -> bool {
         match self {
             Self::All => true,
-            Self::Selected(ids) => ids.contains(&id),
+            Self::Selected(functions) => functions.contains_key(&id),
         }
     }
 }
@@ -640,7 +640,7 @@ impl PreparedEffectRowProjection {
 /// Declaration formals remain inside their functions, never ambient Γ ports.
 pub(crate) struct PreparedEffectFunctionUses<'g> {
     graph: &'g PreparedEffectDefinitions,
-    functions: BTreeSet<u64>,
+    functions: BTreeMap<u64, Arc<Function>>,
 }
 
 impl PreparedEffectFunctionUses<'_> {
@@ -650,7 +650,7 @@ impl PreparedEffectFunctionUses<'_> {
     ) -> Result<bool, PreparedEffectInvariant> {
         let reference = FunctionRef::Unknown(unknown.clone());
         self.graph.function(&reference)?;
-        Ok(self.functions.contains(&reference.reference().ordinal))
+        Ok(self.functions.contains_key(&reference.reference().ordinal))
     }
 }
 

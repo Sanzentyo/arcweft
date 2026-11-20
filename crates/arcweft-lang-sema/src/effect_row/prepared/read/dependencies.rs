@@ -16,10 +16,18 @@ pub(in crate::effect_row::prepared) enum Dependency<'a> {
     Predicate(&'a PreparedEffectPredicate),
 }
 
-enum PendingDependency {
-    Function(u64),
-    Row(u64),
-    Predicate(u64),
+enum PendingDependency<'a> {
+    Function(u64, &'a Function),
+    Row(&'a RowTerm),
+    Predicate(&'a PredicateTerm),
+}
+
+#[derive(Default)]
+pub(in crate::effect_row::prepared) struct ReachedDefinitions {
+    pub(in crate::effect_row::prepared) functions: BTreeMap<u64, Arc<Function>>,
+    pub(in crate::effect_row::prepared) rows: BTreeMap<u64, Arc<RowTerm>>,
+    pub(in crate::effect_row::prepared) predicates: BTreeMap<u64, Arc<PredicateTerm>>,
+    pub(in crate::effect_row::prepared) choices: BTreeSet<u64>,
 }
 
 impl PreparedEffectReadView<'_> {
@@ -65,11 +73,8 @@ impl PreparedEffectReadView<'_> {
 pub(in crate::effect_row::prepared) struct Reachable<'a> {
     view: PreparedEffectReadView<'a>,
     schemes: SchemeDependencies,
-    pub(in crate::effect_row::prepared) functions: BTreeSet<u64>,
-    pub(in crate::effect_row::prepared) rows: BTreeSet<u64>,
-    pub(in crate::effect_row::prepared) predicates: BTreeSet<u64>,
-    pub(in crate::effect_row::prepared) choices: BTreeSet<u64>,
-    pending: Vec<PendingDependency>,
+    definitions: ReachedDefinitions,
+    pending: Vec<PendingDependency<'a>>,
 }
 
 impl<'a> Reachable<'a> {
@@ -80,12 +85,24 @@ impl<'a> Reachable<'a> {
         Self {
             view,
             schemes,
-            functions: BTreeSet::new(),
-            rows: BTreeSet::new(),
-            predicates: BTreeSet::new(),
-            choices: BTreeSet::new(),
+            definitions: ReachedDefinitions::default(),
             pending: Vec::new(),
         }
+    }
+
+    /// A verified original already contains the dependencies of this live
+    /// function. A Named declaration may still need its body traversed.
+    pub(super) fn retain_function<C: DecisionControl>(
+        &mut self,
+        id: u64,
+        definition: &Arc<Function>,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        work.charge(DecisionWork::Node)?;
+        self.definitions
+            .functions
+            .insert(id, Arc::clone(definition));
+        Ok(())
     }
 
     /// The original snapshot has already followed every immutable term edge.
@@ -99,7 +116,7 @@ impl<'a> Reachable<'a> {
         fn retain<'view, T: 'view, C: DecisionControl>(
             definitions: &BTreeMap<u64, Arc<T>>,
             live: impl Fn(u64) -> Option<&'view Arc<T>>,
-            ids: &mut BTreeSet<u64>,
+            reached: &mut BTreeMap<u64, Arc<T>>,
             work: &mut Work<'_, C>,
         ) -> Result<(), PreparedEffectFailure<C::Error>> {
             for (&id, definition) in definitions {
@@ -109,7 +126,7 @@ impl<'a> Reachable<'a> {
                     return Err(PreparedEffectInvariant::ImportedRelationOrigin.into());
                 }
                 work.charge(DecisionWork::Node)?;
-                ids.insert(id);
+                reached.insert(id, Arc::clone(current));
             }
             Ok(())
         }
@@ -118,13 +135,13 @@ impl<'a> Reachable<'a> {
         retain(
             &original.rows,
             |id| self.view.row_definition(id),
-            &mut self.rows,
+            &mut self.definitions.rows,
             &mut work,
         )?;
         retain(
             &original.predicates,
             |id| self.view.predicate_definition(id),
-            &mut self.predicates,
+            &mut self.definitions.predicates,
             &mut work,
         )?;
         for &id in &original.choices {
@@ -133,7 +150,7 @@ impl<'a> Reachable<'a> {
                 return Err(PreparedEffectInvariant::StaleReference.into());
             }
             work.charge(DecisionWork::Node)?;
-            self.choices.insert(id);
+            self.definitions.choices.insert(id);
         }
         Ok(())
     }
@@ -147,7 +164,7 @@ impl<'a> Reachable<'a> {
         control
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
-        self.choices.insert(choice.0.ordinal);
+        self.definitions.choices.insert(choice.0.ordinal);
         Ok(())
     }
 
@@ -158,185 +175,170 @@ impl<'a> Reachable<'a> {
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
         work.charge(DecisionWork::Visit)?;
-        let (pending, visited) = match value {
-            Dependency::Function(id) => (PendingDependency::Function(id), &self.functions),
-            Dependency::Row(PreparedEffectRow::Term(reference)) => (
-                PendingDependency::Row(self.view.relation.validate(&reference.0)?),
-                &self.rows,
-            ),
-            Dependency::Predicate(PreparedEffectPredicate::Term(reference)) => (
-                PendingDependency::Predicate(self.view.relation.validate(&reference.0)?),
-                &self.predicates,
-            ),
+        let pending = match value {
+            Dependency::Function(id) => Self::discover(
+                &mut self.definitions.functions,
+                id,
+                || self.view.function_definition(id),
+                &mut work,
+            )?
+            .map(|definition| PendingDependency::Function(id, definition)),
+            Dependency::Row(PreparedEffectRow::Term(reference)) => {
+                let id = self.view.relation.validate(&reference.0)?;
+                Self::discover(
+                    &mut self.definitions.rows,
+                    id,
+                    || self.view.row_definition(id),
+                    &mut work,
+                )?
+                .map(PendingDependency::Row)
+            }
+            Dependency::Predicate(PreparedEffectPredicate::Term(reference)) => {
+                let id = self.view.relation.validate(&reference.0)?;
+                Self::discover(
+                    &mut self.definitions.predicates,
+                    id,
+                    || self.view.predicate_definition(id),
+                    &mut work,
+                )?
+                .map(PendingDependency::Predicate)
+            }
             Dependency::Row(PreparedEffectRow::Canonical(_))
             | Dependency::Predicate(PreparedEffectPredicate::Canonical(_)) => return Ok(()),
         };
-        let id = match pending {
-            PendingDependency::Function(id)
-            | PendingDependency::Row(id)
-            | PendingDependency::Predicate(id) => id,
-        };
-        // Retained terms already cover their edges. A canonical value has
-        // no graph edges. Only unresolved dependencies occupy the worklist.
-        if visited.contains(&id) {
-            return Ok(());
+        if let Some(pending) = pending {
+            self.pending.push(pending);
         }
-        work.charge(DecisionWork::Node)?;
-        self.pending.push(pending);
         Ok(())
+    }
+
+    fn discover<T: 'a, C: DecisionControl>(
+        reached: &mut BTreeMap<u64, Arc<T>>,
+        id: u64,
+        live: impl FnOnce() -> Option<&'a Arc<T>>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Option<&'a T>, PreparedEffectFailure<C::Error>> {
+        let std::collections::btree_map::Entry::Vacant(entry) = reached.entry(id) else {
+            return Ok(None);
+        };
+        let definition = live().ok_or(PreparedEffectInvariant::StaleReference)?;
+        // Admit both the retained definition and its one pending visit
+        // before cloning or queueing. That same entry deduplicates edges.
+        work.charge(DecisionWork::Node)?;
+        work.charge(DecisionWork::Node)?;
+        entry.insert(Arc::clone(definition));
+        Ok(Some(definition))
     }
 
     pub(in crate::effect_row::prepared) fn collect<C: DecisionControl>(
         mut self,
         control: &mut C,
-    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+    ) -> Result<ReachedDefinitions, PreparedEffectFailure<C::Error>> {
         while let Some(value) = self.pending.pop() {
             match value {
-                PendingDependency::Function(id) => {
-                    if self.functions.contains(&id) {
-                        continue;
-                    }
-                    control
-                        .charge(DecisionWork::Node)
-                        .map_err(PreparedEffectFailure::Control)?;
-                    self.functions.insert(id);
-                    let function = self
-                        .view
-                        .function_definition(id)
-                        .ok_or(PreparedEffectInvariant::StaleReference)?;
-                    match function.as_ref() {
-                        Function::Scheme(scheme)
-                            if !matches!(self.schemes, SchemeDependencies::Headers) =>
-                        {
-                            let SchemeState::BodyPrepared { body, obligations } = &scheme.state
-                            else {
-                                if matches!(self.schemes, SchemeDependencies::Observation) {
-                                    return Err(PreparedEffectFailure::ObservationNeedsBody(
-                                        PreparedEffectSchemeRef(self.view.relation.reference(id)),
-                                    ));
-                                }
-                                return Err(PreparedEffectInvariant::SchemeState.into());
-                            };
-                            self.push(Dependency::Row(body), control)?;
-                            for predicate in obligations {
-                                self.push(Dependency::Predicate(predicate), control)?;
+                PendingDependency::Function(id, function) => match function {
+                    Function::Scheme(scheme)
+                        if !matches!(self.schemes, SchemeDependencies::Headers) =>
+                    {
+                        let SchemeState::BodyPrepared { body, obligations } = &scheme.state else {
+                            if matches!(self.schemes, SchemeDependencies::Observation) {
+                                return Err(PreparedEffectFailure::ObservationNeedsBody(
+                                    PreparedEffectSchemeRef(self.view.relation.reference(id)),
+                                ));
                             }
+                            return Err(PreparedEffectInvariant::SchemeState.into());
+                        };
+                        self.push(Dependency::Row(body), control)?;
+                        for predicate in obligations {
+                            self.push(Dependency::Predicate(predicate), control)?;
                         }
-                        Function::Imported(imported) => {
-                            for input in imported.relation.inputs().values() {
-                                self.push(
-                                    Dependency::Function(
-                                        self.view.relation.validate(input.reference())?,
-                                    ),
-                                    control,
-                                )?;
-                            }
-                        }
-                        Function::Scheme(_)
-                        | Function::SchemeInput(_)
-                        | Function::Unknown { .. } => {}
                     }
-                }
-                PendingDependency::Row(id) => {
-                    if self.rows.contains(&id) {
-                        continue;
-                    }
-                    control
-                        .charge(DecisionWork::Node)
-                        .map_err(PreparedEffectFailure::Control)?;
-                    self.rows.insert(id);
-                    let row = self
-                        .view
-                        .row_definition(id)
-                        .ok_or(PreparedEffectInvariant::StaleReference)?;
-                    match row.as_ref() {
-                        RowTerm::Application {
-                            function,
-                            arguments,
-                        } => {
+                    Function::Imported(imported) => {
+                        for input in imported.relation.inputs().values() {
                             self.push(
                                 Dependency::Function(
-                                    self.view.relation.validate(function.reference())?,
+                                    self.view.relation.validate(input.reference())?,
                                 ),
                                 control,
                             )?;
-                            for row in arguments {
-                                self.push(Dependency::Row(row), control)?;
-                            }
-                        }
-                        RowTerm::Substitution { arguments, .. } => {
-                            for row in arguments.values() {
-                                self.push(Dependency::Row(row), control)?;
-                            }
-                        }
-                        RowTerm::Union(rows) => {
-                            for row in rows {
-                                self.push(Dependency::Row(row), control)?;
-                            }
-                        }
-                        RowTerm::Select { choice, yes, no } => {
-                            self.choice(choice, control)?;
-                            self.push(Dependency::Row(yes), control)?;
-                            self.push(Dependency::Row(no), control)?;
                         }
                     }
-                }
-                PendingDependency::Predicate(id) => {
-                    if self.predicates.contains(&id) {
-                        continue;
-                    }
-                    control
-                        .charge(DecisionWork::Node)
-                        .map_err(PreparedEffectFailure::Control)?;
-                    self.predicates.insert(id);
-                    let predicate = self
-                        .view
-                        .predicate_definition(id)
-                        .ok_or(PreparedEffectInvariant::StaleReference)?;
-                    match predicate.as_ref() {
-                        PredicateTerm::ImportedPrincipal(imported) => {
-                            imported.validate(self.view, control)?;
-                            for input in imported.inputs().values() {
-                                self.push(
-                                    Dependency::Function(
-                                        self.view.relation.validate(input.reference())?,
-                                    ),
-                                    control,
-                                )?;
-                            }
-                        }
-                        PredicateTerm::Substitution { arguments, .. } => {
-                            for row in arguments.values() {
-                                self.push(Dependency::Row(row), control)?;
-                            }
-                        }
-                        PredicateTerm::Relation {
-                            actual, permitted, ..
-                        } => {
-                            self.push(Dependency::Row(actual), control)?;
-                            self.push(Dependency::Row(permitted), control)?;
-                        }
-                        PredicateTerm::And(values) | PredicateTerm::Or(values) => {
-                            for predicate in values {
-                                self.push(Dependency::Predicate(predicate), control)?;
-                            }
-                        }
-                        PredicateTerm::Equivalent([left, right]) => {
-                            self.push(Dependency::Predicate(left), control)?;
-                            self.push(Dependency::Predicate(right), control)?;
-                        }
-                        PredicateTerm::Not(value) => {
-                            self.push(Dependency::Predicate(value), control)?
-                        }
-                        PredicateTerm::Select { choice, yes, no } => {
-                            self.choice(choice, control)?;
-                            self.push(Dependency::Predicate(yes), control)?;
-                            self.push(Dependency::Predicate(no), control)?;
+                    Function::Scheme(_) | Function::SchemeInput(_) | Function::Unknown { .. } => {}
+                },
+                PendingDependency::Row(row) => match row {
+                    RowTerm::Application {
+                        function,
+                        arguments,
+                    } => {
+                        self.push(
+                            Dependency::Function(
+                                self.view.relation.validate(function.reference())?,
+                            ),
+                            control,
+                        )?;
+                        for row in arguments {
+                            self.push(Dependency::Row(row), control)?;
                         }
                     }
-                }
+                    RowTerm::Substitution { arguments, .. } => {
+                        for row in arguments.values() {
+                            self.push(Dependency::Row(row), control)?;
+                        }
+                    }
+                    RowTerm::Union(rows) => {
+                        for row in rows {
+                            self.push(Dependency::Row(row), control)?;
+                        }
+                    }
+                    RowTerm::Select { choice, yes, no } => {
+                        self.choice(choice, control)?;
+                        self.push(Dependency::Row(yes), control)?;
+                        self.push(Dependency::Row(no), control)?;
+                    }
+                },
+                PendingDependency::Predicate(predicate) => match predicate {
+                    PredicateTerm::ImportedPrincipal(imported) => {
+                        imported.validate(self.view, control)?;
+                        for input in imported.inputs().values() {
+                            self.push(
+                                Dependency::Function(
+                                    self.view.relation.validate(input.reference())?,
+                                ),
+                                control,
+                            )?;
+                        }
+                    }
+                    PredicateTerm::Substitution { arguments, .. } => {
+                        for row in arguments.values() {
+                            self.push(Dependency::Row(row), control)?;
+                        }
+                    }
+                    PredicateTerm::Relation {
+                        actual, permitted, ..
+                    } => {
+                        self.push(Dependency::Row(actual), control)?;
+                        self.push(Dependency::Row(permitted), control)?;
+                    }
+                    PredicateTerm::And(values) | PredicateTerm::Or(values) => {
+                        for predicate in values {
+                            self.push(Dependency::Predicate(predicate), control)?;
+                        }
+                    }
+                    PredicateTerm::Equivalent([left, right]) => {
+                        self.push(Dependency::Predicate(left), control)?;
+                        self.push(Dependency::Predicate(right), control)?;
+                    }
+                    PredicateTerm::Not(value) => {
+                        self.push(Dependency::Predicate(value), control)?
+                    }
+                    PredicateTerm::Select { choice, yes, no } => {
+                        self.choice(choice, control)?;
+                        self.push(Dependency::Predicate(yes), control)?;
+                        self.push(Dependency::Predicate(no), control)?;
+                    }
+                },
             }
         }
-        Ok(self)
+        Ok(self.definitions)
     }
 }
