@@ -20746,3 +20746,20 @@ CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外で
 Generic Match `.1.2` C3/C5 は、元の受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-final-effect-snapshot.raw.zip) は86 entry、1,387,867 bytes、SHA256 `ed31f76380221c33ef88941b57aff1c88579580b34f89101f61ef62cf9c23c57`。各entryの長さとハッシュを照合した。記録時の `target` は134,644,740,662 bytes。
+
+<a id="whole-effect-predicate-equivalence"></a>
+## 2026-11-21 — 効果述語全体の等価を直接保持する
+
+検証基点は `46ade589adf44487dde192511f91d87f717e5ef3`。公開Sourceは `1bd29d6c204ae3db271bea0bf3608a64f8a61a3b`。効果述語全体の等価を一つの準備済み演算で保持し、同じ行入力を両側に渡してから量化する。決定グラフ、独立照合、残余条件、移送が同じ演算を消費する。定数同士の等価が成立するときは、発行元を認証した既存制約を同じ状態で保持する。回帰では別々に量化すると等しいが同じ入力では異なる述語を拒否し、異なるラベルで両方が偽になる場合の例を確認した。制約生成が途中で上限に達した場合の状態と作業量、別グラフへの定数等価の適用拒否も検査した。
+
+同一SHA256の先行CLI入力を既定上限4,096で実行した。1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで戻り値42・1ステップ最大1操作。実行ログと診断数は先行結果と一致した。CLIの3 callback は先行2入力が式68、別の1入力が式69で停止した。診断専用上限16,384で、2 callback は4,335→3,823、3 callback の先行2入力は7,162→6,332単位。3 callback の元の並びで、最終解決の前が2,625→2,175単位、成分準備が3,198→2,968単位、その後が1,339→1,189単位だった。関数の効果述語を照合した最初の3引数はそれぞれ34→9単位だった。子成分とルートで同じ元制約をコンパイルした箇所に各335単位かかり、子成分のラベルサポートの制約は622単位だった。
+
+Sema全featureユニット2,011件は1,935 PASS／76既知FAIL。追加した量化の回帰と、先行失敗4件が通過した。既定上限の2・3 callback の2件、関数型の引数反変／効果共変、lifetime promotion の選択carrier payloadの意味解析が対象。Semaの2・3 callback の診断専用上限では4,336→3,824、4,539→3,929単位だった。
+
+Compilerの `recursive_callbacks_keep_independent_effects` はNative／デコード済みAWBCでFAILからPASSに変わった。Generic Match `.1.2` C3/C5 は、受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+Semaのテストビルドで、残余条件の読取りに使う `ResidualPreparedPredicateView::Equivalent` のオペランドフィールドに未読警告が1件増えた。今回の回帰は等価の意味と制約の適用を検査し、このフィールドは直接照合していない。
+
+CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外の4,321件は4,243 PASS／78既知FAILで、別に1件SKIP。先行Source `d0e5a59daabf993a545969fb4e1e5c2824164b50` と共通の4,320 IDを照合し、上記のSema 4件とCompilerのNative／AWBC 2件がFAILからPASSに変わった。共通のPASSはすべて通過し、新たな量化の回帰 `agreement_quantifies_the_two_operands_at_the_same_valuation` もPASSした。CLIのライブラリ・バイナリ196件と統合6 targetの30件は先行実行と合否が一致し、workspace全target・全featureのcheck／Clippy、書式、差分、Cargo依存グラフ、構造ゲートが通過した。CLIの全 `check` テストは未再実行。
+
+[検証原本](acceptance-evidence/task-whole-effect-predicate-equivalence.raw.zip) は77 entry、1,370,865 bytes、SHA256 `d7fd1a45c778e856e6d3e30d3cd340f20b4907aa28cc3617e275e26dc89959ab`。各entryの長さとハッシュを照合した。記録時の `target` は134,686,686,524 bytes。
