@@ -20780,3 +20780,18 @@ CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外の
 Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-original-quantified-effect-clause-reuse.raw.zip) は70 entry、1,383,500 bytes、SHA256 `bff9b80cd3784ad25ea250132861354acb9d6e69a6bf276a978ac3c306fc66dd`。各entryの長さとハッシュを照合した。記録時の `target` は134,695,500,804 bytes。
+
+<a id="joint-guarded-support-constraints"></a>
+## 2026-11-21 — 条件付きサポート制約を元制約と同時に構築
+
+検証基点は `2e03a7988edc0c20cd7771cb748cbdaa27f80fda`。公開Sourceは `dc8fdd42c6a5f2855714bc1e2bbef7506b29a2b6`。取り込み先にだけあるラベルでは、入力係数がラベル外の係数とすべて一致するとき、同じ一致を局所関数にも求める。Semaはラベルごとにこの等価式を元制約とともに渡す。Coreは元制約の単一リテラルから確定した値を条件式のオペランドに反映し、元制約を含む決定グラフを一度だけ確定する。既定上限4,096と正準表現による独立照合を維持した。グラフをまとめた初回試行では、2 callback が3,613単位、3 callback の先行2入力が6,069単位だった。3 callback が先行Sourceの6,011単位を上回ったため、初回試行の実装は公開対象から外した。
+
+同一SHA256の先行CLI入力で、1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで戻り値42、ログ順、1ステップ最大1操作、診断0を既定上限で再確認した。3 callback は両実行系で先行2入力が式68、別の入力が式95で停止した。診断専用上限16,384では2 callback が3,663→3,411、先行の3 callback 2入力が6,011→5,481、別の3 callback 入力が5,797→5,267単位だった。先行順の入力では成分準備が2,647→2,117単位、うち子成分のコンパイルとサポート制約の区間が1,112→583単位だった。その後の内訳は、ルートの最小化と型の再構築234、ルートの独立照合218、取り込んだ成分の再構築と照合182、照合後の処理555単位。
+
+Core全featureの対象2,399件がすべてPASSした。先行の全2,398 IDの合否が一致した。追加の回帰では一括版を個別構築と照合し、元制約の正負のリテラル、矛盾、上限到達時の失敗を確認した。Sema全featureユニット2,013件は1,937 PASS／76既知FAILで、先行の全IDと一致した。既存のサポート制約テストは2ラベルに拡張し、自由入力、固定入力、元のサポートに含むラベルを各割当てで照合した。
+
+CargoでCoreの推移的逆依存51パッケージを選定し、CLI以外で8,143件を実行した。8,065 PASS／78既知FAIL／18 SKIP。Semaの対象22パッケージに属する4,323件はSource `9dfc476e5aa2997e8c1569d96efc2616a0f7a4a4` と全IDの合否が一致した。Compilerの `recursive_callbacks_keep_independent_effects` はNative／デコード済みAWBCでPASS。残る範囲では、先行Core全件のSource `f33523ba95a04a3a943f44bfd2351f8cc0de5475` に含まれた3,816 IDがPASSを維持し、既公開のCore回帰3件と今回のCore回帰1件がPASSした。CLI 226件、Core doctest 81件、workspace全target・全featureのcheck／Clippy、書式、差分、依存グラフ、構造ゲートが通過した。前回の取り込みモジュールのワイルドカードimport警告は解消した。CLIの全 `check` テストは未再実行。
+
+Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-joint-guarded-support-constraints.raw.zip) は107 entry、1,722,788 bytes、SHA256 `cadfe72e86d5ab9179de19b052e92f7e8af31864e8631ca57a7ed9bf21597e11`。各entryの長さとハッシュを照合した。記録時の `target` は134,799,052,933 bytes。
