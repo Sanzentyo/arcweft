@@ -20399,3 +20399,24 @@ Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-
 CLIを除くCoreの推移的逆依存は8,117件で8,023 PASS、94既知FAIL、18 SKIP。比較元 `5bcf186d03bf4e83aedf858584fdfed722cee301` と既存IDの合否はすべて一致し、`prefix_table_equations_match_the_universal_relation` が追加で通過した。初回はWindowsのページングファイル不足（OSエラー1455）で依存rlibを読み込めず、ビルドが終了101となった。CLIとdoctestの完了後、同じテスト選択を `CARGO_BUILD_JOBS=4` で単独実行した。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-unrestricted-scheme-equations.raw.zip) は71 entry、1,669,299 bytes、SHA256 `841894fd5b52f23dabbb80d93ae8cf293d4c50dfb99fcf111d1dded5da94e8bf`。各entryの長さとハッシュ、公開Sourceの4ファイルを照合した。記録時の `target` は101,681,310,223 bytes。
+
+<a id="unrestricted-row-clauses"></a>
+## 2026-11-20 — 制約のない効果行の包含を入力マスクごとに判定する
+
+検証基点 `2b3e25da98d74135ed1fd2adf275b9163f942901`、Source `7688b4838554b74fe95ac40a26a796683942a2ba`。前提が恒真の全称量化では、ラベルクラスの各入力マスクが有限行で実現できる。論理積と、行の入力から独立した選択を辿り、行の所属比較を各マスクで直接判定する。論理和と否定の内側は通常の評価を使う。通常の評価と全称量化向けの評価は同じ依存走査で処理し、キャッシュのキーで区別する。形式引数がない場合は通常の評価結果を再利用する。
+
+回帰テストは論理積、選択、否定、論理和を組み合わせた効果述語を既存の全称量化と照合した。選択は同じ変数を保持し、通常評価で必要な外側マスクの存在条件はキャッシュを通じても保持された。Sema全featureユニットは1,999件で1,913 PASS、86既知FAIL。比較元 `73b3ee8f8c577a5e8d784e7b93220ba802db4adb` の既存IDは合否が一致し、この回帰条件が追加で通過した。workspace全target・全feature check／Clippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+最初の試作は、引数のない述語も全称量化向けに評価した。その試作では2 callback が残余プログラム構築中に上限へ達した。引数のない場合の再利用を加えた公開Sourceでは、本体の最初の効果項を読む段階まで進んだ。試作と公開Sourceのログはそれぞれの入力ハッシュで区別した。
+
+Supersedes [制約のないスキームを係数ごとに比較した時点の停止位置](#unrestricted-scheme-equations)。公開Sourceの既定上限4,096で、2 callback のSemaは式75、Native／AWBCは型検査の式76で停止した。3実行とも本体の最初の効果項を読む段階で停止した。3 callback のSemaは式26で、外側ラベルの8マスクから残った4条件を存在条件なしで合成中に停止した。この外側比較に入ってから停止までに同じ型制約コンテキストが計上した作業は83単位（3,740→3,823）。候補全体が上限4,096を使い切った。
+
+前の `OriginalConstraintForest::close` で候補を受理した時点から次の `close` に入るまで、同じコンテキストで2,142単位（1,180→3,322）を計上した。このうち、2回目の `infer_original_products` は1,585単位（1,735→3,320）だった。その内訳では、元の効果制約の準備と直後のシード作成前の計上が816単位（1,874→2,690）、経路を封印して元の効果関係を確定する区間が435単位（2,690→3,125）だった。計測は公開Sourceの既定上限で、既存テストの実行中に各境界で読んだ。
+
+元の制約を準備した際、述語の変数走査は118単位（1,888→2,006）、登録された適用の移送は0単位だった。移送ループが実行されると最低1単位を計上する。空の置換表で呼ばれた `project_registered_predicate` は544単位（2,006→2,550）だった。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を既記録のStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
+
+Cargo graphから求めたSemaの逆依存は22パッケージ。CLIを除く4,309件で4,217 PASS、92既知FAIL、1 SKIP。比較元のCore全逆依存ログから該当パッケージを抽出し、4,308件と照合した。コンパイラの `view_product` では `nominal_default_constructed_from_scoped_input_keeps_its_origin` と `nominal_enum_default_constructed_from_scoped_input_keeps_its_origin` がFAILからPASSへ変わった。追加回帰テストもPASS。既存のPASSからFAILへの変化は0件。CLI library／binary 196件と規定の統合6 target 30件はすべてPASS。逆依存とCLIのビルドは `CARGO_BUILD_JOBS=4` で実行した。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-unrestricted-row-clauses.raw.zip) は92 entry、1,747,107 bytes、SHA256 `385a969194b1a03d9bb394cbb7058837af05ccfd41631aa5a40f9a8e40e78971`。各entryの長さとハッシュ、公開Sourceの4ファイルを照合した。記録時の `target` は101,693,391,270 bytes。
