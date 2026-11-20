@@ -662,7 +662,7 @@ impl<V: Clone + Ord> EffectDecision<V> {
         builder.finish(Self::mapped_root(self.root, &indices))
     }
 
-    /// `self ? yes : no` is the only Boolean construction primitive.
+    /// Builds `self ? yes : no` from canonical operands.
     pub fn conditional<C: DecisionControl>(
         &self,
         yes: &Self,
@@ -690,6 +690,9 @@ impl<V: Clone + Ord> EffectDecision<V> {
                 }
                 Root::Branch(slot) => operands[slot].copy_with_control(control),
             };
+        }
+        if yes_root == Root::False && no_root == Root::True {
+            return self.not(control);
         }
         let mut builder = DecisionBuilder::new(control);
         let condition = builder.import(self)?;
@@ -978,7 +981,29 @@ impl<V: Clone + Ord> EffectDecision<V> {
 
     /// Complements a Boolean function without interpreting it as a finite row.
     pub fn not<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
-        self.conditional(&Self::constant(false), &Self::constant(true), control)
+        if self.nodes.is_empty() {
+            return Ok(Self::constant(self.root == Root::False));
+        }
+        self.admit_copy(control)?;
+        // Swapping terminals is a bijection. Branch indices, distinct
+        // children and the reachable low-before-high order are preserved.
+        let complement = |root| match root {
+            Root::False => Root::True,
+            Root::True => Root::False,
+            branch => branch,
+        };
+        Ok(Self {
+            nodes: self
+                .nodes
+                .iter()
+                .map(|node| Node {
+                    variable: node.variable.clone(),
+                    low: complement(node.low),
+                    high: complement(node.high),
+                })
+                .collect(),
+            root: self.root,
+        })
     }
 
     /// Existentially eliminates the supplied caller-owned variables.

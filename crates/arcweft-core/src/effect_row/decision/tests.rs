@@ -82,6 +82,45 @@ fn independent_equalities_preserve_later_contradiction_and_input_order() {
 }
 
 #[test]
+fn complement_reuses_canonical_branch_indices_within_the_copy_budget() {
+    let mut control = Meter::default();
+    let left = atom(1).or(&atom(3), &mut control).unwrap();
+    let right = atom(2).and(&atom(3), &mut control).unwrap();
+    let input = atom(0).conditional(&left, &right, &mut control).unwrap();
+    let limit = input.node_count() + 1;
+    let mut exact = Meter {
+        limit: Some(limit),
+        ..Meter::default()
+    };
+    let complement = input.not(&mut exact).unwrap();
+    assert_eq!(complement.node_count(), input.node_count());
+    assert_eq!(complement.not(&mut control).unwrap(), input);
+    assert_eq!(
+        truth_table(&complement, 4),
+        truth_table(&input, 4)
+            .into_iter()
+            .map(|value| !value)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        input
+            .conditional(
+                &EffectDecision::constant(false),
+                &EffectDecision::constant(true),
+                &mut control
+            )
+            .unwrap(),
+        complement
+    );
+
+    let mut short = Meter {
+        limit: Some(limit - 1),
+        ..Meter::default()
+    };
+    assert_eq!(input.not(&mut short), Err((limit, limit - 1)));
+}
+
+#[test]
 fn joint_equalities_keep_shared_coefficients_and_constants() {
     use EffectDecisionReplacement::{Constant, Decision, Variable};
 
