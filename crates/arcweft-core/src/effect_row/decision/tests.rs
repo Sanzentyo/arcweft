@@ -69,6 +69,53 @@ fn joint_equalities_keep_shared_coefficients_and_constants() {
 }
 
 #[test]
+fn joint_requirements_share_work_across_independent_implications() {
+    let premises: Vec<_> = (0..8).map(|index| atom(index * 2)).collect();
+    let grants: Vec<_> = (0..8).map(|index| atom(index * 2 + 1)).collect();
+    let implications = || {
+        premises.iter().zip(&grants).map(|(premise, consequence)| {
+            EffectDecisionRequirement::Implication {
+                premise,
+                consequence,
+            }
+        })
+    };
+    let mut separate = Meter::default();
+    let decisions: Vec<_> = implications()
+        .map(|point| point.decision(&mut separate).unwrap())
+        .collect();
+    let expected = EffectDecision::all(&decisions, &mut separate).unwrap();
+    let mut joint = Meter::default();
+    assert_eq!(
+        EffectDecisionRequirement::all(implications(), &mut joint).unwrap(),
+        expected
+    );
+    assert!(joint.used < separate.used);
+    let mut short = Meter {
+        limit: Some(joint.used - 1),
+        ..Meter::default()
+    };
+    assert_eq!(
+        EffectDecisionRequirement::all(implications(), &mut short),
+        Err((joint.used, joint.used - 1))
+    );
+}
+
+#[test]
+fn equivalent_literals_have_the_same_cost_in_both_orders() {
+    let left = atom(2);
+    let right = atom(6);
+    let mut ascending = Meter::default();
+    let expected = left.equivalent(&right, &mut ascending).unwrap();
+    let mut descending = Meter {
+        limit: Some(ascending.used),
+        ..Meter::default()
+    };
+    assert_eq!(right.equivalent(&left, &mut descending).unwrap(), expected);
+    assert_eq!(descending.used, ascending.used);
+}
+
+#[test]
 fn finalization_emits_only_reachable_branches_in_low_before_high_order() {
     let mut work = Meter::default();
     let mut builder = DecisionBuilder::new(&mut work);

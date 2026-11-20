@@ -429,6 +429,17 @@ impl<'basis> LabelClasses<'basis> {
         self.labels.binary_search(label).ok().map(|index| index + 1)
     }
 
+    fn with_path(self, label: &EffectId) -> std::ops::Range<usize> {
+        // Scope syntax sorts before every possible continuation of a path.
+        // Removing it therefore preserves the order of the named classes.
+        let path = label.path();
+        let start = self
+            .labels
+            .partition_point(|candidate| candidate.path() < path);
+        let count = self.labels[start..].partition_point(|candidate| candidate.path() == path);
+        start..start + count
+    }
+
     fn including<'label, C: DecisionControl>(
         self,
         support: impl IntoIterator<Item = &'label EffectId>,

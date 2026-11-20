@@ -634,11 +634,13 @@ impl<'a> Compilation<'a> {
         // of the formal inputs. Empty input rows are a valid representative of
         // that region, including the outside-support membership point.
         let valuation = self.valuation();
-        let outside = valuation.empty_point(0, &actual[0], work)?.not(work)?;
-        if outside.is_constant(false) {
-            return Ok(outside);
+        let outside = valuation.empty_point(0, &actual[0], work)?;
+        if outside.is_constant(true) {
+            return Ok(Decision::constant(false));
         }
         let mut requirements = Vec::new();
+        let denied = Decision::constant(false);
+        let classes = self.layout.label_classes();
         for (index, label) in self.layout.labels.iter().enumerate() {
             work.charge(DecisionWork::Visit)?;
             let class = index + 1;
@@ -647,8 +649,9 @@ impl<'a> Compilation<'a> {
                 continue;
             }
             let mut allowance: Option<Cow<'_, Decision>> = None;
-            for (other, capability) in self.layout.labels.iter().enumerate() {
+            for other in classes.with_path(label) {
                 work.charge(DecisionWork::Visit)?;
+                let capability = &self.layout.labels[other];
                 if !capability.covers(label) || permitted[other + 1].is_constant(false) {
                     continue;
                 }
@@ -670,26 +673,29 @@ impl<'a> Compilation<'a> {
                     break;
                 }
             }
-            let requirement = match allowance {
-                Some(allowance) if allowance.is_constant(true) => continue,
-                Some(allowance) if required.is_constant(true) => match allowance {
-                    Cow::Borrowed(value) => work.copy_decision(value)?,
-                    Cow::Owned(value) => value,
-                },
-                Some(allowance) => {
-                    required.conditional(&allowance, &Decision::constant(true), work)?
-                }
-                None => required.not(work)?,
-            };
-            if requirement.is_constant(false) {
-                return Ok(requirement);
+            let allowance = allowance.unwrap_or(Cow::Borrowed(&denied));
+            if allowance.is_constant(true) {
+                continue;
             }
-            if !requirement.is_constant(true) {
-                work.charge(DecisionWork::Node)?;
-                requirements.push(requirement);
+            if allowance.is_constant(false) && required.is_constant(true) {
+                return Ok(Decision::constant(false));
             }
+            work.charge(DecisionWork::Node)?;
+            requirements.push((required, allowance));
         }
-        FiniteRowValuation::join_named(outside, &requirements, work)
+        let outside_requirement = EffectDecisionRequirement::Implication {
+            premise: outside.as_ref(),
+            consequence: &denied,
+        };
+        EffectDecisionRequirement::all(
+            std::iter::once(outside_requirement).chain(requirements.iter().map(
+                |(required, allowance)| EffectDecisionRequirement::Implication {
+                    premise: required.as_ref(),
+                    consequence: allowance.as_ref(),
+                },
+            )),
+            work,
+        )
     }
 
     fn relation<C: DecisionControl>(

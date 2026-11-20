@@ -1539,6 +1539,23 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         if left == Root::True {
             return Ok(right);
         }
+        if right == Root::True {
+            return Ok(left);
+        }
+        // Use the earlier literal as the condition so both branches can
+        // attach directly to it. Distinct literals of one reference disagree.
+        let (left, right) = match (self.node(left), self.node(right)) {
+            (Some(first), Some(second))
+                if first.literal_polarity().is_some() && second.literal_polarity().is_some() =>
+            {
+                match first.variable.cmp(&second.variable) {
+                    std::cmp::Ordering::Less => (left, right),
+                    std::cmp::Ordering::Equal => return Ok(Root::False),
+                    std::cmp::Ordering::Greater => (right, left),
+                }
+            }
+            _ => (left, right),
+        };
         let negated = self.conditional(Conditional::new(right, Root::False, Root::True))?;
         self.conditional(Conditional::new(left, right, negated))
     }

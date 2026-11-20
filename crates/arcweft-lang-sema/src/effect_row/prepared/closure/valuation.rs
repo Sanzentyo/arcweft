@@ -284,6 +284,31 @@ mod tests {
     use crate::types::{GenericBinder, GenericScope};
 
     #[test]
+    fn coverage_path_groups_include_scopes_without_including_other_operations() {
+        let mut labels: Vec<EffectId> = [
+            "fs.read(file)",
+            "fs.read",
+            "fs.read(file.extra)",
+            "fs.read.meta",
+            "fs.read_more",
+            "fs.write",
+        ]
+        .into_iter()
+        .map(|value| value.parse().unwrap())
+        .collect();
+        labels.sort();
+        let classes = LabelClasses { labels: &labels };
+        let required = "fs.read(file.extra)".parse().unwrap();
+        assert_eq!(
+            labels[classes.with_path(&required)]
+                .iter()
+                .map(EffectId::as_str)
+                .collect::<Vec<_>>(),
+            ["fs.read", "fs.read(file)", "fs.read(file.extra)"],
+        );
+    }
+
+    #[test]
     fn input_quantification_visits_only_reachable_formals_and_presence() {
         let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 20));
         let parameters: Vec<_> = (0..20).map(|index| parameter(&scope, index)).collect();

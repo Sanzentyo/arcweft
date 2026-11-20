@@ -129,6 +129,41 @@ impl<'a, V: Clone + Ord> EffectDecisionRequirement<'a, V> {
         }
     }
 
+    /// Conjoins the requirements in a common decision arena. Their operands
+    /// can share nodes, and no intermediate requirement graph is published.
+    pub fn all<C: DecisionControl>(
+        requirements: impl IntoIterator<Item = Self>,
+        control: &mut C,
+    ) -> Result<EffectDecision<V>, C::Error> {
+        let mut builder = DecisionBuilder::new(control);
+        let mut clauses = Vec::new();
+        for requirement in requirements {
+            builder.control.charge(DecisionWork::Visit)?;
+            let (first, second) = requirement.operands();
+            let point = match second {
+                Some(second) => {
+                    if first.is_constant(false) || second.is_constant(true) {
+                        continue;
+                    }
+                    let premise = builder.import(first)?;
+                    let consequence = builder.import(second)?;
+                    builder.conditional(Conditional::new(premise, consequence, Root::True))?
+                }
+                None => builder.import(first)?,
+            };
+            match point {
+                Root::False => return Ok(EffectDecision::constant(false)),
+                Root::True => {}
+                Root::Branch(_) => {
+                    builder.control.charge(DecisionWork::Node)?;
+                    clauses.push(point);
+                }
+            }
+        }
+        let result = builder.conjoin_ordered(clauses)?;
+        builder.finish(result)
+    }
+
     /// Requires this point for every assignment to references at or before `through`.
     /// References after the prefix remain free. Both operands follow the same
     /// assignment, and each reachable pair of source roots is expanded once.
