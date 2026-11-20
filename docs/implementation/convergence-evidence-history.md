@@ -20437,3 +20437,22 @@ Cargo graphから求めたSemaの推移的逆依存は22パッケージ。CLIを
 Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を記録済みのStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-empty-effect-projection.raw.zip) は43 entry、1,352,923 bytes、SHA256 `6183c85c858003e0539dee13cc1f955271ca9edb349c631667a839583137d252`。各entryの長さとハッシュ、公開Sourceの2ファイルを照合した。記録時の `target` は101,705,014,987 bytes。
+
+<a id="closed-effect-membership"></a>
+## 2026-11-20 — 閉じた効果行に必要な包含判定を先に選ぶ
+
+検証基点 `03115393fef858691da9e4c3be428e06e566d9a8`、Source `abfb8f6f73db8f6213c48cfffd24f88242ff4e34`。包含では効果行が閉じているかを先に判定し、その結果が一定なら必要な関係だけを構築する。行が閉じているかどうかが選択変数や未確定の係数に依存する場合は、同じ選択で厳密な所属の比較と capability の比較を切り替える。等値は厳密に比較する。有限行のコンパイルと正準式での独立検証で、分岐規則を共有する。回帰は閉じた `fs.read` と形式引数を同じ選択で切り替え、`fs.read(save)` に対する包含を両経路で双方向に検証した。
+
+2 callback のSemaで、比較の4回目に両行の読取りが完了した時点は修正前後とも2,287単位だった。その直後の capability 比較の開始が2,380から2,287単位へ移った。元の厳密比較は93単位、変更後はその比較を呼ばなかった。[修正前の計測](#empty-effect-projection)と同じコンテキストの作業量を使用した。
+
+Supersedes [名前付きラベルの capability 比較で止まっていた位置](#empty-effect-projection)。既定上限4,096で2 callback のSemaは式75で、包含の後の効果述語の論理積を構築中に停止した。3 callback のSemaは式26で、4回目の外側ラベル比較によるマスク選択中に上限に達した。Native／AWBC の2 callback は型検査の式76で同じ論理積の構築中に上限に達した。別の3 callback 入力で、CLIの `bytecode-vm` と `awbc-product` はどちらも `sema.final_analysis` の式69で終了1。3種類の効果を持つ実引数と実行コマンドは原本に含めた。
+
+別の測定では既存の実行ファイルをデバッガーから起動し、プロセス内の診断用上限16,384で両方のSemaテストの既存アサーションを確認した。候補の報告時の最大作業は2 callback が5,706単位、3 callback が5,744単位。最後の効果閉包では、2 callback が取り込んだ関係の再計算に1,224単位、元の関係のコンパイルからセル集合の確定までに1,057単位を計上した。取り込んだ1関係の内訳は、関係のコンパイルに473単位、追加ラベルの制約に447単位、完了計算に240単位だった。3 callback は取り込みと元の関係のコンパイルに25単位と1,293単位を計上した。この測定は処理の特定に使い、既定上限での受入件数には算入しない。
+
+Semaの全 feature テストは2,001件で1,920 PASS、81既知FAIL。比較元 `63b89868f9171dd4d8fe757c5e63e02beae9783b` で失敗していた `parent_and_child_close_type_constant_and_effect_relations_together` と、新規の回帰テストが通過した。workspace全target・全featureのcheckとClippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+Cargo graphから求めたSemaの推移的逆依存は22パッケージ。CLIを除く4,311件で4,224 PASS、87既知FAIL、1 SKIP。比較元の4,310件と個別IDを照合し、同じ親子の閉包テストがFAILからPASSに変わった。追加の回帰1件はPASS、新規失敗は0件。CLIのライブラリ・バイナリ196件と規定の統合6 target 30件はすべてPASS。最初の逆依存ビルドはWindowsのページングファイル不足（OSエラー1455）により Player Native のコンパイルが失敗し、Cargoは終了101となった。CLI完了後、同じテスト選択の再実行ではビルドが通り、上記結果を取得した。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を記録済みのStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-closed-effect-membership.raw.zip) は79 entry、1,443,633 bytes、SHA256 `6fb1a8ed4860bc8dcc1b4ebc9ef2ccd2cce243f5f90bfe2a21cd1c8d58a304e3`。各entryの長さとハッシュ、公開Sourceの4ファイルを照合した。記録時の `target` は101,710,895,560 bytes。
