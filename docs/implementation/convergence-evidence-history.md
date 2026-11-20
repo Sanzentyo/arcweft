@@ -20873,3 +20873,22 @@ CLIのライブラリ・バイナリ196件、統合6対象の30件、Core doctes
 Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-forced-decision-prefix.raw.zip) は117 entry、2,119,840 bytes、SHA256 `b804c99b8a73a4792a263e0a5441283252a3ba5839587c44ac81e20ed5b65701`。各entryの長さとハッシュを照合した。記録時の `target` は134,885,454,691 bytes。
+
+<a id="direct-effect-reification"></a>
+## 2026-11-21 — 確定した係数から正準の効果行を直接構築
+
+検証基点は `cf307031f5216db8f20f13389b5ab92c3d38a941`。公開Sourceは `2c003a21c07a1f86b440291a349f6ad739bd54b2`。確定済みの関数の係数表から、宣言順に対応する効果行パラメーターを使って正準行を直接作る。取り込み先で照合した係数を子成分の同じパラメーター位置に移し、子成分の独立照合は移送した正準行を各係数および元の制約と照合する。元の効果行が正準比較で一致した場合は関係式の組み立てを省き、呼出し条件は別に照合する。追加回帰は、宣言順と正準決定グラフの変数順が異なる行の名前付き係数と既定係数を比較した。同じ行を比較しても呼出し条件が残ることを既存回帰に加えた。
+
+最初の試行は中間グラフを省いただけで、2 callback と3 callback の作業量は先行値と一致した。この試行の回帰テストのビルドは `E0277` で終了した。効果行の構築には宣言エラーを扱える既存の `Work` が必要だったため、テストの制御型を修正した。最終試行のSema対象100件は99 PASS／1既知FAILだった。失敗した `contextual_effect_rows_survive_value_expression_boundaries` は、先行Sema全featureと先行Sema逆依存でも失敗した同一IDだった。
+
+5つの `.arcw` を公開済み入力原本のSHA256と照合した。既定上限4,096で1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで戻り値42、1ステップ最大1操作、診断0件を確認した。1 callback は `marker` を記録し、2 callback はログ0件だった。CLIの3 callback は3入力ともVM／AWBC Productで式95の意味解析に失敗した。
+
+診断専用上限16,384で2 callback は2,893→2,887単位、3 callback の先行2入力は4,537→4,529単位、別の入力は4,394→4,386単位だった。いずれもVMで戻り値42。先行順の3 callback では外側の独立照合が209→205単位、取り込んだ子成分の特殊化が98→94単位だった。同じ入力で元制約と最終制約のスナップショット構築を別計測し、それぞれ126単位と139単位を確認した。
+
+CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外の4,325件は4,247 PASS／78既知FAILで、別に1件SKIP。先行Source `9d403e2564014931d939165971e5412db58a460b` の4,324 IDの合否が一致し、追加回帰がPASSした。Compilerの2 callback はNativeとデコード済みAWBCでPASSした。Semaでは開いた再帰宣言の3 callback の効果行伝播がPASSした。Sema全featureユニットは1,939 PASS／76既知FAILで、先行の2,014 IDの合否が一致した。初回の照合は比較元にCore全体を指定していた。同じ実行ログを使い、Semaの同一選択範囲を比較元にして照合し直した。
+
+CLIのライブラリ・バイナリ196件、統合6対象の30件、Sema doctest 2件、workspace全target・全featureのcheck／Clippy、書式、差分、構造ゲートが通過した。CLIの全 `check` テストは未再実行。
+
+Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-direct-effect-reification.raw.zip) は110 entry、1,588,598 bytes、SHA256 `aea68f86b62a38f70310a6513d45e58911a8d5cfa7f6fe31c1b585b8c30ac75a`。各entryの長さとハッシュを照合した。記録時の `target` は134,893,196,299 bytes。
