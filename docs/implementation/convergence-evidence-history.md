@@ -20456,3 +20456,22 @@ Cargo graphから求めたSemaの推移的逆依存は22パッケージ。CLIを
 Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を記録済みのStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-closed-effect-membership.raw.zip) は79 entry、1,443,633 bytes、SHA256 `6fb1a8ed4860bc8dcc1b4ebc9ef2ccd2cce243f5f90bfe2a21cd1c8d58a304e3`。各entryの長さとハッシュ、公開Sourceの4ファイルを照合した。記録時の `target` は101,710,895,560 bytes。
+
+<a id="grouped-effect-obligations"></a>
+## 2026-11-20 — 追加ラベルの制約と効果述語の論理積をまとめる
+
+検証基点 `fe964b64170f70aa68695bd7a1bcad05c2ec9632`、Source `3c697ee98af20392f2537e60b0ed4e60c2e88af6`。取り込んだ関係の追加ラベルでは、入力の全係数が外側ラベルと一致する場合に、局所出力の全係数の一致を求める。確定済みの入力係数は既存の固定セルから読む。ラベルごとの条件は一度に元の関係へ加える。有限行のコンパイルと正準式での検証では、複数の効果述語を合わせる際に既存の決定図ビルダーを共有し、2項の論理積は両項から直接作る。
+
+回帰テストでは、2つの局所出力と1つのFuture入力の外側・名前付き係数を、入力が未確定の場合と、固定入力が追加ラベルを含む場合と含まない場合で全組み合わせ評価した。元の有限性制約を期待値に含めるために最初のビルドを中止し、検証用の入力SHA256を記録し直した。Semaの全 feature テストは2,002件で1,921 PASS、81既知FAIL。比較元 `abfb8f6f73db8f6213c48cfffd24f88242ff4e34` と既存の2,001件の合否が一致し、新規の回帰テストが通過した。workspace全target・全featureのcheckとClippy、fmt、差分、Cargo graph、構造ゲートは終了0。
+
+[前回](#closed-effect-membership)と同じSema 2 callback をプロセス内の診断用上限16,384で実測した。取り込んだ1関係のコンパイルは473→461単位、追加ラベルの制約は447→436単位、完了計算は両方240単位。最大の候補報告は2 callback が5,706→5,671単位、3 callback が5,744→5,716単位。両方の既存アサーションが通過した。診断用の実行は既定上限での受入件数から区別する。
+
+Supersedes [効果述語の論理積を構築中に止まっていた位置](#closed-effect-membership)。既定上限4,096で、2 callback のSemaは式75で効果関係の次のノードを処理する直前に停止した。3 callback のSemaは式26で外側ラベルの入力マスクを処理する直前に上限に達した。Native／AWBC の2 callback も型検査の式76で同じ箇所に達した。前回と同じ3 callback の実入力では、CLIの `bytecode-vm` と `awbc-product` がともに `sema.final_analysis` の式69で終了1となった。
+
+上限に達する前に完了した最後の処理で、元の制約を組み合わせる区間を測定した。2 callback は522単位で、効果制約の準備に204単位、凍結に303単位を計上した。3 callback は820単位で、同じ二工程に379単位と414単位を計上した。
+
+Cargo graphから求めたSemaの推移的逆依存は22パッケージ。CLIを除く4,312件で4,225 PASS、87既知FAIL、1 SKIP。比較元の4,311件と個別IDを照合し、既存の合否はすべて一致した。追加の回帰1件も通過した。CLIのライブラリ・バイナリ196件と規定の統合6 target 30件はすべてPASS。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を記録済みのStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-grouped-effect-obligations.raw.zip) は57 entry、1,375,040 bytes、SHA256 `0c55576c89ef19de8d2104ddd83e2c7b48abc6dc9cc83cef270bbf0063fc5ea9`。各entryの長さとハッシュ、公開Sourceの6ファイルを照合した。記録時の `target` は101,721,091,652 bytes。
