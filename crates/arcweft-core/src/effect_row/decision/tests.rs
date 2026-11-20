@@ -31,6 +31,57 @@ fn truth_table(decision: &EffectDecision<u8>, variables: u8) -> Vec<bool> {
 }
 
 #[test]
+fn one_node_budget_admits_a_canonical_reference() {
+    let mut meter = Meter {
+        limit: Some(1),
+        ..Meter::default()
+    };
+    let decision = EffectDecision::variable(0, &mut meter).unwrap();
+    assert_eq!(decision.single_reference(), Some(&0));
+    assert_eq!(truth_table(&decision, 1), [false, true]);
+
+    let mut empty = Meter {
+        limit: Some(0),
+        ..Meter::default()
+    };
+    assert_eq!(EffectDecision::variable(0, &mut empty), Err((1, 0)));
+}
+
+#[test]
+fn independent_equalities_preserve_later_contradiction_and_input_order() {
+    use EffectDecisionReplacement::{Constant, Variable};
+
+    let independent = || {
+        [
+            Ok([Variable(0), Constant(true)]),
+            Ok([Variable(1), Variable(2)]),
+            Ok([Constant(false), Variable(3)]),
+        ]
+    };
+    let decision = EffectDecision::all_equalities(independent(), &mut Meter::default()).unwrap();
+    assert_eq!(
+        truth_table(&decision, 4),
+        (0..16)
+            .map(|bits| bits & 1 != 0 && (bits & 2 != 0) == (bits & 4 != 0) && bits & 8 == 0)
+            .collect::<Vec<_>>()
+    );
+
+    let unsatisfiable = independent()
+        .into_iter()
+        .chain([Ok([Variable(0), Constant(false)]), Err((42, 0))]);
+    assert!(
+        EffectDecision::all_equalities(unsatisfiable, &mut Meter::default())
+            .unwrap()
+            .is_constant(false)
+    );
+    let invalid = independent().into_iter().chain([Err((42, 0))]);
+    assert_eq!(
+        EffectDecision::all_equalities(invalid, &mut Meter::default()),
+        Err((42, 0))
+    );
+}
+
+#[test]
 fn joint_equalities_keep_shared_coefficients_and_constants() {
     use EffectDecisionReplacement::{Constant, Decision, Variable};
 

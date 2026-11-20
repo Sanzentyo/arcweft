@@ -294,18 +294,23 @@ impl<'a> Compilation<'a> {
         let admitted = self
             .cells
             .complete_import(imported.relation.principal(), work)?;
-        let equations = (0..self.layout.classes())
-            .flat_map(|class| (0..table).map(move |mask| (class, mask)))
-            .map(|(class, mask)| {
-                Ok([
-                    self.cells.local(Atom::Cell {
-                        scheme: local,
-                        class,
-                        mask,
-                    })?,
-                    EffectDecisionReplacement::Decision(imported.coefficient(class, mask)?),
-                ])
-            });
+        let cells = self
+            .layout
+            .classes()
+            .checked_mul(table)
+            .ok_or(PreparedEffectInvariant::TruthTableOverflow)?;
+        let equations = (0..cells).map(|position| {
+            let class = position / table;
+            let mask = position % table;
+            Ok([
+                self.cells.local(Atom::Cell {
+                    scheme: local,
+                    class,
+                    mask,
+                })?,
+                EffectDecisionReplacement::Decision(imported.coefficient(class, mask)?),
+            ])
+        });
         let admission = (!admitted.is_constant(true)).then_some(Ok([
             EffectDecisionReplacement::Constant(true),
             EffectDecisionReplacement::Decision(&admitted),

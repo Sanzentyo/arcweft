@@ -504,9 +504,8 @@ impl<V: Clone + Ord> EffectDecision<V> {
 
     /// Admits one caller-owned Boolean variable through the supplied work control.
     pub fn variable<C: DecisionControl>(variable: V, control: &mut C) -> Result<Self, C::Error> {
-        let mut builder = DecisionBuilder::new(control);
-        let root = builder.branch(variable, Root::False, Root::True)?;
-        builder.finish(root)
+        control.charge(DecisionWork::Node)?;
+        Ok(Self::reference(variable))
     }
 
     /// Tests whether the whole reduced function is the requested constant.
@@ -969,14 +968,11 @@ impl<V: Clone + Ord> EffectDecision<V> {
                 Root::True => {}
                 Root::Branch(_) => {
                     builder.control.charge(DecisionWork::Node)?;
-                    equations.push(GuardedPoint {
-                        guard: None,
-                        point: equation,
-                    });
+                    equations.push(equation);
                 }
             }
         }
-        let result = builder.conjoin_guarded(&equations)?;
+        let result = builder.conjoin_ordered(equations)?;
         builder.finish(result)
     }
 
@@ -1567,6 +1563,8 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     where
         V: 'a,
     {
+        let equations = equations.into_iter();
+        let mut deferred = (equations.size_hint().0 >= 3).then(|| (BTreeSet::new(), Vec::new()));
         let mut root = Root::True;
         for equation in equations {
             self.control.charge(DecisionWork::Visit)?;
@@ -1574,12 +1572,46 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             let left = self.operand(left)?;
             let right = self.operand(right)?;
             let same = self.equivalent_roots(left, right)?;
+            match same {
+                Root::False => return Ok(Root::False),
+                Root::True => continue,
+                Root::Branch(_) => {}
+            }
+            if let Some((used, points)) = &mut deferred {
+                let literals = [left, right]
+                    .into_iter()
+                    .filter_map(|operand| match operand {
+                        Root::Branch(index) => Some(&self.nodes[index]),
+                        Root::False | Root::True => None,
+                    });
+                if literals
+                    .clone()
+                    .all(|node| node.literal_polarity().is_some() && !used.contains(&node.variable))
+                {
+                    for node in literals {
+                        self.control.charge(DecisionWork::Node)?;
+                        used.insert(node.variable.clone());
+                    }
+                    self.control.charge(DecisionWork::Node)?;
+                    points.push(same);
+                    continue;
+                }
+            }
+            // Independent literal equalities are jointly satisfiable. After
+            // the first dependent point, check each equality before reading
+            // another item so a contradiction still short-circuits the input.
+            if let Some((_, points)) = deferred.take() {
+                root = self.conjoin_ordered(points)?;
+            }
             root = self.conditional(Conditional::new(root, same, Root::False))?;
             if root == Root::False {
-                break;
+                return Ok(Root::False);
             }
         }
-        Ok(root)
+        match deferred {
+            Some((_, points)) => self.conjoin_ordered(points),
+            None => Ok(root),
+        }
     }
 
     fn cofactor(&self, root: Root, variable: &V, high: bool) -> Root {

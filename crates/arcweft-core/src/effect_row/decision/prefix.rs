@@ -236,10 +236,10 @@ impl<'a, V: Clone + Ord> EffectDecisionRequirement<'a, V> {
             }
             if point != Root::True {
                 builder.control.charge(DecisionWork::Node)?;
-                clauses.push(GuardedPoint { guard: None, point });
+                clauses.push(point);
             }
         }
-        let result = builder.conjoin_guarded(&clauses)?;
+        let result = builder.conjoin_ordered(clauses)?;
         builder.finish(result)
     }
 
