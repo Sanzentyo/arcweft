@@ -95,6 +95,63 @@ impl FiniteRowValuation<'_> {
         )
     }
 
+    fn validate_class_point<'a, C: DecisionControl>(
+        self,
+        class: usize,
+        variables: impl Iterator<Item = &'a Atom>,
+        work: &mut Work<'_, C>,
+    ) -> Result<bool, PreparedEffectFailure<C::Error>> {
+        let mut uses_parameters = false;
+        for reference in variables {
+            work.charge(DecisionWork::Visit)?;
+            match reference {
+                Atom::Formal {
+                    owner,
+                    class: member_class,
+                    parameter,
+                } if *owner == self.owner
+                    && *member_class == class
+                    && *parameter < self.parameters.len() =>
+                {
+                    uses_parameters = true;
+                }
+                Atom::Formal { .. } | Atom::Presence { .. } => {
+                    return Err(PreparedEffectInvariant::UnclosedCell.into());
+                }
+                _ => {}
+            }
+        }
+        Ok(uses_parameters)
+    }
+
+    /// A finite input row can realize any mask at this class. Outside the
+    /// named support, the test must hold whenever a label has that mask.
+    pub(super) fn all_class_masks<C: DecisionControl>(
+        self,
+        class: usize,
+        requirement: EffectDecisionRequirement<'_, Atom>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        if !self.validate_class_point(class, requirement.variables(), work)? {
+            return requirement.decision(work);
+        }
+        let through = Atom::Formal {
+            owner: self.owner,
+            class,
+            parameter: self.parameters.len() - 1,
+        };
+        requirement.all_guarded_prefixes(
+            &through,
+            0..self.pattern_count()?,
+            work,
+            |mask, reference| match reference {
+                Atom::Formal { parameter, .. } => Ok(mask & (1usize << parameter) != 0),
+                _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
+            },
+            |_| None,
+        )
+    }
+
     /// Over an unrestricted scope every membership mask can occur at each
     /// label class, including a fresh label outside the named support.
     pub(super) fn scheme_equation<C: DecisionControl>(
@@ -108,22 +165,7 @@ impl FiniteRowValuation<'_> {
         }
         let mut classes = Vec::new();
         for (class, point) in members.iter().enumerate() {
-            for reference in point.variables() {
-                work.charge(DecisionWork::Visit)?;
-                match reference {
-                    Atom::Formal {
-                        owner,
-                        class: member_class,
-                        parameter,
-                    } if *owner == self.owner
-                        && *member_class == class
-                        && *parameter < self.parameters.len() => {}
-                    Atom::Formal { .. } | Atom::Presence { .. } => {
-                        return Err(PreparedEffectInvariant::UnclosedCell.into());
-                    }
-                    _ => {}
-                }
-            }
+            self.validate_class_point(class, point.variables(), work)?;
             let coefficient = |mask| Atom::Cell {
                 scheme,
                 class,

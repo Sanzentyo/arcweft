@@ -234,7 +234,12 @@ impl RelationScope<'_> {
         };
         let mut requirements = Vec::new();
         for obligation in obligations {
-            let required = self.compiler.predicate(obligation, work)?;
+            let required = if unrestricted {
+                self.compiler
+                    .predicate_in_unrestricted_scope(obligation, work)?
+            } else {
+                self.compiler.predicate(obligation, work)?
+            };
             work.charge(DecisionWork::Node)?;
             requirements.push(required);
         }
@@ -264,6 +269,9 @@ impl RelationScope<'_> {
         let domain = self.compiler.predicate(&obligation.domain, work)?;
         let consequence = match self.compiler.extensional_agreement(obligation, work)? {
             Some(agreement) => work.share_decision(agreement)?,
+            None if domain.is_constant(true) => self
+                .compiler
+                .predicate_in_unrestricted_scope(&obligation.predicate, work)?,
             None => self.compiler.predicate(&obligation.predicate, work)?,
         };
         self.require(&domain, consequence, work)

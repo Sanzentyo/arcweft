@@ -11,6 +11,22 @@ pub(super) struct CompiledRow {
     pub(super) admitted: Decision,
 }
 
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum PredicateInputs {
+    AtValuation,
+    Unrestricted,
+}
+
+impl PredicateInputs {
+    fn children(self, term: &PredicateTerm) -> Self {
+        match term {
+            // A choice is fixed for the complete assignment of input rows.
+            PredicateTerm::And(_) | PredicateTerm::Select { .. } => self,
+            _ => Self::AtValuation,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum ApplicationCells<'a> {
     Variables,
@@ -50,7 +66,7 @@ pub(super) struct Compilation<'a> {
     cells: ApplicationCells<'a>,
     residual_rows: Option<&'a BTreeMap<u64, GenericEffectReference>>,
     rows: BTreeMap<u64, Arc<CompiledRow>>,
-    predicates: BTreeMap<u64, Arc<Decision>>,
+    predicates: BTreeMap<(u64, PredicateInputs), Arc<Decision>>,
 }
 
 impl<'a> Compilation<'a> {
@@ -580,6 +596,7 @@ impl<'a> Compilation<'a> {
         relation: PreparedEffectRelation,
         actual: &PreparedEffectRow,
         permitted: &PreparedEffectRow,
+        inputs: PredicateInputs,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
         let actual = self.read_row(actual, work)?;
@@ -589,27 +606,11 @@ impl<'a> Compilation<'a> {
             .split_first()
             .zip(permitted.membership.split_first())
             .ok_or(PreparedEffectInvariant::UnclosedCell)?;
-        let valuation = self.valuation();
-        let outside = match relation {
-            PreparedEffectRelation::Equal => {
-                valuation.outside(&actual_outside.equivalent(permitted_outside, work)?, work)?
-            }
-            PreparedEffectRelation::AdmittedSubset => valuation.outside_requirement(
-                EffectDecisionRequirement::Implication {
-                    premise: actual_outside,
-                    consequence: permitted_outside,
-                },
-                work,
-            )?,
-        };
+        let outside =
+            self.compare_membership(relation, inputs, 0, actual_outside, permitted_outside, work)?;
         let mut members = Vec::new();
-        for (left, right) in actual_named.iter().zip(permitted_named) {
-            let test = match relation {
-                PreparedEffectRelation::Equal => left.equivalent(right, work)?,
-                PreparedEffectRelation::AdmittedSubset => {
-                    left.conditional(right, &Decision::constant(true), work)?
-                }
-            };
+        for (index, (left, right)) in actual_named.iter().zip(permitted_named).enumerate() {
+            let test = self.compare_membership(relation, inputs, index + 1, left, right, work)?;
             work.charge(DecisionWork::Node)?;
             members.push(test);
         }
@@ -629,6 +630,8 @@ impl<'a> Compilation<'a> {
             if closed.is_constant(false) {
                 return admitted(exact, work);
             }
+            // The closure selector is independent of input rows. Prequantifying
+            // the exact branch preserves the outer universal requirement.
             let mut covered = self
                 .valuation()
                 .outside(&actual.membership[0].not(work)?, work)?;
@@ -656,9 +659,51 @@ impl<'a> Compilation<'a> {
         admitted(result, work)
     }
 
+    fn compare_membership<C: DecisionControl>(
+        &self,
+        relation: PreparedEffectRelation,
+        inputs: PredicateInputs,
+        class: usize,
+        left: &Decision,
+        right: &Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        let valuation = self.valuation();
+        match relation {
+            PreparedEffectRelation::Equal => {
+                let same = left.equivalent(right, work)?;
+                match (inputs, class) {
+                    (PredicateInputs::Unrestricted, _) => valuation.all_class_masks(
+                        class,
+                        EffectDecisionRequirement::Predicate(&same),
+                        work,
+                    ),
+                    (PredicateInputs::AtValuation, 0) => valuation.outside(&same, work),
+                    (PredicateInputs::AtValuation, _) => Ok(same),
+                }
+            }
+            PreparedEffectRelation::AdmittedSubset => {
+                let requirement = EffectDecisionRequirement::Implication {
+                    premise: left,
+                    consequence: right,
+                };
+                match (inputs, class) {
+                    (PredicateInputs::Unrestricted, _) => {
+                        valuation.all_class_masks(class, requirement, work)
+                    }
+                    (PredicateInputs::AtValuation, 0) => {
+                        valuation.outside_requirement(requirement, work)
+                    }
+                    (PredicateInputs::AtValuation, _) => requirement.decision(work),
+                }
+            }
+        }
+    }
+
     fn read_predicate<C: DecisionControl>(
         &self,
         predicate: &PreparedEffectPredicate,
+        inputs: PredicateInputs,
         work: &mut Work<'_, C>,
     ) -> Result<Cow<'_, Decision>, PreparedEffectFailure<C::Error>> {
         match predicate {
@@ -668,7 +713,7 @@ impl<'a> Compilation<'a> {
             PreparedEffectPredicate::Term(reference) => {
                 work.charge(DecisionWork::Visit)?;
                 self.predicates
-                    .get(&reference.0.ordinal)
+                    .get(&(reference.0.ordinal, inputs))
                     .map(|value| Cow::Borrowed(value.as_ref()))
                     .ok_or_else(|| PreparedEffectInvariant::StaleReference.into())
             }
@@ -680,14 +725,36 @@ impl<'a> Compilation<'a> {
         root: &PreparedEffectPredicate,
         work: &mut Work<'_, C>,
     ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
+        self.predicate_with_inputs(root, PredicateInputs::AtValuation, work)
+    }
+
+    /// Prequantifies membership clauses on distributive paths. The caller
+    /// still quantifies other predicates and checks row admission.
+    pub(super) fn predicate_in_unrestricted_scope<C: DecisionControl>(
+        &mut self,
+        root: &PreparedEffectPredicate,
+        work: &mut Work<'_, C>,
+    ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
+        if self.parameters.is_empty() {
+            return self.predicate(root, work);
+        }
+        self.predicate_with_inputs(root, PredicateInputs::Unrestricted, work)
+    }
+
+    fn predicate_with_inputs<C: DecisionControl>(
+        &mut self,
+        root: &PreparedEffectPredicate,
+        inputs: PredicateInputs,
+        work: &mut Work<'_, C>,
+    ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
         match root {
             PreparedEffectPredicate::Canonical(value) => {
                 let decision = self.canonical_predicate(value, work)?;
                 work.share_decision(decision)
             }
             PreparedEffectPredicate::Term(reference) => {
-                self.prepare(terms::Reference::Predicate(reference), work)?;
-                Ok(Arc::clone(&self.predicates[&reference.0.ordinal]))
+                self.prepare(terms::Reference::Predicate(reference, inputs), work)?;
+                Ok(Arc::clone(&self.predicates[&(reference.0.ordinal, inputs)]))
             }
         }
     }
@@ -696,6 +763,7 @@ impl<'a> Compilation<'a> {
         &mut self,
         id: u64,
         term: &PredicateTerm,
+        inputs: PredicateInputs,
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         let value = match term {
@@ -732,12 +800,12 @@ impl<'a> Compilation<'a> {
                 relation,
                 actual,
                 permitted,
-            } => self.relation(*relation, actual, permitted, work)?,
+            } => self.relation(*relation, actual, permitted, inputs, work)?,
             PredicateTerm::And(children) | PredicateTerm::Or(children) => {
                 let and = matches!(term, PredicateTerm::And(_));
                 let mut result = Decision::constant(and);
                 for child in children {
-                    let child = self.read_predicate(child, work)?;
+                    let child = self.read_predicate(child, inputs.children(term), work)?;
                     result = if and {
                         result.and(&child, work)?
                     } else {
@@ -746,17 +814,20 @@ impl<'a> Compilation<'a> {
                 }
                 result
             }
-            PredicateTerm::Not(child) => self.read_predicate(child, work)?.not(work)?,
+            PredicateTerm::Not(child) => self
+                .read_predicate(child, inputs.children(term), work)?
+                .not(work)?,
             PredicateTerm::Select { choice, yes, no } => {
                 self.graph.validate_choice(choice)?;
                 let condition = Decision::variable(Atom::Choice(choice.0.ordinal), work)?;
-                let yes = self.read_predicate(yes, work)?;
-                let no = self.read_predicate(no, work)?;
+                let yes = self.read_predicate(yes, inputs.children(term), work)?;
+                let no = self.read_predicate(no, inputs.children(term), work)?;
                 condition.conditional(&yes, &no, work)?
             }
         };
         work.charge(DecisionWork::Node)?;
-        self.predicates.insert(id, work.share_decision(value)?);
+        self.predicates
+            .insert((id, inputs), work.share_decision(value)?);
         Ok(())
     }
 }
