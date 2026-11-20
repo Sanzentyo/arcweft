@@ -20729,3 +20729,20 @@ Core全featureの対象2,398件がPASSし、先行と共通の2,397 IDは合否�
 Compilerの `callable_execution` 378件は376 PASS／2既知FAILで、全IDの合否が一致した。失敗は `recursive_callbacks_keep_independent_effects` のNative／AWBC。CLIのライブラリ・バイナリ196件と統合6 targetの30件、workspace全target・全featureのcheckとClippy、Core doctest 81件、書式、差分、Cargo依存グラフ、構造ゲートがすべて通過した。
 
 [検証原本](acceptance-evidence/task-direct-effect-complement.raw.zip) は85 entry、1,438,020 bytes、SHA256 `918dc7f94a336b49ca5ce01699d63df2889960d079c2f149e5b357cadbf9768b`。各entryの長さとハッシュを照合した。記録時の `target` は134,480,973,118 bytes。
+
+<a id="final-effect-snapshot"></a>
+## 2026-11-21 — 最終効果スナップショットの統合
+
+検証基点は `5d45a0dbc414dd950306aacdd9e2fa321770e61e`。公開Sourceは `d0e5a59daabf993a545969fb4e1e5c2824164b50`。最終解決は元の制約、認証済みの取り込み制約、実際の名前付き本体、問い合わせに必要な定義を一度に保持する。義務の順序は元の制約、取り込んだ主解の条件と各関数の一致、公開済みの制約。実際の名前付き本体が到達する後続宣言も確認し、一時的なバインドは成功・失敗とも元グラフから巻き戻す。回帰では名前付き本体の未準備拒否、準備後の行の一致、矛盾する公開済み制約の拒否、ロールバックを従来の二段階構築と照合した。同じ定義の収集に必要な作業量も比較した。
+
+同一SHA256の先行入力をVM／AWBC Productで実行した。既定上限4,096で1 callback は戻り値42、ログ `marker`、1ステップ最大1操作で成功した。2 callback は式75、3 callback の2入力は式68、別の3 callback は式69で両実行系とも意味解析が停止した。診断専用の上限16,384では2 callback が4,422→4,335、3 callback の2入力が7,286→7,162単位で、先行受入の戻り値42、ログ順、1ステップ最大1操作、診断0を再確認した。最終スナップショットの区間は2 callback が214→127単位、3 callback の元の並びが299→175単位。候補全体の削減量はそれぞれこの区間の削減量と一致した。
+
+3 callback の元の並びでは、先頭3つの引数で取り込んだ読取スコープの検証に14、25、34単位、その直後に最初の読取スコープを開く区間に4、20、29単位かかった。選択された型の照合を開始してから制約処理が終わるまでの区間は124、146、162単位だった。後者の内訳では、照合用の読取スコープを開くのが各3単位、両オペランドの検証が12、11、11単位、関数の効果述語の等価判定が各34単位だった。
+
+Sema全featureユニット2,010件は1,930 PASS／80既知FAILで、全IDの合否が一致した。Semaの2 callback は診断専用上限で4,423→4,336単位で成功し、3 callback は4,539単位だった。既定上限では両方とも引き続き停止した。
+
+CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外で4,320件を実行し、4,236 PASS／84既知FAIL／1 SKIP。先行Source `f33523ba95a04a3a943f44bfd2351f8cc0de5475` の対象4,320 IDと照合し、合否がすべて一致した。Compilerの `recursive_callbacks_keep_independent_effects` のNative／AWBCは、両方とも最終の型投影で効果predicateの正準表現を読み出す際に既定上限に達した。CLIのライブラリ・バイナリ196件と統合6 targetの30件、workspace全target・全featureのcheckとClippy、書式、差分、Cargo依存グラフ、構造ゲートが通過した。
+
+Generic Match `.1.2` C3/C5 は、元の受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-final-effect-snapshot.raw.zip) は86 entry、1,387,867 bytes、SHA256 `ed31f76380221c33ef88941b57aff1c88579580b34f89101f61ef62cf9c23c57`。各entryの長さとハッシュを照合した。記録時の `target` は134,644,740,662 bytes。
