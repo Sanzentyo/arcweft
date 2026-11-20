@@ -119,7 +119,11 @@ fn inherited_clauses_keep_their_quantified_meaning_when_a_named_body_enters() {
     for (rows, expected_shared) in [(&BTreeMap::new(), 1), (&actual, 0)] {
         let work = &mut Work(&mut control);
         let layout = Layout::new(graph, rows, inventory, work).unwrap();
-        let fixed = FixedCells::new(graph, rows, layout.view(), work).unwrap();
+        let program = EffectResidualProgram::with_inventory(graph, inventory, work).unwrap();
+        let fixed = FixedCells::new(graph, rows, layout.view(), work)
+            .unwrap()
+            .admit_finiteness(graph, &program, work)
+            .unwrap();
         let LoweredImports {
             layout,
             fixed,
@@ -128,7 +132,6 @@ fn inherited_clauses_keep_their_quantified_meaning_when_a_named_body_enters() {
         let inherited = clauses::inherited_from(&cache, graph, &layout, &fixed, work).unwrap();
         assert_eq!(inherited.len(), expected_shared);
 
-        let program = EffectResidualProgram::with_inventory(graph, inventory, work).unwrap();
         let mut independent_control = budget();
         let independent = component::compile_relation(
             graph,

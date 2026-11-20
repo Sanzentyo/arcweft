@@ -114,6 +114,14 @@ fn conditional_completion_keeps_future_cells_free_in_the_least_function() {
         .unwrap();
     assert_eq!(&result.principal, &finite);
     assert_eq!(&result.satisfiable, &finite);
+    assert!(
+        result
+            .coefficients
+            .get(&cell(&x, 0))
+            .unwrap()
+            .is_constant(false)
+    );
+    assert!(result.coefficients.get(&cell(&f, 0)).is_none());
     assert_eq!(
         result.coefficients.get(&cell(&x, 1)).unwrap(),
         &finite.and(&future, &mut Work(&mut work)).unwrap()
@@ -153,7 +161,10 @@ fn an_extra_label_requires_all_local_memberships_to_agree_when_inputs_agree() {
         let compile = |support, work: &mut Work<'_, Budget>| {
             let layout =
                 Layout::with_shared_labels(&graph.relation, Arc::clone(&labels), work).unwrap();
-            let actual = FixedCells::new(&graph.relation, &rows, layout.view(), work).unwrap();
+            let actual = FixedCells::new(&graph.relation, &rows, layout.view(), work)
+                .unwrap()
+                .admit_finiteness(&graph.relation, &program, work)
+                .unwrap();
             CompiledComponent::compile(
                 &graph.relation,
                 &program,
@@ -176,6 +187,7 @@ fn an_extra_label_requires_all_local_memberships_to_agree_when_inputs_agree() {
                 let originally_admitted = unrestricted
                     .evaluate_with_control(assignment, work)
                     .unwrap();
+                assert_eq!(originally_admitted, fixed.is_some() || !membership(0));
                 let support_admitted = labels.iter().enumerate().all(|(index, label)| {
                     let class = index + 1;
                     let input_differs = fixed.map_or_else(
@@ -184,7 +196,7 @@ fn an_extra_label_requires_all_local_memberships_to_agree_when_inputs_agree() {
                     );
                     let outputs_agree = [3, 6]
                         .into_iter()
-                        .all(|outside| membership(outside) == membership(outside + class));
+                        .all(|outside| !membership(outside + class));
                     authored.contains(label) || input_differs || outputs_agree
                 });
                 assert_eq!(

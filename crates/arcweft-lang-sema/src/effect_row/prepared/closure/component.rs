@@ -17,11 +17,24 @@ pub(super) struct CompiledComponent {
     choices: BTreeSet<Atom>,
 }
 
-/// Actual input coefficients in the class and mask coordinates of this layout.
-pub(super) struct FixedCells(BTreeMap<Atom, bool>);
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum FiniteCell {
+    Local,
+    Input,
+}
+
+/// Actual input coefficients and the default cells constrained by this
+/// component's original finite-function clauses.
+pub(super) struct FixedCells {
+    actual: BTreeMap<Atom, bool>,
+    finite: BTreeMap<u64, FiniteCell>,
+}
 
 impl FixedCells {
-    pub(super) const EMPTY: Self = Self(BTreeMap::new());
+    pub(super) const EMPTY: Self = Self {
+        actual: BTreeMap::new(),
+        finite: BTreeMap::new(),
+    };
 
     pub(super) fn new<C: DecisionControl>(
         graph: &PreparedEffectDefinitions,
@@ -57,7 +70,7 @@ impl FixedCells {
                         work,
                     )?;
                     work.charge(DecisionWork::Node)?;
-                    fixed.0.insert(
+                    fixed.actual.insert(
                         Atom::Cell {
                             scheme: id,
                             class,
@@ -71,20 +84,67 @@ impl FixedCells {
         Ok(fixed)
     }
 
-    pub(super) fn is_empty(&self) -> bool {
-        self.0.is_empty()
+    pub(super) fn admit_finiteness<C: DecisionControl>(
+        mut self,
+        graph: &PreparedEffectDefinitions,
+        program: &EffectResidualProgram,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        for node in program.relation_nodes() {
+            work.charge(DecisionWork::Visit)?;
+            if let ResidualNode::FiniteFunction(scheme) = node {
+                let role = if graph.functions[scheme].is_input() {
+                    FiniteCell::Input
+                } else {
+                    FiniteCell::Local
+                };
+                work.charge(DecisionWork::Node)?;
+                self.finite.insert(*scheme, role);
+            }
+        }
+        Ok(self)
+    }
+
+    const fn default_scheme(cell: &Atom) -> Option<u64> {
+        match cell {
+            Atom::Cell {
+                scheme,
+                class: 0,
+                mask: 0,
+            } => Some(*scheme),
+            _ => None,
+        }
+    }
+
+    fn finite_cell(&self, cell: &Atom) -> Option<FiniteCell> {
+        Self::default_scheme(cell).and_then(|id| self.finite.get(&id).copied())
+    }
+
+    pub(super) fn reads(&self, cell: &Atom) -> bool {
+        !self.actual.is_empty() || (!self.finite.is_empty() && Self::default_scheme(cell).is_some())
     }
 
     pub(super) fn value(&self, cell: &Atom) -> Option<bool> {
-        self.0.get(cell).copied()
+        self.actual
+            .get(cell)
+            .copied()
+            .or_else(|| self.finite_cell(cell).map(|_| false))
     }
 
-    pub(super) fn contains_function(&self, scheme: u64) -> bool {
-        self.0.contains_key(&Atom::Cell {
+    fn determined_value(&self, cell: &Atom) -> Option<bool> {
+        self.actual
+            .get(cell)
+            .copied()
+            .or_else(|| (self.finite_cell(cell) == Some(FiniteCell::Local)).then_some(false))
+    }
+
+    pub(super) fn binds_coefficient(&self, scheme: u64) -> bool {
+        self.value(&Atom::Cell {
             scheme,
             class: 0,
             mask: 0,
         })
+        .is_some()
     }
 
     pub(super) fn operand(&self, cell: Atom) -> EffectDecisionReplacement<'static, Atom> {
@@ -100,18 +160,32 @@ impl FixedCells {
         original: &PreparedEffectDefinitions,
         work: &mut Work<'_, C>,
     ) -> Result<bool, PreparedEffectFailure<C::Error>> {
-        for (cell, value) in &self.0 {
+        for (cell, value) in &self.actual {
             work.charge(DecisionWork::Visit)?;
-            if receiving.0.get(cell) != Some(value) {
+            if receiving.actual.get(cell) != Some(value) {
                 return Ok(false);
             }
         }
-        for (cell, value) in &receiving.0 {
+        for (cell, value) in &receiving.actual {
             work.charge(DecisionWork::Visit)?;
             let Atom::Cell { scheme, .. } = cell else {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());
             };
-            if original.functions.contains_key(scheme) && self.0.get(cell) != Some(value) {
+            if original.functions.contains_key(scheme) && self.actual.get(cell) != Some(value) {
+                return Ok(false);
+            }
+        }
+        // An input can become a local scheme in the receiving component.
+        // Both compile their original clauses with the same default value.
+        for scheme in self.finite.keys() {
+            work.charge(DecisionWork::Visit)?;
+            if !receiving.finite.contains_key(scheme) {
+                return Ok(false);
+            }
+        }
+        for scheme in receiving.finite.keys() {
+            work.charge(DecisionWork::Visit)?;
+            if original.functions.contains_key(scheme) && !self.finite.contains_key(scheme) {
                 return Ok(false);
             }
         }
@@ -210,7 +284,7 @@ impl EffectCoefficients {
 
     pub(super) fn get(&self, cell: &Atom) -> Option<&Decision> {
         self.fixed
-            .value(cell)
+            .determined_value(cell)
             .map(|value| if value { &self.one } else { &self.zero })
             .or_else(|| self.least.get(cell))
     }
@@ -225,7 +299,7 @@ impl EffectCoefficients {
         work: &mut Work<'_, C>,
     ) -> Result<ClosedEffectCoefficients, PreparedEffectFailure<C::Error>> {
         let least = self.least.specialize(&actuals, work)?;
-        for (cell, &value) in &self.fixed.0 {
+        for (cell, &value) in &self.fixed.actual {
             work.charge(DecisionWork::Node)?;
             if let std::collections::btree_map::Entry::Vacant(entry) = actuals.entry(cell.clone()) {
                 entry.insert(value);
@@ -233,7 +307,22 @@ impl EffectCoefficients {
                 return Err(PreparedEffectInvariant::DuplicateFutureBinding.into());
             }
         }
-        Self::new(FixedCells(actuals), least).close(work)
+        let mut finite = BTreeMap::new();
+        for (&scheme, &role) in &self.fixed.finite {
+            work.charge(DecisionWork::Visit)?;
+            if role == FiniteCell::Local {
+                work.charge(DecisionWork::Node)?;
+                finite.insert(scheme, role);
+            }
+        }
+        Self::new(
+            FixedCells {
+                actual: actuals,
+                finite,
+            },
+            least,
+        )
+        .close(work)
     }
 
     pub(super) fn close<C: DecisionControl>(
@@ -248,7 +337,7 @@ impl EffectCoefficients {
 
     #[cfg(test)]
     pub(super) fn inject_coefficient_for_replay_test(&mut self, cell: Atom, value: bool) {
-        self.fixed.0.insert(cell, value);
+        self.fixed.actual.insert(cell, value);
     }
 }
 
@@ -307,6 +396,7 @@ impl RelationScope<'_> {
         domain: &EffectPredicate,
         body: &PreparedEffectRow,
         obligations: &[PreparedEffectPredicate],
+        fixed: &FixedCells,
         work: &mut Work<'_, C>,
     ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
         let body = self.compiler.row(body, work)?;
@@ -314,7 +404,7 @@ impl RelationScope<'_> {
         let equation = if unrestricted {
             self.compiler
                 .valuation()
-                .scheme_equation(id, &body.membership, work)?
+                .scheme_equation(id, &body.membership, fixed, work)?
         } else {
             let parameters = self.compiler.parameters(work)?;
             let own = self.compiler.application(id, &parameters, work)?;
@@ -528,7 +618,7 @@ pub(super) fn compile_relation<C: DecisionControl>(
                     body,
                     obligations,
                 } => relation_scope(&mut scopes, graph, classes, fixed, clause.scope(), work)?
-                    .require_scheme(id, domain, body, obligations, work)?,
+                    .require_scheme(id, domain, body, obligations, fixed, work)?,
                 ResidualClauseSource::Obligation { id, obligation } => {
                     let value = if let Some(inherited) = obligations.inherited.get(id) {
                         Arc::clone(inherited)
@@ -550,10 +640,14 @@ pub(super) fn compile_relation<C: DecisionControl>(
                     class: 0,
                     mask: 0,
                 };
-                let result = if let Some(value) = fixed.value(&cell) {
-                    Decision::constant(!value)
-                } else {
-                    Decision::variable(cell, work)?.not(work)?
+                let result = match fixed.determined_value(&cell) {
+                    Some(value) => Decision::constant(!value),
+                    None if fixed.finite_cell(&cell) == Some(FiniteCell::Input) => {
+                        // The input is read under this assumption when compiling
+                        // the clauses, but the receiving caller must prove it.
+                        Decision::variable(cell, work)?.not(work)?
+                    }
+                    None => return Err(PreparedEffectInvariant::UnclosedCell.into()),
                 };
                 work.share_decision(result)?
             }
@@ -624,7 +718,7 @@ impl CompiledComponent {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());
             };
             work.charge(DecisionWork::Visit)?;
-            if !graph.functions[scheme].is_input() {
+            if !graph.functions[scheme].is_input() && fixed.determined_value(cell).is_none() {
                 minimized.insert(cell.clone());
             }
         }
@@ -660,7 +754,7 @@ impl CompiledComponent {
         let relation = self.relation;
         for atom in relation.variables() {
             work.charge(DecisionWork::Visit)?;
-            if self.fixed.value(atom).is_some()
+            if self.fixed.determined_value(atom).is_some()
                 || (!self.layout.cells.contains(atom) && !self.choices.contains(atom))
             {
                 return Err(PreparedEffectInvariant::UnclosedCell.into());

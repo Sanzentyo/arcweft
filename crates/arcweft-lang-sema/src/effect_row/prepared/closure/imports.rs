@@ -189,7 +189,8 @@ fn lower_selected_imports<'a, C: DecisionControl>(
                 // Every child uses the receiving label basis. Admit its
                 // shape before evaluating its own fixed input cells.
                 let layout = Layout::with_shared_labels(&source.graph, Arc::clone(&labels), work)?;
-                let fixed = FixedCells::new(&source.graph, &source.fixed, layout.view(), work)?;
+                let fixed = FixedCells::new(&source.graph, &source.fixed, layout.view(), work)?
+                    .admit_finiteness(&source.graph, &source.program, work)?;
                 work.charge(DecisionWork::Node)?;
                 pending.push((scope, site));
                 scope = ImportScope::new(&source.graph, layout, fixed, FunctionInventory::All);
@@ -239,12 +240,13 @@ pub(super) fn compile_with_imports<C: DecisionControl>(
     inventory: FunctionInventory<'_>,
     work: &mut Work<'_, C>,
 ) -> Result<CompiledComponent, PreparedEffectFailure<C::Error>> {
+    let program = EffectResidualProgram::with_inventory(graph, inventory, work)?;
+    let fixed = fixed.admit_finiteness(graph, &program, work)?;
     let LoweredImports {
         layout,
         fixed,
         cache,
     } = lower_selected_imports(graph, layout, fixed, inventory, work)?;
-    let program = EffectResidualProgram::with_inventory(graph, inventory, work)?;
     let inherited = clauses::inherited_from(&cache, graph, &layout, &fixed, work)?;
     CompiledComponent::compile(
         graph,
@@ -318,7 +320,7 @@ impl ImportedRelations {
             work.charge(DecisionWork::Visit)?;
             graph.function(actual)?;
             same_coordinates &= actual.reference().ordinal == original;
-            substitutes_fixed |= fixed.contains_function(actual.reference().ordinal);
+            substitutes_fixed |= fixed.binds_coefficient(actual.reference().ordinal);
         }
         // The completed child can reference only unresolved inputs. Its binding
         // covers those inputs, so matching ordinals preserve all child cells.

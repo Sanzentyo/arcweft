@@ -206,12 +206,15 @@ fn original_cell_coordinates_share_the_guard_and_local_coefficients() {
             .unwrap();
         let actual_row = call(&mut parent, &actual);
         equation(&mut parent, actual_row, permitted.clone(), vec![]);
-        let closed = parent.solve_principal(&mut budget()).unwrap();
-        assert_eq!(
-            closed.resolve_row(&output_row, &mut budget()).unwrap(),
-            EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap()),
-        );
-        let table = &closed.layout.imports.functions[&id(&output)];
+        let work = &mut Work(&mut budget());
+        let inventory = FunctionInventory::All;
+        let layout = Layout::new(&parent.relation, &BTreeMap::new(), inventory, work).unwrap();
+        // Before the receiving component supplies its finite defaults, only
+        // a coordinate change should require remapping the original decisions.
+        let LoweredImports { layout, .. } =
+            lower_selected_imports(&parent.relation, layout, FixedCells::EMPTY, inventory, work)
+                .unwrap();
+        let table = &layout.imports.functions[&id(&output)];
         assert!(table.relation.principal().node_count() > 0);
         assert_eq!(
             std::ptr::eq(table.relation.principal(), &table.relation.child.principal),
@@ -240,6 +243,25 @@ fn original_cell_coordinates_share_the_guard_and_local_coefficients() {
             table.coefficient(classes, 0),
             Err(PreparedEffectInvariant::UnclosedCell)
         );
+
+        let closed = parent.solve_principal(&mut budget()).unwrap();
+        assert_eq!(
+            closed.resolve_row(&output_row, &mut budget()).unwrap(),
+            EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap()),
+        );
+        let table = &closed.layout.imports.functions[&id(&output)];
+        assert!(table.relation.principal().is_constant(true));
+        assert!(table.coefficient(0, 0).unwrap().is_constant(false));
+        let expected = Decision::variable(
+            Atom::Cell {
+                scheme: actual.reference().ordinal,
+                class: 1,
+                mask: 0,
+            },
+            work,
+        )
+        .unwrap();
+        assert_eq!(table.coefficient(1, 0).unwrap(), &expected,);
     }
 }
 

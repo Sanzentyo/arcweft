@@ -186,6 +186,7 @@ impl FiniteRowValuation<'_> {
         self,
         scheme: u64,
         members: &[Decision],
+        fixed: &FixedCells,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
         if members.len() != self.classes.classes() {
@@ -212,9 +213,15 @@ impl FiniteRowValuation<'_> {
                         Atom::Formal { parameter, .. } => Ok(mask & (1usize << parameter) != 0),
                         _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
                     },
-                    |mask| EffectDecisionReplacement::Variable(coefficient(mask)),
+                    |mask| fixed.operand(coefficient(mask)),
                 )?,
-                None => point.equivalent(&Decision::variable(coefficient(0), work)?, work)?,
+                None => Decision::all_equalities(
+                    [Ok([
+                        EffectDecisionReplacement::Decision(point),
+                        fixed.operand(coefficient(0)),
+                    ])],
+                    work,
+                )?,
             };
             work.charge(DecisionWork::Node)?;
             classes.push(equation);

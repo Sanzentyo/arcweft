@@ -403,7 +403,7 @@ impl<'a> Compilation<'a> {
                                 )
                             }
                             (_, None) => {
-                                if !matches!(self.cells, ApplicationCells::Prepared(fixed) if fixed.is_empty()) {
+                                if !matches!(self.cells, ApplicationCells::Prepared(fixed) if !fixed.reads(&cell)) {
                                     work.charge(DecisionWork::Visit)?;
                                 }
                                 self.cells.local(cell)?
