@@ -20625,3 +20625,22 @@ Semaの推移的逆依存はCargoで22パッケージを選定した。CLIを除
 Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[Style Lengthの後継1件](acceptance-evidence/task-expression-value-scope.json)で照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-scoped-canonical-effect-labels.raw.zip) は80 entry、1,387,800 bytes、SHA256 `473717f8e358b5bce1ebacaafd77a0e91c6c936e3121c46a5ef7244bfa7ce382`。各entryの長さとハッシュを照合した。記録時の `target` は101,873,350,974 bytes。
+
+<a id="compiled-closed-capabilities"></a>
+## 2026-11-20 — 閉じた効果行の能力包含と編集の巻き戻し
+
+検証基点は `b3c6b589a845e9cb62abaa89ea8856ef66d30f7f`。公開した製品Sourceは `35b67f24ecf0e476b7b9e9171c52348d5f4f207e`。能力の包含を選ぶ条件は、両方の効果行が形式引数に依存しないこと。選ばれた側では空の入力効果行の所属を使い、必要な名前付きラベルの条件を組み、途中の不要な決定グラフの複製を省く。開いた効果行には、同じラベルの所属を直接比べる条件を使う。回帰では `fs.read(save)` で `fs.read(save.slot)` を満たす閉じた行と、空の入力に対して成立しない開いた行を同じ選択で切り替え、閉じた行の選択でだけ本体が求まることを確認した。
+
+製品SourceのSema全featureユニットは2,009件で1,928 PASS／81既知FAIL。先行2,008 IDはすべて合否が一致し、追加の回帰1件が通過した。診断用上限16,384では、Semaの2 callback が4,703→4,671単位、3 callback は4,709単位。既定上限4,096では両方とも元の義務を照合中に停止した。2 callback の停止位置は取り込んだ効果関係の適用条件の計算で、3 callback は確定した関数の正準効果行への変換だった。
+
+先行CLIの4入力を元のファイルSHA256、引数、1ステップ最大1操作で再実行した。1 callback はVM／AWBC Productとも戻り値42、ログ `marker`。2 callback は式75、3 callback の2入力は式68で、両実行系とも `sema.final_analysis` を返した。別の3 callback 入力も両実行系で式69の失敗を再現した。先行の失敗3入力を診断用上限16,384のVMで実行すると、2 callback が4,702→4,670単位、3 callback の2入力が7,915→7,807単位だった。すべて戻り値42、元のログ順、1ステップ最大1操作、診断0を確認した。
+
+旧3 callback の巡回入力で、候補処理用にインスタンス化された関係コンパイルの合成箇所を採取した。到達順の入力句数は2、2、5、6、11だった。採取の上限は16,384。変数名での取得が失敗したため、同じ実行ファイルの逆アセンブルから検査対象のスライス長を特定し、実行ファイルSHA256と採取位置を記録した。Compilerの `recursive_callbacks_keep_independent_effects` はNative／AWBCとも式76の型検査で失敗し、既定上限の両スタックはSemaの2 callback と同じく、取り込んだ効果関係の適用条件を照合する計算を指した。
+
+Semaの推移的逆依存はCargoで22パッケージを選定した。CLIを除く実行は4,319件で4,234 PASS／85既知FAIL／1 SKIP。先行Sourceと共通の4,318 IDは合否がすべて一致し、追加回帰1件がPASSした。規定CLIはライブラリ・バイナリ196件と統合6 target 30件がすべてPASS。workspace全target・全featureのcheck／Clippy、書式、差分、Cargo graph、構造ゲートを通過した。初回はWindowsのページファイル不足（OS error 1455、exit 101）でビルドを中断した。同じSourceと条件で再試行し、全件が終端に到達した。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[Style Lengthの後継1件](acceptance-evidence/task-expression-value-scope.json)で照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
+
+巻き戻し回帰の旧入力では、単一の行変数を置換すると、編集に所属しないリテラルが直接返る。そのリテラルを期限切れの項として期待していたため、Source `63445816620508a0543a310792c48641774d74d5` では編集が新しい項の識別子を発行する和集合を入力にした。失敗後に編集の続行・commit・発行済み項の再利用がすべて拒否されることと、新しい編集の結果が `fs.read` と `fs.write` の両方を持つことを確認した。変更はテスト1ファイル。Sema全featureユニット2,009件は1,929 PASS／80既知FAILで、当該回帰だけが失敗から成功に変わった。逆依存の集計は製品Sourceで実行した値を記録する。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-compiled-closed-capabilities.raw.zip) は85 entry、1,555,337 bytes、SHA256 `a242d7a1d22ef8aede35bccfaa7d0a54b837fab2dec491793ef71fc46042e486`。各entryの長さとハッシュを照合した。記録時の `target` は101,898,108,412 bytes。
