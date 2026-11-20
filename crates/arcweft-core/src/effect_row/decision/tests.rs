@@ -159,6 +159,57 @@ fn joint_equalities_keep_shared_coefficients_and_constants() {
 }
 
 #[test]
+fn ordered_definitions_can_share_compound_inputs_and_still_short_circuit() {
+    use EffectDecisionReplacement::{Constant, Decision, Variable};
+
+    let mut setup = Meter::default();
+    let coefficients: Vec<_> = (0..4)
+        .map(|group| {
+            atom(4 * group + 2)
+                .or(&atom(4 * group + 3), &mut setup)
+                .unwrap()
+        })
+        .collect();
+    let equations = || {
+        coefficients
+            .iter()
+            .zip(0..4)
+            .flat_map(|(coefficient, group)| {
+                [
+                    Ok([Variable(4 * group), Decision(coefficient)]),
+                    Ok([Decision(coefficient), Variable(4 * group + 1)]),
+                ]
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut sequential = Meter::default();
+    let mut operands = equations().into_iter();
+    let expected =
+        EffectDecision::all_equalities(std::iter::from_fn(|| operands.next()), &mut sequential)
+            .unwrap();
+    let mut batch = Meter::default();
+    let result = EffectDecision::all_equalities(equations(), &mut batch).unwrap();
+    assert_eq!(result, expected);
+    assert!(
+        batch.used < sequential.used,
+        "{} < {}",
+        batch.used,
+        sequential.used
+    );
+
+    let contradiction = equations().into_iter().chain([
+        Ok([Variable(0), Constant(true)]),
+        Ok([Variable(1), Constant(false)]),
+        Err((42, 0)),
+    ]);
+    assert!(
+        EffectDecision::all_equalities(contradiction, &mut Meter::default())
+            .unwrap()
+            .is_constant(false)
+    );
+}
+
+#[test]
 fn guarded_equalities_join_original_relations_within_one_budget() {
     use EffectDecisionReplacement::{Constant, Decision, Variable};
 
@@ -774,6 +825,44 @@ fn shared_conjunction_has_the_same_result_as_pairwise_conjunction() {
     assert_eq!(
         left.equivalent(&right, &mut work).unwrap(),
         left.conditional(&right, &not_right, &mut work).unwrap()
+    );
+}
+
+#[test]
+fn conjunction_restricts_compound_inputs_under_required_literals() {
+    let mut setup = Meter::default();
+    let positive = atom(0);
+    let negative = atom(1).not(&mut setup).unwrap();
+    let constraints: Vec<_> = (2..8)
+        .map(|slot| {
+            let left = positive.or(&atom(slot), &mut setup).unwrap();
+            let right = negative.or(&atom(slot + 6), &mut setup).unwrap();
+            left.and(&right, &mut setup).unwrap()
+        })
+        .collect();
+    let inputs = || constraints.iter().chain([&positive, &negative]);
+    let expected = positive.and(&negative, &mut setup).unwrap();
+
+    let mut unrestricted = Meter::default();
+    let mut builder = DecisionBuilder::new(&mut unrestricted);
+    let points: Vec<_> = inputs()
+        .map(|point| builder.import(point).unwrap())
+        .collect();
+    let root = builder.conjoin_ordered(points).unwrap();
+    assert_eq!(builder.finish(root).unwrap(), expected);
+
+    let mut restricted = Meter::default();
+    assert_eq!(
+        EffectDecision::all(inputs(), &mut restricted).unwrap(),
+        expected
+    );
+    assert!(restricted.used < unrestricted.used);
+
+    let conflict = positive.equivalent(&atom(1), &mut setup).unwrap();
+    assert!(
+        EffectDecision::all([&positive, &negative, &conflict], &mut setup)
+            .unwrap()
+            .is_constant(false)
     );
 }
 

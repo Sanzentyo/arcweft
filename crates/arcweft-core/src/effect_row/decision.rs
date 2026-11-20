@@ -12,7 +12,7 @@ use std::{
 };
 
 mod conjunction;
-use conjunction::GuardedPoint;
+use conjunction::{Conjuncts, GuardedPoint};
 mod prefix;
 use prefix::DecisionPrefix;
 
@@ -113,6 +113,85 @@ impl<V> EffectDecisionReplacement<'_, V> {
                 Root::False | Root::True => None,
             },
         }
+    }
+}
+
+/// Each retained equality can assign a fresh variable to a function of
+/// already available inputs. Any earlier equality remains satisfiable after
+/// this assignment because it did not read the newly assigned variable.
+struct DeferredEqualities<V> {
+    mentioned: BTreeSet<V>,
+    points: Vec<Root>,
+}
+
+impl<V: Clone + Ord> DeferredEqualities<V> {
+    fn new() -> Self {
+        Self {
+            mentioned: BTreeSet::new(),
+            points: Vec::new(),
+        }
+    }
+
+    fn admit<C: DecisionControl>(
+        &mut self,
+        pair: &[EffectDecisionReplacement<'_, V>; 2],
+        control: &mut C,
+    ) -> Result<bool, C::Error> {
+        for (output, input) in [(&pair[0], &pair[1]), (&pair[1], &pair[0])] {
+            if let Some((variable, _)) = output.literal()
+                && !self.mentioned.contains(variable)
+            {
+                if !self.record_input(input, Some(variable), control)? {
+                    return Ok(false);
+                }
+                self.remember(variable, control)?;
+                return Ok(true);
+            }
+        }
+        // A single nonterminal condition is satisfiable. It can supply the
+        // initial input domain, provided later definitions do not change any
+        // of its references. The caller still handles constant false eagerly.
+        if self.points.is_empty() {
+            self.record_input(&pair[0], None, control)?;
+            self.record_input(&pair[1], None, control)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn record_input<C: DecisionControl>(
+        &mut self,
+        input: &EffectDecisionReplacement<'_, V>,
+        output: Option<&V>,
+        control: &mut C,
+    ) -> Result<bool, C::Error> {
+        if let Some((variable, _)) = input.literal() {
+            if Some(variable) == output {
+                return Ok(false);
+            }
+            self.remember(variable, control)?;
+        } else if let EffectDecisionReplacement::Decision(decision) = input {
+            for variable in decision.variables() {
+                control.charge(DecisionWork::Visit)?;
+                if Some(variable) == output {
+                    return Ok(false);
+                }
+                self.remember(variable, control)?;
+            }
+        }
+        Ok(true)
+    }
+
+    fn remember<C: DecisionControl>(
+        &mut self,
+        variable: &V,
+        control: &mut C,
+    ) -> Result<(), C::Error> {
+        if !self.mentioned.contains(variable) {
+            control.charge(DecisionWork::Node)?;
+            self.mentioned.insert(variable.clone());
+        }
+        Ok(())
     }
 }
 
@@ -744,33 +823,26 @@ impl<V: Clone + Ord> EffectDecision<V> {
         if second.root == Root::False {
             return Ok(Self::constant(false));
         }
-        let mut builder = DecisionBuilder::new(control);
-        let first = builder.import(first)?;
-        let second = builder.import(second)?;
-        let mut clauses = Vec::new();
-        for decision in decisions {
-            builder.control.charge(DecisionWork::Visit)?;
-            match decision.root {
-                Root::False => return Ok(Self::constant(false)),
-                Root::True => {}
-                Root::Branch(_) => {
-                    let point = builder.import(decision)?;
-                    if point != first && point != second {
-                        builder.control.charge(DecisionWork::Node)?;
-                        clauses.push(point);
-                    }
-                }
+        let Some(third) = nontrivial()? else {
+            return first.and(second, control);
+        };
+        let mut conjuncts = Conjuncts::new();
+        for decision in [first, second, third] {
+            if !conjuncts.add(decision, control)? {
+                return Ok(Self::constant(false));
             }
         }
-        let root = if clauses.is_empty() {
-            builder.conditional(Conditional::new(first, second, Root::False))?
-        } else {
-            for point in [first, second] {
-                builder.control.charge(DecisionWork::Node)?;
-                clauses.push(point);
+        for decision in decisions {
+            control.charge(DecisionWork::Visit)?;
+            if !conjuncts.add(decision, control)? {
+                return Ok(Self::constant(false));
             }
-            builder.conjoin_ordered(clauses)?
+        }
+        let mut builder = DecisionBuilder::new(control);
+        let Some(points) = conjuncts.import(&mut builder)? else {
+            return Ok(Self::constant(false));
         };
+        let root = builder.conjoin(points)?;
         builder.finish(root)
     }
 
@@ -959,39 +1031,24 @@ impl<V: Clone + Ord> EffectDecision<V> {
         E: IntoIterator<Item = Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>>,
         V: 'a,
     {
-        let mut builder = DecisionBuilder::new(control);
-        let mut conjuncts = Vec::new();
-        let mut literal_values = BTreeMap::new();
+        let mut conjuncts = Conjuncts::new();
         for relation in relations {
-            builder.control.charge(DecisionWork::Visit)?;
-            match builder.import(relation)? {
-                Root::False => return Ok(Self::constant(false)),
-                Root::True => {}
-                root @ Root::Branch(_) => {
-                    if let Some((variable, value)) = relation.literal() {
-                        match literal_values.entry(variable) {
-                            Entry::Occupied(existing) if *existing.get() != value => {
-                                return Ok(Self::constant(false));
-                            }
-                            Entry::Occupied(_) => {}
-                            Entry::Vacant(slot) => {
-                                builder.control.charge(DecisionWork::Node)?;
-                                slot.insert(value);
-                            }
-                        }
-                    }
-                    builder.control.charge(DecisionWork::Node)?;
-                    conjuncts.push(root);
-                }
+            control.charge(DecisionWork::Visit)?;
+            if !conjuncts.add(relation, control)? {
+                return Ok(Self::constant(false));
             }
         }
+        let mut builder = DecisionBuilder::new(control);
+        let Some(mut points) = conjuncts.import(&mut builder)? else {
+            return Ok(Self::constant(false));
+        };
         // Every retained base conjunct must hold. Within guarded groups, its
         // literal value can stand in for either polarity of that reference.
         let fixed_operands = |equation: Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>| {
             equation.map(|pair| {
                 pair.map(|operand| {
                     if let Some((reference, polarity)) = operand.literal()
-                        && let Some(&value) = literal_values.get(reference)
+                        && let Some(&value) = conjuncts.literals.get(reference)
                     {
                         EffectDecisionReplacement::Constant(value == polarity)
                     } else {
@@ -1010,16 +1067,11 @@ impl<V: Clone + Ord> EffectDecision<V> {
                 Root::True => {}
                 root @ Root::Branch(_) => {
                     builder.control.charge(DecisionWork::Node)?;
-                    conjuncts.push(root);
+                    points.push(root);
                 }
             }
         }
-        let root = match conjuncts.as_slice() {
-            [] => Root::True,
-            [one] => *one,
-            [left, right] => builder.conditional(Conditional::new(*left, *right, Root::False))?,
-            _ => builder.conjoin_ordered(conjuncts)?,
-        };
+        let root = builder.conjoin(points)?;
         builder.finish(root)
     }
 
@@ -1599,18 +1651,29 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     }
 
     fn import(&mut self, decision: &EffectDecision<V>) -> Result<Root, C::Error> {
+        self.import_with_values(decision, |_| None)
+    }
+
+    fn import_with_values(
+        &mut self,
+        decision: &EffectDecision<V>,
+        mut value: impl FnMut(&V) -> Option<bool>,
+    ) -> Result<Root, C::Error> {
         let mut indices = Vec::new();
         for node in decision.nodes.iter() {
             self.control.charge(DecisionWork::Visit)?;
-            // This source is canonical. Remapping its child indices in order
-            // preserves the variable order and keeps distinct children distinct.
             let low = EffectDecision::<V>::mapped_root(node.low, &indices);
             let high = EffectDecision::<V>::mapped_root(node.high, &indices);
-            let root = self.intern_branch(Node {
-                variable: node.variable.clone(),
-                low,
-                high,
-            })?;
+            let root = match value(&node.variable) {
+                Some(false) => low,
+                Some(true) => high,
+                None if low == high => low,
+                None => self.intern_branch(Node {
+                    variable: node.variable.clone(),
+                    low,
+                    high,
+                })?,
+            };
             indices.push(root);
         }
         Ok(EffectDecision::<V>::mapped_root(decision.root, &indices))
@@ -1684,11 +1747,16 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         V: 'a,
     {
         let equations = equations.into_iter();
-        let mut deferred = (equations.size_hint().0 >= 3).then(|| (BTreeSet::new(), Vec::new()));
+        let mut deferred = (equations.size_hint().0 >= 3).then(DeferredEqualities::new);
         let mut root = Root::True;
         for equation in equations {
             self.control.charge(DecisionWork::Visit)?;
-            let [left, right] = equation?;
+            let pair = equation?;
+            let can_defer = match &mut deferred {
+                Some(deferred) => deferred.admit(&pair, self.control)?,
+                None => false,
+            };
+            let [left, right] = pair;
             let left = self.operand(left)?;
             let right = self.operand(right)?;
             let same = self.equivalent_roots(left, right)?;
@@ -1697,31 +1765,15 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
                 Root::True => continue,
                 Root::Branch(_) => {}
             }
-            if let Some((used, points)) = &mut deferred {
-                let literals = [left, right]
-                    .into_iter()
-                    .filter_map(|operand| match operand {
-                        Root::Branch(index) => Some(&self.nodes[index]),
-                        Root::False | Root::True => None,
-                    });
-                if literals
-                    .clone()
-                    .all(|node| node.literal_polarity().is_some() && !used.contains(&node.variable))
-                {
-                    for node in literals {
-                        self.control.charge(DecisionWork::Node)?;
-                        used.insert(node.variable.clone());
-                    }
-                    self.control.charge(DecisionWork::Node)?;
-                    points.push(same);
-                    continue;
-                }
+            if can_defer && let Some(deferred) = &mut deferred {
+                self.control.charge(DecisionWork::Node)?;
+                deferred.points.push(same);
+                continue;
             }
-            // Independent literal equalities are jointly satisfiable. After
-            // the first dependent point, check each equality before reading
-            // another item so a contradiction still short-circuits the input.
-            if let Some((_, points)) = deferred.take() {
-                root = self.conjoin_ordered(points)?;
+            // Once a point may constrain an earlier assignment, check it
+            // before reading another fallible equation.
+            if let Some(deferred) = deferred.take() {
+                root = self.conjoin_ordered(deferred.points)?;
             }
             root = self.conditional(Conditional::new(root, same, Root::False))?;
             if root == Root::False {
@@ -1729,7 +1781,7 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             }
         }
         match deferred {
-            Some((_, points)) => self.conjoin_ordered(points),
+            Some(deferred) => self.conjoin_ordered(deferred.points),
             None => Ok(root),
         }
     }

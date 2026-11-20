@@ -2,6 +2,74 @@
 
 use super::*;
 
+pub(super) struct Conjuncts<'a, V> {
+    pub(super) literals: BTreeMap<&'a V, bool>,
+    decisions: Vec<&'a EffectDecision<V>>,
+}
+
+impl<'a, V: Clone + Ord> Conjuncts<'a, V> {
+    pub(super) fn new() -> Self {
+        Self {
+            literals: BTreeMap::new(),
+            decisions: Vec::new(),
+        }
+    }
+
+    pub(super) fn add<C: DecisionControl>(
+        &mut self,
+        decision: &'a EffectDecision<V>,
+        control: &mut C,
+    ) -> Result<bool, C::Error> {
+        match decision.root {
+            Root::False => return Ok(false),
+            Root::True => return Ok(true),
+            Root::Branch(_) => {}
+        }
+        if let Some((variable, value)) = decision.literal() {
+            match self.literals.entry(variable) {
+                Entry::Occupied(existing) => return Ok(*existing.get() == value),
+                Entry::Vacant(slot) => {
+                    control.charge(DecisionWork::Node)?;
+                    slot.insert(value);
+                }
+            }
+        } else {
+            control.charge(DecisionWork::Node)?;
+            self.decisions.push(decision);
+        }
+        Ok(true)
+    }
+
+    pub(super) fn import<C: DecisionControl>(
+        &self,
+        builder: &mut DecisionBuilder<'_, V, C>,
+    ) -> Result<Option<Vec<Root>>, C::Error> {
+        let mut points = Vec::new();
+        for decision in &self.decisions {
+            // These assignments are still conjuncts of the returned relation.
+            // Under them the residual can omit every test of a fixed variable.
+            match builder
+                .import_with_values(decision, |variable| self.literals.get(variable).copied())?
+            {
+                Root::False => return Ok(None),
+                Root::True => {}
+                point @ Root::Branch(_) => {
+                    builder.control.charge(DecisionWork::Node)?;
+                    points.push(point);
+                }
+            }
+        }
+        for (&variable, &value) in &self.literals {
+            let low = if value { Root::False } else { Root::True };
+            let high = if value { Root::True } else { Root::False };
+            let point = builder.branch(variable.clone(), low, high)?;
+            builder.control.charge(DecisionWork::Node)?;
+            points.push(point);
+        }
+        Ok(Some(points))
+    }
+}
+
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct GuardedPoint<V> {
     pub(super) point: Root,
@@ -17,6 +85,15 @@ enum Task<'a, V> {
 }
 
 impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
+    pub(super) fn conjoin(&mut self, points: Vec<Root>) -> Result<Root, C::Error> {
+        match points.as_slice() {
+            [] => Ok(Root::True),
+            [one] => Ok(*one),
+            [left, right] => self.conditional(Conditional::new(*left, *right, Root::False)),
+            _ => self.conjoin_ordered(points),
+        }
+    }
+
     pub(super) fn conjoin_ordered(&mut self, mut clauses: Vec<Root>) -> Result<Root, C::Error> {
         // Attach later decisions first. Independent earlier conditions can
         // then attach to the finished suffix without rebuilding an earlier
