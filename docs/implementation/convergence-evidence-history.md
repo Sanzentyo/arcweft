@@ -20831,3 +20831,24 @@ CargoでCoreの推移的逆依存51パッケージを選定した。CLI以外の
 Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-conjunctive-effect-assignments.raw.zip) は117 entry、1,784,912 bytes、SHA256 `5295b132023419e33e668a81892505077fed16acf24873d91e415596284f7473`。各entryの長さとハッシュを照合した。記録時の `target` は134,859,499,379 bytes。
+
+<a id="admitted-finite-effect-defaults"></a>
+## 2026-11-21 — 有限性が確定した効果係数を元制約の構築前に適用
+
+検証基点は `6be358d7d30849f957186a5b4afffecdf09cb1a7`。公開Sourceは `9d403e2564014931d939165971e5412db58a460b`。元の有限性の節が要求する、名前付きラベルの範囲外かつ引数がすべてそのラベルを含まない場合の係数を、元制約の構築と取り込み先の束縛で偽として扱う。ローカルの既知係数は最小解の変数集合から外し、復元した解に偽を反映する。未束縛の入力には、呼出し側に有限性を求める条件を保持する。実入力の係数はその値を使い、有限性の条件と矛盾すれば拒否する。正準表現による元制約の照合は独立に実施する。
+
+初回の効果閉包テストは68件PASS／1件FAILだった。失敗したテストは、取り込み先で有限性が確定した後も元の条件グラフが同じ参照のまま残ることを要求していた。有限性を適用する前は条件と係数を共有できることを引き続き検査し、適用後は成立した条件と偽の既定係数、名前付き係数、実際の戻り値を照合する形に修正した。途中の修正で非公開の比較メソッドを参照したため、テストビルドが `E0624` で終了した。公開の決定グラフ構築と等値比較を使う形に修正し、最終的な効果閉包テスト69件はすべてPASSした。Sema全featureユニットは1,938 PASS／76既知FAILで、先行の2,014 IDの合否が一致した。
+
+5つの `.arcw` のSHA256を公開済みの入力原本と照合した。既定上限4,096で1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで戻り値42、1ステップ最大1操作、診断0件を確認。1 callback は `marker` を記録し、2 callback はログ0件だった。3 callback はVMとAWBC Productの3入力とも式95で失敗した。CLI計測後の差分はテストに限られ、再ビルドの実行ファイルと製品ソース4ファイルのSHA256が計測時と一致した。
+
+診断専用上限16,384で、2 callback は3,226→2,985単位、先行の3 callback 2入力は5,065→4,677単位、別の3 callback 入力は4,922→4,534単位だった。診断時はVMで戻り値42。先行順の3 callback で、効果成分の構築は2,004→1,652単位、うちルートの元制約を組み立てる段階は542→262単位になった。
+
+同じ先行順入力の別計測では、正準表現によるルートの独立照合に209単位、取り込んだ子成分の独立照合に89単位かかった。続く元の引数トレースの閉包は205単位、最終的な引数の実体化は153単位で、全体の最大値は4,677単位だった。
+
+CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外の4,324件は4,246 PASS／78既知FAILで、別に1件SKIP。先行Source `f2f146a3516865fbe24d857e187104b8bcc1e363` の全4,324 IDの合否が一致した。Compilerの `recursive_callbacks_keep_independent_effects` はNativeとデコード済みAWBCでPASSした。
+
+CLIのライブラリ・バイナリ196件、統合6対象の30件、Sema doctest 2件、workspace全target・全featureのcheck／Clippy、書式、差分、構造ゲートが通過した。CLIの全 `check` テストは未再実行。
+
+Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-admitted-finite-effect-defaults.raw.zip) は86 entry、1,488,018 bytes、SHA256 `6cc7f92e1e852f267f1a138544cd5f7868e109b66b2d25c2600421c790e7d305`。各entryの長さとハッシュを照合した。記録時の `target` は134,866,638,940 bytes。
