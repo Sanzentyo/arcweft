@@ -977,7 +977,11 @@ fn failed_term_edit_cannot_commit_or_reuse_its_successful_prefix() {
     let mut control = budget();
     let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
     let a = parameter(&scope, 0);
-    let source = open(&a);
+    // The single-parameter projection can return its literal replacement
+    // directly. Keep a real union so the edit must issue a new term identity.
+    let source = graph
+        .union(vec![open(&a), literal(&["fs.write"])], &mut control)
+        .unwrap();
     let before = graph.retained_terms();
     let mut edit = graph.edit_terms();
     let output = edit
@@ -985,6 +989,7 @@ fn failed_term_edit_cannot_commit_or_reuse_its_successful_prefix() {
             Ok(Some(literal(&["fs.read"])))
         })
         .unwrap();
+    assert!(matches!(&output, PreparedEffectRow::Term(_)));
     assert!(matches!(
         edit.map_row_parameters(&source, &mut Budget(0), &mut |_, _| Ok(None)),
         Err(PreparedEffectFailure::Control(Exhausted))
@@ -1006,4 +1011,17 @@ fn failed_term_edit_cannot_commit_or_reuse_its_successful_prefix() {
             PreparedEffectInvariant::StaleReference
         ))
     ));
+
+    let mut edit = graph.edit_terms();
+    let retry = edit
+        .map_row_parameters(&source, &mut control, &mut |_, _| {
+            Ok(Some(literal(&["fs.read"])))
+        })
+        .unwrap();
+    edit.commit().unwrap();
+    let principal = graph.solve_principal(&mut control).unwrap();
+    assert_eq!(
+        principal.resolve_row(&retry, &mut control).unwrap(),
+        EffectRow::closed(EffectSet::from_labels(["fs.read", "fs.write"]).unwrap())
+    );
 }
