@@ -20644,3 +20644,22 @@ Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-
 巻き戻し回帰の旧入力では、単一の行変数を置換すると、編集に所属しないリテラルが直接返る。そのリテラルを期限切れの項として期待していたため、Source `63445816620508a0543a310792c48641774d74d5` では編集が新しい項の識別子を発行する和集合を入力にした。失敗後に編集の続行・commit・発行済み項の再利用がすべて拒否されることと、新しい編集の結果が `fs.read` と `fs.write` の両方を持つことを確認した。変更はテスト1ファイル。Sema全featureユニット2,009件は1,929 PASS／80既知FAILで、当該回帰だけが失敗から成功に変わった。逆依存の集計は製品Sourceで実行した値を記録する。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-compiled-closed-capabilities.raw.zip) は85 entry、1,555,337 bytes、SHA256 `a242d7a1d22ef8aede35bccfaa7d0a54b837fab2dec491793ef71fc46042e486`。各entryの長さとハッシュを照合した。記録時の `target` は101,898,108,412 bytes。
+
+<a id="ordered-effect-conjunction"></a>
+## 2026-11-20 — 効果の決定グラフを先頭参照ごとに合成する
+
+検証基点は `777946d3427e0f12f3a8fcad2d1a8a81665cdfd0`。公開Sourceは `e90d60cdc3cf388ec952c3427dc8f601bddaf634`。論理積の入力を先頭の参照でまとめ、同じ参照を持つ条件は一度の余因子探索で評価する。グループ間は後続の参照から合成し、早い参照を末尾のグラフに接続する。重複した根は一度だけ合成し、最終グラフは同じインターナーから正準の順序で発行する。
+
+11条件の比較では、独立した条件が1,058→304単位、先頭共有が514→322単位、末尾共有が458→190単位、隣接参照の重なりが903→284単位、重複が39単位のままだった。いずれも従来の一つのアリーナで順番に合成した結果と一致した。2変数の真理値表を4個組み合わせる全65,536通りも、真理値表の共通部分と一致した。コミットした回帰で入力順を逆転しても同じ正準グラフを得られることと、必要量に1単位足りないと拒否されることを確認した。
+
+Core全feature対象は2,392件がすべてPASS。先行実行との共通2,391 IDの合否は一致し、今回の回帰1件も通過した。Sema全featureユニットは2,009件で1,929 PASS／80既知FAIL。全2,009 IDの合否は先行Sourceと一致した。Semaの診断用上限16,384では、2 callback が4,671→4,617単位、3 callback が4,709→4,686単位。既定上限4,096では2 callback が取り込んだ係数の特殊化、3 callback が元の述語の照合で停止した。
+
+先行CLIの4入力を元のファイルSHA256、引数、1ステップ最大1操作で再実行した。既定上限で1 callback はVM／AWBC Productとも戻り値42とログ `marker` を得た。2 callback は式75、3 callback の2入力は式68で両実行系とも意味解析の作業上限4,096に到達した。別の3 callback 入力は式69の失敗を再現した。先行の失敗3入力を上限16,384のVMで実行し、2 callback が4,670→4,616単位、3 callback の2入力が7,807→7,616単位だった。戻り値42、元のログ順、1ステップ最大1操作、診断0は一致した。全条件を一回の探索に渡した先行試行では、同じ3入力が4,664／7,722／7,722単位だった。
+
+2 callback の診断実行で、候補処理の照合を7回開始し、対象の係数評価を16回観測した。同じ照合の開始から次の開始までに係数所有者と決定グラフの参照先が一致したグループは3つで、評価回数は3、4、3回だった。4回のうち2回は取り込んだ関数を適用する箇所だった。逆アセンブルで引数位置と戻り先を照合し、試行した実行ファイルSHA256を採取原本に記録した。Compilerの `recursive_callbacks_keep_independent_effects` はNative／AWBCとも式76の型検査に失敗した。上限到達箇所は取り込んだ係数の特殊化だった（`decision.rs:1096`、`component.rs:199`、`imports.rs:438`、`reification.rs:151`）。個別ビルドと全体の逆依存ビルドの両方で同じスタックを確認した。
+
+Coreの推移的逆依存はCargoで51パッケージを選定した。CLIを除く実行は8,132件で8,048 PASS／84既知FAIL。18件はSKIP。先行のCore全逆依存に先行Semaの結果を反映して8,131共通IDを比較した。既知の失敗84件は継続し、入力を `63445816620508a0543a310792c48641774d74d5` で訂正した巻き戻し回帰 `failed_term_edit_cannot_commit_or_reuse_its_successful_prefix` は成功に変わった。今回追加したCoreの回帰1件も成功し、ほかの合否は一致した。Semaの22パッケージに属する結果は4,319件で4,235 PASS／84既知FAIL。既定設定のCLIはライブラリ・バイナリ196件と統合6 target 30件がすべてPASS。workspace全target・全featureのcheck／Clippy、Core doctest 81件、書式、差分、Cargo graph、構造ゲートを通過した。最初の一括ビルド3回はWindowsのページングファイル不足（OS 1455）2回と、`project_cache_transaction` のrustc内部エラー1回で停止した。失敗が報告された19個のテストターゲットを7組に分けてビルドし、全体はテスト選択と既定の行番号デバッグ情報を維持して再試行した。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[Style Lengthの後継1件](acceptance-evidence/task-expression-value-scope.json)で照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-ordered-effect-conjunction.raw.zip) は133 entry、2,018,437 bytes、SHA256 `343b295570cea8111517dd23149d3a647b51ddd9d356c46edcbd665cccbe3712`。各entryの長さとハッシュを照合した。記録時の `target` は134,391,219,135 bytes。
