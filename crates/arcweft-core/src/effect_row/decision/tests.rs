@@ -31,6 +31,44 @@ fn truth_table(decision: &EffectDecision<u8>, variables: u8) -> Vec<bool> {
 }
 
 #[test]
+fn joint_equalities_keep_shared_coefficients_and_constants() {
+    use EffectDecisionReplacement::{Constant, Decision, Variable};
+
+    let coefficient = atom(1).or(&atom(2), &mut Meter::default()).unwrap();
+    let cases = || {
+        [
+            Ok([Variable(0), Decision(&coefficient)]),
+            Ok([Variable(1), Constant(false)]),
+            Ok([Variable(2), Variable(0)]),
+        ]
+    };
+    let mut measured = Meter::default();
+    let decision = EffectDecision::all_equalities(cases(), &mut measured).unwrap();
+    assert_eq!(
+        truth_table(&decision, 3),
+        [true, false, false, false, false, true, false, false]
+    );
+    let mut short = Meter {
+        used: 0,
+        limit: Some(measured.used - 1),
+    };
+    assert_eq!(
+        EffectDecision::all_equalities(cases(), &mut short),
+        Err((measured.used, measured.used - 1))
+    );
+    let guarded = EffectDecision::all_equalities_under(
+        [Ok([Variable(1), Constant(false)])],
+        cases(),
+        &mut Meter::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        truth_table(&guarded, 3),
+        [true, false, true, true, false, true, true, true]
+    );
+}
+
+#[test]
 fn finalization_emits_only_reachable_branches_in_low_before_high_order() {
     let mut work = Meter::default();
     let mut builder = DecisionBuilder::new(&mut work);

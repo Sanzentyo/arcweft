@@ -898,6 +898,40 @@ impl<V: Clone + Ord> EffectDecision<V> {
         builder.finish(same)
     }
 
+    /// The valuations that satisfy every pair of equivalent operands. Build
+    /// their conjunction in one arena so shared coefficients are interned once.
+    pub fn all_equalities<'a, C: DecisionControl>(
+        equations: impl IntoIterator<Item = Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>>,
+        control: &mut C,
+    ) -> Result<Self, C::Error>
+    where
+        V: 'a,
+    {
+        let mut builder = DecisionBuilder::new(control);
+        let root = builder.conjoin_equalities(equations)?;
+        builder.finish(root)
+    }
+
+    /// Requires all the conclusions when all the hypotheses hold. Both
+    /// groups and the implication share one decision arena.
+    pub fn all_equalities_under<'a, C: DecisionControl>(
+        hypotheses: impl IntoIterator<Item = Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>>,
+        conclusions: impl IntoIterator<Item = Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>>,
+        control: &mut C,
+    ) -> Result<Self, C::Error>
+    where
+        V: 'a,
+    {
+        let mut builder = DecisionBuilder::new(control);
+        let hypothesis = builder.conjoin_equalities(hypotheses)?;
+        if hypothesis == Root::False {
+            return Ok(Self::constant(true));
+        }
+        let conclusion = builder.conjoin_equalities(conclusions)?;
+        let root = builder.conditional(Conditional::new(hypothesis, conclusion, Root::True))?;
+        builder.finish(root)
+    }
+
     /// The condition under which every assignment in `cases` yields its
     /// expected coefficient. Each case assigns the ordered references up to
     /// and including `through`; later references remain free.
@@ -1479,6 +1513,28 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         }
         let negated = self.conditional(Conditional::new(right, Root::False, Root::True))?;
         self.conditional(Conditional::new(left, right, negated))
+    }
+
+    fn conjoin_equalities<'a>(
+        &mut self,
+        equations: impl IntoIterator<Item = Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>>,
+    ) -> Result<Root, C::Error>
+    where
+        V: 'a,
+    {
+        let mut root = Root::True;
+        for equation in equations {
+            self.control.charge(DecisionWork::Visit)?;
+            let [left, right] = equation?;
+            let left = self.operand(left)?;
+            let right = self.operand(right)?;
+            let same = self.equivalent_roots(left, right)?;
+            root = self.conditional(Conditional::new(root, same, Root::False))?;
+            if root == Root::False {
+                break;
+            }
+        }
+        Ok(root)
     }
 
     fn cofactor(&self, root: Root, variable: &V, high: bool) -> Root {

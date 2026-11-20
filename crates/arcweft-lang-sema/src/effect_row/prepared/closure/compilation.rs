@@ -282,23 +282,23 @@ impl<'a> Compilation<'a> {
         let admitted = self
             .cells
             .complete_import(imported.relation.principal(), work)?;
-        let mut equations = Vec::new();
-        for class in 0..self.layout.classes() {
-            for mask in 0..table {
-                let left = Decision::variable(
-                    Atom::Cell {
+        let equations = (0..self.layout.classes())
+            .flat_map(|class| (0..table).map(move |mask| (class, mask)))
+            .map(|(class, mask)| {
+                Ok([
+                    EffectDecisionReplacement::Variable(Atom::Cell {
                         scheme: local,
                         class,
                         mask,
-                    },
-                    work,
-                )?;
-                let right = imported.coefficient(class, mask)?;
-                work.charge(DecisionWork::Node)?;
-                equations.push(left.equivalent(right, work)?);
-            }
-        }
-        Decision::all(std::iter::once(&admitted).chain(&equations), work).map(Some)
+                    }),
+                    EffectDecisionReplacement::Decision(imported.coefficient(class, mask)?),
+                ])
+            });
+        let admission = (!admitted.is_constant(true)).then_some(Ok([
+            EffectDecisionReplacement::Constant(true),
+            EffectDecisionReplacement::Decision(&admitted),
+        ]));
+        Decision::all_equalities(admission.into_iter().chain(equations), work).map(Some)
     }
 
     pub(super) fn application<C: DecisionControl>(

@@ -4,6 +4,7 @@ use super::*;
 use crate::effect_row::prepared::completion::residual::{
     EffectResidualProgram, ResidualClauseSource, ResidualNode, ResidualNodeId, ResidualRowScope,
 };
+use arcweft_core::effect_row::EffectDecisionReplacement;
 
 #[cfg(test)]
 mod tests;
@@ -535,9 +536,9 @@ impl CompiledComponent {
         if self.minimized.is_empty() {
             return Ok(());
         }
-        let member = |cell: &Atom, work: &mut Work<'_, C>| match self.fixed.get(cell) {
-            Some(&value) => Ok(Decision::constant(value)),
-            None => Decision::variable(cell.clone(), work),
+        let member = |cell: &Atom| match self.fixed.get(cell) {
+            Some(&value) => EffectDecisionReplacement::Constant(value),
+            None => EffectDecisionReplacement::Variable(cell.clone()),
         };
         let mut restrictions = Vec::new();
         for (index, label) in self.layout.labels.iter().enumerate() {
@@ -553,6 +554,7 @@ impl CompiledComponent {
             let mut inputs = Vec::new();
             let mut outputs = Vec::new();
             for cell in self.layout.cells.range(first..) {
+                work.charge(DecisionWork::Visit)?;
                 let Atom::Cell {
                     scheme,
                     class: selected,
@@ -569,27 +571,19 @@ impl CompiledComponent {
                     class: 0,
                     mask: *mask,
                 };
-                let same = member(cell, work)?.equivalent(&member(&outside, work)?, work)?;
-                if same.is_constant(true) {
-                    continue;
-                }
                 work.charge(DecisionWork::Node)?;
+                let equation = [member(cell), member(&outside)];
                 if self.minimized.contains(cell) {
-                    outputs.push(same);
+                    outputs.push(equation);
                 } else {
-                    inputs.push(same);
+                    inputs.push(equation);
                 }
             }
-            let unchanged_inputs = Decision::all(&inputs, work)?;
-            if unchanged_inputs.is_constant(false) {
-                continue;
-            }
-            let unchanged_outputs = Decision::all(&outputs, work)?;
             // A class whose inputs agree with the outside class must keep
             // every local coefficient equal to its outside counterpart.
-            let restriction = unchanged_inputs.conditional(
-                &unchanged_outputs,
-                &Decision::constant(true),
+            let restriction = Decision::all_equalities_under(
+                inputs.into_iter().map(Ok),
+                outputs.into_iter().map(Ok),
                 work,
             )?;
             if !restriction.is_constant(true) {
