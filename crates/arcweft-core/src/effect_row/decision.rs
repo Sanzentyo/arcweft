@@ -100,10 +100,7 @@ impl<V> EffectDecisionReplacement<'_, V> {
         match self {
             Self::Constant(_) => None,
             Self::Variable(variable) => Some((variable, true)),
-            Self::Decision(decision) => match (decision.root, decision.nodes.as_ref()) {
-                (Root::Branch(0), [node]) => Some((&node.variable, node.literal_polarity()?)),
-                _ => None,
-            },
+            Self::Decision(decision) => decision.literal(),
         }
     }
 
@@ -115,6 +112,15 @@ impl<V> EffectDecisionReplacement<'_, V> {
                 Root::Branch(index) => Some(&decision.nodes[index].variable),
                 Root::False | Root::True => None,
             },
+        }
+    }
+}
+
+impl<V> EffectDecision<V> {
+    fn literal(&self) -> Option<(&V, bool)> {
+        match (self.root, self.nodes.as_ref()) {
+            (Root::Branch(0), [node]) => Some((&node.variable, node.literal_polarity()?)),
+            _ => None,
         }
     }
 }
@@ -935,12 +941,85 @@ impl<V: Clone + Ord> EffectDecision<V> {
         V: 'a,
     {
         let mut builder = DecisionBuilder::new(control);
-        let hypothesis = builder.conjoin_equalities(hypotheses)?;
-        if hypothesis == Root::False {
-            return Ok(Self::constant(true));
+        let root = builder.guarded_equalities(hypotheses, conclusions)?;
+        builder.finish(root)
+    }
+
+    /// Conjoins existing relations and groups of guarded equalities in one
+    /// arena. Each group's conclusions must hold whenever all its hypotheses
+    /// agree. Only the joint relation is emitted as a canonical decision.
+    pub fn all_with_guarded_equalities<'a, C, H, E>(
+        relations: impl IntoIterator<Item = &'a Self>,
+        groups: impl IntoIterator<Item = (H, E)>,
+        control: &mut C,
+    ) -> Result<Self, C::Error>
+    where
+        C: DecisionControl,
+        H: IntoIterator<Item = Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>>,
+        E: IntoIterator<Item = Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>>,
+        V: 'a,
+    {
+        let mut builder = DecisionBuilder::new(control);
+        let mut conjuncts = Vec::new();
+        let mut literal_values = BTreeMap::new();
+        for relation in relations {
+            builder.control.charge(DecisionWork::Visit)?;
+            match builder.import(relation)? {
+                Root::False => return Ok(Self::constant(false)),
+                Root::True => {}
+                root @ Root::Branch(_) => {
+                    if let Some((variable, value)) = relation.literal() {
+                        match literal_values.entry(variable) {
+                            Entry::Occupied(existing) if *existing.get() != value => {
+                                return Ok(Self::constant(false));
+                            }
+                            Entry::Occupied(_) => {}
+                            Entry::Vacant(slot) => {
+                                builder.control.charge(DecisionWork::Node)?;
+                                slot.insert(value);
+                            }
+                        }
+                    }
+                    builder.control.charge(DecisionWork::Node)?;
+                    conjuncts.push(root);
+                }
+            }
         }
-        let conclusion = builder.conjoin_equalities(conclusions)?;
-        let root = builder.conditional(Conditional::new(hypothesis, conclusion, Root::True))?;
+        // Every retained base conjunct must hold. Within guarded groups, its
+        // literal value can stand in for either polarity of that reference.
+        let fixed_operands = |equation: Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>| {
+            equation.map(|pair| {
+                pair.map(|operand| {
+                    if let Some((reference, polarity)) = operand.literal()
+                        && let Some(&value) = literal_values.get(reference)
+                    {
+                        EffectDecisionReplacement::Constant(value == polarity)
+                    } else {
+                        operand
+                    }
+                })
+            })
+        };
+        for (hypotheses, conclusions) in groups {
+            builder.control.charge(DecisionWork::Visit)?;
+            match builder.guarded_equalities(
+                hypotheses.into_iter().map(fixed_operands),
+                conclusions.into_iter().map(fixed_operands),
+            )? {
+                Root::False => return Ok(Self::constant(false)),
+                Root::True => {}
+                root @ Root::Branch(_) => {
+                    builder.control.charge(DecisionWork::Node)?;
+                    conjuncts.push(root);
+                }
+            }
+        }
+        let root = match conjuncts.as_slice() {
+            [] => Root::True,
+            [one] => *one,
+            [left, right] => builder.conditional(Conditional::new(*left, *right, Root::False))?,
+            _ => builder.conjoin_ordered(conjuncts)?,
+        };
         builder.finish(root)
     }
 
@@ -1579,6 +1658,22 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         };
         let negated = self.conditional(Conditional::new(right, Root::False, Root::True))?;
         self.conditional(Conditional::new(left, right, negated))
+    }
+
+    fn guarded_equalities<'a>(
+        &mut self,
+        hypotheses: impl IntoIterator<Item = Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>>,
+        conclusions: impl IntoIterator<Item = Result<[EffectDecisionReplacement<'a, V>; 2], C::Error>>,
+    ) -> Result<Root, C::Error>
+    where
+        V: 'a,
+    {
+        let hypothesis = self.conjoin_equalities(hypotheses)?;
+        if hypothesis == Root::False {
+            return Ok(Root::True);
+        }
+        let conclusion = self.conjoin_equalities(conclusions)?;
+        self.conditional(Conditional::new(hypothesis, conclusion, Root::True))
     }
 
     fn conjoin_equalities<'a>(

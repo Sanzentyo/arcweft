@@ -1,6 +1,9 @@
 //! Reuse quantified original clauses within one receiving coefficient basis.
 
-use super::*;
+use super::{
+    Arc, BTreeMap, CachedCompletion, Decision, DecisionControl, DecisionWork, FixedCells, Function,
+    Layout, PreparedEffectDefinitions, PreparedEffectFailure, Work,
+};
 
 #[derive(Default)]
 pub(in crate::effect_row::prepared::closure) struct InheritedObligations<'a>(&'a [Arc<Decision>]);

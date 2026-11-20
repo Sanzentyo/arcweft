@@ -159,6 +159,69 @@ fn joint_equalities_keep_shared_coefficients_and_constants() {
 }
 
 #[test]
+fn guarded_equalities_join_original_relations_within_one_budget() {
+    use EffectDecisionReplacement::{Constant, Decision, Variable};
+
+    let mut control = Meter::default();
+    let zero = atom(0);
+    let negative = zero.not(&mut control).unwrap();
+    let positive = atom(5);
+    let first = atom(1).or(&atom(3), &mut control).unwrap();
+    let second = atom(2).or(&atom(4), &mut control).unwrap();
+    let relations = [&first, &second, &negative, &positive];
+    let groups = || {
+        [
+            (
+                [Ok([Variable(0), Variable(1)])],
+                [
+                    Ok([Variable(2), Variable(3)]),
+                    Ok([Variable(4), Variable(5)]),
+                ],
+            ),
+            (
+                [Ok([Variable(0), Variable(4)])],
+                [
+                    Ok([Variable(2), Variable(4)]),
+                    Ok([Variable(3), Decision(&negative)]),
+                ],
+            ),
+            (
+                [Ok([Constant(false), Constant(true)])],
+                [Err((42, 0)), Ok([Constant(false), Constant(true)])],
+            ),
+        ]
+    };
+    let mut separate = Meter::default();
+    let guards = groups().map(|(inputs, outputs)| {
+        EffectDecision::all_equalities_under(inputs, outputs, &mut separate).unwrap()
+    });
+    let expected =
+        EffectDecision::all(relations.into_iter().chain(&guards), &mut separate).unwrap();
+    let mut joint = Meter::default();
+    assert_eq!(
+        EffectDecision::all_with_guarded_equalities(relations, groups(), &mut joint).unwrap(),
+        expected,
+    );
+    assert!(joint.used < separate.used);
+    assert!(
+        EffectDecision::all_with_guarded_equalities([&zero, &negative], groups(), &mut control)
+            .unwrap()
+            .is_constant(false)
+    );
+
+    for limit in 0..joint.used {
+        let mut short = Meter {
+            used: 0,
+            limit: Some(limit),
+        };
+        assert_eq!(
+            EffectDecision::all_with_guarded_equalities(relations, groups(), &mut short),
+            Err((limit + 1, limit)),
+        );
+    }
+}
+
+#[test]
 fn joint_requirements_share_work_across_independent_implications() {
     let premises: Vec<_> = (0..8).map(|index| atom(index * 2)).collect();
     let grants: Vec<_> = (0..8).map(|index| atom(index * 2 + 1)).collect();

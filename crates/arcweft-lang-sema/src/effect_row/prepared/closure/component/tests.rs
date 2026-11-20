@@ -125,53 +125,74 @@ fn conditional_completion_keeps_future_cells_free_in_the_least_function() {
 #[test]
 fn an_extra_label_requires_all_local_memberships_to_agree_when_inputs_agree() {
     let mut graph = PreparedEffectGraph::default();
-    retain_label_basis(&mut graph);
     let future = unknown(&mut graph, PreparedEffectUnknownEligibility::Future);
     let first = unknown(&mut graph, PreparedEffectUnknownEligibility::Bindable);
     let second = unknown(&mut graph, PreparedEffectUnknownEligibility::Bindable);
-    let cells = [
-        cell(&future, 0),
-        cell(&future, 1),
-        cell(&first, 0),
-        cell(&first, 1),
-        cell(&second, 0),
-        cell(&second, 1),
-    ];
+    let functions = [&future, &first, &second];
+    let cells: Vec<_> = functions
+        .into_iter()
+        .flat_map(|function| (0..3).map(move |class| cell(function, class)))
+        .collect();
+    let labels: Arc<[_]> = EffectSet::from_labels(["fs.read", "log.write"])
+        .unwrap()
+        .iter()
+        .cloned()
+        .collect();
+    let authored = [BTreeSet::new(), BTreeSet::from([labels[0].clone()])];
     let future_id = FunctionRef::Unknown(future).reference().ordinal;
     let mut control = budget();
     let work = &mut Work(&mut control);
-    for fixed in [None, Some(false), Some(true)] {
+    let program = EffectResidualProgram::new(&graph.relation, work).unwrap();
+    let partial = EffectSet::from_labels(["log.write"]).unwrap();
+    let empty = EffectSet::new();
+    for fixed in [None, Some(&empty), Some(&partial)] {
         let rows = fixed
-            .map(|contains_label| {
-                let effects = if contains_label {
-                    EffectSet::from_labels(["log.write"]).unwrap()
-                } else {
-                    EffectSet::new()
-                };
-                (future_id, EffectRow::closed(effects))
-            })
+            .map(|effects| (future_id, EffectRow::closed(effects.clone())))
             .into_iter()
             .collect();
-        let mut component = CompiledComponent::new(&graph.relation, &rows, work).unwrap();
-        let unrestricted = component.relation.copy_with_control(work).unwrap();
-        component.restrict_support(&BTreeSet::new(), work).unwrap();
-        for mask in 0..(1 << cells.len()) {
-            let membership = |index| (mask & (1 << index)) != 0;
-            let assignment =
-                |atom: &Atom| membership(cells.iter().position(|cell| cell == atom).unwrap());
-            let originally_admitted = unrestricted
-                .evaluate_with_control(assignment, work)
-                .unwrap();
-            let named_input_differs = fixed.unwrap_or_else(|| membership(0) != membership(1));
-            let locals_agree = membership(2) == membership(3) && membership(4) == membership(5);
-            assert_eq!(
-                component
-                    .relation
+        let compile = |support, work: &mut Work<'_, Budget>| {
+            let layout =
+                Layout::with_shared_labels(&graph.relation, Arc::clone(&labels), work).unwrap();
+            let actual = FixedCells::new(&graph.relation, &rows, layout.view(), work).unwrap();
+            CompiledComponent::compile(
+                &graph.relation,
+                &program,
+                actual,
+                layout,
+                CompiledObligations::default(),
+                support,
+                work,
+            )
+            .unwrap()
+            .relation
+        };
+        let unrestricted = compile(None, work);
+        for authored in &authored {
+            let restricted = compile(Some(authored), work);
+            for mask in 0..(1 << cells.len()) {
+                let membership = |index| (mask & (1 << index)) != 0;
+                let assignment =
+                    |atom: &Atom| membership(cells.iter().position(|cell| cell == atom).unwrap());
+                let originally_admitted = unrestricted
                     .evaluate_with_control(assignment, work)
-                    .unwrap(),
-                originally_admitted && (named_input_differs || locals_agree),
-                "fixed={fixed:?}, cells={mask:06b}",
-            );
+                    .unwrap();
+                let support_admitted = labels.iter().enumerate().all(|(index, label)| {
+                    let class = index + 1;
+                    let input_differs = fixed.map_or_else(
+                        || membership(0) != membership(class),
+                        |effects| effects.contains(label),
+                    );
+                    let outputs_agree = [3, 6]
+                        .into_iter()
+                        .all(|outside| membership(outside) == membership(outside + class));
+                    authored.contains(label) || input_differs || outputs_agree
+                });
+                assert_eq!(
+                    restricted.evaluate_with_control(assignment, work).unwrap(),
+                    originally_admitted && support_admitted,
+                    "fixed={fixed:?}, authored={authored:?}, cells={mask:09b}",
+                );
+            }
         }
     }
 }

@@ -207,7 +207,7 @@ fn lower_selected_imports<'a, C: DecisionControl>(
         let inherited =
             clauses::inherited_from(&cache, &source.graph, &scope.layout, &scope.fixed, work)?;
         let mut obligations = Vec::new();
-        let mut component = CompiledComponent::compile(
+        let component = CompiledComponent::compile(
             &source.graph,
             &source.program,
             scope.fixed,
@@ -216,9 +216,9 @@ fn lower_selected_imports<'a, C: DecisionControl>(
                 inherited,
                 retain: Some(&mut obligations),
             },
+            Some(&source.support),
             work,
         )?;
-        component.restrict_support(&source.support, work)?;
         let completed = component.complete(work)?;
         work.charge(DecisionWork::Node)?;
         let completed = Arc::new(completed);
@@ -255,6 +255,7 @@ pub(super) fn compile_with_imports<C: DecisionControl>(
             inherited,
             retain: None,
         },
+        None,
         work,
     )
 }

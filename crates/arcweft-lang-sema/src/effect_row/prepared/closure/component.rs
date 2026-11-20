@@ -428,17 +428,84 @@ pub(super) struct CompiledObligations<'a> {
     pub(super) retain: Option<&'a mut Vec<Arc<Decision>>>,
 }
 
+pub(super) struct SupportRestriction<'a> {
+    authored: &'a BTreeSet<EffectId>,
+    minimized: &'a BTreeSet<Atom>,
+}
+
+type SupportEquations = Vec<[EffectDecisionReplacement<'static, Atom>; 2]>;
+
+impl SupportRestriction<'_> {
+    /// A class may extend the authored support only if some input coefficient
+    /// at that class differs from the same input's outside coefficient.
+    fn equations<C: DecisionControl>(
+        &self,
+        layout: &Layout,
+        fixed: &FixedCells,
+        work: &mut Work<'_, C>,
+    ) -> Result<Vec<(SupportEquations, SupportEquations)>, PreparedEffectFailure<C::Error>> {
+        let mut groups = Vec::new();
+        for (index, label) in layout.labels.iter().enumerate() {
+            if self.authored.contains(label) {
+                continue;
+            }
+            let class = index + 1;
+            let first = Atom::Cell {
+                class,
+                mask: 0,
+                scheme: 0,
+            };
+            let mut inputs = Vec::new();
+            let mut outputs = Vec::new();
+            for cell in layout.cells.range(first..) {
+                work.charge(DecisionWork::Visit)?;
+                let Atom::Cell {
+                    scheme,
+                    class: selected,
+                    mask,
+                } = cell
+                else {
+                    return Err(PreparedEffectInvariant::UnclosedCell.into());
+                };
+                if *selected != class {
+                    break;
+                }
+                let outside = Atom::Cell {
+                    scheme: *scheme,
+                    class: 0,
+                    mask: *mask,
+                };
+                work.charge(DecisionWork::Node)?;
+                let pair = [fixed.operand(cell.clone()), fixed.operand(outside)];
+                if self.minimized.contains(cell) {
+                    outputs.push(pair);
+                } else {
+                    inputs.push(pair);
+                }
+            }
+            work.charge(DecisionWork::Node)?;
+            groups.push((inputs, outputs));
+        }
+        Ok(groups)
+    }
+}
+
 pub(super) fn compile_relation<C: DecisionControl>(
     graph: &PreparedEffectDefinitions,
     program: &EffectResidualProgram,
-    layout: ClassLayout<'_>,
+    layout: &Layout,
     fixed: &FixedCells,
     mut obligations: CompiledObligations<'_>,
+    support: Option<SupportRestriction<'_>>,
     work: &mut Work<'_, C>,
 ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
+    let Some((ResidualNode::And(children), clauses)) = program.relation_nodes().split_last() else {
+        return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
+    };
     let mut scopes = BTreeMap::new();
     let mut values = Vec::<Arc<Decision>>::new();
-    for node in program.relation_nodes() {
+    let classes = layout.view();
+    for node in clauses {
         work.charge(DecisionWork::Visit)?;
         let decision = |id: ResidualNodeId| values[id.index()].as_ref();
         let value = match node {
@@ -460,13 +527,13 @@ pub(super) fn compile_relation<C: DecisionControl>(
                     domain,
                     body,
                     obligations,
-                } => relation_scope(&mut scopes, graph, layout, fixed, clause.scope(), work)?
+                } => relation_scope(&mut scopes, graph, classes, fixed, clause.scope(), work)?
                     .require_scheme(id, domain, body, obligations, work)?,
                 ResidualClauseSource::Obligation { id, obligation } => {
                     let value = if let Some(inherited) = obligations.inherited.get(id) {
                         Arc::clone(inherited)
                     } else {
-                        relation_scope(&mut scopes, graph, layout, fixed, clause.scope(), work)?
+                        relation_scope(&mut scopes, graph, classes, fixed, clause.scope(), work)?
                             .require_obligation(obligation, work)?
                     };
                     if let Some(retained) = obligations.retain.as_deref_mut() {
@@ -500,9 +567,25 @@ pub(super) fn compile_relation<C: DecisionControl>(
         work.charge(DecisionWork::Node)?;
         values.push(value);
     }
-    values
-        .pop()
-        .ok_or_else(|| PreparedEffectInvariant::PrincipalConfirmation.into())
+    work.charge(DecisionWork::Visit)?;
+    let relations = children.iter().map(|id| values[id.index()].as_ref());
+    if let Some(support) = support {
+        let groups = support.equations(layout, fixed, work)?;
+        if !groups.is_empty() {
+            let groups = groups
+                .into_iter()
+                .map(|(inputs, outputs)| (inputs.into_iter().map(Ok), outputs.into_iter().map(Ok)));
+            let result = Decision::all_with_guarded_equalities(relations, groups, work)?;
+            return work.share_decision(result);
+        }
+    }
+    match children.as_ref() {
+        [one] => Ok(Arc::clone(&values[one.index()])),
+        _ => {
+            let result = Decision::all(relations, work)?;
+            work.share_decision(result)
+        }
+    }
 }
 
 impl CompiledComponent {
@@ -532,9 +615,9 @@ impl CompiledComponent {
         fixed: FixedCells,
         layout: Layout,
         obligations: CompiledObligations<'_>,
+        authored_support: Option<&BTreeSet<EffectId>>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
-        let relation = compile_relation(graph, program, layout.view(), &fixed, obligations, work)?;
         let mut minimized = BTreeSet::new();
         for cell in &layout.cells {
             let Atom::Cell { scheme, .. } = cell else {
@@ -545,6 +628,14 @@ impl CompiledComponent {
                 minimized.insert(cell.clone());
             }
         }
+        let support = authored_support
+            .filter(|_| !minimized.is_empty())
+            .map(|authored| SupportRestriction {
+                authored,
+                minimized: &minimized,
+            });
+        let relation =
+            compile_relation(graph, program, &layout, &fixed, obligations, support, work)?;
         let mut choices = BTreeSet::new();
         for &id in &graph.choices {
             work.charge(DecisionWork::Visit)?;
@@ -613,81 +704,6 @@ impl CompiledComponent {
             coefficients: EffectCoefficients::new(self.fixed, least),
             choice_witnesses,
         })
-    }
-
-    /// A larger receiving basis does not grant extra exceptions to this child.
-    /// A new class is available only when an actual Future coefficient differs
-    /// from its outside/default coefficient at that class.
-    pub(super) fn restrict_support<C: DecisionControl>(
-        &mut self,
-        support: &BTreeSet<EffectId>,
-        work: &mut Work<'_, C>,
-    ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        if self.minimized.is_empty() {
-            return Ok(());
-        }
-        let mut restrictions = Vec::new();
-        for (index, label) in self.layout.labels.iter().enumerate() {
-            if support.contains(label) {
-                continue;
-            }
-            let class = index + 1;
-            let first = Atom::Cell {
-                class,
-                mask: 0,
-                scheme: 0,
-            };
-            let mut inputs = Vec::new();
-            let mut outputs = Vec::new();
-            for cell in self.layout.cells.range(first..) {
-                work.charge(DecisionWork::Visit)?;
-                let Atom::Cell {
-                    scheme,
-                    class: selected,
-                    mask,
-                } = cell
-                else {
-                    return Err(PreparedEffectInvariant::UnclosedCell.into());
-                };
-                if *selected != class {
-                    break;
-                }
-                let outside = Atom::Cell {
-                    scheme: *scheme,
-                    class: 0,
-                    mask: *mask,
-                };
-                work.charge(DecisionWork::Node)?;
-                let equation = [
-                    self.fixed.operand(cell.clone()),
-                    self.fixed.operand(outside),
-                ];
-                if self.minimized.contains(cell) {
-                    outputs.push(equation);
-                } else {
-                    inputs.push(equation);
-                }
-            }
-            // A class whose inputs agree with the outside class must keep
-            // every local coefficient equal to its outside counterpart.
-            let restriction = Decision::all_equalities_under(
-                inputs.into_iter().map(Ok),
-                outputs.into_iter().map(Ok),
-                work,
-            )?;
-            if !restriction.is_constant(true) {
-                work.charge(DecisionWork::Node)?;
-                restrictions.push(restriction);
-            }
-        }
-        if !restrictions.is_empty() {
-            let restricted = Decision::all(
-                std::iter::once(self.relation.as_ref()).chain(&restrictions),
-                work,
-            )?;
-            self.relation = work.share_decision(restricted)?;
-        }
-        Ok(())
     }
 }
 

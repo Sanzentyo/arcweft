@@ -133,9 +133,10 @@ fn inherited_clauses_keep_their_quantified_meaning_when_a_named_body_enters() {
         let independent = component::compile_relation(
             graph,
             &program,
-            layout.view(),
+            &layout,
             &fixed,
             CompiledObligations::default(),
+            None,
             &mut Work(&mut independent_control),
         )
         .unwrap();
@@ -143,12 +144,13 @@ fn inherited_clauses_keep_their_quantified_meaning_when_a_named_body_enters() {
         let receiving = component::compile_relation(
             graph,
             &program,
-            layout.view(),
+            &layout,
             &fixed,
             CompiledObligations {
                 inherited,
                 retain: None,
             },
+            None,
             &mut Work(&mut receiving_control),
         )
         .unwrap();
