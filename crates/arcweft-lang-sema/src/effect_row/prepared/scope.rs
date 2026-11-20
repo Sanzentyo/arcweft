@@ -154,7 +154,8 @@ impl PreparedEffectGraph {
             }
             retain_layer(&mut layers, &input.data, &mut work)?;
         }
-        self.assemble_read_scope(layers, &mut work)
+        let order = ordered_layers(&layers, &mut work)?;
+        self.assemble_read_scope(layers, order, &mut work)
     }
 
     /// Read only through selected layers whose bases still have an ancestry
@@ -172,23 +173,26 @@ impl PreparedEffectGraph {
         // An identical enclosing view introduces no new dependencies.
         if let Some(scope) = first
             && scopes.peek().is_none()
-            && scope.data.base == self.state
-            && self
-                .active_scope
-                .as_ref()
-                .is_none_or(|active| Arc::ptr_eq(&active.input.data, &scope.data))
+            && self.can_reuse_read_scope(scope)
         {
             scope.validate_issuer(self, &mut work)?;
             return Ok(scope.clone());
         }
         let mut layers = BTreeMap::new();
-        let mut bases = BTreeSet::new();
+        let mut bases = BTreeMap::new();
+        let mut reusable: Option<PreparedEffectReadScope> = None;
         let mut retain_scope = |scope: &PreparedEffectReadScope| {
             scope.validate_issuer(self, &mut work)?;
-            work.charge(DecisionWork::Node)?;
-            bases.insert(scope.data.base);
+            self.require_detached_base(scope.data.base, &mut bases, &mut work)?;
             for layer in scope.data.layers.values() {
                 retain_layer(&mut layers, layer, &mut work)?;
+            }
+            if self.can_reuse_read_scope(scope)
+                && reusable
+                    .as_ref()
+                    .is_none_or(|current| current.data.layers.len() < scope.data.layers.len())
+            {
+                reusable = Some(scope.clone());
             }
             Ok::<(), PreparedEffectFailure<C::Error>>(())
         };
@@ -198,31 +202,92 @@ impl PreparedEffectGraph {
         if let Some(active) = &self.active_scope {
             retain_scope(&active.input)?;
         }
-        let mut states = BTreeSet::new();
-        for (_, layer) in ordered_layers(&layers, &mut work)? {
-            if !self.retains_state(layer.base) && !states.contains(&layer.base) {
-                return Err(PreparedEffectInvariant::DeltaBase.into());
-            }
-            for &state in layer.ancestors.iter().chain(std::iter::once(&layer.result)) {
-                work.charge(DecisionWork::Node)?;
-                states.insert(state);
-            }
+        let order = ordered_layers(&layers, &mut work)?;
+        self.confirm_scope_ancestry(&layers, &order, bases, &mut work)?;
+        // Layer admission has checked that duplicate ordinals have identical
+        // definitions. If the union has the same size, this scope contains
+        // every selected layer and has already assembled the current overlay.
+        if let Some(scope) = reusable
+            && scope.data.layers.len() == layers.len()
+        {
+            return Ok(scope);
         }
-        for base in bases {
-            work.charge(DecisionWork::Visit)?;
-            if !self.retains_state(base) && !states.contains(&base) {
-                return Err(PreparedEffectInvariant::DeltaBase.into());
-            }
-        }
-        self.assemble_read_scope(layers, &mut work)
+        self.assemble_read_scope(layers, order, &mut work)
             .map(|data| PreparedEffectReadScope {
                 data: Arc::new(data),
             })
     }
 
+    fn can_reuse_read_scope(&self, scope: &PreparedEffectReadScope) -> bool {
+        scope.data.base == self.state
+            && self
+                .active_scope
+                .as_ref()
+                .is_none_or(|active| Arc::ptr_eq(&active.input.data, &scope.data))
+    }
+
+    fn require_detached_base<C: DecisionControl>(
+        &self,
+        base: PreparedEffectStateId,
+        required: &mut BTreeMap<PreparedEffectStateId, bool>,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        work.charge(DecisionWork::Visit)?;
+        if !self.retains_state(base)
+            && let std::collections::btree_map::Entry::Vacant(entry) = required.entry(base)
+        {
+            work.charge(DecisionWork::Node)?;
+            entry.insert(false);
+        }
+        Ok(())
+    }
+
+    fn confirm_scope_ancestry<C: DecisionControl>(
+        &self,
+        layers: &BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
+        order: &[(PreparedEffectStateId, u64)],
+        mut required: BTreeMap<PreparedEffectStateId, bool>,
+        work: &mut Work<'_, C>,
+    ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        for &(base, _) in order {
+            self.require_detached_base(base, &mut required, work)?;
+        }
+        if required.is_empty() {
+            return Ok(());
+        }
+        for &(base, ordinal) in order {
+            work.charge(DecisionWork::Visit)?;
+            if required.get(&base) == Some(&false) {
+                return Err(PreparedEffectInvariant::DeltaBase.into());
+            }
+            let layer = &layers[&ordinal];
+            // The ancestry is sorted by state id. Look up only outstanding
+            // bases in this layer's range, without copying its revision history.
+            let first = layer.ancestors.first().copied().unwrap_or(layer.result);
+            let last = layer.ancestors.last().copied().unwrap_or(layer.result);
+            for (&state, witnessed) in
+                required.range_mut(first.min(layer.result)..=last.max(layer.result))
+            {
+                work.charge(DecisionWork::Visit)?;
+                if !*witnessed {
+                    *witnessed =
+                        state == layer.result || layer.ancestors.binary_search(&state).is_ok();
+                }
+            }
+        }
+        for witnessed in required.into_values() {
+            work.charge(DecisionWork::Visit)?;
+            if !witnessed {
+                return Err(PreparedEffectInvariant::DeltaBase.into());
+            }
+        }
+        Ok(())
+    }
+
     fn assemble_read_scope<C: DecisionControl>(
         &self,
         layers: BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
+        order: Vec<(PreparedEffectStateId, u64)>,
         work: &mut Work<'_, C>,
     ) -> Result<ReadScopeData, PreparedEffectFailure<C::Error>> {
         let mut functions = BTreeMap::<u64, Arc<Function>>::new();
@@ -235,7 +300,8 @@ impl PreparedEffectGraph {
             work.charge(DecisionWork::Node)?;
             ids.push(origin);
         }
-        for ((_, origin), layer) in ordered_layers(&layers, work)? {
+        for (_, origin) in order {
+            let layer = &layers[&origin];
             for (&id, function) in &layer.functions {
                 work.charge(DecisionWork::Visit)?;
                 if let Some(previous) = functions.get(&id) {
@@ -349,18 +415,16 @@ impl PreparedEffectGraph {
     }
 }
 
-fn ordered_layers<'a, C: DecisionControl>(
-    layers: &'a BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
+fn ordered_layers<C: DecisionControl>(
+    layers: &BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
     work: &mut Work<'_, C>,
-) -> Result<
-    BTreeMap<(PreparedEffectStateId, u64), &'a PreparedEffectDeltaData>,
-    PreparedEffectFailure<C::Error>,
-> {
-    let mut ordered = BTreeMap::new();
+) -> Result<Vec<(PreparedEffectStateId, u64)>, PreparedEffectFailure<C::Error>> {
+    let mut ordered = Vec::new();
     for (&id, layer) in layers {
         work.charge(DecisionWork::Node)?;
-        ordered.insert((layer.base, id), layer.as_ref());
+        ordered.push((layer.base, id));
     }
+    ordered.sort_unstable();
     Ok(ordered)
 }
 

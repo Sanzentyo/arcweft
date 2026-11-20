@@ -327,6 +327,21 @@ fn selected_sources_at_different_live_bases_compose_without_reading_siblings() {
         Err(PreparedEffectInvariant::StaleReference)
     );
     assert_eq!(reads.data.layers.len(), 2);
+    let recomposed = graph
+        .compose_read_scopes([&first_reads, &reads, &second_reads], &mut work)
+        .unwrap();
+    assert!(Arc::ptr_eq(&recomposed.data, &reads.data));
+
+    let mut abandoned = graph.checkpoint(&mut work).unwrap();
+    graph.changed(&mut work).unwrap();
+    let abandoned_reads = graph.read_scope([], &mut work).unwrap();
+    graph.rollback(&mut abandoned).unwrap();
+    assert!(matches!(
+        graph.compose_read_scopes([&reads, &abandoned_reads], &mut work),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::DeltaBase
+        ))
+    ));
     let (derived, derived_reads) = graph
         .compute_in_read_scope(&reads, &mut work, |graph, work| {
             graph.union(vec![first.row.clone(), second.row.clone()], work)
@@ -372,6 +387,11 @@ fn a_nested_base_requires_its_actual_enclosing_layer() {
     let row = graph.application(&scheme, vec![], &mut work).unwrap();
     let child_delta = graph.extract_delta(&mut child, &mut work).unwrap();
     let child_reads = graph.read_scope([&child_delta], &mut work).unwrap();
+    // Keep the child's base in the parent's ancestry behind unrelated
+    // revisions. Composition only needs the base that the child references.
+    for _ in 0..128 {
+        graph.changed(&mut work).unwrap();
+    }
     let parent_delta = graph.extract_delta(&mut parent, &mut work).unwrap();
     let parent_reads = graph.read_scope([&parent_delta], &mut work).unwrap();
 
@@ -382,7 +402,7 @@ fn a_nested_base_requires_its_actual_enclosing_layer() {
         ))
     ));
     let joined = graph
-        .compose_read_scopes([&child_reads, &parent_reads], &mut work)
+        .compose_read_scopes([&child_reads, &parent_reads], &mut Budget(64))
         .unwrap();
     let view = graph.read_scoped(&joined, &mut work).unwrap();
     view.validate_query_roots(&[&row], &[], &mut work).unwrap();
