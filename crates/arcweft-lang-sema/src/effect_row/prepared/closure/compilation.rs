@@ -591,20 +591,17 @@ impl<'a> Compilation<'a> {
         result.forall(&self.formals(work)?, work)
     }
 
-    fn relation<C: DecisionControl>(
-        &mut self,
+    fn exact_membership<C: DecisionControl>(
+        &self,
         relation: PreparedEffectRelation,
-        actual: &PreparedEffectRow,
-        permitted: &PreparedEffectRow,
         inputs: PredicateInputs,
+        actual: &[Decision],
+        permitted: &[Decision],
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
-        let actual = self.read_row(actual, work)?;
-        let permitted = self.read_row(permitted, work)?;
         let ((actual_outside, actual_named), (permitted_outside, permitted_named)) = actual
-            .membership
             .split_first()
-            .zip(permitted.membership.split_first())
+            .zip(permitted.split_first())
             .ok_or(PreparedEffectInvariant::UnclosedCell)?;
         let outside =
             self.compare_membership(relation, inputs, 0, actual_outside, permitted_outside, work)?;
@@ -614,49 +611,63 @@ impl<'a> Compilation<'a> {
             work.charge(DecisionWork::Node)?;
             members.push(test);
         }
-        let exact = FiniteRowValuation::join_named(outside, &members, work)?;
-        let admitted = |result: Decision, work: &mut Work<'_, C>| {
-            result
-                .and(&actual.admitted, work)?
-                .and(&permitted.admitted, work)
-        };
-        let result = if relation == PreparedEffectRelation::AdmittedSubset {
-            // Capability coverage applies only when both rows can be closed.
-            let actual_closed = self.closed(&actual.membership, work)?;
-            if actual_closed.is_constant(false) {
-                return admitted(exact, work);
-            }
-            let closed = actual_closed.and(&self.closed(&permitted.membership, work)?, work)?;
-            if closed.is_constant(false) {
-                return admitted(exact, work);
-            }
-            // The closure selector is independent of input rows. Prequantifying
-            // the exact branch preserves the outer universal requirement.
-            let mut covered = self
-                .valuation()
-                .outside(&actual.membership[0].not(work)?, work)?;
-            for (index, label) in self.layout.labels.iter().enumerate() {
-                let mut allowance = Decision::constant(false);
-                for (other, capability) in self.layout.labels.iter().enumerate() {
-                    work.charge(DecisionWork::Visit)?;
-                    if capability.covers(label) {
-                        allowance = allowance.or(&permitted.membership[other + 1], work)?;
-                    }
+        FiniteRowValuation::join_named(outside, &members, work)
+    }
+
+    fn covered<C: DecisionControl>(
+        &self,
+        actual: &[Decision],
+        permitted: &[Decision],
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        if actual.len() != self.layout.classes() || permitted.len() != self.layout.classes() {
+            return Err(PreparedEffectInvariant::UnclosedCell.into());
+        }
+        let mut covered = self.valuation().outside(&actual[0].not(work)?, work)?;
+        for (index, label) in self.layout.labels.iter().enumerate() {
+            let mut allowance = Decision::constant(false);
+            for (other, capability) in self.layout.labels.iter().enumerate() {
+                work.charge(DecisionWork::Visit)?;
+                if capability.covers(label) {
+                    allowance = allowance.or(&permitted[other + 1], work)?;
                 }
-                covered = covered.and(
-                    &actual.membership[index + 1].conditional(
-                        &allowance,
-                        &Decision::constant(true),
-                        work,
-                    )?,
-                    work,
-                )?;
             }
-            closed.conditional(&covered, &exact, work)?
-        } else {
-            exact
-        };
-        admitted(result, work)
+            covered = covered.and(
+                &actual[index + 1].conditional(&allowance, &Decision::constant(true), work)?,
+                work,
+            )?;
+        }
+        Ok(covered)
+    }
+
+    fn relation<C: DecisionControl>(
+        &self,
+        relation: PreparedEffectRelation,
+        actual: &PreparedEffectRow,
+        permitted: &PreparedEffectRow,
+        inputs: PredicateInputs,
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        let actual = self.read_row(actual, work)?;
+        let permitted = self.read_row(permitted, work)?;
+        let result = relation.decide_membership(
+            [&actual.membership, &permitted.membership],
+            work,
+            |row, work| self.closed(row, work),
+            |work| {
+                self.exact_membership(
+                    relation,
+                    inputs,
+                    &actual.membership,
+                    &permitted.membership,
+                    work,
+                )
+            },
+            |work| self.covered(&actual.membership, &permitted.membership, work),
+        )?;
+        result
+            .and(&actual.admitted, work)?
+            .and(&permitted.admitted, work)
     }
 
     fn compare_membership<C: DecisionControl>(

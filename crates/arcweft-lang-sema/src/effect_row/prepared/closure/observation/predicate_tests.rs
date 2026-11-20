@@ -110,6 +110,73 @@ fn extension_retains_partial_invariance_and_never_certifies_vacuity() {
 }
 
 #[test]
+fn capability_coverage_and_exact_membership_follow_the_same_row_choice() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
+    let row = parameter(&scope, 0);
+    let choice = graph.choice(&mut control).unwrap();
+    let actual = graph
+        .select_row(&choice, literal(&["fs.read"]), open(&row), &mut control)
+        .unwrap();
+    let permitted = EffectSet::from_labels(["fs.read(save)"]).unwrap();
+    let requirement = graph
+        .relate(
+            PreparedEffectRelation::AdmittedSubset,
+            actual,
+            literal(&["fs.read(save)"]),
+            &mut control,
+        )
+        .unwrap();
+    let exact = EffectFormula::variable(row.clone(), &mut control)
+        .unwrap()
+        .subset(
+            &EffectFormula::from_set(&permitted, &mut control).unwrap(),
+            &mut control,
+        )
+        .unwrap();
+    let expected = graph
+        .select_predicate(
+            &choice,
+            truth(true),
+            PreparedEffectPredicate::Canonical(exact),
+            &mut control,
+        )
+        .unwrap();
+    let denied_expected = graph.not(expected.clone(), &mut control).unwrap();
+    let denied_requirement = graph.not(requirement.clone(), &mut control).unwrap();
+    let forward = graph
+        .or(vec![denied_expected, requirement.clone()], &mut control)
+        .unwrap();
+    let backward = graph
+        .or(vec![denied_requirement, expected.clone()], &mut control)
+        .unwrap();
+    let verified = graph.solve_principal(&mut control).unwrap();
+    // Prove both implications for every input row and retained choice.
+    for (domain, consequence, implication) in [
+        (&expected, &requirement, &forward),
+        (&requirement, &expected, &backward),
+    ] {
+        let observed = verified
+            .observe_predicate(&truth(true), implication, &mut control)
+            .unwrap();
+        assert_eq!(observed.total_truth(), Some(true));
+        let fact = graph
+            .read()
+            .scoped_constraint(
+                std::slice::from_ref(&row),
+                domain,
+                consequence,
+                &mut control,
+            )
+            .unwrap();
+        verified
+            .confirm_scoped_constraint(&fact, &mut control)
+            .unwrap();
+    }
+}
+
+#[test]
 fn extension_preserves_named_and_outside_conditions_against_finite_sets() {
     let mut graph = PreparedEffectGraph::default();
     let mut control = budget();

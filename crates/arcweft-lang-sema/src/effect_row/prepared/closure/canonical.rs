@@ -388,36 +388,24 @@ impl<'a> CanonicalReplay<'a> {
         self.prepare_row(permitted, work)?;
         let actual = self.read_row(actual, work)?;
         let permitted = self.read_row(permitted, work)?;
-        let subset = actual.formula.subset(&permitted.formula, work)?;
-        let predicate = if relation == PreparedEffectRelation::Equal {
-            subset.and(&permitted.formula.subset(&actual.formula, work)?, work)?
-        } else {
-            subset
-        };
-        let exact = self.guard(&predicate, work)?;
-        let admitted = |result: Decision, work: &mut Work<'_, C>| {
-            result
-                .and(&actual.admitted, work)?
-                .and(&permitted.admitted, work)
-        };
-        let result = if relation == PreparedEffectRelation::AdmittedSubset {
-            let actual_closed = self.closed(&actual.formula, work)?;
-            if actual_closed.is_constant(false) {
-                return admitted(exact, work);
-            }
-            let closed = actual_closed.and(&self.closed(&permitted.formula, work)?, work)?;
-            if closed.is_constant(false) {
-                return admitted(exact, work);
-            }
-            closed.conditional(
-                &self.covered(&actual.formula, &permitted.formula, work)?,
-                &exact,
-                work,
-            )?
-        } else {
-            exact
-        };
-        admitted(result, work)
+        let result = relation.decide_membership(
+            [actual.formula.as_ref(), permitted.formula.as_ref()],
+            work,
+            |row, work| self.closed(row, work),
+            |work| {
+                let subset = actual.formula.subset(&permitted.formula, work)?;
+                let predicate = if relation == PreparedEffectRelation::Equal {
+                    subset.and(&permitted.formula.subset(&actual.formula, work)?, work)?
+                } else {
+                    subset
+                };
+                self.guard(&predicate, work)
+            },
+            |work| self.covered(&actual.formula, &permitted.formula, work),
+        )?;
+        result
+            .and(&actual.admitted, work)?
+            .and(&permitted.admitted, work)
     }
 
     fn read_predicate<C: DecisionControl>(

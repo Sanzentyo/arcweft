@@ -74,6 +74,37 @@ enum FormalOwner {
 
 type Decision = EffectDecision<Atom>;
 
+impl PreparedEffectRelation {
+    fn decide_membership<C: DecisionControl, Row>(
+        self,
+        rows: [&Row; 2],
+        work: &mut Work<'_, C>,
+        closed: impl Fn(&Row, &mut Work<'_, C>) -> Result<Decision, PreparedEffectFailure<C::Error>>,
+        exact: impl FnOnce(&mut Work<'_, C>) -> Result<Decision, PreparedEffectFailure<C::Error>>,
+        covered: impl FnOnce(&mut Work<'_, C>) -> Result<Decision, PreparedEffectFailure<C::Error>>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        if self == Self::Equal {
+            return exact(work);
+        }
+        let [actual, permitted] = rows;
+        let actual_closed = closed(actual, work)?;
+        if actual_closed.is_constant(false) {
+            return exact(work);
+        }
+        let both_closed = actual_closed.and(&closed(permitted, work)?, work)?;
+        if both_closed.is_constant(true) {
+            return covered(work);
+        }
+        if both_closed.is_constant(false) {
+            return exact(work);
+        }
+        // The selector is independent of input rows. A symbolic selector
+        // keeps both membership relations under the original quantifier.
+        let exact = exact(work)?;
+        both_closed.conditional(&covered(work)?, &exact, work)
+    }
+}
+
 struct Layout {
     labels: Arc<[EffectId]>,
     tables: BTreeMap<u64, usize>,
