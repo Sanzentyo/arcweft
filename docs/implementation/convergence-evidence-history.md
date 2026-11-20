@@ -20475,3 +20475,32 @@ Cargo graphから求めたSemaの推移的逆依存は22パッケージ。CLIを
 Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を記録済みのStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
 
 [検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-grouped-effect-obligations.raw.zip) は57 entry、1,375,040 bytes、SHA256 `0c55576c89ef19de8d2104ddd83e2c7b48abc6dc9cc83cef270bbf0063fc5ea9`。各entryの長さとハッシュ、公開Sourceの6ファイルを照合した。記録時の `target` は101,721,091,652 bytes。
+
+<a id="universal-effect-prefix"></a>
+## 2026-11-20 — 制約のない効果入力を決定図の分岐で全称量化する
+
+検証基点 `d19959e52b2ec30737da54d72b7299b6926551c2`、公開Source `99f7380ceb54088f5aec40c79fc42864435493c6`。基点の追跡済み作業ツリーに変更はなく、既存の未追跡 `%SystemDrive%/` があった。CoreとSemaの5ファイルの検証用SHA256と公開blobを照合した。
+
+制約のない全称比較では、左右の決定図で同じ入力を選び、到達可能なノードの組を一度ずつ展開する。入力より後ろの変数は決定図に残し、必要な条件の論理積を構築する。親から子へ進むとノード番号の組が必ず小さくなるため、組の降順で処理し、探索待ちの集合で重複を除く。外側ラベルの存在条件が必要な比較では、各マスクのguardを評価する。新規回帰は単一述語と含意の両方を64マスクの列挙と比較し、同じ決定図と未確定の変数を確認した。使用作業量が少なくなり、必要量より1単位少ない上限で正しく停止した。
+
+初回の試行では探索待ちと訪問済みを別に保持した。Core 2,389件がPASS、Sema 2,002件のうち1,921 PASS／81既知FAILで、既存の合否は比較元 `3c697ee98af20392f2537e60b0ed4e60c2e88af6` と一致した。探索待ちを一つの集合に置き換えた後、同じowner範囲を再実行した。公開版のCore全featureの対象2,389件は全件PASS、比較元の2,388 IDをすべて含む。Sema全featureユニットも2,002件で1,921 PASS／81既知FAIL、初回および比較元と全IDの合否が一致した。初回のworkspace checkは完了前に中止した。試行の入力、実行結果、診断ログを原本に保持する。
+
+既存テスト実行ファイルをデバッガーから起動し、プロセス内の診断用上限16,384で既存アサーションを通した。3 callback の最大作業量は比較元5,716単位、初回試行5,699単位、公開版5,696単位。2 callback はいずれも5,671単位。
+
+Supersedes [外側ラベルの入力マスクの処理直前だった停止位置](#grouped-effect-obligations)。既定上限4,096で2 callback のSemaは式75で、効果関係の次のノード処理に入る直前に停止した。3 callback のSemaは式26で、外側ラベル比較の決定図をたどり終え、残った条件の論理積を構築する段階で上限に達した。デバッガーでは同じ型付き呼出し経路の論理積開始点に4回到達し、4回目の直後に上限を観測した。Compilerの2 callback はNative／AWBCとも型検査の式76で失敗し、デバッガーではSemaと同じ効果関係の次のノードの直前で停止した。3 callback の実CLI入力では `bytecode-vm` と `awbc-product` がともに `sema.final_analysis` の式69で終了1。検証入力のSHA256は前回と一致した。
+
+[2026-11-10の先行受入](#recursive-callback-effects-and-closed-instances)のCLI 4入力を、元の `e0680eb045387dca2aeafe33c691aed7f25dcfbb` の記録から取り出し、入力のSHA256と同じ引数・1操作上限を確認して再実行した。1 callback はVM／AWBC Productとも終了0で、戻り値42、ログ `marker`、最大1操作、診断0が一致した。2 callback は両方で式75、3 callback の巡回2入力は両方で式68の `sema.final_analysis` を返し、終了1となった。既定上限4,096で実行したVMの3失敗もデバッガーで確認した。2 callback は効果述語の読取り、3 callback の2入力はそれぞれ決定図の探索と論理積の構築で上限に達した。元の8実行はすべて成功しており、同じ6実行の失敗を回帰と判定した。元の受入と公開SHA、今回の入力・実行ごとの結果を各原本に保持する。
+
+同じ実行ファイルでプロセス内の診断用上限を16,384にした実行では、失敗した6件すべてが終了0となり、先行受入の戻り値42、ログ順、最大1操作、診断0を再現した。
+
+workspace全target・全featureのcheckとClippy、fmt、差分、Cargo graph、構造ゲートは終了0。Coreの全feature doctestは81件すべてPASS。
+
+Generic Match `.1.2` C3/C5 は[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)の150 IDと、[置換理由を記録済みのStyle Length後継ID](acceptance-evidence/task-expression-value-scope.json)を照合した。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件がすべてPASS。
+
+Cargo graphから求めた推移的逆依存はCore 51パッケージ、Sema 22パッケージ。既定featureのCoreはCLIを除き8,122件を実行し、8,035 PASS、87既知FAIL、18 SKIP。Semaの逆依存に該当する実行分は4,312件で、4,225 PASS、87既知FAIL。CLIのライブラリ・バイナリ196件と規定の統合6 target 30件はすべてPASS。
+
+比較では[Coreの前回全件](#unrestricted-scheme-equations) `73b3ee8f8c577a5e8d784e7b93220ba802db4adb` の8,117件を基礎とし、Semaに該当する4,308 IDを[直近のSema実行](#grouped-effect-obligations) `3c697ee98af20392f2537e60b0ed4e60c2e88af6` の結果で更新した。既存IDの合否はすべて一致し、追加のCore回帰1件が通過した。元のCoreとSemaの実行結果は、それぞれの検証履歴に保持する。
+
+現状一覧で重複していたCLI・workspace品質・Semaの件数を、Core／Semaの横断検証行に集約した。旧行が記載していた `630229b2eaa239a143765b2d2d5389ae00ffbb3b` のCLI 226件と、`33c8f9ec369ebd2b77e856b56af2a1215871f605` のSema 1,894 PASS／95 FAILおよび品質結果は、それぞれ[当時のCore／CLI逆依存](#effect-decision-projection-reverse)と[関係保持の検証](#retained-effect-relation)に保持する。CLIの先行Source `6cde3621e955a5798b8b1e978205410127c4f610` と `20a847545961e185230491ee3de9e4d256d2db32` も[先行の原本](acceptance-evidence/task-analyzer-effect-declarations.raw.zip)と当時の履歴を参照する。
+
+[検証原本・全失敗ID・Generic Match照合](acceptance-evidence/task-universal-effect-prefix.raw.zip) は102 entry、1,830,165 bytes、SHA256 `4e4afcb5d47b380b32c1550796aa737c3c3105a34d905f637e7cd19b57e70597`。各entryの長さとハッシュを照合した。記録時の `target` は101,745,093,523 bytes。
