@@ -184,6 +184,26 @@ pub(crate) enum PreparedEffectPredicate {
     Term(PreparedEffectPredicateRef),
 }
 
+impl PreparedEffectPredicate {
+    fn constant_truth(&self) -> Option<bool> {
+        let Self::Canonical(predicate) = self else {
+            return None;
+        };
+        let membership = predicate.membership();
+        if membership.overrides().next().is_some() {
+            return None;
+        }
+        let default = membership.default_decision();
+        if default.is_constant(false) {
+            Some(false)
+        } else if default.is_constant(true) {
+            Some(true)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedEffectRelation {
     Equal,
@@ -426,6 +446,8 @@ enum PredicateTerm {
     },
     And(Box<[PreparedEffectPredicate]>),
     Or(Box<[PreparedEffectPredicate]>),
+    /// Equality of the two whole predicates at the same input valuation.
+    Equivalent([PreparedEffectPredicate; 2]),
     Not(PreparedEffectPredicate),
     Select {
         choice: PreparedEffectChoice,
@@ -839,6 +861,30 @@ impl PreparedEffectGraph {
             0 => Ok(PreparedEffectPredicate::Canonical(identity)),
             1 => Ok(predicates.pop().expect("single predicate")),
             _ => self.insert_predicate(connective(predicates.into_boxed_slice()), control),
+        }
+    }
+
+    fn equivalent<C: DecisionControl>(
+        &mut self,
+        left: PreparedEffectPredicate,
+        right: PreparedEffectPredicate,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
+        self.validate_predicate(&left)?;
+        self.validate_predicate(&right)?;
+        match (left.constant_truth(), right.constant_truth()) {
+            (Some(left), Some(right)) => Ok(PreparedEffectPredicate::Canonical(if left == right {
+                EffectPredicate::unconstrained()
+            } else {
+                EffectPredicate::impossible()
+            })),
+            (Some(true), None) => Ok(right),
+            (None, Some(true)) => Ok(left),
+            (Some(false), None) => self.not(right, control),
+            (None, Some(false)) => self.not(left, control),
+            (None, None) => {
+                self.insert_predicate(PredicateTerm::Equivalent([left, right]), control)
+            }
         }
     }
 

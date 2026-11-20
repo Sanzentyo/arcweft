@@ -72,6 +72,9 @@ impl<'a> Term<'a> {
                 PredicateTerm::And(children) | PredicateTerm::Or(children) => {
                     Children::Predicates(children.iter(), inputs.children(predicate))
                 }
+                PredicateTerm::Equivalent(children) => {
+                    Children::Predicates(children.iter(), inputs.children(predicate))
+                }
                 PredicateTerm::Not(child) => Children::Predicates(
                     std::slice::from_ref(child).iter(),
                     inputs.children(predicate),

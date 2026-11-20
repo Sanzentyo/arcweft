@@ -22,6 +22,8 @@ impl PredicateInputs {
         match term {
             // A choice is fixed for the complete assignment of input rows.
             PredicateTerm::And(_) | PredicateTerm::Select { .. } => self,
+            // Equivalence compares the operands at the same valuation before
+            // quantifying the resulting predicate.
             _ => Self::AtValuation,
         }
     }
@@ -886,6 +888,12 @@ impl<'a> Compilation<'a> {
                     result = result.or(&child, work)?;
                 }
                 result
+            }
+            PredicateTerm::Equivalent([left, right]) => {
+                let inputs = inputs.children(term);
+                let left = self.read_predicate(left, inputs, work)?;
+                let right = self.read_predicate(right, inputs, work)?;
+                left.equivalent(&right, work)?
             }
             PredicateTerm::Not(child) => self
                 .read_predicate(child, inputs.children(term), work)?

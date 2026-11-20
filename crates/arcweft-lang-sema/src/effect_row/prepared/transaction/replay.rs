@@ -707,6 +707,9 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             | (PredicateTerm::Or(left), PredicateTerm::Or(right)) => {
                 self.predicate_slice(left, right)?
             }
+            (PredicateTerm::Equivalent(left), PredicateTerm::Equivalent(right)) => {
+                self.predicate_slice(left, right)?
+            }
             (PredicateTerm::Not(left), PredicateTerm::Not(right)) => {
                 self.push(Pair::Predicate(left, right))?;
                 true

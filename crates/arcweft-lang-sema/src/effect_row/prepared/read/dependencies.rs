@@ -321,6 +321,10 @@ impl<'a> Reachable<'a> {
                                 self.push(Dependency::Predicate(predicate), control)?;
                             }
                         }
+                        PredicateTerm::Equivalent([left, right]) => {
+                            self.push(Dependency::Predicate(left), control)?;
+                            self.push(Dependency::Predicate(right), control)?;
+                        }
                         PredicateTerm::Not(value) => {
                             self.push(Dependency::Predicate(value), control)?
                         }

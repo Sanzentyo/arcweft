@@ -561,7 +561,8 @@ impl CanonicalReplay<'_> {
                             work.charge(DecisionWork::Node)?;
                             todo.push(child);
                         }
-                        PredicateTerm::Select { yes, no, .. } => {
+                        PredicateTerm::Select { yes, no, .. }
+                        | PredicateTerm::Equivalent([yes, no]) => {
                             for child in [yes, no] {
                                 work.charge(DecisionWork::Node)?;
                                 todo.push(child);
@@ -625,6 +626,11 @@ impl CanonicalReplay<'_> {
                         value = value.or(&child, work)?;
                     }
                     value
+                }
+                PredicateTerm::Equivalent([left, right]) => {
+                    let left = self.read_predicate(left, work)?;
+                    let right = self.read_predicate(right, work)?;
+                    left.equivalent(&right, work)?
                 }
                 PredicateTerm::Not(child) => self.read_predicate(child, work)?.not(work)?,
                 PredicateTerm::Select { choice, yes, no } => {

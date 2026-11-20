@@ -28,10 +28,25 @@ fn agreement_waits_for_the_actual_body_and_keeps_the_existing_relation() {
             .constrain_predicate_equality(&mut graph, &required, &truth(), &mut control)
             .unwrap();
         let previous = environment.original_predicate().clone();
-        // A second, tautological agreement must conjoin rather than replace R.
+        let previous_terms = graph.retained_terms();
+        let previous_state = graph.state;
         environment
             .constrain_predicate_equality(&mut graph, &truth(), &truth(), &mut control)
             .unwrap();
+        assert_eq!(environment.original_predicate(), &previous);
+        assert_eq!(graph.retained_terms(), previous_terms);
+        assert_eq!(graph.state, previous_state);
+        assert!(matches!(
+            environment.constrain_predicate_equality(
+                &mut PreparedEffectGraph::default(),
+                &truth(),
+                &truth(),
+                &mut control,
+            ),
+            Err(PreparedEffectFailure::Invariant(
+                PreparedEffectInvariant::ForeignIssuer
+            ))
+        ));
         graph.read().validate_retained_predicate(&previous).unwrap();
         assert!(matches!(
             graph.scheme(&declaration).unwrap().state,
@@ -122,24 +137,66 @@ fn agreement_compares_whole_facts_including_different_nonempty_rows() {
 }
 
 #[test]
+fn agreement_quantifies_the_two_operands_at_the_same_valuation() {
+    let mut control = Control(1_000_000);
+    let mut graph = PreparedEffectGraph::default();
+    let mut environment = environment(graph.read(), &mut control);
+    let parameter = GenericScope::default()
+        .with_binder(GenericBinder::new(0, 0, 1))
+        .bound_effect(0, 0)
+        .unwrap();
+    let input = PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), parameter.clone()));
+    let [left, right] = ["fs.read", "log.write"].map(|label| {
+        graph
+            .relate(
+                PreparedEffectRelation::AdmittedSubset,
+                input.clone(),
+                row(&[label]),
+                &mut control,
+            )
+            .unwrap()
+    });
+    environment
+        .constrain_predicate_equality(&mut graph, &left, &right, &mut control)
+        .unwrap();
+    graph
+        .add_scoped_obligation(
+            vec![parameter],
+            truth(),
+            environment.original_predicate().clone(),
+            &mut control,
+        )
+        .unwrap();
+    // Neither operand holds for every finite row. They disagree when the
+    // input contains just one of the two permitted effects.
+    assert!(matches!(
+        graph.solve_principal(&mut control),
+        Err(PreparedEffectFailure::Unsatisfiable)
+    ));
+}
+
+#[test]
 fn every_failed_agreement_edit_rolls_back_without_refunding_work() {
     let mut control = Control(1_000_000);
     let mut graph = PreparedEffectGraph::default();
     let seed = environment(graph.read(), &mut control);
     let variable = seed.original_variables().next().unwrap().clone();
-    let actual = graph
-        .relate(
-            PreparedEffectRelation::Equal,
-            PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), variable)),
-            row(&["fs.read"]),
-            &mut control,
-        )
-        .unwrap();
+    let input = PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), variable));
+    let [left, right] = ["fs.read", "log.write"].map(|label| {
+        graph
+            .relate(
+                PreparedEffectRelation::Equal,
+                input.clone(),
+                row(&[label]),
+                &mut control,
+            )
+            .unwrap()
+    });
     let mut checkpoint = graph.checkpoint(&mut control).unwrap();
     let mut probe = seed.clone();
     let mut measured = Control(4096);
     probe
-        .constrain_predicate_equality(&mut graph, &actual, &truth(), &mut measured)
+        .constrain_predicate_equality(&mut graph, &left, &right, &mut measured)
         .unwrap();
     let required = 4096 - measured.0;
     graph.rollback(&mut checkpoint).unwrap();
@@ -149,7 +206,7 @@ fn every_failed_agreement_edit_rolls_back_without_refunding_work() {
         let mut checkpoint = graph.checkpoint(&mut control).unwrap();
         let mut branch = seed.clone();
         let mut work = Control(available);
-        let result = branch.constrain_predicate_equality(&mut graph, &actual, &truth(), &mut work);
+        let result = branch.constrain_predicate_equality(&mut graph, &left, &right, &mut work);
         if available < required {
             assert!(matches!(
                 result,

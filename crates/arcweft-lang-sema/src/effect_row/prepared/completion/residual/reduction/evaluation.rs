@@ -246,6 +246,12 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
                             todo.push(child);
                         }
                     }
+                    PredicateTerm::Equivalent(children) => {
+                        for child in children {
+                            self.work.charge(DecisionWork::Node)?;
+                            todo.push(child);
+                        }
+                    }
                     PredicateTerm::Not(child) => {
                         self.work.charge(DecisionWork::Node)?;
                         todo.push(child);
@@ -309,6 +315,13 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
                     } else {
                         self.arena.disjunction(values, self.work)?
                     }
+                }
+                PredicateTerm::Equivalent([left, right]) => {
+                    let left = self.read_predicate(left, scope)?;
+                    let right = self.read_predicate(right, scope)?;
+                    let forward = self.arena.implies(left, right, self.work)?;
+                    let reverse = self.arena.implies(right, left, self.work)?;
+                    self.arena.conjunction([forward, reverse], self.work)?
                 }
                 PredicateTerm::Not(child) => {
                     let child = self.read_predicate(child, scope)?;

@@ -271,7 +271,8 @@ where
                                 .map_err(PreparedEffectFailure::Control)?;
                             todo.push(child);
                         }
-                        PredicateTerm::Select { yes, no, .. } => {
+                        PredicateTerm::Select { yes, no, .. }
+                        | PredicateTerm::Equivalent([yes, no]) => {
                             self.control
                                 .charge(DecisionWork::Node)
                                 .map_err(PreparedEffectFailure::Control)?;
@@ -324,6 +325,11 @@ where
                     } else {
                         self.graph.or(mapped, self.control)?
                     }
+                }
+                PredicateTerm::Equivalent([left, right]) => {
+                    let left = self.read_predicate(left)?;
+                    let right = self.read_predicate(right)?;
+                    self.graph.equivalent(left, right, self.control)?
                 }
                 PredicateTerm::Not(child) => {
                     let mapped = self.read_predicate(child)?;
@@ -492,12 +498,7 @@ impl PreparedEffectTermEdit<'_> {
         let result = (|| {
             let left = self.read().retain_predicate(left, control)?;
             let right = self.read().retain_predicate(right, control)?;
-            let left_copy = self.read().retain_predicate(&left, control)?;
-            let right_copy = self.read().retain_predicate(&right, control)?;
-            let both = self.graph.and(vec![left_copy, right_copy], control)?;
-            let either = self.graph.or(vec![left, right], control)?;
-            let neither = self.graph.not(either, control)?;
-            self.graph.or(vec![both, neither], control)
+            self.graph.equivalent(left, right, control)
         })();
         if result.is_err() {
             self.invalidate();

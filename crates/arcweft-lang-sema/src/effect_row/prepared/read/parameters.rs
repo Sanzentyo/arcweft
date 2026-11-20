@@ -158,6 +158,9 @@ impl PreparedEffectReadView<'_> {
                         PredicateTerm::And(children) | PredicateTerm::Or(children) => {
                             ParameterChildren::Predicates(children.iter())
                         }
+                        PredicateTerm::Equivalent(children) => {
+                            ParameterChildren::Predicates(children.iter())
+                        }
                         PredicateTerm::Not(child) => {
                             ParameterChildren::Predicates(std::slice::from_ref(child).iter())
                         }

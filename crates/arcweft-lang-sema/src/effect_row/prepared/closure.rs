@@ -284,7 +284,7 @@ impl Layout {
                         support(predicate.membership())?;
                     }
                 }
-                PredicateTerm::Select { yes, no, .. } => {
+                PredicateTerm::Select { yes, no, .. } | PredicateTerm::Equivalent([yes, no]) => {
                     for predicate in [yes, no] {
                         if let PreparedEffectPredicate::Canonical(predicate) = predicate {
                             support(predicate.membership())?;

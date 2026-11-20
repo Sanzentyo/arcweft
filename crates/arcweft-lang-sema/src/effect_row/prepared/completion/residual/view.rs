@@ -531,6 +531,7 @@ pub(crate) enum ResidualPreparedPredicateView<'a> {
     },
     And(ResidualPreparedPredicates<'a>),
     Or(ResidualPreparedPredicates<'a>),
+    Equivalent([ResidualPreparedPredicate<'a>; 2]),
     Not(ResidualPreparedPredicate<'a>),
     Select {
         choice: &'a PreparedEffectChoice,
@@ -619,6 +620,9 @@ impl<'a> ResidualPreparedPredicate<'a> {
                 },
                 PredicateTerm::And(values) => ResidualPreparedPredicateView::And(children(values)),
                 PredicateTerm::Or(values) => ResidualPreparedPredicateView::Or(children(values)),
+                PredicateTerm::Equivalent([left, right]) => {
+                    ResidualPreparedPredicateView::Equivalent([predicate(left), predicate(right)])
+                }
                 PredicateTerm::Not(value) => ResidualPreparedPredicateView::Not(predicate(value)),
                 PredicateTerm::Select { choice, yes, no } => {
                     ResidualPreparedPredicateView::Select {

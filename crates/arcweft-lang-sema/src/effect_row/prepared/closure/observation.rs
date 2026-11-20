@@ -758,7 +758,8 @@ impl ObservationSupport {
                             work.charge(DecisionWork::Node)?;
                             todo.push(Root::Predicate(child));
                         }
-                        PredicateTerm::Select { yes, no, .. } => {
+                        PredicateTerm::Select { yes, no, .. }
+                        | PredicateTerm::Equivalent([yes, no]) => {
                             for child in [yes, no] {
                                 work.charge(DecisionWork::Node)?;
                                 todo.push(Root::Predicate(child));

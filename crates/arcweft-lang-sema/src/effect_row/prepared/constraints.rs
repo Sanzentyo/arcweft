@@ -204,6 +204,13 @@ impl EffectConstraintEnvironment<PreparedEffects> {
         }
         let mut edit = graph.edit_terms();
         let added = edit.equivalent_predicates(left, right, control)?;
+        if added.constant_truth() == Some(true) {
+            control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?;
+            edit.read().validate_retained_predicate(&self.predicate)?;
+            return edit.commit().map_err(Into::into);
+        }
         let predicate = self.conjoin(&mut edit, added, control)?;
         control
             .charge(DecisionWork::Visit)
