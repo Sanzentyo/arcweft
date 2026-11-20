@@ -20699,3 +20699,16 @@ CargoでCore逆依存51パッケージを選定し、CLI以外で8,136件を実�
 Generic Match `.1.2` C3/C5 の受入を再照合した。元の受入監査の150 IDとStyle Length後継1件に当たる、transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBC継続・保存7件がすべてPASS。
 
 [検証原本と作業量](acceptance-evidence/task-joint-effect-coverage.raw.zip) は95 entry、1,680,859 bytes、SHA256 `7f538af1d9ecb0f2461fb459bf77cc50e114baf8478ce93bd7277a2b155a719c`。各entryの長さとハッシュを照合した。記録時の `target` は134,420,721,469 bytes。
+
+<a id="effect-literal-products"></a>
+## 2026-11-20 — 効果判定の単一参照と独立した等式の合成
+
+検証基点は `281a36167ddeaee0795f7b07bc900aa0ae6d1494`。公開Sourceは `aaf2e6f355907842d3a2ce457bf0f0d8b2259ed6`。単一の正準参照を1ノードの課金で生成する。独立した単一参照の等式は同じアリーナで参照順に合成し、依存する等式からは入力順に処理する。3件の独立した等式に続く矛盾で後続エラーの読取りを止め、矛盾のない場合はそのエラーを返すことを確認した。無条件の prefix の条件も決定根で合成する。Semaの外延一致は全係数を従来と同じ順序で列挙する。
+
+同一SHA256の先行入力をVM／AWBC Productで実行した。既定上限4,096で1 callback は戻り値42、ログ `marker`、1ステップ最大1操作で成功した。2 callback は式75、3 callback の2入力は式68、別の3 callback は式69で両実行系とも意味解析が停止した。診断専用の上限16,384では、2 callback が4,527→4,454単位、3 callback の2入力が7,477→7,330単位。戻り値42、ログ順、1ステップ最大1操作、診断0を先行実行と照合した。成分準備は2 callback が1,906→1,833単位、3 callback の元の順では3,389→3,242単位だった。3 callback の元の順は最終成分の準備開始時に2,749単位、独立した正準照合の開始時に6,225単位を消費していた。
+
+Core全featureの対象2,397件がPASSし、先行と共通の2,395 IDは合否が一致。Sema全featureユニット2,010件は1,930 PASS／80既知FAILで、全IDの合否が一致した。Semaの2、3 callback は診断専用上限でそれぞれ4,528→4,455、4,683→4,551単位で成功し、既定上限では引き続き停止した。CLIの既定設定のライブラリ・バイナリ196件と統合6 targetの30件がPASSした。
+
+Compilerの `callable_execution` 378件は先行実行と全IDの合否が一致し、376件がPASS、`recursive_callbacks_keep_independent_effects` のNative／AWBCの2件が既知FAILだった。workspace全target・全featureのcheckとClippy、Core doctest 81件、書式、差分、Cargo依存グラフ、構造ゲートを通過した。Coreの推移的逆依存を一括で実行した結果は[先行の照合](#joint-effect-coverage)に記録した。
+
+[検証原本](acceptance-evidence/task-effect-literal-products.raw.zip) は74 entry、1,420,178 bytes、SHA256 `8ca6a2c9720bf81942662281a691a1311bcde7b6d1c4019a097737f116b4b68b`。各entryの長さとハッシュを照合した。記録時の `target` は134,442,390,334 bytes。
