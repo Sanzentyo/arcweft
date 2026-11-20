@@ -660,6 +660,55 @@ fn cell_dependent_closedness_is_decided_before_capability_admission() {
 }
 
 #[test]
+fn capability_coverage_uses_one_closed_choice_for_the_whole_row() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
+    let parameter = parameter(&scope, 0);
+    let scheme = graph
+        .declare(
+            vec![parameter.clone()],
+            EffectPredicate::unconstrained(),
+            &mut control,
+        )
+        .unwrap();
+    let choice = graph.choice(&mut control).unwrap();
+    let required = literal(&["fs.read(save.slot)", "log.write"]);
+    let granted = literal(&["fs.read(save)", "fs.write(save.slot)", "log.write"]);
+    let open_required = graph
+        .union(vec![open(&parameter), required.clone()], &mut control)
+        .unwrap();
+    let open_granted = graph
+        .union(vec![open(&parameter), granted.clone()], &mut control)
+        .unwrap();
+    let required = graph
+        .select_row(&choice, required, open_required, &mut control)
+        .unwrap();
+    let granted = graph
+        .select_row(&choice, granted, open_granted, &mut control)
+        .unwrap();
+    let admission = graph
+        .relate(
+            PreparedEffectRelation::AdmittedSubset,
+            required,
+            granted,
+            &mut control,
+        )
+        .unwrap();
+    let body = graph
+        .select_row(&choice, literal(&["log.write"]), literal(&[]), &mut control)
+        .unwrap();
+    graph
+        .prepare_body(&scheme, body, vec![admission], &mut control)
+        .unwrap();
+    let principal = graph.solve_principal(&mut control).unwrap();
+    assert_eq!(
+        principal.scheme(&scheme).unwrap(),
+        &EffectRow::closed(EffectSet::from_labels(["log.write"]).unwrap())
+    );
+}
+
+#[test]
 fn closure_budget_boundary_preserves_the_original_graph_on_failure() {
     let mut graph = PreparedEffectGraph::default();
     let mut control = budget();

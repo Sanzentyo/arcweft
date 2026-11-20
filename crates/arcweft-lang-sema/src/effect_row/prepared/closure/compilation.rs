@@ -630,21 +630,66 @@ impl<'a> Compilation<'a> {
         if actual.len() != self.layout.classes() || permitted.len() != self.layout.classes() {
             return Err(PreparedEffectInvariant::UnclosedCell.into());
         }
-        let mut covered = self.valuation().outside(&actual[0].not(work)?, work)?;
+        // Capability admission is selected only where both rows are independent
+        // of the formal inputs. Empty input rows are a valid representative of
+        // that region, including the outside-support membership point.
+        let valuation = self.valuation();
+        let outside = valuation.empty_point(0, &actual[0], work)?.not(work)?;
+        if outside.is_constant(false) {
+            return Ok(outside);
+        }
+        let mut requirements = Vec::new();
         for (index, label) in self.layout.labels.iter().enumerate() {
-            let mut allowance = Decision::constant(false);
+            work.charge(DecisionWork::Visit)?;
+            let class = index + 1;
+            let required = valuation.empty_point(class, &actual[class], work)?;
+            if required.is_constant(false) {
+                continue;
+            }
+            let mut allowance: Option<Cow<'_, Decision>> = None;
             for (other, capability) in self.layout.labels.iter().enumerate() {
                 work.charge(DecisionWork::Visit)?;
-                if capability.covers(label) {
-                    allowance = allowance.or(&permitted[other + 1], work)?;
+                if !capability.covers(label) || permitted[other + 1].is_constant(false) {
+                    continue;
+                }
+                let grant = valuation.empty_point(other + 1, &permitted[other + 1], work)?;
+                if grant.is_constant(false) {
+                    continue;
+                }
+                if grant.is_constant(true) {
+                    allowance = Some(grant);
+                    break;
+                }
+                let grant = match allowance {
+                    Some(previous) => Cow::Owned(previous.or(&grant, work)?),
+                    None => grant,
+                };
+                let total = grant.is_constant(true);
+                allowance = Some(grant);
+                if total {
+                    break;
                 }
             }
-            covered = covered.and(
-                &actual[index + 1].conditional(&allowance, &Decision::constant(true), work)?,
-                work,
-            )?;
+            let requirement = match allowance {
+                Some(allowance) if allowance.is_constant(true) => continue,
+                Some(allowance) if required.is_constant(true) => match allowance {
+                    Cow::Borrowed(value) => work.copy_decision(value)?,
+                    Cow::Owned(value) => value,
+                },
+                Some(allowance) => {
+                    required.conditional(&allowance, &Decision::constant(true), work)?
+                }
+                None => required.not(work)?,
+            };
+            if requirement.is_constant(false) {
+                return Ok(requirement);
+            }
+            if !requirement.is_constant(true) {
+                work.charge(DecisionWork::Node)?;
+                requirements.push(requirement);
+            }
         }
-        Ok(covered)
+        FiniteRowValuation::join_named(outside, &requirements, work)
     }
 
     fn relation<C: DecisionControl>(

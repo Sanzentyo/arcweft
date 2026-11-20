@@ -139,6 +139,27 @@ impl FiniteRowValuation<'_> {
         Ok(uses_parameters)
     }
 
+    /// Evaluate a membership point with each input row empty. The common
+    /// parameter-independent case can continue to borrow its decision.
+    pub(super) fn empty_point<'a, C: DecisionControl>(
+        self,
+        class: usize,
+        point: &'a Decision,
+        work: &mut Work<'_, C>,
+    ) -> Result<Cow<'a, Decision>, PreparedEffectFailure<C::Error>> {
+        if self.parameters.is_empty()
+            || !self.validate_class_point(class, point.variables(), work)?
+        {
+            return Ok(Cow::Borrowed(point));
+        }
+        point
+            .restrict_references(
+                |atom| matches!(atom, Atom::Formal { .. }).then_some(false),
+                work,
+            )
+            .map(Cow::Owned)
+    }
+
     /// In an unrestricted scope any assignment can occur at this class,
     /// including at a fresh label outside the named support.
     pub(super) fn all_class_inputs<C: DecisionControl>(
