@@ -20712,3 +20712,20 @@ Core全featureの対象2,397件がPASSし、先行と共通の2,395 IDは合否�
 Compilerの `callable_execution` 378件は先行実行と全IDの合否が一致し、376件がPASS、`recursive_callbacks_keep_independent_effects` のNative／AWBCの2件が既知FAILだった。workspace全target・全featureのcheckとClippy、Core doctest 81件、書式、差分、Cargo依存グラフ、構造ゲートを通過した。Coreの推移的逆依存を一括で実行した結果は[先行の照合](#joint-effect-coverage)に記録した。
 
 [検証原本](acceptance-evidence/task-effect-literal-products.raw.zip) は74 entry、1,420,178 bytes、SHA256 `8ca6a2c9720bf81942662281a691a1311bcde7b6d1c4019a097737f116b4b68b`。各entryの長さとハッシュを照合した。記録時の `target` は134,442,390,334 bytes。
+
+<a id="direct-effect-complement"></a>
+## 2026-11-21 — 正準決定グラフの否定
+
+検証基点は `ca9dc1ccba7e93ae54dc20ee9608bb55a29c6232`。公開Sourceは `aca1bbf907101befca016bda015de92ead4deb30`。否定は必要な複製作業を先に計上し、正準な枝番号と走査順を保持したまま終端の真偽を交換する。条件分岐の両結果が偽・真になる場合もこの経路を使う。Coreの回帰では共有する後続枝を持つ決定で真理値の反転と二重否定後の正準結果を検査し、複製予算ちょうどで成功、1単位不足で拒否することを確認した。試作は4変数で表せる65,536関数すべてを従来の構築と照合した。65,534関数で作業量が減り、定数2件は同じだった。試作での合計は4,478,022→550,336単位。
+
+同一SHA256の先行入力をVM／AWBC Productで実行した。既定上限4,096で1 callback は戻り値42、ログ `marker`、1ステップ最大1操作で成功した。2 callback は式75、3 callback の2入力は式68、別の3 callback は式69で両実行系とも意味解析が停止した。診断専用の上限16,384では2 callback が4,454→4,422、3 callback の2入力が7,330→7,286単位で、先行受入の戻り値42、ログ順、1ステップ最大1操作、診断0を再確認した。今回の削減は成分準備の区間にあり、2 callback は1,833→1,801単位、3 callback の元の並びは3,242→3,198単位だった。
+
+元の制約を最終解決へ渡す前に連続する2つのスナップショットを計測した。2 callback では109単位と105単位、3 callback の元の並びでは154単位と145単位だった。3 callback の先頭3つの引数で、callback完了から各結果の制約処理終了までは順に194、249、299単位。5引数の処理を終えた時点で1,520単位、元の制約を共同で推論し始める時点で1,699単位だった。
+
+CLI統合テストが構築した同じSourceの実行ファイルでも、2 callback と3 callback の元の並びの最大作業量を再現した。両方で、取り込んだ子成分は元の宣言を指す名前付き入力1件を取り込み、照合時にその実入力を特殊化した。
+
+Core全featureの対象2,398件がPASSし、先行と共通の2,397 IDは合否が一致した。Sema全featureユニット2,010件は1,930 PASS／80既知FAILで、全IDの合否が一致した。Semaの2、3 callback は診断専用上限でそれぞれ4,455→4,423、4,551→4,539単位で成功し、既定上限では引き続き停止した。
+
+Compilerの `callable_execution` 378件は376 PASS／2既知FAILで、全IDの合否が一致した。失敗は `recursive_callbacks_keep_independent_effects` のNative／AWBC。CLIのライブラリ・バイナリ196件と統合6 targetの30件、workspace全target・全featureのcheckとClippy、Core doctest 81件、書式、差分、Cargo依存グラフ、構造ゲートがすべて通過した。
+
+[検証原本](acceptance-evidence/task-direct-effect-complement.raw.zip) は85 entry、1,438,020 bytes、SHA256 `918dc7f94a336b49ca5ce01699d63df2889960d079c2f149e5b357cadbf9768b`。各entryの長さとハッシュを照合した。記録時の `target` は134,480,973,118 bytes。
