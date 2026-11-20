@@ -190,7 +190,7 @@ fn conditional_completion_rejects_an_invalid_cell_even_with_a_total_principal_do
     let outside_layout = Decision::variable(cell(&future, 2), &mut work).unwrap();
     // Every valuation has a least witness, but the witness would refer to a
     // class that the declared input does not have.
-    component.relation = local.equivalent(&outside_layout, &mut work).unwrap();
+    component.relation = Arc::new(local.equivalent(&outside_layout, &mut work).unwrap());
     assert!(matches!(
         component.complete(&mut work),
         Err(PreparedEffectFailure::Invariant(

@@ -68,6 +68,98 @@ fn child_equality() -> (
 }
 
 #[test]
+fn inherited_clauses_keep_their_quantified_meaning_when_a_named_body_enters() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 1));
+    let parameter = parameter(&scope, 0);
+    let parameters = vec![parameter.clone()];
+    let argument = open(&parameter);
+    let named = graph
+        .declare(
+            parameters.clone(),
+            EffectPredicate::unconstrained(),
+            &mut control,
+        )
+        .unwrap();
+    let named_row = graph
+        .application(&named, vec![argument.clone()], &mut control)
+        .unwrap();
+    let future = unknown(&mut graph, true, parameters.clone());
+    let future_row = graph
+        .unknown_application(&future, vec![argument.clone()], &mut control)
+        .unwrap();
+    let local = unknown(&mut graph, false, parameters.clone());
+    let local_row = graph
+        .unknown_application(&local, vec![argument], &mut control)
+        .unwrap();
+    let allowed = graph
+        .union(vec![named_row, future_row], &mut control)
+        .unwrap();
+    equation(&mut graph, local_row, allowed, parameters);
+    let child = graph
+        .read()
+        .freeze_scoped(&[], &[], &[], &mut control)
+        .unwrap();
+    graph
+        .prepare_body(&named, literal(&["log.write"]), vec![], &mut control)
+        .unwrap();
+    let attachment = graph
+        .import_scoped_relation(&child, &[(&future, &future)], &mut control)
+        .unwrap();
+    let guard = graph.imported_principal(&attachment, &mut control).unwrap();
+    graph
+        .add_scoped_obligation(vec![], truth(), guard, &mut control)
+        .unwrap();
+
+    let graph = &graph.relation;
+    let future_row = EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap());
+    let actual = BTreeMap::from([(future.reference().ordinal, future_row)]);
+    let inventory = FunctionInventory::All;
+    for (rows, expected_shared) in [(&BTreeMap::new(), 1), (&actual, 0)] {
+        let work = &mut Work(&mut control);
+        let layout = Layout::new(graph, rows, inventory, work).unwrap();
+        let fixed = FixedCells::new(graph, rows, layout.view(), work).unwrap();
+        let LoweredImports {
+            layout,
+            fixed,
+            cache,
+        } = lower_selected_imports(graph, layout, fixed, inventory, work).unwrap();
+        let inherited = clauses::inherited_from(&cache, graph, &layout, &fixed, work).unwrap();
+        assert_eq!(inherited.len(), expected_shared);
+
+        let program = EffectResidualProgram::with_inventory(graph, inventory, work).unwrap();
+        let mut independent_control = budget();
+        let independent = component::compile_relation(
+            graph,
+            &program,
+            layout.view(),
+            &fixed,
+            CompiledObligations::default(),
+            &mut Work(&mut independent_control),
+        )
+        .unwrap();
+        let mut receiving_control = budget();
+        let receiving = component::compile_relation(
+            graph,
+            &program,
+            layout.view(),
+            &fixed,
+            CompiledObligations {
+                inherited,
+                retain: None,
+            },
+            &mut Work(&mut receiving_control),
+        )
+        .unwrap();
+        assert_eq!(receiving, independent);
+        if expected_shared > 0 {
+            assert!(receiving_control.0 > independent_control.0);
+        }
+    }
+}
+
+#[test]
 fn lowering_visits_unrelated_declarations_once_when_resuming_an_import() {
     let (child, local, future) = child_equality();
     let mut parent = PreparedEffectGraph::default();
@@ -85,7 +177,7 @@ fn lowering_visits_unrelated_declarations_once_when_resuming_an_import() {
     let lower = |graph: &PreparedEffectDefinitions, control: &mut Budget| {
         let layout =
             Layout::with_shared_labels(graph, Arc::from([]), &mut Work(&mut budget())).unwrap();
-        let (layout, _) = lower_selected_imports(
+        let LoweredImports { layout, .. } = lower_selected_imports(
             graph,
             layout,
             FixedCells::EMPTY,
@@ -139,7 +231,7 @@ fn fixed_parent_cells_specialize_an_import_with_the_same_ordinals() {
     let work = &mut Work(&mut budget());
     let layout = Layout::new(&parent.relation, &rows, FunctionInventory::All, work).unwrap();
     let fixed = FixedCells::new(&parent.relation, &rows, layout.view(), work).unwrap();
-    let (layout, _) = lower_selected_imports(
+    let LoweredImports { layout, .. } = lower_selected_imports(
         &parent.relation,
         layout,
         fixed,

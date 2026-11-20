@@ -45,6 +45,10 @@ impl PreparedEffectDeclaration {
         &self.reference
     }
 
+    pub(super) fn has_header(&self, header: &Arc<SchemeHeader>) -> bool {
+        Arc::ptr_eq(&self.header, header)
+    }
+
     /// An immutable header can outlive a rolled-back declaration. Possessing
     /// its old lease never authorizes using that declaration in another graph
     /// or after its removal from the original graph.
@@ -60,7 +64,7 @@ impl PreparedEffectDeclaration {
         view: PreparedEffectReadView<'_>,
     ) -> Result<(), PreparedEffectInvariant> {
         let current = view.scheme(&self.reference)?;
-        if !Arc::ptr_eq(&current.header, &self.header) {
+        if !self.has_header(&current.header) {
             return Err(PreparedEffectInvariant::StaleReference);
         }
         Ok(())

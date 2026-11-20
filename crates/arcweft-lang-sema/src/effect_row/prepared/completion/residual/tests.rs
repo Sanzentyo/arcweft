@@ -48,6 +48,80 @@ fn row(labels: &[&str]) -> EffectRow {
 }
 
 #[test]
+fn residual_equivalence_retains_both_operands_and_reduces_whole_row_truth() {
+    for left in [&[][..], &["log.write"][..]] {
+        for right in [&[][..], &["fs.read"][..]] {
+            let mut graph = PreparedEffectGraph::default();
+            let mut work = budget();
+            let emptiness = |graph: &mut PreparedEffectGraph, labels, work: &mut Budget| {
+                graph
+                    .relate(
+                        PreparedEffectRelation::Equal,
+                        literal(labels),
+                        literal(&[]),
+                        work,
+                    )
+                    .unwrap()
+            };
+            let first = emptiness(&mut graph, left, &mut work);
+            let second = emptiness(&mut graph, right, &mut work);
+            let equal = graph.equivalent(first, second, &mut work).unwrap();
+            graph
+                .add_scoped_obligation(vec![], truth(), equal, &mut work)
+                .unwrap();
+            let source = graph.complete_scoped(&mut work).unwrap();
+            let EffectResidualPredicateView::ExistsLocalFunctions { body, .. } =
+                source.satisfiable().view().unwrap()
+            else {
+                panic!("expected the outer residual function scope");
+            };
+            let EffectResidualPredicateView::ExistsUniformChoices { body, .. } =
+                body.view().unwrap()
+            else {
+                panic!("expected the uniform choice scope");
+            };
+            let EffectResidualPredicateView::And(mut clauses) = body.view().unwrap() else {
+                panic!("expected the original relation");
+            };
+            let EffectResidualPredicateView::ForAllFiniteRows {
+                consequence: ResidualConsequenceView::Obligation(equality),
+                ..
+            } = clauses.next().unwrap().view().unwrap()
+            else {
+                panic!("expected the original row obligation");
+            };
+            assert!(clauses.next().is_none());
+            let ResidualPreparedPredicateView::Equivalent(operands) = equality.view().unwrap()
+            else {
+                panic!("expected the retained whole-row comparison");
+            };
+            for (operand, expected) in operands.into_iter().zip([left, right]) {
+                assert!(operand.parameters().is_empty());
+                let ResidualPreparedPredicateView::Relation {
+                    relation,
+                    actual,
+                    permitted,
+                } = operand.view().unwrap()
+                else {
+                    panic!("expected the original emptiness test");
+                };
+                assert_eq!(relation, PreparedEffectRelation::Equal);
+                assert!(
+                    matches!(actual.view().unwrap(), ResidualPreparedRowView::Canonical(value) if value == &row(expected))
+                );
+                assert!(
+                    matches!(permitted.view().unwrap(), ResidualPreparedRowView::Canonical(value) if value == &row(&[]))
+                );
+            }
+            assert_eq!(
+                source.reduce(&mut work).unwrap().principal().truth_value(),
+                Some(left.is_empty() == right.is_empty()),
+            );
+        }
+    }
+}
+
+#[test]
 fn residual_construction_charges_each_original_obligation_once() {
     let mut graph = PreparedEffectGraph::default();
     graph

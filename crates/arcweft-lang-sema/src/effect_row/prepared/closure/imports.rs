@@ -1,10 +1,14 @@
 //! One conditional minimization per immutable relation and receiving label basis.
 
 use super::*;
+use crate::effect_row::prepared::completion::residual::EffectResidualProgram;
 use crate::effect_row::prepared::completion::{ImportedEffectFunction, ImportedEffectRelation};
 use arcweft_core::effect_row::EffectDecisionReplacement;
+use component::CompiledObligations;
 use std::collections::btree_map;
 
+mod clauses;
+pub(super) use clauses::InheritedObligations;
 #[cfg(test)]
 mod tests;
 
@@ -57,17 +61,27 @@ impl ImportedRelations {
     }
 }
 
-type Cache = Vec<(Arc<ScopedEffectCompletion>, Arc<ComponentCompletion>)>;
+struct CachedCompletion {
+    source: Arc<ScopedEffectCompletion>,
+    completion: Arc<ComponentCompletion>,
+    obligations: Vec<Arc<Decision>>,
+}
+
+struct LoweredImports {
+    layout: Layout,
+    fixed: FixedCells,
+    cache: Vec<CachedCompletion>,
+}
 
 fn cached<'a, C: DecisionControl>(
-    cache: &'a Cache,
+    cache: &'a [CachedCompletion],
     source: &Arc<ScopedEffectCompletion>,
     work: &mut Work<'_, C>,
 ) -> Result<Option<&'a Arc<ComponentCompletion>>, PreparedEffectFailure<C::Error>> {
-    for (owner, value) in cache {
+    for entry in cache {
         work.charge(DecisionWork::Visit)?;
-        if Arc::ptr_eq(owner, source) {
-            return Ok(Some(value));
+        if Arc::ptr_eq(&entry.source, source) {
+            return Ok(Some(&entry.completion));
         }
     }
     Ok(None)
@@ -155,13 +169,13 @@ impl<'a> ImportScope<'a> {
 
 /// Actual input support is admitted by the root completion boundary. Every
 /// nested relation keeps its own quantifiers, uniform choices and late inputs.
-pub(super) fn lower_selected_imports<'a, C: DecisionControl>(
+fn lower_selected_imports<'a, C: DecisionControl>(
     graph: &'a PreparedEffectDefinitions,
     layout: Layout,
     fixed: FixedCells,
     inventory: FunctionInventory<'a>,
     work: &mut Work<'_, C>,
-) -> Result<(Layout, FixedCells), PreparedEffectFailure<C::Error>> {
+) -> Result<LoweredImports, PreparedEffectFailure<C::Error>> {
     let mut cache = Vec::new();
     let mut pending = Vec::new();
     let labels = Arc::clone(&layout.labels);
@@ -183,24 +197,66 @@ pub(super) fn lower_selected_imports<'a, C: DecisionControl>(
             continue;
         }
         let Some((mut parent, site)) = pending.pop() else {
-            return Ok((scope.layout, scope.fixed));
+            return Ok(LoweredImports {
+                layout: scope.layout,
+                fixed: scope.fixed,
+                cache,
+            });
         };
         let source = site.relation().completion();
+        let inherited =
+            clauses::inherited_from(&cache, &source.graph, &scope.layout, &scope.fixed, work)?;
+        let mut obligations = Vec::new();
         let mut component = CompiledComponent::compile(
             &source.graph,
             &source.program,
             scope.fixed,
             scope.layout,
+            CompiledObligations {
+                inherited,
+                retain: Some(&mut obligations),
+            },
             work,
         )?;
         component.restrict_support(&source.support, work)?;
         let completed = component.complete(work)?;
         work.charge(DecisionWork::Node)?;
         let completed = Arc::new(completed);
-        cache.push((Arc::clone(source), Arc::clone(&completed)));
+        cache.push(CachedCompletion {
+            source: Arc::clone(source),
+            completion: Arc::clone(&completed),
+            obligations,
+        });
         parent.install(site, &completed, work)?;
         scope = parent;
     }
+}
+
+pub(super) fn compile_with_imports<C: DecisionControl>(
+    graph: &PreparedEffectDefinitions,
+    layout: Layout,
+    fixed: FixedCells,
+    inventory: FunctionInventory<'_>,
+    work: &mut Work<'_, C>,
+) -> Result<CompiledComponent, PreparedEffectFailure<C::Error>> {
+    let LoweredImports {
+        layout,
+        fixed,
+        cache,
+    } = lower_selected_imports(graph, layout, fixed, inventory, work)?;
+    let program = EffectResidualProgram::with_inventory(graph, inventory, work)?;
+    let inherited = clauses::inherited_from(&cache, graph, &layout, &fixed, work)?;
+    CompiledComponent::compile(
+        graph,
+        &program,
+        fixed,
+        layout,
+        CompiledObligations {
+            inherited,
+            retain: None,
+        },
+        work,
+    )
 }
 
 impl ImportedEffectRelation {

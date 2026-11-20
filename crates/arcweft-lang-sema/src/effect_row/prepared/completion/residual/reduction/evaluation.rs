@@ -367,7 +367,7 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
                 let domain = self.canonical_predicate(domain, &BTreeMap::new(), scope)?;
                 (self.arena.pointwise(domain, self.work)?, consequence)
             }
-            ResidualClauseSource::Obligation(obligation) => (
+            ResidualClauseSource::Obligation { obligation, .. } => (
                 self.predicate(&obligation.domain, scope)?,
                 self.predicate(&obligation.predicate, scope)?,
             ),

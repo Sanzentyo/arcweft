@@ -11,7 +11,7 @@ mod tests;
 
 pub(super) struct CompiledComponent {
     layout: Layout,
-    relation: Decision,
+    relation: Arc<Decision>,
     fixed: FixedCells,
     minimized: BTreeSet<Atom>,
     choices: BTreeSet<Atom>,
@@ -93,6 +93,30 @@ impl FixedCells {
             EffectDecisionReplacement::Constant,
         )
     }
+
+    pub(super) fn agrees_on<C: DecisionControl>(
+        &self,
+        receiving: &Self,
+        original: &PreparedEffectDefinitions,
+        work: &mut Work<'_, C>,
+    ) -> Result<bool, PreparedEffectFailure<C::Error>> {
+        for (cell, value) in &self.0 {
+            work.charge(DecisionWork::Visit)?;
+            if receiving.0.get(cell) != Some(value) {
+                return Ok(false);
+            }
+        }
+        for (cell, value) in &receiving.0 {
+            work.charge(DecisionWork::Visit)?;
+            let Atom::Cell { scheme, .. } = cell else {
+                return Err(PreparedEffectInvariant::UnclosedCell.into());
+            };
+            if original.functions.contains_key(scheme) && self.0.get(cell) != Some(value) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
 }
 
 /// One completion boundary. Future coefficients remain parameters of both the
@@ -168,14 +192,14 @@ impl EffectWitnesses {
 /// Fixed inputs and the least tuple have disjoint domains. Any cell outside
 /// both domains still requires an actual input or belongs to another relation.
 pub(super) struct EffectCoefficients {
-    fixed: BTreeMap<Atom, bool>,
+    fixed: FixedCells,
     least: DecisionLowerEnvelope<Atom>,
     zero: Decision,
     one: Decision,
 }
 
 impl EffectCoefficients {
-    fn new(fixed: BTreeMap<Atom, bool>, least: DecisionLowerEnvelope<Atom>) -> Self {
+    fn new(fixed: FixedCells, least: DecisionLowerEnvelope<Atom>) -> Self {
         Self {
             fixed,
             least,
@@ -186,9 +210,13 @@ impl EffectCoefficients {
 
     pub(super) fn get(&self, cell: &Atom) -> Option<&Decision> {
         self.fixed
-            .get(cell)
-            .map(|&value| if value { &self.one } else { &self.zero })
+            .value(cell)
+            .map(|value| if value { &self.one } else { &self.zero })
             .or_else(|| self.least.get(cell))
+    }
+
+    pub(super) fn fixed(&self) -> &FixedCells {
+        &self.fixed
     }
 
     pub(super) fn specialize<C: DecisionControl>(
@@ -197,7 +225,7 @@ impl EffectCoefficients {
         work: &mut Work<'_, C>,
     ) -> Result<ClosedEffectCoefficients, PreparedEffectFailure<C::Error>> {
         let least = self.least.specialize(&actuals, work)?;
-        for (cell, &value) in &self.fixed {
+        for (cell, &value) in &self.fixed.0 {
             work.charge(DecisionWork::Node)?;
             if let std::collections::btree_map::Entry::Vacant(entry) = actuals.entry(cell.clone()) {
                 entry.insert(value);
@@ -205,7 +233,7 @@ impl EffectCoefficients {
                 return Err(PreparedEffectInvariant::DuplicateFutureBinding.into());
             }
         }
-        Self::new(actuals, least).close(work)
+        Self::new(FixedCells(actuals), least).close(work)
     }
 
     pub(super) fn close<C: DecisionControl>(
@@ -220,7 +248,7 @@ impl EffectCoefficients {
 
     #[cfg(test)]
     pub(super) fn inject_coefficient_for_replay_test(&mut self, cell: Atom, value: bool) {
-        self.fixed.insert(cell, value);
+        self.fixed.0.insert(cell, value);
     }
 }
 
@@ -392,13 +420,22 @@ fn relation_scope<'g, 's, C: DecisionControl>(
     }
 }
 
-fn compile_relation<C: DecisionControl>(
+#[derive(Default)]
+pub(super) struct CompiledObligations<'a> {
+    pub(super) inherited: imports::InheritedObligations<'a>,
+    /// Retain the quantified clauses only as long as this import pass can
+    /// receive an extension of their original relation.
+    pub(super) retain: Option<&'a mut Vec<Arc<Decision>>>,
+}
+
+pub(super) fn compile_relation<C: DecisionControl>(
     graph: &PreparedEffectDefinitions,
     program: &EffectResidualProgram,
     layout: ClassLayout<'_>,
     fixed: &FixedCells,
+    mut obligations: CompiledObligations<'_>,
     work: &mut Work<'_, C>,
-) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
     let mut scopes = BTreeMap::new();
     let mut values = Vec::<Arc<Decision>>::new();
     for node in program.relation_nodes() {
@@ -417,22 +454,29 @@ fn compile_relation<C: DecisionControl>(
                 let result = decision(*child).not(work)?;
                 work.share_decision(result)?
             }
-            ResidualNode::Guarded(clause) => {
-                let source = clause.source(graph)?;
-                let scoped =
-                    relation_scope(&mut scopes, graph, layout, fixed, clause.scope(), work)?;
-                match source {
-                    ResidualClauseSource::Scheme {
-                        id,
-                        domain,
-                        body,
-                        obligations,
-                    } => scoped.require_scheme(id, domain, body, obligations, work)?,
-                    ResidualClauseSource::Obligation(obligation) => {
-                        scoped.require_obligation(obligation, work)?
+            ResidualNode::Guarded(clause) => match clause.source(graph)? {
+                ResidualClauseSource::Scheme {
+                    id,
+                    domain,
+                    body,
+                    obligations,
+                } => relation_scope(&mut scopes, graph, layout, fixed, clause.scope(), work)?
+                    .require_scheme(id, domain, body, obligations, work)?,
+                ResidualClauseSource::Obligation { id, obligation } => {
+                    let value = if let Some(inherited) = obligations.inherited.get(id) {
+                        Arc::clone(inherited)
+                    } else {
+                        relation_scope(&mut scopes, graph, layout, fixed, clause.scope(), work)?
+                            .require_obligation(obligation, work)?
+                    };
+                    if let Some(retained) = obligations.retain.as_deref_mut() {
+                        debug_assert_eq!(retained.len(), id);
+                        work.charge(DecisionWork::Node)?;
+                        retained.push(Arc::clone(&value));
                     }
+                    value
                 }
-            }
+            },
             ResidualNode::FiniteFunction(scheme) => {
                 let cell = Atom::Cell {
                     scheme: *scheme,
@@ -456,13 +500,8 @@ fn compile_relation<C: DecisionControl>(
         work.charge(DecisionWork::Node)?;
         values.push(value);
     }
-    let result = values.pop();
-    // The temporary scope and expression inventories own every other reference
-    // to the final decision. Release them before transferring it to the caller.
-    drop(values);
-    drop(scopes);
-    result
-        .and_then(Arc::into_inner)
+    values
+        .pop()
         .ok_or_else(|| PreparedEffectInvariant::PrincipalConfirmation.into())
 }
 
@@ -484,10 +523,7 @@ impl CompiledComponent {
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
         let layout = Layout::new(graph, fixed, inventory, work)?;
         let fixed = FixedCells::new(graph, fixed, layout.view(), work)?;
-        let (layout, fixed) =
-            imports::lower_selected_imports(graph, layout, fixed, inventory, work)?;
-        let program = EffectResidualProgram::with_inventory(graph, inventory, work)?;
-        Self::compile(graph, &program, fixed, layout, work)
+        imports::compile_with_imports(graph, layout, fixed, inventory, work)
     }
 
     pub(super) fn compile<C: DecisionControl>(
@@ -495,9 +531,10 @@ impl CompiledComponent {
         program: &EffectResidualProgram,
         fixed: FixedCells,
         layout: Layout,
+        obligations: CompiledObligations<'_>,
         work: &mut Work<'_, C>,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
-        let relation = compile_relation(graph, program, layout.view(), &fixed, work)?;
+        let relation = compile_relation(graph, program, layout.view(), &fixed, obligations, work)?;
         let mut minimized = BTreeSet::new();
         for cell in &layout.cells {
             let Atom::Cell { scheme, .. } = cell else {
@@ -552,7 +589,10 @@ impl CompiledComponent {
             None
         } else {
             let relation = if least.domain().is_empty() || relation.node_count() == 0 {
-                relation
+                match Arc::try_unwrap(relation) {
+                    Ok(relation) => relation,
+                    Err(relation) => work.copy_decision(&relation)?,
+                }
             } else {
                 least.instantiate(&relation, work)?
             };
@@ -570,7 +610,7 @@ impl CompiledComponent {
             layout: Arc::new(self.layout),
             satisfiable,
             principal,
-            coefficients: EffectCoefficients::new(self.fixed.0, least),
+            coefficients: EffectCoefficients::new(self.fixed, least),
             choice_witnesses,
         })
     }
@@ -641,8 +681,11 @@ impl CompiledComponent {
             }
         }
         if !restrictions.is_empty() {
-            self.relation =
-                Decision::all(std::iter::once(&self.relation).chain(&restrictions), work)?;
+            let restricted = Decision::all(
+                std::iter::once(self.relation.as_ref()).chain(&restrictions),
+                work,
+            )?;
+            self.relation = work.share_decision(restricted)?;
         }
         Ok(())
     }

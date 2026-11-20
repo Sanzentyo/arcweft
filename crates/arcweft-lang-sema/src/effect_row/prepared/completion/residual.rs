@@ -101,12 +101,13 @@ impl ResidualClause {
                     obligations,
                 }
             }
-            Self::Obligation(id) => ResidualClauseSource::Obligation(
-                graph
+            Self::Obligation(id) => ResidualClauseSource::Obligation {
+                id,
+                obligation: graph
                     .obligations
                     .get(id)
                     .ok_or(PreparedEffectInvariant::UnclosedCell)?,
-            ),
+            },
         })
     }
 }
@@ -118,7 +119,10 @@ pub(in crate::effect_row::prepared) enum ResidualClauseSource<'a> {
         body: &'a PreparedEffectRow,
         obligations: &'a [PreparedEffectPredicate],
     },
-    Obligation(&'a ScopedObligation),
+    Obligation {
+        id: usize,
+        obligation: &'a ScopedObligation,
+    },
 }
 
 #[derive(Clone, Copy)]

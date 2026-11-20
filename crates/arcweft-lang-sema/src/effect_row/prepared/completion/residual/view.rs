@@ -294,7 +294,7 @@ impl<'a> EffectResidualPredicate<'a> {
                             },
                         },
                     ),
-                    ResidualClauseSource::Obligation(obligation) => (
+                    ResidualClauseSource::Obligation { obligation, .. } => (
                         predicate(ResidualSourcePredicate::Prepared(&obligation.domain)),
                         ResidualConsequenceView::Obligation(predicate(
                             ResidualSourcePredicate::Prepared(&obligation.predicate),
