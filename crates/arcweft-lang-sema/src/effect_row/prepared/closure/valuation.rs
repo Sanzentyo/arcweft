@@ -19,29 +19,44 @@ impl FiniteRowValuation<'_> {
             .ok_or_else(|| PreparedEffectInvariant::TruthTableOverflow.into())
     }
 
-    pub(super) fn formals<C: DecisionControl>(
+    /// Eliminates this valuation's input references. A decision already
+    /// expressed in the receiving cells and choices can keep its graph.
+    pub(super) fn quantify_inputs<C: DecisionControl>(
         self,
+        predicate: &Decision,
         work: &mut Work<'_, C>,
-    ) -> Result<BTreeSet<Atom>, PreparedEffectFailure<C::Error>> {
-        let mut result = BTreeSet::new();
-        for class in 0..self.classes.classes() {
-            for parameter in 0..self.parameters.len() {
-                work.charge(DecisionWork::Node)?;
-                result.insert(Atom::Formal {
-                    owner: self.owner,
+    ) -> Result<Option<Decision>, PreparedEffectFailure<C::Error>> {
+        if self.parameters.is_empty() || predicate.node_count() == 0 {
+            return Ok(None);
+        }
+        let patterns = self.pattern_count()?;
+        let mut inputs = BTreeSet::new();
+        for atom in predicate.variables() {
+            work.charge(DecisionWork::Visit)?;
+            let belongs = match atom {
+                Atom::Formal {
+                    owner,
                     class,
                     parameter,
-                });
+                } => {
+                    *owner == self.owner
+                        && *class < self.classes.classes()
+                        && *parameter < self.parameters.len()
+                }
+                Atom::Presence { owner, mask } => {
+                    *owner == self.owner && (1..patterns).contains(mask)
+                }
+                Atom::Cell { .. } | Atom::Choice(_) => false,
+            };
+            if belongs && !inputs.contains(atom) {
+                work.charge(DecisionWork::Node)?;
+                inputs.insert(atom.clone());
             }
         }
-        for mask in 1..self.pattern_count()? {
-            work.charge(DecisionWork::Node)?;
-            result.insert(Atom::Presence {
-                owner: self.owner,
-                mask,
-            });
+        if inputs.is_empty() {
+            return Ok(None);
         }
-        Ok(result)
+        predicate.forall(&inputs, work).map(Some)
     }
 
     /// This quantifies labels in the same finite-row valuation, not the input
@@ -238,5 +253,72 @@ impl FiniteRowValuation<'_> {
             },
         )?
         .ok_or_else(|| PreparedEffectInvariant::TruthTableOverflow.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::effect_row::prepared::test_support::{Budget, budget, parameter};
+    use crate::types::{GenericBinder, GenericScope};
+
+    #[test]
+    fn input_quantification_visits_only_reachable_formals_and_presence() {
+        let scope = GenericScope::default().with_binder(GenericBinder::new(0, 0, 20));
+        let parameters: Vec<_> = (0..20).map(|index| parameter(&scope, index)).collect();
+        let owner = FormalOwner::Observation;
+        let valuation = FiniteRowValuation {
+            classes: LabelClasses { labels: &[] },
+            owner,
+            parameters: &parameters,
+        };
+        let mut setup = budget();
+        let formal = Decision::variable(
+            Atom::Formal {
+                owner,
+                class: 0,
+                parameter: 17,
+            },
+            &mut setup,
+        )
+        .unwrap();
+        let presence = Decision::variable(Atom::Presence { owner, mask: 7 }, &mut setup).unwrap();
+        let foreign = Decision::variable(
+            Atom::Presence {
+                owner: FormalOwner::Scheme(2),
+                mask: 7,
+            },
+            &mut setup,
+        )
+        .unwrap();
+        let cell = Decision::variable(
+            Atom::Cell {
+                class: 0,
+                mask: 0,
+                scheme: 1,
+            },
+            &mut setup,
+        )
+        .unwrap();
+        let decision = Decision::all(
+            [
+                &formal.or(&cell, &mut setup).unwrap(),
+                &presence.or(&cell, &mut setup).unwrap(),
+                &foreign,
+            ],
+            &mut setup,
+        )
+        .unwrap();
+        let expected = foreign.and(&cell, &mut setup).unwrap();
+        let projected = valuation
+            .quantify_inputs(&decision, &mut Work(&mut Budget(256)))
+            .unwrap();
+        assert_eq!(projected.as_ref(), Some(&expected));
+        assert!(
+            valuation
+                .quantify_inputs(&expected, &mut Work(&mut Budget(expected.node_count())))
+                .unwrap()
+                .is_none()
+        );
     }
 }

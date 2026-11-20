@@ -206,7 +206,17 @@ mod tests {
             &parameters,
             ApplicationCells::Variables,
         );
-        let formals = compiler.formals(work).unwrap();
+        let formals = BTreeSet::from([
+            Atom::Formal {
+                owner: FormalOwner::Observation,
+                class: 0,
+                parameter: 0,
+            },
+            Atom::Presence {
+                owner: FormalOwner::Observation,
+                mask: 1,
+            },
+        ]);
         for predicate in [&selected, &conjunction] {
             let reference = compiler
                 .predicate(predicate, work)

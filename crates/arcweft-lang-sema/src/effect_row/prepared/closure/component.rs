@@ -167,18 +167,18 @@ impl ClosedEffectCoefficients {
 
 struct RelationScope<'a> {
     compiler: Compilation<'a>,
-    formals: Option<BTreeSet<Atom>>,
 }
 
 impl RelationScope<'_> {
     fn require<C: DecisionControl>(
-        &mut self,
+        &self,
         domain: &Decision,
         consequence: Arc<Decision>,
         work: &mut Work<'_, C>,
     ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
+        let valuation = self.compiler.valuation();
         if domain.is_constant(true) || consequence.is_constant(true) {
-            return match self.quantify(&consequence, work)? {
+            return match valuation.quantify_inputs(&consequence, work)? {
                 Some(result) => work.share_decision(result),
                 None => Ok(consequence),
             };
@@ -188,24 +188,10 @@ impl RelationScope<'_> {
         } else {
             domain.conditional(&consequence, &Decision::constant(true), work)?
         };
-        let result = self.quantify(&guarded, work)?.unwrap_or(guarded);
+        let result = valuation
+            .quantify_inputs(&guarded, work)?
+            .unwrap_or(guarded);
         work.share_decision(result)
-    }
-
-    fn quantify<C: DecisionControl>(
-        &mut self,
-        guarded: &Decision,
-        work: &mut Work<'_, C>,
-    ) -> Result<Option<Decision>, PreparedEffectFailure<C::Error>> {
-        if guarded.node_count() == 0 || self.compiler.valuation().parameters.is_empty() {
-            return Ok(None);
-        }
-        if self.formals.is_none() {
-            self.formals = Some(self.compiler.formals(work)?);
-        }
-        guarded
-            .forall(self.formals.as_ref().expect("formals were computed"), work)
-            .map(Some)
     }
 
     fn require_scheme<C: DecisionControl>(
@@ -247,7 +233,11 @@ impl RelationScope<'_> {
             std::iter::once(&body.admitted).chain(requirements.iter().map(Arc::as_ref));
         if unrestricted {
             let admitted = Decision::all(needs_admission, work)?;
-            let admitted = self.quantify(&admitted, work)?.unwrap_or(admitted);
+            let admitted = self
+                .compiler
+                .valuation()
+                .quantify_inputs(&admitted, work)?
+                .unwrap_or(admitted);
             let relation = if admitted.is_constant(true) {
                 equation
             } else {
@@ -317,7 +307,6 @@ fn relation_scope<'g, 's, C: DecisionControl>(
                     parameters,
                     ApplicationCells::Variables,
                 ),
-                formals: None,
             }))
         }
     }

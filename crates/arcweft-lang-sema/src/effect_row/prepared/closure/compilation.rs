@@ -105,13 +105,6 @@ impl<'a> Compilation<'a> {
         }
     }
 
-    pub(super) fn formals<C: DecisionControl>(
-        &self,
-        work: &mut Work<'_, C>,
-    ) -> Result<BTreeSet<Atom>, PreparedEffectFailure<C::Error>> {
-        self.valuation().formals(work)
-    }
-
     pub(super) fn whole<C: DecisionControl>(
         &self,
         members: &[Decision],
@@ -588,7 +581,10 @@ impl<'a> Compilation<'a> {
             let independent = decision.independence_region(&parameters, work)?;
             result = result.and(&independent, work)?;
         }
-        result.forall(&self.formals(work)?, work)
+        Ok(self
+            .valuation()
+            .quantify_inputs(&result, work)?
+            .unwrap_or(result))
     }
 
     fn exact_membership<C: DecisionControl>(
