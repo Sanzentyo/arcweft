@@ -412,7 +412,7 @@ impl<'a> ClassLayout<'a> {
     }
 }
 
-impl LabelClasses<'_> {
+impl<'basis> LabelClasses<'basis> {
     fn classes(self) -> usize {
         self.labels.len() + 1
     }
@@ -421,11 +421,37 @@ impl LabelClasses<'_> {
         if class == 0 || std::ptr::eq(self.labels, basis.labels) {
             class
         } else {
-            basis
-                .labels
-                .binary_search(&self.labels[class - 1])
-                .map_or(0, |index| index + 1)
+            basis.named(&self.labels[class - 1]).unwrap_or(0)
         }
+    }
+
+    fn named(self, label: &EffectId) -> Option<usize> {
+        self.labels.binary_search(label).ok().map(|index| index + 1)
+    }
+
+    fn including<'label, C: DecisionControl>(
+        self,
+        support: impl IntoIterator<Item = &'label EffectId>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Cow<'basis, [EffectId]>, PreparedEffectFailure<C::Error>> {
+        let mut additional = BTreeSet::new();
+        for label in support {
+            work.charge(DecisionWork::Visit)?;
+            if self.named(label).is_none() && !additional.contains(label) {
+                work.charge(DecisionWork::Node)?;
+                additional.insert(label);
+            }
+        }
+        if additional.is_empty() {
+            return Ok(Cow::Borrowed(self.labels));
+        }
+        let mut labels = Vec::new();
+        for label in self.labels.iter().chain(additional) {
+            work.charge(DecisionWork::Node)?;
+            labels.push(label.clone());
+        }
+        labels.sort_unstable();
+        Ok(Cow::Owned(labels))
     }
 
     fn at<'a, V: Clone + Ord>(
@@ -610,19 +636,31 @@ impl PrincipalEffectClosure {
         if self.graph.retains_constraint(constraint, &mut work)? {
             return Ok(EffectPredicate::unconstrained());
         }
-        self.graph
-            .read()
-            .validate_retained_predicate(&constraint.obligation.domain)?;
-        self.graph
-            .read()
-            .validate_retained_predicate(&constraint.obligation.predicate)?;
+        let obligation = &constraint.obligation;
+        let roots = [&obligation.domain, &obligation.predicate];
+        for root in roots {
+            self.graph.read().validate_retained_predicate(root)?;
+        }
+        // The solved basis includes every retained definition. A new
+        // caller-owned canonical root can contribute its own named labels.
+        let labels = self.layout.view().label_classes().including(
+            roots
+                .into_iter()
+                .filter_map(|root| match root {
+                    PreparedEffectPredicate::Canonical(predicate) => Some(predicate.membership()),
+                    PreparedEffectPredicate::Term(_) => None,
+                })
+                .flat_map(|membership| membership.overrides().map(|(label, _)| label)),
+            &mut work,
+        )?;
         let scope = FiniteRowValuation {
-            classes: self.layout.view().label_classes(),
+            classes: LabelClasses { labels: &labels },
             owner: FormalOwner::Observation,
-            parameters: &constraint.obligation.parameters,
+            parameters: &obligation.parameters,
         };
-        canonical::CanonicalReplay::new(self, scope)
-            .confirm_obligation(&constraint.obligation, &mut work)?;
+        canonical::CanonicalProof::new(self)
+            .replay(scope)
+            .confirm_obligation(obligation, &mut work)?;
         Ok(EffectPredicate::unconstrained())
     }
 }

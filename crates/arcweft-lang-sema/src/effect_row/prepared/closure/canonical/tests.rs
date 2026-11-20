@@ -2,6 +2,62 @@ use super::*;
 use crate::effect_row::prepared::test_support::*;
 
 #[test]
+fn function_formula_reuse_preserves_the_callers_formal_admission() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let gamma = crate::types::GenericScope::default()
+        .with_binder(crate::types::GenericBinder::new(0, 0, 2));
+    let e = parameter(&gamma, 0);
+    let f = parameter(&gamma, 1);
+    let required = arcweft_core::effect_row::EffectFormula::from_set(
+        &EffectSet::from_labels(["fs.read"]).unwrap(),
+        &mut control,
+    )
+    .unwrap();
+    let input = arcweft_core::effect_row::EffectFormula::variable(e.clone(), &mut control).unwrap();
+    let domain = required.subset(&input, &mut control).unwrap();
+    let function = graph
+        .declare(vec![e.clone()], domain, &mut control)
+        .unwrap();
+    graph
+        .prepare_body(&function, open(&e), vec![], &mut control)
+        .unwrap();
+    let call = graph
+        .application(&function, vec![open(&e)], &mut control)
+        .unwrap();
+    let principal = graph.solve_principal(&mut control).unwrap();
+    let proof = CanonicalProof::new(&principal);
+    let mut work = Work(&mut control);
+    let id = function.0.ordinal;
+    let formula = proof.function(id, &mut work).unwrap();
+    for (parameter, parameters) in [[e.clone(), f.clone()], [f, e]].iter().enumerate() {
+        let owner = FormalOwner::Obligation(parameter);
+        let mut replay = proof.replay(FiniteRowValuation {
+            classes: principal.layout.view().label_classes(),
+            owner,
+            parameters,
+        });
+        replay.prepare_row(&call, &mut work).unwrap();
+        let value = replay.read_row(&call, &mut work).unwrap();
+        assert_eq!(value.formula.as_ref(), &formula.formula);
+        assert_eq!(
+            value.admitted.variables().collect::<Vec<_>>(),
+            vec![&Atom::Formal {
+                owner,
+                class: 1,
+                parameter
+            }]
+        );
+    }
+    let mut cached_lookup = Budget(1);
+    assert!(Rc::ptr_eq(
+        &formula,
+        &proof.function(id, &mut Work(&mut cached_lookup)).unwrap()
+    ));
+    assert_eq!(cached_lookup.0, 0);
+}
+
+#[test]
 fn confirmation_rejects_a_larger_fixed_point_than_the_retained_least_tuple() {
     for named_support in [false, true] {
         let mut graph = PreparedEffectGraph::default();
@@ -77,7 +133,8 @@ fn a_uniform_choice_is_not_a_finite_effect_row_variable() {
         owner: FormalOwner::Observation,
         parameters: &[],
     };
-    let replay = CanonicalReplay::new(&principal, scope);
+    let proof = CanonicalProof::new(&principal);
+    let replay = proof.replay(scope);
     // Core row variables are finite sets. A raw Choice variable passes its
     // all-variables-empty check but denotes infinitely many labels when true.
     let infinite = Formula::variable(Variable::Choice(0), &mut control).unwrap();
@@ -149,6 +206,72 @@ fn scoped_confirmation_proves_the_whole_implication_with_unused_inputs() {
             ));
         }
     }
+}
+
+#[test]
+fn scoped_confirmation_checks_named_labels_supplied_by_either_side() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let settled = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut control)
+        .unwrap();
+    graph
+        .prepare_body(&settled, literal(&["log.write"]), vec![], &mut control)
+        .unwrap();
+    let principal = graph.solve_principal(&mut control).unwrap();
+    let gamma = crate::types::GenericScope::default()
+        .with_binder(crate::types::GenericBinder::new(0, 0, 1));
+    let e = parameter(&gamma, 0);
+    let membership = |label: &str, control: &mut Budget| {
+        arcweft_core::effect_row::EffectFormula::<GenericEffectReference>::from_set(
+            &EffectSet::from_labels([label]).unwrap(),
+            control,
+        )
+        .unwrap()
+    };
+    let input = arcweft_core::effect_row::EffectFormula::variable(e.clone(), &mut control).unwrap();
+    let read = membership("fs.read", &mut control);
+    let log = membership("log.write", &mut control);
+    let empty =
+        arcweft_core::effect_row::EffectFormula::from_set(&EffectSet::new(), &mut control).unwrap();
+    let truth = PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained());
+    let reads = PreparedEffectPredicate::Canonical(read.subset(&input, &mut control).unwrap());
+    let logs = PreparedEffectPredicate::Canonical(log.subset(&input, &mut control).unwrap());
+    let permits_read =
+        PreparedEffectPredicate::Canonical(input.subset(&read, &mut control).unwrap());
+    let permits_none =
+        PreparedEffectPredicate::Canonical(input.subset(&empty, &mut control).unwrap());
+    assert_eq!(
+        principal.layout.labels.as_ref(),
+        &[EffectId::parse("log.write").unwrap()]
+    );
+    for (domain, predicate, accepted) in [
+        (&truth, &reads, false),
+        (&logs, &reads, false),
+        (&reads, &logs, false),
+        (&permits_read, &permits_none, false),
+        (&reads, &reads, true),
+    ] {
+        let fact = graph
+            .read()
+            .scoped_constraint(std::slice::from_ref(&e), domain, predicate, &mut control)
+            .unwrap();
+        let result = principal.confirm_scoped_constraint(&fact, &mut control);
+        if accepted {
+            assert_eq!(result.unwrap(), EffectPredicate::unconstrained());
+        } else {
+            assert!(matches!(
+                result,
+                Err(PreparedEffectFailure::Invariant(
+                    PreparedEffectInvariant::PrincipalConfirmation
+                ))
+            ));
+        }
+    }
+    assert_eq!(
+        principal.layout.labels.as_ref(),
+        &[EffectId::parse("log.write").unwrap()]
+    );
 }
 
 #[test]

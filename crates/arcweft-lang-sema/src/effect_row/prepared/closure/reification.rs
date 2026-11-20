@@ -45,6 +45,7 @@ impl PrincipalEffectClosure {
         &self,
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        let proof = canonical::CanonicalProof::new(self);
         for &id in self.functions.keys() {
             let function = &self.graph.functions[&id];
             let row = self.functions[&id].known()?;
@@ -111,7 +112,7 @@ impl PrincipalEffectClosure {
                     owner: FormalOwner::Scheme(id),
                     parameters: function.parameters(),
                 };
-                canonical::CanonicalReplay::new(self, scope).confirm(id, scheme, work)?;
+                proof.replay(scope).confirm(id, scheme, work)?;
             }
         }
         let mut replays = BTreeMap::new();
@@ -130,7 +131,7 @@ impl PrincipalEffectClosure {
                         owner: FormalOwner::Obligation(id),
                         parameters,
                     };
-                    entry.insert(canonical::CanonicalReplay::new(self, scope))
+                    entry.insert(proof.replay(scope))
                 }
             };
             replay.confirm_obligation(obligation, work)?;

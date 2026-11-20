@@ -1,6 +1,6 @@
 //! Independent replay through canonical formula algebra, without scheme cells.
 
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::RefCell, collections::btree_map::Entry, rc::Rc};
 
 use super::*;
 use crate::effects::EffectSet;
@@ -23,8 +23,27 @@ impl Variable {
 type Formula = arcweft_core::effect_row::EffectFormula<Variable>;
 type Predicate = arcweft_core::effect_row::EffectPredicate<Variable>;
 
-struct Row {
+struct FunctionFormula {
     formula: Formula,
+    uses_parameters: bool,
+}
+
+enum RowFormula {
+    Derived(Formula),
+    Function(Rc<FunctionFormula>),
+}
+
+impl RowFormula {
+    fn as_formula(&self) -> &Formula {
+        match self {
+            Self::Derived(formula) => formula,
+            Self::Function(function) => &function.formula,
+        }
+    }
+}
+
+struct Row {
+    formula: RowFormula,
     admitted: Decision,
 }
 
@@ -33,28 +52,73 @@ struct RowView<'a> {
     admitted: Cow<'a, Decision>,
 }
 
-pub(super) struct CanonicalReplay<'a> {
+pub(super) struct CanonicalProof<'a> {
     principal: &'a PrincipalEffectClosure,
-    scope: FiniteRowValuation<'a>,
-    rows: BTreeMap<u64, Row>,
-    predicates: BTreeMap<u64, Decision>,
+    functions: RefCell<BTreeMap<u64, Rc<FunctionFormula>>>,
 }
 
-impl<'a> CanonicalReplay<'a> {
-    pub(super) fn new(
-        principal: &'a PrincipalEffectClosure,
-        scope: FiniteRowValuation<'a>,
-    ) -> Self {
+impl<'a> CanonicalProof<'a> {
+    pub(super) fn new(principal: &'a PrincipalEffectClosure) -> Self {
         Self {
             principal,
+            functions: RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    pub(super) fn replay<'scope>(
+        &'scope self,
+        scope: FiniteRowValuation<'scope>,
+    ) -> CanonicalReplay<'scope> {
+        CanonicalReplay {
+            proof: self,
             scope,
             rows: BTreeMap::new(),
             predicates: BTreeMap::new(),
         }
     }
 
-    fn formula<C: DecisionControl>(
+    fn function<C: DecisionControl>(
         &self,
+        id: u64,
+        work: &mut Work<'_, C>,
+    ) -> Result<Rc<FunctionFormula>, PreparedEffectFailure<C::Error>> {
+        work.charge(DecisionWork::Visit)?;
+        let mut functions = self.functions.borrow_mut();
+        match functions.entry(id) {
+            Entry::Occupied(slot) => Ok(Rc::clone(slot.get())),
+            Entry::Vacant(slot) => {
+                // The typed references of a function's canonical formula are
+                // independent of the caller's valuation. Scalar admission is
+                // still evaluated within each replay.
+                let row = self
+                    .principal
+                    .functions
+                    .get(&id)
+                    .ok_or(PreparedEffectInvariant::StaleReference)?;
+                let mut uses_parameters = false;
+                let formula = row.known()?.map_references(work, &mut |reference, _| {
+                    uses_parameters = true;
+                    Ok(Variable::Parameter(reference.clone()))
+                })?;
+                work.charge(DecisionWork::Node)?;
+                Ok(Rc::clone(slot.insert(Rc::new(FunctionFormula {
+                    formula,
+                    uses_parameters,
+                }))))
+            }
+        }
+    }
+}
+
+pub(super) struct CanonicalReplay<'a> {
+    proof: &'a CanonicalProof<'a>,
+    scope: FiniteRowValuation<'a>,
+    rows: BTreeMap<u64, Row>,
+    predicates: BTreeMap<u64, Decision>,
+}
+
+impl CanonicalReplay<'_> {
+    fn formula<C: DecisionControl>(
         row: &EffectRow,
         work: &mut Work<'_, C>,
     ) -> Result<Formula, PreparedEffectFailure<C::Error>> {
@@ -106,14 +170,26 @@ impl<'a> CanonicalReplay<'a> {
             work.charge(DecisionWork::Visit)?;
             return Ok(Decision::constant(true));
         }
+        let membership = predicate.membership();
+        if membership.default_decision().is_constant(true) {
+            let mut named = Vec::new();
+            for (label, point) in membership.overrides() {
+                work.charge(DecisionWork::Visit)?;
+                let class = self
+                    .scope
+                    .classes
+                    .named(label)
+                    .ok_or(PreparedEffectInvariant::UnclosedCell)?;
+                let point = self.scalar(point, class, work)?;
+                work.charge(DecisionWork::Node)?;
+                named.push(point);
+            }
+            return Decision::all(&named, work);
+        }
         let mut members = Vec::new();
         for class in 0..self.scope.classes.classes() {
             work.charge(DecisionWork::Node)?;
-            members.push(self.scalar(
-                self.scope.classes.at(predicate.membership(), class),
-                class,
-                work,
-            )?);
+            members.push(self.scalar(self.scope.classes.at(membership, class), class, work)?);
         }
         self.scope.whole(&members, work)
     }
@@ -143,18 +219,18 @@ impl<'a> CanonicalReplay<'a> {
     ) -> Result<RowView<'_>, PreparedEffectFailure<C::Error>> {
         match row {
             PreparedEffectRow::Canonical(row) => Ok(RowView {
-                formula: Cow::Owned(self.formula(row, work)?),
+                formula: Cow::Owned(Self::formula(row, work)?),
                 admitted: Cow::Owned(Decision::constant(true)),
             }),
             PreparedEffectRow::Term(reference) => {
-                self.principal.graph.row(reference)?;
+                self.proof.principal.graph.row(reference)?;
                 work.charge(DecisionWork::Visit)?;
                 let row = self
                     .rows
                     .get(&reference.0.ordinal)
                     .ok_or(PreparedEffectInvariant::StaleReference)?;
                 Ok(RowView {
-                    formula: Cow::Borrowed(&row.formula),
+                    formula: Cow::Borrowed(row.formula.as_formula()),
                     admitted: Cow::Borrowed(&row.admitted),
                 })
             }
@@ -169,12 +245,13 @@ impl<'a> CanonicalReplay<'a> {
         if matches!(root, PreparedEffectRow::Canonical(_)) {
             return Ok(());
         }
+        let principal = self.proof.principal;
         let mut todo = vec![root];
         let mut reachable = BTreeSet::new();
         while let Some(row) = todo.pop() {
             work.charge(DecisionWork::Visit)?;
             if let PreparedEffectRow::Term(reference) = row {
-                let term = self.principal.graph.row(reference)?;
+                let term = principal.graph.row(reference)?;
                 if !self.rows.contains_key(&reference.0.ordinal)
                     && reachable.insert(reference.0.ordinal)
                 {
@@ -186,13 +263,13 @@ impl<'a> CanonicalReplay<'a> {
             }
         }
         for id in reachable {
-            let term = self.principal.graph.rows[&id].as_ref();
+            let term = principal.graph.rows[&id].as_ref();
             let row = match term {
                 RowTerm::Application {
                     function,
                     arguments,
                 } => {
-                    let definition = self.principal.graph.function(function)?;
+                    let definition = principal.graph.function(function)?;
                     let mut substitutions = BTreeMap::new();
                     let mut admitted = Decision::constant(true);
                     for (parameter, argument) in
@@ -208,34 +285,32 @@ impl<'a> CanonicalReplay<'a> {
                         .domain()
                         .filter(|domain| !domain.is_unconstrained())
                     {
-                        let domain = self
-                            .canonical_predicate(domain, work)?
-                            .substitute(&substitutions, work)?;
+                        let domain = self.canonical_predicate(domain, work)?;
+                        let domain = if substitutions.is_empty() {
+                            domain
+                        } else {
+                            domain.substitute(&substitutions, work)?
+                        };
                         admitted = admitted.and(&self.guard(&domain, work)?, work)?;
                     }
                     if let Function::Imported(_) = definition {
-                        let imported = self
-                            .principal
+                        let imported = principal
                             .layout
                             .imports
                             .functions
                             .get(&function.reference().ordinal)
                             .ok_or(PreparedEffectInvariant::PrincipalConfirmation)?;
-                        let admitted_by_import = self
-                            .principal
+                        let admitted_by_import = principal
                             .coefficients
                             .evaluate(imported.relation.principal(), work)?;
                         admitted = admitted.and(&Decision::constant(admitted_by_import), work)?;
                     }
-                    let formula = self
-                        .formula(
-                            self.principal
-                                .functions
-                                .get(&function.reference().ordinal)
-                                .ok_or(PreparedEffectInvariant::StaleReference)?,
-                            work,
-                        )?
-                        .substitute(&substitutions, work)?;
+                    let formula = self.proof.function(function.reference().ordinal, work)?;
+                    let formula = if substitutions.is_empty() || !formula.uses_parameters {
+                        RowFormula::Function(formula)
+                    } else {
+                        RowFormula::Derived(formula.formula.substitute(&substitutions, work)?)
+                    };
                     Row { formula, admitted }
                 }
                 RowTerm::Substitution { formula, arguments } => {
@@ -251,8 +326,13 @@ impl<'a> CanonicalReplay<'a> {
                         substitutions
                             .insert(Variable::Parameter(parameter.clone()), argument.formula);
                     }
+                    let formula = if substitutions.is_empty() {
+                        source
+                    } else {
+                        source.substitute(&substitutions, work)?
+                    };
                     Row {
-                        formula: source.substitute(&substitutions, work)?,
+                        formula: RowFormula::Derived(formula),
                         admitted,
                     }
                 }
@@ -264,10 +344,13 @@ impl<'a> CanonicalReplay<'a> {
                         formula = formula.union(&child.formula, work)?;
                         admitted = admitted.and(&child.admitted, work)?;
                     }
-                    Row { formula, admitted }
+                    Row {
+                        formula: RowFormula::Derived(formula),
+                        admitted,
+                    }
                 }
                 RowTerm::Select { choice, yes, no } => {
-                    self.principal.graph.validate_choice(choice)?;
+                    principal.graph.validate_choice(choice)?;
                     let yes = self.read_row(yes, work)?;
                     let no = self.read_row(no, work)?;
                     let bit = EffectDecision::variable(Variable::Choice(choice.0.ordinal), work)?;
@@ -301,10 +384,17 @@ impl<'a> CanonicalReplay<'a> {
                     let formula = formula.finish();
                     let admitted = Decision::variable(Atom::Choice(choice.0.ordinal), work)?
                         .conditional(&yes.admitted, &no.admitted, work)?;
-                    Row { formula, admitted }
+                    Row {
+                        formula: RowFormula::Derived(formula),
+                        admitted,
+                    }
                 }
             };
-            self.finite(&row.formula, work)?;
+            // The identity mapping of a canonical function's parameters
+            // preserves finiteness. Only derived rows can add uniform choices.
+            if let RowFormula::Derived(formula) = &row.formula {
+                self.finite(formula, work)?;
+            }
             work.charge(DecisionWork::Node)?;
             self.rows.insert(id, row);
         }
@@ -316,13 +406,23 @@ impl<'a> CanonicalReplay<'a> {
         row: &Formula,
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        let mut has_choices = false;
         let mut parameters = BTreeSet::new();
         for variable in row.variables() {
             work.charge(DecisionWork::Visit)?;
-            if matches!(variable, Variable::Parameter(_)) && !parameters.contains(variable) {
-                work.charge(DecisionWork::Node)?;
-                parameters.insert(variable.clone());
+            match variable {
+                Variable::Choice(_) => has_choices = true,
+                Variable::Parameter(_) if !parameters.contains(variable) => {
+                    work.charge(DecisionWork::Node)?;
+                    parameters.insert(variable.clone());
+                }
+                Variable::Parameter(_) => {}
             }
+        }
+        // A reachable parameter in a reduced point decision is essential.
+        // Choices are the only variables that can switch that dependence.
+        if parameters.is_empty() || !has_choices {
+            return Ok(Decision::constant(parameters.is_empty()));
         }
         let mut closed = EffectDecision::constant(true);
         for class in 0..self.scope.classes.classes() {
@@ -421,7 +521,7 @@ impl<'a> CanonicalReplay<'a> {
                 .guard(&self.canonical_predicate(predicate, work)?, work)
                 .map(Cow::Owned),
             PreparedEffectPredicate::Term(reference) => {
-                self.principal.graph.predicate(reference)?;
+                self.proof.principal.graph.predicate(reference)?;
                 work.charge(DecisionWork::Visit)?;
                 let predicate = self
                     .predicates
@@ -440,12 +540,13 @@ impl<'a> CanonicalReplay<'a> {
         if matches!(root, PreparedEffectPredicate::Canonical(_)) {
             return Ok(());
         }
+        let principal = self.proof.principal;
         let mut todo = vec![root];
         let mut reachable = BTreeSet::new();
         while let Some(predicate) = todo.pop() {
             work.charge(DecisionWork::Visit)?;
             if let PreparedEffectPredicate::Term(reference) = predicate {
-                let term = self.principal.graph.predicate(reference)?;
+                let term = principal.graph.predicate(reference)?;
                 if !self.predicates.contains_key(&reference.0.ordinal)
                     && reachable.insert(reference.0.ordinal)
                 {
@@ -474,16 +575,15 @@ impl<'a> CanonicalReplay<'a> {
             }
         }
         for id in reachable {
-            let term = self.principal.graph.predicates[&id].as_ref();
+            let term = principal.graph.predicates[&id].as_ref();
             let value = match term {
                 PredicateTerm::ImportedPrincipal(imported) => {
-                    let guard = self
-                        .principal
+                    let guard = principal
                         .layout
                         .imports
                         .relation(imported, work)?
                         .principal();
-                    Decision::constant(self.principal.coefficients.evaluate(guard, work)?)
+                    Decision::constant(principal.coefficients.evaluate(guard, work)?)
                 }
                 PredicateTerm::Substitution {
                     predicate,
@@ -502,8 +602,12 @@ impl<'a> CanonicalReplay<'a> {
                         substitutions
                             .insert(Variable::Parameter(parameter.clone()), argument.formula);
                     }
-                    self.guard(&source.substitute(&substitutions, work)?, work)?
-                        .and(&admitted, work)?
+                    let predicate = if substitutions.is_empty() {
+                        source
+                    } else {
+                        source.substitute(&substitutions, work)?
+                    };
+                    self.guard(&predicate, work)?.and(&admitted, work)?
                 }
                 PredicateTerm::Relation {
                     relation,
@@ -524,7 +628,7 @@ impl<'a> CanonicalReplay<'a> {
                 }
                 PredicateTerm::Not(child) => self.read_predicate(child, work)?.not(work)?,
                 PredicateTerm::Select { choice, yes, no } => {
-                    self.principal.graph.validate_choice(choice)?;
+                    principal.graph.validate_choice(choice)?;
                     Decision::variable(Atom::Choice(choice.0.ordinal), work)?.conditional(
                         self.read_predicate(yes, work)?.as_ref(),
                         self.read_predicate(no, work)?.as_ref(),
@@ -549,8 +653,8 @@ impl<'a> CanonicalReplay<'a> {
         };
         self.prepare_row(body, work)?;
         let body = self.read_row(body, work)?;
-        let own = self.formula(&self.principal.functions[&id], work)?;
-        let equal = own.equivalent(&body.formula, work)?;
+        let own = self.proof.function(id, work)?;
+        let equal = own.formula.equivalent(&body.formula, work)?;
         let mut expected = self.guard(&equal, work)?.and(&body.admitted, work)?;
         for obligation in obligations {
             self.prepare_predicate(obligation, work)?;
@@ -585,7 +689,7 @@ impl<'a> CanonicalReplay<'a> {
         if expected.is_constant(true) {
             return Ok(());
         }
-        let witnesses = self.principal.witnesses.relation();
+        let witnesses = self.proof.principal.witnesses.relation();
         if witnesses.is_constant(true)
             || !witnesses
                 .and(&expected.not(work)?, work)?
