@@ -40,14 +40,25 @@ fn function_formula_reuse_preserves_the_callers_formal_admission() {
         replay.prepare_row(&call, &mut work).unwrap();
         let value = replay.read_row(&call, &mut work).unwrap();
         assert_eq!(value.formula.as_ref(), &formula.formula);
-        assert_eq!(
-            value.admitted.variables().collect::<Vec<_>>(),
-            vec![&Atom::Formal {
+        let admitted = Decision::variable(
+            Atom::Formal {
                 owner,
                 class: 1,
-                parameter
-            }]
-        );
+                parameter,
+            },
+            &mut work,
+        )
+        .unwrap();
+        assert_eq!(value.admitted.as_ref(), &admitted);
+        for relation in [
+            PreparedEffectRelation::Equal,
+            PreparedEffectRelation::AdmittedSubset,
+        ] {
+            assert_eq!(
+                replay.relation(relation, &call, &call, &mut work).unwrap(),
+                admitted,
+            );
+        }
     }
     let mut cached_lookup = Budget(1);
     assert!(Rc::ptr_eq(
@@ -55,6 +66,47 @@ fn function_formula_reuse_preserves_the_callers_formal_admission() {
         &proof.function(id, &mut Work(&mut cached_lookup)).unwrap()
     ));
     assert_eq!(cached_lookup.0, 0);
+}
+
+#[test]
+fn reification_keeps_mask_order_distinct_from_canonical_reference_order() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut control = budget();
+    let scope = crate::types::GenericScope::default()
+        .with_binder(crate::types::GenericBinder::new(0, 0, 2));
+    let first = parameter(&scope, 0);
+    let second = parameter(&scope, 1);
+    assert!(first < second);
+    let a = EffectDecision::variable(first.clone(), &mut control).unwrap();
+    let b = EffectDecision::variable(second.clone(), &mut control).unwrap();
+    let outside = a.and(&b.not(&mut control).unwrap(), &mut control).unwrap();
+    let formula = arcweft_core::effect_row::EffectFormula::try_from_decisions(
+        outside,
+        BTreeMap::from([(EffectId::parse("fs.read").unwrap(), b)]),
+        &mut Work(&mut control),
+    )
+    .unwrap();
+    let row = EffectRow {
+        formula: Some(formula),
+    };
+    let scheme = graph
+        .declare(
+            vec![second, first],
+            EffectPredicate::unconstrained(),
+            &mut control,
+        )
+        .unwrap();
+    graph
+        .prepare_body(
+            &scheme,
+            PreparedEffectRow::Canonical(row.clone()),
+            vec![],
+            &mut control,
+        )
+        .unwrap();
+
+    let closure = graph.solve_principal(&mut control).unwrap();
+    assert_eq!(closure.scheme(&scheme).unwrap(), &row);
 }
 
 #[test]

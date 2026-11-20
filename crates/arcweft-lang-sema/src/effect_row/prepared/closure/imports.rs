@@ -435,11 +435,19 @@ impl ImportedRelationTable {
             );
         }
         let mut coefficients = BTreeMap::new();
+        let child_layout = self.child.layout.view();
+        let parent_layout = parent.layout.view();
         for (&future, actual) in self.source.inputs() {
-            let actual = actual.clone();
-            let actual_definition = parent.graph.function(&actual)?;
-            let parameters = graph.functions[&future].parameters();
-            let row = parent.functions[&actual.reference().ordinal].known()?;
+            let actual_definition = parent.graph.function(actual)?;
+            let actual_id = actual.reference().ordinal;
+            let actual_table = parent_layout.function_table(actual_id, actual_definition)?;
+            let future_definition = &graph.functions[&future];
+            let future_table = child_layout.function_table(future, future_definition)?;
+            if actual_table.entries != future_table.entries {
+                return Err(PreparedEffectInvariant::ApplicationArity.into());
+            }
+            let parameters = future_definition.parameters();
+            let row = parent.functions[&actual_id].known()?;
             let formula = row.map_references(work, &mut |reference, _| {
                 let index = actual_definition
                     .parameters()
@@ -450,22 +458,22 @@ impl ImportedRelationTable {
                     })?;
                 Ok(parameters[index].clone())
             })?;
-            for class in 0..self.child.layout.view().classes() {
-                for mask in 0..self.child.layout.tables[&future] {
-                    let value = self.child.layout.view().at(formula.membership(), class).evaluate_with_control(|reference| {
-                        let index = parameters.iter().position(|parameter| parameter == reference)
-                            .expect("specialized Future references come from its declared parameters");
-                        mask & (1usize << index) != 0
-                    }, work)?;
+            // The parent already confirmed its row against these cells.
+            // Transfer positional coefficients and retain the transported
+            // formula for the child's independent replay.
+            for class in 0..child_layout.classes() {
+                let parent_class = child_layout
+                    .label_classes()
+                    .class_in(class, parent_layout.label_classes());
+                for mask in 0..future_table.entries {
                     work.charge(DecisionWork::Node)?;
-                    coefficients.insert(
-                        Atom::Cell {
-                            scheme: future,
-                            class,
-                            mask,
-                        },
-                        value,
-                    );
+                    let value = actual_table.closed_value(
+                        parent_class,
+                        mask,
+                        &parent.coefficients,
+                        work,
+                    )?;
+                    coefficients.insert(future_table.cell(class, mask), value);
                 }
             }
             work.charge(DecisionWork::Node)?;

@@ -348,26 +348,16 @@ impl<'a> Compilation<'a> {
                 })
                 .collect();
         }
-        let table = *self
-            .layout
-            .tables
+        let function = self
+            .graph
+            .functions
             .get(&scheme)
             .ok_or(PreparedEffectInvariant::StaleReference)?;
-        let function = self.graph.functions[&scheme].as_ref();
         if arguments.len() != function.parameters().len() {
             return Err(PreparedEffectInvariant::ApplicationArity.into());
         }
-        let imported = match function {
-            Function::Imported(_) => Some(
-                self.layout
-                    .imports
-                    .functions
-                    .get(&scheme)
-                    .ok_or(PreparedEffectInvariant::UnclosedCell)?,
-            ),
-            _ => None,
-        };
         let basis = self.cells.basis(self.layout);
+        let table = basis.function_table(scheme, function)?;
         let mut result = Vec::new();
         for class in 0..self.layout.classes() {
             let basis_class = self
@@ -377,7 +367,7 @@ impl<'a> Compilation<'a> {
             result.push(
                 Decision::select_table(
                     arguments.len(),
-                    table,
+                    table.entries,
                     work,
                     |index| {
                         EffectDecisionReplacement::Decision(
@@ -385,28 +375,29 @@ impl<'a> Compilation<'a> {
                         )
                     },
                     |mask, work| {
-                        let cell = Atom::Cell {
-                            scheme,
-                            class: basis_class,
-                            mask,
-                        };
-                        Ok(match (self.cells, imported) {
+                        Ok(match (self.cells, table.imported) {
                             (ApplicationCells::Prepared(_), Some(imported)) => {
                                 EffectDecisionReplacement::Decision(
                                     imported.coefficient(basis_class, mask)?,
                                 )
                             }
-                            (ApplicationCells::Solved { coefficients, .. }, Some(imported)) => {
-                                let value = imported.coefficient(basis_class, mask)?;
-                                EffectDecisionReplacement::Constant(
-                                    coefficients.evaluate(value, work)?,
-                                )
-                            }
-                            (_, None) => {
-                                if !matches!(self.cells, ApplicationCells::Prepared(fixed) if !fixed.reads(&cell)) {
+                            (ApplicationCells::Prepared(fixed), None) => {
+                                let cell = table.cell(basis_class, mask);
+                                if fixed.reads(&cell) {
                                     work.charge(DecisionWork::Visit)?;
                                 }
-                                self.cells.local(cell)?
+                                fixed.operand(cell)
+                            }
+                            (ApplicationCells::Solved { coefficients, .. }, imported) => {
+                                if imported.is_none() {
+                                    work.charge(DecisionWork::Visit)?;
+                                }
+                                EffectDecisionReplacement::Constant(table.closed_value(
+                                    basis_class,
+                                    mask,
+                                    coefficients,
+                                    work,
+                                )?)
                             }
                         })
                     },

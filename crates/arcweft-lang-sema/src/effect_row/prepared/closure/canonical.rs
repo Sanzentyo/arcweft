@@ -488,20 +488,26 @@ impl CanonicalReplay<'_> {
         self.prepare_row(permitted, work)?;
         let actual = self.read_row(actual, work)?;
         let permitted = self.read_row(permitted, work)?;
-        let result = relation.decide_membership(
-            [actual.formula.as_ref(), permitted.formula.as_ref()],
-            work,
-            |row, work| self.closed(row, work),
-            |work| {
-                let predicate = if relation == PreparedEffectRelation::Equal {
-                    actual.formula.equivalent(&permitted.formula, work)?
-                } else {
-                    actual.formula.subset(&permitted.formula, work)?
-                };
-                self.guard(&predicate, work)
-            },
-            |work| self.covered(&actual.formula, &permitted.formula, work),
-        )?;
+        // Identical canonical memberships already prove equality and both
+        // subset relations. Each application's admission still has to hold.
+        let result = if actual.formula.equal_with(&permitted.formula, work)? {
+            Decision::constant(true)
+        } else {
+            relation.decide_membership(
+                [actual.formula.as_ref(), permitted.formula.as_ref()],
+                work,
+                |row, work| self.closed(row, work),
+                |work| {
+                    let predicate = if relation == PreparedEffectRelation::Equal {
+                        actual.formula.equivalent(&permitted.formula, work)?
+                    } else {
+                        actual.formula.subset(&permitted.formula, work)?
+                    };
+                    self.guard(&predicate, work)
+                },
+                |work| self.covered(&actual.formula, &permitted.formula, work),
+            )?
+        };
         result
             .and(&actual.admitted, work)?
             .and(&permitted.admitted, work)
@@ -660,8 +666,12 @@ impl CanonicalReplay<'_> {
         self.prepare_row(body, work)?;
         let body = self.read_row(body, work)?;
         let own = self.proof.function(id, work)?;
-        let equal = own.formula.equivalent(&body.formula, work)?;
-        let mut expected = self.guard(&equal, work)?.and(&body.admitted, work)?;
+        let equal = if own.formula.equal_with(&body.formula, work)? {
+            Decision::constant(true)
+        } else {
+            self.guard(&own.formula.equivalent(&body.formula, work)?, work)?
+        };
+        let mut expected = equal.and(&body.admitted, work)?;
         for obligation in obligations {
             self.prepare_predicate(obligation, work)?;
             expected = expected.and(self.read_predicate(obligation, work)?.as_ref(), work)?;

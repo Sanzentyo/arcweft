@@ -1,8 +1,96 @@
-//! Confirmation of the canonical scheme tuple under all retained witnesses.
+//! Reification of the least scheme tuple and independent confirmation.
+
+use arcweft_core::effect_row::EffectDecisionReplacement;
 
 use super::*;
 
 impl PrincipalEffectClosure {
+    pub(super) fn reify<C: DecisionControl>(
+        graph: Arc<PreparedEffectDefinitions>,
+        layout: Arc<Layout>,
+        coefficients: ClosedEffectCoefficients,
+        witnesses: ClosedEffectWitnesses,
+        fixed: BTreeMap<u64, EffectRow>,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        // Fixed inputs retain the original row. Confirmation checks each
+        // against its admitted cells, just as it checks solved outputs.
+        let mut functions = fixed;
+        for id in functions.keys() {
+            work.charge(DecisionWork::Visit)?;
+            if !layout.tables.contains_key(id)
+                || !graph
+                    .functions
+                    .get(id)
+                    .is_some_and(|function| function.is_input())
+            {
+                return Err(PreparedEffectInvariant::FutureBinding.into());
+            }
+        }
+        let classes = layout.view();
+        for (&id, function) in &graph.functions {
+            if !classes.tables.contains_key(&id) {
+                continue;
+            }
+            if function.is_input() {
+                work.charge(DecisionWork::Visit)?;
+                if !functions.contains_key(&id) {
+                    return Err(if function.is_future() {
+                        PreparedEffectInvariant::UnresolvedFuture
+                    } else {
+                        PreparedEffectInvariant::UnresolvedSchemeInput
+                    }
+                    .into());
+                }
+                continue;
+            }
+            let table = classes.function_table(id, function)?;
+            let parameters = function.parameters();
+            // Mask bits follow declaration order even when canonical decision
+            // nodes must follow a different reference order.
+            let membership =
+                |class, work: &mut Work<'_, C>| -> Result<_, PreparedEffectFailure<C::Error>> {
+                    EffectDecision::select_table(
+                        parameters.len(),
+                        table.entries,
+                        work,
+                        |index| EffectDecisionReplacement::Variable(parameters[index].clone()),
+                        |mask, work| {
+                            if table.imported.is_none() {
+                                work.charge(DecisionWork::Visit)?;
+                            }
+                            Ok(EffectDecisionReplacement::Constant(table.closed_value(
+                                class,
+                                mask,
+                                &coefficients,
+                                work,
+                            )?))
+                        },
+                    )?
+                    .ok_or_else(|| PreparedEffectInvariant::ApplicationArity.into())
+                };
+            let default = membership(0, work)?;
+            let mut formula = EffectFormula::builder(default, work)?;
+            for (index, label) in classes.labels.iter().enumerate() {
+                formula.set(label, membership(index + 1, work)?, work)?;
+            }
+            work.charge(DecisionWork::Node)?;
+            functions.insert(
+                id,
+                EffectRow {
+                    formula: Some(formula.finish()),
+                },
+            );
+        }
+        Ok(Self {
+            graph,
+            layout,
+            functions,
+            coefficients,
+            witnesses,
+        })
+    }
+
     pub(crate) fn scheme(
         &self,
         reference: &PreparedEffectSchemeRef,
@@ -46,6 +134,7 @@ impl PrincipalEffectClosure {
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         let proof = canonical::CanonicalProof::new(self);
+        let classes = self.layout.view();
         for &id in self.functions.keys() {
             let function = &self.graph.functions[&id];
             let row = self.functions[&id].known()?;
@@ -75,32 +164,19 @@ impl PrincipalEffectClosure {
             // Compare the original finite inputs with their admitted cells and
             // the reconstructed outputs with the least tuple. Fixed-point
             // replay alone would also accept a larger solution to S=S.
-            for mask in 0..self.layout.tables[&id] {
-                for class in 0..self.layout.view().classes() {
-                    let value = self
-                        .layout
-                        .view()
-                        .at(row.membership(), class)
-                        .evaluate_with_control(
-                            |reference| {
-                                let &index = parameters.get(reference).expect(
-                                    "canonical scheme references were checked against their header",
-                                );
-                                mask & (1usize << index) != 0
-                            },
-                            work,
-                        )?;
-                    let least = if matches!(function.as_ref(), Function::Imported(_)) {
-                        let coefficient =
-                            self.layout.imports.functions[&id].coefficient(class, mask)?;
-                        self.coefficients.evaluate(coefficient, work)?
-                    } else {
-                        self.coefficients.value(&Atom::Cell {
-                            scheme: id,
-                            class,
-                            mask,
-                        })?
-                    };
+            let table = classes.function_table(id, function)?;
+            for mask in 0..table.entries {
+                for class in 0..classes.classes() {
+                    let value = classes.at(row.membership(), class).evaluate_with_control(
+                        |reference| {
+                            let &index = parameters.get(reference).expect(
+                                "canonical scheme references were checked against their header",
+                            );
+                            mask & (1usize << index) != 0
+                        },
+                        work,
+                    )?;
+                    let least = table.closed_value(class, mask, &self.coefficients, work)?;
                     if least != value {
                         return Err(PreparedEffectInvariant::PrincipalConfirmation.into());
                     }

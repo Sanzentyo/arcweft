@@ -157,6 +157,35 @@ struct ClassLayout<'a> {
     imports: &'a ImportedRelations,
 }
 
+struct FunctionTable<'a> {
+    scheme: u64,
+    entries: usize,
+    imported: Option<&'a imports::ImportedFunctionTable>,
+}
+
+impl FunctionTable<'_> {
+    fn cell(&self, class: usize, mask: usize) -> Atom {
+        Atom::Cell {
+            scheme: self.scheme,
+            class,
+            mask,
+        }
+    }
+
+    fn closed_value<C: DecisionControl>(
+        &self,
+        class: usize,
+        mask: usize,
+        coefficients: &ClosedEffectCoefficients,
+        work: &mut Work<'_, C>,
+    ) -> Result<bool, PreparedEffectFailure<C::Error>> {
+        match self.imported {
+            Some(table) => coefficients.evaluate(table.coefficient(class, mask)?, work),
+            None => Ok(coefficients.value(&self.cell(class, mask))?),
+        }
+    }
+}
+
 /// Label classes are independent of the solver's scheme-cell tables.
 #[derive(Clone, Copy)]
 struct LabelClasses<'a> {
@@ -393,6 +422,31 @@ impl Layout {
 }
 
 impl<'a> ClassLayout<'a> {
+    fn function_table(
+        self,
+        scheme: u64,
+        function: &Function,
+    ) -> Result<FunctionTable<'a>, PreparedEffectInvariant> {
+        let entries = *self
+            .tables
+            .get(&scheme)
+            .ok_or(PreparedEffectInvariant::StaleReference)?;
+        let imported = match function {
+            Function::Imported(_) => Some(
+                self.imports
+                    .functions
+                    .get(&scheme)
+                    .ok_or(PreparedEffectInvariant::UnclosedCell)?,
+            ),
+            _ => None,
+        };
+        Ok(FunctionTable {
+            scheme,
+            entries,
+            imported,
+        })
+    }
+
     fn label_classes(self) -> LabelClasses<'a> {
         LabelClasses {
             labels: self.labels,
@@ -802,90 +856,5 @@ impl ClosureDefinitions<'_> {
         // under every retained witness, without choosing a discrete alternative.
         closed.confirm(&mut work)?;
         Ok(closed)
-    }
-}
-
-impl PrincipalEffectClosure {
-    fn reify<C: DecisionControl>(
-        graph: Arc<PreparedEffectDefinitions>,
-        layout: Arc<Layout>,
-        coefficients: ClosedEffectCoefficients,
-        witnesses: ClosedEffectWitnesses,
-        fixed: BTreeMap<u64, EffectRow>,
-        work: &mut Work<'_, C>,
-    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
-        // Fixed inputs arrived as canonical finite rows. Keep those rows in
-        // the result and check their cells against the solved tuple in confirm.
-        let mut functions = fixed;
-        for id in functions.keys() {
-            work.charge(DecisionWork::Visit)?;
-            if !layout.tables.contains_key(id)
-                || !graph
-                    .functions
-                    .get(id)
-                    .is_some_and(|function| function.is_input())
-            {
-                return Err(PreparedEffectInvariant::FutureBinding.into());
-            }
-        }
-        for (&id, function) in &graph.functions {
-            if !layout.tables.contains_key(&id) {
-                continue;
-            }
-            if function.is_input() {
-                work.charge(DecisionWork::Visit)?;
-                if !functions.contains_key(&id) {
-                    return Err(if function.is_future() {
-                        PreparedEffectInvariant::UnresolvedFuture
-                    } else {
-                        PreparedEffectInvariant::UnresolvedSchemeInput
-                    }
-                    .into());
-                }
-                continue;
-            }
-            let compilation = Compilation::new(
-                &graph,
-                layout.view(),
-                FormalOwner::Scheme(id),
-                function.parameters(),
-                ApplicationCells::Solved {
-                    basis: layout.view(),
-                    coefficients: &coefficients,
-                },
-            );
-            let parameters = compilation.parameters(work)?;
-            let mut membership = compilation.application(id, &parameters, work)?.into_iter();
-            let mut project = |atom: &Atom, _: &mut Work<'_, C>| match atom {
-                Atom::Formal {
-                    owner: FormalOwner::Scheme(owner),
-                    parameter,
-                    ..
-                } if *owner == id => Ok(function.parameters()[*parameter].clone()),
-                _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
-            };
-            let default = membership
-                .next()
-                .ok_or(PreparedEffectInvariant::UnclosedCell)?
-                .map_references(work, &mut project)?;
-            let mut formula = EffectFormula::builder(default, work)?;
-            for (label, decision) in layout.labels.iter().zip(membership) {
-                formula.set(label, decision.map_references(work, &mut project)?, work)?;
-            }
-            work.charge(DecisionWork::Node)?;
-            functions.insert(
-                id,
-                EffectRow {
-                    formula: Some(formula.finish()),
-                },
-            );
-        }
-        Ok(PrincipalEffectClosure {
-            graph,
-            layout,
-            functions,
-            coefficients,
-            witnesses,
-        })
     }
 }
