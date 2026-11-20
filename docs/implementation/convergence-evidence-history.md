@@ -20812,3 +20812,22 @@ CLIのライブラリ・バイナリ196件、統合6対象の30件、Sema doctes
 Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-retained-source-effect-reads.raw.zip) は67 entry、1,384,324 bytes、SHA256 `660a3f15e2d03254aac4c17abd6761f1561e0e0885a86e1a42274e1621ebebd8`。各entryの長さとハッシュを照合した。記録時の `target` は134,864,951,207 bytes。
+
+<a id="conjunctive-effect-assignments"></a>
+## 2026-11-21 — 効果制約の必須の真偽値を合成時に適用
+
+検証基点は `3091e47b387590fb33521791d1c6bcd4c6b42540`。公開Sourceは `a686a8a79416614a8ca7984542bcadf6208be4d3`。Coreの決定グラフは、必須の真偽値が確定した変数を元の制約の取り込み時に固定し、確定した真偽値を最終的な条件にも含める。前の等式が参照しない変数を新たに定義する等式は、共通の入力に依存していてもまとめて結合できる。先行する定義を制約する等式では、次の入力を読む前に矛盾を判定する。追加の回帰で、真偽値の固定後の関係を個別合成の関係と照合し、共通入力と矛盾後の読み取り停止を確認した。
+
+同一SHA256のCLI入力で、既定上限4,096の1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで通過した。両方とも戻り値42、1ステップ最大1操作、診断0件。1 callback は `marker` を記録し、2 callback はログ0件だった。CLIの3 callback はVMとAWBC Productの3入力とも式95で失敗した。全5入力を先行原本内の `.arcw` とSHA256で照合した。[先行4入力](acceptance-evidence/task-recursive-callback-effects.raw.zip)・[別の3 callback 入力](acceptance-evidence/task-effect-predicate-identities-read-scope.raw.zip)。
+
+診断専用上限16,384の初回試行では2 callback が3,276→3,287単位、先行の3 callback 2入力が5,178→5,161単位、別の3 callback 入力が5,035→5,018単位だった。必須の真偽値を取り込み時に適用した公開版は、同じ順に3,226、5,065、4,922単位だった。全診断実行でVMの戻り値42を確認した。先行順の3 callback で、効果成分の構築は2,117→2,004単位、うちルートの元制約の結合は400→333単位、取り込んだ子成分のコンパイルは583→550単位だった。
+
+Core全featureの対象2,401件がPASSした。先行の2,399件と今回の追加回帰2件を含む。Sema全featureユニット2,014件は1,938 PASS／76既知FAILで、先行の全IDの合否が一致した。
+
+CLIのライブラリ・バイナリの初回実行は、MCPの標準入出力テストが子プロセスの終了期限に達し、62件で停止した。61件PASS／1件FAILで134件が未実行だった。同じ対象を `--no-fail-fast` で再実行し、当該テストを含む196件がPASSした。CLIの統合6対象30件とCoreのdoctest 81件もPASSした。workspace全target・全featureのcheck／Clippy、書式、差分、構造ゲートが通過した。両方のCLI実行結果を原本に収録する。CLIの全 `check` テストは未再実行。
+
+CargoでCoreの推移的逆依存51パッケージを選定した。CLI以外の8,146件は8,068 PASS／78既知FAILで、別に18件SKIP。先行CoreのSource `dc8fdd42c6a5f2855714bc1e2bbef7506b29a2b6` の8,143 IDと、最新SemaのSource `f2f146a3516865fbe24d857e187104b8bcc1e363` で加わった1 IDの合否が一致し、今回の追加回帰2件がPASSした。Compilerの `recursive_callbacks_keep_independent_effects` はNativeとデコード済みAWBCでPASSした。
+
+Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-conjunctive-effect-assignments.raw.zip) は117 entry、1,784,912 bytes、SHA256 `5295b132023419e33e668a81892505077fed16acf24873d91e415596284f7473`。各entryの長さとハッシュを照合した。記録時の `target` は134,859,499,379 bytes。
