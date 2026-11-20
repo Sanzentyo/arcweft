@@ -95,6 +95,63 @@ impl FiniteRowValuation<'_> {
         )
     }
 
+    /// Over an unrestricted scope every membership mask can occur at each
+    /// label class, including a fresh label outside the named support.
+    pub(super) fn scheme_equation<C: DecisionControl>(
+        self,
+        scheme: u64,
+        members: &[Decision],
+        work: &mut Work<'_, C>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        if members.len() != self.classes.classes() {
+            return Err(PreparedEffectInvariant::UnclosedCell.into());
+        }
+        let mut classes = Vec::new();
+        for (class, point) in members.iter().enumerate() {
+            for reference in point.variables() {
+                work.charge(DecisionWork::Visit)?;
+                match reference {
+                    Atom::Formal {
+                        owner,
+                        class: member_class,
+                        parameter,
+                    } if *owner == self.owner
+                        && *member_class == class
+                        && *parameter < self.parameters.len() => {}
+                    Atom::Formal { .. } | Atom::Presence { .. } => {
+                        return Err(PreparedEffectInvariant::UnclosedCell.into());
+                    }
+                    _ => {}
+                }
+            }
+            let coefficient = |mask| Atom::Cell {
+                scheme,
+                class,
+                mask,
+            };
+            let equation = match self.parameters.len().checked_sub(1) {
+                Some(parameter) => point.matches_prefix_table(
+                    &Atom::Formal {
+                        owner: self.owner,
+                        class,
+                        parameter,
+                    },
+                    0..self.pattern_count()?,
+                    work,
+                    |mask, reference| match reference {
+                        Atom::Formal { parameter, .. } => Ok(mask & (1usize << parameter) != 0),
+                        _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
+                    },
+                    |mask| EffectDecisionReplacement::Variable(coefficient(mask)),
+                )?,
+                None => point.equivalent(&Decision::variable(coefficient(0), work)?, work)?,
+            };
+            work.charge(DecisionWork::Node)?;
+            classes.push(equation);
+        }
+        Decision::all(&classes, work)
+    }
+
     pub(super) fn whole<C: DecisionControl>(
         self,
         members: &[Decision],

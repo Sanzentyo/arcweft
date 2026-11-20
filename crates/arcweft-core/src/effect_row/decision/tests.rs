@@ -327,6 +327,50 @@ fn guarded_prefix_cases_share_the_suffix_and_keep_free_guard_order() {
 }
 
 #[test]
+fn prefix_table_equations_match_the_universal_relation() {
+    let mut setup = Meter::default();
+    let body = atom(0)
+        .conditional(
+            &atom(9),
+            &atom(1).or(&atom(10), &mut setup).unwrap(),
+            &mut setup,
+        )
+        .unwrap();
+    let mut reference = Meter::default();
+    let table = EffectDecision::select_table(
+        2,
+        4,
+        &mut reference,
+        |bit| EffectDecisionReplacement::Variable(bit as u8),
+        |mask, _| Ok(EffectDecisionReplacement::Variable(4 + mask as u8)),
+    )
+    .unwrap()
+    .unwrap();
+    let expected = body
+        .equivalent(&table, &mut reference)
+        .unwrap()
+        .forall(&[0, 1].into_iter().collect(), &mut reference)
+        .unwrap();
+    let mut work = Meter::default();
+    let actual = body
+        .matches_prefix_table(
+            &1,
+            0..4,
+            &mut work,
+            |mask, reference| Ok(mask & (1 << reference) != 0),
+            |mask| EffectDecisionReplacement::Variable(4 + mask as u8),
+        )
+        .unwrap();
+    assert_eq!(actual, expected);
+    assert!(
+        work.used < reference.used,
+        "{} < {}",
+        work.used,
+        reference.used
+    );
+}
+
+#[test]
 fn guarded_conjunction_shares_points_required_by_many_guards() {
     let mut setup = Meter::default();
     let point = atom(24).or(&atom(25), &mut setup).unwrap();

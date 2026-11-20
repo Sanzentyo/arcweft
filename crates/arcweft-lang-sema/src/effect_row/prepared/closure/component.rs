@@ -217,26 +217,40 @@ impl RelationScope<'_> {
         work: &mut Work<'_, C>,
     ) -> Result<Arc<Decision>, PreparedEffectFailure<C::Error>> {
         let body = self.compiler.row(body, work)?;
-        let parameters = self.compiler.parameters(work)?;
-        let own = self.compiler.application(id, &parameters, work)?;
-        let mut members = Vec::new();
-        for (left, right) in own.iter().zip(&body.membership) {
-            work.charge(DecisionWork::Node)?;
-            members.push(left.equivalent(right, work)?);
-        }
-        let equation = self.compiler.whole(&members, work)?;
+        let unrestricted = domain.is_unconstrained();
+        let equation = if unrestricted {
+            self.compiler
+                .valuation()
+                .scheme_equation(id, &body.membership, work)?
+        } else {
+            let parameters = self.compiler.parameters(work)?;
+            let own = self.compiler.application(id, &parameters, work)?;
+            let mut members = Vec::new();
+            for (left, right) in own.iter().zip(&body.membership) {
+                work.charge(DecisionWork::Node)?;
+                members.push(left.equivalent(right, work)?);
+            }
+            self.compiler.whole(&members, work)?
+        };
         let mut requirements = Vec::new();
         for obligation in obligations {
             let required = self.compiler.predicate(obligation, work)?;
             work.charge(DecisionWork::Node)?;
             requirements.push(required);
         }
-        let consequence = Decision::all(
-            [&equation, &body.admitted]
-                .into_iter()
-                .chain(requirements.iter().map(Arc::as_ref)),
-            work,
-        )?;
+        let needs_admission =
+            std::iter::once(&body.admitted).chain(requirements.iter().map(Arc::as_ref));
+        if unrestricted {
+            let admitted = Decision::all(needs_admission, work)?;
+            let admitted = self.quantify(&admitted, work)?.unwrap_or(admitted);
+            let relation = if admitted.is_constant(true) {
+                equation
+            } else {
+                equation.and(&admitted, work)?
+            };
+            return work.share_decision(relation);
+        }
+        let consequence = Decision::all(std::iter::once(&equation).chain(needs_admission), work)?;
         let consequence = work.share_decision(consequence)?;
         let domain = self.compiler.canonical_predicate(domain, work)?;
         self.require(&domain, consequence, work)

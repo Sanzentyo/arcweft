@@ -892,12 +892,46 @@ impl<V: Clone + Ord> EffectDecision<V> {
         let mut builder = DecisionBuilder::new(control);
         let left = builder.import(self)?;
         let right = builder.import(other)?;
-        if left == right {
-            return Ok(Self::constant(true));
-        }
-        let negated = builder.conditional(Conditional::new(right, Root::False, Root::True))?;
-        let same = builder.conditional(Conditional::new(left, right, negated))?;
+        let same = builder.equivalent_roots(left, right)?;
         builder.finish(same)
+    }
+
+    /// The condition under which every assignment in `cases` yields its
+    /// expected coefficient. Each case assigns the ordered references up to
+    /// and including `through`; later references remain free.
+    pub fn matches_prefix_table<'a, C: DecisionControl>(
+        &self,
+        through: &V,
+        cases: impl IntoIterator<Item = usize>,
+        control: &mut C,
+        mut select: impl FnMut(usize, &V) -> Result<bool, C::Error>,
+        mut expected: impl FnMut(usize) -> EffectDecisionReplacement<'a, V>,
+    ) -> Result<Self, C::Error>
+    where
+        V: 'a,
+    {
+        let mut builder = DecisionBuilder::new(control);
+        let mut prefix = DecisionPrefix::new(self);
+        let mut equations = Vec::new();
+        for case in cases {
+            builder.control.charge(DecisionWork::Visit)?;
+            let point = prefix.select(through, case, &mut select, &mut builder)?;
+            let coefficient = builder.operand(expected(case))?;
+            let equation = builder.equivalent_roots(point, coefficient)?;
+            match equation {
+                Root::False => return Ok(Self::constant(false)),
+                Root::True => {}
+                Root::Branch(_) => {
+                    builder.control.charge(DecisionWork::Node)?;
+                    equations.push(GuardedPoint {
+                        guard: None,
+                        point: equation,
+                    });
+                }
+            }
+        }
+        let result = builder.conjoin_guarded(&equations)?;
+        builder.finish(result)
     }
 
     /// Complements a Boolean function without interpreting it as a finite row.
@@ -1594,6 +1628,17 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     fn known(&self, key: Conditional) -> Option<Root> {
         key.reduced()
             .or_else(|| self.conditionals.get(&key).copied())
+    }
+
+    fn equivalent_roots(&mut self, left: Root, right: Root) -> Result<Root, C::Error> {
+        if left == right {
+            return Ok(Root::True);
+        }
+        if left == Root::True {
+            return Ok(right);
+        }
+        let negated = self.conditional(Conditional::new(right, Root::False, Root::True))?;
+        self.conditional(Conditional::new(left, right, negated))
     }
 
     fn cofactor(&self, root: Root, variable: &V, high: bool) -> Root {
