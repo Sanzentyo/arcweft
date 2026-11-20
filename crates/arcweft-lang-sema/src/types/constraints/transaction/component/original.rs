@@ -201,7 +201,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     for equation in &path.equations {
                         scope.merge(equation.scope(), context)?;
                     }
-                    for reads in path.lineage.probe_effect_reads() {
+                    if let Some(reads) = path.lineage.effect_read_scope() {
                         context.enter_node()?;
                         source_reads.push(reads);
                     }

@@ -35,7 +35,7 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
             .iter()
             .map(|alternative| {
                 graph.compose_read_scopes(
-                    alternative.path.lineage.probe_effect_reads().chain([reads]),
+                    alternative.path.lineage.effect_reads.iter().chain([reads]),
                     control,
                 )
             })
@@ -63,7 +63,7 @@ impl<D: ConstraintDomain> PendingChildConstraint<D> {
                 context.enter_node()?;
                 let (source, reads) = context.with_effect_reads(
                     graph,
-                    alternative.path.lineage.probe_effect_reads(),
+                    alternative.path.lineage.effect_read_scope(),
                     |context, graph| {
                         let scope = Arc::new(context.capture_lexical_scope()?);
                         let (opened, result) = super::ResolvedConstraintResult::resolve(
@@ -163,7 +163,7 @@ impl<D: ConstraintDomain> PendingResultConstraint<D> {
         for path in &mut transaction.frontier {
             let (value, reads) = context.with_effect_reads(
                 graph,
-                path.lineage.probe_effect_reads(),
+                path.lineage.effect_read_scope(),
                 |context, graph| {
                     super::ConstraintOperand::open_template(
                         template,
@@ -235,7 +235,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let mut advanced = Vec::new();
         for mut path in core::mem::take(&mut self.frontier) {
             context.enter_node()?;
-            let reads = context.compose_effect_reads(effects, path.lineage.probe_effect_reads())?;
+            let reads = context.compose_effect_reads(effects, path.lineage.effect_read_scope())?;
             let (mut paths, reads) = context.with_effect_read_scope(
                 effects,
                 reads.as_ref(),

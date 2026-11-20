@@ -343,8 +343,9 @@ pub(crate) struct ConstraintSourceLineage<D: ConstraintDomain> {
     root: ConstraintApplicationId,
     pub(super) original: super::OriginalProducerContext,
     pub(super) scope: super::lexical::ConstraintLexicalScope,
-    pub(super) probe_trace: Vec<ActiveConstraintProbe<D>>,
+    probe_trace: Vec<ActiveConstraintProbe<D>>,
     pub(super) projections: Vec<Arc<ProjectionRequest<D>>>,
+    // Includes the detached reads of every preparation in probe_trace.
     effect_reads: Option<crate::effect_row::prepared::PreparedEffectReadScope>,
 }
 
@@ -362,14 +363,8 @@ impl<D: ConstraintDomain> Clone for ConstraintSourceLineage<D> {
 }
 
 impl<D: ConstraintDomain> ConstraintSourceLineage<D> {
-    pub(super) fn probe_effect_reads(
-        &self,
-    ) -> impl Iterator<Item = &crate::effect_row::prepared::PreparedEffectReadScope> {
-        self.effect_reads.iter().chain(
-            self.probe_trace
-                .iter()
-                .filter_map(|probe| probe.branch.preparation().and_then(D::probe_effect_reads)),
-        )
+    fn effect_read_scope(&self) -> Option<&crate::effect_row::prepared::PreparedEffectReadScope> {
+        self.effect_reads.as_ref()
     }
 }
 
@@ -594,15 +589,15 @@ pub(crate) struct ClosedSourceProbeContribution<D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> ClosedSourceProbeContribution<D> {
-    fn validate_effect_reads<A: TypeConstraintAccounting>(
-        &self,
+    fn admit_effect_reads<A: TypeConstraintAccounting>(
+        &mut self,
         graph: &crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
         let Some(scope) = D::probe_effect_reads(&self.preparation) else {
             return Ok(());
         };
-        for alternative in &self.alternatives {
+        for alternative in &mut self.alternatives {
             let value = match alternative.result.term() {
                 SourceProbeTerm::AdmittedValue(value) => value.value(),
                 SourceProbeTerm::Result(result) => {
@@ -618,39 +613,43 @@ impl<D: ConstraintDomain> ClosedSourceProbeContribution<D> {
                 #[cfg(test)]
                 SourceProbeTerm::Type(value) => value,
             };
-            if matches!(
+            let reads = graph.compose_read_scopes(
+                alternative.path.lineage.effect_reads.iter().chain([scope]),
+                context,
+            )?;
+            if !matches!(
                 value.constraint_shape(),
                 super::TypeConstraintShape::Leaf(_) | super::TypeConstraintShape::Never
             ) {
-                continue;
+                let roots = crate::types::effect_domain::PreparedTypeEffectRoots::collect(
+                    [value],
+                    [],
+                    context,
+                )
+                .map_err(|error| match error {
+                    crate::types::TypeProjectionError::Control(error) => error,
+                    crate::types::TypeProjectionError::Instantiation(error) => {
+                        TypeConstraintInvariant::Instantiation(error).into()
+                    }
+                })?;
+                graph.read_scoped(&reads, context)?.validate_query_roots(
+                    roots.rows(),
+                    roots.predicates(),
+                    context,
+                )?;
             }
-            let roots =
-                crate::types::effect_domain::PreparedTypeEffectRoots::collect([value], [], context)
-                    .map_err(|error| match error {
-                        crate::types::TypeProjectionError::Control(error) => error,
-                        crate::types::TypeProjectionError::Instantiation(error) => {
-                            TypeConstraintInvariant::Instantiation(error).into()
-                        }
-                    })?;
-            let reads = graph.compose_read_scopes(
-                alternative
-                    .path
-                    .lineage
-                    .probe_effect_reads()
-                    .chain(std::iter::once(scope)),
-                context,
-            )?;
-            let read = graph.read_scoped(&reads, context)?;
-            read.validate_query_roots(roots.rows(), roots.predicates(), context)?;
+            alternative.path.lineage.effect_reads = Some(reads);
         }
         Ok(())
     }
 
-    fn bind_preparation<A: TypeConstraintAccounting>(
-        self,
+    fn admit_preparation<A: TypeConstraintAccounting>(
+        mut self,
+        graph: &crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<SourceProbeContribution<D>, TypeConstraintError> {
+    ) -> Result<Vec<ObservedProbeAlternative<D>>, TypeConstraintError> {
         context.check_cancelled()?;
+        self.admit_effect_reads(graph, context)?;
         let first = self
             .alternatives
             .first()
@@ -688,10 +687,7 @@ impl<D: ConstraintDomain> ClosedSourceProbeContribution<D> {
             // The existing branch allocation is the preparation owner too.
             first.retain_owned(self.preparation)?;
         }
-        Ok(SourceProbeContribution {
-            input: self.input,
-            alternatives: self.alternatives,
-        })
+        Ok(self.alternatives)
     }
 }
 
@@ -1331,7 +1327,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     {
         let result = (|| {
             let reads =
-                context.compose_effect_reads(graph, nested.path.lineage.probe_effect_reads())?;
+                context.compose_effect_reads(graph, nested.path.lineage.effect_read_scope())?;
             let (mut transaction, reads) =
                 context.with_effect_read_scope(graph, reads.as_ref(), |context, graph| {
                     original.validate_imported_in(&nested.path.applications, context)?;
@@ -1788,7 +1784,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 for path in &self.frontier {
                     let request = context.with_effect_reads(
                         graph,
-                        path.lineage.probe_effect_reads(),
+                        path.lineage.effect_read_scope(),
                         |context, graph| {
                             let input = input
                                 .map(|input| {
@@ -2039,7 +2035,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         };
         let (hints, effect_reads) = context.with_effect_reads(
             graph,
-            path.lineage.probe_effect_reads(),
+            path.lineage.effect_read_scope(),
             |context, graph| -> Result<_, TypeConstraintError> {
                 let mut hints = Vec::new();
                 for alternative in operation.prepared.alternatives() {
@@ -2132,15 +2128,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 operation.rejections.push(cause);
             }
             ProbeSubmission::Accepted(contribution) => {
-                contribution.validate_effect_reads(graph, context)?;
-                let contribution = contribution.bind_preparation(context)?;
+                let alternatives = contribution.admit_preparation(graph, context)?;
                 operation.active_input = None;
-                for ObservedProbeAlternative { mut path, result } in contribution.alternatives {
+                for ObservedProbeAlternative { mut path, result } in alternatives {
                     let (actual_term, branch, callback_selection) = result.into_parts();
-                    let preparation_reads = branch.preparation().and_then(D::probe_effect_reads);
                     let (accepted, reads) = context.with_effect_reads(
                         graph,
-                        path.lineage.probe_effect_reads().chain(preparation_reads),
+                        path.lineage.effect_read_scope(),
                         |context, graph| -> Result<_, TypeConstraintError> {
                             let scope = Arc::new(context.capture_lexical_scope()?);
                             let actual_operand = resolve_probe_term(
@@ -2606,7 +2600,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         A: TypeConstraintAccounting,
     {
         let cyclic = path.deferred_cycles.parameters.iter().next().cloned();
-        let reads = context.compose_effect_reads(graph, path.lineage.probe_effect_reads())?;
+        let reads = context.compose_effect_reads(graph, path.lineage.effect_read_scope())?;
         let (mut path, reads) =
             context.with_effect_read_scope(graph, reads.as_ref(), |context, graph| {
                 seal_path(path, graph, context)

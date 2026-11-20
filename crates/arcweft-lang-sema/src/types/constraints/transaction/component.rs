@@ -447,7 +447,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 }
                 let (value, reads) = context.with_effect_reads(
                     graph,
-                    path.lineage.probe_effect_reads(),
+                    path.lineage.effect_read_scope(),
                     |context, graph| {
                         let projection =
                             context.with_original_scope(path.lineage.scope.clone(), |context| {

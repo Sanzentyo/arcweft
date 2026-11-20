@@ -347,7 +347,7 @@ mod retained_preparation {
             let (input, _) = context
                 .with_effect_reads(
                     &mut graph,
-                    path.lineage.probe_effect_reads(),
+                    path.lineage.effect_read_scope(),
                     |context, graph| {
                         let original = path.prepare_original_path_effects(graph, context)?;
                         let effects = ConstraintClosedEffects::for_original_path(
@@ -529,6 +529,71 @@ mod retained_preparation {
         ));
         assert!(transaction.probe.as_ref().unwrap().active_input.is_some());
         assert!(transaction.frontier.is_empty());
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_scalar_alternative_rejects_foreign_preparation_before_binding_observations() {
+        use crate::effect_row::prepared::{PreparedEffectGraph, PreparedEffectInvariant};
+
+        let cancellation = AtomicBool::new(false);
+        let mut graph = PreparedEffectGraph::default();
+        let (mut context, parameters) = ConstraintTestSetup::<_, Domain>::new(
+            TypeConstraintLimits::new(4096, 2048, 128, 64),
+            &cancellation,
+        )
+        .into_parts();
+        let mut transaction = TypeConstraintTransaction::initialize_fixture(
+            &mut context,
+            &mut graph,
+            (),
+            parameters,
+            None,
+        )
+        .unwrap();
+        transaction
+            .begin_prepared_probe(
+                &mut context,
+                super::super::super::PreparedSourceConstraint::unchecked(
+                    (),
+                    PreparedConstraintSourceProjection::Scalar,
+                ),
+                super::super::super::ConstraintAcceptance::PatternAcceptsActual,
+            )
+            .unwrap();
+        let mut ticket = transaction
+            .next_probe(&mut context, &mut graph)
+            .unwrap()
+            .unwrap();
+        let result = SourceProbeResult::unchecked(TypeKind::I32, ());
+        let observation = Arc::clone(result.observation());
+        let foreign = PreparedEffectGraph::default()
+            .read_scope([], &mut context)
+            .unwrap();
+        let drops = Arc::new(AtomicUsize::new(0));
+        let contribution = ticket.observe(result).unwrap().close_preparation(Facts {
+            value: 7,
+            drops: Arc::clone(&drops),
+            relation: None,
+            reads: Some(foreign),
+            query: None,
+        });
+
+        assert_eq!(
+            transaction
+                .submit_probe(
+                    &mut context,
+                    &mut graph,
+                    ticket.input(),
+                    ProbeSubmission::Accepted(contribution),
+                )
+                .err(),
+            Some(TypeConstraintError::from(
+                PreparedEffectInvariant::ForeignIssuer
+            )),
+        );
+        assert!(observation.preparation().is_none());
+        assert!(transaction.probe.as_ref().unwrap().active_input.is_some());
         assert_eq!(drops.load(Ordering::Relaxed), 1);
     }
 }
