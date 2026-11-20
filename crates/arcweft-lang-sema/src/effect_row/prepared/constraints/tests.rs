@@ -54,6 +54,43 @@ fn environment(
 }
 
 #[test]
+fn an_empty_application_projection_retains_the_authenticated_predicate() {
+    let mut control = Control(4096);
+    let mut graph = PreparedEffectGraph::default();
+    let mut environment = environment(graph.read(), &mut control);
+    let reference = environment.original_variables().next().unwrap().clone();
+    environment
+        .constrain_relation(
+            &mut graph,
+            PreparedEffectRelation::AdmittedSubset,
+            &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), reference)),
+            &row(&["fs.read"]),
+            &mut control,
+        )
+        .unwrap();
+    let applications = BTreeMap::new();
+    let state = graph.state;
+    let terms = graph.retained_terms();
+    let original = environment.original_predicate();
+    assert!(matches!(original, PreparedEffectPredicate::Term(_)));
+
+    let projected = environment
+        .project_registered_predicate(&applications, &mut graph, &mut control)
+        .unwrap();
+    assert_eq!(&projected, original);
+    assert_eq!(graph.state, state);
+    assert_eq!(graph.retained_terms(), terms);
+
+    let mut other_graph = PreparedEffectGraph::default();
+    assert!(matches!(
+        environment.project_registered_predicate(&applications, &mut other_graph, &mut control),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ForeignIssuer
+        ))
+    ));
+}
+
+#[test]
 fn original_relation_is_retained_before_the_body_and_rejects_a_later_conflict() {
     for conflict in [false, true] {
         let mut control = Control(1_000_000);

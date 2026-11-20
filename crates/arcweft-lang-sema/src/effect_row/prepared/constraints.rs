@@ -21,6 +21,14 @@ impl EffectConstraintEnvironment<PreparedEffects> {
     where
         C::Error: From<EffectConstraintEnvironmentError>,
     {
+        if applications.is_empty() {
+            let read = graph.read();
+            read.visit_predicate_parameters(&self.predicate, control, &mut |reference, _| {
+                self.validate_reference(reference).map_err(Into::into)
+            })?;
+            return read.retain_predicate(&self.predicate, control);
+        }
+
         for variable in applications.keys() {
             control
                 .charge(DecisionWork::Visit)
