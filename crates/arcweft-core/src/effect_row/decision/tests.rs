@@ -371,6 +371,59 @@ fn prefix_table_equations_match_the_universal_relation() {
 }
 
 #[test]
+fn universal_prefix_shares_reachable_pairs_and_preserves_suffix_references() {
+    let mut setup = Meter::default();
+    let premise = atom(0)
+        .conditional(&atom(8), &atom(9), &mut setup)
+        .unwrap()
+        .and(&atom(2).or(&atom(4), &mut setup).unwrap(), &mut setup)
+        .unwrap();
+    let consequence = atom(2)
+        .conditional(&atom(10), &atom(11), &mut setup)
+        .unwrap()
+        .or(&atom(4).and(&atom(8), &mut setup).unwrap(), &mut setup)
+        .unwrap();
+    for requirement in [
+        EffectDecisionRequirement::Predicate(&consequence),
+        EffectDecisionRequirement::Implication {
+            premise: &premise,
+            consequence: &consequence,
+        },
+    ] {
+        let mut explicit = Meter::default();
+        let reference = requirement
+            .all_guarded_prefixes(
+                &5,
+                0..64,
+                &mut explicit,
+                |mask, variable| Ok(mask & (1 << variable) != 0),
+                |_| None,
+            )
+            .unwrap();
+        let mut work = Meter::default();
+        let actual = requirement.forall_prefix(&5, &mut work).unwrap();
+        assert_eq!(actual, reference);
+        assert!(actual.node_count() > 0);
+        assert!(actual.variables().all(|variable| *variable > 5));
+        assert!(
+            work.used < explicit.used,
+            "{} < {}",
+            work.used,
+            explicit.used
+        );
+
+        let mut limited = Meter {
+            used: 0,
+            limit: Some(work.used - 1),
+        };
+        assert_eq!(
+            requirement.forall_prefix(&5, &mut limited),
+            Err((work.used, work.used - 1)),
+        );
+    }
+}
+
+#[test]
 fn guarded_conjunction_shares_points_required_by_many_guards() {
     let mut setup = Meter::default();
     let point = atom(24).or(&atom(25), &mut setup).unwrap();

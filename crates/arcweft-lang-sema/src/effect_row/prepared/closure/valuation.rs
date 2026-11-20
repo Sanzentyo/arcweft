@@ -124,9 +124,9 @@ impl FiniteRowValuation<'_> {
         Ok(uses_parameters)
     }
 
-    /// A finite input row can realize any mask at this class. Outside the
-    /// named support, the test must hold whenever a label has that mask.
-    pub(super) fn all_class_masks<C: DecisionControl>(
+    /// In an unrestricted scope any assignment can occur at this class,
+    /// including at a fresh label outside the named support.
+    pub(super) fn all_class_inputs<C: DecisionControl>(
         self,
         class: usize,
         requirement: EffectDecisionRequirement<'_, Atom>,
@@ -140,16 +140,8 @@ impl FiniteRowValuation<'_> {
             class,
             parameter: self.parameters.len() - 1,
         };
-        requirement.all_guarded_prefixes(
-            &through,
-            0..self.pattern_count()?,
-            work,
-            |mask, reference| match reference {
-                Atom::Formal { parameter, .. } => Ok(mask & (1usize << parameter) != 0),
-                _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
-            },
-            |_| None,
-        )
+        self.pattern_count()?;
+        requirement.forall_prefix(&through, work)
     }
 
     /// Over an unrestricted scope every membership mask can occur at each

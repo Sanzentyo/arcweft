@@ -684,7 +684,7 @@ impl<'a> Compilation<'a> {
             PreparedEffectRelation::Equal => {
                 let same = left.equivalent(right, work)?;
                 match (inputs, class) {
-                    (PredicateInputs::Unrestricted, _) => valuation.all_class_masks(
+                    (PredicateInputs::Unrestricted, _) => valuation.all_class_inputs(
                         class,
                         EffectDecisionRequirement::Predicate(&same),
                         work,
@@ -700,7 +700,7 @@ impl<'a> Compilation<'a> {
                 };
                 match (inputs, class) {
                     (PredicateInputs::Unrestricted, _) => {
-                        valuation.all_class_masks(class, requirement, work)
+                        valuation.all_class_inputs(class, requirement, work)
                     }
                     (PredicateInputs::AtValuation, 0) => {
                         valuation.outside_requirement(requirement, work)
