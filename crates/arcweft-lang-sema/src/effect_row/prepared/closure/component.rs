@@ -540,42 +540,30 @@ impl CompiledComponent {
     /// from its outside/default coefficient at that class.
     pub(super) fn restrict_support<C: DecisionControl>(
         &mut self,
-        graph: &PreparedEffectDefinitions,
         support: &BTreeSet<EffectId>,
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
+        if self.minimized.is_empty() {
+            return Ok(());
+        }
+        let member = |cell: &Atom, work: &mut Work<'_, C>| match self.fixed.get(cell) {
+            Some(&value) => Ok(Decision::constant(value)),
+            None => Decision::variable(cell.clone(), work),
+        };
+        let mut restrictions = Vec::new();
         for (index, label) in self.layout.labels.iter().enumerate() {
             if support.contains(label) {
                 continue;
             }
             let class = index + 1;
-            let mut admitted = Decision::constant(false);
-            for (&id, function) in &graph.functions {
-                if !function.is_input() {
-                    continue;
-                }
-                for mask in 0..self.layout.tables[&id] {
-                    let named = Decision::variable(
-                        Atom::Cell {
-                            scheme: id,
-                            class,
-                            mask,
-                        },
-                        work,
-                    )?;
-                    let default = Decision::variable(
-                        Atom::Cell {
-                            scheme: id,
-                            class: 0,
-                            mask,
-                        },
-                        work,
-                    )?;
-                    let differs = named.conditional(&default.not(work)?, &default, work)?;
-                    admitted = admitted.or(&differs, work)?;
-                }
-            }
-            for cell in &self.minimized {
+            let first = Atom::Cell {
+                class,
+                mask: 0,
+                scheme: 0,
+            };
+            let mut inputs = Vec::new();
+            let mut outputs = Vec::new();
+            for cell in self.layout.cells.range(first..) {
                 let Atom::Cell {
                     scheme,
                     class: selected,
@@ -585,20 +573,44 @@ impl CompiledComponent {
                     return Err(PreparedEffectInvariant::UnclosedCell.into());
                 };
                 if *selected != class {
+                    break;
+                }
+                let outside = Atom::Cell {
+                    scheme: *scheme,
+                    class: 0,
+                    mask: *mask,
+                };
+                let same = member(cell, work)?.equivalent(&member(&outside, work)?, work)?;
+                if same.is_constant(true) {
                     continue;
                 }
-                let named = Decision::variable(cell.clone(), work)?;
-                let default = Decision::variable(
-                    Atom::Cell {
-                        scheme: *scheme,
-                        class: 0,
-                        mask: *mask,
-                    },
-                    work,
-                )?;
-                let same = named.conditional(&default, &default.not(work)?, work)?;
-                self.relation = self.relation.and(&admitted.or(&same, work)?, work)?;
+                work.charge(DecisionWork::Node)?;
+                if self.minimized.contains(cell) {
+                    outputs.push(same);
+                } else {
+                    inputs.push(same);
+                }
             }
+            let unchanged_inputs = Decision::all(&inputs, work)?;
+            if unchanged_inputs.is_constant(false) {
+                continue;
+            }
+            let unchanged_outputs = Decision::all(&outputs, work)?;
+            // A class whose inputs agree with the outside class must keep
+            // every local coefficient equal to its outside counterpart.
+            let restriction = unchanged_inputs.conditional(
+                &unchanged_outputs,
+                &Decision::constant(true),
+                work,
+            )?;
+            if !restriction.is_constant(true) {
+                work.charge(DecisionWork::Node)?;
+                restrictions.push(restriction);
+            }
+        }
+        if !restrictions.is_empty() {
+            self.relation =
+                Decision::all(std::iter::once(&self.relation).chain(&restrictions), work)?;
         }
         Ok(())
     }

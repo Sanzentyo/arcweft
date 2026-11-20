@@ -1,5 +1,7 @@
 //! Joint closure of issuer-owned, parameterized effect schemes.
 
+use std::borrow::Cow;
+
 use arcweft_core::effect_row::{DecisionLowerEnvelope, EffectDecision, EffectMembershipView};
 
 use super::*;
@@ -73,6 +75,39 @@ enum FormalOwner {
 }
 
 type Decision = EffectDecision<Atom>;
+
+impl<C: DecisionControl> Work<'_, C> {
+    fn conjoin_prepared_predicates<'a>(
+        &mut self,
+        children: &[PreparedEffectPredicate],
+        mut read: impl FnMut(
+            &PreparedEffectPredicate,
+            &mut Self,
+        ) -> Result<Cow<'a, Decision>, PreparedEffectFailure<C::Error>>,
+    ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        match children {
+            [] => Ok(Decision::constant(true)),
+            [child] => match read(child, self)? {
+                Cow::Borrowed(decision) => self.copy_decision(decision),
+                Cow::Owned(decision) => Ok(decision),
+            },
+            [left, right] => {
+                let left = read(left, self)?;
+                let right = read(right, self)?;
+                left.and(&right, self)
+            }
+            many => {
+                let mut decisions = Vec::new();
+                for child in many {
+                    let decision = read(child, self)?;
+                    self.charge(DecisionWork::Node)?;
+                    decisions.push(decision);
+                }
+                Decision::all(decisions.iter().map(AsRef::as_ref), self)
+            }
+        }
+    }
+}
 
 impl PreparedEffectRelation {
     fn decide_membership<C: DecisionControl, Row>(

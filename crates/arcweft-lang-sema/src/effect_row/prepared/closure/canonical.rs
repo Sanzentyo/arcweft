@@ -511,16 +511,15 @@ impl<'a> CanonicalReplay<'a> {
                     actual,
                     permitted,
                 } => self.relation(*relation, actual, permitted, work)?,
-                PredicateTerm::And(children) | PredicateTerm::Or(children) => {
-                    let and = matches!(term, PredicateTerm::And(_));
-                    let mut value = Decision::constant(and);
+                PredicateTerm::And(children) => work
+                    .conjoin_prepared_predicates(children, |child, work| {
+                        self.read_predicate(child, work)
+                    })?,
+                PredicateTerm::Or(children) => {
+                    let mut value = Decision::constant(false);
                     for child in children {
                         let child = self.read_predicate(child, work)?;
-                        value = if and {
-                            value.and(&child, work)?
-                        } else {
-                            value.or(&child, work)?
-                        };
+                        value = value.or(&child, work)?;
                     }
                     value
                 }

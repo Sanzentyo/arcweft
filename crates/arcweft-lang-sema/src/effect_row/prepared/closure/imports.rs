@@ -178,7 +178,7 @@ pub(super) fn lower_selected_imports<'a, C: DecisionControl>(
             layout,
             work,
         )?;
-        component.restrict_support(&source.graph, &source.support, work)?;
+        component.restrict_support(&source.support, work)?;
         let completed = component.complete(work)?;
         work.charge(DecisionWork::Node)?;
         let completed = Arc::new(completed);

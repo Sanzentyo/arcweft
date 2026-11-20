@@ -812,16 +812,15 @@ impl<'a> Compilation<'a> {
                 actual,
                 permitted,
             } => self.relation(*relation, actual, permitted, inputs, work)?,
-            PredicateTerm::And(children) | PredicateTerm::Or(children) => {
-                let and = matches!(term, PredicateTerm::And(_));
-                let mut result = Decision::constant(and);
+            PredicateTerm::And(children) => work
+                .conjoin_prepared_predicates(children, |child, work| {
+                    self.read_predicate(child, inputs.children(term), work)
+                })?,
+            PredicateTerm::Or(children) => {
+                let mut result = Decision::constant(false);
                 for child in children {
                     let child = self.read_predicate(child, inputs.children(term), work)?;
-                    result = if and {
-                        result.and(&child, work)?
-                    } else {
-                        result.or(&child, work)?
-                    };
+                    result = result.or(&child, work)?;
                 }
                 result
             }

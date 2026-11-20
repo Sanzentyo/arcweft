@@ -79,6 +79,60 @@ fn conditional_completion_keeps_future_cells_free_in_the_least_function() {
 }
 
 #[test]
+fn an_extra_label_requires_all_local_memberships_to_agree_when_inputs_agree() {
+    let mut graph = PreparedEffectGraph::default();
+    retain_label_basis(&mut graph);
+    let future = unknown(&mut graph, PreparedEffectUnknownEligibility::Future);
+    let first = unknown(&mut graph, PreparedEffectUnknownEligibility::Bindable);
+    let second = unknown(&mut graph, PreparedEffectUnknownEligibility::Bindable);
+    let cells = [
+        cell(&future, 0),
+        cell(&future, 1),
+        cell(&first, 0),
+        cell(&first, 1),
+        cell(&second, 0),
+        cell(&second, 1),
+    ];
+    let future_id = FunctionRef::Unknown(future).reference().ordinal;
+    let mut control = budget();
+    let work = &mut Work(&mut control);
+    for fixed in [None, Some(false), Some(true)] {
+        let rows = fixed
+            .map(|contains_label| {
+                let effects = if contains_label {
+                    EffectSet::from_labels(["log.write"]).unwrap()
+                } else {
+                    EffectSet::new()
+                };
+                (future_id, EffectRow::closed(effects))
+            })
+            .into_iter()
+            .collect();
+        let mut component = CompiledComponent::new(&graph.relation, &rows, work).unwrap();
+        let unrestricted = component.relation.copy_with_control(work).unwrap();
+        component.restrict_support(&BTreeSet::new(), work).unwrap();
+        for mask in 0..(1 << cells.len()) {
+            let membership = |index| (mask & (1 << index)) != 0;
+            let assignment =
+                |atom: &Atom| membership(cells.iter().position(|cell| cell == atom).unwrap());
+            let originally_admitted = unrestricted
+                .evaluate_with_control(assignment, work)
+                .unwrap();
+            let named_input_differs = fixed.unwrap_or_else(|| membership(0) != membership(1));
+            let locals_agree = membership(2) == membership(3) && membership(4) == membership(5);
+            assert_eq!(
+                component
+                    .relation
+                    .evaluate_with_control(assignment, work)
+                    .unwrap(),
+                originally_admitted && (named_input_differs || locals_agree),
+                "fixed={fixed:?}, cells={mask:06b}",
+            );
+        }
+    }
+}
+
+#[test]
 fn conditional_completion_rejects_an_invalid_cell_even_with_a_total_principal_domain() {
     let mut graph = PreparedEffectGraph::default();
     let mut work = budget();
