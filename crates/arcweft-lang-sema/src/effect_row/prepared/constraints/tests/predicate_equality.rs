@@ -172,9 +172,23 @@ fn foreign_stale_and_unadmitted_inputs_cannot_publish_agreement() {
     let mut control = Control(1_000_000);
     let mut graph = PreparedEffectGraph::default();
     let mut foreign_graph = PreparedEffectGraph::default();
-    let foreign = foreign_graph.and(vec![], &mut control).unwrap();
+    let foreign = foreign_graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            row(&[]),
+            row(&[]),
+            &mut control,
+        )
+        .unwrap();
     let mut checkpoint = graph.checkpoint(&mut control).unwrap();
-    let stale = graph.and(vec![], &mut control).unwrap();
+    let stale = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            row(&[]),
+            row(&[]),
+            &mut control,
+        )
+        .unwrap();
     graph.rollback(&mut checkpoint).unwrap();
     let variable: GenericEffectReference = GenericEffectParameterId::new(
         GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(91_818)),

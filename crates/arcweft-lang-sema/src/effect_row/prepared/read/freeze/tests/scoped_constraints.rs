@@ -170,7 +170,14 @@ fn incomplete_gamma_foreign_receipts_and_stale_predicates_are_rejected() {
         ))
     ));
     let mut checkpoint = graph.checkpoint(&mut control).unwrap();
-    let issued = graph.and(vec![], &mut control).unwrap();
+    let issued = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            literal(&[]),
+            literal(&[]),
+            &mut control,
+        )
+        .unwrap();
     let stale = graph
         .read()
         .scoped_constraint(&[], &truth(), &issued, &mut control)

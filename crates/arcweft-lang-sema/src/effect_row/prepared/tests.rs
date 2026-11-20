@@ -6,6 +6,42 @@ use crate::{
 };
 
 #[test]
+fn predicate_identities_retain_the_operand_after_graph_validation() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut setup = budget();
+    let predicate = graph
+        .relate(
+            PreparedEffectRelation::Equal,
+            literal(&["fs.read"]),
+            literal(&[]),
+            &mut setup,
+        )
+        .unwrap();
+    let truth = PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained());
+    let falsehood = PreparedEffectPredicate::Canonical(EffectPredicate::impossible());
+    assert_eq!(graph.and(Vec::new(), &mut Budget(0)).unwrap(), truth);
+    assert_eq!(graph.or(Vec::new(), &mut Budget(0)).unwrap(), falsehood);
+    assert_eq!(
+        graph
+            .and(vec![truth.clone(), predicate.clone()], &mut Budget(2))
+            .unwrap(),
+        predicate,
+    );
+    assert_eq!(
+        graph
+            .or(vec![predicate.clone(), falsehood], &mut Budget(2))
+            .unwrap(),
+        predicate,
+    );
+    assert!(matches!(
+        PreparedEffectGraph::default().and(vec![truth, predicate], &mut Budget(2)),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ForeignIssuer
+        ))
+    ));
+}
+
+#[test]
 fn recursive_identity_retains_a_parametric_default_class() {
     let mut graph = PreparedEffectGraph::default();
     let mut control = budget();

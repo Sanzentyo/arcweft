@@ -796,13 +796,12 @@ impl PreparedEffectGraph {
         predicates: Vec<PreparedEffectPredicate>,
         control: &mut C,
     ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
-        for predicate in &predicates {
-            control
-                .charge(DecisionWork::Visit)
-                .map_err(PreparedEffectFailure::Control)?;
-            self.validate_predicate(predicate)?;
-        }
-        self.insert_predicate(PredicateTerm::And(predicates.into_boxed_slice()), control)
+        self.connect_predicates(
+            predicates,
+            EffectPredicate::unconstrained(),
+            PredicateTerm::And,
+            control,
+        )
     }
 
     pub(crate) fn or<C: DecisionControl>(
@@ -810,13 +809,37 @@ impl PreparedEffectGraph {
         predicates: Vec<PreparedEffectPredicate>,
         control: &mut C,
     ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
+        self.connect_predicates(
+            predicates,
+            EffectPredicate::impossible(),
+            PredicateTerm::Or,
+            control,
+        )
+    }
+
+    fn connect_predicates<C: DecisionControl>(
+        &mut self,
+        mut predicates: Vec<PreparedEffectPredicate>,
+        identity: EffectPredicate,
+        connective: impl FnOnce(Box<[PreparedEffectPredicate]>) -> PredicateTerm,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
+        // Validate every operand in the original graph before simplifying.
+        // A connective with one remaining operand can retain that exact term.
         for predicate in &predicates {
             control
                 .charge(DecisionWork::Visit)
                 .map_err(PreparedEffectFailure::Control)?;
             self.validate_predicate(predicate)?;
         }
-        self.insert_predicate(PredicateTerm::Or(predicates.into_boxed_slice()), control)
+        predicates.retain(|predicate| {
+            !matches!(predicate, PreparedEffectPredicate::Canonical(value) if *value == identity)
+        });
+        match predicates.len() {
+            0 => Ok(PreparedEffectPredicate::Canonical(identity)),
+            1 => Ok(predicates.pop().expect("single predicate")),
+            _ => self.insert_predicate(connective(predicates.into_boxed_slice()), control),
+        }
     }
 
     pub(crate) fn not<C: DecisionControl>(
