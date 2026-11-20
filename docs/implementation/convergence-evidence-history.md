@@ -20680,3 +20680,22 @@ Semaの診断用上限16,384では2 callback が4,617→4,612単位、3 callback
 Core全feature対象2,393件が通過し、先行実行との共通2,392 IDの合否は一致した。Sema全featureユニット2,009件は1,929 PASS／80既知FAILで、先行実行と全IDの合否が一致した。既定設定のCLIはライブラリ・バイナリ196件と統合6 target 30件すべてが通過した。統合テストの初回ビルドは、計測プロセスが実行ファイルを保持してWindowsのファイル共有エラー（OS 5）になった。同じ対象をプロセス終了後に再実行して通過した。workspace全target・全featureのcheck／Clippy、Core doctest 81件、書式、差分、Cargo graph、構造ゲートを通過した。51パッケージの全逆依存8,132件とGeneric Matchの151件は[先行Sourceの検証](convergence-evidence-history.md#ordered-effect-conjunction)に記録する。
 
 [検証原本と停止位置](acceptance-evidence/task-resolve-assigned-effect-prefix.raw.zip) は91 entry、1,449,569 bytes、SHA256 `f54126d572bb6ea37a7ae50bc08fb6317e07ac3483522428729df5888429c6bc`。各entryの長さとハッシュを照合した。記録時の `target` は138,376,416,077 bytes。
+
+<a id="joint-effect-coverage"></a>
+## 2026-11-20 — 閉じた行の capability 判定を一つの決定グラフで組み立てる
+
+検証基点は `3e44c32eafd5becb706b2dc5745b113c1dc1c385`。公開Sourceは `f33523ba95a04a3a943f44bfd2351f8cc0de5475`。閉じた行の capability 判定では、必要な効果と同じパスを持つラベルだけを候補にし、スコープを含む最終判定は `EffectId::covers` に委ねる。各名前の必要条件と許可条件、名前のない領域の拒否条件を、同じ決定アリーナで合成する。単一変数の等価は参照順に構築し、同じ変数の正負は定数の不一致として確定する。
+
+3変数の真理値表から作った全65,536組で従来と同じ正準の等価判定を得た。逆順の単一変数の比較は24→14単位だった。Coreの回帰は正順と逆順の作業量が一致すること、8含意を合成した結果が個別に合成した結果と一致し、上限を1単位下げると拒否されることを確認した。Semaの回帰は、スコープ付きラベルとスコープなしラベルを同じパスに含め、名前を延長した別操作を除くことを確認した。2変数の真理値表から作った含意2個の全65,536組でも、個別に作って合成した正準結果と一致した。62,112組で作業量が減り、1,506組は同量、1,918組は増加した。この集合の合計は2,563,602→2,101,724単位だった。
+
+同一SHA256の4入力をVM／AWBC Productで実行した。既定上限4,096で1 callback は戻り値42、ログ `marker`、1ステップ最大1操作で成功。2 callback は式75、3 callback の2入力は式68で意味解析が停止した。別の3 callback は式69で停止した。診断専用の上限16,384では、2 callback が4,611→4,527単位、3 callback の2入力が7,609→7,477単位。戻り値42、ログ順、最大1操作、診断0を再確認した。
+
+診断実行で2 callback の成分準備は1,990→1,906単位で、ルートの関係コンパイル860→828、取り込んだ成分の関係コンパイル407→385、子の効果サポート制約339→309だった。3 callback の元の順では準備3,521→3,389単位で、同じ区間は1,553→1,497、686→650、681→641。準備区間の削減量は候補全体の削減量84、132単位と一致した。変更前の2つの522単位の区間では、入力への依存性判定が作業量を計上せずに終わり、閉じた行の capability 判定を3回ずつ通過していた。
+
+Core全feature対象2,395件がすべてPASS、先行実行との共通2,393 IDの合否は一致。Sema全featureユニット2,010件は1,930 PASS／80既知FAIL。追加した1件がPASSし、共通2,009 IDの合否は一致した。Semaの診断用上限16,384では2 callback が4,612→4,528単位、3 callback は4,683単位だった。既定上限では両方とも正準述語の照合で停止した。
+
+CargoでCore逆依存51パッケージを選定し、CLI以外で8,136件を実行した。8,052 PASS／84既知FAIL、18件をスキップ。先行Source `e90d60cdc3cf388ec952c3427dc8f601bddaf634` と共通の8,132 IDは合否が一致し、割り当て済み先頭区間の回帰を含む追加4件もPASS。Semaの22パッケージ分は4,320件で4,236 PASS／84既知FAIL。Compiler `recursive_callbacks_keep_independent_effects` のNative／AWBCは、どちらも既定上限で元の述語の子を準備する途中（`canonical.rs:556`）で停止した。既定設定のCLIはライブラリ・バイナリ196件、統合6 target 30件がすべてPASS。workspace全target・全featureのcheck／Clippy、Core doctest 81件、書式、差分、Cargo graphと構造ゲートを通過した。
+
+Generic Match `.1.2` C3/C5 の受入を再照合した。元の受入監査の150 IDとStyle Length後継1件に当たる、transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBC継続・保存7件がすべてPASS。
+
+[検証原本と作業量](acceptance-evidence/task-joint-effect-coverage.raw.zip) は95 entry、1,680,859 bytes、SHA256 `7f538af1d9ecb0f2461fb459bf77cc50e114baf8478ce93bd7277a2b155a719c`。各entryの長さとハッシュを照合した。記録時の `target` は134,420,721,469 bytes。
