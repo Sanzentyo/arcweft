@@ -20763,3 +20763,20 @@ Semaのテストビルドで、残余条件の読取りに使う `ResidualPrepar
 CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外の4,321件は4,243 PASS／78既知FAILで、別に1件SKIP。先行Source `d0e5a59daabf993a545969fb4e1e5c2824164b50` と共通の4,320 IDを照合し、上記のSema 4件とCompilerのNative／AWBC 2件がFAILからPASSに変わった。共通のPASSはすべて通過し、新たな量化の回帰 `agreement_quantifies_the_two_operands_at_the_same_valuation` もPASSした。CLIのライブラリ・バイナリ196件と統合6 targetの30件は先行実行と合否が一致し、workspace全target・全featureのcheck／Clippy、書式、差分、Cargo依存グラフ、構造ゲートが通過した。CLIの全 `check` テストは未再実行。
 
 [検証原本](acceptance-evidence/task-whole-effect-predicate-equivalence.raw.zip) は77 entry、1,370,865 bytes、SHA256 `d7fd1a45c778e856e6d3e30d3cd340f20b4907aa28cc3617e275e26dc89959ab`。各entryの長さとハッシュを照合した。記録時の `target` は134,686,686,524 bytes。
+
+<a id="original-quantified-effect-clauses"></a>
+## 2026-11-21 — 量化済みの元制約を取り込み先と共有
+
+検証基点は `d885bc378c05797ca8da68422c7687e79180479b`。公開Sourceは `9dfc476e5aa2997e8c1569d96efc2616a0f7a4a4`。子成分で行入力を量化した元制約は、発行元、先頭からの制約の同一性、ラベル座標、参照先の定義・ヘッダー、固定入力、内側の取り込み先が一致する場合に一度の解決内で共有する。名前付き関数の本体が展開されても、元のヘッダーから読む係数の座標は共通にできる。固定入力が変わる場合はその入力で再評価する。子成分のサポート制約、局所関数の最小化、各成分の元制約、正準表現による独立照合を引き続き適用する。
+
+同一SHA256のCLI入力で、既定上限4,096の1 callback をVM／AWBC Product、2 callback をVM／AOT／AWBC Productで実行し、戻り値42、ログ順、1ステップ最大1操作、診断0を確認した。3 callback は両実行系で先行2入力が式68、別の入力が式95で停止した。別の入力の停止位置は前回の式69から変わった。診断専用上限16,384で、2 callback は3,823→3,663、先行の3 callback 2入力は6,332→6,011単位で、実行結果を維持した。別の3 callback 入力は同じ診断上限で最大5,797単位、VMで戻り値42だった。先行順の3 callback の成分準備は2,968→2,647単位で、その前の2,175単位と後の1,189単位は一致した。元制約共有の発行元と定義の照合は17単位で、子成分のサポート制約は623単位だった。
+
+同じSourceからCLI統合テストが生成した実行ファイルでも、先行順の3 callback の最大6,011単位を再現した。子成分のサポート制約の623単位のうち、出力の等価制約に146、条件付き制約の合成に155、決定グラフの確定に90、成分の元制約との結合に213単位かかった。
+
+Sema全featureユニット2,013件は1,937 PASS／76既知FAIL。先行の全2,011 IDの合否が一致した。追加2件は、名前付き本体の展開をまたいだ共有と固定入力による共有の解除を独立再計算と照合する回帰、残余条件の等価オペランドと4通りの空行の真理値を照合する回帰。後者が前回未読だったフィールドを直接検査し、その警告は消えた。JSON出力を有効化する環境変数がない最初のnextest起動はテスト実行前に終了したため、初回の結果と実行済みの再試行を原本に収録した。
+
+CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外の4,323件は4,245 PASS／78既知FAILで、別に1件SKIP。先行Source `1bd29d6c204ae3db271bea0bf3608a64f8a61a3b` と共通の4,321 IDの合否が一致し、上記2件がPASSした。Compilerの `recursive_callbacks_keep_independent_effects` はNativeとデコード済みAWBCでPASSした。CLIのライブラリ・バイナリ196件と統合6 targetの30件は全件PASSし、先行実行と合否が一致した。workspace全target・全featureのcheck／Clippy、書式、差分、Cargo依存グラフ、構造ゲートが通過した。Clippyは新しい取り込みモジュールのワイルドカードimportを警告した。CLIの全 `check` テストは未再実行。
+
+Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-original-quantified-effect-clause-reuse.raw.zip) は70 entry、1,383,500 bytes、SHA256 `bff9b80cd3784ad25ea250132861354acb9d6e69a6bf276a978ac3c306fc66dd`。各entryの長さとハッシュを照合した。記録時の `target` は134,695,500,804 bytes。
