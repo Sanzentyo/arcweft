@@ -482,6 +482,7 @@ impl<'a> ResidualPreparedRow<'a> {
                 RowTerm::Application {
                     function,
                     arguments,
+                    ..
                 } => ResidualPreparedRowView::Application {
                     function: ResidualFunction {
                         source: self.source,

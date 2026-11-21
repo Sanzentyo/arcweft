@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::effect_row::prepared::{
-    PreparedEffectPredicate, PreparedEffectReadView, PreparedEffectRow,
+    PreparedEffectPredicate, PreparedEffectReadView, PreparedEffectRow, SourceEffectParameter,
 };
 use crate::types::GenericEffectReference;
 use crate::types::constraints::{ConstraintGenericParameterId, references};
@@ -196,6 +196,26 @@ impl<'a, D: ConstraintDomain> ConstraintFunctionHeaderView<'a, D> {
         Ok(())
     }
 
+    fn admit_source_parameter<A: TypeConstraintAccounting>(
+        &self,
+        field: ConstraintEffectField,
+        parameter: SourceEffectParameter<'_>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        match parameter {
+            SourceEffectParameter::Reference { captured: true, .. } => Ok(()),
+            SourceEffectParameter::Reference { reference, .. } => {
+                self.admit_effect_reference(field, reference, context)
+            }
+            SourceEffectParameter::Introduction(reference) => {
+                if !self.admits_effect_parameter(field, &reference.clone().into(), context)? {
+                    return Err(references::effect_out_of_scope(reference));
+                }
+                Ok(())
+            }
+        }
+    }
+
     pub(in crate::types::constraints) fn admit_projection<A: TypeConstraintAccounting>(
         header: Option<Self>,
         row: &PreparedEffectRow,
@@ -213,25 +233,29 @@ impl<'a, D: ConstraintDomain> ConstraintFunctionHeaderView<'a, D> {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
 
-        // A visit charges the effect graph once, then checks the reference
-        // against both the active branch and the exact source field.
-        let mut admit = |field, reference: &GenericEffectReference, context: &mut _| {
-            check_reference(reference, context)?;
+        // The active branch sees the actual arguments. Source admission also
+        // checks the introduction that supplies any inherited arguments.
+        let mut admit = |field, parameter: SourceEffectParameter<'_>, context: &mut _| {
+            if let SourceEffectParameter::Reference { reference, .. } = parameter {
+                check_reference(reference, context)?;
+            }
             if let Some(header) = &header {
-                header.admit_effect_reference(field, reference, context)?;
+                header.admit_source_parameter(field, parameter, context)?;
             }
             Ok(())
         };
-        effects.visit_predicate_parameters(predicate, context, &mut |reference, context| {
-            admit(ConstraintEffectField::Predicate, reference, context)
-        })?;
+        effects.visit_predicate_source_parameters(
+            predicate,
+            context,
+            &mut |parameter, context| admit(ConstraintEffectField::Predicate, parameter, context),
+        )?;
         if let PreparedEffectPredicate::Canonical(predicate) = predicate
             && predicate.is_impossible()
         {
             return Err(crate::types::constraints::TypeConstraintRejection::Mismatch.into());
         }
-        effects.visit_row_parameters(row, context, &mut |reference, context| {
-            admit(ConstraintEffectField::Row, reference, context)
+        effects.visit_row_source_parameters(row, context, &mut |parameter, context| {
+            admit(ConstraintEffectField::Row, parameter, context)
         })?;
         Ok(header.map(AdmittedConstraintFunctionHeader))
     }
@@ -241,14 +265,14 @@ impl<'a, D: ConstraintDomain> ConstraintFunctionHeaderView<'a, D> {
         effects: PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        effects.visit_row_parameters(self.row(), context, &mut |reference, context| {
-            self.admit_effect_reference(ConstraintEffectField::Row, reference, context)
+        effects.visit_row_source_parameters(self.row(), context, &mut |parameter, context| {
+            self.admit_source_parameter(ConstraintEffectField::Row, parameter, context)
         })?;
-        effects.visit_predicate_parameters(
+        effects.visit_predicate_source_parameters(
             self.predicate(),
             context,
-            &mut |reference, context| {
-                self.admit_effect_reference(ConstraintEffectField::Predicate, reference, context)
+            &mut |parameter, context| {
+                self.admit_source_parameter(ConstraintEffectField::Predicate, parameter, context)
             },
         )?;
         Ok(())

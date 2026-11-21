@@ -269,6 +269,7 @@ impl<'a> Reachable<'a> {
                     RowTerm::Application {
                         function,
                         arguments,
+                        ..
                     } => {
                         self.push(
                             Dependency::Function(

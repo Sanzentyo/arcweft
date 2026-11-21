@@ -268,6 +268,7 @@ impl CanonicalReplay<'_> {
                 RowTerm::Application {
                     function,
                     arguments,
+                    ..
                 } => {
                     let definition = principal.graph.function(function)?;
                     let mut substitutions = BTreeMap::new();

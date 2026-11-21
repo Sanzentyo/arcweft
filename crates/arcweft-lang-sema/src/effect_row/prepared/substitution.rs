@@ -168,14 +168,19 @@ where
                 RowTerm::Application {
                     function,
                     arguments,
+                    authority,
                 } => {
                     let mut mapped = Vec::new();
                     for argument in arguments {
                         self.charge(DecisionWork::Node)?;
                         mapped.push(self.read_row(argument)?);
                     }
-                    self.graph
-                        .apply_function(function.clone(), mapped, self.control)?
+                    self.graph.apply_function_with_authority(
+                        function.clone(),
+                        mapped,
+                        *authority,
+                        self.control,
+                    )?
                 }
                 RowTerm::Union(children) => {
                     let mut mapped = Vec::new();
@@ -433,8 +438,7 @@ impl PreparedEffectTermEdit<'_> {
         result
     }
 
-    /// Instantiate an already declared unknown in the same atomic term edit
-    /// as the transport of its actual captured inputs.
+    #[cfg(test)]
     pub(crate) fn unknown_application<C: DecisionControl>(
         &mut self,
         function: &PreparedEffectUnknownRef,
@@ -445,6 +449,29 @@ impl PreparedEffectTermEdit<'_> {
             return Err(PreparedEffectInvariant::TermEditState.into());
         }
         let result = self.graph.unknown_application(function, arguments, control);
+        if result.is_err() {
+            self.invalidate();
+        }
+        result
+    }
+
+    /// Instantiate a registered unknown using its introduction dependencies.
+    /// Source admission checks each actual against its formal after rewrites.
+    pub(crate) fn introduction_application<C: DecisionControl>(
+        &mut self,
+        function: &PreparedEffectUnknownRef,
+        arguments: Vec<PreparedEffectRow>,
+        control: &mut C,
+    ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
+        if !matches!(self.state, TermEditState::Open) {
+            return Err(PreparedEffectInvariant::TermEditState.into());
+        }
+        let result = self.graph.apply_function_with_authority(
+            FunctionRef::Unknown(function.clone()),
+            arguments,
+            ApplicationArgumentAuthority::Introduction,
+            control,
+        );
         if result.is_err() {
             self.invalidate();
         }

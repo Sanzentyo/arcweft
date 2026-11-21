@@ -573,6 +573,7 @@ impl PrincipalEffectClosure {
         let RowTerm::Application {
             function,
             arguments,
+            ..
         } = self.graph.row(reference)?
         else {
             return Ok(None);

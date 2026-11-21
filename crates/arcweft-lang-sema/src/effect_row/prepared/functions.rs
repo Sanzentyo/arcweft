@@ -259,7 +259,34 @@ impl PreparedEffectGraph {
         arguments: Vec<PreparedEffectRow>,
         control: &mut C,
     ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
-        if self.function(&function)?.parameters().len() != arguments.len() {
+        self.apply_function_with_authority(
+            function,
+            arguments,
+            ApplicationArgumentAuthority::Explicit,
+            control,
+        )
+    }
+
+    pub(super) fn apply_function_with_authority<C: DecisionControl>(
+        &mut self,
+        function: FunctionRef,
+        arguments: Vec<PreparedEffectRow>,
+        authority: ApplicationArgumentAuthority,
+        control: &mut C,
+    ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
+        let definition = self.function(&function)?;
+        if authority == ApplicationArgumentAuthority::Introduction
+            && !matches!(
+                definition,
+                Function::Unknown {
+                    origin: Some(_),
+                    ..
+                }
+            )
+        {
+            return Err(PreparedEffectInvariant::ParameterContract.into());
+        }
+        if definition.parameters().len() != arguments.len() {
             return Err(PreparedEffectInvariant::ApplicationArity.into());
         }
         for row in &arguments {
@@ -272,6 +299,7 @@ impl PreparedEffectGraph {
             RowTerm::Application {
                 function,
                 arguments: arguments.into_boxed_slice(),
+                authority,
             },
             control,
         )

@@ -85,6 +85,7 @@ impl PreparedEffectDeclaration {
             RowTerm::Application {
                 function: FunctionRef::Scheme(reference),
                 arguments,
+                ..
             } if reference == self.scheme() => {
                 if arguments.len() != self.parameters().len() {
                     return Err(PreparedEffectInvariant::ApplicationArity);

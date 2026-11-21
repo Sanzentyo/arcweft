@@ -76,7 +76,7 @@ impl ConstraintEffectFunction {
             };
             arguments.push(argument);
         }
-        let application = edit.unknown_application(&function, arguments, context)?;
+        let application = edit.introduction_application(&function, arguments, context)?;
         edit.commit()?;
         Ok(Self {
             function,

@@ -169,6 +169,7 @@ impl<'s, 'w, 'c, C: DecisionControl> Evaluator<'s, 'w, 'c, C> {
                 RowTerm::Application {
                     function,
                     arguments,
+                    ..
                 } => {
                     let declared = self.source.graph.function(function)?;
                     if arguments.len() != declared.parameters().len() {

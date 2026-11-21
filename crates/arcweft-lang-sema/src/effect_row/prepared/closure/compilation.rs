@@ -240,6 +240,7 @@ impl<'a> Compilation<'a> {
         let RowTerm::Application {
             function: local @ FunctionRef::Unknown(_),
             arguments: actual_arguments,
+            ..
         } = self.graph.row(actual)?
         else {
             return Ok(None);
@@ -247,6 +248,7 @@ impl<'a> Compilation<'a> {
         let RowTerm::Application {
             function: imported @ FunctionRef::Imported(_),
             arguments: permitted_arguments,
+            ..
         } = self.graph.row(permitted)?
         else {
             return Ok(None);
@@ -432,6 +434,7 @@ impl<'a> Compilation<'a> {
             RowTerm::Application {
                 function,
                 arguments,
+                ..
             } => {
                 let mut compiled = Vec::new();
                 let mut admitted = Decision::constant(true);

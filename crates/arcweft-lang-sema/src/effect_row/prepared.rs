@@ -23,7 +23,7 @@ mod closure;
 mod declaration;
 mod read;
 mod relation;
-pub(crate) use read::PreparedEffectReadView;
+pub(crate) use read::{PreparedEffectReadView, SourceEffectParameter};
 pub(crate) use scoped::PreparedEffectScopedConstraint;
 mod constraints;
 use relation::PreparedEffectDefinitions;
@@ -172,8 +172,8 @@ impl PreparedEffectRow {
             return false;
         };
         matches!((left.1.as_deref(), right.1.as_deref()), (
-            Some(RowTerm::Application { function: FunctionRef::Scheme(left), arguments: left_arguments }),
-            Some(RowTerm::Application { function: FunctionRef::Scheme(right), arguments: right_arguments }),
+            Some(RowTerm::Application { function: FunctionRef::Scheme(left), arguments: left_arguments, .. }),
+            Some(RowTerm::Application { function: FunctionRef::Scheme(right), arguments: right_arguments, .. }),
         ) if left == right && left_arguments == right_arguments)
     }
 }
@@ -379,6 +379,7 @@ enum RowTerm {
     Application {
         function: FunctionRef,
         arguments: Box<[PreparedEffectRow]>,
+        authority: ApplicationArgumentAuthority,
     },
     Substitution {
         formula: EffectFormula<GenericEffectReference>,
@@ -390,6 +391,12 @@ enum RowTerm {
         yes: PreparedEffectRow,
         no: PreparedEffectRow,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ApplicationArgumentAuthority {
+    Explicit,
+    Introduction,
 }
 
 enum RowChildren<'a> {

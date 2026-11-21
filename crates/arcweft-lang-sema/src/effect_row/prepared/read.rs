@@ -4,6 +4,7 @@ use super::*;
 use super::{scoped::ScopedObligation, transaction::PreparedEffectDeltaData};
 
 mod parameters;
+pub(crate) use parameters::SourceEffectParameter;
 
 pub(super) mod dependencies;
 mod freeze;
@@ -98,6 +99,7 @@ impl<'a> PreparedEffectReadView<'a> {
                     Ok(RowTerm::Application {
                         function: FunctionRef::Unknown(unknown),
                         arguments,
+                        ..
                     }) => {
                         return arguments.is_empty() && self.validate_unknown(unknown).is_ok();
                     }

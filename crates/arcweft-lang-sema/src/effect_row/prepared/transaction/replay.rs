@@ -580,12 +580,14 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
                 RowTerm::Application {
                     function: left,
                     arguments: left_arguments,
+                    authority: left_authority,
                 },
                 RowTerm::Application {
                     function: right,
                     arguments: right_arguments,
+                    authority: right_authority,
                 },
-            ) => {
+            ) if left_authority == right_authority => {
                 self.push(Pair::Function(left, right))?;
                 self.row_slice(left_arguments, right_arguments)?
             }

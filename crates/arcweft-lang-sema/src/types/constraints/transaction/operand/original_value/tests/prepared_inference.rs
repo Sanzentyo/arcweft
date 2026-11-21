@@ -218,6 +218,74 @@ fn a_final_header_projects_the_actual_function_beneath_its_local_binder() {
 }
 
 #[test]
+fn a_header_checks_the_introduction_and_any_explicit_application_arguments() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let (source, path, key) = parent(&mut context, &mut graph, 98_608);
+    let captured = source.rigid_scope().effects[0].clone();
+    let lease = path
+        .applications
+        .import_parameters(&[key.clone().into()], &mut context)
+        .unwrap();
+    let original = context.fixture_original_context(Some(&lease)).unwrap();
+    let operand = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
+        &input(key.clone()),
+        Arc::new(original.gamma().clone()),
+        original,
+        &mut ConstraintEffectPhase::new(&mut graph),
+        &mut context,
+    )
+    .unwrap();
+    let TypeKind::Function { effects, .. } = operand.value.as_ref() else {
+        unreachable!()
+    };
+    let inherited = effects.clone();
+    let function = path.applications.effect_function(&key).unwrap();
+    let explicit = graph
+        .unknown_application(
+            function,
+            vec![PreparedEffectRow::Canonical(EffectRow::open(
+                EffectSet::new(),
+                captured.clone(),
+            ))],
+            &mut context,
+        )
+        .unwrap();
+    let replacement = GenericEffectReference::Free(GenericEffectParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(98_609)),
+        0,
+    ));
+    let mut edit = graph.edit_terms();
+    let rewritten = edit
+        .map_row_parameters(&inherited, &mut context, &mut |reference, _| {
+            Ok((reference == &captured).then(|| {
+                PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), replacement.clone()))
+            }))
+        })
+        .unwrap();
+    edit.commit().unwrap();
+
+    let without_lease = context.fixture_operand(input(key.clone()));
+    for (mut operand, effects, denied) in [
+        (operand.clone(), explicit, captured),
+        (operand, rewritten, replacement),
+        (without_lease, inherited, key),
+    ] {
+        let TypeKind::Function { effects: row, .. } = Arc::make_mut(&mut operand.value) else {
+            unreachable!()
+        };
+        *row = effects;
+        let children = operand.view().children(&mut context).unwrap();
+        let header = children.function_header().unwrap().unwrap();
+        assert_eq!(
+            header.admit(graph.read(), &mut context),
+            Err(references::effect_out_of_scope(&denied)),
+        );
+    }
+}
+
+#[test]
 fn source_inference_uses_its_actual_application_beneath_local_binders() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
