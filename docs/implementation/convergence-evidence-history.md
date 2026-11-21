@@ -21068,3 +21068,24 @@ CLI の lib／bin 196件と統合6対象30件はすべてPASS。全 `check` テ�
 `main` で Source `dd7b05b7f2db62d5f8bf19b77b5a342ae702d10b` を公開した。公開先のrefとfetchしたSHA、および変更したSemaの17ファイルのblobを照合した。Sourceの公開時点で、作業ツリーにはこの履歴と現状一覧の更新、および既存の未追跡 `%SystemDrive%/` があった。
 
 [検証原本](acceptance-evidence/task-declared-rigid-capture-authority.raw.zip) は63項目、1,226,500 bytes、SHA256 `52e22041cd80370f33d5c6da1b3f38b84980626aa5c2cc014ca042372206496c`。全項目の長さとSHA256を照合した。検証後の `target` は136,007,753,418 bytes。
+
+<a id="introduced-effect-applications"></a>
+## 2026-11-21 — 局所関数ヘッダーで推論関数の依存引数を検査
+
+検証基点は `866e4d03a9675f79e6023b29c5c34affd45b9103`。[先行実測](#declared-rigid-capture-authority)では、ヘッダーに移送した親の推論関数を閉じる前に、その依存引数を子の直接参照として照合し、`ForeignVariable` で拒否した。
+
+ソース `228136cb0a6104bb03c5765cefd596f473454802` は、推論関数の導入時に作った適用を効果グラフに記録する。ヘッダーの効果行と述語は導入元を照合し、実引数が元の形式引数に対応する固定参照を借りる。明示実引数と置換が加えた参照には通常の出自検査を適用する。実引数は引き続き有効な推論分岐でも検査する。局所 binder の下で外側参照の深さが1になること、結果の証明が実際の関数を保持すること、親の固定参照を結果の直接利用へ渡さないことを既存の回帰で確認した。新規の回帰は同じ引数を指定した明示適用、別の固定参照への置換、導入権限を借りていないヘッダーの3件を拒否した。
+
+初回の逆依存実行は4,334件中4,267 PASS／67 FAIL、別に1 SKIP。対象の既存テストがFAILからPASSへ変わり、新規テストがPASSした一方、正当なスキームを開くテスト `a_scheme_opening_requires_its_original_effect_predicate_in_the_parameter_contract` が `ForeignVariable` で新たに失敗した。初回ソースだけでの公開は保留し、その版のCLIビルドは中断した。
+
+最終ソース `f368f95dd4e980c369061f1cb10c8cac0c51c528` では、スキームを開いた操作が実際に発行した推論関数を、元のスキームの固定参照と併せて照合する。元の効果述語を失ったスキームを拒否し、元の述語を保持するスキームが通過した。対象62件では61 PASS／1既知FAIL。既知失敗は、局所 binder の移送後に保持した述語と正準述語を直接比較するケースで、先行実行でも同じ箇所で失敗した。
+
+最終版はCargoで解決した逆依存22パッケージを対象にした。CLI以外の21パッケージでは4,334件実行し、4,268 PASS／66既知FAIL、別に1 SKIP。[先行実行](#declared-rigid-capture-authority)とのテストID照合で、既存のヘッダー回帰1件がFAILからPASSに変わり、新規テスト1件がPASSした。スキームの回帰は解消し、最終版の新規失敗は0件だった。workspaceの全ターゲット・全機能のcheckとClippy、変更Rustファイルの書式、構造ゲートを通過した。構造ゲートのブロッキング違反は0件。
+
+CLIのlib／bin 196件と統合6対象30件はすべてPASS。再構築した `arcw.exe` のSHA256は `9f96b3ee3adc8b6e532d9cf442474e4eaecb858ea3161d1f96e4ff2ca8d318aa`。公開済みの5入力をSHA256で照合し、VM／AOT／AWBC Productで計14回実行した。すべて42を返し、1ステップ最大1操作、診断とアサーション失敗0件を確認した。ステップ数とログは先行実測と一致した。
+
+コンテナの確認では、新旧CLIで同一の10入力をVMで実行した。`Vec` に入れた型注釈付き・なしのlambdaと名前付き関数、配列のliteralと反復は、callbackの効果行を省略すると `sema.call.no_viable_signature`。直接渡したcallback、要素型に `fs.write` を明記した2つの `Vec`、数値の `Vec` は42を返した。callbackを含むタプルは `compiler.runtime_semantic_projection` で未確定効果行を拒否した。旧CLIの `Vec` のデバッガ実測では、`checked_bracket_sequence_expression` が確定済みと扱われた期待型を `source_type_accepts` で照合し、効果行の観測後に呼出し候補をロールバックした。
+
+`main` を通常の fast-forward で更新し、公開先のfull SHA、fetchしたコミット、変更した16ファイルのblobを照合した。公開時のローカル作業ツリーには既存の未追跡 `%SystemDrive%/` があった。
+
+[検証原本](acceptance-evidence/task-introduced-effect-application.raw.zip) は95項目、1,384,261 bytes、SHA256 `d6d7851221159a7ddcc3f2e23f13f097ec7cf149ae797c1848f95c5774f1ba5a`。全項目の長さとSHA256を照合した。検証後の `target` は136,046,591,238 bytes。
