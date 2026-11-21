@@ -102,19 +102,7 @@ impl<D: ConstraintDomain> PreparedConstraintFunctionScheme<D> {
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(ConstraintPath<D>, ConstraintOperand<D>), TypeConstraintError> {
-        context.with_effect_transaction(graph, |context, graph| {
-            self.instantiate_in(expected_source, path, key, graph, context)
-        })
-    }
-
-    fn instantiate_in<A: TypeConstraintAccounting>(
-        self,
-        expected_source: &Arc<ConstraintOperand<D>>,
-        mut path: ConstraintPath<D>,
-        key: Arc<D::Projection>,
-        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(ConstraintPath<D>, ConstraintOperand<D>), TypeConstraintError> {
+        context.check_cancelled()?;
         if !Arc::ptr_eq(&self.source, expected_source) {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
@@ -122,49 +110,60 @@ impl<D: ConstraintDomain> PreparedConstraintFunctionScheme<D> {
             .source
             .associated_result()
             .ok_or(TypeConstraintInvariant::OriginalProducer)?;
-        let scope = context.application_scope(
+        let original = path
+            .applications
+            .require_application(source_projection.application())?
+            .original_context()
+            .clone();
+        let (output, _) = context.with_application_scope(
+            graph,
+            None,
             self.application,
             self.parameters,
-            path.applications
-                .require_application(source_projection.application())?
-                .original_context()
-                .clone(),
-            graph,
+            original,
+            |context, graph, scope| {
+                let application = scope.id();
+                let path = context.admit_application(path, scope, graph)?;
+                let mut path = TypeConstraintTransaction::prepare_application(
+                    context,
+                    graph,
+                    application,
+                    path,
+                    None,
+                )?;
+                let value = ConstraintOperand::open_template(
+                    &self.template,
+                    &path,
+                    application,
+                    graph,
+                    context,
+                )?;
+                path.lineage.projections.push(Arc::new(ProjectionRequest {
+                    application,
+                    key: Arc::clone(&key),
+                    value,
+                    closure: TypeConstraintProjectionClosure::Closed,
+                    source: Some(source_projection),
+                    input: Some(Arc::clone(&self.source)),
+                    named_effect: None,
+                }));
+                let (value, instance) = ResolvedConstraintResult::resolve(
+                    ConstraintResultProjection { application, key },
+                    &path,
+                    graph,
+                    context,
+                )?;
+                let operand = ConstraintOperand {
+                    value: Arc::new(value),
+                    scope: self.source.shared_scope(),
+                    origin: Arc::new(ConstraintOperandOrigin::FunctionSchemeInstantiation {
+                        instance,
+                        source: self.source,
+                    }),
+                };
+                Ok((path, operand))
+            },
         )?;
-        let application = scope.id();
-        path = context.admit_application(path, scope, graph)?;
-        path = TypeConstraintTransaction::prepare_application(
-            context,
-            graph,
-            application,
-            path,
-            None,
-        )?;
-        let value =
-            ConstraintOperand::open_template(&self.template, &path, application, graph, context)?;
-        path.lineage.projections.push(Arc::new(ProjectionRequest {
-            application,
-            key: Arc::clone(&key),
-            value,
-            closure: TypeConstraintProjectionClosure::Closed,
-            source: Some(source_projection),
-            input: Some(Arc::clone(&self.source)),
-            named_effect: None,
-        }));
-        let (value, instance) = ResolvedConstraintResult::resolve(
-            ConstraintResultProjection { application, key },
-            &path,
-            graph,
-            context,
-        )?;
-        let operand = ConstraintOperand {
-            value: Arc::new(value),
-            scope: self.source.shared_scope(),
-            origin: Arc::new(ConstraintOperandOrigin::FunctionSchemeInstantiation {
-                instance,
-                source: self.source,
-            }),
-        };
-        Ok((path, operand))
+        Ok(output)
     }
 }

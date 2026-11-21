@@ -4,7 +4,7 @@
 //! lives in the sibling `transaction` module and only borrows it per phase.
 
 use crate::effect_row::prepared::{
-    PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
+    PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectReadScope, PreparedEffectRow,
 };
 use crate::types::PreparedEffects;
 
@@ -1531,14 +1531,22 @@ where
         Ok(self.lexical_scope.clone())
     }
 
-    pub(super) fn application_scope(
+    /// Open and use an application under the same graph checkpoint, so a
+    /// failed path admission also rolls back the application's definitions.
+    pub(super) fn with_application_scope<T>(
         &mut self,
+        graph: &mut PreparedEffectGraph,
+        reads: Option<&PreparedEffectReadScope>,
         application: D::Application,
         parameters: TypeConstraintParameterScope,
         original: super::OriginalProducerContext,
-        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
-    ) -> Result<ConstraintApplicationScope<D>, TypeConstraintError> {
-        self.with_effect_transaction(graph, |context, graph| {
+        use_scope: impl FnOnce(
+            &mut Self,
+            &mut PreparedEffectGraph,
+            ConstraintApplicationScope<D>,
+        ) -> Result<T, TypeConstraintError>,
+    ) -> Result<(T, Option<PreparedEffectReadScope>), TypeConstraintError> {
+        self.with_effect_read_scope(graph, reads, |context, graph| {
             use crate::effect_row::prepared::PreparedEffectUnknownEligibility;
             use std::{collections::BTreeMap, sync::Arc};
 
@@ -1647,15 +1655,35 @@ where
                 functions.insert(variable.variable().clone(), binding);
             }
             let predicate = parameters.opened_effect_predicate(graph, context)?;
-            Ok(ConstraintApplicationScope::new(
+            let scope = ConstraintApplicationScope::new(
                 application,
                 parameters,
                 introduction,
                 original,
                 functions,
                 predicate,
-            ))
+            );
+            use_scope(context, graph, scope)
         })
+    }
+
+    #[cfg(test)]
+    pub(super) fn application_scope(
+        &mut self,
+        application: D::Application,
+        parameters: TypeConstraintParameterScope,
+        original: super::OriginalProducerContext,
+        graph: &mut PreparedEffectGraph,
+    ) -> Result<ConstraintApplicationScope<D>, TypeConstraintError> {
+        self.with_application_scope(
+            graph,
+            None,
+            application,
+            parameters,
+            original,
+            |_, _, scope| Ok(scope),
+        )
+        .map(|(scope, _)| scope)
     }
 
     #[cfg(test)]

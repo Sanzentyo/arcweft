@@ -225,15 +225,26 @@ fn rolled_back_application_receipts_stay_stale_after_redeclaration() {
     let original = context.fixture_original_context(None).unwrap();
     let mut stale = None;
     let mut stale_application = None;
-    let failed: Result<(), TypeConstraintError> =
-        context.with_effect_transaction(&mut graph, |context, graph| {
-            let application =
-                context.application_scope((), parameters.clone(), original.clone(), graph)?;
-            stale = application.effect_function(&variable).cloned();
+    let failed = context.with_application_scope(
+        &mut graph,
+        None,
+        (),
+        parameters.clone(),
+        original.clone(),
+        |context, graph, application| {
+            let function = application.effect_function(&variable).unwrap();
+            graph.read().validate_unknown(function)?;
+            stale = Some(function.clone());
             stale_application = Some(application);
-            Err(TypeConstraintAbort::Cancelled.into())
-        });
-    assert!(failed.is_err());
+            cancellation.store(true, std::sync::atomic::Ordering::Release);
+            context.check_cancelled()
+        },
+    );
+    assert!(matches!(
+        failed,
+        Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
+    ));
+    cancellation.store(false, std::sync::atomic::Ordering::Release);
     assert_eq!(
         graph.read().validate_unknown(stale.as_ref().unwrap()),
         Err(PreparedEffectInvariant::StaleReference)

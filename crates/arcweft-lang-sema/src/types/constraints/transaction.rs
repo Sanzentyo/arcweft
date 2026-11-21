@@ -1341,11 +1341,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let result = (|| {
             let reads =
                 context.compose_effect_reads(graph, nested.path.lineage.effect_read_scope())?;
-            let (mut transaction, reads) =
-                context.with_effect_read_scope(graph, reads.as_ref(), |context, graph| {
-                    original.validate_imported_in(&nested.path.applications, context)?;
-                    let scope =
-                        context.application_scope(application, parameters, original, graph)?;
+            original.validate_imported_in(&nested.path.applications, context)?;
+            let (mut transaction, reads) = context.with_application_scope(
+                graph,
+                reads.as_ref(),
+                application,
+                parameters,
+                original,
+                |context, graph, scope| {
                     let application = scope.id();
                     let path = context.admit_application(nested.path, scope, graph)?;
                     Self::from_path_with_parent(
@@ -1356,7 +1359,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         inherited.as_ref(),
                         Some(nested.receipt),
                     )
-                })?;
+                },
+            )?;
             transaction.frontier[0].lineage.effect_reads = reads;
             Ok(transaction)
         })();
@@ -1414,17 +1418,20 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        match context.with_effect_transaction(graph, |context, graph| {
-            let scope =
-                context.application_scope(application, parameters, original.clone(), graph)?;
-            let application = scope.id();
-            context
-                .start_path_with_imported(scope, imported, original, graph.read())
-                .and_then(|path| {
-                    Self::from_path(context, graph, application, path, inherited.as_ref())
-                })
-        }) {
-            Ok(transaction) => Ok(transaction),
+        match context.with_application_scope(
+            graph,
+            None,
+            application,
+            parameters,
+            original.clone(),
+            |context, graph, scope| {
+                let application = scope.id();
+                let path =
+                    context.start_path_with_imported(scope, imported, original, graph.read())?;
+                Self::from_path(context, graph, application, path, inherited.as_ref())
+            },
+        ) {
+            Ok((transaction, _)) => Ok(transaction),
             Err(error) => Err(match error {
                 TypeConstraintError::Abort(error) => {
                     super::TypeConstraintInitializationFailure::Abort(error)
