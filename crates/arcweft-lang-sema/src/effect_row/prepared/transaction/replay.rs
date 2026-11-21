@@ -84,7 +84,7 @@ struct Replay<'a, 'c, C> {
     base: &'a PreparedEffectGraph,
     left: &'a PreparedEffectDeltaData,
     right: &'a PreparedEffectDeltaData,
-    inputs: Option<&'a PreparedEffectReadScope>,
+    inputs: Option<&'a super::super::scope::ReadScopeData>,
     left_view: PreparedEffectReadView<'a>,
     right_view: PreparedEffectReadView<'a>,
     control: &'c mut C,
@@ -124,11 +124,11 @@ impl PreparedEffectGraph {
         let inputs = left_delta
             .dependencies
             .as_ref()
-            .filter(|scope| !scope.data.layers.is_empty());
+            .filter(|scope| scope.detached().is_some());
         let right_inputs = right_delta
             .dependencies
             .as_ref()
-            .filter(|scope| !scope.data.layers.is_empty());
+            .filter(|scope| scope.detached().is_some());
         let same_inputs = match (inputs, right_inputs) {
             (None, None) => true,
             (Some(left), Some(right)) => left.same_origin(right, control)?,
@@ -141,7 +141,7 @@ impl PreparedEffectGraph {
             base: self,
             left,
             right,
-            inputs,
+            inputs: inputs.and_then(PreparedEffectReadScope::detached),
             left_view,
             right_view,
             control,
@@ -252,14 +252,12 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
         self.base.relation.functions.contains_key(&id)
             || self
                 .inputs
-                .is_some_and(|scope| scope.data.functions.contains_key(&id))
+                .is_some_and(|scope| scope.functions.contains_key(&id))
     }
 
     fn input_choice(&self, id: u64) -> bool {
         self.base.relation.choices.contains(&id)
-            || self
-                .inputs
-                .is_some_and(|scope| scope.data.choices.contains(&id))
+            || self.inputs.is_some_and(|scope| scope.choices.contains(&id))
     }
     fn visit(&mut self) -> Result<(), PreparedEffectFailure<C::Error>> {
         self.control

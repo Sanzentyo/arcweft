@@ -410,7 +410,8 @@ impl PreparedEffectGraph {
             inputs: self
                 .active_scope
                 .as_ref()
-                .map(|scope| Arc::clone(&scope.input.data.ids)),
+                .and_then(|scope| scope.input.detached())
+                .map(|data| Arc::clone(&data.ids)),
             functions,
             obligations: self
                 .relation
@@ -460,7 +461,14 @@ impl PreparedEffectGraph {
         if self.checkpoints.is_empty() {
             self.journal.clear();
         }
-        let dependencies = self.active_scope.as_ref().map(|scope| scope.input.clone());
+        // The delta already owns this issuer and base. A live read at that
+        // same revision adds no definitions or ancestry to its permit.
+        let dependencies = self
+            .active_scope
+            .as_ref()
+            .map(|scope| &scope.input)
+            .filter(|input| !input.is_live_at(delta.base))
+            .cloned();
         self.leave_checkpoint_scope(checkpoint);
         Ok(PreparedEffectDelta {
             data: Arc::new(delta),
@@ -584,41 +592,44 @@ impl PreparedEffectGraph {
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
         let mut witnessed = BTreeSet::from([self.state]);
-        let super::scope::ReadScopeData {
-            functions,
-            rows,
-            predicates,
-            choices,
-            mut layers,
-            ..
-        } = self.delta_scope_data(ordered.values().copied(), control, |delta, control| {
-            if !witnessed.contains(&delta.data.base) {
-                return Err(PreparedEffectInvariant::DeltaBase.into());
-            }
-            if let Some(scope) = &delta.dependencies {
-                scope.validate_ancestry(self, |base| witnessed.contains(&base), control)?;
-            }
-            Self::charge_delta_contents(delta, control)?;
-            for &state in delta
-                .data
-                .ancestors
-                .iter()
-                .chain(std::iter::once(&delta.data.result))
-            {
-                control
-                    .charge(DecisionWork::Node)
-                    .map_err(PreparedEffectFailure::Control)?;
-                witnessed.insert(state);
-            }
-            Ok(())
-        })?;
+        let detached =
+            self.delta_scope_data(ordered.values().copied(), control, |delta, control| {
+                if !witnessed.contains(&delta.data.base) {
+                    return Err(PreparedEffectInvariant::DeltaBase.into());
+                }
+                if let Some(scope) = &delta.dependencies {
+                    scope.validate_ancestry(self, |base| witnessed.contains(&base), control)?;
+                }
+                Self::charge_delta_contents(delta, control)?;
+                for &state in delta
+                    .data
+                    .ancestors
+                    .iter()
+                    .chain(std::iter::once(&delta.data.result))
+                {
+                    control
+                        .charge(DecisionWork::Node)
+                        .map_err(PreparedEffectFailure::Control)?;
+                    witnessed.insert(state);
+                }
+                Ok(())
+            })?;
         // The publication assembles a new set of indexes. Only a retained
         // read scope shares them with its successors.
-        let mut functions = Arc::into_inner(functions).expect("new function index");
-        let mut rows = Arc::into_inner(rows).expect("new row index");
-        let mut predicates = Arc::into_inner(predicates).expect("new predicate index");
-        let mut choices = Arc::into_inner(choices).expect("new choice index");
-        let inherited = self.active_scope.as_ref().map(|scope| &scope.input.data);
+        let (mut functions, mut rows, mut predicates, mut choices, mut layers) = detached
+            .map_or_else(Default::default, |data| {
+                (
+                    Arc::into_inner(data.functions).expect("new function index"),
+                    Arc::into_inner(data.rows).expect("new row index"),
+                    Arc::into_inner(data.predicates).expect("new predicate index"),
+                    Arc::into_inner(data.choices).expect("new choice index"),
+                    data.layers,
+                )
+            });
+        let inherited = self
+            .active_scope
+            .as_ref()
+            .and_then(|scope| scope.input.detached());
         for id in layers.keys() {
             control
                 .charge(DecisionWork::Visit)
@@ -649,18 +660,20 @@ impl PreparedEffectGraph {
                 .charge(DecisionWork::Node)
                 .map_err(PreparedEffectFailure::Control)?;
         }
-        if let Some(inherited) = inherited {
-            // Inherited reads already belong to the target checkpoint. Import
-            // only writes authorized by the supplied permits into its journal.
+        if self.active_scope.is_some() {
+            // The live overlay also belongs to the target checkpoint when
+            // its input scope has no detached layers.
             let target = self.read();
             functions.retain(|id, function| {
                 !target
                     .function_definition(*id)
                     .is_some_and(|before| Arc::ptr_eq(before, function))
             });
-            rows.retain(|id, _| !inherited.rows.contains_key(id));
-            predicates.retain(|id, _| !inherited.predicates.contains_key(id));
-            choices.retain(|id| !inherited.choices.contains(id));
+            if let Some(inherited) = inherited {
+                rows.retain(|id, _| !inherited.rows.contains_key(id));
+                predicates.retain(|id, _| !inherited.predicates.contains_key(id));
+                choices.retain(|id| !inherited.choices.contains(id));
+            }
             layers.retain(|id, _| permits.contains(id));
         }
         let (result, next_state) = if layers.is_empty() {

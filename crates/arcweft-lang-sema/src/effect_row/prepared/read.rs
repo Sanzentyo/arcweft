@@ -22,7 +22,7 @@ pub(crate) struct PreparedEffectReadView<'a> {
     relation: &'a PreparedEffectDefinitions,
     scope: Option<&'a scope::ActiveEffectScope>,
     extracted: Option<&'a PreparedEffectDeltaData>,
-    dependencies: Option<&'a PreparedEffectReadScope>,
+    dependencies: Option<&'a scope::ReadScopeData>,
 }
 
 impl PreparedEffectGraph {
@@ -45,7 +45,10 @@ impl PreparedEffectGraph {
             relation: &self.relation,
             scope: self.active_scope.as_ref(),
             extracted: Some(&delta.data),
-            dependencies: delta.dependencies.as_ref(),
+            dependencies: delta
+                .dependencies
+                .as_ref()
+                .and_then(PreparedEffectReadScope::detached),
         })
     }
 
@@ -59,7 +62,7 @@ impl PreparedEffectGraph {
         scope.validate(self, control)?;
         scope.require_enclosing(self.active_scope.as_ref(), control)?;
         Ok(PreparedEffectReadView {
-            dependencies: Some(scope),
+            dependencies: scope.detached(),
             ..self.read()
         })
     }
@@ -137,12 +140,13 @@ impl<'a> PreparedEffectReadView<'a> {
             .chain(
                 self.scope
                     .into_iter()
-                    .flat_map(|scope| scope.input.data.functions.keys()),
+                    .filter_map(|scope| scope.input.detached())
+                    .flat_map(|data| data.functions.keys()),
             )
             .chain(
                 self.dependencies
                     .into_iter()
-                    .flat_map(|scope| scope.data.functions.keys()),
+                    .flat_map(|data| data.functions.keys()),
             )
             .chain(
                 self.extracted
@@ -210,13 +214,11 @@ impl<'a> PreparedEffectReadView<'a> {
         self.extracted
             .and_then(|delta| delta.functions.get(&id))
             .or_else(|| self.scope.and_then(|scope| scope.functions.get(&id)))
-            .or_else(|| {
-                self.dependencies
-                    .and_then(|scope| scope.data.functions.get(&id))
-            })
+            .or_else(|| self.dependencies.and_then(|data| data.functions.get(&id)))
             .or_else(|| {
                 self.scope
-                    .and_then(|scope| scope.input.data.functions.get(&id))
+                    .and_then(|scope| scope.input.detached())
+                    .and_then(|data| data.functions.get(&id))
             })
             .or_else(|| self.relation.functions.get(&id))
     }
@@ -227,9 +229,13 @@ impl<'a> PreparedEffectReadView<'a> {
     ) -> Option<&'a Arc<RowTerm>> {
         self.extracted
             .and_then(|delta| delta.rows.get(&id))
-            .or_else(|| self.dependencies.and_then(|scope| scope.data.rows.get(&id)))
+            .or_else(|| self.dependencies.and_then(|data| data.rows.get(&id)))
             .or_else(|| self.relation.rows.get(&id))
-            .or_else(|| self.scope.and_then(|scope| scope.input.data.rows.get(&id)))
+            .or_else(|| {
+                self.scope
+                    .and_then(|scope| scope.input.detached())
+                    .and_then(|data| data.rows.get(&id))
+            })
     }
 
     pub(in crate::effect_row::prepared) fn predicate_definition(
@@ -238,14 +244,12 @@ impl<'a> PreparedEffectReadView<'a> {
     ) -> Option<&'a Arc<PredicateTerm>> {
         self.extracted
             .and_then(|delta| delta.predicates.get(&id))
-            .or_else(|| {
-                self.dependencies
-                    .and_then(|scope| scope.data.predicates.get(&id))
-            })
+            .or_else(|| self.dependencies.and_then(|data| data.predicates.get(&id)))
             .or_else(|| self.relation.predicates.get(&id))
             .or_else(|| {
                 self.scope
-                    .and_then(|scope| scope.input.data.predicates.get(&id))
+                    .and_then(|scope| scope.input.detached())
+                    .and_then(|data| data.predicates.get(&id))
             })
     }
 
@@ -254,11 +258,12 @@ impl<'a> PreparedEffectReadView<'a> {
             .is_some_and(|delta| delta.choices.contains(&id))
             || self
                 .dependencies
-                .is_some_and(|scope| scope.data.choices.contains(&id))
+                .is_some_and(|data| data.choices.contains(&id))
             || self.relation.choices.contains(&id)
             || self
                 .scope
-                .is_some_and(|scope| scope.input.data.choices.contains(&id))
+                .and_then(|scope| scope.input.detached())
+                .is_some_and(|data| data.choices.contains(&id))
     }
 
     pub(in crate::effect_row::prepared) fn validate_choice(

@@ -326,15 +326,15 @@ fn selected_sources_at_different_live_bases_compose_without_reading_siblings() {
         view.validate_retained_row(&sibling.row),
         Err(PreparedEffectInvariant::StaleReference)
     );
-    assert_eq!(reads.data.layers.len(), 2);
+    assert_eq!(reads.layer_count(), 2);
     let recomposed = graph
         .compose_read_scopes([&first_reads, &reads, &second_reads], &mut work)
         .unwrap();
-    assert!(Arc::ptr_eq(&recomposed.data, &reads.data));
+    assert!(recomposed.same_selection(&reads));
     let contained = graph
         .compose_read_scopes([&reads, &first_reads, &second_reads], &mut Budget(7))
         .unwrap();
-    assert!(Arc::ptr_eq(&contained.data, &reads.data));
+    assert!(contained.same_selection(&reads));
 
     let mut abandoned = graph.checkpoint(&mut work).unwrap();
     graph.changed(&mut work).unwrap();
@@ -604,7 +604,7 @@ fn unchanged_computation_reuses_reads_with_only_a_closing_visit() {
                 Err(PreparedEffectFailure::Control(Exhausted))
             ));
             let (row, reads) = graph.compute_in_read_scope(&input, &mut Budget(4), read)?;
-            assert!(Arc::ptr_eq(&reads.data, &input.data));
+            assert!(reads.same_selection(&input));
             graph.read().validate_retained_row(&row)?;
             Ok::<_, PreparedEffectFailure<Exhausted>>(())
         })
@@ -612,6 +612,72 @@ fn unchanged_computation_reuses_reads_with_only_a_closing_visit() {
 
     assert_eq!(graph.next_delta, next_delta);
     assert_base(&graph, base);
+}
+
+#[test]
+fn live_reads_keep_the_exact_issuer_and_base_without_a_detached_layer() {
+    let mut graph = PreparedEffectGraph::default();
+    let foreign = PreparedEffectGraph::default();
+    let mut work = budget();
+    let mut checkpoint = graph.checkpoint(&mut work).unwrap();
+    let empty = graph.extract_delta(&mut checkpoint, &mut work).unwrap();
+    assert!(matches!(
+        graph.read_scope([&empty], &mut Budget(1)),
+        Err(PreparedEffectFailure::Control(Exhausted))
+    ));
+    let reads = graph.read_scope([&empty], &mut Budget(2)).unwrap();
+    assert!(reads.detached().is_none());
+    assert!(matches!(
+        foreign.read_scoped(&reads, &mut Budget(1)),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ForeignIssuer
+        ))
+    ));
+
+    let mut edit = graph.edit_scope(&reads, &mut work).unwrap();
+    let choice = edit.choice(&mut work).unwrap();
+    let delta = edit.finish(&mut work).unwrap();
+    assert!(delta.publishes_without_read_scope());
+    assert_eq!(
+        graph.read().validate_choice(&choice),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+
+    let mut restore = graph.checkpoint(&mut work).unwrap();
+    graph.restore_delta(delta, &mut work).unwrap();
+    graph.read().validate_choice(&choice).unwrap();
+    assert!(matches!(
+        graph.read_scoped(&reads, &mut Budget(1)),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::DeltaBase
+        ))
+    ));
+    graph.rollback(&mut restore).unwrap();
+    graph.read_scoped(&reads, &mut Budget(1)).unwrap();
+}
+
+#[test]
+fn live_only_scope_publication_does_not_journal_a_definition_already_in_view() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let scheme = graph
+        .declare(vec![], EffectPredicate::unconstrained(), &mut work)
+        .unwrap();
+    let id = graph.validate(&scheme.0).unwrap();
+    let reads = graph.read_scope([], &mut Budget(1)).unwrap();
+    let edit = graph.edit_scope(&reads, &mut work).unwrap();
+    let mut redundant = edit.graph.checkpoint(&mut work).unwrap();
+    let definition = Arc::clone(edit.read().function_definition(id).unwrap());
+    edit.graph.publish_function(id, Arc::clone(&definition));
+    let delta = edit.graph.extract_delta(&mut redundant, &mut work).unwrap();
+    assert!(delta.has_writes());
+    let frontier = edit.graph.journal.len();
+    edit.graph.restore_delta(delta, &mut work).unwrap();
+    assert_eq!(edit.graph.journal.len(), frontier);
+    assert!(Arc::ptr_eq(
+        edit.read().function_definition(id).unwrap(),
+        &definition
+    ));
 }
 
 #[test]
@@ -624,7 +690,7 @@ fn derived_terms_share_unmodified_indexes_and_keep_the_exact_layer() {
     let edit = graph.edit_scope(&input, &mut work).unwrap();
     let empty = edit.finish(&mut work).unwrap();
     let same = graph.read_scope([&empty], &mut work).unwrap();
-    assert!(Arc::ptr_eq(&same.data, &input.data));
+    assert!(same.same_selection(&input));
 
     let mut edit = graph.edit_scope(&input, &mut work).unwrap();
     let predicate = edit
@@ -642,19 +708,19 @@ fn derived_terms_share_unmodified_indexes_and_keep_the_exact_layer() {
         .delta_scope_data([&added], &mut rebuilding, |delta, control| {
             graph.validate_delta_base(delta, control)
         })
-        .map(|data| PreparedEffectReadScope {
-            data: Arc::new(data),
-        })
+        .map(|data| graph.bind_read_scope(data))
         .unwrap();
     let mut extending = budget();
     let available = extending.0;
     let extended = graph.read_scope([&added], &mut extending).unwrap();
     assert!(extending.0 > rebuilding.0);
     assert!(extended.same_origin(&rebuilt, &mut work).unwrap());
-    assert_eq!(extended.data.ids, rebuilt.data.ids);
-    assert!(Arc::ptr_eq(&extended.data.functions, &input.data.functions));
-    assert!(Arc::ptr_eq(&extended.data.rows, &input.data.rows));
-    assert!(Arc::ptr_eq(&extended.data.choices, &input.data.choices));
+    let extended_data = extended.detached().unwrap();
+    let input_data = input.detached().unwrap();
+    assert_eq!(extended_data.ids, rebuilt.detached().unwrap().ids);
+    assert!(Arc::ptr_eq(&extended_data.functions, &input_data.functions));
+    assert!(Arc::ptr_eq(&extended_data.rows, &input_data.rows));
+    assert!(Arc::ptr_eq(&extended_data.choices, &input_data.choices));
     let view = graph.read_scoped(&extended, &mut work).unwrap();
     view.validate_query_roots(&[&source.row], &[&source.predicate, &predicate], &mut work)
         .unwrap();
@@ -816,6 +882,14 @@ fn cancellation_preserves_its_original_cause_and_all_source_publication_permits(
     let base = graph.state;
     let cancelled = std::cell::Cell::new(true);
     let mut control = Cancellation(&cancelled);
+    assert!(matches!(
+        graph.read_scope([], &mut control),
+        Err(PreparedEffectFailure::Control(Cancelled))
+    ));
+    assert!(matches!(
+        graph.compose_read_scopes([], &mut control),
+        Err(PreparedEffectFailure::Control(Cancelled))
+    ));
     assert!(matches!(
         graph.read_scope([&source.delta], &mut control),
         Err(PreparedEffectFailure::Control(Cancelled))

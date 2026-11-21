@@ -10,13 +10,13 @@ type DefinitionIndex<T> = Arc<BTreeMap<u64, Arc<T>>>;
 
 #[derive(Clone, Debug)]
 pub(crate) struct PreparedEffectReadScope {
-    pub(super) data: Arc<ReadScopeData>,
+    issuer: Arc<PreparedEffectIssuer>,
+    base: PreparedEffectStateId,
+    detached: Option<Arc<ReadScopeData>>,
 }
 
 #[derive(Debug)]
 pub(super) struct ReadScopeData {
-    issuer: Arc<PreparedEffectIssuer>,
-    base: PreparedEffectStateId,
     pub(super) ids: Arc<[u64]>,
     pub(super) layers: BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
     pub(super) functions: DefinitionIndex<Function>,
@@ -32,13 +32,35 @@ pub(super) struct ActiveEffectScope {
 }
 
 impl PreparedEffectReadScope {
+    pub(super) fn detached(&self) -> Option<&ReadScopeData> {
+        self.detached.as_deref()
+    }
+
+    pub(super) fn is_live_at(&self, base: PreparedEffectStateId) -> bool {
+        self.base == base && self.detached.is_none()
+    }
+
+    fn layer_count(&self) -> usize {
+        self.detached().map_or(0, |data| data.layers.len())
+    }
+
+    fn same_selection(&self, other: &Self) -> bool {
+        self.base == other.base
+            && Arc::ptr_eq(&self.issuer, &other.issuer)
+            && match (&self.detached, &other.detached) {
+                (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+
     pub(super) fn validate<C: DecisionControl>(
         &self,
         graph: &PreparedEffectGraph,
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         self.validate_issuer(graph, &mut Work(control))?;
-        if self.data.base != graph.state {
+        if self.base != graph.state {
             return Err(PreparedEffectInvariant::DeltaBase.into());
         }
         Ok(())
@@ -50,7 +72,7 @@ impl PreparedEffectReadScope {
         work: &mut Work<'_, C>,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         work.charge(DecisionWork::Visit)?;
-        if !Arc::ptr_eq(&self.data.issuer, &graph.relation.issuer) {
+        if !Arc::ptr_eq(&self.issuer, &graph.relation.issuer) {
             return Err(PreparedEffectInvariant::ForeignIssuer.into());
         }
         Ok(())
@@ -63,7 +85,7 @@ impl PreparedEffectReadScope {
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         self.validate_issuer(graph, &mut Work(control))?;
-        if !graph.retains_state(self.data.base) && !witnessed(self.data.base) {
+        if !graph.retains_state(self.base) && !witnessed(self.base) {
             return Err(PreparedEffectInvariant::DeltaBase.into());
         }
         Ok(())
@@ -87,16 +109,21 @@ impl PreparedEffectReadScope {
         other: &Self,
         work: &mut Work<'_, C>,
     ) -> Result<bool, PreparedEffectFailure<C::Error>> {
-        if Arc::ptr_eq(&self.data, &other.data) {
+        let Some(required) = other.detached() else {
+            return Ok(true);
+        };
+        let Some(selected) = self.detached() else {
+            return Ok(false);
+        };
+        if std::ptr::eq(selected, required) {
             return Ok(true);
         }
-        if self.data.layers.len() < other.data.layers.len() {
+        if selected.layers.len() < required.layers.len() {
             return Ok(false);
         }
-        for (&id, layer) in &other.data.layers {
+        for (&id, layer) in &required.layers {
             work.charge(DecisionWork::Visit)?;
-            if !self
-                .data
+            if !selected
                 .layers
                 .get(&id)
                 .is_some_and(|selected| Arc::ptr_eq(selected, layer))
@@ -112,11 +139,13 @@ impl PreparedEffectReadScope {
         other: &Self,
         control: &mut C,
     ) -> Result<bool, PreparedEffectFailure<C::Error>> {
-        if self.data.layers.len() != other.data.layers.len() {
+        let (Some(left), Some(right)) = (self.detached(), other.detached()) else {
+            return Ok(self.detached.is_none() && other.detached.is_none());
+        };
+        if left.layers.len() != right.layers.len() {
             return Ok(false);
         }
-        for ((left_id, left), (right_id, right)) in self.data.layers.iter().zip(&other.data.layers)
-        {
+        for ((left_id, left), (right_id, right)) in left.layers.iter().zip(&right.layers) {
             control
                 .charge(DecisionWork::Visit)
                 .map_err(PreparedEffectFailure::Control)?;
@@ -129,6 +158,14 @@ impl PreparedEffectReadScope {
 }
 
 impl PreparedEffectGraph {
+    fn bind_read_scope(&self, detached: Option<ReadScopeData>) -> PreparedEffectReadScope {
+        PreparedEffectReadScope {
+            issuer: Arc::clone(&self.relation.issuer),
+            base: self.state,
+            detached: detached.map(Arc::new),
+        }
+    }
+
     /// The scope shares definitions and whole original obligations, not the
     /// affine delta token needed to publish them. Flat layers avoid recursive
     /// ownership chains when a deep sequence of source preparations is dropped.
@@ -145,12 +182,14 @@ impl PreparedEffectGraph {
             && let Some(dependencies) = &delta.dependencies
             && self.can_reuse_read_scope(dependencies)
         {
-            self.validate_delta_base(delta, control)?;
-            return if delta.data.has_transition() {
-                self.extend_read_scope(dependencies, &delta.data, control)
-            } else {
-                Ok(dependencies.clone())
-            };
+            if !delta.data.has_transition() {
+                self.validate_delta_base(delta, control)?;
+                return Ok(dependencies.clone());
+            }
+            if let Some(data) = dependencies.detached() {
+                self.validate_delta_base(delta, control)?;
+                return self.extend_read_scope(data, &delta.data, control);
+            }
         }
         self.delta_scope_data(
             first.into_iter().chain(inputs),
@@ -160,9 +199,7 @@ impl PreparedEffectGraph {
                 self.validate_delta_base(input, control)
             },
         )
-        .map(|data| PreparedEffectReadScope {
-            data: Arc::new(data),
-        })
+        .map(|data| self.bind_read_scope(data))
     }
 
     pub(super) fn delta_scope_data<'a, C: DecisionControl>(
@@ -173,18 +210,30 @@ impl PreparedEffectGraph {
             &'a PreparedEffectDelta,
             &mut C,
         ) -> Result<(), PreparedEffectFailure<C::Error>>,
-    ) -> Result<ReadScopeData, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Option<ReadScopeData>, PreparedEffectFailure<C::Error>> {
+        let mut inputs = inputs.into_iter().peekable();
         let mut layers = BTreeMap::new();
         let mut work = Work(control);
-        if let Some(active) = &self.active_scope {
-            for layer in active.input.data.layers.values() {
+        if let Some(active) = self
+            .active_scope
+            .as_ref()
+            .and_then(|scope| scope.input.detached())
+        {
+            for layer in active.layers.values() {
                 retain_layer(&mut layers, layer, &mut work)?;
             }
+        } else if inputs.peek().is_none() {
+            // Issuing a base-only read still observes the caller's control.
+            work.charge(DecisionWork::Visit)?;
         }
         for input in inputs {
             validate(input, work.0)?;
-            if let Some(dependencies) = &input.dependencies {
-                for layer in dependencies.data.layers.values() {
+            if let Some(dependencies) = input
+                .dependencies
+                .as_ref()
+                .and_then(PreparedEffectReadScope::detached)
+            {
+                for layer in dependencies.layers.values() {
                     retain_layer(&mut layers, layer, &mut work)?;
                 }
             }
@@ -205,6 +254,10 @@ impl PreparedEffectGraph {
         let mut work = Work(control);
         let mut scopes = scopes.into_iter();
         let first = scopes.next();
+        if first.is_none() && self.active_scope.is_none() {
+            work.charge(DecisionWork::Visit)?;
+            return Ok(self.bind_read_scope(None));
+        }
         let mut additional = None;
         if let Some(scope) = first.filter(|scope| self.can_reuse_read_scope(scope)) {
             // This view already authenticated its layers at the current state.
@@ -213,7 +266,7 @@ impl PreparedEffectGraph {
             for next in scopes.by_ref() {
                 next.validate_issuer(self, &mut work)?;
                 work.charge(DecisionWork::Visit)?;
-                if !self.retains_state(next.data.base) || !scope.contains_layers(next, &mut work)? {
+                if !self.retains_state(next.base) || !scope.contains_layers(next, &mut work)? {
                     additional = Some(next);
                     break;
                 }
@@ -227,14 +280,16 @@ impl PreparedEffectGraph {
         let mut reusable: Option<PreparedEffectReadScope> = None;
         let mut retain_scope = |scope: &PreparedEffectReadScope| {
             scope.validate_issuer(self, &mut work)?;
-            self.require_detached_base(scope.data.base, &mut bases, &mut work)?;
-            for layer in scope.data.layers.values() {
-                retain_layer(&mut layers, layer, &mut work)?;
+            self.require_detached_base(scope.base, &mut bases, &mut work)?;
+            if let Some(data) = scope.detached() {
+                for layer in data.layers.values() {
+                    retain_layer(&mut layers, layer, &mut work)?;
+                }
             }
             if self.can_reuse_read_scope(scope)
                 && reusable
                     .as_ref()
-                    .is_none_or(|current| current.data.layers.len() < scope.data.layers.len())
+                    .is_none_or(|current| current.layer_count() < scope.layer_count())
             {
                 reusable = Some(scope.clone());
             }
@@ -252,22 +307,20 @@ impl PreparedEffectGraph {
         // definitions. If the union has the same size, this scope contains
         // every selected layer and has already assembled the current overlay.
         if let Some(scope) = reusable
-            && scope.data.layers.len() == layers.len()
+            && scope.layer_count() == layers.len()
         {
             return Ok(scope);
         }
         self.assemble_read_scope(layers, order, &mut work)
-            .map(|data| PreparedEffectReadScope {
-                data: Arc::new(data),
-            })
+            .map(|data| self.bind_read_scope(data))
     }
 
     fn can_reuse_read_scope(&self, scope: &PreparedEffectReadScope) -> bool {
-        scope.data.base == self.state
+        scope.base == self.state
             && self
                 .active_scope
                 .as_ref()
-                .is_none_or(|active| Arc::ptr_eq(&active.input.data, &scope.data))
+                .is_none_or(|active| active.input.same_selection(scope))
     }
 
     fn require_detached_base<C: DecisionControl>(
@@ -333,7 +386,10 @@ impl PreparedEffectGraph {
         layers: BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
         order: Vec<(PreparedEffectStateId, u64)>,
         work: &mut Work<'_, C>,
-    ) -> Result<ReadScopeData, PreparedEffectFailure<C::Error>> {
+    ) -> Result<Option<ReadScopeData>, PreparedEffectFailure<C::Error>> {
+        if layers.is_empty() {
+            return Ok(None);
+        }
         let mut functions = BTreeMap::<u64, Arc<Function>>::new();
         let mut origins = BTreeMap::<u64, u64>::new();
         let mut rows = BTreeMap::new();
@@ -395,16 +451,14 @@ impl PreparedEffectGraph {
         }
         work.charge(DecisionWork::Node)?;
         work.charge(DecisionWork::Node)?;
-        Ok(ReadScopeData {
-            issuer: Arc::clone(&self.relation.issuer),
-            base: self.state,
+        Ok(Some(ReadScopeData {
             ids: ids.into(),
             layers,
             functions: Arc::new(functions),
             rows: Arc::new(rows),
             predicates: Arc::new(predicates),
             choices: Arc::new(choices),
-        })
+        }))
     }
 
     pub(crate) fn edit_scope<C: DecisionControl>(
@@ -470,11 +524,10 @@ impl PreparedEffectGraph {
     /// there is no function replacement to reconcile against the live graph.
     fn extend_read_scope<C: DecisionControl>(
         &self,
-        input: &PreparedEffectReadScope,
+        old: &ReadScopeData,
         added: &Arc<PreparedEffectDeltaData>,
         control: &mut C,
     ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
-        let old = &input.data;
         if old.ids.last().is_some_and(|id| *id >= added.ordinal) {
             return Err(PreparedEffectInvariant::ReadScopeConflict.into());
         }
@@ -504,18 +557,14 @@ impl PreparedEffectGraph {
         };
         work.charge(DecisionWork::Node)?;
         work.charge(DecisionWork::Node)?;
-        Ok(PreparedEffectReadScope {
-            data: Arc::new(ReadScopeData {
-                issuer: Arc::clone(&old.issuer),
-                base: old.base,
-                ids: ids.into(),
-                layers,
-                functions: Arc::clone(&old.functions),
-                rows,
-                predicates,
-                choices,
-            }),
-        })
+        Ok(self.bind_read_scope(Some(ReadScopeData {
+            ids: ids.into(),
+            layers,
+            functions: Arc::clone(&old.functions),
+            rows,
+            predicates,
+            choices,
+        })))
     }
 }
 

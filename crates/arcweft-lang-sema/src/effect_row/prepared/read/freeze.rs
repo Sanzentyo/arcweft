@@ -263,11 +263,11 @@ impl PreparedEffectReadView<'_> {
         let mut layers = BTreeMap::new();
         for scope in self
             .scope
-            .map(|scope| &scope.input)
+            .and_then(|scope| scope.input.detached())
             .into_iter()
             .chain(self.dependencies)
         {
-            for (&id, layer) in &scope.data.layers {
+            for (&id, layer) in &scope.layers {
                 work.charge(DecisionWork::Visit)?;
                 if let Some(previous) = layers.get(&id) {
                     if !Arc::ptr_eq(previous, layer) {
