@@ -594,30 +594,46 @@ impl<D: ConstraintDomain> ClosedSourceProbeContribution<D> {
         graph: &crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
-        let Some(scope) = D::probe_effect_reads(&self.preparation) else {
-            return Ok(());
-        };
+        let source_reads = D::probe_effect_reads(&self.preparation);
         for alternative in &mut self.alternatives {
-            let value = match alternative.result.term() {
-                SourceProbeTerm::AdmittedValue(value) => value.value(),
-                SourceProbeTerm::Result(result) => {
-                    ResolvedConstraintResult::request(result, &alternative.path)?
-                        .value
-                        .value()
-                }
-                SourceProbeTerm::Value(_) => {
-                    return Err(protocol_error(
-                        TypeConstraintSourceProtocolInvariant::Outcome,
-                    ));
-                }
-                #[cfg(test)]
-                SourceProbeTerm::Type(value) => value,
+            if source_reads.is_none()
+                && matches!(alternative.result.term(), SourceProbeTerm::Result(_))
+            {
+                // A result without new callback reads resolves against the
+                // graph at its own use, after preceding alternatives ran.
+                continue;
+            }
+            let value = if source_reads.is_some() {
+                Some(match alternative.result.term() {
+                    SourceProbeTerm::AdmittedValue(value) => value.value(),
+                    SourceProbeTerm::Result(result) => {
+                        ResolvedConstraintResult::request(result, &alternative.path)?
+                            .value
+                            .value()
+                    }
+                    SourceProbeTerm::Value(_) => {
+                        return Err(protocol_error(
+                            TypeConstraintSourceProtocolInvariant::Outcome,
+                        ));
+                    }
+                    #[cfg(test)]
+                    SourceProbeTerm::Type(value) => value,
+                })
+            } else {
+                None
             };
-            let reads = graph.compose_read_scopes(
-                alternative.path.lineage.effect_reads.iter().chain([scope]),
-                context,
+            let reads = context.compose_effect_reads(
+                graph,
+                alternative
+                    .path
+                    .lineage
+                    .effect_reads
+                    .iter()
+                    .chain(source_reads),
             )?;
-            if !value.constraint_shape().is_closed_leaf() {
+            if let Some(value) = value
+                && !value.constraint_shape().is_closed_leaf()
+            {
                 let roots = crate::types::effect_domain::PreparedTypeEffectRoots::collect(
                     [value],
                     [],
@@ -629,13 +645,14 @@ impl<D: ConstraintDomain> ClosedSourceProbeContribution<D> {
                         TypeConstraintInvariant::Instantiation(error).into()
                     }
                 })?;
-                graph.read_scoped(&reads, context)?.validate_query_roots(
+                let reads = reads.as_ref().expect("the preparation supplied reads");
+                graph.read_scoped(reads, context)?.validate_query_roots(
                     roots.rows(),
                     roots.predicates(),
                     context,
                 )?;
             }
-            alternative.path.lineage.effect_reads = Some(reads);
+            alternative.path.lineage.effect_reads = reads;
         }
         Ok(())
     }
@@ -2159,22 +2176,16 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 operation.active_input = None;
                 for ObservedProbeAlternative { mut path, result } in alternatives {
                     let (actual_term, branch, callback_selection) = result.into_parts();
-                    let (accepted, reads) = context.with_effect_reads(
+                    let (accepted, reads) = with_observed_probe_operand(
+                        actual_term,
+                        &path,
+                        &self.original,
+                        ConstraintSourceReceipt {
+                            input: Arc::clone(&input),
+                        },
                         graph,
-                        path.lineage.effect_read_scope(),
-                        |context, graph| -> Result<_, TypeConstraintError> {
-                            let scope = Arc::new(context.capture_lexical_scope()?);
-                            let actual_operand = resolve_probe_term(
-                                actual_term,
-                                &path,
-                                &scope,
-                                &self.original,
-                                ConstraintSourceReceipt {
-                                    input: Arc::clone(&input),
-                                },
-                                graph,
-                                context,
-                            )?;
+                        context,
+                        |context, actual_operand| {
                             if let Some(actual) = actual_operand.shared_result_observation() {
                                 context.enter_node()?;
                                 observed_results.push(ResolvedResultProbe {
@@ -2737,45 +2748,74 @@ fn projection_error(error: TypeConstraintError) -> TypeConstraintError {
     }
 }
 
-fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
+fn with_observed_probe_operand<A: TypeConstraintAccounting, D: ConstraintDomain, T>(
     term: SourceProbeTerm<D>,
     path: &ConstraintPath<D>,
-    target: &Arc<super::lexical::ConstraintLexicalScope>,
     original: &super::OriginalProducerContext,
     receipt: ConstraintSourceReceipt<D>,
     graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<ConstraintOperand<D>, TypeConstraintError> {
-    match term {
-        SourceProbeTerm::Value(_) => Err(protocol_error(
-            TypeConstraintSourceProtocolInvariant::Outcome,
-        )),
+    accept: impl FnOnce(
+        &mut TypeConstraintContext<'_, A, D>,
+        ConstraintOperand<D>,
+    ) -> Result<T, TypeConstraintError>,
+) -> Result<
+    (
+        T,
+        Option<crate::effect_row::prepared::PreparedEffectReadScope>,
+    ),
+    TypeConstraintError,
+> {
+    context.check_cancelled()?;
+    let reads = path.lineage.effect_read_scope();
+    let actual = match term {
+        SourceProbeTerm::Value(_) => {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Outcome,
+            ));
+        }
         SourceProbeTerm::AdmittedValue(actual) => {
+            // The comparison visits the frames without cloning their inventory.
+            for _ in 0..context.lexical_scope().binders().len() {
+                context.enter_node()?;
+            }
             actual.require_source_receipt(&receipt)?;
-            if actual.scope() != target.as_ref() {
+            if actual.scope() != context.lexical_frames() {
                 return Err(TypeConstraintInvariant::OriginalProducer.into());
             }
-            Ok(actual)
+            actual
         }
         #[cfg(test)]
-        SourceProbeTerm::Type(value) => Ok(ConstraintOperand::source(
+        SourceProbeTerm::Type(value) => ConstraintOperand::source(
             value,
-            Arc::clone(target),
+            Arc::new(context.capture_lexical_scope()?),
             original.clone(),
             receipt,
             ResolvedConstraintSource::Fixture,
-        )),
+        ),
         SourceProbeTerm::Result(result) => {
-            let (actual, result) = ResolvedConstraintResult::resolve(result, path, graph, context)?;
-            Ok(ConstraintOperand::source(
-                actual,
-                Arc::clone(target),
-                original.clone(),
-                receipt,
-                ResolvedConstraintSource::Result(result),
-            ))
+            // Transporting a child's result to this lexical scope can derive
+            // effect terms. Keep transport and selection in the same scope.
+            return context.with_effect_reads(graph, reads, |context, graph| {
+                let scope = Arc::new(context.capture_lexical_scope()?);
+                let (value, result) =
+                    ResolvedConstraintResult::resolve(result, path, graph, context)?;
+                accept(
+                    context,
+                    ConstraintOperand::source(
+                        value,
+                        scope,
+                        original.clone(),
+                        receipt,
+                        ResolvedConstraintSource::Result(result),
+                    ),
+                )
+            });
         }
-    }
+    };
+    // An admitted value already owns its typed receipt. Source selection only
+    // reads that operand and can reuse this branch's admitted effect scope.
+    accept(context, actual).map(|selected| (selected, reads.cloned()))
 }
 
 mod result_port;
