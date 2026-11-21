@@ -64,8 +64,10 @@ let items = Vec<Content>::with_capacity(0usize) // new declaration
 
 The assignment target is a place, not a value read. The right-hand side is
 evaluated first, so `items = identity(items)` may move the old value and then
-initialize the same place with the result. In-place mutation requires the
-selected value to remain initialized. Active receiver loans prohibit consuming
+initialize the same place with the result. The value's final type must match
+the place's type, including the resolved effects in any nested function type.
+In-place mutation requires the selected value to remain initialized.
+Active receiver loans prohibit consuming
 or changing an overlapping place during operand evaluation. Initialization and borrow
 obligations are checked statically, including control-flow joins and backedges.
 An assignment transfers an existing old value to the owning runtime's cleanup

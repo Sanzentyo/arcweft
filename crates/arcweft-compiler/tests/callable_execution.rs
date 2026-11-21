@@ -726,6 +726,50 @@ flow main() -> i64 {
 }
 
 callable_case!(
+    named_function_values_replace_mutable_callables,
+    r#"
+struct Holder { callback: (i64 -> i64 effects {}) }
+fn first(value: i64) -> i64 { value - 10i64 }
+fn second(value: i64) -> i64 { value + 2i64 }
+flow main() -> i64 {
+    let mut callback: i64 -> i64 effects {} = first
+    let previous = callback
+    callback = second
+    let mut holder = Holder { callback = first }
+    holder.callback = second
+    let stored = holder.callback
+    return previous(10i64) + callback(19i64) + stored(19i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+#[test]
+fn assigning_a_function_with_different_closed_effects_is_rejected() {
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+fn pure(value: i64) -> i64 { value }
+fn logging(value: i64) -> i64 { log.info("unexpected assignment"); value }
+flow main() -> i64 {
+    let mut callback: i64 -> i64 effects {} = pure
+    callback = logging
+    return 42i64
+}
+"#;
+    let error =
+        compile_source(source).expect_err("assignment must preserve the place's function type");
+    let diagnostics = error.project().diagnostics();
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.diagnostic().code().map(|code| code.as_str())
+                == Some("sema.statement.operand_type")
+        }),
+        "{diagnostics:?}"
+    );
+}
+
+callable_case!(
     curried_function_value_retains_independent_callback_effects,
     r#"
 fn invoke(seed: i64)(callback: i64 -> i64) -> i64 { callback(seed) }

@@ -272,7 +272,12 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             .value_type()
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value_id })?;
         if checked_target_type != value_type {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            return Err(FinalSemanticAnalysisError::StatementOperandTypeMismatch {
+                statement: owner,
+                owner: value_id,
+                expected: Box::new(checked_target_type.clone()),
+                actual: Box::new(value_type.clone()),
+            });
         }
         let place = target
             .mutable_place()

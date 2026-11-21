@@ -414,6 +414,13 @@ impl Analyzer<'_, '_, '_> {
             .expressions()
             .get(&target)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
+        self.facts
+            .expressions()
+            .get(&value)
+            .and_then(PreparedExpressionFact::value_type)
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value })?;
+        // Prepared operand types can still carry different effect sources.
+        // The assignment seal compares their closed types before publishing.
         if let Some(CheckedExpressionResolution::Value(CheckedValueResolution::Local(local))) =
             target_fact.checked_resolution()
         {
@@ -427,14 +434,7 @@ impl Analyzer<'_, '_, '_> {
             let target_type = target_fact
                 .value_type()
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
-            if self
-                .facts
-                .expressions()
-                .get(&value)
-                .and_then(PreparedExpressionFact::value_type)
-                != Some(target_type)
-                || self.facts.locals().get(local) != Some(target_type)
-            {
+            if self.facts.locals().get(local) != Some(target_type) {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
             return Ok(PreparedAssignmentStatement::new(target, value, *local));
@@ -445,18 +445,6 @@ impl Analyzer<'_, '_, '_> {
         let local = prepared_field
             .mutable_base()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        let target_type = prepared_field.field_type();
-        let value_fact = self
-            .facts
-            .expressions()
-            .get(&value)
-            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value })?;
-        let value_type = value_fact
-            .value_type()
-            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value })?;
-        if target_type != value_type {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
         Ok(PreparedAssignmentStatement::new(target, value, local))
     }
 
