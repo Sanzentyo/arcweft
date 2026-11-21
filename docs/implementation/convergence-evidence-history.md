@@ -21009,3 +21009,20 @@ Cargoで解決した逆依存は22パッケージ。最初のSourceで開始し�
 最終SourceのCLI lib／bin 196件と統合6対象30件、Sema doctest 2件は全件PASSした。workspace全target・全featureのcheck／Clippy、構造ゲートが通過した。今回の変更で生じたClippyの警告2件を修正し、最終SourceのSema全target・全featureで警告の解消と書式を確認した。`main` へ4コミットを通常pushし、公開SHAと変更8ファイルのGit blobを照合した。
 
 [検証原本](acceptance-evidence/task-view-handler-effect-dependencies.raw.zip) は38項目、1,902,220 bytes、SHA256 `5070ca2527ba708a74947d8c8cfeb8bf282be782f58cea4e37e8e1334a833cd8`。各項目の長さとハッシュを照合した。記録時の `target` は134,994,052,664 bytes。
+
+<a id="project-instance-key-projection-budget"></a>
+## 2026-11-21 — 実行インスタンスの型投影とキー生成の予算
+
+検証基点は `f5153c8f8808db2ee2a07a76950b7ac93e32db2b`。純粋なジェネリック関数を実行インスタンスに閉じる既存テストは、構造ノード上限13に対し、キーの型をエンコードする14回目の訪問を拒否した。デバッガで訪問を追うと、無制約の効果述語は3回の構造検査を終えた後、参照やグラフノードを持たない状態でコピー分をもう一度計上していた。
+
+Source `82c85f0ab301ca1684decd44a2c461d2fc0f6c25` は、構造を検査済みの無制約述語をその場で正準形として返す。修正後は型引数1、関数型3、述語の構造3、効果行4、キー2の計13回を同じ順序で訪問した。バインディングの計上を含めた総作業は15。既存テストは、上限6・12で次の訪問を拒否し、グラフが確定できないことを確認した。上限13ではキーを確定し、計上なしの呼出しと同じ型・キーを得た。対象29件は28 PASS／1既知FAIL。workspace全target・全featureのcheckとClippyを通過した。
+
+既知失敗 `known_callback_predicates_distinguish_callable_digests_and_selected_call_candidates` は、候補を準備した時点の件数を検査していた。調査用の試験で元の効果制約の確定まで進めると、関数内の効果パラメータを外側のスコープから照合し、`UnknownDepth { depth: 0 }` で停止した。デバッガで `ConstraintApplicationInventory::prepare_effect_predicate` の束縛照合を確認した。診断用の変更は作業ツリーから戻し、再現手順と原本を保持した。
+
+Cargoで解決した逆依存22パッケージのうち、CLI以外の21パッケージでは4,331件を実行し、4,257 PASS／74既知FAIL、別に1 SKIP。[前回全件実行](#view-handler-captured-function-effects)との同一ID照合で新規失敗は0件だった。今回の修正で `instance_key_encoding_spends_the_same_projection_budget` と `controlled_projection_visits_type_const_and_effect_occurrences` がFAILからPASSに変わった。後者は閉じた関数型の型・定数・効果の19要素を順に訪問し、出力が元の型と一致することを確認した。前回のテスト修正 `8083b8437d0ba91de5333e4f67e7d0c0eff81dbe` による `final_forest_closure_waits_for_a_body_and_returns_the_same_forest_for_retry` のPASSも全件実行に反映された。
+
+CLIはlib／bin 196件と統合6対象30件がすべてPASS。全 `check` テストの再実行は範囲外。再構築した `arcw.exe` のSHA256は `0967d46e24810ee9ce77cf554eb69b9b0fbd2c15b54e582bfad33d3fc84b4f0c`。公開済みの5入力をSHA256で照合し、VM／AOT／AWBC Productの14実行すべてが42を返して、1ステップ最大1操作、診断とアサーション失敗0件だった。ステップ数とログは先行実測と一致した。3 callback の別入力は256ステップの観測枠で実行し、AWBC Productが89ステップで終了した。
+
+`main` で Source `82c85f0ab301ca1684decd44a2c461d2fc0f6c25` を公開した。公開先のrefとfetchしたSHA、および `template.rs` のblob `53dce4a41bf8f883b6ec1343b49bb6d50c0d85b3` を照合した。Sourceの公開時点で、作業ツリーにはこの履歴と現状一覧の更新、および既存の未追跡 `%SystemDrive%/` があった。
+
+[検証原本](acceptance-evidence/task-project-instance-key-projection-budget.raw.zip) は56項目、1,208,885 bytes、SHA256 `54161403cab241240442a26faf94ab6f8e47fecc1b4da325e093b35ad0ab4c79`。全項目の長さとSHA256を照合した。検証後の `target` は135,988,779,085 bytes。
