@@ -24,7 +24,7 @@ use arcweft_interaction_model::dialogue::{
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use std::sync::Arc;
 
-fn admit_standalone_awbc(
+pub(super) fn admit_standalone_awbc(
     program: &Arc<AwbcProgram>,
 ) -> arcweft_core::awbc::product_step::AwbcProductProgram {
     arcweft_core::awbc::product_step::AwbcProductProgram::admit(

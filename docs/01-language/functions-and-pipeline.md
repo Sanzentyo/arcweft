@@ -170,6 +170,10 @@ if state |> alice_ready { ... }
 environment を決定的な capture binding として保持し、後続の call / apply で
 引数 binding より先に復元する。
 
+仮引数、分解で導入した束縛、可変の束縛にある関数値は、その束縛の検査済み
+関数型に従って適用する。呼出し時点の値が保持する capture を復元し、関数型の
+効果を呼出しに反映する。引数は関数型に従って位置で渡す。
+
 free input は式の local 読取りだけでなく、record shorthand、nominal field の
 base binding、入れ子の closure や deferred callback の生成時 capture を含む。
 callable body 内で導入した binding は外側の capture に含めない。record の明示

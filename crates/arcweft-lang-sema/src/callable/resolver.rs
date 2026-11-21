@@ -1209,8 +1209,6 @@ pub(crate) enum ResolvedFunctionValueSeed {
 
 #[derive(Debug, Eq, Error, PartialEq)]
 pub(crate) enum PreparedFunctionValueOriginQueryError {
-    #[error("composite local function value cannot be prepared")]
-    Composite,
     #[error("function-value local origin cycle")]
     Cycle,
     #[error("function-value local origin is invalid")]
@@ -1702,11 +1700,9 @@ impl PreparedFunctionValueOriginQuery {
                     },
                 ))
             }
-            HirLocalValueOrigin::Composite
-                if self.purpose == PreparedFunctionValueOriginPurpose::Selection =>
-            {
-                Err(PreparedFunctionValueOriginQueryError::Composite)
-            }
+            // Here the checked local owns the function value. Pattern bindings and
+            // mutable locals cannot inherit a declaration or a continuation from an
+            // initializer. Invocation uses the local's checked function interface.
             HirLocalValueOrigin::Independent | HirLocalValueOrigin::Composite => Ok(self.ready(
                 PreparedFunctionValueOriginProducer::Lexical { local: *local },
                 Vec::new(),

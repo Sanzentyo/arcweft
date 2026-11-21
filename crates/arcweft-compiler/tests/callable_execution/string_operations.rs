@@ -33,20 +33,7 @@ flow main() -> usize {{
 
 #[test]
 fn string_operations_and_captures_survive_each_awbc_step_public_cold_restore() {
-    use arcweft_core::{
-        awbc::{
-            codec::AwbcDecodeBudget,
-            product_step::{AwbcProductExecutorSaveSnapshot, AwbcProductProgram},
-            schema::AwbcProgram,
-            verify::{AwbcVerifyBudget, AwbcVerifyContext},
-        },
-        engine::{FlowExit, FlowFiberStatus},
-        executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor},
-        plan::{RuntimeEntryTarget, RuntimeTaskSourceArtifactLimits},
-        step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
-    };
-
-    let compiled = compile_source(
+    assert_awbc_return_after_public_cold_restore(
         r#"
 entry cli @entry.main { goto @flow.main }
 flow main() -> usize {
@@ -60,82 +47,11 @@ flow main() -> usize {
     return count
 }
 "#,
-    )
-    .unwrap();
-    let [entry] = compiled.plan.entries() else {
-        panic!("one original entry");
-    };
-    let RuntimeEntryTarget::Flow(flow) = &entry.target else {
-        panic!("original Flow entry");
-    };
-    let bytes = AwbcLowerer::for_entry(
-        &compiled.plan,
-        &compiled.dialogue_content,
         "string-operations.arcw",
-        &entry.id,
-    )
-    .lower()
-    .unwrap()
-    .program
-    .encode_canonical()
-    .unwrap();
-    let fresh = || {
-        let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
-        let admitted = AwbcProductProgram::admit(
-            Arc::new(decoded),
-            AwbcVerifyBudget::default(),
-            AwbcVerifyContext::default(),
-            RuntimeTaskSourceArtifactLimits::default(),
-            None,
-        )
-        .unwrap();
-        ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
-            admitted,
-            compiled
-                .plan
-                .clone()
-                .seal_flow_invocation(flow.clone(), [])
-                .unwrap(),
-        )
-        .unwrap()
-    };
-    let mut runtime = fresh();
-    let mut public_saves = 0;
-    for _ in 0..256 {
-        let result = runtime.step(
-            RuntimeStepInput::default(),
-            RuntimeStepOptions {
-                mode: RuntimeStepMode::OneOp,
-                budget: RuntimeStepBudget { max_ops: 1 },
-                ..Default::default()
-            },
-        );
-        assert!(result.output.diagnostics.is_empty(), "{:?}", result.output);
-        assert!(result.stats.executed_ops <= 1);
-        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = runtime.snapshot().unwrap();
-        let saved = AwbcProductExecutorSaveSnapshot::from_live(
-            &snapshot,
-            runtime.admitted_product_awbc_program().unwrap(),
-        )
-        .unwrap();
-        let decoded = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
-        assert_eq!(saved, decoded);
-        drop(runtime);
-        let cold = fresh();
-        let bound = cold.bind_product_save_snapshot(decoded).unwrap();
-        runtime = cold
-            .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
-            .unwrap();
-        public_saves += 1;
-        if let FlowFiberStatus::Done(exit) = &runtime.fiber().frame.status {
-            assert_eq!(exit, &FlowExit::Return("5".into()));
-            assert!(public_saves > 1, "execution must cross saved frontiers");
-            return;
-        }
-    }
-    panic!("cold-restored String execution did not finish");
+        "5",
+        &[],
+    );
 }
-
 #[test]
 fn string_scalar_count_rejects_wrong_receivers_arity_and_result_kind() {
     for source in [

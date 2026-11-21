@@ -4554,12 +4554,6 @@ impl Analyzer<'_, '_, '_> {
         error: PreparedFunctionValueOriginQueryError,
     ) -> AnalyzerExpressionError {
         match error {
-            PreparedFunctionValueOriginQueryError::Composite => AnalyzerExpressionError::Call {
-                owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                    crate::callable::CallConstraintInvariant::CompositeFunctionValue,
-                )),
-            },
             PreparedFunctionValueOriginQueryError::Cycle => {
                 AnalyzerExpressionError::Invariant(AnalyzerExpressionInvariant::Cycle { owner })
             }

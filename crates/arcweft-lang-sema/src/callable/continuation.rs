@@ -170,8 +170,6 @@ pub(crate) enum CallConstraintInvariant {
     PreparedFunctionTypeMismatch,
     #[error("function scheme specialization has an invalid source schema: {0}")]
     FunctionSchemeSchema(super::CallableSchemaError),
-    #[error("composite local function value cannot be prepared as a continuation")]
-    CompositeFunctionValue,
     #[error("function-value origin evidence is missing")]
     MissingFunctionValueOrigin,
     #[error("function-value origin evidence is attached to a non-function callee")]

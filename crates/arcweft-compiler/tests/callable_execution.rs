@@ -602,6 +602,129 @@ flow main() -> i64 {
     "42"
 );
 
+fn assert_awbc_return_after_public_cold_restore(
+    source: &str,
+    filename: &str,
+    expected: &str,
+    expected_logs: &[&str],
+) {
+    use arcweft_core::{
+        awbc::{
+            codec::AwbcDecodeBudget, product_step::AwbcProductExecutorSaveSnapshot,
+            schema::AwbcProgram,
+        },
+        effect::LineEffectRequest,
+        engine::{FlowExit, FlowFiberStatus},
+        executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor},
+        plan::RuntimeEntryTarget,
+        step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+    };
+
+    let compiled = compile_source(source).expect("callable program compiles");
+    let [entry] = compiled.plan.entries() else {
+        panic!("one original entry");
+    };
+    let RuntimeEntryTarget::Flow(flow) = &entry.target else {
+        panic!("original Flow entry");
+    };
+    let bytes = AwbcLowerer::for_entry(
+        &compiled.plan,
+        &compiled.dialogue_content,
+        filename,
+        &entry.id,
+    )
+    .lower()
+    .unwrap()
+    .program
+    .encode_canonical()
+    .unwrap();
+    let fresh = || {
+        let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
+        ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
+            execution::admit_standalone_awbc(&Arc::new(decoded)),
+            compiled
+                .plan
+                .clone()
+                .seal_flow_invocation(flow.clone(), [])
+                .unwrap(),
+        )
+        .unwrap()
+    };
+    let mut runtime = fresh();
+    let mut logs = Vec::new();
+    for completed_steps in 1..=256 {
+        let result = runtime.step(
+            RuntimeStepInput::default(),
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::OneOp,
+                budget: RuntimeStepBudget { max_ops: 1 },
+                ..Default::default()
+            },
+        );
+        assert!(result.output.diagnostics.is_empty(), "{:?}", result.output);
+        assert!(result.stats.executed_ops <= 1);
+        logs.extend(result.output.effects.line.into_iter().filter_map(|effect| {
+            if let LineEffectRequest::Log(log) = effect {
+                Some(log.message)
+            } else {
+                None
+            }
+        }));
+        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = runtime.snapshot().unwrap();
+        let saved = AwbcProductExecutorSaveSnapshot::from_live(
+            &snapshot,
+            runtime.admitted_product_awbc_program().unwrap(),
+        )
+        .unwrap();
+        let decoded = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+        assert_eq!(saved, decoded);
+        drop(runtime);
+        let cold = fresh();
+        let bound = cold.bind_product_save_snapshot(decoded).unwrap();
+        runtime = cold
+            .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+            .unwrap();
+        if let FlowFiberStatus::Done(exit) = &runtime.fiber().frame.status {
+            assert_eq!(exit, &FlowExit::Return(expected.into()));
+            assert_eq!(logs, expected_logs);
+            assert!(completed_steps > 1, "execution must cross saved frontiers");
+            return;
+        }
+    }
+    panic!("cold-restored callable execution did not finish");
+}
+
+mod calls_an_effectful_captured_value_from_a_tuple_binding {
+    use super::*;
+
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+fn apply(items: (i64 -> i64, i64), value: i64) -> i64 {
+    let (callback, offset) = items
+    callback(value + offset)
+}
+flow main() -> i64 {
+    let captured = 10i64
+    return apply((|value| { log.info("tuple callback"); value + captured }, 2i64), 30i64)
+}
+"#;
+
+    #[test]
+    fn native() {
+        assert_native_return(SOURCE, "42");
+    }
+
+    #[test]
+    fn awbc() {
+        assert_awbc_return_after_public_cold_restore(
+            SOURCE,
+            "tuple-callback.arcw",
+            "42",
+            &["tuple callback"],
+        );
+    }
+}
+
 callable_case!(
     curried_function_value_retains_independent_callback_effects,
     r#"
