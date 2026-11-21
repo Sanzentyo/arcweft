@@ -6,6 +6,8 @@ use super::*;
 #[cfg(test)]
 mod tests;
 
+type DefinitionIndex<T> = Arc<BTreeMap<u64, Arc<T>>>;
+
 #[derive(Clone, Debug)]
 pub(crate) struct PreparedEffectReadScope {
     pub(super) data: Arc<ReadScopeData>,
@@ -17,9 +19,9 @@ pub(super) struct ReadScopeData {
     base: PreparedEffectStateId,
     pub(super) ids: Arc<[u64]>,
     pub(super) layers: BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
-    pub(super) functions: Arc<BTreeMap<u64, Arc<Function>>>,
-    pub(super) rows: Arc<BTreeMap<u64, Arc<RowTerm>>>,
-    pub(super) predicates: Arc<BTreeMap<u64, Arc<PredicateTerm>>>,
+    pub(super) functions: DefinitionIndex<Function>,
+    pub(super) rows: DefinitionIndex<RowTerm>,
+    pub(super) predicates: DefinitionIndex<PredicateTerm>,
     pub(super) choices: Arc<BTreeSet<u64>>,
 }
 
@@ -478,10 +480,10 @@ impl PreparedEffectGraph {
 }
 
 fn extend_definitions<T, C: DecisionControl>(
-    base: &Arc<BTreeMap<u64, Arc<T>>>,
+    base: &DefinitionIndex<T>,
     added: &BTreeMap<u64, Arc<T>>,
     work: &mut Work<'_, C>,
-) -> Result<Arc<BTreeMap<u64, Arc<T>>>, PreparedEffectFailure<C::Error>> {
+) -> Result<DefinitionIndex<T>, PreparedEffectFailure<C::Error>> {
     if added.is_empty() {
         return Ok(Arc::clone(base));
     }
