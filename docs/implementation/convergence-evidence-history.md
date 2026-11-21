@@ -20994,3 +20994,18 @@ Coreの逆依存52パッケージのうちCLI以外の51パッケージは8,156�
 Generic Match `.1.2` C3/C5 は受入済みの150 IDとStyle Lengthの後継1件を照合し、transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-shared-effect-coefficient-tables.raw.zip) は190項目、2,085,283 bytes、SHA256 `ac92ac533c9025249063e6e86fe68d4366d70d81795861b9460a675a924ed106`。各項目の長さとハッシュを照合した。記録時の `target` は134,941,905,023 bytes。
+
+<a id="view-handler-captured-function-effects"></a>
+## 2026-11-21 — View ハンドラが捕捉する関数の効果を確定
+
+検証基点は `8c7927e7c6c710608189e053129e49429a4230d1`。保持Viewの `on_click` が局所変数経由で関数を呼ぶ既存テストは、式58の型検査で `SchemeState` により失敗していた。呼び出しの引数そのものに加えて、引数の検査中に保持した型も元の制約に含まれる。その型から到達した名前付き関数の本体は、最終照合に入った時点で未準備だった。
+
+Source `87d5e8a912dcaae1612bc253a051cafb2347788d` は不足した本体の参照を返す。呼び出しの処理側が既存の作業予算で本体を準備し、同じ制約と入力を再試行する。続く `64efb7056197517421dac6e1215984d0cc1e2c45` は、拒否候補から診断用の事実を保持する場合に対応する効果項も保持する。`8083b8437d0ba91de5333e4f67e7d0c0eff81dbe` は、宣言しただけで未参照だった既存テストの入力を、実際に本体を必要とする関数型へ修正した。再試行前に同じ証拠が保たれ、再試行後の関数型に本体の効果が入ることを確認した。`8e9d910e6eeefa258bfec99c686b1e8e9af87f53` はエラー変換をまとめ、失敗時だけ元の制約を含むエラーをヒープに置く。
+
+最初のSourceでCompilerのViewスイート114件がすべてPASSした。捕捉座標と型、Viewリソースのcodec往復、AWBCの実行を照合し、捕捉値の変更・保存復元後に古い経路が拒否され、新しい経路から想定のActionが返ることを確認した。同じテストは `64efb7056197517421dac6e1215984d0cc1e2c45` と `8e9d910e6eeefa258bfec99c686b1e8e9af87f53` でも通過した。
+
+Cargoで解決した逆依存は22パッケージ。最初のSourceで開始した非CLI 21パッケージは4,331件を実行し、4,254 PASS／77既知FAIL、別に1 SKIPとなった。全IDの照合で合否が変わったのはViewハンドラの1件で、失敗から成功に変わった。後続コミットの作業中に、一部のコンパイル拒否テストが作業ツリーのソースを再読込した。最終SourceのSema全featureユニットは2,019件を実行し、1,944 PASS／75既知FAIL。前回の同じ2,019 IDから、実際の宣言を読むよう修正した再試行テスト1件が失敗から成功に変わり、新規失敗は0件だった。
+
+最終SourceのCLI lib／bin 196件と統合6対象30件、Sema doctest 2件は全件PASSした。workspace全target・全featureのcheck／Clippy、構造ゲートが通過した。今回の変更で生じたClippyの警告2件を修正し、最終SourceのSema全target・全featureで警告の解消と書式を確認した。`main` へ4コミットを通常pushし、公開SHAと変更8ファイルのGit blobを照合した。
+
+[検証原本](acceptance-evidence/task-view-handler-effect-dependencies.raw.zip) は38項目、1,902,220 bytes、SHA256 `5070ca2527ba708a74947d8c8cfeb8bf282be782f58cea4e37e8e1334a833cd8`。各項目の長さとハッシュを照合した。記録時の `target` は134,994,052,664 bytes。
