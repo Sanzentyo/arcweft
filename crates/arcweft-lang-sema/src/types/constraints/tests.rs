@@ -2869,7 +2869,7 @@ fn hint_projection_cancellation_is_checked_before_descent() {
             &cancellation,
             TypeConstraintParameterScope::empty(),
         )
-        .into_path(&mut effect_graph);
+        .into_projection_path(&mut effect_graph);
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::Vec(Box::new(TypeKind::I32)),
@@ -2880,6 +2880,7 @@ fn hint_projection_cancellation_is_checked_before_descent() {
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
+    assert_eq!(context.accounting_mut().report().nodes(), 0);
 }
 
 #[test]
@@ -2892,7 +2893,7 @@ fn final_projection_cancellation_is_checked_before_descent() {
             &cancellation,
             TypeConstraintParameterScope::empty(),
         )
-        .into_path(&mut effect_graph);
+        .into_projection_path(&mut effect_graph);
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::I32,
@@ -2903,6 +2904,7 @@ fn final_projection_cancellation_is_checked_before_descent() {
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
+    assert_eq!(context.accounting_mut().report().nodes(), 0);
 }
 
 #[test]
@@ -2915,7 +2917,7 @@ fn projected_type_node_limit_accepts_exact_and_rejects_one_over() {
             &cancellation,
             TypeConstraintParameterScope::empty(),
         )
-        .into_path(&mut effect_graph);
+        .into_projection_path(&mut effect_graph);
     assert!(
         super::normalization::project_type(
             &TypeKind::I32,
@@ -2933,7 +2935,7 @@ fn projected_type_node_limit_accepts_exact_and_rejects_one_over() {
             &cancellation,
             TypeConstraintParameterScope::empty(),
         )
-        .into_path(&mut effect_graph);
+        .into_projection_path(&mut effect_graph);
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::I32,
@@ -2994,7 +2996,7 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
                 &cancellation,
                 scope.clone(),
             )
-            .into_path(&mut effect_graph);
+            .into_projection_path(&mut effect_graph);
             assert!(
                 super::normalization::project_type(
                     &array,
@@ -3006,6 +3008,8 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
                 .is_ok()
             );
 
+            assert_eq!(exact.accounting_mut().report().nodes(), 3);
+
             let (mut one_over, one_over_path) = ConstraintTestSetup::<
                 LocalConstraintAccounting<'_>,
                 NoConstraintClient,
@@ -3014,7 +3018,7 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
                 &cancellation,
                 scope.clone(),
             )
-            .into_path(&mut effect_graph);
+            .into_projection_path(&mut effect_graph);
             assert!(matches!(
                 super::normalization::project_type(
                     &array,
@@ -3060,7 +3064,7 @@ fn unresolved_array_length_charges_container_and_header_before_rejection() {
                 &cancellation,
                 TypeConstraintParameterScope::empty(),
             )
-            .into_path(&mut effect_graph);
+            .into_projection_path(&mut effect_graph);
             assert!(matches!(
                 super::normalization::project_type(
                     &array,
@@ -3082,7 +3086,7 @@ fn unresolved_array_length_charges_container_and_header_before_rejection() {
                 &cancellation,
                 TypeConstraintParameterScope::empty(),
             )
-            .into_path(&mut effect_graph);
+            .into_projection_path(&mut effect_graph);
             assert!(matches!(
                 super::normalization::project_type(
                     &array,
@@ -3103,6 +3107,7 @@ fn unresolved_array_length_charges_container_and_header_before_rejection() {
 struct CancelAfterContainer<'a> {
     cancellation: &'a AtomicBool,
     limits: TypeConstraintLimits,
+    charged_nodes: u64,
 }
 
 impl TypeConstraintAccounting for CancelAfterContainer<'_> {
@@ -3112,6 +3117,7 @@ impl TypeConstraintAccounting for CancelAfterContainer<'_> {
         _limits: TypeConstraintLimits,
     ) -> Result<(), TypeConstraintError> {
         if delta.nodes() != 0 {
+            self.charged_nodes += delta.nodes();
             self.cancellation.store(true, Ordering::Release);
         }
         Ok(())
@@ -3136,6 +3142,7 @@ fn array_header_observes_cancellation_after_container_charge() {
     let cancellation = AtomicBool::new(false);
     let accounting = CancelAfterContainer {
         cancellation: &cancellation,
+        charged_nodes: 0,
         limits: TypeConstraintLimits::new(16, 4, 4, 4),
     };
     let (mut context, path) =
@@ -3143,7 +3150,7 @@ fn array_header_observes_cancellation_after_container_charge() {
             accounting,
             TypeConstraintParameterScope::empty(),
         )
-        .into_path(&mut effect_graph);
+        .into_projection_path(&mut effect_graph);
     let array = TypeKind::Array {
         item: Box::new(TypeKind::I32),
         len: super::super::ArrayLength::Const(3),
@@ -3158,6 +3165,7 @@ fn array_header_observes_cancellation_after_container_charge() {
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
+    assert_eq!(context.accounting_mut().charged_nodes, 1);
 }
 
 #[derive(Debug)]

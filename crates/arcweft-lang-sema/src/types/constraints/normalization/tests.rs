@@ -357,7 +357,7 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
         )
         .collect::<BTreeMap<_, _>>();
     let (mut type_context, mut type_context_path) =
-        context(scope, &cancellation, 10_001).into_path(&mut effect_graph);
+        context(scope, &cancellation, 10_001).into_projection_path(&mut effect_graph);
     type_context_path.bindings = type_context.fixture_bindings(bindings);
     let projected = super::project_type(
         &TypeKind::GenericParam(parameters[0].clone()),
@@ -389,7 +389,7 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
         )
         .collect::<BTreeMap<_, _>>();
     let (mut const_context, mut const_context_path) =
-        context(scope, &cancellation, 10_001).into_path(&mut effect_graph);
+        context(scope, &cancellation, 10_001).into_projection_path(&mut effect_graph);
     const_context_path.const_bindings = const_context.fixture_bindings(bindings);
     let input = const_context.fixture_operand(ArrayLength::Generic(parameters[0].clone()));
     let projected = super::project_const_operand(
@@ -410,7 +410,7 @@ fn projection_rebuilds_deep_types_and_rejects_exhausted_work_before_the_leaf() {
     let cancellation = AtomicBool::new(false);
     let mut ty = (0..10_000).fold(TypeKind::I64, |ty, _| TypeKind::Vec(Box::new(ty)));
     let (mut complete_context, complete_context_path) =
-        context(empty_scope(), &cancellation, 10_001).into_path(&mut effect_graph);
+        context(empty_scope(), &cancellation, 10_001).into_projection_path(&mut effect_graph);
     let complete = super::project_type(
         &ty,
         complete_context_path.projection_view(),
@@ -419,7 +419,7 @@ fn projection_rebuilds_deep_types_and_rejects_exhausted_work_before_the_leaf() {
         &mut complete_context,
     );
     let (mut limited_context, limited_context_path) =
-        context(empty_scope(), &cancellation, 32).into_path(&mut effect_graph);
+        context(empty_scope(), &cancellation, 32).into_projection_path(&mut effect_graph);
     let limited = super::project_type(
         &ty,
         limited_context_path.projection_view(),
@@ -460,7 +460,8 @@ fn projection_restores_enclosing_scope_and_seeded_guards_after_nested_abort() {
     let seed = BTreeSet::from([parameters[1].clone()]);
     let mut visiting = seed.clone();
     let mut remaining = BTreeSet::new();
-    let (mut context, mut path) = context(scope, &cancellation, 2).into_path(&mut effect_graph);
+    let (mut context, mut path) =
+        context(scope, &cancellation, 2).into_projection_path(&mut effect_graph);
     path.bindings = context.fixture_bindings(bindings);
     let outer = GenericBinder::new(1, 1, 0);
     context
@@ -608,7 +609,8 @@ fn projection_validates_array_length_before_descending_into_the_item() {
         )),
         len: ArrayLength::Inferred,
     };
-    let (mut context, path) = context(empty_scope(), &cancellation, 2).into_path(&mut effect_graph);
+    let (mut context, path) =
+        context(empty_scope(), &cancellation, 2).into_projection_path(&mut effect_graph);
     assert_eq!(
         super::project_type(
             &ty,

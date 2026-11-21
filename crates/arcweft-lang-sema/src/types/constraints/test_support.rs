@@ -155,6 +155,26 @@ impl<'c, A: TypeConstraintAccounting, D: ConstraintDomain> ConstraintTestSetup<'
         (self.context, self.parameters)
     }
 
+    /// Prepare a real path before starting a test of projection's own budget.
+    /// Fixture admission uses the same graph and an independent accounting scope.
+    pub(crate) fn into_projection_path(
+        self,
+        graph: &mut PreparedEffectGraph,
+    ) -> (TypeConstraintContext<'c, A, D>, ConstraintPath<D>)
+    where
+        D::Application: Default,
+    {
+        let (context, parameters) = self.into_parts();
+        let fixture_cancellation = AtomicBool::new(false);
+        let (_, path) = ConstraintTestSetup::<LocalConstraintAccounting<'_>, D>::with_scope(
+            TypeConstraintLimits::new(4_096, 2_048, 256, 128),
+            &fixture_cancellation,
+            parameters,
+        )
+        .into_path(graph);
+        (context, path)
+    }
+
     pub(crate) fn into_path(
         mut self,
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,

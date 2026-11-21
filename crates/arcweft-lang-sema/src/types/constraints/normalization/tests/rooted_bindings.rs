@@ -17,7 +17,7 @@ fn provenance_projection_releases_ten_thousand_aliases_with_the_exact_shared_nod
     let cancellation = AtomicBool::new(false);
     let (scope, parameters) = type_inventory(10_000);
     let (mut context, mut path) =
-        context(scope, &cancellation, 10_001).into_path(&mut effect_graph);
+        context(scope, &cancellation, 10_001).into_projection_path(&mut effect_graph);
     path.bindings = context.fixture_bindings(
         parameters.iter().cloned().zip(
             parameters
