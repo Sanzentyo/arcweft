@@ -21131,3 +21131,22 @@ Cargoで解決した逆依存はSemaが22パッケージ、Compilerが10パッ�
 `main` を通常の fast-forward で更新した。公開ref、fetchしたコミットのSHA、および変更した11ファイルのblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
 
 [検証原本](acceptance-evidence/task-lexical-function-values.raw.zip) は301項目、2,008,139 bytes、SHA256 `e304098cccb693ff7648ec24306e6b0689a106b29148342360f419aa884125ba`。全項目の長さとSHA256を照合した。検証後の `target` は136,049,776,426 bytes。
+
+<a id="constraint-projection-fixtures"></a>
+## 2026-11-22 — Sema の定数解と投影の計測を本番の経路に揃える
+
+作業基点 `ac7512e6551d0024863cb0180dc78660d65536a9`、同じ製品コードを検証したSource `f0d45f7286847010a1c8a51e8523f1e98994a5ce`。定数別名テストは、先行Source `c1a7002ce7095487b6ed4489e0f90191971a7f8c` の実測で上限128の129件目に達していた。ノード計上のうち114回が効果グラフ側で、定数別名の投影は最初のノードの計上で停止した。検証用の効果関係は、凍結、再接続、テスト専用の再凍結を経由していた。
+
+検証Source `4ac75a62b01d565823e963446acd240d2c34ff1d` は、アクティブな定数解と完了済みの入力を検査する両方のフィクスチャを、本番の元関係の準備・確定に接続した。上限を保ち、別名から正準値への具体化、完了済みとして渡した非正準の別名・循環・自己参照の拒否、後段定数の正確なキーを再検証した。対象392件は343 PASS／49既知FAIL。前回とのID照合で6件がFAILからPASSへ変わった。
+
+検証Source `ea25a208a53ce71473745a1905f904f070748bcd` は、実際の型付き適用を効果グラフに準備してから、投影の計測を開始する。以前は計測対象の上限と取消しが適用の準備に使われ、投影へ到達しないテストがあった。配列の3ノードと2ノード上限、不正な配列長を要素より先に拒否する順序、10,000段の別名と入れ子、取消しの開始前と最初のコンテナの直後、失敗後の外側のスコープ・訪問集合の復元を同じ条件で確認した。この時点の対象392件は354 PASS／38既知FAIL。前の修正から11件がFAILからPASSへ変わった。
+
+最終検証Source `db96d3111e0caec2a82eb27e4a39a09679cb8795` は、直接の別名証拠と子・スライスの関係に使うフィクスチャにも同じ準備を適用した。Sema lib 2,022件の再実行は1,976 PASS／46既知FAIL。先行の[全逆依存実行](#lexical-function-values)と診断テストの再実行に基づく1,957 PASS／65既知FAILを基準に、19件がFAILからPASSへ変わった。追加・欠落・新規失敗は0件。先行の非CLI 4,341実行と今回のSema libをIDで照合すると4,295 PASS／46既知FAIL、先行SKIPは1件。新Sourceでの実行はSema libに限る。Semaの全target・全featureのcheck／Clippyと変更ファイルの書式は終了0。製品コードの検証には同じ製品Sourceの先行CLI 226 PASS、workspace check／Clippy・構造ゲートを引き続き適用する。
+
+CLIでは長さ2と長さ0の配列のmapがVM・AOT・AWBC Productで42を返し、長さ違いは3回とも拒否された。別の確認では、型注釈のないmapの部分適用は呼出し先が1箇所でも2箇所でも `sema.final_analysis`（`shared callable resolution failed`）を返し、配列の型を注釈した対照と受け手から解決する対照は42を返した。このCLIは先行公開の製品コードで構築している。
+
+残る256候補の境界テストでは、本番と同じ呼出し予算で `CallResolutionFailed` を再現した。LLDBは候補を照合した直後、効果グラフの差分を作るノードの計上で停止した。呼出し上限と候補の実評価回数の条件を保持する。
+
+`main` を通常のfast-forwardで更新し、公開ref、取得した検証SourceのSHA、変更した6ファイルのblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
+
+[検証原本](acceptance-evidence/task-constraint-projection-budget.raw.zip) は64項目、776,868 bytes、SHA256 `68358762c572208f03c41cf69291833f9e3eacc5b09316b2551fb1c746aea0ec`。全項目の長さとSHA256を照合した。検証後の `target` は136,042,054,484 bytes。
