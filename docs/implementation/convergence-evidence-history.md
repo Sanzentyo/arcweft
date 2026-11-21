@@ -21258,3 +21258,26 @@ Generic Match .1.2 C3/C5 は元の受入監査の150 IDとStyle Lengthの後継1
 `main` を通常のfast-forwardで更新し、公開ref・取得commitのfull SHA・変更した `transaction.rs` のblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
 
 [検証原本](acceptance-evidence/task-probe-operand-effect-scope.raw.zip) は41項目、1,214,692 bytes、SHA256 `ff7b8dbb8dbe2906bfbde9ab3d28f696368b07039b8ed4dd35f437ab5e614847`。全項目の長さとSHA256を照合した。検証後の `target` は136,093,684,537 bytes。
+
+<a id="constant-effect-predicates"></a>
+## 2026-11-22 — 真偽が決まった効果条件を閉じた値として扱う
+
+作業基点 `39191fbbc8b7633394a06fb4ee884a57c54a389c`。準備済みの定数条件は決定ノードとラベル固有の条件を持たない。従来はアプリケーションの効果条件を開き、環境に保持する際に、定数にも置換用の作業領域と一般の走査を準備していた。
+
+Source `120eaf91dfb67592e9555d351c25f260cf3469a5` では、定数条件を1回の訪問で保持・置換する。変数のある条件は元の発行元、グラフ定義と環境の変数を検証する。登録済みの置換入力を受け取る場合は、置換対象の変数の所有を検査する。定数は開いた条件の移送でも書込み用のチェックポイントを作らない。常に真の条件との論理積は、もう一方の条件にグラフ参照があれば検証し、その条件を保持する。
+
+回帰テストで真と偽の両方を扱い、作業上限0で中断し、1回の訪問で保持・置換できることと、失敗した変更をコミットできないことを確認した。別グラフ由来の参照を拒否する既存テストと、元の効果条件を保持して後の矛盾を拒否する既存テストも通過した。
+
+同じ256候補テストで、前回の87件目まで進入・86件完了から、今回の108件目まで進入・107件完了に進んだ。境界テストは引き続き `CallResolutionFailed`。`CandidateConstraintCallbacks::new` の初期化に必要な計上（`callbacks.rs:19`）で、呼出し全体の作業上限4,096から割り当てられた残りを使い切った。拒否箇所は `context.rs:2339` の `WorkLimit`。
+
+候補2件目の下位作業の上限検査通過回数は36回から29回、型制約コンテキストの計上は23回から16回になった。これは同じ候補1件での通過回数。
+
+Sema libは2,027件を実行し、1,983 PASS／44既知FAIL。Cargo graph上の22パッケージを確認し、非CLIの21パッケージで4,346件を実行し、4,302 PASS／44既知FAIL／別に1 SKIP。定数の回帰テスト1件が通過した。既存の2件がFAILからPASSになり、他の既存IDは同じ結果だった。CLIのlib／bin 196件と統合6対象30件は全件通過し、前回と同じ226 IDを確認した。ワークスペース全ターゲット・全機能のcheck／Clippyと変更ファイルの書式は終了0。
+
+受入・公開済みの Generic Match C3/C5 は、元の受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBCの継続・保存 7件がすべて通過した。
+
+既存の `candidate_session_commits_when_finished_outcome_is_discarded` は割当て16で処理を開始し、結果を破棄しても消費した作業を記録した。`keyed_projection_duplicate_is_a_typed_invariant` は重複キーを型付きの `DuplicateKey` として拒否した。両方ともテストの条件は元のまま実行した。
+
+`main` を通常のfast-forwardで更新し、公開ref・取得commitのfull SHA・変更5ファイルのblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
+
+[検証原本](acceptance-evidence/task-constant-effect-predicates.raw.zip) は41項目、1,214,750 bytes、SHA256 `72ef12d6f51df244828bc9e18b67d5b54790459298065a7bee48177fcd129f33`。全項目の長さとSHA256を照合した。検証後の `target` は136,096,544,430 bytes。
