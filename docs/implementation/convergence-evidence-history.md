@@ -20966,3 +20966,16 @@ CLIのライブラリ・バイナリ196件、統合6対象30件、Sema doctest 2
 Generic Match `.1.2` C3/C5 は元の監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-shared-effect-read-indexes.raw.zip) は84項目、2,003,979 bytes、SHA256 `6d6813885e1efd2cc1f5c4ae023a060b73315b1087650443dd36c1fe2036d833`。各項目の長さとハッシュを照合した。記録時の `target` は134,926,376,010 bytes。
+
+<a id="detached-effect-dependency-scopes"></a>
+## 2026-11-21 — 差分の読取りで検査済みの依存スコープを再利用
+
+検証基点は `ed820eaa3699d1bf8dd41ea2d5c69086b5ec9c84`。公開Sourceは `7b08cffb2faf1d5811b01184cac72053690fb13f`。差分が一つで現行グラフと一致する依存スコープを持ち、関数定義の変更がない場合は、読取りスコープの所有側で元の索引を共有する。差分の発行元・基点・依存の祖先関係とレイヤー順序を検査する。変更のない差分は検査済みのスコープを返し、同じスコープを入れ子で読み取る場合は既に成立している包含関係を再走査しない。テストは元の組み立てとのレイヤー一致、項の可視性、全不足予算での失敗原子性を通常の `read_scope` 経由で確認した。Semaの対象55件がPASSした。
+
+先行5入力をSHA256で照合した。既定上限4,096の1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで戻り値42、1ステップ最大1操作、診断0件。1 callback の最終観測に `marker` が1件あり、2 callback はログ0件だった。3 callback の3入力はVM／AWBC Productとも式95で停止した。診断専用上限16,384では、2 callback が2,765→2,715、3 callback の先行2入力が4,353→4,229、別入力が4,210→4,123単位となり、各VM実行で戻り値42を確認した。先行順入力の基点のコンパイル開始から証明の再照合開始までに1,667単位を計測した。子成分の条件付き結合は126単位、親成分の通常結合は266単位だった。計測原本に区間境界と実行ファイルSHA256を保持した。
+
+Cargoで解決した逆依存22パッケージのうちCLIを除く21パッケージは4,329件実行、4,251 PASS／78既知FAIL、別に1 SKIP。前回と全IDの合否は一致した。Compilerの2 callback のNative／デコード済みAWBCの回帰、開いた再帰宣言の3 callback 効果伝播もPASSした。CLIのlib／bin 196件と規定の統合6対象30件、Sema doctest 2件、workspace全target・全featureのcheck／Clippy、書式、依存グラフ、構造ゲートが通過した。CLIの全 `check` テストは未再実行。
+
+Generic Match `.1.2` C3/C5 は受入済みの150 IDとStyle Lengthの後継1件を照合し、115 transcript、24 coverage、5公開query、7 Native／デコード済みAWBCの継続・保存がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-detached-effect-dependency-scopes.raw.zip) は83項目、1,246,406 bytes、SHA256 `6d3bbab59bf6762b50a2f640b15a4f9d9b30a4497ca6f3240f2e509662109a93`。各項目の長さとハッシュを照合した。記録時の `target` は134,923,048,502 bytes。
