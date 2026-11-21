@@ -604,6 +604,22 @@ impl<'a> Compilation<'a> {
         permitted: &[Decision],
         work: &mut Work<'_, C>,
     ) -> Result<Decision, PreparedEffectFailure<C::Error>> {
+        if actual.len() != self.layout.classes() || permitted.len() != self.layout.classes() {
+            return Err(PreparedEffectInvariant::UnclosedCell.into());
+        }
+        if self.parameters.is_empty() && relation == PreparedEffectRelation::Equal {
+            // There is no local input pattern to eliminate from the outside
+            // point. Compare every class in one controlled conjunction.
+            return Decision::all_equalities(
+                actual.iter().zip(permitted).map(|(left, right)| {
+                    Ok([
+                        EffectDecisionReplacement::Decision(left),
+                        EffectDecisionReplacement::Decision(right),
+                    ])
+                }),
+                work,
+            );
+        }
         let ((actual_outside, actual_named), (permitted_outside, permitted_named)) = actual
             .split_first()
             .zip(permitted.split_first())

@@ -278,10 +278,7 @@ impl TypeKind<PreparedEffects> {
         control: &mut C,
     ) -> Result<bool, TypeProjectionError<C::Error>> {
         let roots = PreparedTypeEffectRoots::collect([self], std::iter::empty(), control)?;
-        Ok(roots
-            .rows()
-            .iter()
-            .any(|row| matches!(row, PreparedEffectRow::Canonical(row) if !row.is_known())))
+        Ok(roots.has_omitted_rows())
     }
 
     /// Projects free effect parameters under each exact nested binder. One edit

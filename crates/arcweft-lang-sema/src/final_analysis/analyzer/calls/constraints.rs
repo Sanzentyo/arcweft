@@ -1796,7 +1796,7 @@ impl<'a, 'project, 'catalog, 'control>
                             error,
                         ))
                     })?;
-                    if !roots.rows().is_empty() || !roots.predicates().is_empty() {
+                    if roots.has_effect_inputs() {
                         let active = self.active_fact_scope.as_ref().ok_or_else(|| {
                             SourceCallbackFailure::invariant(AnalyzerCallClientInvariant::fact_transaction(
                                 source, crate::final_analysis::CandidateFactTransactionViolation::StaleCheckpoint,

@@ -192,6 +192,26 @@ impl FiniteRowValuation<'_> {
         if members.len() != self.classes.classes() {
             return Err(PreparedEffectInvariant::UnclosedCell.into());
         }
+        if self.parameters.is_empty() {
+            for (class, point) in members.iter().enumerate() {
+                self.validate_class_point(class, point.variables(), work)?;
+            }
+            // Each class has just one coefficient. Keep the complete equation
+            // in one decision arena until its canonical result is needed.
+            let equations = members.iter().enumerate().map(|(class, point)| {
+                Ok([
+                    EffectDecisionReplacement::Decision(point),
+                    fixed.operand(Atom::Cell {
+                        scheme,
+                        class,
+                        mask: 0,
+                    }),
+                ])
+            });
+            return Decision::all_equalities(equations, work);
+        }
+        let through_parameter = self.parameters.len() - 1;
+        let patterns = self.pattern_count()?;
         let mut classes = Vec::new();
         for (class, point) in members.iter().enumerate() {
             self.validate_class_point(class, point.variables(), work)?;
@@ -200,29 +220,20 @@ impl FiniteRowValuation<'_> {
                 class,
                 mask,
             };
-            let equation = match self.parameters.len().checked_sub(1) {
-                Some(parameter) => point.matches_prefix_table(
-                    &Atom::Formal {
-                        owner: self.owner,
-                        class,
-                        parameter,
-                    },
-                    0..self.pattern_count()?,
-                    work,
-                    |mask, reference| match reference {
-                        Atom::Formal { parameter, .. } => Ok(mask & (1usize << parameter) != 0),
-                        _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
-                    },
-                    |mask| fixed.operand(coefficient(mask)),
-                )?,
-                None => Decision::all_equalities(
-                    [Ok([
-                        EffectDecisionReplacement::Decision(point),
-                        fixed.operand(coefficient(0)),
-                    ])],
-                    work,
-                )?,
-            };
+            let equation = point.matches_prefix_table(
+                &Atom::Formal {
+                    owner: self.owner,
+                    class,
+                    parameter: through_parameter,
+                },
+                0..patterns,
+                work,
+                |mask, reference| match reference {
+                    Atom::Formal { parameter, .. } => Ok(mask & (1usize << parameter) != 0),
+                    _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
+                },
+                |mask| fixed.operand(coefficient(mask)),
+            )?;
             work.charge(DecisionWork::Node)?;
             classes.push(equation);
         }
@@ -373,5 +384,45 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn parameter_free_scheme_equates_every_class_under_the_same_choices() {
+        let labels = ["fs.read".parse().unwrap(), "log.write".parse().unwrap()];
+        let valuation = FiniteRowValuation {
+            classes: LabelClasses { labels: &labels },
+            owner: FormalOwner::Observation,
+            parameters: &[],
+        };
+        let mut control = budget();
+        let choice = Decision::variable(Atom::Choice(0), &mut control).unwrap();
+        let other = choice.not(&mut control).unwrap();
+        let decision = valuation
+            .scheme_equation(
+                5,
+                &[Decision::constant(false), choice, other],
+                &FixedCells::EMPTY,
+                &mut Work(&mut control),
+            )
+            .unwrap();
+        for mask in 0..16usize {
+            let choice = mask & 8 != 0;
+            let value = decision
+                .evaluate_with_control(
+                    |atom| match atom {
+                        Atom::Cell {
+                            scheme: 5,
+                            class,
+                            mask: 0,
+                        } => mask & (1 << class) != 0,
+                        Atom::Choice(0) => choice,
+                        _ => panic!("unexpected equation variable {atom:?}"),
+                    },
+                    &mut control,
+                )
+                .unwrap();
+            let expected = if choice { 0b010 } else { 0b100 };
+            assert_eq!(value, mask & 0b111 == expected);
+        }
     }
 }

@@ -8,8 +8,12 @@ mod tests;
 
 #[derive(Default)]
 pub(crate) struct PreparedTypeEffectRoots<'a> {
+    // Only terms lead to prepared graph definitions. Keep the authored
+    // port classifications needed for observation and initializer inference.
     rows: Vec<&'a PreparedEffectRow>,
     predicates: Vec<&'a PreparedEffectPredicate>,
+    effect_inputs: bool,
+    omitted_rows: bool,
 }
 
 impl<'a> PreparedTypeEffectRoots<'a> {
@@ -26,7 +30,7 @@ impl<'a> PreparedTypeEffectRoots<'a> {
             control
                 .visit_node(TypeProjectionNodeKind::Effect, 1)
                 .map_err(TypeProjectionError::Control)?;
-            result.predicates.push(predicate);
+            result.record_predicate(predicate);
         }
         result.extend(types, control)?;
         Ok(result)
@@ -70,15 +74,15 @@ impl<'a> PreparedTypeEffectRoots<'a> {
                         control
                             .visit_node(TypeProjectionNodeKind::Effect, depth)
                             .map_err(TypeProjectionError::Control)?;
-                        self.rows.push(row);
+                        self.record_row(row);
                     }
                 } else {
-                    self.rows.push(effects);
+                    self.record_row(effects);
                 }
                 control
                     .visit_node(TypeProjectionNodeKind::Effect, depth)
                     .map_err(TypeProjectionError::Control)?;
-                self.predicates.push(predicate);
+                self.record_predicate(predicate);
             }
             let next_depth = depth
                 .checked_add(1)
@@ -101,12 +105,29 @@ impl<'a> PreparedTypeEffectRoots<'a> {
     }
 
     pub(in crate::types) fn has_terms(&self) -> bool {
-        self.rows
-            .iter()
-            .any(|row| matches!(row, PreparedEffectRow::Term(_)))
-            || self
-                .predicates
-                .iter()
-                .any(|predicate| matches!(predicate, PreparedEffectPredicate::Term(_)))
+        !self.rows.is_empty() || !self.predicates.is_empty()
+    }
+
+    pub(crate) const fn has_effect_inputs(&self) -> bool {
+        self.effect_inputs
+    }
+
+    pub(super) const fn has_omitted_rows(&self) -> bool {
+        self.omitted_rows
+    }
+
+    fn record_row(&mut self, row: &'a PreparedEffectRow) {
+        self.effect_inputs = true;
+        match row {
+            PreparedEffectRow::Term(_) => self.rows.push(row),
+            PreparedEffectRow::Canonical(row) => self.omitted_rows |= !row.is_known(),
+        }
+    }
+
+    fn record_predicate(&mut self, predicate: &'a PreparedEffectPredicate) {
+        self.effect_inputs = true;
+        if matches!(predicate, PreparedEffectPredicate::Term(_)) {
+            self.predicates.push(predicate);
+        }
     }
 }

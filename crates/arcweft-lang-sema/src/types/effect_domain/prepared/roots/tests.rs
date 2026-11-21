@@ -71,8 +71,8 @@ fn nested_headers_retain_the_actual_unprepared_named_input() {
         )
         .unwrap();
     let roots = PreparedTypeEffectRoots::collect([&ty], [&extra], &mut control).unwrap();
-    assert_eq!(roots.rows(), &[&call, &empty]);
-    assert_eq!(roots.predicates().len(), 3);
+    assert_eq!(roots.rows(), &[&call]);
+    assert_eq!(roots.predicates(), &[&extra]);
     let frozen = graph
         .read()
         .freeze_scoped(roots.rows(), roots.predicates(), &[], &mut control)
@@ -126,7 +126,8 @@ fn retained_application_keeps_its_arguments_and_independently_observed_use() {
         )
         .unwrap();
     assert_eq!(roots.rows(), &[&operand]);
-    assert_eq!(roots.predicates().len(), 1);
+    assert!(roots.has_effect_inputs());
+    assert!(roots.predicates().is_empty());
     assert!(matches!(
         graph.read().require_query_bodies(roots.rows(), roots.predicates(), &mut work),
         Err(PreparedEffectFailure::ObservationNeedsBody(reference)) if reference == argument
@@ -157,11 +158,39 @@ fn retained_application_keeps_its_arguments_and_independently_observed_use() {
         )
         .unwrap();
     assert_eq!(roots.rows(), &[&operand, &effect]);
-    assert_eq!(roots.predicates().len(), 2);
+    assert!(roots.predicates().is_empty());
     assert!(matches!(
         graph.read().require_query_bodies(roots.rows(), roots.predicates(), &mut work),
         Err(PreparedEffectFailure::ObservationNeedsBody(reference)) if reference == scheme
     ));
+}
+
+#[test]
+fn canonical_inputs_still_signal_effect_observation_and_omitted_rows() {
+    let mut control = Control(4096);
+    let known = function(
+        PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new())),
+        TypeKind::I64,
+    );
+    let omitted = function(
+        PreparedEffectRow::Canonical(EffectRow::unknown()),
+        known.clone(),
+    );
+    let scalar = TypeKind::I64;
+    let empty = PreparedTypeEffectRoots::collect([&scalar], [], &mut control).unwrap();
+    assert!(!empty.has_effect_inputs());
+    let known_roots = PreparedTypeEffectRoots::collect([&known], [], &mut control).unwrap();
+    assert!(known_roots.has_effect_inputs());
+    assert!(!known_roots.has_terms());
+    assert!(!known_roots.has_omitted_rows());
+    assert!(
+        omitted
+            .has_omitted_function_effect_rows_with_control(&mut control)
+            .unwrap()
+    );
+    let omitted_roots = PreparedTypeEffectRoots::collect([&omitted], [], &mut control).unwrap();
+    assert!(omitted_roots.has_effect_inputs());
+    assert!(!omitted_roots.has_terms());
 }
 
 #[test]
