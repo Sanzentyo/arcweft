@@ -1599,7 +1599,7 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
         }
 
         let mut edges = BTreeMap::new();
-        for node in relation.nodes.iter() {
+        for node in relation.nodes {
             self.control.charge(DecisionWork::Visit)?;
             if !quantified.contains(&node.variable) {
                 return Ok(None);

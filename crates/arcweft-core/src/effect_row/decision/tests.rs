@@ -666,8 +666,10 @@ fn prefix_tables_share_free_references_and_publish_the_joint_relation() {
     let first = atom(0).or(&shared, &mut setup).unwrap();
     let second = atom(1).and(&shared, &mut setup).unwrap();
     let point = |mask: usize, reference: &u8| Ok(mask & (1 << reference) != 0);
-    let coefficient =
-        |table, mask| EffectDecisionReplacement::Variable(2 + (table * 4 + mask) as u8);
+    let coefficient = |table, mask| {
+        let id = u8::try_from(2 + table * 4 + mask).expect("fixture coefficient id fits u8");
+        EffectDecisionReplacement::Variable(id)
+    };
 
     let mut separate = Meter::default();
     let first_group = first
