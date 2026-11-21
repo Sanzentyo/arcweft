@@ -589,7 +589,14 @@ callable_case!(
     r#"
 fn writer(value: i64) -> i64 effects { fs.write } { value }
 fn ignore(unused: (i64 -> i64, i64), value: i64) -> i64 { value }
-flow main() -> i64 { return ignore((|value| writer(value), 1i64), 42i64) }
+fn ignore_vec(unused: Vec<(i64 -> i64, i64)>, value: i64) -> i64 { value }
+fn ignore_array(unused: Array<(i64 -> i64, i64), 1>, value: i64) -> i64 { value }
+flow main() -> i64 {
+    let first = ignore((|value| writer(value), 1i64), 14i64)
+    let second = ignore_vec([(|value| writer(value), 1i64)], 14i64)
+    let third = ignore_array([(|value| writer(value), 1i64)], 14i64)
+    return first + second + third
+}
 "#,
     RuntimeValue::i64(42),
     "42"

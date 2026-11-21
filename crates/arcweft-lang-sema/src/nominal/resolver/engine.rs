@@ -59,13 +59,16 @@ struct Resolver<'input, 'world> {
     alias_stack: Vec<ProjectNominalDeclarationId>,
 }
 
+#[derive(Clone, Copy)]
 struct SourceContext<'a> {
     module: TypeResolutionModule<'a>,
     generics: GenericContext<'a>,
-    associated: Option<AssociatedTypeScope>,
+    associated: Option<&'a AssociatedTypeScope>,
     alias_target: bool,
+    type_argument: bool,
 }
 
+#[derive(Clone, Copy)]
 enum GenericContext<'a> {
     Input(&'a GenericTypeScope),
     Alias(&'a BTreeMap<ModuleSegment, AliasBinding>),
@@ -256,8 +259,9 @@ impl<'input, 'world> Resolver<'input, 'world> {
         let root_context = SourceContext {
             module: self.input.module(),
             generics: GenericContext::Input(self.input.generics()),
-            associated: self.input.associated().cloned(),
+            associated: self.input.associated(),
             alias_target: false,
+            type_argument: false,
         };
         let root = self.input.root();
         let value = self.resolve_node(&root_context, root, 1)?;

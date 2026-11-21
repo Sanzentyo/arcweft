@@ -243,25 +243,22 @@ impl Resolver<'_, '_> {
         }
         let constructor = BuiltinTypeConstructor::from_hir_path(generic.base());
         let mut resolved_args = Vec::with_capacity(generic.arguments().len());
+        let argument_context = SourceContext {
+            type_argument: true,
+            ..*context
+        };
         for (index, child) in generic.arguments().iter().copied().enumerate() {
             let expectation = u16::try_from(index)
                 .ok()
                 .and_then(|index| constructor.and_then(|value| value.argument_expectation(index)));
             let resolved = if expectation == Some(TypeArgumentExpectation::EntityFamily) {
-                self.resolve_entity_family_node(context, child, depth.saturating_add(1))?
+                self.resolve_entity_family_node(&argument_context, child, depth.saturating_add(1))?
             } else {
-                self.resolve_node(context, child, depth.saturating_add(1))?
+                self.resolve_node(&argument_context, child, depth.saturating_add(1))?
             };
             resolved_args.push((child, resolved));
         }
         let result = self.resolve_name(context, owner, generic.base(), resolved_args, depth)?;
-        for child in generic.arguments() {
-            self.nodes
-                .iter_mut()
-                .rfind(|node| node.node() == *child)
-                .expect("the resolved type argument has its exact source node")
-                .mark_type_argument();
-        }
         Ok(self.finish_node(context, owner, result.value, result.outcome))
     }
 
@@ -408,16 +405,12 @@ impl Resolver<'_, '_> {
         depth: u16,
     ) -> Option<NodeValue> {
         if let Some(poison) = self.global_halt {
-            self.nodes.push(ResolvedTypeNode::new(
+            return Some(self.finish_node(
+                context,
                 owner,
-                context.alias_target,
-                context.evidence(owner, false),
-                context.terminal_evidence(owner),
-                context.reference_path(owner),
-                Some(TypeKind::Error(poison)),
+                NodeValue::error(poison, []),
                 TypeNameResolution::Poisoned(poison),
             ));
-            return Some(NodeValue::error(poison, []));
         }
         if let Err((attempted, maximum)) = self.charge(if context.alias_target { 2 } else { 1 }) {
             return Some(self.work_overflow_node(context, owner, attempted, maximum));
@@ -456,7 +449,7 @@ impl Resolver<'_, '_> {
         None
     }
 
-    fn finish_node(
+    pub(super) fn finish_node(
         &mut self,
         context: &SourceContext<'_>,
         owner: TypeId,
@@ -464,7 +457,7 @@ impl Resolver<'_, '_> {
         outcome: TypeNameResolution,
     ) -> NodeValue {
         let recovered = value.ty.clone();
-        self.nodes.push(ResolvedTypeNode::new(
+        let mut resolved = ResolvedTypeNode::new(
             owner,
             context.alias_target,
             context.evidence(owner, false),
@@ -472,7 +465,11 @@ impl Resolver<'_, '_> {
             context.reference_path(owner),
             recovered,
             outcome,
-        ));
+        );
+        if context.type_argument {
+            resolved.mark_type_argument();
+        }
+        self.nodes.push(resolved);
         value
     }
 

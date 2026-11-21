@@ -25,16 +25,12 @@ impl Resolver<'_, '_> {
         related: Vec<NominalDiagnosticRelated>,
     ) -> NodeValue {
         let poison = self.emit_failure(&failure, context.evidence(node, true), related);
-        self.nodes.push(ResolvedTypeNode::new(
+        self.finish_node(
+            context,
             node,
-            context.alias_target,
-            context.evidence(node, false),
-            context.terminal_evidence(node),
-            context.reference_path(node),
-            Some(crate::types::TypeKind::Error(poison)),
+            NodeValue::error(poison, []),
             TypeNameResolution::Failed(failure),
-        ));
-        NodeValue::error(poison, [])
+        )
     }
 
     pub(super) fn failed_name(
@@ -126,16 +122,12 @@ impl Resolver<'_, '_> {
     ) -> NodeValue {
         let failure = TypeResolutionFailure::WorkOverflow { attempted, maximum };
         let poison = self.emit_work_overflow(context.evidence(node, true), attempted, maximum);
-        self.nodes.push(ResolvedTypeNode::new(
+        self.finish_node(
+            context,
             node,
-            context.alias_target,
-            context.evidence(node, false),
-            context.terminal_evidence(node),
-            context.reference_path(node),
-            Some(crate::types::TypeKind::Error(poison)),
+            NodeValue::error(poison, []),
             TypeNameResolution::Failed(failure),
-        ));
-        NodeValue::error(poison, [])
+        )
     }
 
     pub(super) fn charge(&mut self, units: u64) -> Result<(), (u64, u64)> {
@@ -205,7 +197,9 @@ impl Resolver<'_, '_> {
             let reference_path = self.nodes[index].reference_path().cloned();
             let recovered = self.nodes[index].recovered().cloned();
             let contextual_alias_target = self.nodes[index].is_contextual_alias_target();
-            self.nodes[index] = ResolvedTypeNode::new(
+            let was_type_argument = self.nodes[index].purpose()
+                == crate::nominal::ResolvedTypeNodePurpose::TypeArgument;
+            let mut replacement = ResolvedTypeNode::new(
                 owner,
                 contextual_alias_target,
                 source,
@@ -214,6 +208,10 @@ impl Resolver<'_, '_> {
                 recovered,
                 outcome,
             );
+            if was_type_argument {
+                replacement.mark_type_argument();
+            }
+            self.nodes[index] = replacement;
         }
     }
 

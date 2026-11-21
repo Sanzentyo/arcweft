@@ -152,9 +152,9 @@ pub enum StructuralTypeNodeKind {
 
 /// Semantic role of one accepted structural type node.
 ///
-/// Type-constructor arguments and trait predicates retain source ownership
-/// without inventing a runtime value type. The nominal resolver's accepted
-/// outcome is the sole authority for this distinction.
+/// Type-constructor arguments and their authored descendants, as well as
+/// trait predicates, retain source ownership without standalone runtime
+/// value types. The accepted resolver outcome determines this purpose.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResolvedTypeNodePurpose {
     ValueType,
@@ -991,18 +991,19 @@ impl ResolvedTypeRefOutcome {
 }
 
 impl TypeResolutionReport {
-    pub(crate) fn mark_root_type_argument(&mut self) {
+    pub(crate) fn mark_source_type_argument(&mut self) {
         let product = match &mut self.outcome {
             ResolvedTypeRefOutcome::Complete(product) => product,
             ResolvedTypeRefOutcome::Poisoned(poisoned) => &mut poisoned.product,
             ResolvedTypeRefOutcome::Detached(detached) => &mut detached.product,
         };
-        product
-            .nodes
-            .iter_mut()
-            .rfind(|node| node.node() == product.root)
-            .expect("the accepted resolution product owns its root node")
-            .mark_type_argument();
+        // A call's explicit type argument owns the full authored subtree.
+        // Alias expansion nodes belong to a separate declaration.
+        for node in product.nodes.iter_mut() {
+            if !node.is_contextual_alias_target() {
+                node.mark_type_argument();
+            }
+        }
     }
 
     pub(crate) fn new(

@@ -322,7 +322,7 @@ impl Analyzer<'_, '_, '_> {
         let mut report = resolve_type_ref(&input)
             .map_err(|_| FinalSemanticAnalysisError::TypeResolutionFailed { owner })?;
         if root_purpose == ResolvedTypeNodePurpose::TypeArgument {
-            report.mark_root_type_argument();
+            report.mark_source_type_argument();
         }
         if retain_receiver_candidate_outcomes && is_unknown_nominal_receiver(module, owner, &report)
         {

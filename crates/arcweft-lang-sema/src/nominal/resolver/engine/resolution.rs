@@ -174,7 +174,7 @@ impl Resolver<'_, '_> {
                 outcome: TypeNameResolution::Generic(id),
             });
         }
-        let associated = context.associated.as_ref()?;
+        let associated = context.associated?;
         let name = direct_name(path).and_then(|name| ModuleSegment::new(name).ok())?;
         let TypeKind::AcceptedNominal(nominal) = associated.binding(&name)?.clone() else {
             return None;
@@ -564,8 +564,9 @@ impl Resolver<'_, '_> {
                 .and_then(|project| project.module(declaration.id().module()))
                 .expect("accepted symbol declarations retain their exact HIR module"),
             generics: GenericContext::Alias(&bindings),
-            associated: use_context.associated.clone(),
+            associated: use_context.associated,
             alias_target: true,
+            type_argument: false,
         };
         self.alias_stack.push(declaration.id().clone());
         let normalized = self.resolve_node(&target_context, *target, depth + 1)?;
