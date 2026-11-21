@@ -573,10 +573,10 @@ impl PreparedEffectGraph {
             .map_err(PreparedEffectFailure::Control)?;
         let mut witnessed = BTreeSet::from([self.state]);
         let super::scope::ReadScopeData {
-            mut functions,
-            mut rows,
-            mut predicates,
-            mut choices,
+            functions,
+            rows,
+            predicates,
+            choices,
             mut layers,
             ..
         } = self.delta_scope_data(ordered.values().copied(), control, |delta, control| {
@@ -600,6 +600,12 @@ impl PreparedEffectGraph {
             }
             Ok(())
         })?;
+        // The publication assembles a new set of indexes. Only a retained
+        // read scope shares them with its successors.
+        let mut functions = Arc::into_inner(functions).expect("new function index");
+        let mut rows = Arc::into_inner(rows).expect("new row index");
+        let mut predicates = Arc::into_inner(predicates).expect("new predicate index");
+        let mut choices = Arc::into_inner(choices).expect("new choice index");
         let inherited = self.active_scope.as_ref().map(|scope| &scope.input.data);
         for id in layers.keys() {
             control

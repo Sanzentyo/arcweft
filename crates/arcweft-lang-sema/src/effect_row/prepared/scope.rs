@@ -17,10 +17,10 @@ pub(super) struct ReadScopeData {
     base: PreparedEffectStateId,
     pub(super) ids: Arc<[u64]>,
     pub(super) layers: BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
-    pub(super) functions: BTreeMap<u64, Arc<Function>>,
-    pub(super) rows: BTreeMap<u64, Arc<RowTerm>>,
-    pub(super) predicates: BTreeMap<u64, Arc<PredicateTerm>>,
-    pub(super) choices: BTreeSet<u64>,
+    pub(super) functions: Arc<BTreeMap<u64, Arc<Function>>>,
+    pub(super) rows: Arc<BTreeMap<u64, Arc<RowTerm>>>,
+    pub(super) predicates: Arc<BTreeMap<u64, Arc<PredicateTerm>>>,
+    pub(super) choices: Arc<BTreeSet<u64>>,
 }
 
 #[derive(Debug)]
@@ -356,10 +356,10 @@ impl PreparedEffectGraph {
             base: self.state,
             ids: ids.into(),
             layers,
-            functions,
-            rows,
-            predicates,
-            choices,
+            functions: Arc::new(functions),
+            rows: Arc::new(rows),
+            predicates: Arc::new(predicates),
+            choices: Arc::new(choices),
         })
     }
 
@@ -408,11 +408,92 @@ impl PreparedEffectGraph {
         let delta = edit.finish(control)?;
         let reads = if delta.data.base == delta.data.result {
             input.clone()
+        } else if delta.data.functions.is_empty() && self.can_reuse_read_scope(input) {
+            self.extend_read_scope(input, &delta, control)?
         } else {
             self.read_scope([&delta], control)?
         };
         Ok((output, reads))
     }
+
+    /// Terms keep their original definitions for every read scope. An edit
+    /// that adds terms to its exact input can share the other indexes, since
+    /// there is no function replacement to reconcile against the live graph.
+    fn extend_read_scope<C: DecisionControl>(
+        &self,
+        input: &PreparedEffectReadScope,
+        delta: &PreparedEffectDelta,
+        control: &mut C,
+    ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
+        self.validate_delta_base(delta, control)?;
+        let old = &input.data;
+        let added = &delta.data;
+        if !delta
+            .dependencies
+            .as_ref()
+            .is_some_and(|reads| Arc::ptr_eq(old, &reads.data))
+            || old.ids.last().is_some_and(|id| *id >= added.ordinal)
+        {
+            return Err(PreparedEffectInvariant::ReadScopeConflict.into());
+        }
+        let mut work = Work(control);
+        let mut layers = BTreeMap::new();
+        let mut ids = Vec::new();
+        for (&id, layer) in &old.layers {
+            work.charge(DecisionWork::Node)?;
+            layers.insert(id, Arc::clone(layer));
+            work.charge(DecisionWork::Node)?;
+            ids.push(id);
+        }
+        retain_layer(&mut layers, added, &mut work)?;
+        work.charge(DecisionWork::Node)?;
+        ids.push(added.ordinal);
+        let rows = extend_definitions(&old.rows, &added.rows, &mut work)?;
+        let predicates = extend_definitions(&old.predicates, &added.predicates, &mut work)?;
+        let choices = if added.choices.is_empty() {
+            Arc::clone(&old.choices)
+        } else {
+            let mut choices = BTreeSet::new();
+            for &id in old.choices.iter().chain(&added.choices) {
+                work.charge(DecisionWork::Node)?;
+                choices.insert(id);
+            }
+            Arc::new(choices)
+        };
+        work.charge(DecisionWork::Node)?;
+        work.charge(DecisionWork::Node)?;
+        Ok(PreparedEffectReadScope {
+            data: Arc::new(ReadScopeData {
+                issuer: Arc::clone(&old.issuer),
+                base: old.base,
+                ids: ids.into(),
+                layers,
+                functions: Arc::clone(&old.functions),
+                rows,
+                predicates,
+                choices,
+            }),
+        })
+    }
+}
+
+fn extend_definitions<T, C: DecisionControl>(
+    base: &Arc<BTreeMap<u64, Arc<T>>>,
+    added: &BTreeMap<u64, Arc<T>>,
+    work: &mut Work<'_, C>,
+) -> Result<Arc<BTreeMap<u64, Arc<T>>>, PreparedEffectFailure<C::Error>> {
+    if added.is_empty() {
+        return Ok(Arc::clone(base));
+    }
+    let mut definitions = BTreeMap::new();
+    for (&id, value) in base.iter() {
+        work.charge(DecisionWork::Node)?;
+        definitions.insert(id, Arc::clone(value));
+    }
+    for (&id, value) in added {
+        retain_definition(&mut definitions, id, value, work)?;
+    }
+    Ok(Arc::new(definitions))
 }
 
 fn ordered_layers<C: DecisionControl>(

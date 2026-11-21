@@ -582,6 +582,56 @@ fn dropping_scoped_and_nested_term_edits_rolls_back_only_their_own_writes() {
 }
 
 #[test]
+fn derived_terms_share_unmodified_indexes_and_keep_the_exact_layer() {
+    let mut graph = PreparedEffectGraph::default();
+    let base = graph.state;
+    let mut work = budget();
+    let source = prepare_source(&mut graph);
+    let input = graph.read_scope([&source.delta], &mut work).unwrap();
+    let mut edit = graph.edit_scope(&input, &mut work).unwrap();
+    let predicate = edit
+        .relate(
+            PreparedEffectRelation::Equal,
+            source.row.clone(),
+            literal(&["fs.read"]),
+            &mut work,
+        )
+        .unwrap();
+    let added = edit.finish(&mut work).unwrap();
+
+    let mut rebuilding = budget();
+    let rebuilt = graph.read_scope([&added], &mut rebuilding).unwrap();
+    let mut extending = budget();
+    let available = extending.0;
+    let extended = graph
+        .extend_read_scope(&input, &added, &mut extending)
+        .unwrap();
+    assert!(extending.0 > rebuilding.0);
+    assert!(extended.same_origin(&rebuilt, &mut work).unwrap());
+    assert_eq!(extended.data.ids, rebuilt.data.ids);
+    assert!(Arc::ptr_eq(&extended.data.functions, &input.data.functions));
+    assert!(Arc::ptr_eq(&extended.data.rows, &input.data.rows));
+    assert!(Arc::ptr_eq(&extended.data.choices, &input.data.choices));
+    let view = graph.read_scoped(&extended, &mut work).unwrap();
+    view.validate_query_roots(&[&source.row], &[&source.predicate, &predicate], &mut work)
+        .unwrap();
+    assert_eq!(
+        graph
+            .read_scoped(&input, &mut work)
+            .unwrap()
+            .validate_retained_predicate(&predicate),
+        Err(PreparedEffectInvariant::StaleReference)
+    );
+    for remaining in 0..available - extending.0 {
+        assert!(matches!(
+            graph.extend_read_scope(&input, &added, &mut Budget(remaining)),
+            Err(PreparedEffectFailure::Control(Exhausted))
+        ));
+        assert_base(&graph, base);
+    }
+}
+
+#[test]
 fn scope_construction_edit_and_batch_publication_are_failure_atomic_at_every_budget() {
     let mut graph = PreparedEffectGraph::default();
     let mut work = budget();
