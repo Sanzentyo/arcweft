@@ -301,23 +301,23 @@ impl Analyzer<'_, '_, '_> {
                     let Some(dependency) = error.effect_observation_dependency() else {
                         return Err(error);
                     };
-                    self.prepare_type_observation_dependency(context, owner, dependency)?;
+                    self.prepare_effect_body_dependency(owner, dependency, &mut context.work())?;
                 }
             }
         }
     }
 
-    pub(super) fn prepare_type_observation_dependency(
+    pub(super) fn prepare_effect_body_dependency(
         &mut self,
-        context: &super::expression_error::AnalyzerExpressionContext<'_>,
         operand: arcweft_lang_hir::identity::ExprId,
         dependency: &crate::effect_row::prepared::PreparedEffectSchemeRef,
+        work: &mut super::preparation_work::AnalyzerPreparationWork<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         use crate::effect_row::prepared::PreparedEffectFailure;
         let checked = self
             .facts
             .effect_declarations()?
-            .observation_dependency_owner(dependency, &mut context.work())?;
+            .observation_dependency_owner(dependency, work)?;
         let staged = self
             .staged_callables
             .as_ref()

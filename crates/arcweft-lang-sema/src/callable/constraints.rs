@@ -868,41 +868,117 @@ where
     pub(crate) fn finish_original_result(
         self,
         key: D::Projection,
+        source: D::Source,
         inputs: &[(
             &crate::effect_row::prepared::PreparedEffectUnknownRef,
             &crate::effect_row::EffectRow,
         )],
+        mut prepare_body: impl FnMut(
+            &mut C,
+            &crate::effect_row::prepared::PreparedEffectSchemeRef,
+            CandidateConstraintWorkLoan<'control>,
+        ) -> Result<(), D::SourceErrorCause>,
     ) -> Result<CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>> {
+        use crate::effect_row::prepared::PreparedEffectFailure;
+        use crate::types::constraints::{TypeConstraintError, transaction::PreparedValueFailure};
+
         let Self {
             lower,
             mut callbacks,
         } = self;
         let result = (|| {
+            let source = lower.viable_result_source(source);
             let frontier = lower.suspend_result(callbacks.context, key)?;
+            let source = source.ok_or(TypeConstraintError::from(
+                TypeConstraintInvariant::OriginalProducer,
+            ))?;
             let context = &mut *callbacks.context;
+            let access = || CandidateConstraintEffectAccess {
+                authority: &callbacks.authority,
+            };
+            let checkpoint_failure = CandidateConstraintCallbacks::<D, C>::checkpoint_failure;
+            let prepared_failure = |error| {
+                let error = match error {
+                    PreparedValueFailure::Constraint(error) => error,
+                    PreparedValueFailure::Instantiation(error) => {
+                        TypeConstraintInvariant::Instantiation(error).into()
+                    }
+                    PreparedValueFailure::Effect(error) => TypeConstraintError::from(error),
+                    _ => TypeConstraintInvariant::OriginalProducer.into(),
+                };
+                TypeConstraintFailure::from(error)
+            };
+            let mut checkpoint = callbacks
+                .client
+                .with_effect_relation(access(), |graph| graph.checkpoint(context))
+                .map_err(checkpoint_failure)?
+                .map_err(TypeConstraintError::from)?;
+            let materialization = (|| {
+                let (mut forest, producer) = callbacks
+                    .client
+                    .with_effect_relation(access(), |graph| {
+                        frontier.infer_independent(graph, context)
+                    })
+                    .map_err(checkpoint_failure)?
+                    .map_err(prepared_failure)?;
+                loop {
+                    let closed = callbacks
+                        .client
+                        .with_effect_relation(access(), |graph| {
+                            forest.close(inputs, graph, context)
+                        })
+                        .map_err(checkpoint_failure)?;
+                    match closed {
+                        Ok(closed) => {
+                            break closed
+                                .into_candidate_materialization(&producer, context)
+                                .map_err(prepared_failure);
+                        }
+                        Err(failure) => {
+                            let (error, original) = failure.into_parts();
+                            let PreparedValueFailure::Constraint(TypeConstraintError::Invariant(
+                                TypeConstraintInvariant::PreparedEffect(
+                                    PreparedEffectFailure::ObservationNeedsBody(body),
+                                ),
+                            )) = error
+                            else {
+                                return Err(prepared_failure(error));
+                            };
+                            // The closed attempt rolled back. Prepare the missing original
+                            // declaration with no effect graph loan, then retry this forest.
+                            prepare_body(
+                                &mut callbacks.client,
+                                &body,
+                                context.accounting_mut().loan(),
+                            )
+                            .map_err(|cause| {
+                                TypeConstraintFailure::fatal_source(SourceError::new(
+                                    source,
+                                    SourcePhase::Materialize,
+                                    cause,
+                                ))
+                            })?;
+                            forest = original;
+                        }
+                    }
+                }
+            })();
             callbacks
                 .client
-                .with_effect_relation(
-                    CandidateConstraintEffectAccess {
-                        authority: &callbacks.authority,
-                    },
-                    |graph| frontier.into_candidate_materialization(inputs, graph, context),
-                )
-                .map_err(CandidateConstraintCallbacks::<D, C>::checkpoint_failure)?
-                .map_err(|error| {
-                    use crate::types::constraints::{
-                        TypeConstraintError, transaction::PreparedValueFailure,
-                    };
-                    let error = match error {
-                        PreparedValueFailure::Constraint(error) => error,
-                        PreparedValueFailure::Instantiation(error) => {
-                            TypeConstraintInvariant::Instantiation(error).into()
+                .with_effect_relation(access(), |graph| {
+                    if materialization.is_ok() {
+                        if let Err(error) = graph.commit(&checkpoint) {
+                            graph.rollback(&mut checkpoint)?;
+                            return Err(error);
                         }
-                        PreparedValueFailure::Effect(error) => TypeConstraintError::from(error),
-                        _ => TypeConstraintInvariant::OriginalProducer.into(),
-                    };
-                    TypeConstraintFailure::from(error)
+                        Ok(())
+                    } else {
+                        graph.rollback(&mut checkpoint)
+                    }
                 })
+                .map_err(checkpoint_failure)?
+                .map_err(TypeConstraintError::from)?;
+            materialization
         })();
         match result {
             Ok(owner) => callbacks.finish_materialization(owner),

@@ -6722,7 +6722,28 @@ pub(crate) fn run_prepared_candidate(
                 }
                 match (&output.result, output.closure) {
                     (PreparedCallOutput::Value { .. }, TypeConstraintProjectionClosure::Closed) => {
-                        driver.finish_original_result(AnalyzerCallProjection::Result, &[])
+                        driver.finish_original_result(
+                            AnalyzerCallProjection::Result,
+                            AnalyzerCallConstraintSource::Result {
+                                source: application,
+                            },
+                            &[],
+                            |client, body, work| {
+                                client
+                                    .operations
+                                    .analyzer
+                                    .prepare_effect_body_dependency(
+                                        application,
+                                        body,
+                                        &mut AnalyzerPreparationWork::candidate(work, application),
+                                    )
+                                    .map_err(|error| {
+                                        AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(
+                                            error,
+                                        ))
+                                    })
+                            },
+                        )
                     }
                     _ => driver.finish_alternatives(),
                 }

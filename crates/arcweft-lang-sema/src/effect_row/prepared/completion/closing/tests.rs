@@ -363,9 +363,7 @@ fn final_closure_preserves_the_bound_original_identity_with_late_named_values() 
     let state = graph.state;
     assert!(matches!(
         pending.close_original_with_inputs(&mut graph, &[], &[], &inputs, &mut budget()),
-        Err(PreparedEffectFailure::Invariant(
-            PreparedEffectInvariant::SchemeState
-        ))
+        Err(PreparedEffectFailure::ObservationNeedsBody(dependency)) if dependency == child
     ));
     assert_eq!(graph.state, state);
     graph

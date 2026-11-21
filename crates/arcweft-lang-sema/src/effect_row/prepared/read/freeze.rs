@@ -80,8 +80,9 @@ impl PreparedEffectReadView<'_> {
         let schemes = match source {
             #[cfg(test)]
             SnapshotSource::Final(_) | SnapshotSource::FinalBound(_) => SchemeDependencies::Bodies,
-            SnapshotSource::FinalOriginal { .. } => SchemeDependencies::Bodies,
-            SnapshotSource::Observation(_) => SchemeDependencies::Observation,
+            SnapshotSource::FinalOriginal { .. } | SnapshotSource::Observation(_) => {
+                SchemeDependencies::Observation
+            }
             _ => SchemeDependencies::Headers,
         };
         let original = match source {

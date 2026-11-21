@@ -95,8 +95,27 @@ impl<D: ConstraintDomain> SuspendedConstraintFrontier<D> {
         &self.result
     }
 
+    pub(crate) fn infer_independent<A: TypeConstraintAccounting>(
+        self,
+        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<
+        (
+            super::component::OriginalConstraintForest<D, ()>,
+            super::PreparedValueRef<D>,
+        ),
+        super::PreparedValueFailure,
+    > {
+        let original = self.original_context().clone();
+        let mut component = super::OpenConstraintComponent::new(context, graph)?;
+        let producer = component.admit_roots(context, graph, original, vec![self], ())?;
+        let forest = component.infer_original_products(context, graph)?;
+        Ok((forest, producer))
+    }
+
     /// Run a standalone producer through the original-product calculation and
     /// transfer its canonical alternatives to the callable callback owner.
+    #[cfg(test)]
     pub(crate) fn into_candidate_materialization<A: TypeConstraintAccounting>(
         self,
         inputs: &[(
@@ -107,11 +126,8 @@ impl<D: ConstraintDomain> SuspendedConstraintFrontier<D> {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<super::ConstraintMaterialization<D>, super::PreparedValueFailure> {
         context.with_effect_transaction(graph, |context, graph| {
-            let original = self.original_context().clone();
-            let mut component = super::OpenConstraintComponent::new(context, graph)?;
-            let producer = component.admit_roots(context, graph, original, vec![self], ())?;
-            component
-                .infer_original_products(context, graph)?
+            let (forest, producer) = self.infer_independent(graph, context)?;
+            forest
                 .close(inputs, graph, context)
                 .map_err(|failure| failure.into_parts().0)?
                 .into_candidate_materialization(&producer, context)

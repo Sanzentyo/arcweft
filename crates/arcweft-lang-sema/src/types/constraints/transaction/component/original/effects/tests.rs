@@ -412,7 +412,6 @@ fn independent_bound_premises_remain_independent_in_the_joint_domain() {
 
 #[test]
 fn final_forest_closure_waits_for_a_body_and_returns_the_same_forest_for_retry() {
-    use crate::effect_row::prepared::PreparedEffectInvariant;
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let mut graph = PreparedEffectGraph::default();
@@ -437,10 +436,10 @@ fn final_forest_closure_waits_for_a_body_and_returns_the_same_forest_for_retry()
     assert!(matches!(
         error,
         PreparedValueFailure::Constraint(TypeConstraintError::Invariant(
-            TypeConstraintInvariant::PreparedEffect(PreparedEffectFailure::Invariant(
-                PreparedEffectInvariant::SchemeState
+            TypeConstraintInvariant::PreparedEffect(PreparedEffectFailure::ObservationNeedsBody(
+                dependency
             ))
-        ))
+        )) if dependency == named
     ));
     assert!(Arc::ptr_eq(&members, &forest.products[0].members));
     assert_eq!(forest.products[0].members.as_ref(), &[member]);

@@ -1927,7 +1927,7 @@ impl Analyzer<'_, '_, '_> {
                     let Some(dependency) = error.effect_observation_dependency() else {
                         return Err(AnalyzerExpressionError::fatal(error));
                     };
-                    self.prepare_type_observation_dependency(context, left, dependency)
+                    self.prepare_effect_body_dependency(left, dependency, &mut context.work())
                         .map_err(AnalyzerExpressionError::fatal)?;
                 }
             }
@@ -2030,8 +2030,12 @@ impl Analyzer<'_, '_, '_> {
                     let Some(dependency) = error.effect_observation_dependency() else {
                         return Err(AnalyzerExpressionError::fatal(*error));
                     };
-                    self.prepare_type_observation_dependency(context, expression, dependency)
-                        .map_err(AnalyzerExpressionError::fatal)?;
+                    self.prepare_effect_body_dependency(
+                        expression,
+                        dependency,
+                        &mut context.work(),
+                    )
+                    .map_err(AnalyzerExpressionError::fatal)?;
                     continue;
                 }
                 other => other,
