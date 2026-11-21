@@ -588,6 +588,11 @@ fn derived_terms_share_unmodified_indexes_and_keep_the_exact_layer() {
     let mut work = budget();
     let source = prepare_source(&mut graph);
     let input = graph.read_scope([&source.delta], &mut work).unwrap();
+    let edit = graph.edit_scope(&input, &mut work).unwrap();
+    let empty = edit.finish(&mut work).unwrap();
+    let same = graph.read_scope([&empty], &mut work).unwrap();
+    assert!(Arc::ptr_eq(&same.data, &input.data));
+
     let mut edit = graph.edit_scope(&input, &mut work).unwrap();
     let predicate = edit
         .relate(
@@ -600,12 +605,17 @@ fn derived_terms_share_unmodified_indexes_and_keep_the_exact_layer() {
     let added = edit.finish(&mut work).unwrap();
 
     let mut rebuilding = budget();
-    let rebuilt = graph.read_scope([&added], &mut rebuilding).unwrap();
+    let rebuilt = graph
+        .delta_scope_data([&added], &mut rebuilding, |delta, control| {
+            graph.validate_delta_base(delta, control)
+        })
+        .map(|data| PreparedEffectReadScope {
+            data: Arc::new(data),
+        })
+        .unwrap();
     let mut extending = budget();
     let available = extending.0;
-    let extended = graph
-        .extend_read_scope(&input, &added, &mut extending)
-        .unwrap();
+    let extended = graph.read_scope([&added], &mut extending).unwrap();
     assert!(extending.0 > rebuilding.0);
     assert!(extended.same_origin(&rebuilt, &mut work).unwrap());
     assert_eq!(extended.data.ids, rebuilt.data.ids);
@@ -624,7 +634,7 @@ fn derived_terms_share_unmodified_indexes_and_keep_the_exact_layer() {
     );
     for remaining in 0..available - extending.0 {
         assert!(matches!(
-            graph.extend_read_scope(&input, &added, &mut Budget(remaining)),
+            graph.read_scope([&added], &mut Budget(remaining)),
             Err(PreparedEffectFailure::Control(Exhausted))
         ));
         assert_base(&graph, base);

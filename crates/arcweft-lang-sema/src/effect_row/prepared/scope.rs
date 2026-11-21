@@ -74,7 +74,9 @@ impl PreparedEffectReadScope {
         enclosing: Option<&ActiveEffectScope>,
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        if let Some(enclosing) = enclosing {
+        if let Some(enclosing) = enclosing
+            && !Arc::ptr_eq(&self.data, &enclosing.input.data)
+        {
             for (&id, layer) in &enclosing.input.data.layers {
                 control
                     .charge(DecisionWork::Visit)
@@ -122,10 +124,29 @@ impl PreparedEffectGraph {
         inputs: impl IntoIterator<Item = &'a PreparedEffectDelta>,
         control: &mut C,
     ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
-        self.delta_scope_data(inputs, control, |input, control| {
-            // The assembled view meters the definitions it actually inspects.
-            self.validate_delta_base(input, control)
-        })
+        let mut inputs = inputs.into_iter().peekable();
+        let first = inputs.next();
+        if let Some(delta) = first
+            && inputs.peek().is_none()
+            && delta.data.functions.is_empty()
+            && let Some(dependencies) = &delta.dependencies
+            && self.can_reuse_read_scope(dependencies)
+        {
+            self.validate_delta_base(delta, control)?;
+            return if delta.data.has_transition() {
+                self.extend_read_scope(dependencies, &delta.data, control)
+            } else {
+                Ok(dependencies.clone())
+            };
+        }
+        self.delta_scope_data(
+            first.into_iter().chain(inputs),
+            control,
+            |input, control| {
+                // The assembled view meters the definitions it actually inspects.
+                self.validate_delta_base(input, control)
+            },
+        )
         .map(|data| PreparedEffectReadScope {
             data: Arc::new(data),
         })
@@ -410,8 +431,6 @@ impl PreparedEffectGraph {
         let delta = edit.finish(control)?;
         let reads = if delta.data.base == delta.data.result {
             input.clone()
-        } else if delta.data.functions.is_empty() && self.can_reuse_read_scope(input) {
-            self.extend_read_scope(input, &delta, control)?
         } else {
             self.read_scope([&delta], control)?
         };
@@ -424,18 +443,11 @@ impl PreparedEffectGraph {
     fn extend_read_scope<C: DecisionControl>(
         &self,
         input: &PreparedEffectReadScope,
-        delta: &PreparedEffectDelta,
+        added: &Arc<PreparedEffectDeltaData>,
         control: &mut C,
     ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
-        self.validate_delta_base(delta, control)?;
         let old = &input.data;
-        let added = &delta.data;
-        if !delta
-            .dependencies
-            .as_ref()
-            .is_some_and(|reads| Arc::ptr_eq(old, &reads.data))
-            || old.ids.last().is_some_and(|id| *id >= added.ordinal)
-        {
+        if old.ids.last().is_some_and(|id| *id >= added.ordinal) {
             return Err(PreparedEffectInvariant::ReadScopeConflict.into());
         }
         let mut work = Work(control);
