@@ -418,13 +418,23 @@ fn final_forest_closure_waits_for_a_body_and_returns_the_same_forest_for_retry()
     let named = graph
         .declare(vec![], EffectPredicate::unconstrained(), &mut context)
         .unwrap();
+    let row = graph.application(&named, vec![], &mut context).unwrap();
+    let projection = TypeKind::function_with_contract(
+        crate::types::GenericBinder::EMPTY,
+        truth(),
+        [],
+        TypeKind::I64,
+        row,
+    );
     let mut component = Component::new(&mut context, &graph).unwrap();
-    let member = root(
+    let member = root_with_projection(
         &mut component,
         &mut context,
         &mut graph,
         EffectPredicate::unconstrained(),
         false,
+        &projection,
+        None,
     );
     let forest = component
         .infer_original_products(&mut context, &mut graph)
@@ -444,24 +454,33 @@ fn final_forest_closure_waits_for_a_body_and_returns_the_same_forest_for_retry()
     assert!(Arc::ptr_eq(&members, &forest.products[0].members));
     assert_eq!(forest.products[0].members.as_ref(), &[member]);
     assert_eq!(graph.retained_terms(), retained);
+    let body = EffectRow::closed(EffectSet::from_labels(["body.actual"]).unwrap());
     graph
         .prepare_body(
             &named,
-            PreparedEffectRow::Canonical(EffectRow::closed(
-                EffectSet::from_labels(["body.actual"]).unwrap(),
-            )),
+            PreparedEffectRow::Canonical(body.clone()),
             vec![],
             &mut context,
         )
         .unwrap();
     let closed = forest.close(&[], &mut graph, &mut context).unwrap();
     assert!(Arc::ptr_eq(&members, &closed.products[0].members));
-    assert_eq!(closed.products[0].result.as_ref().unwrap().len(), 1);
+    let [branch] = closed.products[0].result.as_deref().unwrap() else {
+        panic!("the original product closes with one branch");
+    };
+    let [completed] = branch.completed.as_ref() else {
+        panic!("the branch retains its original producer");
+    };
+    let [result] = completed.input.component.selected().projections() else {
+        panic!("the producer has one projected result");
+    };
+    let canonical: TypeKind = result.to_quantified_type().unwrap();
+    let TypeKind::Function { effects, .. } = canonical else {
+        panic!("the projected result is a function");
+    };
+    assert_eq!(effects, body);
     assert_eq!(
-        closed.products[0].result.as_ref().unwrap()[0]
-            .effects
-            .predicate()
-            .value(),
+        branch.effects.predicate().value(),
         &EffectPredicate::unconstrained()
     );
     assert!(closed.original.original_path(member).is_ok());
