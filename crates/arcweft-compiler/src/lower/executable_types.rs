@@ -3,13 +3,15 @@
 use arcweft_lang_hir::identity::HirValueTypeOwner;
 use std::collections::BTreeMap;
 
-use arcweft_lang_hir::{identity::TypeId, symbol::ProjectSymbolTable};
+use arcweft_lang_hir::{
+    identity::TypeId, module::HirModule, symbol::ProjectSymbolTable, type_ref::HirTypeKind,
+};
 use arcweft_lang_sema::{
     final_analysis::{CheckedExecutableRuntimeFactPartition, FinalSemanticAnalysis},
     registration::RegisteredSemanticWorld,
 };
 use arcweft_runtime_plan::semantic_facts::{
-    RuntimeExecutableTypeProjection, RuntimeNormalizedType,
+    RuntimeExecutableTypeProjection, RuntimeNormalizedType, RuntimeSequenceKind, RuntimeTypeShape,
 };
 
 use super::{
@@ -43,15 +45,11 @@ impl RuntimeExecutableInstantiation<'_> {
         self,
         origin: ProjectInstantiationOrigin,
         partition: &CheckedExecutableRuntimeFactPartition,
-        source_type_abis: impl IntoIterator<Item = (TypeId, &'abi RuntimeNormalizedType)>,
+        source_type_abis: BTreeMap<TypeId, &'abi RuntimeNormalizedType>,
         symbols: &ProjectSymbolTable,
         world: &RegisteredSemanticWorld,
         analysis: &FinalSemanticAnalysis,
     ) -> Result<Box<[RuntimeExecutableTypeProjection]>, RuntimeSemanticProjectionError> {
-        // Checked input and result ABIs close inferred function effect rows
-        // which remain omitted at their authored TypeId. Preserve the exact
-        // owner's interface rather than normalizing the annotation again.
-        let source_type_abis = source_type_abis.into_iter().collect::<BTreeMap<_, _>>();
         let mut projection = Vec::new();
         for expected in partition.expressions() {
             let owner = expected.owner();
@@ -147,4 +145,75 @@ impl RuntimeExecutableInstantiation<'_> {
         projection.sort_by_key(RuntimeExecutableTypeProjection::owner);
         Ok(projection.into_boxed_slice())
     }
+}
+
+/// Associate authored structural type occurrences with the corresponding
+/// fields of the selected callable ABI. An omitted effect in a nested type
+/// annotation is completed by the same instance that owns the enclosing ABI.
+pub(super) fn source_type_abis<'a>(
+    module: &HirModule,
+    origin: ProjectInstantiationOrigin,
+    roots: impl IntoIterator<Item = (TypeId, &'a RuntimeNormalizedType)>,
+) -> Result<BTreeMap<TypeId, &'a RuntimeNormalizedType>, RuntimeSemanticProjectionError> {
+    let mut types = BTreeMap::new();
+    let mut pending = roots.into_iter().collect::<Vec<_>>();
+    while let Some((owner, abi)) = pending.pop() {
+        if let Some(previous) = types.insert(owner, abi) {
+            if previous != abi {
+                return Err(origin.error("source type has conflicting executable ABI fields"));
+            }
+            continue;
+        }
+        let ty = module.resolve_type(owner).map_err(|_| {
+            origin.error("executable ABI field has no matching authored type occurrence")
+        })?;
+        let mismatch =
+            || origin.error("authored structural type does not match its executable ABI");
+        let (children, fields) = match (ty.kind(), abi.shape()) {
+            (HirTypeKind::Tuple(children), RuntimeTypeShape::Tuple(fields))
+            | (HirTypeKind::Choice(children), RuntimeTypeShape::Choice(fields)) => {
+                (children.as_ref(), fields.as_ref())
+            }
+            (
+                HirTypeKind::Function(source),
+                RuntimeTypeShape::Function {
+                    parameters, result, ..
+                },
+            ) => {
+                pending.push((source.return_type(), result.as_ref()));
+                (source.parameters(), parameters.as_ref())
+            }
+            (HirTypeKind::Reference(source), RuntimeTypeShape::Reference(target)) => {
+                pending.push((source.referent(), target.as_ref()));
+                continue;
+            }
+            (
+                HirTypeKind::Slice(source),
+                RuntimeTypeShape::Sequence {
+                    kind: RuntimeSequenceKind::Slice,
+                    item,
+                },
+            ) => {
+                pending.push((*source, item.as_ref()));
+                continue;
+            }
+            (HirTypeKind::Tuple(children), RuntimeTypeShape::Unit) if children.is_empty() => {
+                continue;
+            }
+            (
+                HirTypeKind::Tuple(_)
+                | HirTypeKind::Choice(_)
+                | HirTypeKind::Function(_)
+                | HirTypeKind::Reference(_)
+                | HirTypeKind::Slice(_),
+                _,
+            ) => return Err(mismatch()),
+            _ => continue,
+        };
+        if children.len() != fields.len() {
+            return Err(mismatch());
+        }
+        pending.extend(children.iter().copied().zip(fields));
+    }
+    Ok(types)
 }

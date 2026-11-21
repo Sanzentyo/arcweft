@@ -585,6 +585,17 @@ fn callback_effect_inference_works_for_complete_and_partial_function_values() {
 }
 
 callable_case!(
+    inferred_callback_effect_in_a_tuple_parameter_reaches_the_instance,
+    r#"
+fn writer(value: i64) -> i64 effects { fs.write } { value }
+fn ignore(unused: (i64 -> i64, i64), value: i64) -> i64 { value }
+flow main() -> i64 { return ignore((|value| writer(value), 1i64), 42i64) }
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     curried_function_value_retains_independent_callback_effects,
     r#"
 fn invoke(seed: i64)(callback: i64 -> i64) -> i64 { callback(seed) }

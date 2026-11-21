@@ -8189,14 +8189,6 @@ fn runtime_executable_semantic_facts<'abi>(
     dialogue: &RuntimeDialogueProjectionCatalog,
     instances: &mut ProjectInstanceProjection<'_>,
 ) -> Result<RuntimeProjectFunctionInstanceSemanticFacts, RuntimeSemanticProjectionError> {
-    let type_projection = lexical.type_projection(
-        origin,
-        &partition,
-        source_type_abis,
-        symbols,
-        world,
-        analysis,
-    )?;
     let error = |owner: ExprId, reason: &str| RuntimeSemanticProjectionError::Call {
         owner,
         reason: reason.to_owned(),
@@ -8215,6 +8207,14 @@ fn runtime_executable_semantic_facts<'abi>(
                 .then_some(module)
         })
         .ok_or_else(|| origin.error("instance semantic partition module is absent"))?;
+    let type_projection = lexical.type_projection(
+        origin,
+        &partition,
+        executable_types::source_type_abis(module, origin, source_type_abis)?,
+        symbols,
+        world,
+        analysis,
+    )?;
     let projected_types = type_projection
         .iter()
         .filter_map(|row| row.ty().map(|ty| (row.owner(), ty)))
