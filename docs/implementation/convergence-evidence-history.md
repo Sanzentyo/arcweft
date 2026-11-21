@@ -21089,3 +21089,24 @@ CLIのlib／bin 196件と統合6対象30件はすべてPASS。再構築した `a
 `main` を通常の fast-forward で更新し、公開先のfull SHA、fetchしたコミット、変更した16ファイルのblobを照合した。公開時のローカル作業ツリーには既存の未追跡 `%SystemDrive%/` があった。
 
 [検証原本](acceptance-evidence/task-introduced-effect-application.raw.zip) は95項目、1,384,261 bytes、SHA256 `d6d7851221159a7ddcc3f2e23f13f097ec7cf149ae797c1848f95c5774f1ba5a`。全項目の長さとSHA256を照合した。検証後の `target` は136,046,591,238 bytes。
+
+<a id="callback-effects-in-containers"></a>
+## 2026-11-21 — コンテナ内の callback の省略効果
+
+作業基点 `f8a770e967190cfb5b7332194858f21f621cd185`、比較する製品ソース `f368f95dd4e980c369061f1cb10c8cac0c51c528`。[先行実測](#introduced-effect-applications)では、`Vec`・配列・配列反復で候補を選べず、タプルでは候補が確定してから実行時の型投影が未確定効果を拒否した。
+
+ソース `060e3c5f4f1864db1c0dd277eeb7e21216c5cfc0` は、呼出しヒントがグラフ上の推論関数の導入キーを保持し、型の各構成要素へ期待型を渡すときにも同じキーを検出するようにした。解決前の効果行を持つ期待型を、式の照合で確定型として扱っていたためである。既存の solver 用引数走査に加え、期待型には効果グラフの発行元を使う。対象100件では95 PASS／5既知FAIL、指定CLI統合30件はPASS。15入力の3実行器による45確認のうち42件が期待どおりで、タプルの実行時投影は3件とも先行実測と同じエラーだった。
+
+タプルでは選択済みの引数型と呼出し ABI が確定済みだった。LLDB は実行インスタンスの型の一覧を作る処理で、内側の元 TypeId の注釈を独立に投影した箇所に停止した。ソース `212d6a48af410c6015a7076223c04a9f15404a7e` は、明示的な構造を持つ元の型の各位置を、選択済み ABI の対応フィールドから発行する。共有する TypeId に異なるフィールドが対応する場合と構造が一致しない場合を拒否する。対象7件はPASSし、新規回帰は Native とデコード済み AWBC で通過した。
+
+入れ子の `Vec`・配列・タプルの4入力でも、比較用のソース `060e3c5f4f1864db1c0dd277eeb7e21216c5cfc0` が同じ投影エラーを返した。最終ソース `c1a7002ce7095487b6ed4489e0f90191971a7f8c` では、型引数の内側にある元の型注釈も、その型引数の解決証拠として保持する。実行に必要な型は閉じた親の型が保持する。エイリアス展開先は宣言側の解決経路を使う。混在するタプルと `Vec`・配列を追加したコンパイラ対象7件がPASSした。
+
+最終版の CLI は19の実入力をVM・AOT・AWBC Productで照合した。17の正常入力の51実行は42を返し、各ステップ最大1操作、診断・アサーション失敗0件だった。捕捉値を利用して実際に実行した `Vec`・配列の callback は、`container callback` を1回記録した。明示した純粋な効果上限に対する効果付き callback と配列長違反は、6実行すべてで `sema.call.no_viable_signature` を返した。既存の再帰 callback 5入力の14実行も、42、ログ、操作数と完了ステップ数が先行実測と一致した。型エイリアスと Option の内側にタプルを置いた対照の6実行も42を返した。
+
+別の3入力では、タプルの分解で取り出した関数を呼ぶと、関数引数の効果を省略した場合、明示した場合、およびローカルでタプルを作った場合の9実行が `sema.final_analysis` の `typed call constraint failure` を返した。効果を明示した入力の LLDB では宣言本体の検査でこのエラーが報告された。再現した2つの関数引数入力は先行CLIでも同じ診断だった。VMで絞り込むと、純粋なlambdaと名前付き関数の直接束縛は42を返し、タプルの分解で束縛した3入力は失敗した。名前付き関数を分解する入力で、デバッガは `HirLocalValueOrigin::Composite` を呼出しの選択時に拒否する分岐で停止した。
+
+Cargoで解決した逆依存はSemaが22パッケージ、Compilerが10パッケージで、Compilerの対象はすべてSemaの対象に含まれる。非CLIの21パッケージでは4,336件実行し、4,271 PASS／65既知FAIL、別に1 SKIP。[前回の全件実行](#introduced-effect-applications)とのID照合で、既存1件がFAILからPASSへ変わり、新規2件もPASS。新規失敗は0件。CLIのlib／bin 196件と統合6対象30件はすべてPASS。再構築した `arcw.exe` のSHA256は `8d3c4ae8940997959946bba3b619a59d690c30f923320e8e4845de74482828aa`。workspace全ターゲット・全機能のcheckとClippy、変更したRust 13ファイルの書式、構造ゲートを通過した。構造ゲートのブロッキング違反は0件。
+
+`main` を通常のfast-forwardで更新し、公開refとfetchしたfull SHA、および変更した13ファイルのblobを照合した。公開時のローカル作業ツリーには既存の未追跡 `%SystemDrive%/` があった。
+
+[検証原本](acceptance-evidence/task-contextual-callback-containers.raw.zip) は351項目、1,484,832 bytes、SHA256 `f1c86116041dc9a69a9b375dd9c32b9b4fb1ae5a58ed103c5845a7b3b532998d`。全項目の長さとSHA256を照合した。検証後の `target` は136,051,673,556 bytes。
