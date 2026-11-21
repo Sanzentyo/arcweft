@@ -20909,3 +20909,24 @@ CLIのライブラリ・バイナリ196件、統合6対象の30件、Sema doctes
 Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-reached-effect-definitions.raw.zip) は76 entry、1,434,470 bytes、SHA256 `f4371d0f8899f59463fa369ef59588d20d70c48f5ee0b791b0d029398e03ee4f`。各entryの長さとハッシュを照合した。記録時の `target` は134,898,862,491 bytes。
+
+<a id="batched-effect-equalities"></a>
+## 2026-11-21 — 効果行の等式をまとめ、準備グラフのルートを選別
+
+検証基点は `abe1bde7dfa013d2d3f559a57fdbbc06af1937b9`。公開Sourceは `021e68501500860938e23ab25311939fac3c5bce`。効果行パラメーターを持たない宣言の係数等式とラベルごとの行等式を、一つの決定グラフで組み立てる。外側と名前付きラベルは同じ選択値のもとで比較する。型からルートを集める段階では、元の型・効果ポートの検査と深さの上限を維持し、依存辺を持つ項を準備グラフへ渡す。効果ポートの有無と省略された効果行の有無は収集時に記録し、呼出し時の本体照合と初期化式の推論に使う。
+
+先行順の3 callback の基点を再ビルドして診断したところ、同じ計測範囲の関数適用4回は対象の関数がすべて異なった。等式の組み立てをまとめた初回試行は、2 callback で2,848→2,838、3 callback の先行2入力で4,475→4,455、別の入力で4,332→4,312単位だった。初回のテストビルドは、回帰が非公開の評価メソッドを呼んだため `E0624` で終了した。公開の制御付き評価に修正し、最終試行では同じ選択値に従う全ラベルの等式と、正準のポートだけを持つ型でも本体照合を要求することと省略判定を保つことを確認する回帰がPASSした。Semaの対象123件は122 PASS／1既知FAILで、失敗IDは先行の `contextual_effect_rows_survive_value_expression_boundaries` と一致した。
+
+5つの `.arcw` を公開済み入力原本のSHA256と照合した。既定上限4,096で1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで戻り値42、1ステップ最大1操作、診断0件を確認した。1 callback は `marker` を記録し、2 callback はログ0件だった。CLIの3 callback は3入力ともVM／AWBC Productで式95の意味解析に失敗した。
+
+最終試行の診断専用上限16,384では、2 callback は2,817単位、3 callback の先行2入力は4,422単位、別の入力は4,279単位だった。いずれもVMで戻り値42。先行順の入力で、ルートの効果制約コンパイルの開始は1,818→1,785単位、開始から完了までは1,549→1,529単位だった。最終試行の別計測では、ルートの論理積の構築が292単位、子成分のガード付き論理積の構築が126単位だった。ルートの論理積のうち、既存の条件を決定グラフ内で結合する工程は196単位だった。先行順の最後のグループでは、同じ先頭変数を持つ条件の論理積に95単位、後続グループの結果との結合に68単位かかった。
+
+CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外の21パッケージの4,328件は4,250 PASS／78既知FAILで、別に1件SKIP。先行Source `ab1a548de6732b8febb90edefa8a19e4112e94f6` の4,326 IDの合否が一致し、追加回帰2件がPASSした。Compilerの2 callback はNativeとデコード済みAWBCでPASSした。Semaでは開いた再帰宣言の3 callback の効果行伝播がPASSした。Sema全featureユニットは1,942 PASS／76既知FAILで、先行の2,016 IDの合否が一致した。
+
+CLIのライブラリ・バイナリ196件、統合6対象の30件、Sema doctest 2件、workspace全target・全featureのcheck／Clippy、書式、差分、構造ゲートが通過した。CLIの全 `check` テストは未再実行。
+
+全体Clippyで今回追加した空判定のアサーションに警告が2件出た。最初の修正では空配列の要素型を推論できず、Clippyのコンパイルが `E0282` で停止した。型を明示した後続Source `1a019acfa49a01398e356540fb82e97ae2d64da3` では失敗時に実際の述語を表示するアサーションに変更した。Semaの書式、全target・全featureのClippy、全featureのルート収集テスト5件で確認した。
+
+Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-batched-effect-equalities.raw.zip) は133 entry、2,577,943 bytes、SHA256 `46819aab07d435ad15c01215310f65d8c3a4d8bb6a97de3ae537d66587f3b2e8`。各entryの長さとハッシュを照合した。記録時の `target` は134,907,506,762 bytes。
