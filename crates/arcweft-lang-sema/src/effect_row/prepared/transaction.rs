@@ -254,6 +254,18 @@ impl PreparedEffectGraph {
         Ok(())
     }
 
+    /// An edit with no retained writes or ancestry needs no detached layer.
+    pub(super) fn checkpoint_has_transition(
+        &self,
+        checkpoint: &PreparedEffectCheckpoint,
+    ) -> Result<bool, PreparedEffectInvariant> {
+        self.validate_checkpoint(checkpoint)?;
+        Ok(self.state != checkpoint.state
+            || self.state_ancestors.len() != checkpoint.ancestor_limit
+            || self.journal.len() != checkpoint.journal_start
+            || self.relation.obligations.len() != checkpoint.obligation_limit)
+    }
+
     pub(crate) fn commit(
         &mut self,
         checkpoint: &PreparedEffectCheckpoint,

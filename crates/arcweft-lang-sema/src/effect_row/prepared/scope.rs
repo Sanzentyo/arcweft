@@ -449,11 +449,18 @@ impl PreparedEffectGraph {
     {
         let edit = self.edit_scope(input, control)?;
         let output = compute(&mut *edit.graph, control)?;
-        let delta = edit.finish(control)?;
-        let reads = if delta.data.base == delta.data.result {
-            input.clone()
-        } else {
+        let checkpoint = edit.checkpoint.as_ref().expect("open scope edit");
+        let reads = if edit
+            .graph
+            .checkpoint_has_transition(checkpoint)
+            .map_err(PreparedEffectFailure::Invariant)?
+        {
+            let delta = edit.finish(control)?;
             self.read_scope([&delta], control)?
+        } else {
+            Work(control).charge(DecisionWork::Visit)?;
+            drop(edit);
+            input.clone()
         };
         Ok((output, reads))
     }

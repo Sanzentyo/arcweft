@@ -586,6 +586,35 @@ fn dropping_scoped_and_nested_term_edits_rolls_back_only_their_own_writes() {
 }
 
 #[test]
+fn unchanged_computation_reuses_reads_with_only_a_closing_visit() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let source = prepare_source(&mut graph);
+    let input = graph.read_scope([&source.delta], &mut work).unwrap();
+    let next_delta = graph.next_delta;
+    let read = |_: &mut PreparedEffectGraph,
+                _: &mut Budget|
+     -> Result<_, PreparedEffectFailure<Exhausted>> { Ok(source.row.clone()) };
+
+    let base = graph.state;
+    graph
+        .validate_in_read_scope(&input, &mut work, |graph, _| {
+            assert!(matches!(
+                graph.compute_in_read_scope(&input, &mut Budget(3), read),
+                Err(PreparedEffectFailure::Control(Exhausted))
+            ));
+            let (row, reads) = graph.compute_in_read_scope(&input, &mut Budget(4), read)?;
+            assert!(Arc::ptr_eq(&reads.data, &input.data));
+            graph.read().validate_retained_row(&row)?;
+            Ok::<_, PreparedEffectFailure<Exhausted>>(())
+        })
+        .unwrap();
+
+    assert_eq!(graph.next_delta, next_delta);
+    assert_base(&graph, base);
+}
+
+#[test]
 fn derived_terms_share_unmodified_indexes_and_keep_the_exact_layer() {
     let mut graph = PreparedEffectGraph::default();
     let base = graph.state;
@@ -793,6 +822,16 @@ fn cancellation_preserves_its_original_cause_and_all_source_publication_permits(
     ));
     cancelled.set(false);
     let scope = graph.read_scope([&source.delta], &mut control).unwrap();
+    assert!(matches!(
+        graph.compute_in_read_scope(&scope, &mut control, |graph, _| {
+            graph.read().validate_retained_row(&source.row)?;
+            cancelled.set(true);
+            Ok::<_, PreparedEffectFailure<Cancelled>>(())
+        }),
+        Err(PreparedEffectFailure::Control(Cancelled))
+    ));
+    assert_base(&graph, base);
+    cancelled.set(false);
     let mut edit = graph.edit_scope(&scope, &mut control).unwrap();
     edit.prepare_body(
         &source.scheme,
