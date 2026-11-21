@@ -98,6 +98,37 @@ impl<'a, V: Clone + Ord> DecisionPrefix<'a, V> {
     }
 }
 
+impl<V: Clone + Ord, C: DecisionControl> DecisionBuilder<'_, V, C> {
+    pub(super) fn collect_prefix_equations<'a>(
+        &mut self,
+        decision: &EffectDecision<V>,
+        through: &V,
+        cases: impl IntoIterator<Item = usize>,
+        mut select: impl FnMut(usize, &V) -> Result<bool, C::Error>,
+        mut expected: impl FnMut(usize) -> EffectDecisionReplacement<'a, V>,
+        equations: &mut Vec<Root>,
+    ) -> Result<bool, C::Error>
+    where
+        V: 'a,
+    {
+        let mut prefix = DecisionPrefix::new(decision);
+        for case in cases {
+            self.control.charge(DecisionWork::Visit)?;
+            let point = prefix.select(through, case, &mut select, self)?;
+            let coefficient = self.operand(expected(case))?;
+            match self.equivalent_roots(point, coefficient)? {
+                Root::False => return Ok(false),
+                Root::True => {}
+                equation @ Root::Branch(_) => {
+                    self.control.charge(DecisionWork::Node)?;
+                    equations.push(equation);
+                }
+            }
+        }
+        Ok(true)
+    }
+}
+
 impl<'a, V: Clone + Ord> EffectDecisionRequirement<'a, V> {
     fn operands(&self) -> (&'a EffectDecision<V>, Option<&'a EffectDecision<V>>) {
         match *self {

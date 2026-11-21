@@ -660,6 +660,55 @@ fn prefix_table_equations_match_the_universal_relation() {
 }
 
 #[test]
+fn prefix_tables_share_free_references_and_publish_the_joint_relation() {
+    let mut setup = Meter::default();
+    let shared = atom(10).or(&atom(11), &mut setup).unwrap();
+    let first = atom(0).or(&shared, &mut setup).unwrap();
+    let second = atom(1).and(&shared, &mut setup).unwrap();
+    let point = |mask: usize, reference: &u8| Ok(mask & (1 << reference) != 0);
+    let coefficient =
+        |table, mask| EffectDecisionReplacement::Variable(2 + (table * 4 + mask) as u8);
+
+    let mut separate = Meter::default();
+    let first_group = first
+        .matches_prefix_table(&1, 0..4, &mut separate, point, |mask| coefficient(0, mask))
+        .unwrap();
+    let second_group = second
+        .matches_prefix_table(&1, 0..4, &mut separate, point, |mask| coefficient(1, mask))
+        .unwrap();
+    let expected = first_group.and(&second_group, &mut separate).unwrap();
+
+    let solve = |work: &mut Meter| {
+        EffectDecision::all_matching_prefix_tables(
+            [(&first, 1), (&second, 1)],
+            0..4,
+            work,
+            point,
+            coefficient,
+        )
+    };
+    let mut work = Meter::default();
+    let actual = solve(&mut work).unwrap();
+    assert_eq!(actual, expected);
+    assert!(actual.evaluate(|variable| matches!(variable, 3 | 5)));
+    assert!(!actual.evaluate(|variable| matches!(variable, 3 | 5 | 7)));
+    assert!(!actual.evaluate(|variable| matches!(variable, 3 | 5 | 10)));
+    assert!(
+        work.used < separate.used,
+        "{} < {}",
+        work.used,
+        separate.used
+    );
+    for limit in 0..work.used {
+        let mut work = Meter {
+            limit: Some(limit),
+            ..Meter::default()
+        };
+        assert_eq!(solve(&mut work), Err((limit + 1, limit)));
+    }
+}
+
+#[test]
 fn universal_prefix_shares_reachable_pairs_and_preserves_suffix_references() {
     let mut setup = Meter::default();
     let premise = atom(0)
@@ -861,6 +910,31 @@ fn conjunction_restricts_compound_inputs_under_required_literals() {
     let conflict = positive.equivalent(&atom(1), &mut setup).unwrap();
     assert!(
         EffectDecision::all([&positive, &negative, &conflict], &mut setup)
+            .unwrap()
+            .is_constant(false)
+    );
+
+    let shared = positive.and(&negative, &mut setup).unwrap();
+    let first = shared.and(&atom(2), &mut setup).unwrap();
+    let tail = atom(3).or(&atom(4), &mut setup).unwrap();
+    let second = shared.and(&tail, &mut setup).unwrap();
+    let third = atom(5).or(&atom(1), &mut setup).unwrap();
+    let reference = first
+        .and(&second, &mut setup)
+        .unwrap()
+        .and(&third, &mut setup)
+        .unwrap();
+    assert_eq!(
+        EffectDecision::all([&first, &second, &third], &mut setup).unwrap(),
+        reference,
+    );
+    let opposed = atom(0)
+        .not(&mut setup)
+        .unwrap()
+        .and(&tail, &mut setup)
+        .unwrap();
+    assert!(
+        EffectDecision::all([&first, &second, &opposed], &mut setup)
             .unwrap()
             .is_constant(false)
     );
@@ -1268,7 +1342,7 @@ fn least_closed_tuple_accounts_for_literals_skipped_by_an_accepting_path() {
     let bound: Arc<BTreeSet<_>> = Arc::new((0..=64).collect());
     for (relation, has_least) in [(dense, true), (alternate, false)] {
         let mut work = Meter {
-            limit: Some(1024),
+            limit: Some(320),
             ..Meter::default()
         };
         let completed = relation

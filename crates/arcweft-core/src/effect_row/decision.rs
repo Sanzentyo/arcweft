@@ -8,13 +8,13 @@
 use std::{
     cmp::Reverse,
     collections::{BTreeMap, BTreeSet, BinaryHeap, btree_map::Entry},
+    ops::Range,
     sync::Arc,
 };
 
 mod conjunction;
 use conjunction::{Conjuncts, GuardedPoint};
 mod prefix;
-use prefix::DecisionPrefix;
 
 #[cfg(test)]
 mod tests;
@@ -56,6 +56,14 @@ pub(super) struct Node<V> {
 }
 
 impl<V> Node<V> {
+    fn forced_edge(&self) -> Option<(bool, Root)> {
+        match (self.low, self.high) {
+            (Root::False, high) => Some((true, high)),
+            (low, Root::False) => Some((false, low)),
+            _ => None,
+        }
+    }
+
     fn literal_polarity(&self) -> Option<bool> {
         match (self.low, self.high) {
             (Root::False, Root::True) => Some(true),
@@ -113,11 +121,10 @@ impl<V> DecisionView<'_, V> {
         while let Root::Branch(index) = root {
             control.charge(DecisionWork::Visit)?;
             let node = &self.nodes[index];
-            root = match (node.low, node.high) {
-                (Root::False, high) => high,
-                (low, Root::False) => low,
-                _ => break,
+            let Some((_, next)) = node.forced_edge() else {
+                break;
             };
+            root = next;
         }
         // Each skipped node has only one accepting edge. Its descendants
         // occupy the entire canonical postorder preceding that node.
@@ -1135,20 +1142,47 @@ impl<V: Clone + Ord> EffectDecision<V> {
         V: 'a,
     {
         let mut builder = DecisionBuilder::new(control);
-        let mut prefix = DecisionPrefix::new(self);
         let mut equations = Vec::new();
-        for case in cases {
+        if !builder.collect_prefix_equations(
+            self,
+            through,
+            cases,
+            &mut select,
+            &mut expected,
+            &mut equations,
+        )? {
+            return Ok(Self::constant(false));
+        }
+        let result = builder.conjoin_ordered(equations)?;
+        builder.finish(result)
+    }
+
+    /// Matches all tables in one decision arena. Each table supplies its own
+    /// assigned prefix boundary. `expected` receives the table's position and
+    /// case index. References after each boundary remain shared and free.
+    pub fn all_matching_prefix_tables<'a, C: DecisionControl>(
+        tables: impl IntoIterator<Item = (&'a Self, V)>,
+        cases: Range<usize>,
+        control: &mut C,
+        mut select: impl FnMut(usize, &V) -> Result<bool, C::Error>,
+        mut expected: impl FnMut(usize, usize) -> EffectDecisionReplacement<'a, V>,
+    ) -> Result<Self, C::Error>
+    where
+        V: 'a,
+    {
+        let mut builder = DecisionBuilder::new(control);
+        let mut equations = Vec::new();
+        for (index, (point, through)) in tables.into_iter().enumerate() {
             builder.control.charge(DecisionWork::Visit)?;
-            let point = prefix.select(through, case, &mut select, &mut builder)?;
-            let coefficient = builder.operand(expected(case))?;
-            let equation = builder.equivalent_roots(point, coefficient)?;
-            match equation {
-                Root::False => return Ok(Self::constant(false)),
-                Root::True => {}
-                Root::Branch(_) => {
-                    builder.control.charge(DecisionWork::Node)?;
-                    equations.push(equation);
-                }
+            if !builder.collect_prefix_equations(
+                point,
+                &through,
+                cases.clone(),
+                &mut select,
+                |case| expected(index, case),
+                &mut equations,
+            )? {
+                return Ok(Self::constant(false));
             }
         }
         let result = builder.conjoin_ordered(equations)?;
@@ -1455,10 +1489,18 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             return Ok(completion);
         }
 
+        let tail_admissibility = completion.admissibility;
         let mut guard = Root::True;
         for node in forced {
             self.control.charge(DecisionWork::Visit)?;
-            if !quantified.contains(&node.variable) {
+            if quantified.contains(&node.variable) {
+                if node.low == Root::False {
+                    self.control.charge(DecisionWork::Node)?;
+                    completion
+                        .replacements
+                        .insert(node.variable.clone(), tail_admissibility);
+                }
+            } else {
                 let (low, high) = if node.low == Root::False {
                     (Root::False, guard)
                 } else {
@@ -1468,23 +1510,15 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             }
         }
         if guard != Root::True {
-            completion.admissibility = self.conditional(Conditional::new(
-                guard,
-                completion.admissibility,
-                Root::False,
-            ))?;
+            completion.admissibility =
+                self.conditional(Conditional::new(guard, tail_admissibility, Root::False))?;
             for root in completion.replacements.values_mut() {
                 self.control.charge(DecisionWork::Visit)?;
-                *root = self.conditional(Conditional::new(guard, *root, Root::False))?;
-            }
-        }
-        for node in forced {
-            self.control.charge(DecisionWork::Visit)?;
-            if node.low == Root::False && quantified.contains(&node.variable) {
-                self.control.charge(DecisionWork::Node)?;
-                completion
-                    .replacements
-                    .insert(node.variable.clone(), completion.admissibility);
+                *root = if *root == tail_admissibility {
+                    completion.admissibility
+                } else {
+                    self.conditional(Conditional::new(guard, *root, Root::False))?
+                };
             }
         }
         // The reconstructed prefix already holds on the admissible domain.
@@ -1558,50 +1592,58 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
                 instantiated: relation.root,
             }));
         }
-        let mut ranks = BTreeMap::new();
+        #[derive(PartialEq, Eq, PartialOrd, Ord)]
+        enum EdgeEnd<V> {
+            At(V),
+            Terminal,
+        }
+
+        let mut edges = BTreeMap::new();
         for node in relation.nodes.iter() {
             self.control.charge(DecisionWork::Visit)?;
             if !quantified.contains(&node.variable) {
                 return Ok(None);
             }
-            if let std::collections::btree_map::Entry::Vacant(slot) = ranks.entry(&node.variable) {
-                self.control.charge(DecisionWork::Node)?;
-                slot.insert(0);
-            }
-        }
-        let mut optional_until = Vec::new();
-        for (rank, slot) in ranks.values_mut().enumerate() {
-            self.control.charge(DecisionWork::Node)?;
-            *slot = rank;
-            optional_until.push(0);
-        }
-        for node in relation.nodes.iter() {
-            self.control.charge(DecisionWork::Visit)?;
-            let rank = ranks[&node.variable];
-            if node.low != Root::False {
-                optional_until[rank] = optional_until[rank].max(rank + 1);
-            }
-            for child in [node.low, node.high] {
-                let end = match child {
-                    Root::False => continue,
-                    Root::True => ranks.len(),
-                    Root::Branch(index) => ranks[&relation.nodes[index].variable],
-                };
-                let start = rank + 1;
-                if start < end {
-                    optional_until[start] = optional_until[start].max(end);
+            let admits_false = node.low != Root::False;
+            let furthest = [node.low, node.high]
+                .into_iter()
+                .filter_map(|root| match root {
+                    Root::False => None,
+                    Root::True => Some(EdgeEnd::Terminal),
+                    Root::Branch(index) => Some(EdgeEnd::At(&relation.nodes[index].variable)),
+                })
+                .max()
+                .expect("a reduced decision has an accepting edge");
+            match edges.entry(&node.variable) {
+                Entry::Vacant(slot) => {
+                    self.control.charge(DecisionWork::Node)?;
+                    slot.insert((admits_false, furthest));
+                }
+                Entry::Occupied(mut slot) => {
+                    let (any_low, end) = slot.get_mut();
+                    *any_low |= admits_false;
+                    if furthest > *end {
+                        *end = furthest;
+                    }
                 }
             }
         }
+
         let mut replacements = BTreeMap::new();
-        let mut optional_end = 0;
-        for ((variable, rank), end) in ranks.into_iter().zip(optional_until) {
+        let mut optional_end = None;
+        for (variable, (admits_false, furthest)) in edges {
             self.control.charge(DecisionWork::Visit)?;
-            optional_end = optional_end.max(end);
-            if rank >= optional_end {
+            if !admits_false
+                && optional_end
+                    .as_ref()
+                    .is_none_or(|end| end <= &EdgeEnd::At(variable))
+            {
                 self.control.charge(DecisionWork::Node)?;
                 replacements.insert(variable.clone(), Root::True);
             }
+            // The edge's source is tested. Only later variables before its
+            // destination can be skipped along this accepting path.
+            optional_end = optional_end.max(Some(furthest));
         }
         let instantiated = if relation.try_evaluate(
             |variable| Ok(replacements.contains_key(variable)),
@@ -1732,12 +1774,12 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
     }
 
     fn import(&mut self, decision: &EffectDecision<V>) -> Result<Root, C::Error> {
-        self.import_with_values(decision, |_| None)
+        self.import_with_values(&decision.view(), |_| None)
     }
 
     fn import_with_values(
         &mut self,
-        decision: &EffectDecision<V>,
+        decision: &DecisionView<'_, V>,
         mut value: impl FnMut(&V) -> Option<bool>,
     ) -> Result<Root, C::Error> {
         let mut indices = Vec::new();

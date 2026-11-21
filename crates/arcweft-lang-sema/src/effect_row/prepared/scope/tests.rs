@@ -331,6 +331,10 @@ fn selected_sources_at_different_live_bases_compose_without_reading_siblings() {
         .compose_read_scopes([&first_reads, &reads, &second_reads], &mut work)
         .unwrap();
     assert!(Arc::ptr_eq(&recomposed.data, &reads.data));
+    let contained = graph
+        .compose_read_scopes([&reads, &first_reads, &second_reads], &mut Budget(7))
+        .unwrap();
+    assert!(Arc::ptr_eq(&contained.data, &reads.data));
 
     let mut abandoned = graph.checkpoint(&mut work).unwrap();
     graph.changed(&mut work).unwrap();

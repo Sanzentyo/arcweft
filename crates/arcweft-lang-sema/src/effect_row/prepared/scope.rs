@@ -75,23 +75,36 @@ impl PreparedEffectReadScope {
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         if let Some(enclosing) = enclosing
-            && !Arc::ptr_eq(&self.data, &enclosing.input.data)
+            && !self.contains_layers(&enclosing.input, &mut Work(control))?
         {
-            for (&id, layer) in &enclosing.input.data.layers {
-                control
-                    .charge(DecisionWork::Visit)
-                    .map_err(PreparedEffectFailure::Control)?;
-                if !self
-                    .data
-                    .layers
-                    .get(&id)
-                    .is_some_and(|selected| Arc::ptr_eq(selected, layer))
-                {
-                    return Err(PreparedEffectInvariant::ReadScopeConflict.into());
-                }
-            }
+            return Err(PreparedEffectInvariant::ReadScopeConflict.into());
         }
         Ok(())
+    }
+
+    fn contains_layers<C: DecisionControl>(
+        &self,
+        other: &Self,
+        work: &mut Work<'_, C>,
+    ) -> Result<bool, PreparedEffectFailure<C::Error>> {
+        if Arc::ptr_eq(&self.data, &other.data) {
+            return Ok(true);
+        }
+        if self.data.layers.len() < other.data.layers.len() {
+            return Ok(false);
+        }
+        for (&id, layer) in &other.data.layers {
+            work.charge(DecisionWork::Visit)?;
+            if !self
+                .data
+                .layers
+                .get(&id)
+                .is_some_and(|selected| Arc::ptr_eq(selected, layer))
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     pub(super) fn same_origin<C: DecisionControl>(
@@ -190,16 +203,24 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
         let mut work = Work(control);
-        let mut scopes = scopes.into_iter().peekable();
+        let mut scopes = scopes.into_iter();
         let first = scopes.next();
-        // The retained view already authenticated these layers at this state.
-        // An identical enclosing view introduces no new dependencies.
-        if let Some(scope) = first
-            && scopes.peek().is_none()
-            && self.can_reuse_read_scope(scope)
-        {
+        let mut additional = None;
+        if let Some(scope) = first.filter(|scope| self.can_reuse_read_scope(scope)) {
+            // This view already authenticated its layers at the current state.
+            // A live base with identical selected layers adds no new dependency.
             scope.validate_issuer(self, &mut work)?;
-            return Ok(scope.clone());
+            for next in scopes.by_ref() {
+                next.validate_issuer(self, &mut work)?;
+                work.charge(DecisionWork::Visit)?;
+                if !self.retains_state(next.data.base) || !scope.contains_layers(next, &mut work)? {
+                    additional = Some(next);
+                    break;
+                }
+            }
+            if additional.is_none() {
+                return Ok(scope.clone());
+            }
         }
         let mut layers = BTreeMap::new();
         let mut bases = BTreeMap::new();
@@ -219,7 +240,7 @@ impl PreparedEffectGraph {
             }
             Ok::<(), PreparedEffectFailure<C::Error>>(())
         };
-        for scope in first.into_iter().chain(scopes) {
+        for scope in first.into_iter().chain(additional).chain(scopes) {
             retain_scope(scope)?;
         }
         if let Some(active) = &self.active_scope {

@@ -212,32 +212,35 @@ impl FiniteRowValuation<'_> {
         }
         let through_parameter = self.parameters.len() - 1;
         let patterns = self.pattern_count()?;
-        let mut classes = Vec::new();
         for (class, point) in members.iter().enumerate() {
             self.validate_class_point(class, point.variables(), work)?;
-            let coefficient = |mask| Atom::Cell {
-                scheme,
-                class,
-                mask,
-            };
-            let equation = point.matches_prefix_table(
-                &Atom::Formal {
+        }
+        let tables = members.iter().enumerate().map(|(class, point)| {
+            (
+                point,
+                Atom::Formal {
                     owner: self.owner,
                     class,
                     parameter: through_parameter,
                 },
-                0..patterns,
-                work,
-                |mask, reference| match reference {
-                    Atom::Formal { parameter, .. } => Ok(mask & (1usize << parameter) != 0),
-                    _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
-                },
-                |mask| fixed.operand(coefficient(mask)),
-            )?;
-            work.charge(DecisionWork::Node)?;
-            classes.push(equation);
-        }
-        Decision::all(&classes, work)
+            )
+        });
+        Decision::all_matching_prefix_tables(
+            tables,
+            0..patterns,
+            work,
+            |mask, reference| match reference {
+                Atom::Formal { parameter, .. } => Ok(mask & (1usize << parameter) != 0),
+                _ => Err(PreparedEffectInvariant::UnclosedCell.into()),
+            },
+            |class, mask| {
+                fixed.operand(Atom::Cell {
+                    scheme,
+                    class,
+                    mask,
+                })
+            },
+        )
     }
 
     pub(super) fn whole<C: DecisionControl>(

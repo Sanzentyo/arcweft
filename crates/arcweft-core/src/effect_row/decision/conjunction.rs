@@ -4,7 +4,7 @@ use super::*;
 
 pub(super) struct Conjuncts<'a, V> {
     pub(super) literals: BTreeMap<&'a V, bool>,
-    decisions: Vec<&'a EffectDecision<V>>,
+    decisions: Vec<DecisionView<'a, V>>,
 }
 
 impl<'a, V: Clone + Ord> Conjuncts<'a, V> {
@@ -20,24 +20,33 @@ impl<'a, V: Clone + Ord> Conjuncts<'a, V> {
         decision: &'a EffectDecision<V>,
         control: &mut C,
     ) -> Result<bool, C::Error> {
-        match decision.root {
-            Root::False => return Ok(false),
-            Root::True => return Ok(true),
-            Root::Branch(_) => {}
-        }
-        if let Some((variable, value)) = decision.literal() {
-            match self.literals.entry(variable) {
-                Entry::Occupied(existing) => return Ok(*existing.get() == value),
+        let mut root = decision.root;
+        while let Root::Branch(index) = root {
+            let node = &decision.nodes[index];
+            let Some((value, next)) = node.forced_edge() else {
+                control.charge(DecisionWork::Node)?;
+                // Every skipped head has just one surviving child. The
+                // remaining graph occupies this canonical postorder slice.
+                self.decisions.push(DecisionView {
+                    root,
+                    nodes: &decision.nodes[..=index],
+                });
+                return Ok(true);
+            };
+            match self.literals.entry(&node.variable) {
+                Entry::Occupied(existing) if *existing.get() != value => return Ok(false),
+                Entry::Occupied(_) => {}
                 Entry::Vacant(slot) => {
                     control.charge(DecisionWork::Node)?;
                     slot.insert(value);
                 }
             }
-        } else {
-            control.charge(DecisionWork::Node)?;
-            self.decisions.push(decision);
+            root = next;
+            if matches!(root, Root::Branch(_)) {
+                control.charge(DecisionWork::Visit)?;
+            }
         }
-        Ok(true)
+        Ok(root == Root::True)
     }
 
     pub(super) fn import<C: DecisionControl>(
@@ -59,12 +68,18 @@ impl<'a, V: Clone + Ord> Conjuncts<'a, V> {
                 }
             }
         }
-        for (&variable, &value) in &self.literals {
-            let low = if value { Root::False } else { Root::True };
-            let high = if value { Root::True } else { Root::False };
-            let point = builder.branch(variable.clone(), low, high)?;
+        let mut literals = Root::True;
+        for (&variable, &value) in self.literals.iter().rev() {
+            let (low, high) = if value {
+                (Root::False, literals)
+            } else {
+                (literals, Root::False)
+            };
+            literals = builder.branch(variable.clone(), low, high)?;
+        }
+        if literals != Root::True {
             builder.control.charge(DecisionWork::Node)?;
-            points.push(point);
+            points.push(literals);
         }
         Ok(Some(points))
     }

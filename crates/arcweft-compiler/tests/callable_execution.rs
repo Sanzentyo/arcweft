@@ -1370,6 +1370,30 @@ flow main() -> i64 { return swap(report, increment, 3i64) }
     "42"
 );
 
+mod recursive_three_callbacks_rotate_with_inferred_effects {
+    use super::*;
+
+    const SOURCE: &str = r#"fn log_callback(value: i64) -> i64 { log.info("log"); value }
+fn read_callback(value: i64) -> i64 effects { fs.read } { value }
+fn write_callback(value: i64) -> i64 effects { fs.write } { value }
+fn rotate(first: i64 -> i64, second: i64 -> i64, third: i64 -> i64, value: i64, count: i64) -> i64 {
+    if count == 0i64 { first(value) } else { rotate(second, third, first, value, count - 1i64) }
+}
+flow main() -> i64 { return rotate(log_callback, read_callback, write_callback, 42i64, 3i64) }
+entry cli @entry.main { goto @flow.main }
+"#;
+
+    #[test]
+    fn native() {
+        assert_native_return(SOURCE, "42");
+    }
+
+    #[test]
+    fn awbc() {
+        assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+    }
+}
+
 callable_case!(
     mutually_recursive_generics_execute_for_distinct_types,
     r#"
