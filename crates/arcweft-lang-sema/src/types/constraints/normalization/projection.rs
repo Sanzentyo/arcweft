@@ -46,6 +46,9 @@ impl<'ty, D: ConstraintDomain> ConstraintProjectionView<'ty, D> {
         graph: PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
+        if input.value().constraint_shape().is_closed_leaf() {
+            return context.check_cancelled();
+        }
         for _ in input.lexical_scope().shape().binders() {
             context.enter_node()?;
         }

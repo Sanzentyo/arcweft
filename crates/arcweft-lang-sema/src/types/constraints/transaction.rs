@@ -477,10 +477,10 @@ impl<D: ConstraintDomain> ConstraintSourceReceipt<D> {
             return alternative.is_none() && expected.is_none();
         }
         self.input.prepared.source_projection().is_scalar()
-            && self.input.hints.iter().any(|hint| {
-                Some(hint.alternative) == alternative
-                    && hint.unbound.is_empty()
-                    && Some(&hint.expected) == expected
+            && self.input.alternatives().any(|(row, opened)| {
+                Some(row.alternative()) == alternative
+                    && opened.unbound.is_empty()
+                    && Some(opened.hint_type()) == expected
             })
     }
 }
@@ -617,10 +617,7 @@ impl<D: ConstraintDomain> ClosedSourceProbeContribution<D> {
                 alternative.path.lineage.effect_reads.iter().chain([scope]),
                 context,
             )?;
-            if !matches!(
-                value.constraint_shape(),
-                super::TypeConstraintShape::Leaf(_) | super::TypeConstraintShape::Never
-            ) {
+            if !value.constraint_shape().is_closed_leaf() {
                 let roots = crate::types::effect_domain::PreparedTypeEffectRoots::collect(
                     [value],
                     [],
@@ -759,16 +756,26 @@ impl<D: ConstraintDomain> SourceProbeContribution<D> {
 pub(crate) struct ProbeInput<D: ConstraintDomain> {
     source: ConstraintSourceId<D::Source>,
     prepared: Arc<PreparedSourceConstraint<D>>,
-    hints: Vec<OwnedAlternativeHint<D>>,
+    opened_alternatives: Vec<OpenedSourceAlternative<D>>,
     acceptance: ConstraintAcceptance,
     equation_ordinal: Option<ConstraintEquationId>,
 }
 
-struct OwnedAlternativeHint<D: ConstraintDomain> {
-    alternative: D::AlternativeIndex,
-    expected: TypeKind<PreparedEffects>,
+struct OpenedSourceAlternative<D: ConstraintDomain> {
+    /// This is the exact opened operand from the issued input, before hint
+    /// projection follows bindings on the pre-callback path.
+    operand: ConstraintOperand<D>,
+    projected_hint: Option<TypeKind<PreparedEffects>>,
     unbound: Box<[super::ConstraintGenericParameterId]>,
     scope_lease: Option<super::ImportedGenericParameterScopeLease>,
+}
+
+impl<D: ConstraintDomain> OpenedSourceAlternative<D> {
+    fn hint_type(&self) -> &TypeKind<PreparedEffects> {
+        self.projected_hint
+            .as_ref()
+            .unwrap_or_else(|| self.operand.value())
+    }
 }
 
 impl<D: ConstraintDomain> ProbeTicket<D> {
@@ -934,6 +941,17 @@ impl<D: ConstraintDomain> ProbeTicket<D> {
 }
 
 impl<D: ConstraintDomain> ProbeInput<D> {
+    fn alternatives(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &super::PreparedSourceAlternative<D>,
+            &OpenedSourceAlternative<D>,
+        ),
+    > {
+        self.prepared.alternatives().zip(&self.opened_alternatives)
+    }
+
     /// Build borrowed per-alternative hints for the callback lifetime.  The
     /// temporary view cannot escape this call, so the callback never owns or
     /// rewrites a lower expected type.
@@ -945,26 +963,21 @@ impl<D: ConstraintDomain> ProbeInput<D> {
             return callback(ExpectedHint::Unchecked);
         }
         let hints =
-            self.hints
-                .iter()
-                .map(|hint| {
-                    let alternative = self
-                        .prepared
-                        .alternative(hint.alternative)
-                        .expect("prepared alternative is retained by its ticket");
-                    let value_expected = if hint.unbound.is_empty() {
-                        ProjectedExpectedHint::Complete(&hint.expected)
+            self.alternatives()
+                .map(|(alternative, opened)| {
+                    let value_expected = if opened.unbound.is_empty() {
+                        ProjectedExpectedHint::Complete(opened.hint_type())
                     } else {
                         ProjectedExpectedHint::Parametric {
-                            expected: &hint.expected,
-                            unbound: &hint.unbound,
-                            scope_lease: hint.scope_lease.as_ref().expect(
+                            expected: opened.hint_type(),
+                            unbound: &opened.unbound,
+                            scope_lease: opened.scope_lease.as_ref().expect(
                                 "parametric expected hints retain their source scope lease",
                             ),
                         }
                     };
                     SourceAlternativeHint::new(
-                        hint.alternative,
+                        alternative.alternative(),
                         alternative.evidence(),
                         value_expected,
                         self.prepared.source_projection(),
@@ -2034,11 +2047,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             }
             return Ok(None);
         };
-        let (hints, effect_reads) = context.with_effect_reads(
+        let (opened_alternatives, effect_reads) = context.with_effect_reads(
             graph,
             path.lineage.effect_read_scope(),
             |context, graph| -> Result<_, TypeConstraintError> {
-                let mut hints = Vec::new();
+                let mut opened_alternatives = Vec::new();
                 for alternative in operation.prepared.alternatives() {
                     let scope = Arc::new(context.capture_lexical_scope()?);
                     let expected = bind_source_expectation(
@@ -2050,38 +2063,44 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         graph,
                         context,
                     )?;
-                    let projected = project_type(
-                        expected.value(),
-                        path.projection_view(),
-                        ConstraintClosurePolicy::Hint,
-                        graph,
-                        context,
-                    )?;
-                    let unbound = projected
-                        .remaining
-                        .iter()
-                        .map(|parameter| parameter.parameter().clone())
-                        .collect::<Box<[_]>>();
+                    let (projected_hint, unbound) =
+                        if expected.value().constraint_shape().is_closed_leaf() {
+                            (None, Box::default())
+                        } else {
+                            let projected = project_type(
+                                expected.value(),
+                                path.projection_view(),
+                                ConstraintClosurePolicy::Hint,
+                                graph,
+                                context,
+                            )?;
+                            let unbound = projected
+                                .remaining
+                                .iter()
+                                .map(|parameter| parameter.parameter().clone())
+                                .collect::<Box<[_]>>();
+                            (Some(projected.value), unbound)
+                        };
                     let scope_lease = if unbound.is_empty() {
                         None
                     } else {
                         Some(path.applications.import_parameters(&unbound, context)?)
                     };
-                    hints.push(OwnedAlternativeHint {
-                        alternative: alternative.alternative(),
-                        expected: projected.value,
+                    opened_alternatives.push(OpenedSourceAlternative {
+                        operand: expected,
+                        projected_hint,
                         unbound,
                         scope_lease,
                     });
                 }
-                Ok(hints)
+                Ok(opened_alternatives)
             },
         )?;
         path.lineage.effect_reads = effect_reads;
         let input = Arc::new(ProbeInput {
             source: operation.source,
             prepared: Arc::clone(&operation.prepared),
-            hints,
+            opened_alternatives,
             acceptance: operation.acceptance,
             equation_ordinal: operation.equation_ordinal,
         });
@@ -2186,7 +2205,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                                     ));
                                 };
                                 match validate_source_selection(
-                                    &input.prepared,
+                                    &input,
                                     *alternative,
                                     Arc::clone(evidence),
                                     &actual,
@@ -2220,15 +2239,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                                         value_expected,
                                         source_projection,
                                     )) => {
-                                        let value_expected = bind_source_expectation(
-                                            value_expected,
-                                            &self.original,
-                                            self.application,
-                                            &path,
-                                            scope,
-                                            graph,
-                                            context,
-                                        )?;
                                         let pattern = source_projection.compose_operand(
                                             &actual_operand.view(),
                                             &value_expected.view(),
@@ -2240,7 +2250,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                                                 evidence,
                                             },
                                             source_projection,
-                                            Some(value_expected),
+                                            Some(value_expected.clone()),
                                         )
                                     }
                                 };
@@ -2306,10 +2316,17 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             .expect("a checked source retains its equation");
                         let expected = equation.pattern.clone();
                         let actual = equation.actual.clone();
+                        // Closed leaves have no effect terms to look up. The
+                        // path keeps its admitted reads for subsequent inputs.
+                        let needs_effect_reads =
+                            !expected.value().constraint_shape().is_closed_leaf()
+                                || !actual.value().constraint_shape().is_closed_leaf();
                         let relate = |graph: &mut crate::effect_row::prepared::PreparedEffectGraph, context: &mut TypeConstraintContext<'_, A, D>| {
                             relate_selected_call(graph, &expected.view(), &actual.view(), path, context, input.acceptance)
                         };
-                        if let Some(reads) = &reads {
+                        if let Some(reads) = &reads
+                            && needs_effect_reads
+                        {
                             graph
                                 .compute_in_read_scope(reads, context, relate)
                                 .and_then(|(mut paths, reads)| {
@@ -2794,7 +2811,7 @@ fn bind_source_expectation<A: TypeConstraintAccounting, D: ConstraintDomain>(
 }
 
 fn validate_source_selection<'a, D: ConstraintDomain>(
-    prepared: &'a PreparedSourceConstraint<D>,
+    input: &'a ProbeInput<D>,
     selected: D::AlternativeIndex,
     evidence: Arc<D::ObservedEvidence>,
     actual: &TypeKind<PreparedEffects>,
@@ -2802,14 +2819,18 @@ fn validate_source_selection<'a, D: ConstraintDomain>(
     Option<(
         D::AlternativeIndex,
         Arc<D::ObservedEvidence>,
-        &'a PreparedSourceExpectation,
+        &'a ConstraintOperand<D>,
         CheckedConstraintSourceProjection<PreparedEffects>,
     )>,
     TypeConstraintError,
 > {
-    let selected_row = prepared.alternative(selected).ok_or(protocol_error(
-        TypeConstraintSourceProtocolInvariant::UnknownAlternative,
-    ))?;
+    let prepared = &input.prepared;
+    let (selected_row, opened) = input
+        .alternatives()
+        .find(|(row, _)| row.alternative() == selected)
+        .ok_or(protocol_error(
+            TypeConstraintSourceProtocolInvariant::UnknownAlternative,
+        ))?;
     if !D::evidence_accepts(selected_row.evidence(), &evidence) {
         return Err(protocol_error(
             TypeConstraintSourceProtocolInvariant::InvalidEvidence,
@@ -2857,7 +2878,7 @@ fn validate_source_selection<'a, D: ConstraintDomain>(
     Ok(Some((
         selected,
         evidence,
-        selected_row.expectation(),
+        &opened.operand,
         source_projection,
     )))
 }

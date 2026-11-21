@@ -498,14 +498,6 @@ impl<D: ConstraintDomain> PreparedSourceConstraint<D> {
         guarded.iter().chain(otherwise)
     }
 
-    pub(crate) fn alternative(
-        &self,
-        index: D::AlternativeIndex,
-    ) -> Option<&PreparedSourceAlternative<D>> {
-        self.alternatives()
-            .find(|alternative| alternative.alternative() == index)
-    }
-
     pub(crate) const fn otherwise(&self) -> Option<&PreparedSourceAlternative<D>> {
         match self {
             Self::Unchecked { .. } => None,

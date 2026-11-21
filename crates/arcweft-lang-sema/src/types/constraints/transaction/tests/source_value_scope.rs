@@ -264,6 +264,34 @@ fn source_value_admission_checks_cancellation_for_closed_grammar_leaves() {
 }
 
 #[test]
+fn operand_admission_checks_leaf_cancellation_and_reserves_composite_work() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let application = context
+        .fixture_application_scope(0, TypeConstraintParameterScope::empty(), &mut graph)
+        .unwrap();
+    let path = context.start_path(application, &mut graph).unwrap();
+    let leaf = context.fixture_operand(TypeKind::I64);
+    let tuple = context.fixture_operand(TypeKind::Tuple(vec![TypeKind::I64]));
+    let mut no_work = TypeConstraintContext::<_, ApplicationSourceDomain>::with_accounting(
+        LocalConstraintAccounting::new(TypeConstraintLimits::new(0, 0, 0, 0), &cancellation),
+    );
+    let view = path.projection_view();
+    view.admit_operand(leaf.view(), graph.read(), &mut no_work)
+        .expect("a closed leaf has no references to admit");
+    assert!(matches!(
+        view.admit_operand(tuple.view(), graph.read(), &mut no_work),
+        Err(TypeConstraintError::Abort(_))
+    ));
+    cancellation.store(true, Ordering::Release);
+    assert!(matches!(
+        view.admit_operand(leaf.view(), graph.read(), &mut no_work),
+        Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
+    ));
+}
+
+#[test]
 fn checked_source_values_reject_a_same_shape_foreign_frame_at_the_receiving_port() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);

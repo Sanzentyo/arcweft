@@ -317,6 +317,11 @@ pub(crate) enum TypeConstraintShape<'a, D: TypeEffectDomain = CanonicalEffects> 
 impl<D: TypeEffectDomain> Copy for TypeConstraintShape<'_, D> {}
 
 impl<'a, D: TypeEffectDomain> TypeConstraintShape<'a, D> {
+    /// These grammar leaves have neither generic ports nor nested types.
+    pub(crate) const fn is_closed_leaf(self) -> bool {
+        matches!(self, Self::Leaf(_) | Self::Never)
+    }
+
     pub(crate) const fn binder(self) -> GenericBinder {
         match self {
             Self::Function { binder, .. } => *binder,

@@ -51,13 +51,12 @@ impl<D: ConstraintDomain> ResolvedConstraintSource<D> {
     ) -> Result<(TypeKind<PreparedEffects>, Self), TypeConstraintError> {
         context.check_cancelled()?;
         let original = owner.original_context();
-        let value = match owner.value_type().constraint_shape() {
-            // These exhaustive grammar leaves have no parameter occurrences
-            // or recursive semantic type storage. The probe already charged
-            // its root; no Γ traversal or recursive copy is needed here.
-            super::super::TypeConstraintShape::Leaf(_)
-            | super::super::TypeConstraintShape::Never => owner.value_type().clone(),
-            _ => phase.admit_type(owner.value_type(), target, original, context)?,
+        // The probe already charged its root. Closed leaves retain the
+        // original value owner without traversing its generic scope.
+        let value = if owner.value_type().constraint_shape().is_closed_leaf() {
+            owner.value_type().clone()
+        } else {
+            phase.admit_type(owner.value_type(), target, original, context)?
         };
         Ok((value, Self::Value(owner)))
     }
