@@ -20949,3 +20949,20 @@ CLIのライブラリ・バイナリ196件、統合6対象30件、Core doctest 8
 Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-same-head-effect-conjunction.raw.zip) は121項目、2,138,166 bytes、SHA256 `9809353a4efe0e092d6c2e5c220d3f85e1f40e29d2e1a22817523cda4bea1af4`。各項目の長さとハッシュを照合した。記録時の `target` は134,919,371,832 bytes。
+
+<a id="shared-effect-read-indexes"></a>
+## 2026-11-21 — 派生した効果の読取りスコープで変更のない索引を共有
+
+検証基点は `39be04505d2a586cdad0880d68dd824c0ed19c76`。公開Sourceは `26f4653bb574c009ec291ec66160e568eb52039f`。先行順の3 callback を基点で計測したところ、関数の効果ヘッダーの再走査は3回で計16単位、照合で派生した読取りスコープの再構成は3回で計90単位だった。前者の検査契約を維持し、後者では元の読取りを参照したまま変更のない索引を共有する。
+
+選択済みの入力が現行状態と一致し、差分が関数定義を差し替えない場合に、元の不変な索引へ差分を追加する。行・述語・選択のうち差分に含まれる索引だけを組み立てる。共有時も差分の発行元、入力スコープ、レイヤー順序を照合する。関数定義の変更や異なる読取りの合成には既存のレイヤー照合を使い、公開用の定義も同じ所有境界で組み立てる。回帰は従来の組み立てと同じレイヤー、元と新しい項の可視性、未変更の索引の共有、必要量に満たない全予算点で元の状態が保たれることを確認した。スコープ・読取り・トランザクションの対象55件は全件PASSした。
+
+公開済み5つの `.arcw` をSHA256で照合した。既定上限4,096で1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで戻り値42、1ステップ最大1操作、診断0件だった。CLIの3 callback は3入力ともVM／AWBC Productで式95の意味解析に失敗した。診断専用上限16,384での最大作業量は、2 callback が2,790→2,765単位、3 callback の先行2入力が4,396→4,353単位、別の入力が4,253→4,210単位だった。いずれもVMで戻り値42だった。
+
+Semaの推移的逆依存22パッケージのうちCLI以外の21パッケージで4,329件を実行し、4,251 PASS／78既知FAIL、別に1件SKIPだった。先行Source `021e68501500860938e23ab25311939fac3c5bce` の4,328 IDの合否は一致し、追加回帰1件がPASSした。Compilerの2 callback はNativeとデコード済みAWBCでPASSした。Sema全featureユニットは1,943 PASS／76既知FAILで、既存IDの合否は一致した。
+
+CLIのライブラリ・バイナリ196件、統合6対象30件、Sema doctest 2件、workspace全target・全featureのcheck／Clippy、書式、差分、依存グラフ、構造ゲートが通過した。CLIの全 `check` テストは未再実行。追加した索引の戻り値型にClippy警告が1件出た。後続Source `d11e54338d99b2aadedb5c314d0e81b131534b08` で索引型に名前を付け、Semaの書式・全target／全featureのClippy・対象55件を再確認した。
+
+Generic Match `.1.2` C3/C5 は元の監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-shared-effect-read-indexes.raw.zip) は84項目、2,003,979 bytes、SHA256 `6d6813885e1efd2cc1f5c4ae023a060b73315b1087650443dd36c1fe2036d833`。各項目の長さとハッシュを照合した。記録時の `target` は134,926,376,010 bytes。
