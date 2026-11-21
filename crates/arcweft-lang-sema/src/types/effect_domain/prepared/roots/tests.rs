@@ -127,7 +127,7 @@ fn retained_application_keeps_its_arguments_and_independently_observed_use() {
         .unwrap();
     assert_eq!(roots.rows(), &[&operand]);
     assert!(roots.has_effect_inputs());
-    assert!(roots.predicates().is_empty());
+    assert_eq!(roots.predicates(), &[] as &[&PreparedEffectPredicate]);
     assert!(matches!(
         graph.read().require_query_bodies(roots.rows(), roots.predicates(), &mut work),
         Err(PreparedEffectFailure::ObservationNeedsBody(reference)) if reference == argument
@@ -158,7 +158,7 @@ fn retained_application_keeps_its_arguments_and_independently_observed_use() {
         )
         .unwrap();
     assert_eq!(roots.rows(), &[&operand, &effect]);
-    assert!(roots.predicates().is_empty());
+    assert_eq!(roots.predicates(), &[] as &[&PreparedEffectPredicate]);
     assert!(matches!(
         graph.read().require_query_bodies(roots.rows(), roots.predicates(), &mut work),
         Err(PreparedEffectFailure::ObservationNeedsBody(reference)) if reference == scheme
