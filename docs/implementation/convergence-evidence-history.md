@@ -21239,3 +21239,22 @@ Generic Match .1.2 C3/C5 は元の受入監査の150 IDとStyle Lengthの後継1
 `main` を通常のfast-forwardで更新し、公開ref・取得commitのfull SHA・変更4ファイルのblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
 
 [検証原本](acceptance-evidence/task-probe-expression-fact-attempt.raw.zip) は44項目、1,354,716 bytes、SHA256 `23afb2bc7628efc1a79e89459b072a583e5d835b2403de8327f29fe5b5d6e533`。全項目の長さとSHA256を照合した。検証後の `target` は136,090,136,545 bytes。
+
+<a id="probe-operand-effect-scope"></a>
+## 2026-11-22 — 検証済みの引数値を効果グラフの編集から外す
+
+作業基点 `537ebaee6d0ce86afbdbaecf6b101e1d154c1044`。[先行計測](#probe-expression-fact-attempt)では、閉じた試行の効果読取りとその前の読取りを合成し、引数値を受け取る際にも効果グラフの編集を開いていた。
+
+Source `d2bb75d330328c430c971c195c49edcfe2d63181` では、検証済みの引数値を元の受領証と現在の字句フレームで照合し、既に合成した効果読取りを経路に保持して候補の選択を行う。フレーム照合の作業を計上し、そのためのフレームの複製を省く。子呼出しの結果を移送するときは効果項を生成し得るので、結果の移送と選択を同じ作業スコープで扱う。前からの読み取り範囲とコールバックで得た定義を合成し、型に含まれる効果の根を検査する。
+
+同じ256候補テストで、前回の77件目まで進入・76件完了から、今回の87件目まで進入・86件完了に進んだ。境界テストは引き続き `CallResolutionFailed`。全体作業上限4,096を超える計上は、`admit_effect_reads` が効果読取りの合成中に発行元を検査する箇所（`scope.rs:265`）で拒否された。
+
+候補2件目の下位作業の上限検査通過回数は41回から36回、型制約コンテキストの計上は28回から23回になった。事実チェックポイント開始の計上は6回だった。この測定の単位は1候補での計上箇所の通過回数。
+
+Sema libは2,026件を実行し、1,980 PASS／46既知FAIL。Cargo graph上の22パッケージを確認し、非CLIの21パッケージで4,345件を実行し、4,299 PASS／46既知FAIL／別に1 SKIP。実行IDと合否はすべて前回と一致した。CLIのlib／bin 196件と統合6対象30件は全件通過し、前回と同じ226 IDを確認した。ワークスペース全ターゲット・全機能のcheck／Clippyと変更ファイルの書式は終了0。
+
+Generic Match .1.2 C3/C5 は元の受入監査の150 IDとStyle Lengthの後継1件を今回の逆依存実行で照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+`main` を通常のfast-forwardで更新し、公開ref・取得commitのfull SHA・変更した `transaction.rs` のblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
+
+[検証原本](acceptance-evidence/task-probe-operand-effect-scope.raw.zip) は41項目、1,214,692 bytes、SHA256 `ff7b8dbb8dbe2906bfbde9ab3d28f696368b07039b8ed4dd35f437ab5e614847`。全項目の長さとSHA256を照合した。検証後の `target` は136,093,684,537 bytes。
