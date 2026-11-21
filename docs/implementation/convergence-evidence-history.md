@@ -20979,3 +20979,18 @@ Cargoで解決した逆依存22パッケージのうちCLIを除く21パッケ�
 Generic Match `.1.2` C3/C5 は受入済みの150 IDとStyle Lengthの後継1件を照合し、115 transcript、24 coverage、5公開query、7 Native／デコード済みAWBCの継続・保存がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-detached-effect-dependency-scopes.raw.zip) は83項目、1,246,406 bytes、SHA256 `6d3bbab59bf6762b50a2f640b15a4f9d9b30a4497ca6f3240f2e509662109a93`。各項目の長さとハッシュを照合した。記録時の `target` は134,923,048,502 bytes。
+
+<a id="shared-effect-coefficient-tables"></a>
+## 2026-11-21 — 再帰先の3 callback に必要な効果の計算を既定上限内に収める
+
+検証基点は `43c8fbb5fdb6c56f6ae3b8313cce89682aebd8ae`。公開Sourceは `ebbe273b5da767d53bad37affe160f96a1551c6e`。基点の先行順入力では、最終的に既存スコープを返した4回の合成で計81単位を使った。現在の基点で有効な先頭スコープに後続の正確なレイヤーが含まれ、各基点が生きていることを確かめられれば、合成の一時索引を作らずに済む。係数の等式は全ラベルクラスを一つの決定グラフで組み立て、自由参照を保持して最後に正準化する。束縛変数だけの関係は、成立する枝が飛ばせる変数と偽を許す変数を一度の走査で求める。論理積は入力が必須とする先頭条件を集め、その値で残りの関係を縮約し、必須条件ごと正準形に確定する。元の式による独立照合を維持した。
+
+元の5入力のSHA256を照合した。既定上限4,096のまま1 callback はVM／AWBC Product、2・3 callback はVM／AOT／AWBC Productで戻り値42、1ステップ最大1操作、診断0件となった。以前は式95で停止していた3入力の通過を確認した。3 callback の先行2入力はVMとAOTで28ステップ、AWBC Productで123ステップ。別入力はVMとAOTで21ステップ、AWBC Productでは64ステップの観測終了時点で実行中だった。同じバイナリと1ステップ最大1操作で観測枠を256にすると89ステップで42を返した。ログは先行2入力が `log` 各1件、別入力は0件だった。
+
+診断用上限16,384での最大作業量は、2 callback と3 callback の3入力で、基点が2,715／4,229／4,229／4,123、中間試行が2,688／4,160／4,160／4,075と2,681／4,147／4,147／4,062、最終試行が2,653／4,056／4,056／3,971単位だった。中間試行のCoreユニット2,402件の通過と、切替時に中断した検証の原本も保持した。
+
+Coreの逆依存52パッケージのうちCLI以外の51パッケージは8,156件実行、8,078 PASS／78既知FAIL、別に18 SKIP。先行Core `2476bd4d95f3d5718fd68c5ff344dbca023d2fd3` と後続Sema `7b08cffb2faf1d5811b01184cac72053690fb13f` を合成した8,153 IDの合否はすべて一致した。係数表の等値性と予算の回帰1件、先行巡回入力のNative／デコード済みAWBC各1件が追加でPASSした。Core全featureユニット2,402件、Semaの対象55件、対象CLI 226件、Core doctest 81件とSema 2件、workspace全target・全featureのcheck／Clippy、書式、依存グラフ、構造ゲートが通過した。CLIの全 `check` テストは未再実行。全体Clippyで追加コードに出た警告2件は後続Source `b85a440f8045c573ca57129edfe71c202d663bab` で解消した。Coreの書式、全target／全featureのClippy、効果決定グラフの対象テストを再確認した。
+
+Generic Match `.1.2` C3/C5 は受入済みの150 IDとStyle Lengthの後継1件を照合し、transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-shared-effect-coefficient-tables.raw.zip) は190項目、2,085,283 bytes、SHA256 `ac92ac533c9025249063e6e86fe68d4366d70d81795861b9460a675a924ed106`。各項目の長さとハッシュを照合した。記録時の `target` は134,941,905,023 bytes。
