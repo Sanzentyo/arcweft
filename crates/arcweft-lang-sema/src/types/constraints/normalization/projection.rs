@@ -1,6 +1,8 @@
 //! Metered transitive projection of candidate bindings and scoped type terms.
 
-use crate::effect_row::prepared::{PreparedEffectGraph, PreparedEffectReadView};
+use crate::effect_row::prepared::{
+    PreparedEffectGraph, PreparedEffectReadView, SourceEffectParameter,
+};
 use crate::types::{CanonicalEffects, PreparedEffects};
 
 use std::collections::BTreeSet;
@@ -502,7 +504,13 @@ where
                             predicate,
                             phase.read(),
                             context,
-                            |variable, context| {
+                            |parameter, context| {
+                                if matches!(parameter, SourceEffectParameter::Introduction(_))
+                                    && policy != ConstraintClosurePolicy::Hint
+                                {
+                                    return Ok(());
+                                }
+                                let variable = parameter.reference();
                                 context.validate_effect_reference(variable, view)?;
                                 if context.effect_eligibility(variable, view)
                                     != Some(crate::effect_row::EffectConstraintEligibility::Rigid)

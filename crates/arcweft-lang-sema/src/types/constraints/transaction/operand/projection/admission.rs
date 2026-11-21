@@ -231,8 +231,8 @@ impl<'a, D: ConstraintDomain> ConstraintFunctionHeaderView<'a, D> {
         predicate: &PreparedEffectPredicate,
         effects: PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
-        mut check_reference: impl FnMut(
-            &GenericEffectReference,
+        mut check_parameter: impl FnMut(
+            SourceEffectParameter<'_>,
             &mut TypeConstraintContext<'_, A, D>,
         ) -> Result<(), TypeConstraintError>,
     ) -> Result<Option<AdmittedConstraintFunctionHeader<'a, D>>, TypeConstraintError> {
@@ -242,12 +242,10 @@ impl<'a, D: ConstraintDomain> ConstraintFunctionHeaderView<'a, D> {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
 
-        // The active branch sees the actual arguments. Source admission also
-        // checks the introduction that supplies any inherited arguments.
+        // Source admission checks the introduction that supplies inherited
+        // arguments. The branch may also need that key for an expected hint.
         let mut admit = |field, parameter: SourceEffectParameter<'_>, context: &mut _| {
-            if let SourceEffectParameter::Reference { reference, .. } = parameter {
-                check_reference(reference, context)?;
-            }
+            check_parameter(parameter, context)?;
             if let Some(header) = &header {
                 header.admit_source_parameter(field, parameter, context)?;
             }

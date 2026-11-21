@@ -346,20 +346,22 @@ impl<C: DecisionControl> GenericUseWalk<PreparedEffects> for PreparedGenericUse<
         visit: &mut impl FnMut(&GenericEffectReference) -> Result<(), TypeGenericUseError>,
     ) -> Result<(), Self::Error> {
         let mut control = GenericUseControl(self.control);
-        let mut visit = |reference: &GenericEffectReference, _: &mut GenericUseControl<'_, C>| {
-            visit(reference).map_err(PreparedGenericUseFailure::Type)
+        let mut visit = |parameter: crate::effect_row::prepared::SourceEffectParameter<'_>,
+                         _: &mut GenericUseControl<'_, C>| {
+            visit(parameter.reference()).map_err(PreparedGenericUseFailure::Type)
         };
         self.graph
-            .visit_row_parameters(row, &mut control, &mut visit)?;
+            .visit_row_source_parameters(row, &mut control, &mut visit)?;
         self.graph
-            .visit_predicate_parameters(predicate, &mut control, &mut visit)?;
+            .visit_predicate_source_parameters(predicate, &mut control, &mut visit)?;
         Ok(())
     }
 }
 
 impl TypeGenericReferenceUseCollector {
-    /// Walk application-local types in the exact live read scope. The
-    /// occurrence of a declaration application comes from its arguments.
+    /// Walk application-local types in the exact live read scope.
+    /// A registered inference function contributes its introduction key as
+    /// well as the free references of its actual arguments.
     pub(crate) fn collect_prepared<C: DecisionControl>(
         ty: &TypeKind<PreparedEffects>,
         scope: &GenericScope,

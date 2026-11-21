@@ -2,12 +2,21 @@
 
 use super::*;
 
+#[derive(Clone, Copy)]
 pub(crate) enum SourceEffectParameter<'a> {
     Reference {
         reference: &'a GenericEffectReference,
         captured: bool,
     },
     Introduction(&'a GenericEffectReference),
+}
+
+impl<'a> SourceEffectParameter<'a> {
+    pub(crate) const fn reference(&self) -> &'a GenericEffectReference {
+        match self {
+            Self::Reference { reference, .. } | Self::Introduction(reference) => reference,
+        }
+    }
 }
 
 enum ParameterInput<'a> {
