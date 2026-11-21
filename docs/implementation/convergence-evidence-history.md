@@ -21110,3 +21110,24 @@ Cargoで解決した逆依存はSemaが22パッケージ、Compilerが10パッ�
 `main` を通常のfast-forwardで更新し、公開refとfetchしたfull SHA、および変更した13ファイルのblobを照合した。公開時のローカル作業ツリーには既存の未追跡 `%SystemDrive%/` があった。
 
 [検証原本](acceptance-evidence/task-contextual-callback-containers.raw.zip) は351項目、1,484,832 bytes、SHA256 `f1c86116041dc9a69a9b375dd9c32b9b4fb1ae5a58ed103c5845a7b3b532998d`。全項目の長さとSHA256を照合した。検証後の `target` は136,051,673,556 bytes。
+
+<a id="lexical-function-values"></a>
+## 2026-11-22 — 分解束縛と可変束縛から関数値を呼び出す
+
+作業基点 `e4d0f4afddffcb48cae0497e420969f5a3d85d21`。前回の[再現記録](#callback-effects-in-containers)にあったタプル分解の失敗を置き換える。元のHirLocalValueOrigin::Compositeを関数選択時に拒否していた。Source `ca90dc984488dea376d13a8cf929ab5476c9dcea` は、分解と可変束縛では検査済みの束縛の関数型から位置引数を照合し、実際に格納されている関数値を呼び出す。直接の不変束縛から確定した初期化式への追跡は既存の経路で行う。
+
+最初のSourceでVM・AOT・AWBC Productの8入力×3実行が42を返した。タプル引数の効果省略と明示、ローカルのタプル、捕捉付きの入れ子、途中まで適用した関数、配列のlet-else、ジェネリックの異なる型引数、既存のvariant matchを含む。明示した効果上限違反と関数値の名前付き引数は各3実行で拒否された。対象7件が通過し、捕捉付きコールバックのAWBC Productは、各ステップの公開セーブをJSONで往復し、新しい実行器に復元して42を返した。1ステップ最大1操作、ログ1回を確認した。既存のStringの保存・復元確認も同じ手順で継続した。
+
+最初のSourceでは、可変の束縛から呼べた一方で、名前付き関数やそのローカル別名を再代入すると準備済み代入の型比較で拒否した。LLDBはanalyze_statementsからprepared_assignment_statementに入り、確定前の型の比較エラーを返す分岐に停止した。ラムダや条件式を右辺に置いた対照は通過した。ラムダの対照は再代入前に保存した関数値も同時に実行した。
+
+最終Source `f0d45f7286847010a1c8a51e8523f1e98994a5ce` は、代入の準備で右辺の型付き式と書込み先の同一性を保持し、左右の型は効果解決後に照合する。ローカルとレコードフィールドに同じ規則を使う。確定した効果が異なる代入はsema.statement.operand_typeで拒否する。
+
+製品ソースの初回逆依存では既存の代入テスト1件が失敗した。旧汎用エラーを期待していた箇所で、実際にはレコードのi64フィールドにboolを代入する文を拒否し、期待型と実際の型を報告していた。検証Source `10794b346efd5a81e831ce6ac478ea17b668ee73` はテストを更新し、代入文と右辺式のID、期待型i64、実際の型boolを照合する。ほかの4件の書込み先の拒否を保持した。4,341件の初回実行は4,275 PASS／66 FAIL、別に1 SKIP。変更したテストを含む代入の対象3件は再実行でPASS。
+
+最終版CLIの17入力×3実行は、正常39件が戻り値42、診断0件、最大1操作と期待ログに一致した。残る12件は、関数型の異なる代入、明示効果の上限違反、位置専用の関数値に対する名前付き引数、失敗時の分岐を持たない配列パターンの各3件で拒否した。純粋な関数型への効果付き関数の代入は `sema.statement.operand_type` を返した。再代入前の関数値、再代入後のローカルとレコードフィールドを同じ入力で実行した。最終版の対象10件はPASS。実行したCLIのSHA256は `ff4fb9f313908e6c4f5fed5a82cc971aa0014e82ee7507bd8b072347dbf5df91`。
+
+Cargoで解決した逆依存はSemaが22パッケージ、Compilerが10パッケージで、Compilerの対象はすべてSemaの対象に含まれる。非CLIの21パッケージでは4,341件実行し、4,275 PASS＋再実行で1 PASS／65既知FAIL、別に1 SKIP。[先行実行](#callback-effects-in-containers)とテストIDを照合した。製品ソースで実行した全件結果と、テストの更新後に採取した再実行結果の両方を保持する。CLIはlib／bin 196件、統合6対象30件すべてPASS。workspace全ターゲット・全機能のcheck／Clippy、変更Rustファイルの書式、構造ゲートを通過した。構造ゲートのブロッキング違反は0件。
+
+`main` を通常の fast-forward で更新した。公開ref、fetchしたコミットのSHA、および変更した11ファイルのblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
+
+[検証原本](acceptance-evidence/task-lexical-function-values.raw.zip) は301項目、2,008,139 bytes、SHA256 `e304098cccb693ff7648ec24306e6b0689a106b29148342360f419aa884125ba`。全項目の長さとSHA256を照合した。検証後の `target` は136,049,776,426 bytes。
