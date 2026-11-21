@@ -21047,3 +21047,24 @@ CLI の lib／bin 196件と統合6対象30件はすべてPASS。全 `check` テ�
 `main` で Source `95c1abc3bad04f5ae9280efd34e662323ebe8386` を公開した。公開先のrefとfetchしたSHA、および変更したSemaの34ファイルのblobを照合した。Sourceの公開時点で、作業ツリーにはこの履歴と現状一覧の更新、および既存の未追跡 `%SystemDrive%/` があった。
 
 [検証原本](acceptance-evidence/task-higher-order-effect-scopes.raw.zip) は60項目、1,241,392 bytes、SHA256 `b69a42496108cf959e910aad767b9319f2bc7d085b0cdfcdfb919a0fe7694b91`。全項目の長さとSHA256を照合した。検証後の `target` は135,998,442,563 bytes。
+
+<a id="declared-rigid-capture-authority"></a>
+## 2026-11-21 — 元の宣言の固定参照を確定結果へ引き継ぐ
+
+検証基点は `743d95e19ebc93b2e493cf69d6431373a4f21a01`。[前回の調査](#higher-order-effect-scopes)で、元の宣言が許可した固定効果を正準の効果行として発行する段階と、関数ヘッダーを発行する段階の両方で、`ConstraintApplicationInventory::import_parameters` が `ForeignVariable` を返すことを確認した。
+
+最初の修正は、候補が保持する元の宣言を照合し、要求された固定参照を既存の読み取り専用キャプチャとして発行する。対象80件は67 PASS／13既知FAILで、単独の効果行を発行する既存テストと、正準化した入力を保持する既存テストがFAILからPASSに変わった。型・定数・効果の固定参照を同じ証明で取り出し、推論権限を持つ適用のキーと区別する新規テストもPASSした。
+
+Futureを含む投影は効果行の発行を通過し、結果型の組み立てで `ForeignVariable` が発生した。デバッガで `ContextReferenceMap::effect_reference` の固定参照の照合を確認した。結果型の組み立てにも同じ宣言の照合を適用する。型・定数・効果の各参照には元の式の出自検査を適用し、完了した値を再び開くときは、その値が保持するキャプチャを使う。
+
+Source `dd7b05b7f2db62d5f8bf19b77b5a342ae702d10b` の対象89件は75 PASS／14既知FAIL。新規失敗0件。最初の修正で通過した既存2件に加え、`a_contextual_result_compares_the_canonical_rows_of_its_two_ports` と `a_registered_projection_keeps_named_and_future_queries_before_final_closure` がFAILからPASSに変わった。後者は、Futureの実入力がないときの拒否、同じ計算の再試行、名前付き効果とFutureの実入力、元の宣言の固定効果を合わせた正準の効果行を確認した。新規テストは、子が貸与された固定参照を再発行できることと、同じ元の宣言の別の固定効果を直接発行できないことも確認した。workspace全target・全featureのcheckとClippy、変更Rustファイルの書式、構造ゲートが通過し、構造ゲートのブロッキング違反は0件だった。サイズレビュー対象となった `application.rs` に、適用の所属と宣言の固定キャプチャを照合する処理を置き、貸与の発行と結果型の組み立てで共有する。
+
+Cargoで解決した逆依存22パッケージのうち、CLI以外の21パッケージで4,333件を実行し、4,266 PASS／67既知FAIL、別に1 SKIP。[前回の全件実行](#higher-order-effect-scopes)とテストID単位で照合した。既存4件がFAILからPASSへ変わり、新規1件もPASS。新規失敗は0件。
+
+CLI の lib／bin 196件と統合6対象30件はすべてPASS。全 `check` テストの再実行は範囲外。再構築した `arcw.exe` のSHA256は `0f24a4e5d2f8f8f0c949e013e89805b47d475c4e66dc45a93c91d74020cc06b3`。公開済みの5入力をSHA256で照合し、VM／AOT／AWBC Productで14回実行した。すべて42を返し、1ステップ最大1操作、診断とアサーション失敗0件だった。ステップ数とログは先行実測と一致した。
+
+別の既知失敗 `a_final_header_projects_the_actual_function_beneath_its_local_binder` は、親の推論関数を適用した関数ヘッダーを検査するときに、適用の依存引数をヘッダーが直接参照する固定効果として照合し、`ForeignVariable` で拒否する。デバッガは `ConstraintFunctionHeaderView::admit_effect_reference` と、準備済みの効果行の引数を走査する経路で停止した。
+
+`main` で Source `dd7b05b7f2db62d5f8bf19b77b5a342ae702d10b` を公開した。公開先のrefとfetchしたSHA、および変更したSemaの17ファイルのblobを照合した。Sourceの公開時点で、作業ツリーにはこの履歴と現状一覧の更新、および既存の未追跡 `%SystemDrive%/` があった。
+
+[検証原本](acceptance-evidence/task-declared-rigid-capture-authority.raw.zip) は63項目、1,226,500 bytes、SHA256 `52e22041cd80370f33d5c6da1b3f38b84980626aa5c2cc014ca042372206496c`。全項目の長さとSHA256を照合した。検証後の `target` は136,007,753,418 bytes。
