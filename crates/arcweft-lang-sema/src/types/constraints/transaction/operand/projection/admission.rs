@@ -73,7 +73,16 @@ impl<D: ConstraintDomain> ConstraintOperandOrigin<D> {
                 Self::Rebuilt { source, .. } => source,
                 Self::TypeAlias { terminal, .. } => &terminal.origin,
                 Self::ConstAlias { terminal, .. } => &terminal.origin,
-                Self::FunctionSchemeInstantiation { source, .. } => &source.origin,
+                Self::FunctionSchemeInstantiation { instance, source } => {
+                    // The original scheme supplies its rigid captures. The
+                    // exact opening supplies the inference functions it issued.
+                    if let ConstraintGenericParameterId::Effect(reference) = parameter
+                        && instance.owner.effect_function(reference).is_some()
+                    {
+                        return Ok(true);
+                    }
+                    &source.origin
+                }
                 Self::SourceExpectation {
                     value_expected,
                     projection,
