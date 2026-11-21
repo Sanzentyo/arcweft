@@ -65,8 +65,8 @@ pub(super) fn setup_with_limits<'a>(
         .into_iter()
         .map(|key| parameters.const_reference(&key.into()).unwrap())
         .collect();
-    let (context, path) =
-        ConstraintTestSetup::with_scope(limits, cancellation, parameters).into_path(graph);
+    let (context, path) = ConstraintTestSetup::with_scope(limits, cancellation, parameters)
+        .into_projection_path(graph);
     (context, path, types, lengths)
 }
 
