@@ -21026,3 +21026,24 @@ CLIはlib／bin 196件と統合6対象30件がすべてPASS。全 `check` テス
 `main` で Source `82c85f0ab301ca1684decd44a2c461d2fc0f6c25` を公開した。公開先のrefとfetchしたSHA、および `template.rs` のblob `53dce4a41bf8f883b6ec1343b49bb6d50c0d85b3` を照合した。Sourceの公開時点で、作業ツリーにはこの履歴と現状一覧の更新、および既存の未追跡 `%SystemDrive%/` があった。
 
 [検証原本](acceptance-evidence/task-project-instance-key-projection-budget.raw.zip) は56項目、1,208,885 bytes、SHA256 `54161403cab241240442a26faf94ab6f8e47fecc1b4da325e093b35ad0ab4c79`。全項目の長さとSHA256を照合した。検証後の `target` は135,988,779,085 bytes。
+
+<a id="higher-order-effect-scopes"></a>
+## 2026-11-21 — 高階関数の効果制約を元の字句スコープで確定
+
+検証基点は `c9a3243a245e9dc99d434fd3f30c3f25257822d9`。[前回の再現](#project-instance-key-projection-budget)で、型が一致する候補でも、元の効果制約を確定すると関数内の効果パラメータの参照で `UnknownDepth { depth: 0 }` が発生した。関数型の効果述語の一致と効果行の比較を、候補の外側の制約に組み込んでいた。
+
+Source `95c1abc3bad04f5ae9280efd34e662323ebe8386`。比較が生じた関数ヘッダーの字句フレームを候補に保持する。元の前提と比較式を同じフレームに移し、候補単独と複数候補の積の両方で、各フレームを独立に束縛して比較を確定する。推論変数への代入には、その変数の導入位置で認めた依存を持つ適用を使う。
+
+候補件数の既存テストを効果制約の確定まで進め、同じ効果述語を持つ候補の受理と、異なる効果述語を持つ候補の効果不充足による拒否を検査するよう訂正した。別の回帰テストは、同じ位置に形式引数を持つ二つの callback を照合し、外側の効果に依存する場合の実際の解と、片方の内側の効果を捕捉する場合の拒否を確認する。所有位置を整理する前の対象32件は23 PASS／9既知FAILで、両回帰は通過した。最終Sourceから構築した逆依存テストバイナリでも両回帰が通過した。Semaとworkspace全体の全target・全featureのcheck、workspaceのClippy、構造ゲートが通過した。構造ゲートのブロッキング違反は0件。既存のサイズレビュー対象 `transaction.rs` は候補の構成を更新し、効果制約の収集と確定は `normalization/effects/scoped.rs` が持つ。
+
+逆依存実行では、上の候補選択に加えて、`specialization_preserves_a_nested_known_scheme_and_its_predicate` と `shared_ambient_frames_transport_under_own_binders_across_different_scope_shapes` がFAILからPASSへ変わった。前者は `UnknownDepth { depth: 0 }` で失敗していた特殊化で、入れ子の関数型と効果述語を保持した。後者は `UnknownDepth { depth: 2 }` で失敗していた複数候補の積で、束縛の深さが異なっても共有の外側フレームを照合した。二つの callback の新規回帰もPASSした。
+
+Cargoで解決した逆依存22パッケージのうち、CLI以外の21パッケージで4,332件を実行し、4,261 PASS／71既知FAIL、別に1 SKIP。[前回の全件実行](#project-instance-key-projection-budget)とテストID単位で照合した。新規失敗は0件。
+
+CLI の lib／bin 196件と統合6対象30件はすべてPASS。全 `check` テストの再実行は範囲外。再構築した `arcw.exe` のSHA256は `265dc966bf26a13ac5ccff74897d7f2ac0405e7879e87b2d82dab6ba01528a1b`。公開済みの5入力をSHA256で照合し、VM／AOT／AWBC Productで14回実行した。すべて42を返し、1ステップ最大1操作、診断とアサーション失敗0件を確認した。ステップ数とログは先行実測と一致した。
+
+別の既知失敗 `a_registered_projection_keeps_named_and_future_queries_before_final_closure` は、Futureの実入力を渡した後、確定した関数型の効果行を発行する段階で `ForeignVariable` を返す。デバッガで `ConstraintClosedEffects` のヘッダー検査から `ConstraintApplicationInventory::import_parameters` に至り、元の宣言が保持する固定効果パラメータの照合で拒否することを確認した。正準化した複数の入力を保持するテストも同じヘッダー検査で失敗し、確定した効果行を単独発行するテストは `ConstraintEffectCompletionContext::support` から同じ取込み処理に至った。
+
+`main` で Source `95c1abc3bad04f5ae9280efd34e662323ebe8386` を公開した。公開先のrefとfetchしたSHA、および変更したSemaの34ファイルのblobを照合した。Sourceの公開時点で、作業ツリーにはこの履歴と現状一覧の更新、および既存の未追跡 `%SystemDrive%/` があった。
+
+[検証原本](acceptance-evidence/task-higher-order-effect-scopes.raw.zip) は60項目、1,241,392 bytes、SHA256 `b69a42496108cf959e910aad767b9319f2bc7d085b0cdfcdfb919a0fe7694b91`。全項目の長さとSHA256を照合した。検証後の `target` は135,998,442,563 bytes。
