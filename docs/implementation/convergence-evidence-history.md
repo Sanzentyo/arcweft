@@ -21150,3 +21150,20 @@ CLIでは長さ2と長さ0の配列のmapがVM・AOT・AWBC Productで42を返�
 `main` を通常のfast-forwardで更新し、公開ref、取得した検証SourceのSHA、変更した6ファイルのblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
 
 [検証原本](acceptance-evidence/task-constraint-projection-budget.raw.zip) は64項目、776,868 bytes、SHA256 `68358762c572208f03c41cf69291833f9e3eacc5b09316b2551fb1c746aea0ec`。全項目の長さとSHA256を照合した。検証後の `target` は136,042,054,484 bytes。
+
+<a id="unchanged-effect-read-scope"></a>
+## 2026-11-22 — 読み取りだけの効果スコープで差分の作成を省く
+
+作業基点 `2811d790df588213d0803b0a4ae8aed69bda7f5b`。先行の[256候補の失敗記録](#constraint-projection-fixtures)を再追跡した。旧バイナリでは作業上限に達するまでに、差分本体のノード計上箇所へ223回到達した。うち一時的な読取り計算から113回、呼出しグラフの移譲から110回。両経路で差分へ含める書込みと祖先を計上する箇所への到達は0回だった。
+
+Source `700e5ac3bdcb4c757517434c39e3e2326c1586d0` は、正当なチェックポイントについて、状態ID・祖先・変更ジャーナル・義務の境界を照合する。変更がなければ終了時の取消しと作業計上を1回行い、元の読取りスコープをそのまま返す。差分を作る前に元スコープへ戻るため、差分IDの払い出しも発生しない。変更がある計算は型付き差分を移して読取りを組み立てる。
+
+対象19件は18 PASS／1既知FAIL。入れ子の効果スコープで使える作業量4では元の読取りと同じ実体を返し、作業量3では終了時の検査で拒否した。取消しを計算直後に発生させても、元のスコープと移譲権限を保持した。派生した行・述語、スコープの結合、移譲の再試行、新たな差分IDの払い出しがないことを効果のowner検証で確認した。Sema lib 2,023件は1,977 PASS／46既知FAIL。先行Semaの2,022 IDの合否はすべて一致し、追加1件が通過した。
+
+256候補の境界は引き続き `CallResolutionFailed`。更新後のLLDBは、同じ呼出し作業上限4,096に対し、比較前に2つの項の由来とスコープを検査する `relate_constraint` の `admit_operand` から `AdmitOrigins` に入った位置で停止した。候補の物理評価と上限の条件は元のテストにある。
+
+Cargo graphでSemaを含む推移的逆依存22パッケージを確認した。非CLIの21パッケージは4,342件実行し、4,296 PASS／46既知FAIL、別に1 SKIP。前回の全逆依存と先行Sema再実行を組み合わせた4,341 IDの合否は今回すべて一致し、新しいスコープの回帰テストが追加1件として通過した。CLIはlib／bin 196件と統合6対象30件がすべてPASSし、前回と同じ226 IDを確認した。workspace全target・全featureのcheck／Clippyと、変更ファイルの書式は終了0。
+
+`main` を通常のfast-forwardで更新し、公開ref・取得commitのfull SHA・変更3ファイルのblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
+
+[検証原本](acceptance-evidence/task-effect-read-scope-budget.raw.zip) は34項目、1,269,163 bytes、SHA256 `9a03923a6a6a857cd103ad8a4f488467d0a3ae2b5dbbfb79b1c690b8a4670222`。全項目の長さとSHA256を照合した。検証後の `target` は136,050,942,039 bytes。
