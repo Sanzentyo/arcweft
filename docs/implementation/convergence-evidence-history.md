@@ -20930,3 +20930,22 @@ CLIのライブラリ・バイナリ196件、統合6対象の30件、Sema doctes
 Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-batched-effect-equalities.raw.zip) は133 entry、2,577,943 bytes、SHA256 `46819aab07d435ad15c01215310f65d8c3a4d8bb6a97de3ae537d66587f3b2e8`。各entryの長さとハッシュを照合した。記録時の `target` は134,907,506,762 bytes。
+
+<a id="same-head-effect-conjunction"></a>
+## 2026-11-21 — 同じ先頭変数を持つ効果条件を後続条件と直接結合
+
+検証基点は `9ec343e048babb7e6111cb4b1801acad13d70a87`。公開Sourceは `2476bd4d95f3d5718fd68c5ff344dbca023d2fd3`。同じ先頭変数を持つ条件が複数あり、後続の条件が組み立て済みの場合、その変数の低分岐と高分岐を分けてから後続条件を双方へ適用する。各入力の先頭を一度読み、既存の制御付き論理積で両分岐を求める。回帰は後続条件が双方と変数を共有する全16通りの値、逆順の正準結果、必要な作業量より1単位少ない制御での拒否を確認した。Coreの対象51件は全件PASSした。
+
+公開済みの5つの `.arcw` をSHA256で照合した。既定上限4,096で1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで戻り値42、1ステップ最大1操作、診断0件だった。1 callback は `marker` を記録し、2 callback はログ0件だった。CLIの3 callback は3入力ともVM／AWBC Productで式95の意味解析に失敗した。
+
+診断専用上限16,384では、先行の2,817／4,422／4,422／4,279単位に対し、後続条件を既存の論理積に渡す初回試行で2,795／4,401／4,401／4,258単位、先頭を一度だけ処理する最終試行で2,790／4,396／4,396／4,253単位となった。いずれもVMで戻り値42。補助計測がWindows上で `arcw.exe` を使用していた間、最終試行のCLIビルドは `os error 5` で停止した。同じ実装の再試行は補助計測の終了後に通過した。
+
+先行順の初回試行では、正準形を使った元の効果制約の照合が3,457単位で始まり、子成分の照合を含め3,846単位で終わった。候補の確定までに追加でかかった555単位のうち、下位の作業報告で確認できた538単位の内訳を原本に収録した。
+
+CargoはCoreの推移的逆依存52パッケージを返した。CLI以外の51パッケージで8,152件を実行し、8,074 PASS／78既知FAIL、別に18件SKIPだった。先行CoreのSource `fa9ee2a34e25d4c1faa2d757b747f8f69ae83145` と、その後のSema Source `021e68501500860938e23ab25311939fac3c5bce` の重複を除く8,151 IDの合否が一致し、追加回帰1件がPASSした。Compilerの2 callback はNativeとデコード済みAWBCでPASSした。Core全featureの対象2,403件は全件PASSし、Sema全featureユニットは1,942 PASS／76既知FAILで合否が一致した。
+
+CLIのライブラリ・バイナリ196件、統合6対象30件、Core doctest 81件、workspace全target・全featureのcheck／Clippy、書式、差分、依存グラフ、構造ゲートが通過した。CLIの全 `check` テストは未再実行。Clippyで追加コードの単位型パターンに警告が1件出た。後続Source `ccb3d06d1a383d9ca9ea976fd979f38c0fef2a2c` で `()` を明示し、Coreの書式・全target／全featureのClippy・決定グラフ51件で確認した。
+
+Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-same-head-effect-conjunction.raw.zip) は121項目、2,138,166 bytes、SHA256 `9809353a4efe0e092d6c2e5c220d3f85e1f40e29d2e1a22817523cda4bea1af4`。各項目の長さとハッシュを照合した。記録時の `target` は134,919,371,832 bytes。
