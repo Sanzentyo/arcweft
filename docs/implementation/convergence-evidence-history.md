@@ -20892,3 +20892,20 @@ CLIのライブラリ・バイナリ196件、統合6対象の30件、Sema doctes
 Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
 
 [検証原本](acceptance-evidence/task-direct-effect-reification.raw.zip) は110 entry、1,588,598 bytes、SHA256 `aea68f86b62a38f70310a6513d45e58911a8d5cfa7f6fe31c1b585b8c30ac75a`。各entryの長さとハッシュを照合した。記録時の `target` は134,893,196,299 bytes。
+
+<a id="reached-effect-definitions"></a>
+## 2026-11-21 — 到達性を検証した効果定義をスナップショットに移送
+
+検証基点は `a95a49ac45340c03c8905b9e46bc5aa5195cb5fd`。公開Sourceは `ab1a548de6732b8febb90edefa8a19e4112e94f6`。関数・行・述語は現在の定義を確認してから初回のみ作業リストへ追加し、同じ到達表に保持する。元の到達性を再利用する場合は、行・述語の同一性と選択の有効性を確認し、最終スナップショットが必要とする名前付き関数の本体は検証する。スナップショットと残余効果の閉包は到達表の定義をそのまま受け取る。新しい回帰では同じ行・述語を8回ずつ指定し、追加の作業量を各ルートの確認に限定しても元と同じ定義が得られることを確認した。Semaの対象87件がPASSした。
+
+5つの `.arcw` を公開済み入力原本のSHA256と照合した。既定上限4,096で1 callback はVM／AWBC Product、2 callback はVM／AOT／AWBC Productで戻り値42、1ステップ最大1操作、診断0件を確認した。1 callback は `marker` を記録し、2 callback はログ0件だった。CLIの3 callback は3入力ともVM／AWBC Productで式95の意味解析に失敗した。
+
+診断専用上限16,384で2 callback は2,887→2,848単位、3 callback の先行2入力は4,529→4,475単位、別の入力は4,386→4,332単位だった。いずれもVMで戻り値42。先行順の3 callback で、元制約のスナップショットは126→101単位、最終制約のスナップショットは139→110単位だった。同じ入力で依存辺を持たない正準ルートの確認が元制約で27回、最終制約で7回残っていることを計測した。
+
+CargoでSemaの推移的逆依存22パッケージを選定した。CLI以外の21パッケージの4,326件は4,248 PASS／78既知FAILで、別に1件SKIP。先行Source `2c003a21c07a1f86b440291a349f6ad739bd54b2` の4,325 IDの合否が一致し、追加回帰1件がPASSした。Compilerの2 callback はNativeとデコード済みAWBCでPASSした。Semaでは開いた再帰宣言の3 callback の効果行伝播がPASSした。Sema全featureユニットは1,940 PASS／76既知FAILで、先行の2,015 IDの合否が一致した。
+
+CLIのライブラリ・バイナリ196件、統合6対象の30件、Sema doctest 2件、workspace全target・全featureのcheck／Clippy、書式、差分、構造ゲートが通過した。CLIの全 `check` テストは未再実行。
+
+Generic Match `.1.2` C3/C5 は受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+[検証原本](acceptance-evidence/task-reached-effect-definitions.raw.zip) は76 entry、1,434,470 bytes、SHA256 `f4371d0f8899f59463fa369ef59588d20d70c48f5ee0b791b0d029398e03ee4f`。各entryの長さとハッシュを照合した。記録時の `target` は134,898,862,491 bytes。
