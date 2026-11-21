@@ -112,22 +112,54 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
                     == self.node(first).map(|node| &node.variable)
             });
             let (group, tail) = remaining.split_at(end);
-            let point = if let [point] = group {
-                *point
-            } else {
-                self.conjoin_points(
+            suffix = match group {
+                [point] => self.conditional(Conditional::new(*point, suffix, Root::False))?,
+                _ if suffix == Root::True => self.conjoin_points(
                     group
                         .iter()
                         .map(|&point| GuardedPoint { guard: None, point }),
-                )?
+                )?,
+                _ => self.conjoin_same_head_with_suffix(group, suffix)?,
             };
-            suffix = self.conditional(Conditional::new(point, suffix, Root::False))?;
             if suffix == Root::False {
                 break;
             }
             remaining = tail;
         }
         Ok(suffix)
+    }
+
+    fn conjoin_same_head_with_suffix(
+        &mut self,
+        group: &[Root],
+        suffix: Root,
+    ) -> Result<Root, C::Error> {
+        let variable = self
+            .node(group[0])
+            .expect("a nonterminal conjunct")
+            .variable
+            .clone();
+        // The suffix starts after this variable, so it holds in both
+        // cofactors. Read the common head once from each input clause.
+        let mut cofactors = [(); 2].map(|_| {
+            vec![GuardedPoint {
+                guard: None,
+                point: suffix,
+            }]
+        });
+        for &point in group {
+            self.control.charge(DecisionWork::Visit)?;
+            let node = self.node(point).expect("a nonterminal conjunct");
+            for (clauses, point) in cofactors.iter_mut().zip([node.low, node.high]) {
+                if point != Root::True {
+                    clauses.push(GuardedPoint { guard: None, point });
+                }
+            }
+        }
+        let [low, high] = cofactors;
+        let low = self.conjoin_points(low)?;
+        let high = self.conjoin_points(high)?;
+        self.branch(variable, low, high)
     }
 
     pub(super) fn conjoin_guarded(

@@ -918,6 +918,36 @@ fn ordered_conjunction_reduces_independent_groups_and_shared_heads_under_budget(
 }
 
 #[test]
+fn shared_head_conjunction_keeps_a_suffix_that_overlaps_both_branches() {
+    let mut setup = Meter::default();
+    let head = atom(0);
+    let left = head.conditional(&atom(1), &atom(2), &mut setup).unwrap();
+    let right = head.or(&atom(3), &mut setup).unwrap();
+    let suffix = atom(1).equivalent(&atom(3), &mut setup).unwrap();
+    let clauses = [&left, &right, &suffix];
+    let mut full = Meter::default();
+    let result = EffectDecision::all(clauses, &mut full).unwrap();
+    for mask in 0..16u8 {
+        let value = |variable: u8| mask & (1 << variable) != 0;
+        let selected = if value(0) { value(1) } else { value(2) };
+        let expected = selected && (value(0) || value(3)) && (value(1) == value(3));
+        assert_eq!(result.evaluate(|&variable| value(variable)), expected);
+    }
+    assert_eq!(
+        EffectDecision::all(clauses.into_iter().rev(), &mut Meter::default()).unwrap(),
+        result
+    );
+    let mut short = Meter {
+        limit: Some(full.used - 1),
+        ..Meter::default()
+    };
+    assert_eq!(
+        EffectDecision::all(clauses, &mut short),
+        Err((full.used, full.used - 1))
+    );
+}
+
+#[test]
 fn equivalence_to_true_admits_only_a_copy_of_the_other_operand() {
     let mut setup = Meter::default();
     let effect = atom(0).and(&atom(1), &mut setup).unwrap();
