@@ -14,7 +14,9 @@ use super::{ConstraintDomain, TypeConstraintInvariant, TypeConstraintParameterSc
 use crate::types::generics::GenericApplicationIssuer;
 use crate::{
     effect_row::EffectConstraintEligibility,
-    effect_row::prepared::{PreparedEffectParameterScope, PreparedEffectUnknownRef},
+    effect_row::prepared::{
+        PreparedEffectInvariant, PreparedEffectParameterScope, PreparedEffectUnknownRef,
+    },
     types::{GenericConstReference, GenericEffectReference, GenericTypeReference},
 };
 
@@ -292,7 +294,13 @@ pub(super) struct ConstraintApplicationScope<D: ConstraintDomain> {
     introduction: Arc<ConstraintLexicalScope>,
     original: super::OriginalProducerContext,
     effect_functions: BTreeMap<GenericEffectReference, ConstraintEffectFunction>,
-    opened_effect_predicate: crate::effect_row::prepared::PreparedEffectPredicate,
+    opened_effect_predicate: OpenedApplicationPredicate,
+}
+
+#[derive(Clone)]
+pub(super) enum OpenedApplicationPredicate {
+    ClosedDeclaration,
+    Projected(crate::effect_row::prepared::PreparedEffectPredicate),
 }
 
 /// Share actual frame identity with the application while keeping the graph
@@ -350,16 +358,23 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
         introduction: Arc<ConstraintLexicalScope>,
         original: super::OriginalProducerContext,
         effect_functions: BTreeMap<GenericEffectReference, ConstraintEffectFunction>,
-        opened_effect_predicate: crate::effect_row::prepared::PreparedEffectPredicate,
-    ) -> Self {
-        Self {
+        opened_effect_predicate: OpenedApplicationPredicate,
+    ) -> Result<Self, super::TypeConstraintError> {
+        if matches!(
+            opened_effect_predicate,
+            OpenedApplicationPredicate::ClosedDeclaration
+        ) && (!parameters.opens_effects_read_only() || !effect_functions.is_empty())
+        {
+            return Err(PreparedEffectInvariant::ParameterContract.into());
+        }
+        Ok(Self {
             application,
             parameters,
             introduction,
             original,
             effect_functions,
             opened_effect_predicate,
-        }
+        })
     }
 
     pub(super) const fn application(&self) -> D::Application {
@@ -403,7 +418,10 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
     pub(super) fn opened_effect_predicate(
         &self,
     ) -> &crate::effect_row::prepared::PreparedEffectPredicate {
-        &self.opened_effect_predicate
+        match &self.opened_effect_predicate {
+            OpenedApplicationPredicate::ClosedDeclaration => self.effects().declared_predicate(),
+            OpenedApplicationPredicate::Projected(predicate) => predicate,
+        }
     }
 
     pub(super) fn validate_effect_functions<A: super::context::TypeConstraintAccounting>(
@@ -411,7 +429,7 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut super::context::TypeConstraintContext<'_, A, D>,
     ) -> Result<(), super::TypeConstraintError> {
-        graph.validate_retained_predicate(&self.opened_effect_predicate)?;
+        graph.validate_retained_predicate(self.opened_effect_predicate())?;
         for function in self.effect_functions.values() {
             context.enter_node()?;
             function.validate(graph)?;

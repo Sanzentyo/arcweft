@@ -240,7 +240,8 @@ fn binding_owners_keep_their_original_source_across_imports_and_equal_frame_shap
         original.clone(),
         owner.effect_functions.clone(),
         owner.opened_effect_predicate.clone(),
-    );
+    )
+    .unwrap();
     let substituted = ConstraintApplicationScope::<Domain>::new(
         0,
         parameters,
@@ -248,7 +249,8 @@ fn binding_owners_keep_their_original_source_across_imports_and_equal_frame_shap
         foreign,
         owner.effect_functions.clone(),
         owner.opened_effect_predicate.clone(),
-    );
+    )
+    .unwrap();
     assert!(owner.same_owner(&same));
     assert!(!owner.same_owner(&substituted));
     let root = context

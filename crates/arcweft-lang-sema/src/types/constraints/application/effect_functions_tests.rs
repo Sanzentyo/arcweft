@@ -341,6 +341,114 @@ fn a_registered_application_cannot_be_admitted_with_another_graph() {
 }
 
 #[test]
+fn a_closed_root_preserves_its_predicate_and_authenticates_imported_effects() {
+    use crate::effect_row::{EffectPredicate, prepared::PreparedEffectPredicate};
+    use crate::types::constraints::{
+        TypeConstraintInitializationFailure, transaction::TypeConstraintTransaction,
+    };
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
+    let parent_variable = parameters.opened_effect_variables()[0].variable().clone();
+    let original = context.fixture_original_context(None).unwrap();
+    let parent = context
+        .application_scope((), parameters, original.clone(), &mut graph)
+        .unwrap();
+    let function = parent.effect_function(&parent_variable).unwrap().clone();
+    let parent = context
+        .start_path_with_imported(parent, None, original, graph.read())
+        .unwrap();
+    let imported = parent
+        .applications
+        .import_parameters(&[parent_variable.clone().into()], &mut context)
+        .unwrap();
+    let original = context.fixture_original_context(Some(&imported)).unwrap();
+    let effects = TypeConstraintEffectScope::seal_call_scope_with_predicate(
+        [],
+        [],
+        PreparedEffectPredicate::Canonical(EffectPredicate::impossible()),
+    )
+    .unwrap();
+    let parameters = TypeConstraintParameterScope::seal_call_scope(
+        GenericBinder::EMPTY,
+        [],
+        [],
+        effects,
+        [],
+        [],
+    )
+    .unwrap();
+
+    let mut foreign = PreparedEffectGraph::default();
+    let mut no_branches = Context::with_accounting(LocalConstraintAccounting::new(
+        TypeConstraintLimits::new(1024, 1024, 0, 1024),
+        &cancellation,
+    ));
+    let rejected = TypeConstraintTransaction::initialize_with_imported(
+        &mut no_branches,
+        &mut foreign,
+        original.clone(),
+        (),
+        parameters.clone(),
+        None,
+        Some(imported.clone()),
+    );
+    assert!(matches!(
+        rejected,
+        Err(TypeConstraintInitializationFailure::Abort(
+            TypeConstraintAbort::BranchLimit {
+                actual: 1,
+                limit: 0
+            }
+        ))
+    ));
+
+    let result = TypeConstraintTransaction::initialize_with_imported(
+        &mut context,
+        &mut foreign,
+        original.clone(),
+        (),
+        parameters.clone(),
+        None,
+        Some(imported.clone()),
+    );
+    assert!(matches!(
+        result,
+        Err(TypeConstraintInitializationFailure::Invariant(
+            TypeConstraintInvariant::PreparedEffect(
+                crate::effect_row::prepared::PreparedEffectFailure::Invariant(
+                    PreparedEffectInvariant::ForeignIssuer,
+                )
+            )
+        ))
+    ));
+
+    let retained = graph.retained_terms();
+    let child = TypeConstraintTransaction::initialize_with_imported(
+        &mut context,
+        &mut graph,
+        original,
+        (),
+        parameters,
+        None,
+        Some(imported),
+    )
+    .unwrap();
+    let path = child.test_single_path();
+    assert_eq!(
+        path.effects.ambient.original_predicate().constant_truth(),
+        Some(false)
+    );
+    assert_eq!(
+        path.applications.effect_function(&parent_variable),
+        Some(&function)
+    );
+    assert_eq!(graph.retained_terms(), retained);
+}
+
+#[test]
 fn original_r_instantiates_the_registered_function_under_its_actual_gamma() {
     use crate::effect_row::prepared::{
         PreparedEffectPredicate, PreparedEffectRelation, PreparedEffectRow,

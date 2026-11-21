@@ -4,7 +4,8 @@
 //! lives in the sibling `transaction` module and only borrows it per phase.
 
 use crate::effect_row::prepared::{
-    PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectReadScope, PreparedEffectRow,
+    PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectReadScope, PreparedEffectReadView,
+    PreparedEffectRow,
 };
 use crate::types::PreparedEffects;
 
@@ -12,11 +13,13 @@ use super::transaction::{
     ConstraintConstOperandView, ConstraintInferenceBranch, ConstraintOperand, ConstraintOperandView,
 };
 use crate::types::ArrayLength;
-#[cfg(test)]
-use std::collections::BTreeMap;
 use std::{
+    collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use crate::effect_row::{
@@ -31,7 +34,9 @@ use super::super::{
 };
 #[cfg(test)]
 use super::super::{GenericConstParameterId, GenericTypeParameterId};
-use super::application::{ConstraintApplicationId, ConstraintApplicationScope};
+use super::application::{
+    ConstraintApplicationId, ConstraintApplicationScope, OpenedApplicationPredicate,
+};
 use super::lexical::ConstraintLexicalScope;
 use super::normalization::ConstraintProjectionView;
 use super::{
@@ -286,6 +291,10 @@ impl TypeConstraintEffectScope {
 
     pub(crate) fn required_inherited(&self) -> &[GenericEffectReference] {
         &self.required_inherited
+    }
+
+    pub(super) const fn declared_predicate(&self) -> &PreparedEffectPredicate {
+        &self.predicate
     }
 
     pub(super) fn accepts_continuation_scope(&self, other: &Self) -> bool {
@@ -903,6 +912,11 @@ impl TypeConstraintParameterScope {
 
     pub(crate) const fn effect_contract(&self) -> &TypeConstraintEffectScope {
         &self.contract.effects
+    }
+
+    pub(super) fn opens_effects_read_only(&self) -> bool {
+        let effects = self.effect_contract();
+        effects.variables.is_empty() && effects.predicate.constant_truth().is_some()
     }
 
     pub(super) fn opened_effect_variables(&self) -> Vec<EffectConstraintVariable> {
@@ -1531,6 +1545,93 @@ where
         Ok(self.lexical_scope.clone())
     }
 
+    fn admit_application_effect_inputs(
+        &mut self,
+        original: &super::OriginalProducerContext,
+        graph: PreparedEffectReadView<'_>,
+        mut retain: impl FnMut(GenericEffectReference),
+    ) -> Result<Arc<ConstraintLexicalScope>, TypeConstraintError> {
+        let mut introduction = self.capture_lexical_scope()?;
+        // Imported Γ retains actual parent frames even after the lexical
+        // traversal has left them. Keep their identity in this opening.
+        introduction.merge(original.gamma(), self)?;
+        let introduction = Arc::new(introduction);
+        // The complete actual Γ is an input, independent of which effect
+        // variables happen to occur in a candidate's row or predicate.
+        let binders = introduction.shape().binders();
+        for (index, binder) in binders.iter().enumerate() {
+            let depth = u32::try_from(binders.len() - index - 1)
+                .map_err(|_| TypeConstraintAbort::ArithmeticOverflow)?;
+            for slot in 0..binder.effects() {
+                self.enter_node()?;
+                retain(introduction.shape().bound_effect(depth, slot)?);
+            }
+        }
+        let rigid = original.rigid_scope();
+        if let Some(imported) = rigid.imported {
+            for parameter in imported.parameters() {
+                self.enter_node()?;
+                if let super::ConstraintGenericParameterId::Effect(
+                    reference @ GenericEffectReference::Inference(_),
+                ) = parameter
+                {
+                    imported
+                        .effect_application(reference)
+                        .ok_or(
+                            crate::effect_row::prepared::PreparedEffectInvariant::ParameterContract,
+                        )?
+                        .validate(graph)?;
+                }
+            }
+        }
+        for reference in rigid.effects.iter().chain(
+            rigid
+                .imported
+                .into_iter()
+                .flat_map(|lease| lease.parameters())
+                .filter_map(|parameter| match parameter {
+                    super::ConstraintGenericParameterId::Effect(reference) => Some(reference),
+                    _ => None,
+                }),
+        ) {
+            self.enter_node()?;
+            let reference = original
+                .admit_effect_reference(
+                    &introduction,
+                    reference,
+                    original.scope(),
+                    introduction.shape(),
+                    self,
+                )
+                .map_err(|error| Self::binding_transport_error(error, reference.clone().into()))?;
+            retain(reference);
+        }
+        Ok(introduction)
+    }
+
+    /// Reserve the root branch before building its application. Its declared
+    /// rows are rigid and its predicate is closed, so all graph access is read-only.
+    pub(super) fn start_closed_effect_path(
+        &mut self,
+        graph: PreparedEffectReadView<'_>,
+        application: D::Application,
+        parameters: TypeConstraintParameterScope,
+        original: super::OriginalProducerContext,
+        imported: Option<super::ImportedGenericParameterScopeLease>,
+    ) -> Result<ConstraintPath<D>, TypeConstraintError> {
+        self.charge_counter(1, Counter::Branches)?;
+        let introduction = self.admit_application_effect_inputs(&original, graph, |_| {})?;
+        let application = ConstraintApplicationScope::new(
+            application,
+            parameters,
+            introduction,
+            original.clone(),
+            BTreeMap::new(),
+            OpenedApplicationPredicate::ClosedDeclaration,
+        )?;
+        self.start_admitted_root(application, imported, original, graph)
+    }
+
     /// Open and use an application under the same graph checkpoint, so a
     /// failed path admission also rolls back the application's definitions.
     pub(super) fn with_application_scope<T>(
@@ -1548,63 +1649,12 @@ where
     ) -> Result<(T, Option<PreparedEffectReadScope>), TypeConstraintError> {
         self.with_effect_read_scope(graph, reads, |context, graph| {
             use crate::effect_row::prepared::PreparedEffectUnknownEligibility;
-            use std::{collections::BTreeMap, sync::Arc};
 
-            let mut introduction = context.capture_lexical_scope()?;
-            // Imported Γ retains actual parent frames even after the lexical
-            // traversal has left them. Keep their identity in this opening.
-            introduction.merge(original.gamma(), context)?;
-            let introduction = Arc::new(introduction);
-            let mut dependencies = std::collections::BTreeSet::new();
-            // The complete actual Γ is an input, independent of which effect
-            // variables happen to occur in a candidate's row or predicate.
-            let binders = introduction.shape().binders();
-            for (index, binder) in binders.iter().enumerate() {
-                let depth = u32::try_from(binders.len() - index - 1)
-                    .map_err(|_| TypeConstraintAbort::ArithmeticOverflow)?;
-                for slot in 0..binder.effects() {
-                    context.enter_node()?;
-                    dependencies.insert(introduction.shape().bound_effect(depth, slot)?);
-                }
-            }
-            let rigid = original.rigid_scope();
-            if let Some(imported) = rigid.imported {
-                for parameter in imported.parameters() {
-                    context.enter_node()?;
-                    if let super::ConstraintGenericParameterId::Effect(
-                        reference @ GenericEffectReference::Inference(_),
-                    ) = parameter
-                    {
-                        imported.effect_application(reference).ok_or(
-                            crate::effect_row::prepared::PreparedEffectInvariant::ParameterContract,
-                        )?.validate(graph.read())?;
-                    }
-                }
-            }
-            for reference in rigid.effects.iter().chain(
-                rigid
-                    .imported
-                    .into_iter()
-                    .flat_map(|lease| lease.parameters())
-                    .filter_map(|parameter| match parameter {
-                        super::ConstraintGenericParameterId::Effect(reference) => Some(reference),
-                        _ => None,
-                    }),
-            ) {
-                context.enter_node()?;
-                let reference = original
-                    .admit_effect_reference(
-                        &introduction,
-                        reference,
-                        original.scope(),
-                        introduction.shape(),
-                        context,
-                    )
-                    .map_err(|error| {
-                        Self::binding_transport_error(error, reference.clone().into())
-                    })?;
-                dependencies.insert(reference);
-            }
+            let mut dependencies = BTreeSet::new();
+            let introduction =
+                context.admit_application_effect_inputs(&original, graph.read(), |reference| {
+                    dependencies.insert(reference);
+                })?;
             // Reserve the declaration inventory before opening/cloning it.
             for _ in parameters.effect_contract().variables() {
                 context.enter_node()?;
@@ -1661,8 +1711,8 @@ where
                 introduction,
                 original,
                 functions,
-                predicate,
-            );
+                OpenedApplicationPredicate::Projected(predicate),
+            )?;
             use_scope(context, graph, scope)
         })
     }
@@ -1927,6 +1977,16 @@ where
             ));
         }
         self.charge_counter(1, Counter::Branches)?;
+        self.start_admitted_root(application, imported, original, graph)
+    }
+
+    fn start_admitted_root(
+        &mut self,
+        application: ConstraintApplicationScope<D>,
+        imported: Option<super::ImportedGenericParameterScopeLease>,
+        original: super::OriginalProducerContext,
+        graph: PreparedEffectReadView<'_>,
+    ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         application.validate_effect_functions(graph, self)?;
         for _ in application.effects().variables() {
             self.enter_node()?;

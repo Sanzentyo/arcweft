@@ -1321,6 +1321,16 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         parent_receipt: Option<ConstraintSourceReceipt<D>>,
     ) -> Result<Self, TypeConstraintError> {
         let path = Self::prepare_application(context, graph, application, path, inherited)?;
+        Self::from_prepared_path(context, graph, application, path, parent_receipt)
+    }
+
+    fn from_prepared_path<A: TypeConstraintAccounting>(
+        context: &mut TypeConstraintContext<'_, A, D>,
+        graph: &crate::effect_row::prepared::PreparedEffectGraph,
+        application: ConstraintApplicationId,
+        path: ConstraintPath<D>,
+        parent_receipt: Option<ConstraintSourceReceipt<D>>,
+    ) -> Result<Self, TypeConstraintError> {
         let original = path
             .applications
             .require_application(application)?
@@ -1435,39 +1445,59 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        match context.with_application_scope(
-            graph,
-            None,
-            application,
-            parameters,
-            original.clone(),
-            |context, graph, scope| {
-                let application = scope.id();
-                let path =
-                    context.start_path_with_imported(scope, imported, original, graph.read())?;
-                Self::from_path(context, graph, application, path, inherited.as_ref())
-            },
-        ) {
-            Ok((transaction, _)) => Ok(transaction),
-            Err(error) => Err(match error {
-                TypeConstraintError::Abort(error) => {
-                    super::TypeConstraintInitializationFailure::Abort(error)
-                }
-                TypeConstraintError::Invariant(error) => {
-                    super::TypeConstraintInitializationFailure::Invariant(error)
-                }
-                TypeConstraintError::Rejected(_) => {
-                    super::TypeConstraintInitializationFailure::Invariant(
-                        super::TypeConstraintInvariant::InheritedSolution(
-                            super::InheritedSolutionInvariant {
-                                kind: super::InheritedSolutionInvariantKind::Forbidden,
-                                parameter: None,
-                            },
-                        ),
-                    )
-                }
-            }),
-        }
+        let initialized = (|| {
+            if inherited.is_none() && parameters.opens_effects_read_only() {
+                let path = context.start_closed_effect_path(
+                    graph.read(),
+                    application,
+                    parameters,
+                    original,
+                    imported,
+                )?;
+                let application = path.root_id();
+                context.check_cancelled()?;
+                Self::validate_uninherited_application(
+                    path.applications.require_application(application)?,
+                )?;
+                return Self::from_prepared_path(context, graph, application, path, None);
+            }
+            let (transaction, _) = context.with_application_scope(
+                graph,
+                None,
+                application,
+                parameters,
+                original.clone(),
+                |context, graph, scope| {
+                    let application = scope.id();
+                    let path = context.start_path_with_imported(
+                        scope,
+                        imported,
+                        original,
+                        graph.read(),
+                    )?;
+                    Self::from_path(context, graph, application, path, inherited.as_ref())
+                },
+            )?;
+            Ok(transaction)
+        })();
+        initialized.map_err(|error| match error {
+            TypeConstraintError::Abort(error) => {
+                super::TypeConstraintInitializationFailure::Abort(error)
+            }
+            TypeConstraintError::Invariant(error) => {
+                super::TypeConstraintInitializationFailure::Invariant(error)
+            }
+            TypeConstraintError::Rejected(_) => {
+                super::TypeConstraintInitializationFailure::Invariant(
+                    super::TypeConstraintInvariant::InheritedSolution(
+                        super::InheritedSolutionInvariant {
+                            kind: super::InheritedSolutionInvariantKind::Forbidden,
+                            parameter: None,
+                        },
+                    ),
+                )
+            }
+        })
     }
 
     pub(crate) fn constrain<A: TypeConstraintAccounting>(
@@ -2691,31 +2721,38 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let applications = Arc::clone(&path.applications);
         let scope = applications.require_application(application)?;
         let Some(inherited) = inherited else {
-            if let Some(parameter) = scope.parameters().required_inherited_keys().first() {
-                return Err(TypeConstraintError::Invariant(
-                    TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
-                        kind: InheritedSolutionInvariantKind::Unclosed,
-                        parameter: Some(parameter.clone().into()),
-                    }),
-                ));
-            }
-            if let Some(parameter) = scope.parameters().required_inherited_const_keys().first() {
-                return Err(TypeConstraintError::Invariant(
-                    TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
-                        kind: InheritedSolutionInvariantKind::Unclosed,
-                        parameter: Some(parameter.clone().into()),
-                    }),
-                ));
-            }
-            if let Some(variable) = scope.effects().required_inherited().first() {
-                return Err(super::effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::MissingInherited,
-                    Some(variable.clone()),
-                ));
-            }
+            Self::validate_uninherited_application(scope)?;
             return Ok(path);
         };
         inherited.restore_inherited_path(application, path, graph, context)
+    }
+
+    fn validate_uninherited_application(
+        scope: &ConstraintApplicationScope<D>,
+    ) -> Result<(), TypeConstraintError> {
+        if let Some(parameter) = scope.parameters().required_inherited_keys().first() {
+            return Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
+                    kind: InheritedSolutionInvariantKind::Unclosed,
+                    parameter: Some(parameter.clone().into()),
+                }),
+            ));
+        }
+        if let Some(parameter) = scope.parameters().required_inherited_const_keys().first() {
+            return Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
+                    kind: InheritedSolutionInvariantKind::Unclosed,
+                    parameter: Some(parameter.clone().into()),
+                }),
+            ));
+        }
+        if let Some(variable) = scope.effects().required_inherited().first() {
+            return Err(super::effect_invariant(
+                super::TypeConstraintEffectInvariantKind::MissingInherited,
+                Some(variable.clone()),
+            ));
+        }
+        Ok(())
     }
 }
 
