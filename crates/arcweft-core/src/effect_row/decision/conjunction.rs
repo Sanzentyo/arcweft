@@ -141,7 +141,7 @@ impl<'c, V: Clone + Ord, C: DecisionControl> DecisionBuilder<'c, V, C> {
             .clone();
         // The suffix starts after this variable, so it holds in both
         // cofactors. Read the common head once from each input clause.
-        let mut cofactors = [(); 2].map(|_| {
+        let mut cofactors = [(); 2].map(|()| {
             vec![GuardedPoint {
                 guard: None,
                 point: suffix,
