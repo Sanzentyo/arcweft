@@ -19,8 +19,7 @@ use super::{
     TypeConstraintParameterEligibility, TypeConstraintParameterScope,
 };
 use crate::effect_row::{
-    EffectConstraintEligibility, EffectConstraintVariable, EffectRow,
-    prepared::{BoundScopedEffectCompletion, PreparedEffectGraph},
+    EffectConstraintEligibility, EffectConstraintVariable, EffectRow, prepared::PreparedEffectGraph,
 };
 use crate::effects::EffectSet;
 use crate::types::{
@@ -32,44 +31,6 @@ fn parameter(ordinal: u16) -> GenericTypeParameterId {
     GenericTypeParameterId::new(
         GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(91)),
         ordinal,
-    )
-}
-
-fn bind_fixture_effects<A: TypeConstraintAccounting, D: ConstraintDomain>(
-    path: &ConstraintPath<D>,
-    graph: &mut PreparedEffectGraph,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<BoundScopedEffectCompletion, TypeConstraintError> {
-    let constraint = path.prepare_effect_constraint(graph, context)?;
-    let source = graph
-        .read()
-        .freeze_scoped(&[], &[], &[&constraint], context)?;
-    let bound = graph.bind_original_scoped(&source, context)?;
-    Ok(bound.freeze(graph.read(), context)?)
-}
-
-fn claim_fixture_solution<A, D, B, C>(
-    types: B,
-    constants: C,
-    path: &mut ConstraintPath<D>,
-    graph: &mut PreparedEffectGraph,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<TypeConstraintSolution, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-    B: IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
-    C: IntoIterator<Item = (GenericConstParameterId, ArrayLength)>,
-{
-    let original = bind_fixture_effects(path, graph, context)?;
-    TypeConstraintSolution::test_seal_completed_with_consts(
-        types,
-        constants,
-        path,
-        &original,
-        &[],
-        graph,
-        context,
     )
 }
 
@@ -131,7 +92,7 @@ fn try_type_only_solution(
             scope,
         )
         .into_path(&mut graph);
-    claim_fixture_solution(
+    TypeConstraintSolution::seal_fixture_claimed_solution(
         bindings,
         std::iter::empty(),
         &mut path,
@@ -315,21 +276,10 @@ fn active_const_alias_chain_closes_before_solution_publication() {
                 ArrayLength::Const(7),
             ),
         ]);
-        let original = bind_fixture_effects(&path, &mut graph, &mut context)
-            .expect("bound effect constraint for the const scope");
-        let effects = super::normalization::ConstraintClosedEffects::for_path(
-            &path,
-            &original,
-            &[],
-            &mut graph,
-            &mut context,
-        )
-        .expect("closed effects for the const aliases");
-        TypeConstraintSolution::complete_application(
+        TypeConstraintSolution::complete_fixture_application(
             &path,
             path.root_id(),
-            &effects,
-            graph.read(),
+            &mut graph,
             &mut context,
         )
     }
@@ -380,7 +330,7 @@ fn claimed_const_alias_is_rejected_as_noncanonical() {
             scope,
         )
         .into_path(&mut graph);
-    let error = claim_fixture_solution(
+    let error = TypeConstraintSolution::seal_fixture_claimed_solution(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [
             (first.clone(), ArrayLength::generic_parameter(second)),
@@ -431,7 +381,7 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
         )
         .into_path(&mut self_graph);
     assert!(matches!(
-        claim_fixture_solution(
+        TypeConstraintSolution::seal_fixture_claimed_solution(
             std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
             [(
                 self_parameter.clone(),
@@ -474,7 +424,7 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
         )
         .into_path(&mut cycle_graph);
     assert!(matches!(
-        claim_fixture_solution(
+        TypeConstraintSolution::seal_fixture_claimed_solution(
             std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
             [
                 (
@@ -519,7 +469,7 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
             previous_scope,
         )
         .into_path(&mut previous_graph);
-    let solution = claim_fixture_solution(
+    let solution = TypeConstraintSolution::seal_fixture_claimed_solution(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [(parameter.clone(), ArrayLength::Const(9))],
         &mut previous_context_path,
@@ -612,7 +562,7 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
             scope,
         )
         .into_path(&mut graph);
-    let solution = claim_fixture_solution(
+    let solution = TypeConstraintSolution::seal_fixture_claimed_solution(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [
             (first.clone(), ArrayLength::Const(1)),
@@ -679,7 +629,7 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
             previous_scope,
         )
         .into_path(&mut previous_graph);
-    let solution = claim_fixture_solution(
+    let solution = TypeConstraintSolution::seal_fixture_claimed_solution(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [(first.clone(), ArrayLength::Const(1))],
         &mut previous_context_path,
@@ -745,7 +695,7 @@ fn completed_const_solution_applies_array_length_parameter() {
             scope,
         )
         .into_path(&mut graph);
-    let solution = claim_fixture_solution(
+    let solution = TypeConstraintSolution::seal_fixture_claimed_solution(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [(parameter.clone(), ArrayLength::Const(5))],
         &mut path,
@@ -2031,15 +1981,16 @@ fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() 
         .parameters()
         .type_reference(&t.into())
         .expect("claimed type slot");
-    let failure: TypeConstraintFailure<NoConstraintClient> = claim_fixture_solution(
-        expected_rows,
-        [],
-        &mut path,
-        &mut effect_graph,
-        &mut context,
-    )
-    .expect_err("a non-canonical completed carrier cannot be issued")
-    .into();
+    let failure: TypeConstraintFailure<NoConstraintClient> =
+        TypeConstraintSolution::seal_fixture_claimed_solution(
+            expected_rows,
+            [],
+            &mut path,
+            &mut effect_graph,
+            &mut context,
+        )
+        .expect_err("a non-canonical completed carrier cannot be issued")
+        .into();
     assert!(matches!(
         failure,
         TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(

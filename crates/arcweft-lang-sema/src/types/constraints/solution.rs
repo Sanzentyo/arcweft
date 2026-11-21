@@ -420,43 +420,10 @@ impl TypeConstraintSolution {
     }
 
     #[cfg(test)]
-    pub(crate) fn test_seal_completed<A, D, B>(
-        bindings: B,
-        path: &mut ConstraintPath<D>,
-        original: &crate::effect_row::prepared::BoundScopedEffectCompletion,
-        inputs: &[(
-            &crate::effect_row::prepared::PreparedEffectUnknownRef,
-            &EffectRow,
-        )],
-        graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Self, TypeConstraintError>
-    where
-        A: TypeConstraintAccounting,
-        D: ConstraintDomain,
-        B: IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
-    {
-        Self::test_seal_completed_with_consts(
-            bindings,
-            std::iter::empty(),
-            path,
-            original,
-            inputs,
-            graph,
-            context,
-        )
-    }
-
-    #[cfg(test)]
-    pub(crate) fn test_seal_completed_with_consts<A, D, B, C>(
+    pub(super) fn seal_fixture_claimed_solution<A, D, B, C>(
         bindings: B,
         const_bindings: C,
         path: &mut ConstraintPath<D>,
-        original: &crate::effect_row::prepared::BoundScopedEffectCompletion,
-        inputs: &[(
-            &crate::effect_row::prepared::PreparedEffectUnknownRef,
-            &EffectRow,
-        )],
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
@@ -547,7 +514,7 @@ impl TypeConstraintSolution {
                 )
             })
             .collect();
-        let effects = ConstraintClosedEffects::for_path(path, original, inputs, graph, context)?;
+        let effects = path.close_original_path_effects(graph, context)?;
         Self::seal_application(
             path,
             application,
@@ -1339,20 +1306,10 @@ mod malformed_completed_tests {
             scope,
         )
         .into_path(&mut graph);
-        let receipt = path.prepare_effect_constraint(&mut graph, &mut context)?;
-        // This malformed-row fixture supplies only scalar values and has no
-        // effect queries or Future inputs. Preserve its actual original C.
-        let frozen = graph
-            .read()
-            .freeze_scoped(&[], &[], &[&receipt], &mut context)?;
-        let original = graph
-            .bind_original_scoped(&frozen, &mut context)?
-            .freeze(graph.read(), &mut context)?;
-        TypeConstraintSolution::test_seal_completed(
+        TypeConstraintSolution::seal_fixture_claimed_solution(
             rows,
+            [],
             &mut path,
-            &original,
-            &[],
             &mut graph,
             &mut context,
         )
