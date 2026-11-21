@@ -980,6 +980,11 @@ pub(in crate::types::constraints) fn map_predicate_with_control<C: TypeProjectio
     ) -> Result<EffectRow, TypeProjectionError<C::Error>>,
 ) -> Result<EffectPredicate, TypeProjectionError<C::Error>> {
     visit_effect_predicate(control, predicate, depth)?;
+    // The canonical unconstrained predicate carries no references or graph
+    // storage to copy after the structural visit has admitted its encoding.
+    if predicate.is_unconstrained() {
+        return Ok(EffectPredicate::unconstrained());
+    }
     predicate.try_substitute_variables(
         &mut EffectProjectionControl { control, depth },
         &mut |reference, adapter| mapping(reference, adapter.control),
