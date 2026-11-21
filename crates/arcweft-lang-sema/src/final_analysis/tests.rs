@@ -3850,13 +3850,6 @@ fn assignment_semantics_reject_non_direct_or_non_nominal_places_and_type_mismatc
                 "fn invalid() { (@entry.agent.main).name = \"changed\" }\n",
             ),
         ),
-        (
-            "rhs-type-mismatch",
-            concat!(
-                "struct Point { x: i64 }\n",
-                "fn invalid(point: Point) { let mut owned = point; owned.x = true }\n",
-            ),
-        ),
     ];
 
     for (label, source) in cases {
@@ -3871,6 +3864,41 @@ fn assignment_semantics_reject_non_direct_or_non_nominal_places_and_type_mismatc
             "{label} must be rejected by the checked assignment authority: {result:?}",
         );
     }
+
+    let mismatch = fixture(
+        concat!(
+            "struct Point { x: i64 }\n",
+            "fn invalid(point: Point) { let mut owned = point; owned.x = true }\n",
+        ),
+        None,
+    );
+    let (assignment, value) = mismatch
+        .project
+        .analysis_view()
+        .expect("the mismatched assignment reaches semantic analysis")
+        .modules()
+        .flat_map(|(_, module)| module.statements())
+        .find_map(|(owner, statement)| match statement.kind() {
+            HirStmtKind::Assign { value, .. } => Some((owner, *value)),
+            _ => None,
+        })
+        .expect("the mismatched assignment and its operand");
+    let result = analyze(&mismatch);
+    assert!(
+        matches!(
+            &result,
+            Err(FinalSemanticAnalysisError::StatementOperandTypeMismatch {
+                statement,
+                owner,
+                expected,
+                actual,
+            }) if *statement == assignment
+                && *owner == value
+                && **expected == TypeKind::I64
+                && **actual == TypeKind::Bool
+        ),
+        "the checked assignment must report its operand and both types: {result:?}",
+    );
 }
 
 fn function_owner(fixture: &Fixture, name: &str) -> arcweft_lang_hir::identity::ItemId {
