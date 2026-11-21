@@ -2065,7 +2065,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     let scope_lease = if unbound.is_empty() {
                         None
                     } else {
-                        Some(path.applications.import_parameters(&unbound)?)
+                        Some(path.applications.import_parameters(&unbound, context)?)
                     };
                     hints.push(OwnedAlternativeHint {
                         alternative: alternative.alternative(),

@@ -496,7 +496,7 @@ fn shared_ambient_frames_transport_under_own_binders_across_different_scope_shap
     );
     let lease = first.transaction.frontier[0]
         .applications
-        .import_parameters(&[ty[0].clone().into()])
+        .import_parameters(&[ty[0].clone().into()], &mut context)
         .unwrap();
     component
         .admit_fixture_roots(&mut context, &mut effects, vec![first], "outer")
@@ -607,6 +607,7 @@ fn cloned_imported_leases_share_inference_without_making_the_parent_a_source_roo
                 .cloned()
                 .map(ConstraintGenericParameterId::Type)
                 .collect::<Vec<_>>(),
+            &mut context,
         )
         .unwrap();
     drop(parent);
@@ -952,7 +953,7 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
     let owner = first.transaction.frontier[0].scope.clone();
     let lease = first.transaction.frontier[0]
         .applications
-        .import_parameters(&[ty[0].clone().into()])
+        .import_parameters(&[ty[0].clone().into()], &mut context)
         .unwrap();
     let actual = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
     component

@@ -1,9 +1,7 @@
 //! Capture-preserving projection between an active and a completed context.
 
 use super::*;
-use crate::types::constraints::{
-    ConstraintGenericParameterId, TypeConstraintAbort, TypeConstraintConstEligibility, references,
-};
+use crate::types::constraints::{ConstraintGenericParameterId, TypeConstraintAbort, references};
 use crate::types::effect_domain::RebindableEffects;
 use crate::{
     effect_row::{EffectPredicate, EffectRow},
@@ -152,6 +150,9 @@ impl CompletedGenericContext {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<ArrayLength>, TypeConstraintError> {
         context.with_original_scope(length.scope().clone(), |context| {
+            if let ArrayLength::Generic(reference) = length.value() {
+                length.view().admit_const_reference(reference, context)?;
+            }
             let mapping = self.reference_map(application, context, Direction::Reify)?;
             let value = mapping.length(
                 length.value(),
@@ -268,10 +269,15 @@ impl CompletedGenericContext {
 }
 
 impl<'scope> ContextReferenceMap<'scope> {
-    fn admits_free(&self, parameter: &ConstraintGenericParameterId, visible: bool) -> bool {
+    fn admits_free<A: TypeConstraintAccounting, D: ConstraintDomain, L>(
+        &self,
+        parameter: &ConstraintGenericParameterId,
+        path: &ConstraintInferenceBranch<D, L>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<bool, TypeConstraintError> {
         match self.direction {
-            Direction::Reify => visible,
-            Direction::Reopen(scope) => scope.contains(parameter),
+            Direction::Reify => path.applications.permits_rigid_export(parameter, context),
+            Direction::Reopen(scope) => Ok(scope.contains(parameter)),
         }
     }
 
@@ -483,11 +489,7 @@ impl<'scope> ContextReferenceMap<'scope> {
             GenericTypeReference::Inference(_) => Err(references::type_out_of_scope(reference)),
             GenericTypeReference::Free(_) => {
                 let parameter = reference.clone().into();
-                if !self.admits_free(
-                    &parameter,
-                    path.applications.parameter_eligibility(reference)
-                        == Some(TypeConstraintParameterEligibility::Rigid),
-                ) {
+                if !self.admits_free(&parameter, path, context)? {
                     return Err(references::type_out_of_scope(reference));
                 }
                 self.retain_free(parameter, false);
@@ -543,11 +545,7 @@ impl<'scope> ContextReferenceMap<'scope> {
             GenericConstReference::Inference(_) => Err(references::const_out_of_scope(reference)),
             GenericConstReference::Free(_) => {
                 let parameter = reference.clone().into();
-                if !self.admits_free(
-                    &parameter,
-                    path.applications.const_parameter_eligibility(reference)
-                        == Some(TypeConstraintConstEligibility::Rigid),
-                ) {
+                if !self.admits_free(&parameter, path, context)? {
                     return Err(references::const_out_of_scope(reference));
                 }
                 self.retain_free(parameter, false);
@@ -607,11 +605,7 @@ impl<'scope> ContextReferenceMap<'scope> {
             GenericEffectReference::Inference(_) => Err(references::effect_out_of_scope(reference)),
             GenericEffectReference::Free(_) => {
                 let parameter = reference.clone().into();
-                if !self.admits_free(
-                    &parameter,
-                    path.applications.effect_eligibility(reference)
-                        == Some(EffectConstraintEligibility::Rigid),
-                ) {
+                if !self.admits_free(&parameter, path, context)? {
                     return Err(references::effect_out_of_scope(reference));
                 }
                 self.retain_free(parameter, root_header);

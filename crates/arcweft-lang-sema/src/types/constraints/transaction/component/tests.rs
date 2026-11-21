@@ -1321,7 +1321,10 @@ fn imported_opening_cannot_change_semantic_application_when_original_roots_join(
         let parent = context.start_path(opening, &mut effects).unwrap();
         let lease = parent
             .applications
-            .import_parameters(&[ConstraintGenericParameterId::Type(reference.clone())])
+            .import_parameters(
+                &[ConstraintGenericParameterId::Type(reference.clone())],
+                &mut context,
+            )
             .unwrap();
         let mut owner = TypeConstraintTransaction::initialize_fixture(
             &mut context,

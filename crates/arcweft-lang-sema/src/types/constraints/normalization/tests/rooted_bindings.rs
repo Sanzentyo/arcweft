@@ -210,7 +210,7 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
         context(parent_parameters, &cancellation, 4096).into_path(&mut effect_graph);
     let lease = parent
         .applications
-        .import_parameters(&[outer_types[0].clone().into()])
+        .import_parameters(&[outer_types[0].clone().into()], &mut context)
         .unwrap();
     let (child_parameters, inner_types) = type_inventory(1);
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
@@ -253,7 +253,7 @@ fn aliases_cannot_lend_a_later_owners_inner_type_or_const_dependencies() {
         super::context(parent_parameters, &cancellation, 4096).into_path(&mut effect_graph);
     let lease = parent
         .applications
-        .import_parameters(&[outer_lengths[0].clone().into()])
+        .import_parameters(&[outer_lengths[0].clone().into()], &mut context)
         .unwrap();
     let (child_parameters, inner_lengths) = const_inventory(1);
     let enclosing = context.enter_binder_scope(GenericBinder::new(0, 1, 0));
@@ -308,7 +308,7 @@ fn an_imported_owner_retains_its_frame_but_does_not_authorize_an_unrelated_expor
     let owner = parent.scope.clone();
     let lease = parent
         .applications
-        .import_parameters(&[types[0].clone().into()])
+        .import_parameters(&[types[0].clone().into()], &mut context)
         .unwrap();
     let value = TypeKind::GenericParam(context.lexical_scope().bound_type(0, 0).unwrap());
     context.restore_binder_scope(enclosing);

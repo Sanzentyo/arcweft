@@ -188,7 +188,10 @@ fn source_values_keep_their_own_declaration_and_explicit_import_authority() {
                 parameters.effect.clone().into(),
             ];
             keys.sort();
-            let lease = path.applications.import_parameters(&keys).unwrap();
+            let lease = path
+                .applications
+                .import_parameters(&keys, &mut context)
+                .unwrap();
             context.fixture_original_context(Some(&lease)).unwrap()
         } else {
             parameters.original(&mut context)
@@ -356,7 +359,7 @@ fn checked_source_values_cannot_use_the_receivers_inference_key_without_an_impor
         .unwrap();
     let lease = path
         .applications
-        .import_parameters(&[parameter.clone().into()])
+        .import_parameters(&[parameter.clone().into()], &mut context)
         .unwrap();
     let imported = context.fixture_original_context(Some(&lease)).unwrap();
     for (original, admitted) in [(original, false), (imported, true)] {
@@ -416,7 +419,7 @@ fn nested_source_gamma_is_owned_by_the_child_application_not_the_root_lineage() 
     .unwrap();
     let lease = parent.frontier[0]
         .applications
-        .import_parameters(&[parent_key.clone().into()])
+        .import_parameters(&[parent_key.clone().into()], &mut context)
         .unwrap();
     let child_original = context.fixture_original_context(Some(&lease)).unwrap();
     parent
@@ -437,7 +440,7 @@ fn nested_source_gamma_is_owned_by_the_child_application_not_the_root_lineage() 
     let foreign = context.start_path(foreign_scope, &mut graph).unwrap();
     let foreign_lease = foreign
         .applications
-        .import_parameters(&[parent_key.clone().into()])
+        .import_parameters(&[parent_key.clone().into()], &mut context)
         .unwrap();
     let foreign_original = context
         .fixture_original_context(Some(&foreign_lease))

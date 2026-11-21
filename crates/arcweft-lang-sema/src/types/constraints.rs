@@ -122,6 +122,17 @@ pub(crate) enum ConstraintGenericParameterId {
     Effect(GenericEffectReference),
 }
 
+impl ConstraintGenericParameterId {
+    fn is_free(&self) -> bool {
+        matches!(
+            self,
+            Self::Type(GenericTypeReference::Free(_))
+                | Self::Const(GenericConstReference::Free(_))
+                | Self::Effect(GenericEffectReference::Free(_))
+        )
+    }
+}
+
 impl From<GenericEffectReference> for ConstraintGenericParameterId {
     fn from(variable: GenericEffectReference) -> Self {
         Self::Effect(variable)

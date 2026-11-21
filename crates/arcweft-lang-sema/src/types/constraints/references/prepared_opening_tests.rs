@@ -341,7 +341,7 @@ fn mathematical_gamma_does_not_grant_a_template_its_parents_private_capture() {
         .unwrap();
     let imported = parent
         .applications
-        .import_parameters(&[parent_variable.into()])
+        .import_parameters(&[parent_variable.into()], &mut context)
         .unwrap();
     let original = context.fixture_original_context(Some(&imported)).unwrap();
     let owner = context

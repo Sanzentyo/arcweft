@@ -200,7 +200,7 @@ impl ImportedGenericParameterScopeLease {
         for _ in &self.parameters {
             context.enter_node()?;
         }
-        if &inventory.import_parameters(&self.parameters)? != self {
+        if &inventory.import_parameters(&self.parameters, context)? != self {
             return Err(TypeConstraintInvariant::ParameterScope(
                 TypeConstraintParameterScopeInvariant::ApplicationContractConflict,
             )
@@ -814,17 +814,19 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             .map(|owner| owner.owner.permits_local_inference(parameter))
     }
 
-    pub(super) fn import_parameters(
+    pub(super) fn import_parameters<A: super::context::TypeConstraintAccounting>(
         &self,
         parameters: &[super::ConstraintGenericParameterId],
-    ) -> Result<ImportedGenericParameterScopeLease, TypeConstraintInvariant>
+        context: &mut super::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<ImportedGenericParameterScopeLease, super::TypeConstraintError>
     where
         D: 'static,
     {
         if parameters.windows(2).any(|rows| rows[0] >= rows[1]) {
             return Err(TypeConstraintInvariant::ParameterScope(
                 TypeConstraintParameterScopeInvariant::ParameterUnordered,
-            ));
+            )
+            .into());
         }
         let mut imported = BTreeMap::<
             ConstraintApplicationId,
@@ -835,7 +837,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         >::new();
         let mut captures = BTreeSet::new();
         for parameter in parameters {
-            if self.captures.contains(parameter) {
+            if self.retains_rigid_capture(parameter, context)? {
                 captures.insert(parameter.clone());
                 continue;
             }
@@ -861,7 +863,8 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                             variable: Some(reference.clone()),
                         })
                     }
-                });
+                }
+                .into());
             };
             imported
                 .entry(owner.id())
@@ -880,6 +883,55 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             parameters: parameters.to_vec().into_boxed_slice(),
             captures: RetainedRigidGenericScope::from_admitted(captures),
         })
+    }
+
+    pub(super) fn permits_rigid_export<A: super::context::TypeConstraintAccounting>(
+        &self,
+        parameter: &super::ConstraintGenericParameterId,
+        context: &mut super::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<bool, super::TypeConstraintError> {
+        if !parameter.is_free() {
+            return Ok(false);
+        }
+        let application_rigid = match parameter {
+            super::ConstraintGenericParameterId::Type(reference) => {
+                self.parameter_eligibility(reference)
+                    == Some(TypeConstraintParameterEligibility::Rigid)
+            }
+            super::ConstraintGenericParameterId::Const(reference) => {
+                self.const_parameter_eligibility(reference)
+                    == Some(TypeConstraintConstEligibility::Rigid)
+            }
+            super::ConstraintGenericParameterId::Effect(reference) => {
+                self.effect_eligibility(reference) == Some(EffectConstraintEligibility::Rigid)
+            }
+        };
+        if application_rigid {
+            return Ok(true);
+        }
+        self.retains_rigid_capture(parameter, context)
+    }
+
+    fn retains_rigid_capture<A: super::context::TypeConstraintAccounting>(
+        &self,
+        parameter: &super::ConstraintGenericParameterId,
+        context: &mut super::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<bool, super::TypeConstraintError> {
+        if !parameter.is_free() {
+            return Ok(false);
+        }
+        if self.captures.contains(parameter) {
+            return Ok(true);
+        }
+        // An admitted application retains its source's declaration. An
+        // imported application only grants the keys of its narrowed lease.
+        for application in self.applications() {
+            context.enter_node()?;
+            if application.original_context().declares_parameter(parameter) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub(super) fn owner_for_parameter(

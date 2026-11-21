@@ -26,6 +26,22 @@ pub(crate) struct OriginalRigidScope<'a> {
     pub(crate) imported: Option<&'a ImportedGenericParameterScopeLease>,
 }
 
+impl OriginalRigidScope<'_> {
+    fn declares(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
+        match parameter {
+            super::ConstraintGenericParameterId::Type(reference) => {
+                self.types.binary_search(reference).is_ok()
+            }
+            super::ConstraintGenericParameterId::Const(reference) => {
+                self.consts.binary_search(reference).is_ok()
+            }
+            super::ConstraintGenericParameterId::Effect(reference) => {
+                self.effects.binary_search(reference).is_ok()
+            }
+        }
+    }
+}
+
 /// The source layer implements this boundary using its accepted declaration
 /// lease. No callable or analyzer types enter this lower layer, as with
 /// imported application authority. A candidate schema is not a source.
@@ -85,21 +101,17 @@ impl OriginalProducerContext {
         }
     }
 
+    pub(super) fn declares_parameter(
+        &self,
+        parameter: &super::ConstraintGenericParameterId,
+    ) -> bool {
+        self.rigid_scope().declares(parameter)
+    }
+
     pub(super) fn admits_parameter(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
-        let rigid = self.0.source.rigid_scope();
-        let declared = match parameter {
-            super::ConstraintGenericParameterId::Type(reference) => {
-                rigid.types.binary_search(reference).is_ok()
-            }
-            super::ConstraintGenericParameterId::Const(reference) => {
-                rigid.consts.binary_search(reference).is_ok()
-            }
-            super::ConstraintGenericParameterId::Effect(reference) => {
-                rigid.effects.binary_search(reference).is_ok()
-            }
-        };
-        declared
-            || rigid
+        let scope = self.rigid_scope();
+        scope.declares(parameter)
+            || scope
                 .imported
                 .is_some_and(|lease| lease.admits_original_parameter(parameter))
     }

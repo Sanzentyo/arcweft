@@ -14,7 +14,7 @@ use crate::{
         ArrayLength, DetachedGenericOwnerId, GenericBinder, GenericConstParameterId,
         GenericEffectParameterId, GenericParameterOwnerId, GenericTypeParameterId, TypeKind,
         constraints::{
-            ConstraintAcceptance, ConstraintPath, TypeConstraintAbort,
+            ConstraintAcceptance, ConstraintPath, OriginalRigidScope, TypeConstraintAbort,
             TypeConstraintConstEligibility, TypeConstraintError, TypeConstraintInvariant,
             TypeConstraintParameterEligibility, TypeConstraintSolution,
             context::{
@@ -26,6 +26,96 @@ use crate::{
         },
     },
 };
+
+#[test]
+fn original_declaration_captures_can_be_narrowed_without_an_application_key() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation, 4096);
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(99_212));
+    let types = [GenericTypeParameterId::new(owner.clone(), 0).into()];
+    let consts = [GenericConstParameterId::new(owner.clone(), 0).into()];
+    let effects = [
+        GenericEffectParameterId::new(owner.clone(), 0).into(),
+        GenericEffectParameterId::new(owner, 1).into(),
+    ];
+    let original = context
+        .fixture_original_context_with_rigid(OriginalRigidScope {
+            types: &types,
+            consts: &consts,
+            effects: &effects,
+            imported: None,
+        })
+        .unwrap();
+    let application = context
+        .application_scope(0, parameters(0), original.clone(), &mut graph)
+        .unwrap();
+    let inference = effect(&application).into();
+    let parent = context
+        .start_path_with_imported(application, None, original, graph.read())
+        .unwrap();
+    let mut keys = [
+        types[0].clone().into(),
+        consts[0].clone().into(),
+        effects[0].clone().into(),
+        inference,
+    ];
+    keys.sort();
+    let lease = parent
+        .applications
+        .import_parameters(&keys, &mut context)
+        .unwrap();
+    assert_eq!(lease.parameters(), &keys);
+    for key in &keys {
+        assert_eq!(lease.permits_local_inference(key), !key.is_free());
+        assert_eq!(
+            parent
+                .applications
+                .permits_rigid_export(key, &mut context)
+                .unwrap(),
+            key.is_free()
+        );
+    }
+    lease
+        .validate_in(&parent.applications, &mut context)
+        .unwrap();
+
+    let child_original = context.fixture_original_context(Some(&lease)).unwrap();
+    let child = context
+        .application_scope(
+            1,
+            TypeConstraintParameterScope::empty(),
+            child_original.clone(),
+            &mut graph,
+        )
+        .unwrap();
+    let child = context
+        .start_path_with_imported(child, Some(lease.clone()), child_original, graph.read())
+        .unwrap();
+    assert_eq!(
+        child
+            .applications
+            .import_parameters(&keys, &mut context)
+            .unwrap(),
+        lease
+    );
+    let omitted = effects[1].clone().into();
+    assert!(
+        !child
+            .applications
+            .permits_rigid_export(&omitted, &mut context)
+            .unwrap()
+    );
+    assert_eq!(
+        child
+            .applications
+            .import_parameters(&[omitted], &mut context)
+            .err(),
+        Some(crate::types::constraints::references::effect_out_of_scope(
+            &effects[1]
+        ))
+    );
+}
 
 struct Domain;
 
@@ -184,7 +274,10 @@ fn binding_owners_keep_their_original_source_across_imports_and_equal_frame_shap
     let key = super::super::ConstraintGenericParameterId::Type(parameter);
     let binding = root.applications.binding_owner(&key).unwrap();
     assert_eq!(binding.original, &original);
-    let lease = root.applications.import_parameters(&[key.clone()]).unwrap();
+    let lease = root
+        .applications
+        .import_parameters(&[key.clone()], &mut context)
+        .unwrap();
     let child_original = context.fixture_original_context(Some(&lease)).unwrap();
     assert_ne!(child_original, original);
     let child_owner = context
@@ -263,7 +356,10 @@ fn imported_bindable_parameters_solve_locally_without_mutating_or_exporting_the_
         super::super::ConstraintGenericParameterId::Const(length.clone()),
         super::super::ConstraintGenericParameterId::Effect(parent_effect.clone()),
     ];
-    let imported = parent.applications.import_parameters(&parameters).unwrap();
+    let imported = parent
+        .applications
+        .import_parameters(&parameters, &mut context)
+        .unwrap();
     assert!(
         parameters
             .iter()
@@ -403,7 +499,10 @@ fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
             super::super::ConstraintGenericParameterId::Const(length.clone()),
             super::super::ConstraintGenericParameterId::Effect(effect.clone()),
         ];
-        let imported = parent.applications.import_parameters(&parameters).unwrap();
+        let imported = parent
+            .applications
+            .import_parameters(&parameters, &mut context)
+            .unwrap();
         assert!(
             parameters
                 .iter()
@@ -1371,7 +1470,10 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
         Some(EffectConstraintEligibility::Rigid)
     );
     let parameters = [ty.clone().into(), length.clone().into(), row.into()];
-    let lease = next.applications.import_parameters(&parameters).unwrap();
+    let lease = next
+        .applications
+        .import_parameters(&parameters, &mut context)
+        .unwrap();
     assert_eq!(lease.parameters(), &parameters);
     assert!(
         parameters
@@ -1466,7 +1568,12 @@ fn completed_parent_does_not_export_unused_child_declarations() {
         .admit_application(parent, child, &mut effect_graph)
         .unwrap();
     let parameters = [ty.clone().into(), length.clone().into(), row.clone().into()];
-    assert!(parent.applications.import_parameters(&parameters).is_ok());
+    assert!(
+        parent
+            .applications
+            .import_parameters(&parameters, &mut context)
+            .is_ok()
+    );
     let solution = Arc::new(
         TypeConstraintSolution::complete_fixture_application(
             &parent,
@@ -1488,7 +1595,9 @@ fn completed_parent_does_not_export_unused_child_declarations() {
         .unwrap();
     for parameter in parameters {
         assert!(
-            next.applications.import_parameters(&[parameter]).is_err(),
+            next.applications
+                .import_parameters(&[parameter], &mut context)
+                .is_err(),
             "a completed value cannot issue a lease for an unused child declaration"
         );
     }

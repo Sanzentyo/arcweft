@@ -31,7 +31,7 @@ fn conditional_output_agreement_uses_the_declared_captured_function_signature() 
             let path = context.start_path_with_imported(parent, None, original, graph.read())?;
             let lease = path
                 .applications
-                .import_parameters(&[parent_variable.clone().into()])?;
+                .import_parameters(&[parent_variable.clone().into()], context)?;
             let original = context.fixture_original_context(Some(&lease))?;
             let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
             let child_variable = parameters.opened_effect_variables()[0].variable().clone();
@@ -152,7 +152,7 @@ fn branches_and_imports_keep_the_issued_function_with_the_complete_intro_gamma()
             );
             let lease = parent
                 .applications
-                .import_parameters(&[variable.clone().into()])?;
+                .import_parameters(&[variable.clone().into()], context)?;
             assert_eq!(lease.effect_function(&variable), Some(&function));
             let original = context.fixture_original_context(Some(&lease))?;
             let child_parameters = parameter_scope(EffectConstraintEligibility::FutureEligible);
@@ -422,7 +422,7 @@ fn transitive_function_captures_extend_gamma_from_the_source_owners() {
         .unwrap();
     let imported = parent
         .applications
-        .import_parameters(&[parent_variable.clone().into()])
+        .import_parameters(&[parent_variable.clone().into()], &mut context)
         .unwrap();
     let original = context.fixture_original_context(Some(&imported)).unwrap();
     let parameters = parameter_scope(EffectConstraintEligibility::Bindable);
@@ -623,7 +623,7 @@ fn imported_introduction_frames_survive_outside_the_parent_lexical_traversal() {
     assert!(context.lexical_scope().binders().is_empty());
     let imported = parent
         .applications
-        .import_parameters(&[parent_variable.clone().into()])
+        .import_parameters(&[parent_variable.clone().into()], &mut context)
         .unwrap();
     let original = context.fixture_original_context(Some(&imported)).unwrap();
     let parameters = parameter_scope(EffectConstraintEligibility::Bindable);

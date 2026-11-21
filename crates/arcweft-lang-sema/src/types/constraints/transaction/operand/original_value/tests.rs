@@ -651,7 +651,10 @@ fn original_inference_references_require_the_sources_actual_import_lease() {
     ];
     let mut keys = vec![ty.into(), length.clone().into(), effect.into()];
     keys.sort();
-    let lease = path.applications.import_parameters(&keys).unwrap();
+    let lease = path
+        .applications
+        .import_parameters(&keys, &mut context)
+        .unwrap();
     let imported = context.fixture_original_context(Some(&lease)).unwrap();
     for (value, rejected) in cases {
         assert_eq!(
@@ -693,7 +696,7 @@ fn introduced_parameter_operands_keep_the_exact_lease_across_child_imports() {
         .unwrap();
     let imported = path
         .applications
-        .import_parameters(&[ty.clone().into()])
+        .import_parameters(&[ty.clone().into()], &mut context)
         .unwrap();
     let child_original = context.fixture_original_context(Some(&imported)).unwrap();
     let child_owner = context

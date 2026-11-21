@@ -118,7 +118,9 @@ fn completed_binding_relocation_uses_the_same_principal_without_new_graph_terms(
                 context,
             )?;
             context.with_binder(GenericBinder::new(0, 0, 1), |context| {
-                let lease = path.applications.import_parameters(&[key.clone().into()])?;
+                let lease = path
+                    .applications
+                    .import_parameters(&[key.clone().into()], context)?;
                 let occurrence = context.fixture_original_context(Some(&lease))?;
                 let template = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
                     &TypeKind::GenericParam(key.clone()),

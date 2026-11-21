@@ -145,7 +145,9 @@ fn a_final_header_projects_the_actual_function_beneath_its_local_binder() {
                 &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), outer)),
                 context,
             )?;
-            let lease = path.applications.import_parameters(&[key.clone().into()])?;
+            let lease = path
+                .applications
+                .import_parameters(&[key.clone().into()], context)?;
             let original = context.fixture_original_context(Some(&lease))?;
             let value: TypeKind<PreparedEffects> = TypeKind::function_with_contract(
                 GenericBinder::new(0, 0, 1),
@@ -225,7 +227,7 @@ fn source_inference_uses_its_actual_application_beneath_local_binders() {
             let (source, path, variable) = parent(context, &mut graph, 98_601);
             let lease = path
                 .applications
-                .import_parameters(&[variable.clone().into()])?;
+                .import_parameters(&[variable.clone().into()], context)?;
             let original = context.fixture_original_context(Some(&lease))?;
             let target = original.gamma().with_binder(GenericBinder::new(0, 0, 1));
             let local = GenericBinder::new(1, 1, 1);
@@ -360,7 +362,10 @@ fn a_narrow_type_lease_does_not_lend_its_owners_effect_variables() {
         .unwrap();
     let type_key = scope.parameters().iter().next().unwrap().0;
     let ty = scope.parameters().type_reference(type_key).unwrap();
-    let lease = path.applications.import_parameters(&[ty.into()]).unwrap();
+    let lease = path
+        .applications
+        .import_parameters(&[ty.into()], &mut context)
+        .unwrap();
     let original = context.fixture_original_context(Some(&lease)).unwrap();
     let error = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
         &input(variable.clone()),
@@ -394,7 +399,7 @@ fn source_admission_does_not_recover_a_stale_application_from_its_live_function(
         .unwrap();
     let lease = stale
         .applications
-        .import_parameters(&[variable.clone().into()])
+        .import_parameters(&[variable.clone().into()], &mut context)
         .unwrap();
     graph.rollback(&mut checkpoint).unwrap();
     graph.read().validate_unknown(&function).unwrap();
@@ -428,7 +433,7 @@ fn a_later_source_rejection_releases_an_already_prepared_effect_replacement() {
             let (_, path, variable) = parent(context, &mut graph, 98_605);
             let lease = path
                 .applications
-                .import_parameters(&[variable.clone().into()])?;
+                .import_parameters(&[variable.clone().into()], context)?;
             let original = context.fixture_original_context(Some(&lease))?;
             let target = original.gamma().with_binder(GenericBinder::new(0, 0, 1));
             let foreign: GenericTypeReference = GenericTypeParameterId::new(

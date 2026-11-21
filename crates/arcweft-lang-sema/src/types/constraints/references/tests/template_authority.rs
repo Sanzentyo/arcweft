@@ -243,7 +243,10 @@ fn a_template_can_read_its_original_sources_exact_imported_scope() {
             .fixture_application_scope(0, parameters, &mut effect_graph)
             .unwrap();
         let mut path = context.start_path(root, &mut effect_graph).unwrap();
-        let lease = path.applications.import_parameters(&expected).unwrap();
+        let lease = path
+            .applications
+            .import_parameters(&expected, &mut context)
+            .unwrap();
         let original = context.fixture_original_context(Some(&lease)).unwrap();
         let child = ConstraintApplicationScope::test_root(
             1,

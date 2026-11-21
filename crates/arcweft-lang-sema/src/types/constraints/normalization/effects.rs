@@ -161,9 +161,8 @@ impl<D: ConstraintDomain> ConstraintEffectCompletionContext<D> {
                 }
             }
         }
-        Ok(self
-            .applications
-            .import_parameters(&parameters.into_iter().collect::<Vec<_>>())?)
+        self.applications
+            .import_parameters(&parameters.into_iter().collect::<Vec<_>>(), context)
     }
 
     fn seal<'a, T, A: TypeConstraintAccounting>(
@@ -738,10 +737,9 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
             }
             parameters.insert(parameter);
         }
-        Ok(self
-            .context
+        self.context
             .applications
-            .import_parameters(&parameters.into_iter().collect::<Vec<_>>())?)
+            .import_parameters(&parameters.into_iter().collect::<Vec<_>>(), context)
     }
 
     fn project_header_values<A: TypeConstraintAccounting>(
