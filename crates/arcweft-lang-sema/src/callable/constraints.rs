@@ -913,6 +913,7 @@ where
                 .with_effect_relation(access(), |graph| graph.checkpoint(context))
                 .map_err(checkpoint_failure)?
                 .map_err(TypeConstraintError::from)?;
+            let mut prepared_dependency = false;
             let materialization = (|| {
                 let (mut forest, producer) = callbacks
                     .client
@@ -958,6 +959,7 @@ where
                                     cause,
                                 ))
                             })?;
+                            prepared_dependency = true;
                             forest = original;
                         }
                     }
@@ -966,7 +968,12 @@ where
             callbacks
                 .client
                 .with_effect_relation(access(), |graph| {
-                    if materialization.is_ok() {
+                    // Rejection can retain the candidate's diagnostic facts.
+                    // A prepared declaration and its effect terms travel together.
+                    if materialization.is_ok()
+                        || (prepared_dependency
+                            && matches!(&materialization, Err(TypeConstraintFailure::Rejected(_))))
+                    {
                         if let Err(error) = graph.commit(&checkpoint) {
                             graph.rollback(&mut checkpoint)?;
                             return Err(error);
