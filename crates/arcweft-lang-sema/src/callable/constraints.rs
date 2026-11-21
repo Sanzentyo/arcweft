@@ -13,8 +13,9 @@ use crate::effect_row::prepared::PreparedEffectReadScope;
 use crate::types::constraints::context::TypeConstraintContext;
 use crate::types::constraints::transaction::{
     ClosedMaterialization, ConstraintMaterialization, MaterializationCallbackBinding,
-    MaterializationTicket, ProbeStart, ProbeSubmission, ProbeTicket, ResolvedResultProbe,
-    SuspendedConstraintFrontier, TypeConstraintProjectionOptions, TypeConstraintTransaction,
+    MaterializationTicket, PreparedValueFailure, ProbeStart, ProbeSubmission, ProbeTicket,
+    ResolvedResultProbe, SuspendedConstraintFrontier, TypeConstraintProjectionOptions,
+    TypeConstraintTransaction,
 };
 use crate::types::constraints::{
     ClosedMaterializationSubmission, CompletedCandidateAlternatives, ConstraintDomain,
@@ -880,7 +881,7 @@ where
         ) -> Result<(), D::SourceErrorCause>,
     ) -> Result<CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>> {
         use crate::effect_row::prepared::PreparedEffectFailure;
-        use crate::types::constraints::{TypeConstraintError, transaction::PreparedValueFailure};
+        use crate::types::constraints::TypeConstraintError;
 
         let Self {
             lower,
@@ -897,17 +898,6 @@ where
                 authority: &callbacks.authority,
             };
             let checkpoint_failure = CandidateConstraintCallbacks::<D, C>::checkpoint_failure;
-            let prepared_failure = |error| {
-                let error = match error {
-                    PreparedValueFailure::Constraint(error) => error,
-                    PreparedValueFailure::Instantiation(error) => {
-                        TypeConstraintInvariant::Instantiation(error).into()
-                    }
-                    PreparedValueFailure::Effect(error) => TypeConstraintError::from(error),
-                    _ => TypeConstraintInvariant::OriginalProducer.into(),
-                };
-                TypeConstraintFailure::from(error)
-            };
             let mut checkpoint = callbacks
                 .client
                 .with_effect_relation(access(), |graph| graph.checkpoint(context))
@@ -921,19 +911,19 @@ where
                         frontier.infer_independent(graph, context)
                     })
                     .map_err(checkpoint_failure)?
-                    .map_err(prepared_failure)?;
+                    .map_err(Self::original_result_failure)?;
                 loop {
                     let closed = callbacks
                         .client
                         .with_effect_relation(access(), |graph| {
-                            forest.close(inputs, graph, context)
+                            forest.close(inputs, graph, context).map_err(Box::new)
                         })
                         .map_err(checkpoint_failure)?;
                     match closed {
                         Ok(closed) => {
                             break closed
                                 .into_candidate_materialization(&producer, context)
-                                .map_err(prepared_failure);
+                                .map_err(Self::original_result_failure);
                         }
                         Err(failure) => {
                             let (error, original) = failure.into_parts();
@@ -943,7 +933,7 @@ where
                                 ),
                             )) = error
                             else {
-                                return Err(prepared_failure(error));
+                                return Err(Self::original_result_failure(error));
                             };
                             // The closed attempt rolled back. Prepare the missing original
                             // declaration with no effect graph loan, then retry this forest.
@@ -994,6 +984,18 @@ where
                 Err(failure)
             }
         }
+    }
+
+    fn original_result_failure(error: PreparedValueFailure) -> TypeConstraintFailure<D> {
+        let constraint = match error {
+            PreparedValueFailure::Constraint(error) => error,
+            PreparedValueFailure::Instantiation(error) => {
+                TypeConstraintInvariant::Instantiation(error).into()
+            }
+            PreparedValueFailure::Effect(error) => error.into(),
+            _ => TypeConstraintInvariant::OriginalProducer.into(),
+        };
+        constraint.into()
     }
 
     pub(crate) fn defer_child_result(
