@@ -80,7 +80,7 @@ use super::expression_error::{
     PhysicalCallAttemptId,
 };
 use super::state::{
-    CandidateFactOperationFailure, CandidateFactTransactionAction,
+    ActiveProbeFactAttempt, CandidateFactOperationFailure, CandidateFactTransactionAction,
     CandidateFactTransactionAuthority, CandidateFactTransactionOutcome, PhysicalCallAttemptClose,
 };
 
@@ -5194,6 +5194,7 @@ impl Analyzer<'_, '_, '_> {
         source: AnalyzerCallConstraintSource,
         expectation: super::expressions::AnalyzerExpressionExpectation<'_>,
         source_admission: Option<&constraints::AnalyzerCallSourceAdmission>,
+        probe_attempt: Option<&ActiveProbeFactAttempt>,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
         match source {
             AnalyzerCallConstraintSource::BaseInstantiation
@@ -5246,6 +5247,7 @@ impl Analyzer<'_, '_, '_> {
                 expression,
                 expectation,
                 source_admission,
+                probe_attempt,
             ),
             AnalyzerCallConstraintSource::Receiver { source }
             | AnalyzerCallConstraintSource::Result { source } => {
@@ -5254,7 +5256,12 @@ impl Analyzer<'_, '_, '_> {
                         FinalSemanticAnalysisError::WrongPayloadFamily,
                     ));
                 }
-                self.evaluate_expression_with_expectation(context, source, expectation)
+                self.evaluate_expression_with_probe_attempt(
+                    context,
+                    source,
+                    expectation,
+                    probe_attempt,
+                )
             }
         }
     }
@@ -5269,11 +5276,17 @@ impl Analyzer<'_, '_, '_> {
         expression: ExprId,
         expectation: super::expressions::AnalyzerExpressionExpectation<'_>,
         admission: Option<&constraints::AnalyzerCallSourceAdmission>,
+        probe_attempt: Option<&ActiveProbeFactAttempt>,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
         let Some(constraints::AnalyzerCallSourceAdmission::CompileTimeScalar(admission)) =
             admission
         else {
-            return self.evaluate_expression_with_expectation(context, expression, expectation);
+            return self.evaluate_expression_with_probe_attempt(
+                context,
+                expression,
+                expectation,
+                probe_attempt,
+            );
         };
         let exact_type = self
             .retain_source_value_type(context, expression, admission.value_type())

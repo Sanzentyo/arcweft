@@ -1960,13 +1960,13 @@ impl<'a, 'project, 'catalog, 'control>
                 crate::final_analysis::CandidateFactTransactionViolation::StaleCheckpoint,
             ))
         })?;
-        let authority = match check_scope {
-            AnalyzerSourceCheckScope::Probe(attempt) => {
-                self.analyzer.facts.probe_fact_attempt_authority(attempt)
-            }
-            AnalyzerSourceCheckScope::Materialize => {
-                self.analyzer.facts.callback_fact_authority(&scope.scope)
-            }
+        let probe_attempt = match check_scope {
+            AnalyzerSourceCheckScope::Probe(attempt) => Some(attempt),
+            AnalyzerSourceCheckScope::Materialize => None,
+        };
+        let authority = match probe_attempt {
+            Some(attempt) => self.analyzer.facts.probe_fact_attempt_authority(attempt),
+            None => self.analyzer.facts.callback_fact_authority(&scope.scope),
         }
         .map_err(|violation| {
             AnalyzerCallCheckFailure::Invariant(AnalyzerCallClientInvariant::fact_transaction(
@@ -2177,6 +2177,7 @@ impl<'a, 'project, 'catalog, 'control>
             source,
             expectation,
             source_admission,
+            probe_attempt,
         );
         match result {
             Ok(checked) => {

@@ -72,7 +72,7 @@ use super::expression_error::{
     AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionFactAuthority,
 };
 use super::state::{
-    CandidateFactOperationFailure, CandidateFactTransactionAction,
+    ActiveProbeFactAttempt, CandidateFactOperationFailure, CandidateFactTransactionAction,
     CandidateFactTransactionAuthority, CandidateFactTransactionOutcome,
 };
 
@@ -602,6 +602,25 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expectation: AnalyzerExpressionExpectation<'_>,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
+        self.evaluate_expression_with_probe_attempt(context, owner, expectation, None)
+    }
+
+    pub(super) fn evaluate_expression_with_probe_attempt(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expectation: AnalyzerExpressionExpectation<'_>,
+        attempt: Option<&ActiveProbeFactAttempt>,
+    ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
+        let transaction = attempt
+            .map(|attempt| {
+                // Reads may use the caller's candidate cursor. Writes and
+                // their rollback belong to the active argument attempt.
+                self.facts
+                    .probe_fact_attempt_transaction(attempt)
+                    .map_err(AnalyzerExpressionError::fact)
+            })
+            .transpose()?;
         // Check the token domain before consulting candidate/published caches:
         // a prior string fact must not erase another parameter's family rule.
         if let Some(family) = expectation.public_id_reference_family() {
@@ -621,8 +640,16 @@ impl Analyzer<'_, '_, '_> {
             }
         }
         match self.cached_expression_fact(context, owner)? {
-            Some(checked) => self.evaluate_cached_expression(context, owner, expectation, checked),
-            None => self.evaluate_uncached_expression(context, owner, expectation),
+            Some(checked) => self.evaluate_cached_expression(
+                context,
+                owner,
+                expectation,
+                checked,
+                transaction.as_ref(),
+            ),
+            None => {
+                self.evaluate_uncached_expression(context, owner, expectation, transaction.as_ref())
+            }
         }
     }
 
@@ -698,6 +725,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expectation: AnalyzerExpressionExpectation<'_>,
         mut checked: PreparedExpressionFact,
+        transaction: Option<&CandidateFactTransactionAuthority<'_>>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         let accepts = |analyzer: &mut Self, checked: &PreparedExpressionFact| {
             expectation.accepts_cached_with(checked, &mut |expected, actual| {
@@ -714,31 +742,21 @@ impl Analyzer<'_, '_, '_> {
             .specialization_target(checked.value_type())
             .is_some()
         {
-            let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
-                context.work(),
-                |this, _, _| {
-                    let specialized = this.specialize_checked_function_value(
-                        context,
-                        owner,
-                        checked,
-                        &expectation,
-                    )?;
-                    if !accepts(this, &specialized)? {
-                        return Err(AnalyzerExpressionError::rejected(owner));
-                    }
-                    this.facts
-                        .replace_contextual_expression(owner, specialized.clone())
-                        .map_err(|_| {
-                            AnalyzerExpressionError::fact(
-                                super::CandidateFactTransactionViolation::ProjectionUnavailable,
-                            )
-                        })?;
-                    Ok(CandidateFactTransactionAction::Commit(specialized))
-                },
-            )?;
-            checked = outcome
-                .into_committed()
-                .map_err(AnalyzerExpressionError::fact)?;
+            checked = self.with_expression_fact_edit(context.work(), transaction, |this, _| {
+                let specialized =
+                    this.specialize_checked_function_value(context, owner, checked, &expectation)?;
+                if !accepts(this, &specialized)? {
+                    return Err(AnalyzerExpressionError::rejected(owner).into());
+                }
+                this.facts
+                    .replace_contextual_expression(owner, specialized.clone())
+                    .map_err(|_| {
+                        AnalyzerExpressionError::fact(
+                            super::CandidateFactTransactionViolation::ProjectionUnavailable,
+                        )
+                    })?;
+                Ok(specialized)
+            })?;
             true
         } else {
             accepts(self, &checked)?
@@ -766,23 +784,16 @@ impl Analyzer<'_, '_, '_> {
                 checked.effects().clone(),
                 CheckedExpressionResolution::Literal(literal.clone()),
             );
-            let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
-                context.work(),
-                |this, _authority, _transaction| {
-                    this.facts
-                        .replace_contextual_expression(owner, contextual.clone())
-                        .map_err(|_| {
-                            AnalyzerExpressionError::fact(
-                                super::CandidateFactTransactionViolation::ProjectionUnavailable,
-                            )
-                        })?;
-                    Ok(CandidateFactTransactionAction::Commit(contextual))
-                },
-            )?;
-            return outcome
-                .into_committed()
-                .map(Into::into)
-                .map_err(AnalyzerExpressionError::fact);
+            return self.with_expression_fact_edit(context.work(), transaction, |this, _| {
+                this.facts
+                    .replace_contextual_expression(owner, contextual.clone())
+                    .map_err(|_| {
+                        AnalyzerExpressionError::fact(
+                            super::CandidateFactTransactionViolation::ProjectionUnavailable,
+                        )
+                    })?;
+                Ok(contextual.into())
+            });
         }
         Err(AnalyzerExpressionError::rejected(owner))
     }
@@ -792,26 +803,36 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
         expectation: AnalyzerExpressionExpectation<'_>,
+        transaction: Option<&CandidateFactTransactionAuthority<'_>>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         self.with_expression_guard(owner, |this| {
-            let outcome = this.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
-                context.work(),
-                |this, _authority, transaction_authority| {
-                    let checked = this.check_fresh_expression(
-                        context,
-                        owner,
-                        &expectation,
-                        &transaction_authority,
-                    )?;
-                    let checked =
-                        this.finish_fresh_expression(context, owner, &expectation, checked)?;
-                    Ok(CandidateFactTransactionAction::Commit(checked))
-                },
-            )?;
-            outcome
-                .into_committed()
-                .map_err(AnalyzerExpressionError::fact)
+            this.with_expression_fact_edit(context.work(), transaction, |this, transaction| {
+                let checked =
+                    this.check_fresh_expression(context, owner, &expectation, transaction)?;
+                this.finish_fresh_expression(context, owner, &expectation, checked)
+            })
         })
+    }
+
+    fn with_expression_fact_edit<T>(
+        &mut self,
+        work: super::preparation_work::AnalyzerPreparationWork<'_>,
+        probe_attempt: Option<&CandidateFactTransactionAuthority<'_>>,
+        operation: impl FnOnce(
+            &mut Self,
+            &CandidateFactTransactionAuthority<'_>,
+        ) -> Result<T, CandidateFactOperationFailure>,
+    ) -> Result<T, AnalyzerExpressionError> {
+        if let Some(transaction) = probe_attempt {
+            // The argument attempt closes after the value and its evidence are checked.
+            return operation(self, transaction)
+                .map_err(CandidateFactOperationFailure::into_expression_error);
+        }
+        self.run_candidate_fact_transaction(work, |this, _, transaction| {
+            operation(this, &transaction).map(CandidateFactTransactionAction::Commit)
+        })?
+        .into_committed()
+        .map_err(AnalyzerExpressionError::fact)
     }
 
     fn check_fresh_expression(

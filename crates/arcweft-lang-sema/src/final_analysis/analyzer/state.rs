@@ -752,7 +752,7 @@ impl From<super::expression_error::AnalyzerExpressionError> for CandidateFactOpe
 }
 
 impl CandidateFactOperationFailure {
-    fn into_expression_error(self) -> super::expression_error::AnalyzerExpressionError {
+    pub(super) fn into_expression_error(self) -> super::expression_error::AnalyzerExpressionError {
         match self {
             Self::Expression(error) => error,
             Self::Projection(failure) => failure.into_expression_error(),
@@ -1034,6 +1034,13 @@ impl SemanticFactState {
         let mut authority = self.candidate_expression_authority(&attempt.checkpoint)?;
         authority.physical_checkpoint = attempt.physical_checkpoint;
         Ok(authority)
+    }
+
+    pub(super) fn probe_fact_attempt_transaction<'a>(
+        &self,
+        attempt: &'a ActiveProbeFactAttempt,
+    ) -> Result<CandidateFactTransactionAuthority<'a>, CandidateFactTransactionViolation> {
+        self.transaction_authority(&attempt.checkpoint)
     }
 
     pub(super) fn close_probe_fact_attempt(
