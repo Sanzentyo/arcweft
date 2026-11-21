@@ -21218,3 +21218,24 @@ Generic Match .1.2 C3/C5 は、元の受入監査の150 IDとStyle Lengthの後�
 `main` を通常のfast-forwardで更新し、公開ref・取得commitのfull SHA・変更6ファイルのblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
 
 [検証原本](acceptance-evidence/task-live-effect-read-anchors.raw.zip) は38項目、1,215,624 bytes、SHA256 `584c9536147099a420241671a5debe2bb8906707faeeae1440568ed5f3646e35`。全項目の長さとSHA256を照合した。検証後の `target` は136,084,671,523 bytes。
+
+<a id="probe-expression-fact-attempt"></a>
+## 2026-11-22 — 引数の試行で式検査のチェックポイントを共有する
+
+作業基点 `1728e48632c6aa9c59a6519bf3dea5168033278b`。[先行計測](#live-effect-read-anchors)で256候補テストの2件目を追跡し、引数のコールバック開始、試行開始、式の検査開始でそれぞれ事実チェックポイントを開くことを確認した。各開始に効果グラフのチェックポイントとその計上を伴っていた。
+
+Source `2356c7c36b806225a393554a2bd8e04987382b70` では、試行で値を評価するとき、アクティブな試行のトークンから書込み権限を取得する。式から読み取れる事実は呼出し元の候補カーソルで決まり、書込みと巻き戻しは引数の試行が担う。式の新規検査、キャッシュ済みの関数値の特殊化、リテラルの文脈に応じた再検査は同じ書込み境界を使う。既存テストで棄却した試行の式と効果定義が巻き戻され、選択した試行の結果を保持できることを確認した。
+
+初回は読み取り権限にも試行との同一性を要求し、Sema libで1,588 PASS／438 FAILだった。既存の392件は `StaleCheckpoint` などでPASSからFAILへ変わった。修正後は、読み取りに親の候補を使う場合にも、書込みには現在の試行のLIFO検証を使う。初回と修正後の実行ログ・入力blob・ID比較を保持する。
+
+同じ256候補テストで、前回の72件目まで進入・71件完了から、今回の77件目まで進入・76件完了に進んだ。境界テストは引き続き `CallResolutionFailed`。全体作業上限4,096を超える計上は、試行で得た効果読取りを取り込む `admit_effect_reads` が、読み取りスコープ合成中に発行元を検査する箇所（`scope.rs:265`）で拒否された。
+
+同じテストの2件目を追跡すると、下位作業の上限検査通過回数は44回から41回、事実チェックポイント開始の計上は9回から6回になった。型制約コンテキストの計上は28回だった。
+
+Sema libは2,026件を実行し、1,980 PASS／46既知FAIL。Cargo graph上の22パッケージを確認し、非CLIの21パッケージで4,345件を実行し、4,299 PASS／46既知FAIL／別に1 SKIP。実行IDと合否はすべて前回と一致した。CLIのlib／bin 196件と統合6対象30件は全件通過し、前回と同じ226 IDを確認した。ワークスペース全ターゲット・全機能のcheck／Clippyと変更ファイルの書式は終了0。
+
+Generic Match .1.2 C3/C5 は元の受入監査の150 IDとStyle Lengthの後継1件を今回の逆依存実行で照合した。transcript 115件、coverage 24件、公開query 5件、Native／デコード済みAWBCの継続・保存7件がすべてPASSした。
+
+`main` を通常のfast-forwardで更新し、公開ref・取得commitのfull SHA・変更4ファイルのblobを照合した。公開時の既存未追跡ファイルは `%SystemDrive%/` のみ。
+
+[検証原本](acceptance-evidence/task-probe-expression-fact-attempt.raw.zip) は44項目、1,354,716 bytes、SHA256 `23afb2bc7628efc1a79e89459b072a583e5d835b2403de8327f29fe5b5d6e533`。全項目の長さとSHA256を照合した。検証後の `target` は136,090,136,545 bytes。
