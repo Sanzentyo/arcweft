@@ -638,15 +638,19 @@ impl PreparedEffectTermEdit<'_> {
         if !matches!(self.state, TermEditState::Open) {
             return Err(PreparedEffectInvariant::TermEditState.into());
         }
-        let result = Substitution {
-            graph: self.graph,
-            project,
-            control,
-            parameters: BTreeMap::new(),
-            rows: BTreeMap::new(),
-            predicates: BTreeMap::new(),
-        }
-        .predicate(predicate);
+        let result = if predicate.constant_truth().is_some() {
+            self.read().retain_predicate(predicate, control)
+        } else {
+            Substitution {
+                graph: self.graph,
+                project,
+                control,
+                parameters: BTreeMap::new(),
+                rows: BTreeMap::new(),
+                predicates: BTreeMap::new(),
+            }
+            .predicate(predicate)
+        };
         if result.is_err() {
             self.invalidate();
         }

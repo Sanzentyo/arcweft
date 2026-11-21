@@ -54,6 +54,65 @@ fn environment(
 }
 
 #[test]
+fn constant_predicates_admit_and_substitute_with_one_visit() {
+    let mut graph = PreparedEffectGraph::default();
+    let state = graph.state;
+    for predicate in [
+        EffectPredicate::unconstrained(),
+        EffectPredicate::impossible(),
+    ] {
+        let predicate = PreparedEffectPredicate::Canonical(predicate);
+        assert!(matches!(
+            EffectConstraintEnvironment::new_prepared(
+                &[],
+                &predicate,
+                graph.read(),
+                &mut Control(0)
+            ),
+            Err(PreparedEffectFailure::Control(Failure::Exhausted))
+        ));
+        let environment = EffectConstraintEnvironment::new_prepared(
+            &[],
+            &predicate,
+            graph.read(),
+            &mut Control(1),
+        )
+        .unwrap();
+        assert_eq!(environment.original_predicate(), &predicate);
+        assert_eq!(
+            environment
+                .project_registered_predicate(
+                    &predicate,
+                    &BTreeMap::new(),
+                    &mut graph,
+                    &mut Control(1)
+                )
+                .unwrap(),
+            predicate
+        );
+
+        let mut edit = graph.edit_terms();
+        assert!(matches!(
+            edit.map_predicate_parameters(&predicate, &mut Control(0), &mut |_, _| unreachable!()),
+            Err(PreparedEffectFailure::Control(Failure::Exhausted))
+        ));
+        assert!(matches!(
+            edit.commit(),
+            Err(PreparedEffectInvariant::TermEditState)
+        ));
+
+        let mut edit = graph.edit_terms();
+        let mapped = edit
+            .map_predicate_parameters(&predicate, &mut Control(1), &mut |_, _| unreachable!())
+            .unwrap();
+        assert_eq!(mapped, predicate);
+        edit.commit().unwrap();
+        assert_eq!(graph.state, state);
+        assert_eq!(graph.retained_terms(), (0, 0));
+    }
+}
+
+#[test]
 fn an_empty_application_projection_retains_the_authenticated_predicate() {
     let mut control = Control(4096);
     let mut graph = PreparedEffectGraph::default();

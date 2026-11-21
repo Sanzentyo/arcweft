@@ -197,10 +197,12 @@ impl<'a> PreparedEffectReadView<'a> {
     ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
         self.validate_retained_predicate(predicate)?;
         match predicate {
-            PreparedEffectPredicate::Canonical(predicate) => predicate
-                .encode(&mut super::super::EffectGraphAdmission(control))
-                .map_err(PreparedEffectFailure::Control)?,
-            PreparedEffectPredicate::Term(_) => control
+            PreparedEffectPredicate::Canonical(value) if predicate.constant_truth().is_none() => {
+                value
+                    .encode(&mut super::super::EffectGraphAdmission(control))
+                    .map_err(PreparedEffectFailure::Control)?
+            }
+            _ => control
                 .charge(DecisionWork::Visit)
                 .map_err(PreparedEffectFailure::Control)?,
         }

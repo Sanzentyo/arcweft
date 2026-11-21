@@ -23,11 +23,7 @@ impl EffectConstraintEnvironment<PreparedEffects> {
         C::Error: From<EffectConstraintEnvironmentError>,
     {
         if applications.is_empty() {
-            let read = graph.read();
-            read.visit_predicate_parameters(predicate, control, &mut |reference, _| {
-                self.validate_reference(reference).map_err(Into::into)
-            })?;
-            return read.retain_predicate(predicate, control);
+            return self.retain_ambient_predicate(graph.read(), predicate, control);
         }
 
         for variable in applications.keys() {
@@ -91,13 +87,25 @@ impl EffectConstraintEnvironment<PreparedEffects> {
         environment
             .admit_variables(variables)
             .map_err(|error| PreparedEffectFailure::Control(error.into()))?;
-        graph.visit_predicate_parameters(predicate, control, &mut |reference, _| {
-            environment
-                .validate_reference(reference)
-                .map_err(Into::into)
-        })?;
-        environment.predicate = graph.retain_predicate(predicate, control)?;
+        environment.predicate = environment.retain_ambient_predicate(graph, predicate, control)?;
         Ok(environment)
+    }
+
+    fn retain_ambient_predicate<C: DecisionControl>(
+        &self,
+        graph: PreparedEffectReadView<'_>,
+        predicate: &PreparedEffectPredicate,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>>
+    where
+        C::Error: From<EffectConstraintEnvironmentError>,
+    {
+        if predicate.constant_truth().is_none() {
+            graph.visit_predicate_parameters(predicate, control, &mut |reference, _| {
+                self.validate_reference(reference).map_err(Into::into)
+            })?;
+        }
+        graph.retain_predicate(predicate, control)
     }
 
     /// The lexical owner separately validates bound references against its
@@ -122,7 +130,17 @@ impl EffectConstraintEnvironment<PreparedEffects> {
         added: PreparedEffectPredicate,
         control: &mut C,
     ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>> {
+        if self.predicate.constant_truth() == Some(true) {
+            control
+                .charge(DecisionWork::Visit)
+                .map_err(PreparedEffectFailure::Control)?;
+            edit.read().validate_retained_predicate(&added)?;
+            return Ok(added);
+        }
         let previous = edit.read().retain_predicate(&self.predicate, control)?;
+        if added.constant_truth() == Some(true) {
+            return Ok(previous);
+        }
         for _ in 0..2 {
             control
                 .charge(DecisionWork::Node)
@@ -182,13 +200,8 @@ impl EffectConstraintEnvironment<PreparedEffects> {
     where
         C::Error: From<EffectConstraintEnvironmentError>,
     {
-        graph
-            .read()
-            .visit_predicate_parameters(predicate, control, &mut |reference, _| {
-                self.validate_reference(reference).map_err(Into::into)
-            })?;
+        let added = self.retain_ambient_predicate(graph.read(), predicate, control)?;
         let mut edit = graph.edit_terms();
-        let added = edit.read().retain_predicate(predicate, control)?;
         let predicate = self.conjoin(&mut edit, added, control)?;
         control
             .charge(DecisionWork::Visit)

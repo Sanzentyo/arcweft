@@ -231,6 +231,9 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<crate::effect_row::prepared::PreparedEffectPredicate, TypeConstraintError> {
+        if predicate.constant_truth().is_some() {
+            return Ok(graph.read().retain_predicate(predicate, context)?);
+        }
         context.with_effect_transaction(graph, |context, graph| {
             let mut variables = BTreeSet::new();
             graph.read().visit_predicate_parameters(
