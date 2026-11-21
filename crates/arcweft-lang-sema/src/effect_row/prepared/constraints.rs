@@ -14,6 +14,7 @@ impl EffectConstraintEnvironment<PreparedEffects> {
     /// predicate against the same Γ that was admitted before inference.
     pub(crate) fn project_registered_predicate<C: DecisionControl>(
         &self,
+        predicate: &PreparedEffectPredicate,
         applications: &BTreeMap<GenericEffectReference, PreparedEffectRow>,
         graph: &mut PreparedEffectGraph,
         control: &mut C,
@@ -23,10 +24,10 @@ impl EffectConstraintEnvironment<PreparedEffects> {
     {
         if applications.is_empty() {
             let read = graph.read();
-            read.visit_predicate_parameters(&self.predicate, control, &mut |reference, _| {
+            read.visit_predicate_parameters(predicate, control, &mut |reference, _| {
                 self.validate_reference(reference).map_err(Into::into)
             })?;
-            return read.retain_predicate(&self.predicate, control);
+            return read.retain_predicate(predicate, control);
         }
 
         for variable in applications.keys() {
@@ -41,7 +42,7 @@ impl EffectConstraintEnvironment<PreparedEffects> {
         }
         let mut edit = graph.edit_terms();
         let predicate =
-            edit.map_predicate_parameters(&self.predicate, control, &mut |variable, control| {
+            edit.map_predicate_parameters(predicate, control, &mut |variable, control| {
                 control
                     .charge(DecisionWork::Visit)
                     .map_err(PreparedEffectFailure::Control)?;
@@ -143,12 +144,8 @@ impl EffectConstraintEnvironment<PreparedEffects> {
     where
         C::Error: From<EffectConstraintEnvironmentError>,
     {
-        self.validate_row(actual, graph.read(), control)?;
-        self.validate_row(permitted, graph.read(), control)?;
         let mut edit = graph.edit_terms();
-        let actual = edit.read().retain_row(actual, control)?;
-        let permitted = edit.read().retain_row(permitted, control)?;
-        let added = edit.relate(relation, actual, permitted, control)?;
+        let added = self.prepare_relation(&mut edit, relation, actual, permitted, control)?;
         let predicate = self.conjoin(&mut edit, added, control)?;
         control
             .charge(DecisionWork::Visit)
@@ -156,6 +153,24 @@ impl EffectConstraintEnvironment<PreparedEffects> {
         edit.commit()?;
         self.predicate = predicate;
         Ok(())
+    }
+
+    pub(crate) fn prepare_relation<C: DecisionControl>(
+        &self,
+        edit: &mut PreparedEffectTermEdit<'_>,
+        relation: PreparedEffectRelation,
+        actual: &PreparedEffectRow,
+        permitted: &PreparedEffectRow,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>>
+    where
+        C::Error: From<EffectConstraintEnvironmentError>,
+    {
+        self.validate_row(actual, edit.read(), control)?;
+        self.validate_row(permitted, edit.read(), control)?;
+        let actual = edit.read().retain_row(actual, control)?;
+        let permitted = edit.read().retain_row(permitted, control)?;
+        edit.relate(relation, actual, permitted, control)
     }
 
     pub(crate) fn restore_predicate<C: DecisionControl>(
@@ -195,15 +210,8 @@ impl EffectConstraintEnvironment<PreparedEffects> {
     where
         C::Error: From<EffectConstraintEnvironmentError>,
     {
-        for predicate in [left, right] {
-            graph
-                .read()
-                .visit_predicate_parameters(predicate, control, &mut |reference, _| {
-                    self.validate_reference(reference).map_err(Into::into)
-                })?;
-        }
         let mut edit = graph.edit_terms();
-        let added = edit.equivalent_predicates(left, right, control)?;
+        let added = self.prepare_predicate_equality(&mut edit, left, right, control)?;
         if added.constant_truth() == Some(true) {
             control
                 .charge(DecisionWork::Visit)
@@ -218,6 +226,25 @@ impl EffectConstraintEnvironment<PreparedEffects> {
         edit.commit()?;
         self.predicate = predicate;
         Ok(())
+    }
+
+    pub(crate) fn prepare_predicate_equality<C: DecisionControl>(
+        &self,
+        edit: &mut PreparedEffectTermEdit<'_>,
+        left: &PreparedEffectPredicate,
+        right: &PreparedEffectPredicate,
+        control: &mut C,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>>
+    where
+        C::Error: From<EffectConstraintEnvironmentError>,
+    {
+        for predicate in [left, right] {
+            edit.read()
+                .visit_predicate_parameters(predicate, control, &mut |reference, _| {
+                    self.validate_reference(reference).map_err(Into::into)
+                })?;
+        }
+        edit.equivalent_predicates(left, right, control)
     }
 
     pub(crate) fn restore_completed_inherited<C: DecisionControl>(

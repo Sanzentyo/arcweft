@@ -189,6 +189,7 @@ fn computed_effect_primitives_retain_only_their_own_used_gamma() {
     let (mut context, mut path, rigid, keys) = fixture(&cancellation, &mut effect_graph);
     for index in 0..2 {
         path.effects
+            .ambient
             .constrain_fixture_subset(
                 &mut effect_graph,
                 &row(&rigid[index]),
@@ -304,6 +305,7 @@ fn completed_header_gamma_is_field_specific_and_survives_reprojection() {
     let (mut context, mut path, rigid, keys) = fixture(&cancellation, &mut effect_graph);
     for index in 0..2 {
         path.effects
+            .ambient
             .constrain_fixture_subset(
                 &mut effect_graph,
                 &row(&rigid[index]),

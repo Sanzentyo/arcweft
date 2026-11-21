@@ -137,8 +137,8 @@ fn a_final_header_projects_the_actual_function_beneath_its_local_binder() {
     context
         .with_binder(GenericBinder::new(0, 0, 1), |context| {
             let (source, mut path, key) = parent(context, &mut graph, 98_607);
-            let outer = path.lineage.scope.shape().bound_effect(0, 0)?;
-            path.effects.constrain_relation(
+            let outer = path.scope.shape().bound_effect(0, 0)?;
+            path.effects.ambient.constrain_relation(
                 &mut graph,
                 PreparedEffectRelation::Equal,
                 &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), key.clone())),
@@ -202,7 +202,7 @@ fn a_final_header_projects_the_actual_function_beneath_its_local_binder() {
                 PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained())
             );
             let closed = close_type_operand(input.view(), &path, &effects, graph.read(), context)?;
-            assert_eq!(closed.scope(), &path.lineage.scope);
+            assert_eq!(closed.scope(), &path.scope);
             let TypeKind::Function {
                 effects: final_row, ..
             } = closed.value()

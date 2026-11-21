@@ -569,12 +569,15 @@ fn parent_and_child_close_type_constant_and_effect_relations_together() {
     let child_row = EffectRow::open(EffectSet::new(), child_effect.clone());
     let expected_row = EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap());
     path.effects
+        .ambient
         .constrain_fixture_subset(&mut effect_graph, &expected_row, &parent_row, &mut context)
         .unwrap();
     path.effects
+        .ambient
         .constrain_fixture_subset(&mut effect_graph, &parent_row, &expected_row, &mut context)
         .unwrap();
     path.effects
+        .ambient
         .constrain_fixture_subset(&mut effect_graph, &parent_row, &child_row, &mut context)
         .unwrap();
     let path = seal_path(path, &mut effect_graph, &mut context).unwrap();
@@ -832,6 +835,7 @@ fn inherited_child_bindings_restore_without_replacing_the_parent() {
     );
     prior_path
         .effects
+        .ambient
         .constrain_fixture_subset(
             &mut effect_graph,
             &row,
@@ -841,6 +845,7 @@ fn inherited_child_bindings_restore_without_replacing_the_parent() {
         .unwrap();
     prior_path
         .effects
+        .ambient
         .constrain_fixture_subset(
             &mut effect_graph,
             &EffectRow::open(EffectSet::new(), effect.clone()),
@@ -1045,6 +1050,7 @@ fn a_child_scope_is_ineligible_on_an_unchosen_sibling_path() {
     assert!(
         sibling
             .effects
+            .ambient
             .validate_row(
                 &PreparedEffectRow::Canonical(EffectRow::open(
                     EffectSet::new(),
@@ -1295,6 +1301,7 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
     let mut parent = paths.pop().unwrap();
     parent
         .effects
+        .ambient
         .constrain_fixture_subset(
             &mut effect_graph,
             &parent_effect,
@@ -1304,6 +1311,7 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
         .unwrap();
     parent
         .effects
+        .ambient
         .constrain_fixture_subset(
             &mut effect_graph,
             &captured_effect,
@@ -1498,6 +1506,7 @@ fn completed_parent_does_not_export_unused_child_declarations() {
     );
     assert!(
         next.effects
+            .ambient
             .validate_row(
                 &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), row)),
                 effect_graph.read(),

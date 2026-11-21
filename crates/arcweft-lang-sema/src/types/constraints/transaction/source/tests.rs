@@ -364,8 +364,7 @@ mod retained_preparation {
                             .query
                             .as_ref()
                             .unwrap();
-                        let projected =
-                            effects.canonicalize(query, path.lineage.scope.shape(), context)?;
+                        let projected = effects.canonicalize(query, path.scope.shape(), context)?;
                         let TypeKind::Function { effects: row, .. } = projected else {
                             panic!("expected a canonical function type");
                         };

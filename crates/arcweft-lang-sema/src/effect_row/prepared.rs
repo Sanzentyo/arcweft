@@ -185,7 +185,7 @@ pub(crate) enum PreparedEffectPredicate {
 }
 
 impl PreparedEffectPredicate {
-    fn constant_truth(&self) -> Option<bool> {
+    pub(crate) fn constant_truth(&self) -> Option<bool> {
         let Self::Canonical(predicate) = self else {
             return None;
         };

@@ -63,6 +63,7 @@ fn closed_headers_lift_the_used_completion_row_through_the_actual_local_binder()
     let ambient_effect = context.lexical_scope().bound_effect(0, 0).unwrap();
     let (mut path, keys) = path(&mut context, &mut effect_graph);
     path.effects
+        .ambient
         .constrain_fixture_subset(
             &mut effect_graph,
             &EffectRow::open(EffectSet::new(), ambient_effect),
@@ -171,6 +172,7 @@ fn projected_headers_keep_the_selected_sibling_port_and_require_both_fields_befo
     let expected = ["fs.read", "ui.write"].map(|label| EffectSet::from_labels([label]).unwrap());
     for (key, effects) in keys.iter().zip(&expected) {
         path.effects
+            .ambient
             .constrain_fixture_subset(
                 &mut effect_graph,
                 &EffectRow::closed(effects.clone()),
@@ -307,6 +309,7 @@ fn a_closed_effect_owner_rejects_changed_premises_and_another_application_invent
     let mut changed = context.fork_path(&path).unwrap();
     changed
         .effects
+        .ambient
         .constrain_fixture_subset(
             &mut effect_graph,
             &EffectRow::open(EffectSet::new(), keys[0].clone()),
@@ -510,6 +513,7 @@ fn read_only_closure_keeps_ambient_effects_outside_both_nested_local_binders() {
     let ambient_scope = context.capture_lexical_scope().unwrap();
     let (mut path, keys) = path(&mut context, &mut effect_graph);
     path.effects
+        .ambient
         .constrain_fixture_subset(
             &mut effect_graph,
             &EffectRow::open(
@@ -628,6 +632,7 @@ fn a_relation_completion_cannot_impersonate_a_source_or_change_its_constraints()
     let mut changed = context.fork_path(&path).unwrap();
     changed
         .effects
+        .ambient
         .constrain_fixture_subset(
             &mut effect_graph,
             &EffectRow::open(EffectSet::new(), keys[0].clone()),
@@ -690,6 +695,7 @@ fn completed_equations_distinguish_the_ambient_effect_from_the_local_binder() {
     let outer = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
     let (mut path, keys) = path(&mut context, &mut effect_graph);
     path.effects
+        .ambient
         .constrain_fixture_subset(
             &mut effect_graph,
             &EffectRow::open(

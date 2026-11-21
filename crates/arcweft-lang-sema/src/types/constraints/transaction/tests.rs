@@ -344,7 +344,7 @@ fn pure_component_effects(
 ) -> Arc<ConstraintClosedEffects<ApplicationSourceDomain>> {
     // The repeated I64/String source fixtures have no effect variables or
     // function headers. Retain their actual C; no Future default is supplied.
-    assert_eq!(path.effects.original_variables().count(), 0);
+    assert_eq!(path.effects.ambient.original_variables().count(), 0);
     let receipt = path.prepare_effect_constraint(graph, context).unwrap();
     let frozen = graph
         .read()

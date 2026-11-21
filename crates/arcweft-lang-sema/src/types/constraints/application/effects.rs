@@ -226,6 +226,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
     pub(in crate::types::constraints) fn prepare_effect_predicate<A: TypeConstraintAccounting>(
         &self,
         effects: &EffectConstraintEnvironment<PreparedEffects>,
+        predicate: &crate::effect_row::prepared::PreparedEffectPredicate,
         scope: &ConstraintLexicalScope,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -233,7 +234,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         context.with_effect_transaction(graph, |context, graph| {
             let mut variables = BTreeSet::new();
             graph.read().visit_predicate_parameters(
-                effects.original_predicate(),
+                predicate,
                 context,
                 &mut |reference, context| {
                     context.enter_node()?;
@@ -261,7 +262,7 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             }
             edit.commit()?;
             effects
-                .project_registered_predicate(&applications, graph, context)
+                .project_registered_predicate(predicate, &applications, graph, context)
                 .map_err(Into::into)
         })
     }

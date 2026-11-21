@@ -131,17 +131,19 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<PreparedConstraintEffects, TypeConstraintError> {
-        let constraint = self.prepare_effect_constraint(graph, context)?;
+        let constraints = self.prepare_effect_constraints(graph, context)?;
         let mut types = Vec::new();
         self.collect_original_effect_types(&mut types, context)?;
         let roots = original_effect_roots(types, [], graph.read(), context)?;
+        let mut clauses = vec![&constraints.primary];
+        for header in &constraints.headers {
+            context.enter_node()?;
+            clauses.push(header);
+        }
         let original = self.freeze_original_effect_roots::<_, TypeConstraintError>(
-            &roots,
-            &[&constraint],
-            graph,
-            context,
+            &roots, &clauses, graph, context,
         )?;
-        PreparedConstraintEffects::new(original, constraint, context)
+        PreparedConstraintEffects::new(original, constraints.primary, context)
     }
 }
 
@@ -158,7 +160,7 @@ impl<D: ConstraintDomain, L> ConstraintInferenceBranch<D, L> {
         E: From<TypeConstraintError> + From<PreparedEffectFailure<TypeConstraintError>>,
     {
         let mut introduced = Vec::new();
-        for parameter in self.effects.original_variables() {
+        for parameter in self.effects.ambient.original_variables() {
             context.enter_node()?;
             if matches!(parameter, GenericEffectReference::Inference(_)) {
                 let function = self

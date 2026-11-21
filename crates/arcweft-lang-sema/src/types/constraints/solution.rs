@@ -912,14 +912,14 @@ impl TypeConstraintSolution {
                 ));
             }
         }
-        path.effects.admit_variables(&rigid_effects)?;
+        path.effects.ambient.admit_variables(&rigid_effects)?;
         let predicate = self.context.reopen_effect_predicate(
             &self.effect_predicate,
             &path,
             application,
             context,
         )?;
-        path.effects.restore_predicate(
+        path.effects.ambient.restore_predicate(
             &crate::effect_row::prepared::PreparedEffectPredicate::Canonical(predicate),
             graph,
             context,
@@ -976,7 +976,7 @@ impl TypeConstraintSolution {
             let value = self
                 .context
                 .reopen_effect_row(&row.value, &path, application, context)?;
-            path.effects.restore_completed_inherited(
+            path.effects.ambient.restore_completed_inherited(
                 reference,
                 &crate::effect_row::prepared::PreparedEffectRow::Canonical(value),
                 graph,

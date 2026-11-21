@@ -27,12 +27,16 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 context.enter_node()?;
                 let path = self.original_path(*member)?;
                 let constraint =
-                    path.prepare_effect_constraint(graph, context)
+                    path.prepare_effect_constraints(graph, context)
                         .map_err(|error| {
                             reject(OriginalProductCheck::EffectRelation(*member), error)
                         })?;
                 context.enter_node()?;
-                sources.push(constraint);
+                sources.push(constraint.primary);
+                for header in constraint.headers {
+                    context.enter_node()?;
+                    sources.push(header);
+                }
                 let domain = path.lineage.original.domain();
                 crate::types::projection_control::visit_effect_predicate(context, &domain, 1)
                     .map_err(projection_failure)?;
@@ -54,7 +58,6 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         &self,
         branch: &JointBranch<D>,
         members: &[OriginalProductMember],
-        scope: &ConstraintLexicalScope,
         original: &PreparedOriginalEffects,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -64,7 +67,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
     > {
         context.with_effect_transaction(graph, |context, graph| {
             let joint = branch
-                .prepare_effect_constraint_in(scope, &original.joint_domain, graph, context)
+                .prepare_effect_constraints_in(&original.joint_domain, graph, context)
                 .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
             let mut constraints = Vec::new();
             for source in &original.sources {
@@ -72,7 +75,11 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 constraints.push(source);
             }
             context.enter_node()?;
-            constraints.push(&joint);
+            constraints.push(&joint.primary);
+            for header in &joint.headers {
+                context.enter_node()?;
+                constraints.push(header);
+            }
 
             let mut selected = BTreeMap::new();
             for member in members {
@@ -137,7 +144,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 graph,
                 context,
             )?;
-            Ok((relation, joint))
+            Ok((relation, joint.primary))
         })
     }
 }

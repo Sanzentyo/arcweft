@@ -75,7 +75,12 @@ fn an_empty_application_projection_retains_the_authenticated_predicate() {
     assert!(matches!(original, PreparedEffectPredicate::Term(_)));
 
     let projected = environment
-        .project_registered_predicate(&applications, &mut graph, &mut control)
+        .project_registered_predicate(
+            environment.original_predicate(),
+            &applications,
+            &mut graph,
+            &mut control,
+        )
         .unwrap();
     assert_eq!(&projected, original);
     assert_eq!(graph.state, state);
@@ -83,7 +88,12 @@ fn an_empty_application_projection_retains_the_authenticated_predicate() {
 
     let mut other_graph = PreparedEffectGraph::default();
     assert!(matches!(
-        environment.project_registered_predicate(&applications, &mut other_graph, &mut control),
+        environment.project_registered_predicate(
+            environment.original_predicate(),
+            &applications,
+            &mut other_graph,
+            &mut control
+        ),
         Err(PreparedEffectFailure::Invariant(
             PreparedEffectInvariant::ForeignIssuer
         ))

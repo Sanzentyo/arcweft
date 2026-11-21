@@ -195,7 +195,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                 let mut source_reads = Vec::new();
                 for member in members.iter() {
                     let path = self.original_path(*member)?;
-                    scope.merge(&path.lineage.scope, context)?;
+                    scope.merge(&path.scope, context)?;
                     path.applications
                         .merge_lexical_scopes(&mut scope, context)?;
                     for equation in &path.equations {
@@ -277,7 +277,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         }
         let mut variables = BTreeMap::new();
         for member in members.iter() {
-            let original_effects = &self.original_path(*member)?.effects;
+            let original_effects = &self.original_path(*member)?.effects.ambient;
             for variable in original_effects.original_variables() {
                 context.enter_node()?;
                 // Captured rigid Γ is owned by the original environment. Its
@@ -305,13 +305,19 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
             context,
         )?;
         let original_effects = self.prepare_original_effects(members, scope, graph, context)?;
+        for _ in scope.shape().binders() {
+            context.enter_node()?;
+        }
         context.enter_node()?;
         let seed = ConstraintInferenceBranch {
             lineage: Arc::clone(members),
+            scope: scope.clone(),
             applications: Arc::new(applications),
             bindings: BTreeMap::new(),
             const_bindings: BTreeMap::new(),
-            effects,
+            effects: crate::types::constraints::normalization::BranchEffectConstraints::new(
+                effects,
+            ),
             equations: Vec::new(),
             choice_key: Vec::new(),
             deferred_cycles: DeferredCycleWitness::default(),
@@ -409,14 +415,8 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     TypeConstraintRejection::CyclicInstantiation { parameter }.into(),
                 ));
             }
-            let (relation, constraint) = self.freeze_original_effects(
-                &branch,
-                members,
-                scope,
-                &original_effects,
-                graph,
-                context,
-            )?;
+            let (relation, constraint) =
+                self.freeze_original_effects(&branch, members, &original_effects, graph, context)?;
             let effects = crate::types::constraints::normalization::PreparedConstraintEffects::new(
                 relation, constraint, context,
             )?
@@ -546,7 +546,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     ));
                 }
             }
-            for parameter in original.effects.original_variables() {
+            for parameter in original.effects.ambient.original_variables() {
                 let Some(value) = projection.owner().row(parameter) else {
                     continue;
                 };
@@ -558,7 +558,6 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     parameter: kind.clone(),
                 };
                 let value = original
-                    .lineage
                     .scope
                     .transport_row(scope, value.value(), context)
                     .map_err(|error| {
@@ -566,6 +565,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     })?;
                 original
                     .effects
+                    .ambient
                     .validate_row(
                         &crate::effect_row::prepared::PreparedEffectRow::Canonical(value),
                         graph.read(),

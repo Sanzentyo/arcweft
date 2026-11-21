@@ -19,6 +19,7 @@ use crate::effect_row::{EffectConstraintEnvironment, EffectPredicate, EffectRow}
 use crate::types::{GenericEffectReference, PreparedEffects, TypeProjectionControl};
 
 mod scoped;
+pub(in crate::types::constraints) use scoped::BranchEffectConstraints;
 
 /// The immutable producer relation and the obligation it already retains.
 /// Preparing this value does not attach the relation to a live graph.
@@ -93,7 +94,7 @@ struct CheckedEffectHeader {
 /// The real calculation scope and domain survive independently of any one
 /// row. The context contains no operands, so primitive origins cannot cycle.
 pub(in crate::types::constraints) struct ConstraintEffectCompletionContext<D: ConstraintDomain> {
-    constraints: EffectConstraintEnvironment<PreparedEffects>,
+    constraints: BranchEffectConstraints,
     applications: Arc<ConstraintApplicationInventory<D>>,
     scope: Arc<ConstraintLexicalScope>,
     origin: ConstraintEffectCompletionOrigin,
@@ -288,7 +289,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<Self>, TypeConstraintError> {
         let original = original.bind(graph, context)?;
-        for _ in path.lineage.scope.shape().binders() {
+        for _ in path.scope.shape().binders() {
             context.enter_node()?;
         }
         let actual;
@@ -300,7 +301,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         };
         Self::complete_branch(
             path,
-            Arc::new(path.lineage.scope.clone()),
+            Arc::new(path.scope.clone()),
             ConstraintEffectCompletionOrigin::Source(path.lineage.original.clone()),
             &original.bound,
             &original.constraint,
@@ -322,13 +323,13 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     ) -> Result<Arc<Self>, TypeConstraintError> {
         context.with_effect_transaction(graph, |context, graph| {
             let constraint = path.prepare_effect_constraint(graph, context)?;
-            for _ in path.lineage.scope.shape().binders() {
+            for _ in path.scope.shape().binders() {
                 context.enter_node()?;
             }
             let inputs = graph.read().actual_inputs(inputs, context)?;
             Self::complete_branch(
                 path,
-                Arc::new(path.lineage.scope.clone()),
+                Arc::new(path.scope.clone()),
                 ConstraintEffectCompletionOrigin::Source(path.lineage.original.clone()),
                 original,
                 &constraint,
@@ -343,17 +344,16 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     /// original product. No synthetic source lineage is introduced.
     pub(in crate::types::constraints) fn for_branch<A: TypeConstraintAccounting, L>(
         branch: &ConstraintInferenceBranch<D, L>,
-        scope: &ConstraintLexicalScope,
         sources: Arc<[OriginalProducerContext]>,
         original: &BoundConstraintEffects,
         inputs: &PreparedEffectActualInputs<'_>,
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<Self>, TypeConstraintError> {
-        for _ in scope.shape().binders() {
+        for _ in branch.scope.shape().binders() {
             context.enter_node()?;
         }
-        let scope = Arc::new(scope.clone());
+        let scope = Arc::new(branch.scope.clone());
         Self::complete_branch(
             branch,
             scope,
@@ -378,7 +378,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
     ) -> Result<Arc<Self>, TypeConstraintError> {
         context.with_effect_transaction(graph, |context, graph| {
             let mut queries = Vec::new();
-            for key in branch.effects.original_variables() {
+            for key in branch.effects.ambient.original_variables() {
                 context.enter_node()?;
                 if !matches!(key, GenericEffectReference::Inference(_)) {
                     continue;
@@ -468,6 +468,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         branch: &ConstraintInferenceBranch<D, L>,
     ) -> Result<(), TypeConstraintError> {
         if !Arc::ptr_eq(&self.context.applications, &branch.applications)
+            || self.context.scope.as_ref() != &branch.scope
             || self.context.constraints != branch.effects
         {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
@@ -480,8 +481,7 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
         path: &ConstraintPath<D>,
     ) -> Result<(), TypeConstraintError> {
         self.require_branch(path)?;
-        if self.context.scope.as_ref() != &path.lineage.scope
-            || !matches!(&self.context.origin,
+        if !matches!(&self.context.origin,
                 ConstraintEffectCompletionOrigin::Source(original)
                     if original == &path.lineage.original)
         {

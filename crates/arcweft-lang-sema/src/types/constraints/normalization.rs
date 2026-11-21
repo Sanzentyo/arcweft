@@ -148,7 +148,7 @@ impl<D: ConstraintDomain, L> ConstraintInferenceBranch<D, L> {
     pub(crate) fn projection_view(&self) -> ConstraintProjectionView<'_, D> {
         ConstraintProjectionView {
             applications: &self.applications,
-            effects: &self.effects,
+            effects: &self.effects.ambient,
             bindings: &self.bindings,
             const_bindings: &self.const_bindings,
         }
@@ -169,8 +169,8 @@ pub(in crate::types::constraints) use projection::seal_type_operand;
 mod effects;
 pub(in crate::types) use effects::ConstraintClosedEffects;
 pub(in crate::types::constraints) use effects::{
-    BoundConstraintEffects, ConstraintEffectCompletionContext, ConstraintEffectPrimitive,
-    PreparedConstraintEffects,
+    BoundConstraintEffects, BranchEffectConstraints, ConstraintEffectCompletionContext,
+    ConstraintEffectPrimitive, PreparedConstraintEffects,
 };
 pub(in crate::types::constraints) use effects::{
     ConstraintClosedEffectHeader, ConstraintEffectProjection, ConstraintProjectedEffectHeader,
@@ -753,7 +753,7 @@ where
         // establishes the binding owner, never the replacement's provenance.
         ConstraintProjectionView {
             applications: &source_applications,
-            effects: &sealed.effects,
+            effects: &sealed.effects.ambient,
             bindings: &source,
             const_bindings: &const_source,
         }
@@ -761,7 +761,7 @@ where
         context.with_original_scope(value.scope().clone(), |context| {
             let source_view = ConstraintProjectionView {
                 applications: &source_applications,
-                effects: &sealed.effects,
+                effects: &sealed.effects.ambient,
                 bindings: &source,
                 const_bindings: &const_source,
             };
@@ -779,7 +779,7 @@ where
         let mut visiting = BTreeSet::new();
         ConstraintProjectionView {
             applications: &source_applications,
-            effects: &sealed.effects,
+            effects: &sealed.effects.ambient,
             bindings: &source,
             const_bindings: &const_source,
         }
@@ -787,7 +787,7 @@ where
         context.with_original_scope(value.scope().clone(), |context| {
             let source_view = ConstraintProjectionView {
                 applications: &source_applications,
-                effects: &sealed.effects,
+                effects: &sealed.effects.ambient,
                 bindings: &source,
                 const_bindings: &const_source,
             };

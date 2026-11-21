@@ -328,12 +328,13 @@ impl<D: ConstraintDomain> Eq for StoredSourceSelection<D> {}
 /// product uses the same algebra without fabricating a source root or probe.
 pub(crate) struct ConstraintInferenceBranch<D: ConstraintDomain, L> {
     pub(super) lineage: L,
+    pub(super) scope: super::lexical::ConstraintLexicalScope,
     pub(super) applications: Arc<ConstraintApplicationInventory<D>>,
     // Each value is relative to the exact introduction scope of its key's
     // admitted application. Only the scoped projection view follows an edge.
     pub(super) bindings: BTreeMap<GenericTypeReference, ConstraintOperand<D>>,
     pub(super) const_bindings: BTreeMap<GenericConstReference, ConstraintOperand<D, ArrayLength>>,
-    pub(crate) effects: crate::effect_row::EffectConstraintEnvironment<PreparedEffects>,
+    pub(super) effects: super::normalization::BranchEffectConstraints,
     pub(crate) equations: Vec<PendingEquation<D>>,
     pub(crate) choice_key: Vec<ChoiceDerivationStep>,
     pub(crate) deferred_cycles: DeferredCycleWitness,
@@ -342,7 +343,6 @@ pub(crate) struct ConstraintInferenceBranch<D: ConstraintDomain, L> {
 pub(crate) struct ConstraintSourceLineage<D: ConstraintDomain> {
     root: ConstraintApplicationId,
     pub(super) original: super::OriginalProducerContext,
-    pub(super) scope: super::lexical::ConstraintLexicalScope,
     probe_trace: Vec<ActiveConstraintProbe<D>>,
     pub(super) projections: Vec<Arc<ProjectionRequest<D>>>,
     // Includes the detached reads of every preparation in probe_trace.
@@ -354,7 +354,6 @@ impl<D: ConstraintDomain> Clone for ConstraintSourceLineage<D> {
         Self {
             root: self.root,
             original: self.original.clone(),
-            scope: self.scope.clone(),
             probe_trace: self.probe_trace.clone(),
             projections: self.projections.clone(),
             effect_reads: self.effect_reads.clone(),
@@ -392,18 +391,18 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             lineage: ConstraintSourceLineage {
                 root,
                 original,
-                scope,
                 probe_trace: Vec::new(),
                 projections: Vec::new(),
                 effect_reads: None,
             },
+            scope,
             applications: Arc::new(ConstraintApplicationInventory::single(
                 application,
                 imported,
             )),
             bindings: BTreeMap::new(),
             const_bindings: BTreeMap::new(),
-            effects,
+            effects: super::normalization::BranchEffectConstraints::new(effects),
             equations: Vec::new(),
             choice_key: Vec::new(),
             deferred_cycles: DeferredCycleWitness::default(),
@@ -426,6 +425,7 @@ impl<D: ConstraintDomain, L: Clone> Clone for ConstraintInferenceBranch<D, L> {
     fn clone(&self) -> Self {
         Self {
             lineage: self.lineage.clone(),
+            scope: self.scope.clone(),
             applications: Arc::clone(&self.applications),
             bindings: self.bindings.clone(),
             const_bindings: self.const_bindings.clone(),
@@ -1692,6 +1692,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             }
             let constrained = path
                 .effects
+                .ambient
                 .constrain_relation(
                     graph,
                     crate::effect_row::prepared::PreparedEffectRelation::Equal,
@@ -2621,7 +2622,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<MaterializationInput<D>, TypeConstraintError> {
-        context.with_original_scope(path.lineage.scope.clone(), |context| {
+        context.with_original_scope(path.scope.clone(), |context| {
             context.validate_in_effect_read_scope(
                 graph,
                 path.lineage.effect_reads.as_ref(),

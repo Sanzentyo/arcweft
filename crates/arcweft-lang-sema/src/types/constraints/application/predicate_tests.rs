@@ -69,7 +69,13 @@ fn complete(
         .unwrap();
     let predicate = path
         .applications
-        .prepare_effect_predicate(&path.effects, &scope, graph, context)
+        .prepare_effect_predicate(
+            &path.effects.ambient,
+            path.effects.ambient.original_predicate(),
+            &scope,
+            graph,
+            context,
+        )
         .unwrap();
     let receipt = graph
         .read()
@@ -205,7 +211,7 @@ fn an_application_opens_its_original_predicate_once_before_actual_named_and_futu
     let path = context
         .start_path_with_imported(owner, None, original, graph.read())
         .unwrap();
-    assert_eq!(path.effects.original_predicate(), &opened);
+    assert_eq!(path.effects.ambient.original_predicate(), &opened);
     assert_eq!(graph.retained_terms(), retained);
     let mut scope = ConstraintLexicalScope::default();
     path.applications
@@ -213,7 +219,13 @@ fn an_application_opens_its_original_predicate_once_before_actual_named_and_futu
         .unwrap();
     let predicate = path
         .applications
-        .prepare_effect_predicate(&path.effects, &scope, &mut graph, &mut context)
+        .prepare_effect_predicate(
+            &path.effects.ambient,
+            path.effects.ambient.original_predicate(),
+            &scope,
+            &mut graph,
+            &mut context,
+        )
         .unwrap();
     let receipt = graph
         .read()

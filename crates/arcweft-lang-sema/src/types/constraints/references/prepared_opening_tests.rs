@@ -291,6 +291,7 @@ fn opening_admits_unused_rigid_source_inputs_through_the_branch_gamma() {
         unreachable!()
     };
     path.effects
+        .ambient
         .validate_row(&effects, graph.read(), &mut context)
         .unwrap();
     let mut references = std::collections::BTreeSet::new();
@@ -382,6 +383,7 @@ fn mathematical_gamma_does_not_grant_a_template_its_parents_private_capture() {
     };
     child
         .effects
+        .ambient
         .validate_row(&effects, graph.read(), &mut context)
         .unwrap();
 }

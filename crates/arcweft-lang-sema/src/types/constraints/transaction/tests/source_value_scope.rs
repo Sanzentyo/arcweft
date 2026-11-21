@@ -164,7 +164,7 @@ fn source_values_cannot_borrow_free_references_from_the_receiving_inventory() {
             _ => references::effect_out_of_scope(&parameters.effect),
         };
         assert_eq!(
-            admit(owner, &path.lineage.scope, &mut graph, &mut context).err(),
+            admit(owner, &path.scope, &mut graph, &mut context).err(),
             Some(expected)
         );
     }
@@ -203,8 +203,7 @@ fn source_values_keep_their_own_declaration_and_explicit_import_authority() {
                 value,
             });
             let retained = Arc::downgrade(&owner);
-            let (actual, resolved) =
-                admit(owner, &path.lineage.scope, &mut graph, &mut context).unwrap();
+            let (actual, resolved) = admit(owner, &path.scope, &mut graph, &mut context).unwrap();
             assert_eq!(actual, expected);
             let ResolvedConstraintSource::Value(owner) = resolved else {
                 panic!("the checked source value keeps its actual owner");
@@ -234,7 +233,7 @@ fn source_value_admission_checks_budget_before_copying_the_owned_type() {
         LocalConstraintAccounting::new(TypeConstraintLimits::new(0, 0, 0, 0), &cancellation),
     );
     assert!(matches!(
-        admit(owner, &path.lineage.scope, &mut graph, &mut exhausted),
+        admit(owner, &path.scope, &mut graph, &mut exhausted),
         Err(TypeConstraintError::Abort(_))
     ));
 }
@@ -256,7 +255,7 @@ fn source_value_admission_checks_cancellation_for_closed_grammar_leaves() {
     });
     cancellation.store(true, Ordering::Release);
     assert!(matches!(
-        admit(owner, &path.lineage.scope, &mut graph, &mut context),
+        admit(owner, &path.scope, &mut graph, &mut context),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
 }
@@ -368,7 +367,7 @@ fn checked_source_values_cannot_use_the_receivers_inference_key_without_an_impor
             value: TypeKind::GenericParam(parameter.clone()),
         });
         let retained = Arc::downgrade(&owner);
-        let result = admit(owner, &path.lineage.scope, &mut graph, &mut context);
+        let result = admit(owner, &path.scope, &mut graph, &mut context);
         if admitted {
             let (value, resolved) = result.unwrap();
             assert_eq!(value, TypeKind::GenericParam(parameter.clone()));

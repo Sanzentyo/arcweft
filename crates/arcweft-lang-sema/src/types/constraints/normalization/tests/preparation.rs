@@ -33,7 +33,7 @@ fn introduced_type_relations_prepare_bindings_without_closing_unrelated_bodies()
             .unwrap();
         let pattern = ConstraintOperand::introduced_type(
             &key,
-            Arc::new(path.lineage.scope.clone()),
+            Arc::new(path.scope.clone()),
             owner,
             &mut context,
         )
@@ -94,13 +94,9 @@ fn an_alias_uses_the_resolved_relation_without_widening_or_early_closure() {
         .applications
         .owner_for_parameter(&key.clone().into())
         .unwrap();
-    let pattern = ConstraintOperand::introduced_type(
-        &key,
-        Arc::new(path.lineage.scope.clone()),
-        owner,
-        &mut context,
-    )
-    .unwrap();
+    let pattern =
+        ConstraintOperand::introduced_type(&key, Arc::new(path.scope.clone()), owner, &mut context)
+            .unwrap();
     let actual = context.fixture_operand(TypeKind::<PreparedEffects>::Bool);
     let named = graph
         .declare(vec![], EffectPredicate::unconstrained(), &mut context)

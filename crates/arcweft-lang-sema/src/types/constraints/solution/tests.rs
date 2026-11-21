@@ -600,9 +600,11 @@ fn type_replacement_retains_caller_effect_reference_without_callee_substitution(
         let bound =
             EffectRow::closed(crate::effects::EffectSet::from_labels([effect]).expect("effect"));
         path.effects
+            .ambient
             .constrain_fixture_subset(&mut effect_graph, &opened, &bound, &mut context)
             .expect("effect upper bound");
         path.effects
+            .ambient
             .constrain_fixture_subset(&mut effect_graph, &bound, &opened, &mut context)
             .expect("effect lower bound");
         TypeConstraintSolution::complete_fixture_application(
@@ -796,10 +798,12 @@ fn closed_instantiation_enforces_retained_effect_predicate_and_work_limits() {
             crate::effects::EffectSet::from_labels(labels.iter().copied()).expect("effects"),
         );
         path.effects
+            .ambient
             .constrain_fixture_subset(&mut effect_graph, &row, &permitted, &mut context)
             .expect("upper bound");
         if role == Role::Bindable {
             path.effects
+                .ambient
                 .constrain_fixture_subset(&mut effect_graph, &permitted, &row, &mut context)
                 .expect("exact binding");
         }

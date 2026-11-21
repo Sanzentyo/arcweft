@@ -80,7 +80,6 @@ impl<D: ConstraintDomain, P> OriginalConstraintForest<D, P> {
                              graph: &mut PreparedEffectGraph| {
                                 let effects = ConstraintClosedEffects::for_branch(
                                     &prepared.branch,
-                                    &product.scope,
                                     Arc::clone(&sources),
                                     &prepared.effects,
                                     &inputs,

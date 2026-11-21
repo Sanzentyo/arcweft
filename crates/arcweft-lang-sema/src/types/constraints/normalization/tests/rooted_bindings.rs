@@ -305,7 +305,7 @@ fn an_imported_owner_retains_its_frame_but_does_not_authorize_an_unrelated_expor
         .fixture_application_scope((), parameters, &mut effect_graph)
         .unwrap();
     let parent = context.start_path(application, &mut effect_graph).unwrap();
-    let owner = parent.lineage.scope.clone();
+    let owner = parent.scope.clone();
     let lease = parent
         .applications
         .import_parameters(&[types[0].clone().into()])

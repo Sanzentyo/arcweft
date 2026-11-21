@@ -187,6 +187,7 @@ fn freshly_opened_scheme_predicates_reject_forbidden_effects_without_mutating_th
         openings.push(opening.clone());
         let actual = EffectRow::closed(EffectSet::from_labels(labels.iter().copied()).unwrap());
         path.effects
+            .ambient
             .constrain_relation(
                 &mut graph,
                 PreparedEffectRelation::AdmittedSubset,
@@ -275,33 +276,42 @@ fn known_callback_predicates_distinguish_callable_digests_and_selected_call_cand
     );
 
     let cancellation = AtomicBool::new(false);
-    let admitted = callbacks
-        .iter()
-        .map(|expected| {
-            let mut context = context(&cancellation);
-            let mut graph = PreparedEffectGraph::default();
-            let application = context
-                .fixture_application_scope((), TypeConstraintParameterScope::empty(), &mut graph)
-                .unwrap();
-            let path = context.start_path(application, &mut graph).unwrap();
-            let scope = GenericScope::default();
-            let expected = expected.prepare_effects(&scope, &mut context).unwrap();
-            let actual = reading.prepare_effects(&scope, &mut context).unwrap();
-            let expected = context.fixture_operand(expected);
-            let actual = context.fixture_operand(actual);
-            super::super::relate_selected_call(
-                &mut graph,
-                &expected.view(),
-                &actual.view(),
-                path,
-                &mut context,
-                super::super::ConstraintAcceptance::PatternAcceptsActual,
-            )
-            .unwrap()
-            .len()
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(admitted, [1, 0]);
+    for (index, expected) in callbacks.iter().enumerate() {
+        let mut context = context(&cancellation);
+        let mut graph = PreparedEffectGraph::default();
+        let application = context
+            .fixture_application_scope((), TypeConstraintParameterScope::empty(), &mut graph)
+            .unwrap();
+        let path = context.start_path(application, &mut graph).unwrap();
+        let scope = GenericScope::default();
+        let expected = expected.prepare_effects(&scope, &mut context).unwrap();
+        let actual = reading.prepare_effects(&scope, &mut context).unwrap();
+        let expected = context.fixture_operand(expected);
+        let actual = context.fixture_operand(actual);
+        let paths = super::super::relate_selected_call(
+            &mut graph,
+            &expected.view(),
+            &actual.view(),
+            path,
+            &mut context,
+            super::super::ConstraintAcceptance::PatternAcceptsActual,
+        )
+        .unwrap();
+        let [candidate] = paths.as_slice() else {
+            panic!("expected one candidate pending effect closure");
+        };
+        let effects = candidate.close_original_path_effects(&mut graph, &mut context);
+        if index == 0 {
+            effects.expect("the matching callback predicate and row admit the candidate");
+        } else {
+            assert!(matches!(
+                effects,
+                Err(TypeConstraintError::Rejected(
+                    TypeConstraintRejection::EffectUnsatisfiable
+                ))
+            ));
+        }
+    }
 }
 
 #[test]

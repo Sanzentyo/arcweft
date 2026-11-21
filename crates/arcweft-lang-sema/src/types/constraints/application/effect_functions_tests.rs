@@ -350,7 +350,7 @@ fn original_r_instantiates_the_registered_function_under_its_actual_gamma() {
             let owner = context.application_scope((), parameters, original.clone(), &mut graph)?;
             let function = owner.effect_function(&variable).unwrap().clone();
             let mut path = context.start_path_with_imported(owner, None, original, graph.read())?;
-            path.effects.constrain_relation(
+            path.effects.ambient.constrain_relation(
                 &mut graph,
                 PreparedEffectRelation::Equal,
                 &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), variable.clone())),
@@ -358,8 +358,9 @@ fn original_r_instantiates_the_registered_function_under_its_actual_gamma() {
                 context,
             )?;
             let prepared = path.applications.prepare_effect_predicate(
-                &path.effects,
-                &path.lineage.scope,
+                &path.effects.ambient,
+                path.effects.ambient.original_predicate(),
+                &path.scope,
                 &mut graph,
                 context,
             )?;
@@ -436,12 +437,14 @@ fn transitive_function_captures_extend_gamma_from_the_source_owners() {
         assert!(
             child
                 .effects
+                .ambient
                 .original_variables()
                 .any(|variable| variable == capture)
         );
     }
     child
         .effects
+        .ambient
         .constrain_relation(
             &mut graph,
             PreparedEffectRelation::Equal,
@@ -516,6 +519,7 @@ fn failed_r_projection_preserves_the_original_r_and_releases_new_terms() {
         .start_path_with_imported(owner, None, original, graph.read())
         .unwrap();
     path.effects
+        .ambient
         .constrain_relation(
             &mut graph,
             PreparedEffectRelation::Equal,
@@ -529,9 +533,10 @@ fn failed_r_projection_preserves_the_original_r_and_releases_new_terms() {
         0,
     )
     .into();
-    let source = path.effects.original_predicate().clone();
+    let source = path.effects.ambient.original_predicate().clone();
     let retained = graph.retained_terms();
-    let result = path.effects.project_registered_predicate(
+    let result = path.effects.ambient.project_registered_predicate(
+        &source,
         &BTreeMap::from([(
             variable,
             PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), foreign)),
@@ -540,7 +545,7 @@ fn failed_r_projection_preserves_the_original_r_and_releases_new_terms() {
         &mut context,
     );
     assert!(result.is_err());
-    assert_eq!(path.effects.original_predicate(), &source);
+    assert_eq!(path.effects.ambient.original_predicate(), &source);
     assert_eq!(graph.retained_terms(), retained);
     graph.read().validate_retained_predicate(&source).unwrap();
 }
@@ -633,6 +638,7 @@ fn imported_introduction_frames_survive_outside_the_parent_lexical_traversal() {
         .unwrap();
     child
         .effects
+        .ambient
         .constrain_relation(
             &mut graph,
             PreparedEffectRelation::Equal,
@@ -648,7 +654,13 @@ fn imported_introduction_frames_survive_outside_the_parent_lexical_traversal() {
         .unwrap();
     let prepared = child
         .applications
-        .prepare_effect_predicate(&child.effects, &joint, &mut graph, &mut context)
+        .prepare_effect_predicate(
+            &child.effects.ambient,
+            child.effects.ambient.original_predicate(),
+            &joint,
+            &mut graph,
+            &mut context,
+        )
         .unwrap();
     let mut references = BTreeSet::new();
     graph

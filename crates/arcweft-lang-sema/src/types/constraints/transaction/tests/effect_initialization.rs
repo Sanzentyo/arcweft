@@ -25,8 +25,10 @@ fn initialization_publishes_the_new_r_only_with_its_transaction() {
                 pure,
                 context,
             )?;
-            path.effects.restore_predicate(&predicate, graph, context)?;
-            issued = Some(path.effects.original_predicate().clone());
+            path.effects
+                .ambient
+                .restore_predicate(&predicate, graph, context)?;
+            issued = Some(path.effects.ambient.original_predicate().clone());
             let application = path.root_id();
             let transaction =
                 TypeConstraintTransaction::from_path(context, graph, application, path, None)?;
@@ -52,7 +54,9 @@ fn initialization_publishes_the_new_r_only_with_its_transaction() {
             let transaction = result.unwrap();
             graph
                 .read()
-                .validate_retained_predicate(transaction.frontier[0].effects.original_predicate())
+                .validate_retained_predicate(
+                    transaction.frontier[0].effects.ambient.original_predicate(),
+                )
                 .unwrap();
             assert!(graph.retained_terms().1 > terms.1);
         }

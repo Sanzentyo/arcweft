@@ -124,6 +124,7 @@ fn root_with_projection(
         .unwrap();
     if invalid {
         path.effects
+            .ambient
             .constrain_relation(
                 graph,
                 PreparedEffectRelation::Equal,
@@ -159,6 +160,7 @@ fn root_with_projection(
 fn branch(
     component: &Component,
     members: &Arc<[OriginalProductMember]>,
+    scope: &ConstraintLexicalScope,
     graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
     context: &mut Context<'_>,
 ) -> JointBranch<NoConstraintClient> {
@@ -173,21 +175,24 @@ fn branch(
     }
     JointBranch {
         lineage: Arc::clone(members),
+        scope: scope.clone(),
         applications: Arc::new(applications),
         bindings: BTreeMap::new(),
         const_bindings: BTreeMap::new(),
-        effects: EffectConstraintEnvironment::new_prepared(
-            &[EffectConstraintVariable::new(
-                input(),
-                EffectConstraintEligibility::Rigid,
-            )],
-            &crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
-                EffectPredicate::unconstrained(),
-            ),
-            graph,
-            context,
-        )
-        .unwrap(),
+        effects: crate::types::constraints::normalization::BranchEffectConstraints::new(
+            EffectConstraintEnvironment::new_prepared(
+                &[EffectConstraintVariable::new(
+                    input(),
+                    EffectConstraintEligibility::Rigid,
+                )],
+                &crate::effect_row::prepared::PreparedEffectPredicate::Canonical(
+                    EffectPredicate::unconstrained(),
+                ),
+                graph,
+                context,
+            )
+            .unwrap(),
+        ),
         equations: Vec::new(),
         choice_key: Vec::new(),
         deferred_cycles: DeferredCycleWitness::default(),
@@ -221,21 +226,21 @@ fn contradictory_joint_premises_cannot_erase_an_individual_sources_failure() {
                 &mut context,
             )
             .unwrap();
-        let mut branch = branch(&component, &members, graph.read(), &mut context);
+        let mut branch = branch(
+            &component,
+            &members,
+            &ConstraintLexicalScope::default(),
+            graph.read(),
+            &mut context,
+        );
         let impossible = graph.not(truth(), &mut context).unwrap();
         branch
             .effects
+            .ambient
             .restore_predicate(&impossible, &mut graph, &mut context)
             .unwrap();
         let (frozen, _) = component
-            .freeze_original_effects(
-                &branch,
-                &members,
-                &ConstraintLexicalScope::default(),
-                &original,
-                &mut graph,
-                &mut context,
-            )
+            .freeze_original_effects(&branch, &members, &original, &mut graph, &mut context)
             .unwrap();
         assert_eq!(
             frozen
@@ -326,16 +331,15 @@ fn a_later_use_is_not_an_original_label_or_type_root() {
             &mut context,
         )
         .unwrap();
-    let branch = branch(&component, &members, graph.read(), &mut context);
+    let branch = branch(
+        &component,
+        &members,
+        &ConstraintLexicalScope::default(),
+        graph.read(),
+        &mut context,
+    );
     let (frozen, _) = component
-        .freeze_original_effects(
-            &branch,
-            &members,
-            &ConstraintLexicalScope::default(),
-            &original,
-            &mut graph,
-            &mut context,
-        )
+        .freeze_original_effects(&branch, &members, &original, &mut graph, &mut context)
         .unwrap();
     assert!(support(&frozen).is_empty());
 }
@@ -373,7 +377,7 @@ fn independent_bound_premises_remain_independent_in_the_joint_domain() {
     let mut scope = ConstraintLexicalScope::default();
     for member in members.iter() {
         let path = component.original_path(*member).unwrap();
-        scope.merge(&path.lineage.scope, &mut context).unwrap();
+        scope.merge(&path.scope, &mut context).unwrap();
         path.applications
             .merge_lexical_scopes(&mut scope, &mut context)
             .unwrap();
@@ -382,21 +386,15 @@ fn independent_bound_premises_remain_independent_in_the_joint_domain() {
     let original = component
         .prepare_original_effects(&members, &scope, &mut graph, &mut context)
         .unwrap();
-    let mut branch = branch(&component, &members, graph.read(), &mut context);
+    let mut branch = branch(&component, &members, &scope, graph.read(), &mut context);
     let impossible = graph.not(truth(), &mut context).unwrap();
     branch
         .effects
+        .ambient
         .restore_predicate(&impossible, &mut graph, &mut context)
         .unwrap();
     let (frozen, _) = component
-        .freeze_original_effects(
-            &branch,
-            &members,
-            &scope,
-            &original,
-            &mut graph,
-            &mut context,
-        )
+        .freeze_original_effects(&branch, &members, &original, &mut graph, &mut context)
         .unwrap();
     // The two premises are jointly satisfiable. A false R must fail; equal
     // depth/slot spelling must not conflate the frames and make D vacuous.

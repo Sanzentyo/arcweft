@@ -442,7 +442,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
         for (frontier, root) in roots.iter_mut().enumerate() {
             for (path_index, path) in root.transaction.frontier.iter_mut().enumerate() {
                 context.enter_node()?;
-                for _ in path.lineage.scope.shape().binders() {
+                for _ in path.scope.shape().binders() {
                     context.enter_node()?;
                 }
                 let (value, reads) = context.with_effect_reads(
@@ -450,7 +450,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     path.lineage.effect_read_scope(),
                     |context, graph| {
                         let projection =
-                            context.with_original_scope(path.lineage.scope.clone(), |context| {
+                            context.with_original_scope(path.scope.clone(), |context| {
                                 let (opened, _) = super::ResolvedConstraintResult::resolve(
                                     root.result.clone(),
                                     path,
@@ -469,12 +469,7 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                             Ok(projection) => {
                                 let ty = original
                                     .gamma()
-                                    .transport_type(
-                                        &path.lineage.scope,
-                                        &projection.value,
-                                        graph,
-                                        context,
-                                    )
+                                    .transport_type(&path.scope, &projection.value, graph, context)
                                     .map_err(Self::projection_failure)?;
                                 context.enter_node()?;
                                 Ok::<_, PreparedValueFailure>(ValueContent::Available { ty })

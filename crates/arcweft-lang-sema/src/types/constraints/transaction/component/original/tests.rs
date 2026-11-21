@@ -759,6 +759,7 @@ fn another_original_binding_can_resolve_a_nonprincipal_effect_relation_before_co
     let union = row(0).union(&row(1), &mut context).unwrap();
     first.transaction.frontier[0]
         .effects
+        .ambient
         .constrain_fixture_subset(&mut effects, &log, &union, &mut context)
         .unwrap();
     assert!(matches!(
@@ -948,7 +949,7 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
     let (scope, ty, _) = parameters(1, 0);
     let enclosing = context.enter_binder_scope(GenericBinder::new(1, 0, 0));
     let first = frontier(&mut context, &mut effects, scope, &[]);
-    let owner = first.transaction.frontier[0].lineage.scope.clone();
+    let owner = first.transaction.frontier[0].scope.clone();
     let lease = first.transaction.frontier[0]
         .applications
         .import_parameters(&[ty[0].clone().into()])
@@ -994,7 +995,6 @@ fn joint_inference_retains_an_imported_owner_frame_absent_from_the_receiving_ori
     let second = lower.suspend_result(&mut context, ()).unwrap();
     assert!(
         second.transaction.frontier[0]
-            .lineage
             .scope
             .shape()
             .binders()

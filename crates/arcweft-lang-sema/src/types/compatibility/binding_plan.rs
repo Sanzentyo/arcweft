@@ -847,14 +847,7 @@ where
                 expected_header.admit(graph.read(), context)?;
                 found_header.admit(graph.read(), context)?;
                 let mut path = path;
-                path.effects
-                    .constrain_predicate_equality(
-                        graph,
-                        expected_header.predicate(),
-                        found_header.predicate(),
-                        context,
-                    )
-                    .map_err(TypeConstraintError::from)?;
+                path.constrain_header_predicates(&expected_header, &found_header, graph, context)?;
                 let expected_params = expected_children
                     .by_ref()
                     .take(expected_params.len())
@@ -881,10 +874,10 @@ where
                 for mut path in paths {
                     let (actual_effects, permitted_effects) = match relation.direction() {
                         ConstraintAcceptance::PatternAcceptsActual => {
-                            (found_header.row(), expected_header.row())
+                            (&found_header, &expected_header)
                         }
                         ConstraintAcceptance::ActualAcceptsPattern => {
-                            (expected_header.row(), found_header.row())
+                            (&expected_header, &found_header)
                         }
                     };
                     let effect_relation = if relation.exact_header() {
@@ -892,17 +885,13 @@ where
                     } else {
                         crate::effect_row::prepared::PreparedEffectRelation::AdmittedSubset
                     };
-                    match path
-                        .effects
-                        .constrain_relation(
-                            graph,
-                            effect_relation,
-                            actual_effects,
-                            permitted_effects,
-                            context,
-                        )
-                        .map_err(TypeConstraintError::from)
-                    {
+                    match path.constrain_header_rows(
+                        actual_effects,
+                        permitted_effects,
+                        effect_relation,
+                        graph,
+                        context,
+                    ) {
                         Ok(()) => effect_paths.push(path),
                         Err(TypeConstraintError::Rejected(_)) => {}
                         Err(error) => return Err(error),

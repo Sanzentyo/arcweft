@@ -10,10 +10,10 @@ use crate::{
     effects::EffectSet,
     types::{
         DetachedGenericOwnerId, GenericBinder, GenericDeclarationBinder, GenericEffectParameterId,
-        GenericParameterOwnerId, GenericScope, GenericScopeError,
+        GenericParameterOwnerId, GenericScope, GenericScopeError, TypeKind,
         constraints::{
             NoConstraintClient, OriginalProducerSource, OriginalRigidScope, TypeConstraintAbort,
-            TypeConstraintEffectScope, TypeConstraintParameterScope,
+            TypeConstraintEffectScope, TypeConstraintParameterScope, TypeConstraintRejection,
             context::{LocalConstraintAccounting, TypeConstraintLimits},
         },
     },
@@ -132,6 +132,73 @@ fn open(reference: GenericEffectReference) -> PreparedEffectRow {
     PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), reference))
 }
 
+#[test]
+fn sibling_callback_rows_keep_the_inference_functions_outer_dependencies() {
+    use crate::types::compatibility::binding_plan::unify_original_binding;
+
+    for accepts in [true, false] {
+        let cancellation = AtomicBool::new(false);
+        let mut context = context(&cancellation);
+        let mut graph = PreparedEffectGraph::default();
+        let binder = GenericBinder::new(0, 0, 1);
+        context
+            .with_binder(binder, |context| {
+                let (_, path, variable) = path(context, &mut graph, false, true);
+                let variable = variable.unwrap();
+                let ambient = context.lexical_scope().clone();
+                let header = ambient.with_binder(binder);
+                let outer = header.bound_effect(1, 0)?;
+                let local = header.bound_effect(0, 0)?;
+                let callback = |row| {
+                    TypeKind::function_with_contract(
+                        binder,
+                        EffectPredicate::unconstrained(),
+                        [],
+                        TypeKind::Unit,
+                        EffectRow::open(EffectSet::new(), row),
+                    )
+                };
+                let expected =
+                    TypeKind::Tuple(vec![callback(variable.clone()), callback(variable.clone())]);
+                let supplied = TypeKind::Tuple(vec![
+                    callback(outer.clone()),
+                    callback(if accepts { outer } else { local }),
+                ]);
+                let expected = expected.prepare_effects(&ambient, context).unwrap();
+                let supplied = supplied.prepare_effects(&ambient, context).unwrap();
+                let expected = context.fixture_operand(expected);
+                let supplied = context.fixture_operand(supplied);
+                let candidates = unify_original_binding(
+                    &mut graph,
+                    &expected.view(),
+                    &supplied.view(),
+                    path,
+                    context,
+                )?;
+                let [candidate] = candidates.as_slice() else {
+                    panic!("expected one candidate pending closure");
+                };
+                let effects = candidate.close_original_path_effects(&mut graph, context);
+                if accepts {
+                    let row = effects?.row(&variable).unwrap().value().clone();
+                    assert_eq!(
+                        row,
+                        EffectRow::open(EffectSet::new(), ambient.bound_effect(0, 0)?)
+                    );
+                } else {
+                    assert!(matches!(
+                        effects,
+                        Err(TypeConstraintError::Rejected(
+                            TypeConstraintRejection::EffectUnsatisfiable
+                        ))
+                    ));
+                }
+                Ok::<_, TypeConstraintError>(())
+            })
+            .unwrap();
+    }
+}
+
 fn quantified_inputs(frozen: &ScopedEffectCompletion) -> Vec<Vec<GenericEffectReference>> {
     let mut todo = vec![frozen.satisfiable()];
     let mut scopes = Vec::new();
@@ -160,7 +227,7 @@ fn the_actual_source_domain_controls_r_and_unused_gamma_is_retained() {
         context
             .with_binder(GenericBinder::new(0, 0, 2), |context| {
                 let (source, mut path, _) = path(context, &mut graph, constrained, false);
-                path.effects.constrain_relation(
+                path.effects.ambient.constrain_relation(
                     &mut graph,
                     PreparedEffectRelation::Equal,
                     &open(source.effects[0].clone()),
@@ -171,8 +238,8 @@ fn the_actual_source_domain_controls_r_and_unused_gamma_is_retained() {
                 let receipt = path.prepare_effect_constraint(&mut graph, context)?;
                 let frozen = graph.read().freeze_scoped(&[], &[], &[&receipt], context)?;
                 let mut expected = vec![
-                    path.lineage.scope.shape().bound_effect(0, 0)?,
-                    path.lineage.scope.shape().bound_effect(0, 1)?,
+                    path.scope.shape().bound_effect(0, 0)?,
+                    path.scope.shape().bound_effect(0, 1)?,
                 ];
                 expected.extend(source.effects.iter().cloned());
                 assert_eq!(quantified_inputs(&frozen), vec![expected]);
@@ -202,7 +269,7 @@ fn inference_inputs_use_actual_functions_and_do_not_become_universal_rows() {
                 .effect_function(&variable)
                 .unwrap()
                 .clone();
-            path.effects.constrain_relation(
+            path.effects.ambient.constrain_relation(
                 &mut graph,
                 PreparedEffectRelation::Equal,
                 &open(variable.clone()),
@@ -243,7 +310,7 @@ fn preparation_borrows_the_retained_frames_and_cancellation_preserves_the_branch
     context.restore_binder_scope(original_scope);
     let other_scope = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
     let other = context.lexical_frames().clone();
-    assert_ne!(&other, &path.lineage.scope);
+    assert_ne!(&other, &path.scope);
     path.prepare_effect_constraint(&mut graph, &mut context)
         .unwrap();
     assert_eq!(context.lexical_frames(), &other);
@@ -270,11 +337,12 @@ fn final_rows_keep_the_original_frames_and_only_their_actual_free_support() {
         let (source, mut path, key) = path(&mut context, &mut graph, false, true);
         let key = key.unwrap();
         let expected = if bound {
-            path.lineage.scope.shape().bound_effect(0, 0).unwrap()
+            path.scope.shape().bound_effect(0, 0).unwrap()
         } else {
             source.effects[0].clone()
         };
         path.effects
+            .ambient
             .constrain_relation(
                 &mut graph,
                 PreparedEffectRelation::Equal,
@@ -298,7 +366,7 @@ fn final_rows_keep_the_original_frames_and_only_their_actual_free_support() {
         context.restore_binder_scope(previous);
         let previous = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
         let caller_frames = context.lexical_frames().clone();
-        assert_ne!(&caller_frames, &path.lineage.scope);
+        assert_ne!(&caller_frames, &path.scope);
         let effects = ConstraintClosedEffects::for_path(
             &path,
             &bound_original,
@@ -309,7 +377,7 @@ fn final_rows_keep_the_original_frames_and_only_their_actual_free_support() {
         .unwrap();
         let row = effects.row(&key).unwrap();
         assert_eq!(row.value(), &EffectRow::open(EffectSet::new(), expected));
-        assert_eq!(row.scope(), &path.lineage.scope);
+        assert_eq!(row.scope(), &path.scope);
         assert_eq!(effects.context.original_context(), &path.lineage.original);
         let support = effects
             .context
@@ -331,7 +399,7 @@ fn an_older_minimum_cannot_silently_admit_a_new_source_fact() {
     let application = path.applications.effect_application(&key).unwrap();
     let mut edit = graph.edit_terms();
     let query = application
-        .transport(&path.lineage.scope, &mut edit, &mut context)
+        .transport(&path.scope, &mut edit, &mut context)
         .unwrap();
     edit.commit().unwrap();
     let receipt = path
@@ -347,6 +415,7 @@ fn an_older_minimum_cannot_silently_admit_a_new_source_fact() {
         .freeze(graph.read(), &mut context)
         .unwrap();
     path.effects
+        .ambient
         .constrain_relation(
             &mut graph,
             PreparedEffectRelation::Equal,

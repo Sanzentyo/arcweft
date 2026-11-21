@@ -1940,7 +1940,7 @@ where
         let mut path =
             ConstraintPath::empty_with_imported(application, effects, imported, scope, original);
         path.applications
-            .admit_captured_rigids(&mut path.effects, self)?;
+            .admit_captured_rigids(&mut path.effects.ambient, self)?;
         Ok(path)
     }
 
@@ -1980,12 +1980,16 @@ where
             ))?;
         self.charge_counter(nodes, Counter::Nodes)?;
         path.effects
+            .ambient
             .admit_variables(&application.parameters().opened_effect_variables())
             .map_err(TypeConstraintError::from)?;
         if !matches!(application.opened_effect_predicate(), PreparedEffectPredicate::Canonical(predicate) if predicate.is_unconstrained())
         {
-            path.effects
-                .restore_predicate(application.opened_effect_predicate(), graph, self)?;
+            path.effects.ambient.restore_predicate(
+                application.opened_effect_predicate(),
+                graph,
+                self,
+            )?;
         }
         std::sync::Arc::make_mut(&mut path.applications)
             .admit(application)
@@ -1993,7 +1997,7 @@ where
                 TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(error))
             })?;
         path.applications
-            .admit_captured_rigids(&mut path.effects, self)?;
+            .admit_captured_rigids(&mut path.effects.ambient, self)?;
         Ok(path)
     }
 
