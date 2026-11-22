@@ -12,6 +12,7 @@ use crate::{
             NoConstraintClient, OriginalProducerSource, OriginalRigidScope,
             TypeConstraintParameterScope, TypeConstraintProjectionClosure,
             context::{LocalConstraintAccounting, TypeConstraintLimits},
+            normalization::PreparedConstraintEffects,
             transaction::TypeConstraintTransaction,
         },
     },
@@ -239,17 +240,43 @@ fn contradictory_joint_premises_cannot_erase_an_individual_sources_failure() {
             .ambient
             .restore_predicate(&impossible, &mut graph, &mut context)
             .unwrap();
-        let (frozen, _) = component
+        let (frozen, joint) = component
             .freeze_original_effects(&branch, &members, &original, &mut graph, &mut context)
             .unwrap();
-        assert_eq!(
-            frozen
-                .reduce(&mut context)
-                .unwrap()
-                .satisfiable()
-                .truth_value(),
-            Some(!invalid)
+        let prepared = PreparedConstraintEffects::new(frozen, joint, &mut context)
+            .unwrap()
+            .bind(&mut graph, &mut context)
+            .unwrap();
+        let sources = members
+            .iter()
+            .map(|member| {
+                component
+                    .original_path(*member)
+                    .unwrap()
+                    .lineage
+                    .original
+                    .clone()
+            })
+            .collect::<Arc<[_]>>();
+        let inputs = graph.read().actual_inputs(&[], &mut context).unwrap();
+        let closed = ConstraintClosedEffects::for_branch(
+            &branch,
+            sources,
+            &prepared,
+            &inputs,
+            &mut graph,
+            &mut context,
         );
+        if invalid {
+            assert!(matches!(
+                closed,
+                Err(TypeConstraintError::Rejected(
+                    TypeConstraintRejection::EffectUnsatisfiable
+                ))
+            ));
+        } else {
+            closed.expect("a contradictory joint premise still admits individually valid roots");
+        }
         // Its sources are still independently retained, not rewritten by a
         // later product's joint facts.
         assert_eq!(original.sources.len(), 2);

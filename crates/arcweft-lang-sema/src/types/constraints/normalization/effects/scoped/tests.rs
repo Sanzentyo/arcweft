@@ -243,10 +243,24 @@ fn the_actual_source_domain_controls_r_and_unused_gamma_is_retained() {
                 ];
                 expected.extend(source.effects.iter().cloned());
                 assert_eq!(quantified_inputs(&frozen), vec![expected]);
-                assert_eq!(
-                    frozen.reduce(context)?.satisfiable().truth_value(),
-                    Some(constrained)
+                let original = PreparedConstraintEffects::new(frozen, receipt, context)?;
+                let closed = ConstraintClosedEffects::for_original_path(
+                    &path,
+                    original,
+                    &[],
+                    &mut graph,
+                    context,
                 );
+                if constrained {
+                    assert_eq!(closed?.context.original_context(), &path.lineage.original);
+                } else {
+                    assert!(matches!(
+                        closed,
+                        Err(TypeConstraintError::Rejected(
+                            TypeConstraintRejection::EffectUnsatisfiable
+                        ))
+                    ));
+                }
                 assert_eq!(path.effects, before);
                 Ok::<_, TypeConstraintError>(())
             })
@@ -291,10 +305,20 @@ fn inference_inputs_use_actual_functions_and_do_not_become_universal_rows() {
                     .len(),
                 3
             );
+            let original = PreparedConstraintEffects::new(frozen, receipt, context)?;
+            let closed = ConstraintClosedEffects::for_original_path(
+                &path,
+                original,
+                &[],
+                &mut graph,
+                context,
+            )?;
+            let row = closed.row(&variable).expect("solved inference function");
             assert_eq!(
-                frozen.reduce(context)?.satisfiable().truth_value(),
-                Some(true)
+                row.value(),
+                &EffectRow::open(EffectSet::new(), source.effects[0].clone()),
             );
+            assert_eq!(row.scope(), &path.scope);
             Ok::<_, TypeConstraintError>(())
         })
         .unwrap();
