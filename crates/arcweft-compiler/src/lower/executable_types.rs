@@ -59,8 +59,9 @@ impl RuntimeExecutableInstantiation<'_> {
         analysis: &FinalSemanticAnalysis,
     ) -> Result<Box<[RuntimeExecutableTypeProjection]>, RuntimeSemanticProjectionError> {
         let (module, callable_abis) = source;
-        let binding_abis = binding_annotation_abis(module, partition, analysis, origin, |ty| {
-            self.runtime_type(ty, symbols, world, analysis)
+        let error = |reason| origin.error(reason);
+        let binding_abis = binding_annotation_abis(module, partition, analysis, error, |_, ty| {
+            self.runtime_type(ty, symbols, world, analysis).map(Some)
         })?;
         let mut roots = binding_abis
             .iter()
@@ -69,7 +70,7 @@ impl RuntimeExecutableInstantiation<'_> {
         for root in callable_abis {
             roots.push(root);
         }
-        let source_type_abis = source_type_abis(module, origin, roots)?;
+        let source_type_abis = source_type_abis(module, roots, error)?;
         let mut projection = Vec::new();
         for expected in partition.expressions() {
             let owner = expected.owner();
@@ -169,17 +170,21 @@ impl RuntimeExecutableInstantiation<'_> {
 
 /// A binding annotation gets its executable type from the checked binding.
 /// The authored type remains available separately for source analysis.
-fn binding_annotation_abis(
+pub(super) fn binding_annotation_abis(
     module: &HirModule,
     partition: &CheckedExecutableRuntimeFactPartition,
     analysis: &FinalSemanticAnalysis,
-    origin: ProjectInstantiationOrigin,
-    mut project: impl FnMut(&TypeKind) -> Result<RuntimeNormalizedType, RuntimeSemanticProjectionError>,
+    error: impl Fn(&'static str) -> RuntimeSemanticProjectionError,
+    mut project: impl FnMut(
+        TypeId,
+        &TypeKind,
+    )
+        -> Result<Option<RuntimeNormalizedType>, RuntimeSemanticProjectionError>,
 ) -> Result<Vec<(TypeId, RuntimeNormalizedType)>, RuntimeSemanticProjectionError> {
     let mut annotations = Vec::new();
     for expected in partition.statements() {
         let statement = module.resolve_stmt(expected.owner()).map_err(|_| {
-            origin.error("binding annotation has no statement in its executable partition")
+            error("binding annotation has no statement in its executable partition")
         })?;
         let (HirStmtKind::Let {
             annotation: Some(annotation),
@@ -196,8 +201,10 @@ fn binding_annotation_abis(
         };
         let checked = analysis
             .pattern(*pattern)
-            .ok_or_else(|| origin.error("binding annotation has no checked binding pattern"))?;
-        annotations.push((*annotation, project(checked.ty())?));
+            .ok_or_else(|| error("binding annotation has no checked binding pattern"))?;
+        if let Some(abi) = project(*annotation, checked.ty())? {
+            annotations.push((*annotation, abi));
+        }
     }
     for expected in partition.patterns() {
         if expected.family() != CheckedExecutableRuntimePatternFactFamily::TypedBinding {
@@ -208,13 +215,15 @@ fn binding_annotation_abis(
             .resolve_pattern(owner)
             .ok()
             .and_then(|pattern| pattern.kind().authored_type())
-            .ok_or_else(|| origin.error("typed binding has no authored annotation"))?;
+            .ok_or_else(|| error("typed binding has no authored annotation"))?;
         let Some(CheckedPatternResolution::TypedBinding(binding)) =
             analysis.pattern(owner).map(|pattern| pattern.resolution())
         else {
-            return Err(origin.error("typed binding has no checked annotation"));
+            return Err(error("typed binding has no checked annotation"));
         };
-        annotations.push((annotation, project(binding.annotation())?));
+        if let Some(abi) = project(annotation, binding.annotation())? {
+            annotations.push((annotation, abi));
+        }
     }
     Ok(annotations)
 }
@@ -222,24 +231,23 @@ fn binding_annotation_abis(
 /// Associate authored structural type occurrences with the corresponding
 /// fields of the selected callable ABI. An omitted effect in a nested type
 /// annotation is completed by the same instance that owns the enclosing ABI.
-fn source_type_abis<'a>(
+pub(super) fn source_type_abis<'a>(
     module: &HirModule,
-    origin: ProjectInstantiationOrigin,
     mut pending: Vec<(TypeId, &'a RuntimeNormalizedType)>,
+    error: impl Fn(&'static str) -> RuntimeSemanticProjectionError,
 ) -> Result<BTreeMap<TypeId, &'a RuntimeNormalizedType>, RuntimeSemanticProjectionError> {
     let mut types = BTreeMap::new();
     while let Some((owner, abi)) = pending.pop() {
         if let Some(previous) = types.insert(owner, abi) {
             if previous != abi {
-                return Err(origin.error("source type has conflicting executable ABI fields"));
+                return Err(error("source type has conflicting executable ABI fields"));
             }
             continue;
         }
-        let ty = module.resolve_type(owner).map_err(|_| {
-            origin.error("executable ABI field has no matching authored type occurrence")
-        })?;
-        let mismatch =
-            || origin.error("authored structural type does not match its executable ABI");
+        let ty = module
+            .resolve_type(owner)
+            .map_err(|_| error("executable ABI field has no matching authored type occurrence"))?;
+        let mismatch = || error("authored structural type does not match its executable ABI");
         let (children, fields) = match (ty.kind(), abi.shape()) {
             (HirTypeKind::Tuple(children), RuntimeTypeShape::Tuple(fields))
             | (HirTypeKind::Choice(children), RuntimeTypeShape::Choice(fields)) => {

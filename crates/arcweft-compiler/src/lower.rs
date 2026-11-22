@@ -899,9 +899,16 @@ fn project_runtime_semantic_fact_inventories(
         runtime_expression_type_owners.extend(program_owners.selected_expression_type_owners()?);
     }
     let mut input = RuntimePlanSemanticFactInput::new();
-    // Reuse the executable partition's sealed classification in the global
-    // projection. Semantic callable values never enter runtime normalization.
+    let modules_by_id = project
+        .modules()
+        .map(|(_, module)| (module.module_id(), module.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let closed_type = |owner| closed_instance_type_owners.contains(&HirValueTypeOwner::Type(owner));
+    let annotation_error = |reason: &str| RuntimeSemanticProjectionError::Type {
+        reason: reason.to_owned(),
+    };
     let mut semantic_values = BTreeMap::new();
+    let mut binding_abis = BTreeMap::<_, Vec<_>>::new();
     for owners in std::iter::once(runtime_owners).chain(program_owners) {
         for executable in owners.reachable_executables() {
             let partition = execution_projection.runtime_fact_partition(owners, executable)?;
@@ -910,7 +917,47 @@ fn project_runtime_semantic_fact_inventories(
                     semantic_values.entry(proof.owner()).or_insert(proof);
                 }
             }
+            let Some(ty) = partition
+                .types()
+                .iter()
+                .find(|ty| ty.has_runtime_type() && !closed_type(ty.owner()))
+            else {
+                continue;
+            };
+            let module_id = ty.owner().module();
+            let module = modules_by_id
+                .get(&module_id)
+                .ok_or_else(|| annotation_error("runtime annotation has no executable module"))?;
+            let annotations = executable_types::binding_annotation_abis(
+                module,
+                &partition,
+                analysis,
+                annotation_error,
+                |owner, ty| {
+                    if closed_type(owner)
+                        || !owners.contains_type(owner)
+                        || partition
+                            .semantic_value_type(HirValueTypeOwner::Type(owner))
+                            .is_some()
+                    {
+                        return Ok(None);
+                    }
+                    runtime_type(ty, symbols, world, analysis).map(Some)
+                },
+            )?;
+            binding_abis
+                .entry(module_id)
+                .or_default()
+                .extend(annotations);
         }
+    }
+    let mut source_type_abis = BTreeMap::new();
+    for (module, bindings) in &binding_abis {
+        source_type_abis.extend(executable_types::source_type_abis(
+            modules_by_id[module],
+            bindings.iter().map(|(owner, ty)| (*owner, ty)).collect(),
+            annotation_error,
+        )?);
     }
     input.attach_checked_local_uses(Arc::clone(analysis.checked_local_uses()));
     for template in format_templates {
@@ -1072,11 +1119,15 @@ fn project_runtime_semantic_fact_inventories(
         if runtime_owners.contains_type(owner)
             || program_owners.is_some_and(|owners| owners.contains_type(owner))
         {
-            if closed_instance_type_owners.contains(&HirValueTypeOwner::Type(owner)) {
+            if closed_type(owner) {
                 continue;
             }
             if let Some(proof) = semantic_values.remove(&HirValueTypeOwner::Type(owner)) {
                 input.push_semantic_value_projection(proof);
+                continue;
+            }
+            if let Some(abi) = source_type_abis.get(&owner) {
+                input.push_type(owner, (*abi).clone());
                 continue;
             }
             input.push_type(
@@ -1133,10 +1184,6 @@ fn project_runtime_semantic_fact_inventories(
         }
     }
 
-    let expression_modules = project
-        .modules()
-        .map(|(_, module)| (module.module_id(), module.as_ref()))
-        .collect::<BTreeMap<_, _>>();
     let mut scope_try_sites = BTreeMap::<_, Vec<_>>::new();
     for (owner, expression) in analysis.expressions() {
         if matches!(expression.resolution(), CheckedExpressionResolution::Try(_))
@@ -1218,7 +1265,7 @@ fn project_runtime_semantic_fact_inventories(
                 runtime_evaluated_effect(effect, symbols, world, analysis)?,
             );
         }
-        let module = expression_modules
+        let module = modules_by_id
             .get(&owner.module())
             .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
         if let Some(scope) = (scopes::ScopeProjection {

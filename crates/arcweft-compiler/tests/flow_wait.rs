@@ -630,6 +630,52 @@ flow main() -> i64 {
 }
 
 #[test]
+fn annotated_callbacks_returned_from_one_prefix_survive_a_wait() {
+    let body = r#"
+fn repeat<T>(callback: T -> i64, value: T, remaining: i64) -> i64 {
+    if remaining == 0i64 { callback(value) } else { repeat(callback, value, remaining - 1i64) }
+}
+
+fn prepare<A, B>(prefix: A, later: B)[body: DialogueContent = {
+    let _ = prefix
+    let _ = later
+    log.info("default")
+    fmt("default")
+}] -> DialogueContent { body }
+
+fn deliver<A, B>(prefix: A)(later: B, callback: B -> i64) -> (B -> i64) {
+    let _ = prepare(prefix, later)
+    callback
+}
+flow main() -> i64 {
+    let shared = deliver({ log.info("prefix"); 7i64 })
+    let message = "captured"
+    let increment = 1i64
+    let text: String -> i64 = shared({ log.info("text argument"); "text" }, |value: String| {
+        log.info(message)
+        if value == "text" { 1i64 } else { 0i64 }
+    })
+    let number: i64 -> i64 = shared({ log.info("number argument"); 40i64 }, |value: i64| value + increment)
+    wait(0.1s)
+    return repeat(text, "text", 1i64) + repeat(number, 40i64, 1i64)
+}
+"#;
+    let (engine, executor) = artifact_bound_entry(body, "annotated-callback-resume.arcw");
+    assert_wait_in_both_executors(
+        engine,
+        executor,
+        &[
+            "prefix",
+            "text argument",
+            "default",
+            "number argument",
+            "default",
+        ],
+        &["captured"],
+    );
+}
+
+#[test]
 fn recursive_body_function_values_resume_with_a_shared_generic_prefix() {
     let body = r#"
 fn left<T>(value: T, count: i64) -> T {
@@ -877,8 +923,17 @@ flow main() -> i64 {{
 }
 
 fn assert_shared_prefix_wait_in_both_executors(
+    engine: Engine,
+    executor: ArcweftRuntimeExecutor,
+    after_wait: &[&str],
+) {
+    assert_wait_in_both_executors(engine, executor, &["prefix"], after_wait);
+}
+
+fn assert_wait_in_both_executors(
     mut engine: Engine,
     executor: ArcweftRuntimeExecutor,
+    before_wait: &[&str],
     after_wait: &[&str],
 ) {
     let options = RuntimeStepOptions {
@@ -886,7 +941,7 @@ fn assert_shared_prefix_wait_in_both_executors(
         budget: RuntimeStepBudget { max_ops: 1 },
         ..Default::default()
     };
-    assert_prefix_resume(after_wait, |nanos| {
+    assert_prefix_resume(before_wait, after_wait, |nanos| {
         engine.step(
             RuntimeStepInput {
                 dt: LogicalDuration::from_nanos(nanos),
@@ -897,7 +952,7 @@ fn assert_shared_prefix_wait_in_both_executors(
     });
 
     let mut executor = Some(executor);
-    assert_prefix_resume(after_wait, |nanos| {
+    assert_prefix_resume(before_wait, after_wait, |nanos| {
         let (restored, result) =
             product_step_with_options(executor.take().unwrap(), nanos, options);
         executor = Some(restored);
@@ -905,7 +960,11 @@ fn assert_shared_prefix_wait_in_both_executors(
     });
 }
 
-fn assert_prefix_resume(after_wait: &[&str], mut step: impl FnMut(u64) -> RuntimeStepResult) {
+fn assert_prefix_resume(
+    before_wait: &[&str],
+    after_wait: &[&str],
+    mut step: impl FnMut(u64) -> RuntimeStepResult,
+) {
     let mut next_boundary = |elapsed| {
         let mut logs = Vec::new();
         let mut waits = Vec::new();
@@ -947,7 +1006,7 @@ fn assert_prefix_resume(after_wait: &[&str], mut step: impl FnMut(u64) -> Runtim
     };
     let (status, _, logs, waits) = next_boundary(0);
     assert!(matches!(status, FlowFiberStatus::DurationWaiting(_)));
-    assert_eq!(logs, ["prefix"]);
+    assert_eq!(logs, before_wait);
     assert_eq!(waits, [LogicalDuration::from_nanos(100_000_000)]);
     let (status, ops, logs, waits) = next_boundary(40_000_000);
     assert!(matches!(status, FlowFiberStatus::DurationWaiting(_)));
