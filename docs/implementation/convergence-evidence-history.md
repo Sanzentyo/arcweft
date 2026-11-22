@@ -21594,3 +21594,19 @@ Sema library は2,035件中2,020 PASS／15既知FAIL。前回の実行から4件
 初期のコンパイル失敗、中断したビルド、import配置を修正する前の集計も原本に収録した。
 
 [検証原本](acceptance-evidence/task-prepared-owner-boundaries.raw.zip) は25項目、697,338 bytes、SHA256 `3985416abe88d2f0096e01748b873bbf870e82907995687e9ec19080ea533b66`。各項目の長さと SHA256 を照合した。検証後の `target` は136,177,163,058 bytes。
+
+<a id="completed-source-captures"></a>
+
+## 2026-11-22 — 確定スコープと宣言由来の捕捉を回帰検証
+
+検証基点は `d637d53982357ce41d2573a159d74532d8c309e3`。Semaのテスト3ファイルを Source `37f6e4ab5a60dfefac5c9651bab6e2802931756a` として `main` に push し、公開 ref と変更 blob を照合した。照合時の追跡差分は0、既存の未追跡1パスがある。
+
+型・定数の正しい再オープンと兄弟の捕捉への差し替え拒否を、元の宣言から作った値で検証した。受け手が同じ型宣言を知っていても、値自身の元の宣言に由来する参照権限は必要だった。ルートの述語を置換するとそのヘッダーだけが使う捕捉は消え、子の関数が使う捕捉は残った。materialization の入力と出力は元のスコープだけを保持し、異なる binder に移った受け手のスコープも復元された。
+
+残る効果境界の試行では、元の宣言に明示した上限を使うと候補は確定したが、実入力を渡さない直後の `close_instantiation(None)` が成功した。親の効果変数に選択した子の固定行との等値を要求した試行では、子の捕捉元を明示しても最終確定が `EffectUnsatisfiable` だった。両方の戻り箇所を LLDB で照合し、試行の差分は公開コミットに含めず結果とトレースを原本に収録した。
+
+別の継続ケースを既存のCLIバイナリで再現した。外側のコールバックの効果を推論する関数内で段階適用し、途中の関数を束縛する形と連続で呼ぶ形の両方が型検査で拒否された。LLDB は実際のCLIでも `PreparedEffectDefinitions::complete_residual_rows` の `ParameterContract` で止まった。一段にした呼び出し、効果を明示した外側の関数、閉じた外側での段階適用、コールバックを直接呼ぶ対照は型検査を通過した。一段の呼び出しと効果を明示した外側の関数は bytecode VM／AWBC Product の全4実行で戻り値42、各ステップ最大1操作、診断0件だった。再現ソース、実行引数、バイナリのSHA256を原本に記録した。
+
+Sema library は2,035件中2,024 PASS／11既知FAIL。前回の実行から4件が FAIL から PASS となり、追加・欠落・新規FAILは0。変更ファイルの書式、Semaの全ターゲット・全機能の check と Clippy、構造ゲートは終了0。変更3ファイルはテスト用モジュール。逆依存の製品入力を照合し、非CLI逆依存の Sema library 以外2,320 PASS／1 SKIPとCLI226 PASSは、同じ製品入力の実測を参照した。[前回の横断実測](#residual-closure)・[元の効果述語の検証](#prepared-owner-boundaries)
+
+[検証原本](acceptance-evidence/task-completed-source-captures.raw.zip) は57項目、782,213 bytes、SHA256 `1d2ba2bbb5c09733ba676c47c8337ea747522fb82aefb23547ca430d09379311`。各項目の長さと SHA256 を照合した。検証後の `target` は136,177,182,004 bytes。
