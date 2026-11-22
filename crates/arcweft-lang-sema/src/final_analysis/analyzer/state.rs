@@ -462,7 +462,10 @@ impl CandidateSemanticProjection {
     pub(super) fn probe_effect_reads(
         &self,
     ) -> Option<&crate::effect_row::prepared::PreparedEffectReadScope> {
-        self.data.probe_effect_reads.as_ref()
+        match &self.data.probe_effect_reads {
+            ProbeEffectReads::Detached(scope) => Some(scope),
+            ProbeEffectReads::Unprepared | ProbeEffectReads::Live => None,
+        }
     }
 
     pub(super) fn visit_effect_types<'p, E>(
@@ -626,8 +629,14 @@ impl CandidateSemanticProjection {
 struct CandidateSemanticProjectionData {
     authority: CandidateProjectionAuthority,
     graph_delta: PreparedCallGraphDelta<AnalyzerPreparedCallPrefix, AnalyzerPreparedUnselectedCall>,
-    probe_effect_reads: Option<crate::effect_row::prepared::PreparedEffectReadScope>,
+    probe_effect_reads: ProbeEffectReads,
     facts: CandidateProjectionFacts,
+}
+
+enum ProbeEffectReads {
+    Unprepared,
+    Live,
+    Detached(crate::effect_row::prepared::PreparedEffectReadScope),
 }
 
 struct CandidateProjectionFacts {
@@ -2170,7 +2179,7 @@ impl SemanticFactState {
                 epoch: self.epoch,
             },
             graph_delta,
-            probe_effect_reads: None,
+            probe_effect_reads: ProbeEffectReads::Unprepared,
             facts: CandidateProjectionFacts {
                 source_type_decisions: self.source_type_decisions.split_off(decision_start),
                 locals: owners
@@ -2560,13 +2569,17 @@ impl SemanticFactState {
         control: &mut C,
     ) -> Result<(), CandidateFactMutationFailure<C::Error>> {
         self.require_candidate_projection_owner(projection)?;
-        if projection.data.probe_effect_reads.is_some() {
+        if !matches!(
+            projection.data.probe_effect_reads,
+            ProbeEffectReads::Unprepared
+        ) {
             return Err(CandidateFactTransactionViolation::ProjectionAuthorityMismatch.into());
         }
         let effects = self
             .prepared_calls()?
             .retain_probe_effect_reads(&projection.data.graph_delta, control)?;
-        projection.data.probe_effect_reads = Some(effects);
+        projection.data.probe_effect_reads =
+            effects.map_or(ProbeEffectReads::Live, ProbeEffectReads::Detached);
         Ok(())
     }
 

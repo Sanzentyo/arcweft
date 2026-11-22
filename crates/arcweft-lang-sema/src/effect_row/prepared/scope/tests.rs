@@ -628,6 +628,22 @@ fn live_reads_keep_the_exact_issuer_and_base_without_a_detached_layer() {
         .extract_delta(&mut checkpoint, &mut Budget(1))
         .unwrap();
     assert!(matches!(
+        graph.retain_probe_reads(&empty, &mut Budget(0)),
+        Err(PreparedEffectFailure::Control(Exhausted))
+    ));
+    assert!(
+        graph
+            .retain_probe_reads(&empty, &mut Budget(1))
+            .unwrap()
+            .is_none()
+    );
+    assert!(matches!(
+        foreign.retain_probe_reads(&empty, &mut Budget(1)),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ForeignIssuer
+        ))
+    ));
+    assert!(matches!(
         graph.read_scope([&empty], &mut Budget(1)),
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
@@ -652,6 +668,12 @@ fn live_reads_keep_the_exact_issuer_and_base_without_a_detached_layer() {
     let mut restore = graph.checkpoint(&mut work).unwrap();
     graph.restore_delta(delta, &mut work).unwrap();
     graph.read().validate_choice(&choice).unwrap();
+    assert!(matches!(
+        graph.retain_probe_reads(&empty, &mut Budget(1)),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::DeltaBase
+        ))
+    ));
     assert!(matches!(
         graph.read_scoped(&reads, &mut Budget(1)),
         Err(PreparedEffectFailure::Invariant(
@@ -697,6 +719,11 @@ fn derived_terms_share_unmodified_indexes_and_keep_the_exact_layer() {
     let empty = edit.finish(&mut work).unwrap();
     let same = graph.read_scope([&empty], &mut work).unwrap();
     assert!(same.same_selection(&input));
+    let retained = graph
+        .retain_probe_reads(&empty, &mut work)
+        .unwrap()
+        .unwrap();
+    assert!(retained.same_selection(&input));
 
     let mut edit = graph.edit_scope(&input, &mut work).unwrap();
     let predicate = edit

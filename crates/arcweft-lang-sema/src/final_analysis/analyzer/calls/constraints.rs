@@ -1813,7 +1813,9 @@ impl<'a, 'project, 'catalog, 'control>
         };
         match (checked.actual, checked.pending_child) {
             (Some(actual), None) => {
-                if let Some(owner) = source.expression_owner() {
+                if let Some(owner) = source.expression_owner()
+                    && !actual.actual().constraint_shape().is_closed_leaf()
+                {
                     let mut roots = crate::types::PreparedTypeEffectRoots::default();
                     let source_failure =
                         |error| source_analysis_failure(source_id, SourcePhase::Probe, error);

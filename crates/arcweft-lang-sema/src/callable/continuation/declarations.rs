@@ -154,14 +154,6 @@ impl PreparedCallableEffectDeclarations {
         Ok(read(graph, control))
     }
 
-    pub(super) fn retain_probe_effect_reads<C: DecisionControl>(
-        &self,
-        delta: &PreparedRelationDelta,
-        control: &mut C,
-    ) -> Result<PreparedEffectReadScope, PreparedEffectFailure<C::Error>> {
-        self.graph.read_scope([delta], control)
-    }
-
     pub(super) fn validate_checkpoint(
         &self,
         checkpoint: &crate::effect_row::prepared::PreparedEffectCheckpoint,
@@ -344,6 +336,30 @@ impl PreparedCallableEffectDeclarations {
 }
 
 impl<P, U> PreparedCallGraph<P, U> {
+    fn extracted_effect_relation<'a>(
+        &'a self,
+        delta: &'a PreparedCallGraphDelta<P, U>,
+    ) -> Result<(&'a PreparedEffectGraph, &'a PreparedRelationDelta), CallConstraintInvariant> {
+        self.validate_delta(delta)?;
+        let (Some(declarations), Some(relation)) = (&self.declarations, &delta.relation) else {
+            return Err(CallConstraintInvariant::InvalidPreparedNodeState);
+        };
+        Ok((&declarations.graph, relation))
+    }
+
+    /// A closed callback can retain its detached effect reads. The projection
+    /// owns the affine publication permit.
+    pub(crate) fn retain_probe_effect_reads<C: DecisionControl>(
+        &self,
+        delta: &PreparedCallGraphDelta<P, U>,
+        control: &mut C,
+    ) -> Result<Option<PreparedEffectReadScope>, PreparedCallGraphMutationFailure<C::Error>> {
+        let (graph, relation) = self.extracted_effect_relation(delta)?;
+        graph
+            .retain_probe_reads(relation, control)
+            .map_err(PreparedCallGraphMutationFailure::effect)
+    }
+
     pub(crate) fn retain_child_effect_reads<
         D: crate::types::constraints::ConstraintDomain,
         C: DecisionControl,
@@ -353,13 +369,12 @@ impl<P, U> PreparedCallGraph<P, U> {
         pending: &mut crate::types::constraints::PendingChildConstraint<D>,
         control: &mut C,
     ) -> Result<(), PreparedCallGraphMutationFailure<C::Error>> {
-        let reads = self.retain_probe_effect_reads(delta, control)?;
-        let declarations = self
-            .declarations
-            .as_ref()
-            .ok_or(CallConstraintInvariant::InvalidPreparedNodeState)?;
+        let (graph, relation) = self.extracted_effect_relation(delta)?;
+        let reads = graph
+            .read_scope([relation], control)
+            .map_err(PreparedCallGraphMutationFailure::effect)?;
         pending
-            .retain_effect_reads(&declarations.graph, &reads, control)
+            .retain_effect_reads(graph, &reads, control)
             .map_err(PreparedCallGraphMutationFailure::effect)
     }
 

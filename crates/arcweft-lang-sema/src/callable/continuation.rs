@@ -1288,22 +1288,6 @@ impl<P, U> PreparedCallGraph<P, U> {
         self.effects.extracted_view(&delta.effects)
     }
 
-    /// A closed callback can keep reading the relation in its own extracted
-    /// projection. Only the projection owns the affine publication permit.
-    pub(crate) fn retain_probe_effect_reads<C: DecisionControl>(
-        &self,
-        delta: &PreparedCallGraphDelta<P, U>,
-        control: &mut C,
-    ) -> Result<PreparedEffectReadScope, PreparedCallGraphMutationFailure<C::Error>> {
-        self.validate_delta(delta)?;
-        let (Some(declarations), Some(relation)) = (&self.declarations, &delta.relation) else {
-            return Err(CallConstraintInvariant::InvalidPreparedNodeState.into());
-        };
-        declarations
-            .retain_probe_effect_reads(relation, control)
-            .map_err(PreparedCallGraphMutationFailure::effect)
-    }
-
     pub(crate) fn request_effect_projection<C: DecisionControl>(
         &mut self,
         site: PreparedCallableEffectProjectionSite,

@@ -166,6 +166,25 @@ impl PreparedEffectGraph {
         }
     }
 
+    /// Retain callback reads that need detached definitions or ancestry.
+    pub(crate) fn retain_probe_reads<C: DecisionControl>(
+        &self,
+        delta: &PreparedEffectDelta,
+        control: &mut C,
+    ) -> Result<Option<PreparedEffectReadScope>, PreparedEffectFailure<C::Error>> {
+        if delta.layer().is_none()
+            && delta.dependencies.is_none()
+            && self
+                .active_scope
+                .as_ref()
+                .is_none_or(|scope| scope.input.detached().is_none())
+        {
+            self.validate_delta_base(delta, control)?;
+            return Ok(None);
+        }
+        self.read_scope([delta], control).map(Some)
+    }
+
     /// The scope shares definitions and whole original obligations, not the
     /// affine delta token needed to publish them. Flat layers avoid recursive
     /// ownership chains when a deep sequence of source preparations is dropped.
