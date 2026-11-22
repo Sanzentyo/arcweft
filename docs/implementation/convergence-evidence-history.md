@@ -21504,3 +21504,19 @@ Sema library は2,035件中1,997 PASS／38既知FAIL。Cargo graph で22パッ�
 Sema library は2,035件中1,998 PASS／37既知FAIL。Cargo graph で Sema を含む22パッケージを確認し、非CLIの21パッケージは4,318 PASS／37既知FAIL／1 SKIPだった。旧テストと後継テストを対応させた比較で、成否の変化はこの1件の FAIL から PASS だった。CLI のライブラリ・バイナリ196件と統合6対象30件はすべて通過した。受入・公開済みの Generic Match C3/C5 の151件と、4,096単位の予算による256候補の検査も通過した。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。変更箇所では `seal_nominal_draft` の引数数と `PreparedEntryFlowTarget::admit` の省略可能なライフタイム指定に関する Clippy の警告が増えた。
 
 [検証原本](acceptance-evidence/task-initial-flow-publication.raw.zip) は29項目、1,229,651 bytes、SHA256 `d81452ae0ef7678169fca8e26975771e5fabe976209bc1ad25f4cc9c1c8dfe57`。各項目の長さとSHA256を照合した。検証後の `target` は136,172,981,468 bytesで、`cargo clean` の目安は300 GB。
+
+<a id="expression-retry-preparation"></a>
+
+## 2026-11-22 — 式の拒否後の再試行
+
+検証基点は `eebbff9b7880b61b3d58e3010dc8f1b701aa5520`。製品 Source `acad901b6aff19edf1ed58b57783378bf0241219` を `main` へ通常 push し、公開 ref と変更 blob を照合した。
+
+LLDB で失敗中の2件を追跡した。未知名を再試行するテストでは `prepare_path_expression` がソース型の準備情報を要求した時点で検査済み callable の登録情報が欠けていた。暗黙関数を再検査するテストでは、`if` の条件にある `_` の型を確認する時点で効果宣言が欠けていた。製品の callable 準備を一つのメソッドにまとめ、式を直接評価するテストでも同じ宣言グラフ、効果式、検査済み callable の準備を通るようにした。
+
+`uncached_expression_failure_retry_cleans_structured_guard` は単純名、メンバーの受け手、`crate::` 付きパスについて、各2回の評価で同じ `sema.value.unknown_symbol` と元の範囲を確認した。`failed_implicit_branch_synthesis_restores_scope_before_contextual_recheck` は文脈なしの拒否を保ち、`i64` を受け取る文脈でもスコープ内の条件 `_` で拒否されることを検査した。各拒否後の式事実と暗黙関数スコープを確認し、同じ `if` が `Bool -> Vec<i64>` で成功し、条件 `_` が元の暗黙関数に束縛された。
+
+Sema library は2,035件中2,000 PASS／35既知FAIL。Cargo graph で Sema を含む22パッケージを確認し、非CLIの21パッケージは4,320 PASS／35既知FAIL／1 SKIPだった。前回からの成否の変化は上記2件の FAIL から PASS。CLI のライブラリ・バイナリ196件と統合6対象30件はすべて通過した。受入・公開済みの Generic Match C3/C5 の151件も通過した。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。変更2ファイルの Clippy 警告は、行数の数値を正規化すると前回と種類・件数が一致した。
+
+現状一覧の冒頭から、単一の「今回の検証対象」として掲げていた `e532add1f489780d75aacd5e1f356dafef4d9b5c` を削除した。検証の対象 Source は行ごとに異なる。対応する効果判定／Core の逆依存検証の SHA と結果は、該当行と検証履歴に保持した。
+
+[検証原本](acceptance-evidence/task-expression-retry-preparation.raw.zip) は28項目、1,195,845 bytes、SHA256 `92493c0f3baa0eb1d72d6c119fc1e04b39fdfb7c34b88b05e31811b204c2956b`。各項目の長さとSHA256を照合した。検証後の `target` は136,173,263,083 bytes。
