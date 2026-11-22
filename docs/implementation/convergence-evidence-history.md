@@ -21534,3 +21534,17 @@ Sema library は2,035件中2,000 PASS／35既知FAIL。Cargo graph で Sema を�
 Sema library は2,035件中2,002 PASS／33既知FAIL。Cargo graph で Sema を含む22パッケージを確認し、非CLIの21パッケージは4,322 PASS／33既知FAIL／1 SKIPだった。公開済み基点から成否が変わったのは、`rejected_source_projection_retains_exact_lower_relation_authority` と `multiple_frontier_relation_failures_choose_the_first_typed_row` の FAIL から PASS。CLI のライブラリ・バイナリ196件と統合6対象30件はすべて通過。受入・公開済みの Generic Match C3/C5 の151件も通過した。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。スロット照合の回帰テストには行数に関する Clippy の警告が1件増えた。
 
 [検証原本](acceptance-evidence/task-dialogue-rejection-source.raw.zip) は31項目、1,262,839 bytes、SHA256 `84428c1bc8a2a0783b3c54fb23480448c0769e5cd2acbd0119a99e3e189e3b71`。各項目の長さと SHA256 を照合した。検証後の `target` は136,173,519,590 bytes。
+
+<a id="forest-opening"></a>
+
+## 2026-11-22 — 合同推論で共有した元の適用の確定
+
+検証基点は `bb67854424e45014fd6855e2df718b55cdee298a`。製品 Source `48d1b311a39c4238b66debdedd5942e4c18eadd2` を `main` へ通常 push し、公開 ref と変更 blob を照合した。
+
+LLDB で、型と定数の別名を共有するケースと、一方の入力が他方の効果関係を確定するケースが `MaterializationInput::from_closed_original` の所有者検査で `OriginalProducer` を返すことを確認した。合同推論の統合と結果の確定は、適用のパラメーター契約、導入時のスコープ、元 producer、発行済みの効果関数による同じ照合を使う。別々に保持した行を照合するときは、両側の効果述語と効果関数の参照を現在のグラフで検証する。同じスコープ形状を持つ別 producer と、発行元の効果関数が残っていてもロールバック済みの行を拒否した。
+
+取消しの LLDB 追跡では、合同推論の確定に入る前に効果グラフのチェックポイントが型制約の `Cancelled` を返していた。値を準備する境界で、効果計算の制御エラーが持つ型制約エラーを保持するようにした。確定を取り消したときに合同推論の入力、グラフ項、スコープを保持し、取消し解除後に同じ入力を確定できた。
+
+Sema library は2,035件中2,005 PASS／30既知FAIL。Cargo graph で Sema を含む22パッケージを確認し、非CLIの21パッケージは4,325 PASS／30既知FAIL／1 SKIPだった。公開済み基点からの成否の変化は上記3件の FAIL から PASS。CLI のライブラリ・バイナリ196件と統合6対象30件はすべて通過。受入・公開済みの Generic Match C3/C5 の151件も通過した。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。変更5ファイルの Clippy 警告は、行数の数値を正規化すると前回と種類・件数が一致した。
+
+[検証原本](acceptance-evidence/task-forest-opening.raw.zip) は31項目、1,198,242 bytes、SHA256 `b4c2e12a43b631ca62f25ca04e3a19ed49c7ad78dc0540d07f8979df04c48c88`。各項目の長さと SHA256 を照合した。検証後の `target` は136,173,668,604 bytes。
