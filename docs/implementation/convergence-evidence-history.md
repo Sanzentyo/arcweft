@@ -21490,3 +21490,17 @@ Sema library は2,034件中1,994 PASS／40既知FAIL。Cargo graph で22パッ�
 Sema library は2,035件中1,997 PASS／38既知FAIL。Cargo graph で22パッケージを確認し、非CLI 21パッケージは4,317 PASS／38既知FAIL／1 SKIPだった。前回からの成否の変化は上記の2件で、追加の照合テストも通過した。CLIのライブラリ・バイナリ196件と統合6対象30件はすべて通過した。256候補の境界テスト、受入・公開済みの Generic Match C3/C5 の151件も通過した。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。
 
 [検証原本](acceptance-evidence/task-effect-declaration-headers.raw.zip) は24項目、1,212,473 bytes、SHA256 `3966a3d9a63538290182f0e0b500aa5d1844f15d4b60d1100bc5ace17de98110`。各項目の長さとSHA256を照合した。検証後の `target` は136,170,852,575 bytes。
+
+<a id="initial-flow-publication"></a>
+
+## 2026-11-22 — 初期 Flow の公開前照合
+
+検証基点は `290d7e08f3d08829c4189df6db533abc81c1f8a3`。製品 Source `99cd71faf6c4524dd1ec8db8d73bc0ce4928e108` を `main` へ通常 push し、公開 ref と変更 blob を照合した。
+
+旧テスト `final_analysis::tests::executable_ingress::initial_flow_late_join_rejects_missing_foreign_and_stale_checked_rows` を LLDB で追跡した。初期 Flow の登録が欠落すると、Entry の検査に到達する前に `collect_prepared_semantic_nominals` の `PublicationTypes::source<PatternId>` が所有者の欠落を返していた。最初の実装候補で `SourceSpan` のアクセサー移動が漏れたためビルドが E0599 で停止し、アクセサーを照合済みの型へ移した。
+
+名目型の収集前に、準備済みの Entry ルートが持つ初期 Flow を検査済み callable カタログの厳密な行と照合する。公開時はその行が持つ宣言を使い、既存の State・Event・引数の契約検査を続ける。後継テスト `final_analysis::tests::executable_ingress::initial_flow_publication_rejects_invalid_checked_rows_at_the_goto_span` は欠落、別 World、古いリビジョン、同じカタログ内の別 Flow の4条件をそれぞれ元の `goto` に対する単一の `sema.entry.initial_flow_not_checked` で拒否した。各拒否直後に同じ入力を再解析し、正常時と同じ `CheckedEntryCatalog` が公開された。
+
+Sema library は2,035件中1,998 PASS／37既知FAIL。Cargo graph で Sema を含む22パッケージを確認し、非CLIの21パッケージは4,318 PASS／37既知FAIL／1 SKIPだった。旧テストと後継テストを対応させた比較で、成否の変化はこの1件の FAIL から PASS だった。CLI のライブラリ・バイナリ196件と統合6対象30件はすべて通過した。受入・公開済みの Generic Match C3/C5 の151件と、4,096単位の予算による256候補の検査も通過した。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。変更箇所では `seal_nominal_draft` の引数数と `PreparedEntryFlowTarget::admit` の省略可能なライフタイム指定に関する Clippy の警告が増えた。
+
+[検証原本](acceptance-evidence/task-initial-flow-publication.raw.zip) は29項目、1,229,651 bytes、SHA256 `d81452ae0ef7678169fca8e26975771e5fabe976209bc1ad25f4cc9c1c8dfe57`。各項目の長さとSHA256を照合した。検証後の `target` は136,172,981,468 bytesで、`cargo clean` の目安は300 GB。
