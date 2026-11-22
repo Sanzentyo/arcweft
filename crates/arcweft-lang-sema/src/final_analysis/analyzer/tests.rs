@@ -454,16 +454,9 @@ fn candidate_call_keeps_nested_ordinary_call_on_candidate_context() {
     )
     .expect("analyzer");
     analyzer.resolve_region_types(None).expect("types");
-    let staged = analyzer
-        .stage_checked_callables()
+    analyzer
+        .prepare_callable_analysis()
         .expect("checked callables");
-    for (owner, fact) in &staged.effect_expressions {
-        analyzer
-            .facts
-            .publish_new_expression(*owner, fact.clone())
-            .expect("effect expression");
-    }
-    analyzer.staged_callables = Some(staged);
     analyzer
         .seed_local_types(&analyzer.published_expression_context(), None)
         .expect("locals");
@@ -1066,14 +1059,9 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
     )
     .expect("analyzer");
     analyzer.resolve_region_types(None).expect("types");
-    let staged = analyzer.stage_checked_callables().expect("callables");
-    for (owner, fact) in &staged.effect_expressions {
-        analyzer
-            .facts
-            .publish_new_expression(*owner, fact.clone())
-            .expect("effect expression");
-    }
-    analyzer.staged_callables = Some(staged);
+    analyzer
+        .prepare_callable_analysis()
+        .expect("checked callables");
     analyzer
         .seed_local_types(&analyzer.published_expression_context(), None)
         .expect("locals");
@@ -1415,6 +1403,10 @@ fn uncached_expression_failure_retry_cleans_structured_guard() {
             FinalSemanticAnalysisControl::new(&cancellation),
         )
         .expect("analyzer");
+        analyzer.resolve_region_types(None).expect("resolved types");
+        analyzer
+            .prepare_callable_analysis()
+            .expect("checked callables");
 
         for _ in 0..2 {
             let error = analyzer
@@ -1842,16 +1834,9 @@ fn evaluator_records_implicit_and_explicit_capture_modes_on_terminal_facts() {
     )
     .expect("analyzer");
     analyzer.resolve_region_types(None).expect("resolved types");
-    let staged = analyzer
-        .stage_checked_callables()
-        .expect("staged checked callables");
-    for (owner, fact) in &staged.effect_expressions {
-        analyzer
-            .facts
-            .publish_new_expression(*owner, fact.clone())
-            .expect("published effect expression");
-    }
-    analyzer.staged_callables = Some(staged);
+    analyzer
+        .prepare_callable_analysis()
+        .expect("checked callables");
     analyzer
         .seed_local_types(&analyzer.published_expression_context(), None)
         .expect("seeded locals");
@@ -1984,16 +1969,9 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
         )
         .expect("analyzer");
         analyzer.resolve_region_types(None).expect("resolved types");
-        let staged = analyzer
-            .stage_checked_callables()
-            .expect("staged checked callables");
-        for (owner, fact) in &staged.effect_expressions {
-            analyzer
-                .facts
-                .publish_new_expression(*owner, fact.clone())
-                .expect("published effect expression");
-        }
-        analyzer.staged_callables = Some(staged);
+        analyzer
+            .prepare_callable_analysis()
+            .expect("checked callables");
         analyzer
             .seed_local_types(&analyzer.published_expression_context(), None)
             .expect("seeded locals");
@@ -2190,10 +2168,13 @@ fn failed_implicit_branch_synthesis_restores_scope_before_contextual_recheck() {
     );
     let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
-    let owner = module
+    let (owner, condition) = module
         .expressions()
         .find_map(|(owner, expression)| {
-            matches!(expression.kind(), HirExprKind::If(_)).then_some(owner)
+            let HirExprKind::If(conditional) = expression.kind() else {
+                return None;
+            };
+            Some((owner, conditional.condition()))
         })
         .expect("implicit callable control body");
     let cancellation = AtomicBool::new(false);
@@ -2204,21 +2185,40 @@ fn failed_implicit_branch_synthesis_restores_scope_before_contextual_recheck() {
         FinalSemanticAnalysisControl::new(&cancellation),
     )
     .unwrap();
+    analyzer.resolve_region_types(None).expect("resolved types");
+    analyzer
+        .prepare_callable_analysis()
+        .expect("checked callables");
     let context = analyzer.published_expression_context();
+    let initial_facts = analyzer.facts.expressions().clone();
     assert!(matches!(
         analyzer.evaluate_expression(&context, owner, None),
         Err(AnalyzerExpressionError::Rejected(_))
     ));
     assert!(analyzer.implicit_callable_stack.is_empty());
-    assert!(!analyzer.facts.expressions().contains_key(&owner));
-    let expected = TypeKind::function_with_canonical_effects(
-        [TypeKind::Bool],
-        TypeKind::Vec(Box::new(TypeKind::I64)),
-        crate::effect_row::EffectRow::closed(EffectSet::new()),
-    );
+    assert_eq!(analyzer.facts.expressions(), &initial_facts);
+    let result = TypeKind::Vec(Box::new(TypeKind::I64));
+    let effects = crate::effect_row::EffectRow::closed(EffectSet::new());
+    let incompatible =
+        TypeKind::function_with_canonical_effects([TypeKind::I64], result.clone(), effects.clone());
+    let rejected = analyzer
+        .evaluate_expression(&context, owner, Some(&incompatible))
+        .expect_err("the condition requires a Bool placeholder inside the implicit scope");
+    assert_eq!(rejected, AnalyzerExpressionError::rejected(condition));
+    assert!(analyzer.implicit_callable_stack.is_empty());
+    assert_eq!(analyzer.facts.expressions(), &initial_facts);
+    let expected = TypeKind::function_with_canonical_effects([TypeKind::Bool], result, effects);
     let checked = analyzer
         .evaluate_expression(&context, owner, Some(&expected))
         .expect("the same source can be checked with its real function context");
     assert_eq!(checked.value_type(), Some(&expected));
+    assert_eq!(
+        analyzer
+            .facts
+            .expressions()
+            .get(&condition)
+            .and_then(PreparedExpressionFact::implicit_parameter_owner),
+        Some(owner)
+    );
     assert!(analyzer.implicit_callable_stack.is_empty());
 }

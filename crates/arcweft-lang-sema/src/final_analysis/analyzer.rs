@@ -618,6 +618,17 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         )
     }
 
+    fn prepare_callable_analysis(&mut self) -> Result<(), FinalSemanticAnalysisError> {
+        let staged = self.stage_checked_callables()?;
+        for (owner, fact) in &staged.effect_expressions {
+            self.facts
+                .publish_new_expression(*owner, fact.clone())
+                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        }
+        self.staged_callables = Some(staged);
+        Ok(())
+    }
+
     fn analyze_staged<M: FinalAnalysisMutation>(
         &mut self,
         mut mutation: M,
@@ -630,13 +641,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 .map_err(|diagnostics| {
                     super::FinalSemanticProjectError::Entry(diagnostics.into())
                 })?;
-        let staged_callables = self.stage_checked_callables()?;
-        for (owner, fact) in &staged_callables.effect_expressions {
-            self.facts
-                .publish_new_expression(*owner, fact.clone())
-                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        }
-        self.staged_callables = Some(staged_callables);
+        self.prepare_callable_analysis()?;
         self.seed_local_types(&self.published_expression_context(), None)?;
         self.prepare_text_proxy_catalog()?;
         self.analyze_fx_definition_bodies()?;
