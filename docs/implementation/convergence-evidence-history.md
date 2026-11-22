@@ -21610,3 +21610,17 @@ Sema library は2,035件中2,020 PASS／15既知FAIL。前回の実行から4件
 Sema library は2,035件中2,024 PASS／11既知FAIL。前回の実行から4件が FAIL から PASS となり、追加・欠落・新規FAILは0。変更ファイルの書式、Semaの全ターゲット・全機能の check と Clippy、構造ゲートは終了0。変更3ファイルはテスト用モジュール。逆依存の製品入力を照合し、非CLI逆依存の Sema library 以外2,320 PASS／1 SKIPとCLI226 PASSは、同じ製品入力の実測を参照した。[前回の横断実測](#residual-closure)・[元の効果述語の検証](#prepared-owner-boundaries)
 
 [検証原本](acceptance-evidence/task-completed-source-captures.raw.zip) は57項目、782,213 bytes、SHA256 `1d2ba2bbb5c09733ba676c47c8337ea747522fb82aefb23547ca430d09379311`。各項目の長さと SHA256 を照合した。検証後の `target` は136,177,182,004 bytes。
+
+<a id="residual-effect-introduction"></a>
+
+## 2026-11-22 — 段階適用の残余効果を修正
+
+検証基点は `262c8a9664724e54857dd35b1b110c790891c839`。Source `d5eae18e0cc87b61073eafbb0ef7a54af23ec0ac` を `main` に push し、公開 ref と変更 blob を照合した。照合時の追跡差分は0、既存の未追跡1パスがある。[前回の失敗再現](#completed-source-captures)を解消した。
+
+捕捉のある残余行は、導入時の捕捉を保持した適用で観測できる。字句スコープ間の移送ではその由来を保持し、別の行を捕捉に代入した適用は元の適用として観測できない。途中結果を束縛する形が通過した後も、連続呼び出しでは後段の効果制約が前段の候補を棄却していた。後段の既知の入力型を前段の推論に用い、コールバックの効果制約は後段の適用で検証するようにした。修正途中の失敗結果とトレースも原本に保持した。
+
+Sema library は2,037件中2,027 PASS／10既知FAIL。以前に失敗した残余効果の所有スコープの1件と追加2件が通過した。Cargo の逆依存グラフは所有 crate を含め22 crate。非CLI逆依存は4,347 PASS／10既知FAIL／1 SKIP、CLIは226 PASS。テストIDの新規失敗・欠落は0。受入・公開済み Generic Match は監査の150 IDと後継1件がすべて通過した。Native／AWBC の共有された途中結果と、AWBC Product の停止ごとの公開 JSON 復元の既存テストも通過した。
+
+CLI の6ケースは、途中結果の束縛、連続呼び出し、効果の異なるコールバックで同じ途中結果を再利用するケース、対照3ケースを含む。bytecode VM／AWBC Product の全12実行で戻り値42、各ステップ最大1操作、診断・アサーション失敗0件だった。固定された空の効果行に適合しないコールバックは型検査で拒否した。書式、workspace の全ターゲット・全機能の check／Clippy、構造ゲートはいずれも終了0。Clippy ではテストの raw 文字列と制約処理の関数長で各1件の警告が増えた。
+
+[検証原本](acceptance-evidence/task-residual-effect-introduction.raw.zip) は67項目、1,363,476 bytes、SHA256 `690d58a8bfe2c479165f7a3f46b198eed2d4d64cfc802aba6f16b1fc5cb15f10`。各項目の長さと SHA256 を照合した。検証後の `target` は136,196,108,652 bytes。
