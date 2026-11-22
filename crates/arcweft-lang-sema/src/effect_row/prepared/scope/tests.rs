@@ -620,7 +620,13 @@ fn live_reads_keep_the_exact_issuer_and_base_without_a_detached_layer() {
     let foreign = PreparedEffectGraph::default();
     let mut work = budget();
     let mut checkpoint = graph.checkpoint(&mut work).unwrap();
-    let empty = graph.extract_delta(&mut checkpoint, &mut work).unwrap();
+    assert!(matches!(
+        graph.extract_delta(&mut checkpoint, &mut Budget(0)),
+        Err(PreparedEffectFailure::Control(Exhausted))
+    ));
+    let empty = graph
+        .extract_delta(&mut checkpoint, &mut Budget(1))
+        .unwrap();
     assert!(matches!(
         graph.read_scope([&empty], &mut Budget(1)),
         Err(PreparedEffectFailure::Control(Exhausted))

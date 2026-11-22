@@ -178,17 +178,19 @@ impl PreparedEffectGraph {
         let first = inputs.next();
         if let Some(delta) = first
             && inputs.peek().is_none()
-            && delta.data.functions.is_empty()
             && let Some(dependencies) = &delta.dependencies
             && self.can_reuse_read_scope(dependencies)
         {
-            if !delta.data.has_transition() {
-                self.validate_delta_base(delta, control)?;
-                return Ok(dependencies.clone());
-            }
-            if let Some(data) = dependencies.detached() {
-                self.validate_delta_base(delta, control)?;
-                return self.extend_read_scope(data, &delta.data, control);
+            match (delta.layer(), dependencies.detached()) {
+                (None, _) => {
+                    self.validate_delta_base(delta, control)?;
+                    return Ok(dependencies.clone());
+                }
+                (Some(layer), Some(data)) if layer.functions.is_empty() => {
+                    self.validate_delta_base(delta, control)?;
+                    return self.extend_read_scope(data, layer, control);
+                }
+                _ => {}
             }
         }
         self.delta_scope_data(
@@ -220,7 +222,7 @@ impl PreparedEffectGraph {
             .and_then(|scope| scope.input.detached())
         {
             for layer in active.layers.values() {
-                retain_layer(&mut layers, layer, &mut work)?;
+                retain_definition(&mut layers, layer.ordinal, layer, &mut work)?;
             }
         } else if inputs.peek().is_none() {
             // Issuing a base-only read still observes the caller's control.
@@ -234,10 +236,14 @@ impl PreparedEffectGraph {
                 .and_then(PreparedEffectReadScope::detached)
             {
                 for layer in dependencies.layers.values() {
-                    retain_layer(&mut layers, layer, &mut work)?;
+                    retain_definition(&mut layers, layer.ordinal, layer, &mut work)?;
                 }
             }
-            retain_layer(&mut layers, &input.data, &mut work)?;
+            if let Some(layer) = input.layer() {
+                retain_definition(&mut layers, layer.ordinal, layer, &mut work)?;
+            } else {
+                work.charge(DecisionWork::Visit)?;
+            }
         }
         let order = ordered_layers(&layers, &mut work)?;
         self.assemble_read_scope(layers, order, &mut work)
@@ -283,7 +289,7 @@ impl PreparedEffectGraph {
             self.require_detached_base(scope.base, &mut bases, &mut work)?;
             if let Some(data) = scope.detached() {
                 for layer in data.layers.values() {
-                    retain_layer(&mut layers, layer, &mut work)?;
+                    retain_definition(&mut layers, layer.ordinal, layer, &mut work)?;
                 }
             }
             if self.can_reuse_read_scope(scope)
@@ -540,7 +546,7 @@ impl PreparedEffectGraph {
             work.charge(DecisionWork::Node)?;
             ids.push(id);
         }
-        retain_layer(&mut layers, added, &mut work)?;
+        retain_definition(&mut layers, added.ordinal, added, &mut work)?;
         work.charge(DecisionWork::Node)?;
         ids.push(added.ordinal);
         let rows = extend_definitions(&old.rows, &added.rows, &mut work)?;
@@ -598,18 +604,6 @@ fn ordered_layers<C: DecisionControl>(
     }
     ordered.sort_unstable();
     Ok(ordered)
-}
-
-fn retain_layer<C: DecisionControl>(
-    layers: &mut BTreeMap<u64, Arc<PreparedEffectDeltaData>>,
-    layer: &Arc<PreparedEffectDeltaData>,
-    work: &mut Work<'_, C>,
-) -> Result<(), PreparedEffectFailure<C::Error>> {
-    if layer.has_transition() {
-        retain_definition(layers, layer.ordinal, layer, work)
-    } else {
-        work.charge(DecisionWork::Visit)
-    }
 }
 
 fn retain_definition<T, C: DecisionControl>(

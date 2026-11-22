@@ -51,11 +51,49 @@ enum EffectCheckpointReads {
 /// References are operational capabilities and remain unchanged on transfer.
 #[derive(Debug)]
 pub(crate) struct PreparedEffectDelta {
-    pub(in crate::effect_row::prepared) data: Arc<PreparedEffectDeltaData>,
+    contents: PreparedEffectDeltaContents,
     pub(in crate::effect_row::prepared) dependencies: Option<super::PreparedEffectReadScope>,
 }
 
+#[derive(Debug)]
+enum PreparedEffectDeltaContents {
+    Unchanged {
+        issuer: Arc<PreparedEffectIssuer>,
+        base: PreparedEffectStateId,
+        ordinal: u64,
+    },
+    Transition(Arc<PreparedEffectDeltaData>),
+}
+
 impl PreparedEffectDelta {
+    pub(super) fn layer(&self) -> Option<&Arc<PreparedEffectDeltaData>> {
+        match &self.contents {
+            PreparedEffectDeltaContents::Unchanged { .. } => None,
+            PreparedEffectDeltaContents::Transition(layer) => Some(layer),
+        }
+    }
+
+    fn issuer(&self) -> &Arc<PreparedEffectIssuer> {
+        match &self.contents {
+            PreparedEffectDeltaContents::Unchanged { issuer, .. } => issuer,
+            PreparedEffectDeltaContents::Transition(layer) => &layer.issuer,
+        }
+    }
+
+    fn base(&self) -> PreparedEffectStateId {
+        match &self.contents {
+            PreparedEffectDeltaContents::Unchanged { base, .. } => *base,
+            PreparedEffectDeltaContents::Transition(layer) => layer.base,
+        }
+    }
+
+    fn ordinal(&self) -> u64 {
+        match &self.contents {
+            PreparedEffectDeltaContents::Unchanged { ordinal, .. } => *ordinal,
+            PreparedEffectDeltaContents::Transition(layer) => layer.ordinal,
+        }
+    }
+
     /// A detached write permit can enter a publication without its probe
     /// read scope only when no other detached permit supplied its inputs.
     pub(crate) fn publishes_without_read_scope(&self) -> bool {
@@ -63,7 +101,7 @@ impl PreparedEffectDelta {
     }
 
     pub(crate) fn has_writes(&self) -> bool {
-        self.data.has_writes()
+        self.layer().is_some_and(|layer| layer.has_writes())
     }
 }
 
@@ -89,12 +127,6 @@ impl PreparedEffectDeltaData {
             || !self.rows.is_empty()
             || !self.predicates.is_empty()
             || !self.choices.is_empty()
-    }
-
-    /// A checkpoint with no writes or revision history supplies no effect
-    /// definitions and cannot witness a new base for another layer.
-    pub(super) fn has_transition(&self) -> bool {
-        self.base != self.result || !self.ancestors.is_empty() || self.has_writes()
     }
 }
 
@@ -351,10 +383,22 @@ impl PreparedEffectGraph {
         checkpoint: &mut PreparedEffectCheckpoint,
         control: &mut C,
     ) -> Result<PreparedEffectDelta, PreparedEffectFailure<C::Error>> {
-        self.validate_checkpoint(checkpoint)?;
+        let has_transition = self.checkpoint_has_transition(checkpoint)?;
         control
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
+        let ordinal = self.next_delta;
+        let next_delta = ordinal
+            .checked_add(1)
+            .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
+        if !has_transition {
+            let contents = PreparedEffectDeltaContents::Unchanged {
+                issuer: Arc::clone(&self.relation.issuer),
+                base: checkpoint.state,
+                ordinal,
+            };
+            return Ok(self.finish_extraction(checkpoint, next_delta, contents));
+        }
         let mut functions = BTreeMap::new();
         for insertion in &self.journal[checkpoint.journal_start..] {
             control
@@ -392,10 +436,6 @@ impl PreparedEffectGraph {
         control
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
-        let ordinal = self.next_delta;
-        let next_delta = ordinal
-            .checked_add(1)
-            .ok_or(PreparedEffectInvariant::OrdinalExhausted)?;
         for _ in &self.state_ancestors[checkpoint.ancestor_limit..] {
             control
                 .charge(DecisionWork::Node)
@@ -421,7 +461,6 @@ impl PreparedEffectGraph {
             predicates: BTreeMap::new(),
             choices: BTreeSet::new(),
         };
-        self.next_delta = next_delta;
         while self.journal.len() > checkpoint.journal_start {
             let insertion = self.journal.pop().expect("validated journal frontier");
             match insertion {
@@ -456,6 +495,17 @@ impl PreparedEffectGraph {
                 }
             }
         }
+        let contents = PreparedEffectDeltaContents::Transition(Arc::new(delta));
+        Ok(self.finish_extraction(checkpoint, next_delta, contents))
+    }
+
+    fn finish_extraction(
+        &mut self,
+        checkpoint: &mut PreparedEffectCheckpoint,
+        next_delta: u64,
+        contents: PreparedEffectDeltaContents,
+    ) -> PreparedEffectDelta {
+        self.next_delta = next_delta;
         self.state = checkpoint.state;
         self.checkpoints.pop();
         if self.checkpoints.is_empty() {
@@ -467,13 +517,13 @@ impl PreparedEffectGraph {
             .active_scope
             .as_ref()
             .map(|scope| &scope.input)
-            .filter(|input| !input.is_live_at(delta.base))
+            .filter(|input| !input.is_live_at(checkpoint.state))
             .cloned();
         self.leave_checkpoint_scope(checkpoint);
-        Ok(PreparedEffectDelta {
-            data: Arc::new(delta),
+        PreparedEffectDelta {
+            contents,
             dependencies,
-        })
+        }
     }
 
     pub(in crate::effect_row::prepared) fn validate_delta<C: DecisionControl>(
@@ -491,7 +541,7 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
         self.validate_delta_issuer(delta, control)?;
-        if self.state != delta.data.base {
+        if self.state != delta.base() {
             return Err(PreparedEffectInvariant::DeltaBase.into());
         }
         if let Some(scope) = &delta.dependencies {
@@ -508,7 +558,7 @@ impl PreparedEffectGraph {
         control
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
-        if !Arc::ptr_eq(&self.relation.issuer, &delta.data.issuer) {
+        if !Arc::ptr_eq(&self.relation.issuer, delta.issuer()) {
             return Err(PreparedEffectInvariant::ForeignIssuer.into());
         }
         Ok(())
@@ -518,7 +568,9 @@ impl PreparedEffectGraph {
         delta: &PreparedEffectDelta,
         control: &mut C,
     ) -> Result<(), PreparedEffectFailure<C::Error>> {
-        let delta = &delta.data;
+        let Some(delta) = delta.layer() else {
+            return Ok(());
+        };
         for () in delta
             .functions
             .iter()
@@ -577,13 +629,13 @@ impl PreparedEffectGraph {
             control
                 .charge(DecisionWork::Node)
                 .map_err(PreparedEffectFailure::Control)?;
-            if !permits.insert(delta.data.ordinal) {
+            if !permits.insert(delta.ordinal()) {
                 return Err(PreparedEffectInvariant::ReadScopeConflict.into());
             }
             control
                 .charge(DecisionWork::Node)
                 .map_err(PreparedEffectFailure::Control)?;
-            ordered.insert((delta.data.base, delta.data.ordinal), delta);
+            ordered.insert((delta.base(), delta.ordinal()), delta);
         }
         if permits.is_empty() {
             return Err(PreparedEffectInvariant::ReadScopeDependencies.into());
@@ -594,23 +646,20 @@ impl PreparedEffectGraph {
         let mut witnessed = BTreeSet::from([self.state]);
         let detached =
             self.delta_scope_data(ordered.values().copied(), control, |delta, control| {
-                if !witnessed.contains(&delta.data.base) {
+                if !witnessed.contains(&delta.base()) {
                     return Err(PreparedEffectInvariant::DeltaBase.into());
                 }
                 if let Some(scope) = &delta.dependencies {
                     scope.validate_ancestry(self, |base| witnessed.contains(&base), control)?;
                 }
                 Self::charge_delta_contents(delta, control)?;
-                for &state in delta
-                    .data
-                    .ancestors
-                    .iter()
-                    .chain(std::iter::once(&delta.data.result))
-                {
-                    control
-                        .charge(DecisionWork::Node)
-                        .map_err(PreparedEffectFailure::Control)?;
-                    witnessed.insert(state);
+                if let Some(layer) = delta.layer() {
+                    for &state in layer.ancestors.iter().chain(std::iter::once(&layer.result)) {
+                        control
+                            .charge(DecisionWork::Node)
+                            .map_err(PreparedEffectFailure::Control)?;
+                        witnessed.insert(state);
+                    }
                 }
                 Ok(())
             })?;
@@ -681,8 +730,11 @@ impl PreparedEffectGraph {
             (self.state, self.next_state)
         } else if permits.len() == 1 {
             let delta = ordered.first_key_value().expect("one publication permit").1;
-            witnessed.remove(&delta.data.result);
-            (delta.data.result, self.next_state)
+            let result = delta
+                .layer()
+                .map_or_else(|| delta.base(), |layer| layer.result);
+            witnessed.remove(&result);
+            (result, self.next_state)
         } else {
             (
                 PreparedEffectStateId(self.next_state),

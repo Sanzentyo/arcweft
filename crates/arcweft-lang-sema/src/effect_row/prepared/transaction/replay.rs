@@ -82,8 +82,8 @@ impl Correspondence {
 
 struct Replay<'a, 'c, C> {
     base: &'a PreparedEffectGraph,
-    left: &'a PreparedEffectDeltaData,
-    right: &'a PreparedEffectDeltaData,
+    left: Option<&'a PreparedEffectDeltaData>,
+    right: Option<&'a PreparedEffectDeltaData>,
     inputs: Option<&'a super::super::scope::ReadScopeData>,
     left_view: PreparedEffectReadView<'a>,
     right_view: PreparedEffectReadView<'a>,
@@ -110,13 +110,12 @@ impl PreparedEffectGraph {
         control
             .charge(DecisionWork::Visit)
             .map_err(PreparedEffectFailure::Control)?;
-        let (left, right) = (&*left_delta.data, &*right_delta.data);
-        if !Arc::ptr_eq(&left.issuer, &right.issuer)
-            || !Arc::ptr_eq(&self.relation.issuer, &left.issuer)
+        if !Arc::ptr_eq(left_delta.issuer(), right_delta.issuer())
+            || !Arc::ptr_eq(&self.relation.issuer, left_delta.issuer())
         {
             return Ok(Some(PreparedEffectReplayMismatch::Issuer));
         }
-        if left.base != right.base || self.state != left.base {
+        if left_delta.base() != right_delta.base() || self.state != left_delta.base() {
             return Ok(Some(PreparedEffectReplayMismatch::Base));
         }
         let left_view = self.read_extracted(left_delta, control)?;
@@ -137,6 +136,8 @@ impl PreparedEffectGraph {
         if !same_inputs {
             return Ok(Some(PreparedEffectReplayMismatch::ReadScopeOrigin));
         }
+        let left = left_delta.layer().map(Arc::as_ref);
+        let right = right_delta.layer().map(Arc::as_ref);
         let mut replay = Replay {
             base: self,
             left,
@@ -154,25 +155,29 @@ impl PreparedEffectGraph {
         };
         // A body installed on a declaration from the shared base is anchored
         // by that original declaration, even if no expression observes it.
-        for id in left.functions.keys() {
+        for id in left.into_iter().flat_map(|layer| layer.functions.keys()) {
             replay.visit()?;
             if replay.input_function(*id) {
-                if !right.functions.contains_key(id) {
+                if !right.is_some_and(|layer| layer.functions.contains_key(id)) {
                     return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
                 }
                 replay.push(Pair::Definition(*id, *id))?;
             }
         }
-        for id in right.functions.keys() {
+        for id in right.into_iter().flat_map(|layer| layer.functions.keys()) {
             replay.visit()?;
-            if replay.input_function(*id) && !left.functions.contains_key(id) {
+            if replay.input_function(*id)
+                && !left.is_some_and(|layer| layer.functions.contains_key(id))
+            {
                 return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
             }
         }
-        if left.obligations.len() != right.obligations.len() {
+        let left_obligations = left.map_or(&[][..], |layer| layer.obligations.as_slice());
+        let right_obligations = right.map_or(&[][..], |layer| layer.obligations.as_slice());
+        if left_obligations.len() != right_obligations.len() {
             return Ok(Some(PreparedEffectReplayMismatch::Obligations));
         }
-        for (left, right) in left.obligations.iter().zip(&right.obligations) {
+        for (left, right) in left_obligations.iter().zip(right_obligations) {
             replay.visit()?;
             if !replay.parameters(&left.parameters, &right.parameters)? {
                 return Ok(Some(PreparedEffectReplayMismatch::Obligations));
@@ -231,13 +236,13 @@ impl PreparedEffectGraph {
         }
         // An unpaired inference unknown still changes the quantified relation.
         // Never infer its owner from ordinal order or matching row observations.
-        for id in left.functions.keys() {
+        for id in left.into_iter().flat_map(|layer| layer.functions.keys()) {
             replay.visit()?;
             if !replay.input_function(*id) && !replay.functions.forward.contains_key(id) {
                 return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
             }
         }
-        for id in right.functions.keys() {
+        for id in right.into_iter().flat_map(|layer| layer.functions.keys()) {
             replay.visit()?;
             if !replay.input_function(*id) && !replay.functions.backward.contains_key(id) {
                 return Ok(Some(PreparedEffectReplayMismatch::FunctionInventory));
@@ -277,7 +282,7 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
         &self,
         reference: &PreparedEffectReference,
     ) -> Result<u64, PreparedEffectInvariant> {
-        if !Arc::ptr_eq(&reference.issuer, &self.left.issuer) {
+        if !Arc::ptr_eq(&reference.issuer, &self.base.relation.issuer) {
             return Err(PreparedEffectInvariant::ForeignIssuer);
         }
         Ok(reference.ordinal)
@@ -323,7 +328,13 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             return Ok((!left_base || !right_base || left != right)
                 .then_some(PreparedEffectReplayMismatch::FunctionIdentity));
         }
-        if !self.left.functions.contains_key(&left) || !self.right.functions.contains_key(&right) {
+        if !self
+            .left
+            .is_some_and(|layer| layer.functions.contains_key(&left))
+            || !self
+                .right
+                .is_some_and(|layer| layer.functions.contains_key(&right))
+        {
             return Err(PreparedEffectInvariant::StaleReference.into());
         }
         if !self.functions.bind(left, right, self.control)? {
@@ -365,8 +376,15 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             .charge(DecisionWork::Node)
             .map_err(PreparedEffectFailure::Control)?;
         self.definitions.insert((left, right));
-        let (left, right) = (&*self.left.functions[&left], &*self.right.functions[&right]);
-        match (left, right) {
+        let left = self
+            .left
+            .and_then(|layer| layer.functions.get(&left))
+            .ok_or(PreparedEffectInvariant::StaleReference)?;
+        let right = self
+            .right
+            .and_then(|layer| layer.functions.get(&right))
+            .ok_or(PreparedEffectInvariant::StaleReference)?;
+        match (left.as_ref(), right.as_ref()) {
             (Function::Scheme(left), Function::Scheme(right)) => {
                 if !self.parameters(&left.header.parameters, &right.header.parameters)?
                     || !left
@@ -479,8 +497,9 @@ impl<'a, C: DecisionControl> Replay<'a, '_, C> {
             self.validate_reference(&right.0)?,
         );
         match (
-            self.left.choices.contains(&left),
-            self.right.choices.contains(&right),
+            self.left.is_some_and(|layer| layer.choices.contains(&left)),
+            self.right
+                .is_some_and(|layer| layer.choices.contains(&right)),
         ) {
             (false, false) => {
                 if !self.input_choice(left) || !self.input_choice(right) {

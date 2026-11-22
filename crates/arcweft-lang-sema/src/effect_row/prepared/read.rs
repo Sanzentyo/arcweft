@@ -44,7 +44,7 @@ impl PreparedEffectGraph {
         Ok(PreparedEffectReadView {
             relation: &self.relation,
             scope: self.active_scope.as_ref(),
-            extracted: Some(&delta.data),
+            extracted: delta.layer().map(Arc::as_ref),
             dependencies: delta
                 .dependencies
                 .as_ref()
