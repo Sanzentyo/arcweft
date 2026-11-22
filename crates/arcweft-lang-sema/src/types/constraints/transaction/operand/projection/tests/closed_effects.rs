@@ -595,24 +595,42 @@ fn read_only_closure_keeps_ambient_effects_outside_both_nested_local_binders() {
 
 #[test]
 fn a_relation_completion_cannot_impersonate_a_source_or_change_its_constraints() {
-    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
-    use crate::types::constraints::{ConstraintClosurePolicy, normalization::project_closed_type};
+    use crate::types::constraints::{
+        ConstraintClosurePolicy,
+        normalization::{PreparedConstraintEffects, project_closed_type},
+    };
 
+    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);
     let (path, keys) = path(&mut context, &mut effect_graph);
     let input = context.fixture_operand(TypeKind::I64);
-    let completion = path
-        .close_original_path_effects(&mut effect_graph, &mut context)
+    let fact = path
+        .prepare_effect_constraint(&mut effect_graph, &mut context)
         .unwrap();
+    let frozen = effect_graph
+        .read()
+        .freeze_scoped(&[], &[], &[&fact], &mut context)
+        .unwrap();
+    let original = PreparedConstraintEffects::new(frozen, fact, &mut context)
+        .unwrap()
+        .bind(&mut effect_graph, &mut context)
+        .unwrap();
+    let inputs = effect_graph
+        .read()
+        .actual_inputs(&[], &mut context)
+        .unwrap();
+    let completion = ConstraintClosedEffects::for_branch(
+        &path,
+        Arc::from([path.lineage.original.clone()]),
+        &original,
+        &inputs,
+        &mut effect_graph,
+        &mut context,
+    )
+    .unwrap();
     assert!(matches!(
-        close_type_operand(
-            input.view(),
-            &path,
-            &completion,
-            effect_graph.read(),
-            &mut context
-        ),
+        completion.require_path(&path),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::OriginalProducer
         ))

@@ -3,9 +3,9 @@ use crate::{
     effect_row::{
         EffectPredicate, EffectRow,
         prepared::{
-            PreparedEffectFailure, PreparedEffectGraph, PreparedEffectInvariant,
-            PreparedEffectPredicate, PreparedEffectRelation, PreparedEffectRow,
-            PreparedEffectUnknownEligibility,
+            BoundScopedEffectCompletion, PreparedEffectFailure, PreparedEffectGraph,
+            PreparedEffectInvariant, PreparedEffectPredicate, PreparedEffectRelation,
+            PreparedEffectRow, PreparedEffectUnknownEligibility,
         },
     },
     effects::EffectSet,
@@ -235,29 +235,29 @@ fn an_application_opens_its_original_predicate_once_before_actual_named_and_futu
         .read()
         .freeze_scoped(&[], &[&predicate], &[&receipt], &mut context)
         .unwrap();
-    let original = graph
-        .bind_original_scoped(&original, &mut context)
-        .unwrap()
-        .freeze(graph.read(), &mut context)
+    let original =
+        BoundScopedEffectCompletion::pending(original, graph.read(), &mut context).unwrap();
+    let future_value = EffectRow::closed(EffectSet::from_labels(["future.actual"]).unwrap());
+    let inputs = graph
+        .read()
+        .actual_inputs(&[(&future, &future_value)], &mut context)
         .unwrap();
+    assert!(matches!(
+        original.close_original_with_inputs(&mut graph, &[], &[], &inputs, &mut context),
+        Err(PreparedEffectFailure::ObservationNeedsBody(declaration)) if declaration == named
+    ));
     graph
         .prepare_body(&named, row(&["named.body"]), vec![], &mut context)
         .unwrap();
+    let missing = graph.read().actual_inputs(&[], &mut context).unwrap();
     assert!(matches!(
-        original.close_original(graph.read(), &[], &[], &[], &mut context),
+        original.close_original_with_inputs(&mut graph, &[], &[], &missing, &mut context),
         Err(PreparedEffectFailure::Invariant(
-            PreparedEffectInvariant::FutureBinding
+            PreparedEffectInvariant::UnresolvedFuture
         ))
     ));
-    let future_value = EffectRow::closed(EffectSet::from_labels(["future.actual"]).unwrap());
     let closed = original
-        .close_original(
-            graph.read(),
-            &[],
-            &[],
-            &[(&future, &future_value)],
-            &mut context,
-        )
+        .close_original_with_inputs(&mut graph, &[], &[], &inputs, &mut context)
         .unwrap();
     assert_eq!(
         closed.unknown(&function).unwrap(),

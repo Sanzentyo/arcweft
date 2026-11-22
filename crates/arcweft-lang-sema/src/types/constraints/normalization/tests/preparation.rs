@@ -4,7 +4,10 @@ use crate::{
         EffectPredicate,
         prepared::{PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow},
     },
-    types::{PreparedEffects, constraints::transaction::ConstraintOperand},
+    types::{
+        PreparedEffects,
+        constraints::{OriginalRigidScope, transaction::ConstraintOperand},
+    },
 };
 use std::sync::Arc;
 
@@ -20,24 +23,54 @@ fn introduced_type_relations_prepare_bindings_without_closing_unrelated_bodies()
             GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(98_901)),
             0,
         );
-        let scope = TypeConstraintParameterScope::new([(parameter.clone(), eligibility)]).unwrap();
-        let (mut context, path) = context(scope, &cancellation, 4096).into_path(&mut graph);
-        let key = path
-            .root_scope()
-            .parameters()
-            .type_reference(&parameter.into())
+        let declared = parameter.clone().into();
+        let scope = TypeConstraintParameterScope::new([(parameter, eligibility)]).unwrap();
+        let (mut context, parameters) = context(scope, &cancellation, 4096).into_parts();
+        let captures = if eligibility == TypeConstraintParameterEligibility::Rigid {
+            std::slice::from_ref(&declared)
+        } else {
+            &[]
+        };
+        let original = context
+            .fixture_original_context_with_rigid(OriginalRigidScope {
+                types: captures,
+                consts: &[],
+                effects: &[],
+                imported: None,
+            })
             .unwrap();
-        let owner = path
-            .applications
-            .owner_for_parameter(&key.clone().into())
+        let application = context
+            .application_scope((), parameters, original.clone(), &mut graph)
             .unwrap();
-        let pattern = ConstraintOperand::introduced_type(
-            &key,
-            Arc::new(path.scope.clone()),
-            owner,
-            &mut context,
-        )
-        .unwrap();
+        let opened = application.parameters().type_reference(&declared);
+        let path = context
+            .start_path_with_imported(application, None, original.clone(), graph.read())
+            .unwrap();
+        let (key, pattern) = if eligibility == TypeConstraintParameterEligibility::Bindable {
+            let key = opened.unwrap();
+            let owner = path
+                .applications
+                .owner_for_parameter(&key.clone().into())
+                .unwrap();
+            let pattern = ConstraintOperand::introduced_type(
+                &key,
+                Arc::new(path.scope.clone()),
+                owner,
+                &mut context,
+            )
+            .unwrap();
+            (key, pattern)
+        } else {
+            assert!(opened.is_none());
+            let pattern = context
+                .fixture_prepared_operand_in(
+                    &original,
+                    &TypeKind::GenericParam(declared.clone()),
+                    &mut graph,
+                )
+                .unwrap();
+            (declared, pattern)
+        };
         let actual = context.fixture_operand(TypeKind::<PreparedEffects>::Bool);
         let named = graph
             .declare(vec![], EffectPredicate::unconstrained(), &mut context)

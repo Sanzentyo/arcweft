@@ -114,10 +114,10 @@ fn prepared_original_admission_transports_all_scalar_ports_under_the_same_nested
             TypeKind::GenericParam(source.types[0].clone()),
             EffectRow::open(EffectSet::new(), nested.bound_effect(ambient, 0).unwrap()),
         )
-        .prepare_effects(scope, context)
-        .unwrap()
     };
-    let value = make(original.scope(), 1, &mut context);
+    let value = make(original.scope(), 1, &mut context)
+        .prepare_effects(original.scope(), &mut context)
+        .unwrap();
     let expected = make(target.shape(), 2, &mut context);
     let mut graph = PreparedEffectGraph::default();
     let admitted = ConstraintOperand::<NoConstraintClient>::from_prepared_original_in(
@@ -128,8 +128,20 @@ fn prepared_original_admission_transports_all_scalar_ports_under_the_same_nested
         &mut context,
     )
     .unwrap();
-    assert_eq!(admitted.value(), &expected);
     assert_eq!(admitted.scope().shape(), target.shape());
+    assert!(matches!(
+        admitted.value(),
+        TypeKind::Function {
+            predicate: PreparedEffectPredicate::Term(_),
+            ..
+        }
+    ));
+    let completed = graph.solve_principal(&mut context).unwrap();
+    let closed = admitted
+        .value()
+        .project_canonical_effects(target.shape(), &completed, &mut context)
+        .unwrap();
+    assert_eq!(closed, expected);
     context.restore_binder_scope(enclosing);
 }
 
