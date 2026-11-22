@@ -217,7 +217,7 @@ impl<P> FunctionReturnContinuation<P> {
                 }
             }
             Self::CallableDefault { pending, .. } => pending.admit_default(site, admission)?,
-            Self::Bind { .. } => {}
+            Self::Bind => {}
         }
         Ok(())
     }
@@ -931,7 +931,21 @@ where
                 frame
                     .continuation
                     .admit_header_and_packet(frame.site, admission)?;
-                O::admit_queue(&frame.caller_pending_ops, admission, binding)
+                O::admit_queue(&frame.caller_pending_ops, admission, binding)?;
+                if frame.continuation.resumes_call_site() {
+                    let Some(crate::task::RuntimeProgramOwner::Plan(plan)) =
+                        admission.program_owner()
+                    else {
+                        unreachable!("an admitted Native function frame has its Plan owner")
+                    };
+                    if frame.original_caller_result(plan).is_none() {
+                        return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                            message: "native function return has no original caller operation"
+                                .into(),
+                        });
+                    }
+                }
+                Ok(())
             }
         }
     }

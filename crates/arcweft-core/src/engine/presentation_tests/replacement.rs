@@ -1,9 +1,10 @@
 use super::*;
 use crate::effect_row::{DecisionControl, DecisionWork, EffectFormula, EffectSet};
-use crate::pattern::{RuntimePattern, RuntimeSemanticTypeId};
+use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
-    RuntimeEffectSet, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionDefinitionIdentity,
-    RuntimeFunctionSemanticRole, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteDeclarationSeed,
+    RuntimeEffectSet, RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind,
+    RuntimeFlowOpSeed, RuntimeFunctionDefinitionIdentity, RuntimeFunctionSemanticRole,
+    RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed,
     RuntimeFunctionTypeContract, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuilder,
     RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeTypeBinder, RuntimeTypeScope,
 };
@@ -17,7 +18,6 @@ struct Fixture {
     boolean: RuntimeSemanticTypeId,
     string: RuntimeSemanticTypeId,
     original_header: RuntimeSemanticTypeId,
-    result: RuntimePattern,
 }
 
 struct Work;
@@ -61,33 +61,51 @@ fn fixture() -> Fixture {
         ));
     }
     builder.admit_type_batch(types, []).unwrap();
-    let result = builder
-        .lower_pattern_seed_for_test(RuntimePatternSeed::new(
-            unit,
-            RuntimePatternSeedKind::Discard,
-        ))
-        .unwrap();
-    for (header, identity) in headers.into_iter().zip([0xc0_u8, 0xc1_u8]) {
-        let site = builder
+    let [caller, callee] = [0xc0_u8, 0xc1_u8].map(|identity| {
+        let caller = identity == 0xc0;
+        builder
             .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
                 definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity(
                     [identity; 32],
                 ),
                 role: RuntimeFunctionSemanticRole::Closure,
-                function_type: Some(header),
+                function_type: Some(headers[usize::from(!caller)]),
                 inputs: Box::new([]),
                 result: unit,
-                body_kind: RuntimeFunctionSiteBodyKind::Expression,
+                body_kind: if caller {
+                    RuntimeFunctionSiteBodyKind::Executable
+                } else {
+                    RuntimeFunctionSiteBodyKind::Expression
+                },
                 effects: RuntimeEffectSet::empty(),
             })
-            .unwrap();
-        builder
-            .define_function_site_seed(
-                &site,
-                RuntimeExprSeed::new(unit, RuntimeExprSeedKind::Value(RuntimeValue::Unit)),
-            )
-            .unwrap();
-    }
+            .unwrap()
+    });
+    builder
+        .define_function_site_seed(
+            &callee,
+            RuntimeExprSeed::new(unit, RuntimeExprSeedKind::Value(RuntimeValue::Unit)),
+        )
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &caller,
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: Box::new([RuntimeFlowOpSeed::ApplyFunction {
+                    callee: RuntimeExprSeed::new(
+                        headers[1],
+                        RuntimeExprSeedKind::Function {
+                            site: callee,
+                            captures: Box::new([]),
+                        },
+                    ),
+                    args: Box::new([]),
+                    result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
+                }]),
+            }),
+        )
+        .unwrap();
     let mut plan = builder.finish().unwrap();
     plan.bind_artifact(
         crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0xc2; 32]).unwrap(),
@@ -106,7 +124,6 @@ fn fixture() -> Fixture {
         boolean,
         string,
         original_header: headers[0],
-        result,
     }
 }
 
@@ -129,7 +146,6 @@ fn native_slot_replacement_returns_the_original_body_type_and_invocation() {
         boolean,
         string,
         original_header,
-        result,
     } = fixture();
     let plan = engine.program_plan();
     let original_binding = Arc::clone(
@@ -167,8 +183,8 @@ fn native_slot_replacement_returns_the_original_body_type_and_invocation() {
                 vec![],
             )
             .unwrap(),
-            FunctionCallFrame::new(replacing_site, FunctionReturnContinuation::Bind { result }),
-            None,
+            FunctionCallFrame::new(replacing_site, FunctionReturnContinuation::Bind),
+            Some(1),
         )
         .unwrap();
     let (_, previous) = engine

@@ -1,7 +1,7 @@
 //! A real two-arrow callable for application-boundary tests in each evaluator.
 
 use crate::{
-    pattern::{RuntimeCheckedType, RuntimePattern, RuntimeSemanticTypeId},
+    pattern::{RuntimeCheckedType, RuntimeSemanticTypeId},
     plan::{
         FlowOp, FlowRuntimeId, RuntimeEffectSet, RuntimeExecutableBodySeed, RuntimeExprSeed,
         RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
@@ -177,13 +177,6 @@ pub(crate) fn returning_callable_state(plan: &RuntimePlan) -> RuntimeCallableSta
         panic!("fixture function expression");
     };
     *state
-}
-
-pub(crate) fn returning_function_result(plan: &RuntimePlan) -> RuntimePattern {
-    let FlowOp::ApplyGroup { result, .. } = &plan.flows()[0].body().ops()[1] else {
-        panic!("fixture retains the exact result pattern");
-    };
-    result.clone()
 }
 
 fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {

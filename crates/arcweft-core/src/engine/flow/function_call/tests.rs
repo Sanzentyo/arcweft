@@ -3,9 +3,7 @@ use std::sync::Arc;
 use crate::engine::Engine;
 use crate::plan::RuntimeFunctionSiteBodyKind;
 use crate::step::RuntimeStepOutput;
-use crate::tests::function_application::{
-    returning_callable_state, returning_function_plan, returning_function_result,
-};
+use crate::tests::function_application::{returning_callable_state, returning_function_plan};
 use crate::value::{RuntimeCallableValue, RuntimeEvalError, RuntimeValue};
 
 #[test]
@@ -100,6 +98,70 @@ fn invalid_original_flow_range_fails_instead_of_completing() {
         crate::engine::FlowFiberStatus::Failed(_)
     ));
     assert!(!output.output.diagnostics.is_empty());
+}
+
+#[test]
+fn native_function_frame_round_trips_its_original_caller_operation() {
+    use crate::engine::{
+        FlowControlStackEntryRollbackImage, FunctionReturnContinuation, NativeEngineRollbackImage,
+    };
+    use crate::step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions};
+
+    let plan = returning_function_plan(RuntimeFunctionSiteBodyKind::Executable);
+    let flow = plan.flows()[0].id.clone();
+    let mut live = Engine::for_flow(plan, &flow).unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Plan(live.program_plan());
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..Default::default()
+    };
+    let frame_index = (0..16).find_map(|_| {
+        let result = live.step(RuntimeStepInput::default(), options);
+        assert!(result.output.diagnostics.is_empty());
+        live.fiber.frame.control_stack.iter().position(|entry| matches!(&entry.kind,
+            crate::engine::FlowControlStackEntryKind::FunctionCall(frame) if matches!(frame.continuation, FunctionReturnContinuation::Bind)))
+    }).expect("the executable call suspends with its original caller");
+    let original = live.inert_rollback_image().unwrap();
+    let round_trip = |mut image: NativeEngineRollbackImage| {
+        let FlowControlStackEntryRollbackImage::FunctionCall(frame) =
+            &mut image.fiber.frame.control_stack[frame_index]
+        else {
+            panic!("saved caller frame");
+        };
+        *frame = serde_json::from_slice(&serde_json::to_vec(frame).unwrap()).unwrap();
+        image
+    };
+    let mut redirected = original.clone();
+    let FlowControlStackEntryRollbackImage::FunctionCall(frame) =
+        &mut redirected.fiber.frame.control_stack[frame_index]
+    else {
+        panic!("saved caller frame");
+    };
+    let position = frame
+        .caller_pending_ops
+        .front_mut()
+        .unwrap()
+        .position_mut()
+        .unwrap();
+    assert_eq!(position.remaining_operation_count(), Some(0));
+    assert!(position.set_operation(1));
+    let error = Engine::from_rollback_image(round_trip(redirected), &owner).unwrap_err();
+    assert!(error.contains("no original caller operation"), "{error}");
+    assert_eq!(live.inert_rollback_image().unwrap(), original);
+
+    let mut restored = Engine::from_rollback_image(round_trip(original), &owner).unwrap();
+    for _ in 0..16 {
+        let expected = live.step(RuntimeStepInput::default(), options);
+        let actual = restored.step(RuntimeStepInput::default(), options);
+        assert_eq!(actual, expected);
+        assert!(actual.output.diagnostics.is_empty());
+        assert!(actual.stats.executed_ops <= 1);
+        if matches!(actual.fiber_status, crate::engine::FlowFiberStatus::Done(_)) {
+            return;
+        }
+    }
+    panic!("the saved executable call did not return");
 }
 
 #[test]
@@ -822,7 +884,10 @@ fn surplus_arguments_reject_before_creating_an_executable_frame() {
         [],
     )
     .unwrap();
-    let result = returning_function_result(&engine.plan);
+    let plan = engine.program_plan();
+    let crate::plan::FlowOp::ApplyGroup { result, .. } = &plan.flows()[0].body().ops()[1] else {
+        panic!("fixture retains the original call result");
+    };
     let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&engine.plan));
     let before = engine.fiber().inert_rollback_image(&owner).unwrap();
     let mut backend = crate::pure::VmRuntimePureCallBackend::default();

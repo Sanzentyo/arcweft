@@ -1291,20 +1291,52 @@ pub(crate) struct NativeFormatOperandFrame<O = NativePendingWork> {
 }
 
 /// One invocation frame shared by direct and value-based function calls.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct FunctionCallFrame<
     O = NativePendingWork,
     P = crate::value::RuntimeCallablePendingGroup,
 > {
+    #[serde(with = "crate::plan::code::function_coordinate")]
     site: crate::runtime_id::RuntimeFunctionSiteId,
+    #[serde(with = "function_frame_instantiation")]
     type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     function_scope: bool,
     caller_pending_ops: VecDeque<O>,
     continuation: FunctionReturnContinuation<P>,
 }
 
+mod function_frame_instantiation {
+    use crate::program_types::RuntimeFunctionEffectInstantiation;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::sync::Arc;
+
+    pub(super) fn serialize<S: Serializer>(
+        value: &Option<Arc<RuntimeFunctionEffectInstantiation>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value.as_deref().serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Arc<RuntimeFunctionEffectInstantiation>>, D::Error> {
+        Option::<RuntimeFunctionEffectInstantiation>::deserialize(deserializer)
+            .map(|value| value.map(Arc::new))
+    }
+}
+
 type FunctionCallFrameRollbackImage =
     FunctionCallFrame<NativePendingWorkRollbackImage, crate::value::RuntimeCallablePendingSnapshot>;
+
+impl<O: work::NativeStoredWork, P> FunctionCallFrame<O, P> {
+    fn original_caller_result<'plan>(
+        &self,
+        plan: &'plan RuntimePlan,
+    ) -> Option<&'plan RuntimePattern> {
+        self.caller_pending_ops.front()?.original_call_result(plan)
+    }
+}
 
 impl Clone for FunctionCallFrameRollbackImage {
     fn clone(&self) -> Self {
@@ -1490,10 +1522,12 @@ impl FunctionCallFrame {
 
 /// The caller operation resumed after an invocation returns. A default
 /// resumes its materialization plan without reevaluating source operands.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) enum FunctionReturnContinuation<P = crate::value::RuntimeCallablePendingGroup> {
     /// A synchronous expression body returns to its live evaluator. The
     /// original site and caller queue still belong to the same call frame.
+    #[serde(skip)]
     Expression,
     RootInitializer {
         entry: EntryRuntimeId,
@@ -1505,15 +1539,13 @@ pub(crate) enum FunctionReturnContinuation<P = crate::value::RuntimeCallablePend
         program: arcweft_id::runtime_program::RuntimePureProgramId,
     },
     Function {
+        #[serde(with = "crate::plan::code::function_coordinate")]
         site: crate::runtime_id::RuntimeFunctionSiteId,
     },
     CallableDefault {
         pending: P,
-        result: RuntimePattern,
     },
-    Bind {
-        result: RuntimePattern,
-    },
+    Bind,
 }
 
 type FunctionReturnContinuationRollbackImage =
@@ -1522,10 +1554,11 @@ type FunctionReturnContinuationRollbackImage =
 impl<P> FunctionReturnContinuation<P> {
     /// A nested invocation resumes the same task instead of ending its work.
     const fn returns_to_caller(&self) -> bool {
-        matches!(
-            self,
-            Self::Expression | Self::CallableDefault { .. } | Self::Bind { .. }
-        )
+        matches!(self, Self::Expression) || self.resumes_call_site()
+    }
+
+    const fn resumes_call_site(&self) -> bool {
+        matches!(self, Self::CallableDefault { .. } | Self::Bind)
     }
 }
 
@@ -1541,13 +1574,10 @@ impl Clone for FunctionReturnContinuationRollbackImage {
             },
             Self::Program { program } => Self::Program { program: *program },
             Self::Function { site } => Self::Function { site: *site },
-            Self::CallableDefault { pending, result } => Self::CallableDefault {
+            Self::CallableDefault { pending } => Self::CallableDefault {
                 pending: pending.clone(),
-                result: result.clone(),
             },
-            Self::Bind { result } => Self::Bind {
-                result: result.clone(),
-            },
+            Self::Bind => Self::Bind,
         }
     }
 }
@@ -1578,18 +1608,15 @@ impl FunctionReturnContinuation {
             Self::Function { site } => {
                 FunctionReturnContinuationRollbackImage::Function { site: *site }
             }
-            Self::CallableDefault { pending, result } => {
+            Self::CallableDefault { pending } => {
                 FunctionReturnContinuationRollbackImage::CallableDefault {
                     pending: crate::value::RuntimeCallablePendingSnapshot::from_live_admitted(
                         pending, owner,
                     )
                     .map_err(|error| error.to_string())?,
-                    result: result.clone(),
                 }
             }
-            Self::Bind { result } => FunctionReturnContinuationRollbackImage::Bind {
-                result: result.clone(),
-            },
+            Self::Bind => FunctionReturnContinuationRollbackImage::Bind,
         })
     }
 
@@ -1634,15 +1661,14 @@ impl FunctionReturnContinuation {
             FunctionReturnContinuationRollbackImage::Function { site: target } => {
                 Self::Function { site: target }
             }
-            FunctionReturnContinuationRollbackImage::CallableDefault { pending, result } => {
+            FunctionReturnContinuationRollbackImage::CallableDefault { pending } => {
                 Self::CallableDefault {
                     pending: pending
                         .into_live_admitted(owner)
                         .map_err(|error| error.to_string())?,
-                    result,
                 }
             }
-            FunctionReturnContinuationRollbackImage::Bind { result } => Self::Bind { result },
+            FunctionReturnContinuationRollbackImage::Bind => Self::Bind,
         })
     }
 }

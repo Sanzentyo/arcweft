@@ -18,7 +18,7 @@ impl Engine {
         &mut self,
         callee: RuntimeValue,
         args: Vec<RuntimeValue>,
-        result: RuntimePattern,
+        result: &RuntimePattern,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
@@ -35,7 +35,7 @@ impl Engine {
                     .try_bind_prefix(args)
                     .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?,
             );
-            self.complete_function_call_result(&result, next_op_index, value, output);
+            self.complete_function_call_result(result, next_op_index, value, output);
             return Ok(());
         }
         let arguments = callable
@@ -61,7 +61,7 @@ impl Engine {
         arguments: Vec<RuntimeValue>,
         attached: Option<RuntimeValue>,
         argument_order: crate::value::RuntimeInputOrder,
-        result: RuntimePattern,
+        result: &RuntimePattern,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
@@ -77,36 +77,34 @@ impl Engine {
         &mut self,
         pending: RuntimeCallablePendingGroup,
         attached: RuntimeValue,
-        result: RuntimePattern,
-        next_op_index: Option<usize>,
+        result: &RuntimePattern,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
         let application = pending
             .complete_default(attached)
             .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?;
-        self.start_callable_application(application, result, next_op_index, output, backend)
+        self.start_callable_application(application, result, None, output, backend)
     }
 
     fn start_callable_application(
         &mut self,
         application: RuntimeCallableApplication,
-        result: RuntimePattern,
+        result: &RuntimePattern,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
         match application {
             RuntimeCallableApplication::Complete(value) => {
-                self.complete_function_call_result(&result, next_op_index, value, output);
+                self.complete_function_call_result(result, next_op_index, value, output);
                 Ok(())
             }
             RuntimeCallableApplication::Invoke(invocation) => {
                 let RuntimeCallableBodyReference::Plan(site) = invocation.body else {
                     return Err(RuntimeCallableValueError::ForeignProgram.into());
                 };
-                let frame =
-                    FunctionCallFrame::new(site, FunctionReturnContinuation::Bind { result });
+                let frame = FunctionCallFrame::new(site, FunctionReturnContinuation::Bind);
                 self.start_function_site_call(invocation, frame, next_op_index, output, backend)
             }
             RuntimeCallableApplication::AttachedDefault {
@@ -118,7 +116,7 @@ impl Engine {
                 };
                 let frame = FunctionCallFrame::new(
                     site,
-                    FunctionReturnContinuation::CallableDefault { pending, result },
+                    FunctionReturnContinuation::CallableDefault { pending },
                 );
                 self.start_function_site_call(invocation, frame, next_op_index, output, backend)
             }

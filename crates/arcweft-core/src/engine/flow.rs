@@ -348,7 +348,7 @@ impl Engine {
             self.execute_native_resume(resume, output, pure_backend);
             return;
         }
-        let (op, source_site, next_op_index) = if let Some(work) =
+        let (op, source_site, next_op_index, call) = if let Some(work) =
             self.fiber.frame.pending_ops.front_mut()
         {
             let NativePendingWorkKind::Source { position, role } = &mut work.kind else {
@@ -396,11 +396,13 @@ impl Engine {
                 );
                 None
             };
-            // The selected source operation has been consumed before it
-            // can suspend or save its caller. Only function-root EOF is
-            // an executable completion transition.
-            self.fiber.frame.normalize_pending_source_ranges(&plan);
-            (Cow::Borrowed(op), source, advance)
+            // A call parks its advanced range, including EOF, so its return
+            // can borrow the original call pattern from that same range.
+            let call = matches!(op, FlowOp::ApplyGroup { .. } | FlowOp::ProjectCall { .. });
+            if !call {
+                self.fiber.frame.normalize_pending_source_ranges(&plan);
+            }
+            (Cow::Borrowed(op), source, advance, call)
         } else {
             if self.fiber.frame.active_function().is_some() {
                 self.fail_eval("active function lost its queued original root", output);
@@ -416,6 +418,9 @@ impl Engine {
             drop_policy,
             line_registry,
         );
+        if call {
+            self.fiber.frame.normalize_pending_source_ranges(&plan);
+        }
     }
 
     // Authored dispatch borrows original plan rows. Runtime state is consumed
@@ -826,7 +831,7 @@ impl Engine {
                     self.start_function_value_call(
                         callee,
                         args,
-                        result.clone(),
+                        result,
                         next_op_index,
                         output,
                         pure_backend,
@@ -1316,7 +1321,7 @@ impl Engine {
             arguments,
             attached,
             order,
-            row.result().clone(),
+            row.result(),
             next_op_index,
             output,
             pure_backend,

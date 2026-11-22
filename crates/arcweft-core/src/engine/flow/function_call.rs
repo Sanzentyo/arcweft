@@ -5,6 +5,7 @@ mod tests;
 
 use std::sync::Arc;
 
+use crate::engine::work::NativeStoredWork;
 use crate::engine::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberStatus, FunctionCallFrame,
     FunctionReturnContinuation, RuntimeCallBackend, RuntimeEvalError, RuntimeStepOutput,
@@ -237,20 +238,34 @@ impl Engine {
                     Some((crate::engine::NativeInvocationRoot::Function(site), value));
                 self.fiber.frame.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
             }
-            FunctionReturnContinuation::CallableDefault { pending, result } => {
-                if let Err(error) = self.finish_callable_group_default(
-                    pending,
-                    value,
-                    result,
-                    None,
-                    output,
-                    pure_backend,
-                ) {
-                    self.fail_eval(error, output);
+            continuation @ (FunctionReturnContinuation::CallableDefault { .. }
+            | FunctionReturnContinuation::Bind) => {
+                let Some(result) = self
+                    .fiber
+                    .frame
+                    .pending_ops
+                    .front()
+                    .and_then(|work| work.original_call_result(&plan_owner))
+                else {
+                    self.fail_eval(
+                        "native function return has no original caller operation",
+                        output,
+                    );
+                    return;
+                };
+                if let FunctionReturnContinuation::CallableDefault { pending } = continuation {
+                    if let Err(error) = self.finish_callable_group_default(
+                        pending,
+                        value,
+                        result,
+                        output,
+                        pure_backend,
+                    ) {
+                        self.fail_eval(error, output);
+                    }
+                } else {
+                    self.complete_function_call_result(result, None, value, output);
                 }
-            }
-            FunctionReturnContinuation::Bind { result } => {
-                self.complete_function_call_result(&result, None, value, output);
             }
         }
     }
@@ -262,7 +277,8 @@ impl Engine {
         value: RuntimeValue,
         output: &mut RuntimeStepOutput,
     ) {
-        match self.try_bind_pattern_owned(result, value) {
+        let bound = self.try_bind_pattern_owned(result, value);
+        match bound {
             Ok(None) => {
                 self.advance_if_needed(next_op_index);
                 self.fiber.frame.status = FlowFiberStatus::Running;
@@ -273,6 +289,7 @@ impl Engine {
             ),
             Err(error) => self.fail_eval(error, output),
         }
+        self.fiber.frame.normalize_pending_source_ranges(&self.plan);
     }
 
     fn take_function_call_frame(

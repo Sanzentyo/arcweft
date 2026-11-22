@@ -29,18 +29,18 @@ pub(crate) enum RuntimeLineCodeBody {
 
 // A persisted code coordinate is inert until resolved against its Plan.
 // Give only this field a reader, keeping function site IDs constructor-bound.
-mod function_coordinate {
+pub(crate) mod function_coordinate {
     use super::*;
     use std::num::NonZeroU32;
 
-    pub(super) fn serialize<S: serde::Serializer>(
+    pub(crate) fn serialize<S: serde::Serializer>(
         site: &RuntimeFunctionSiteId,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         site.get().serialize(serializer)
     }
 
-    pub(super) fn deserialize<'de, D: serde::Deserializer<'de>>(
+    pub(crate) fn deserialize<'de, D: serde::Deserializer<'de>>(
         deserializer: D,
     ) -> Result<RuntimeFunctionSiteId, D::Error> {
         NonZeroU32::deserialize(deserializer).map(RuntimeFunctionSiteId::from_accepted_ordinal)
