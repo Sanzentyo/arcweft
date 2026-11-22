@@ -1715,22 +1715,28 @@ fn admission_charges_the_shared_context_and_observes_cancellation() {
     let parent = scope(0, &mut effect_graph, &mut setup);
     let limited_child = scope(1, &mut effect_graph, &mut setup);
     let cancelled_child = scope(1, &mut effect_graph, &mut setup);
-    let mut context = context(&cancellation, 2);
     // This test isolates application admission from source-context admission.
-    let original = parent.original_context().clone();
-    let root = context
-        .start_path_with_imported(parent, None, original, effect_graph.read())
-        .unwrap();
+    let root = setup.start_path(parent, &mut effect_graph).unwrap();
+    let mut context = context(&cancellation, 2);
     let sibling = context.fork_path(&root).unwrap();
     assert!(matches!(
         context.admit_application(sibling, limited_child, &mut effect_graph),
+        Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
+            actual: 4,
+            limit: 2
+        }))
+    ));
+    // Validating the child's effect function was charged. The rejected
+    // insertion did not charge its three-node inventory.
+    assert_eq!(context.accounting_mut().report().nodes(), 1);
+    assert!(context.enter_node().is_ok());
+    assert!(matches!(
+        context.enter_node(),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
             actual: 3,
             limit: 2
         }))
     ));
-    assert!(context.enter_node().is_ok());
-    assert!(context.enter_node().is_ok());
     let sibling = context.fork_path(&root).unwrap();
     cancellation.store(true, Ordering::Release);
     assert!(matches!(

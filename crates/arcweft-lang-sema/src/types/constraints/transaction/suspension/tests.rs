@@ -255,30 +255,24 @@ fn suspension_checks_unique_projections_cancellation_and_the_original_inclusive_
         ));
     }
     for (limit, succeeds) in [(3, true), (2, false)] {
-        // Keep the suspension budget independent of the separately tested
-        // source-admission budget by supplying an already admitted fixture.
-        let (mut context, parameters) = ConstraintTestSetup::new(
-            TypeConstraintLimits::new(limit, 1024, 128, 128),
+        let (mut setup, mut transaction) = root(
             &cancellation,
-        )
-        .into_parts();
-        let original =
-            super::super::super::OriginalProducerContext::ground_fixture(Default::default());
-        let mut transaction = Transaction::initialize(
-            &mut context,
             &mut effect_graph,
-            original,
-            (),
-            parameters,
-            None,
-        )
-        .unwrap();
+            TypeConstraintParameterScope::empty(),
+            1024,
+        );
         result(
-            &mut context,
+            &mut setup,
             &mut effect_graph,
             &mut transaction,
             &TypeKind::I32,
         );
+        let mut context = Context::with_accounting(LocalConstraintAccounting::new(
+            TypeConstraintLimits::new(limit, 1024, 128, 128),
+            &cancellation,
+        ));
+        // Suspension must share the inclusive work budget with earlier work.
+        context.enter_node().unwrap();
         let suspended = transaction.suspend_result(&mut context, ());
         assert_eq!(suspended.is_ok(), succeeds);
         if !succeeds {

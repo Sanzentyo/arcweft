@@ -418,6 +418,8 @@ fn repeated_source_component<'a>(
     ApplicationSourceContext<'a>,
     TypeConstraintTransaction<ApplicationSourceDomain>,
 ) {
+    // The parameter scope issues the opening identity before graph admission.
+    let child_parameters = TypeConstraintParameterScope::empty();
     let (mut context, parameters) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, ApplicationSourceDomain>::new(
             TypeConstraintLimits::new(4096, 2048, 128, 128),
@@ -428,7 +430,7 @@ fn repeated_source_component<'a>(
     // rely on monotonically issued application identities.
     let child_scope = ConstraintApplicationScope::test_root(
         child_application,
-        TypeConstraintParameterScope::empty(),
+        child_parameters,
         graph,
         &mut context,
     );
@@ -1604,7 +1606,9 @@ fn fixed_effect_evidence_rejects_shrinking_and_expanding_function_relations() {
                 left == right
             )),
             Err(TypeConstraintFailure::Rejected(
-                TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::Mismatch)
+                TypeConstraintCandidateFailure::Constraint(
+                    TypeConstraintRejection::EffectUnsatisfiable
+                )
             ))
         ));
     }
@@ -1615,43 +1619,67 @@ fn fixed_effect_evidence_abort_cannot_publish_a_partial_equality() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let (parameters, variable) = effect_scope();
     let cancellation = AtomicBool::new(false);
-    let (mut context, test_parameters) =
+    let (mut setup, path) =
         ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
-            TypeConstraintLimits::new(128, 1, 16, 16),
+            TypeConstraintLimits::new(4096, 2048, 16, 16),
             &cancellation,
             parameters,
         )
-        .into_parts();
-    let mut transaction = TypeConstraintTransaction::initialize_fixture(
-        &mut context,
-        &mut effect_graph,
-        (),
-        test_parameters,
-        None,
-    )
-    .unwrap();
-    transaction.constrain_effect_equality(
-        &mut context,
-        &mut effect_graph,
-        &PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), variable)),
-        &PreparedEffectRow::Canonical(EffectRow::closed(
-            EffectSet::from_labels(["fs.read"]).unwrap(),
-        )),
-    );
-    assert!(transaction.frontier.is_empty());
-    assert!(transaction.materialization.pending_len() == 0);
-    assert!(transaction.materialization.records_are_empty());
-    assert!(matches!(
-        transaction.finish(&mut context, &mut effect_graph, |left, right, _| Ok(
-            left == right
-        )),
-        Err(TypeConstraintFailure::Abort(
-            TypeConstraintAbort::NodeLimit {
-                actual: 2,
-                limit: 1,
-            }
-        ))
-    ));
+        .into_path(&mut effect_graph);
+    let open = PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), variable));
+    let fixed = EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap());
+    let retained_terms = effect_graph.retained_terms();
+    // Sweep from input admission through the last node before graph commit.
+    for limit in 1..=128 {
+        let mut transaction = TypeConstraintTransaction::from_path(
+            &mut setup,
+            &mut effect_graph,
+            path.root_id(),
+            path.clone(),
+            None,
+        )
+        .unwrap();
+        let mut context = TypeConstraintContext::with_accounting(LocalConstraintAccounting::new(
+            TypeConstraintLimits::new(128, limit, 16, 16),
+            &cancellation,
+        ));
+        transaction.constrain_effect_equality(
+            &mut context,
+            &mut effect_graph,
+            &open,
+            &PreparedEffectRow::Canonical(fixed.clone()),
+        );
+        if !transaction.frontier.is_empty() {
+            assert!(limit > 1);
+            let solved = transaction
+                .finish(&mut setup, &mut effect_graph, |left, right, _| {
+                    Ok(left == right)
+                })
+                .unwrap();
+            assert_eq!(
+                solved
+                    .component
+                    .selected()
+                    .solution()
+                    .effect_bindings()
+                    .map(|(_, row)| row.value())
+                    .collect::<Vec<_>>(),
+                vec![&fixed],
+            );
+            return;
+        }
+        assert_eq!(effect_graph.retained_terms(), retained_terms);
+        assert_eq!(transaction.materialization.pending_len(), 0);
+        assert!(transaction.materialization.records_are_empty());
+        assert!(matches!(
+            transaction.finish(&mut context, &mut effect_graph, |left, right, _| Ok(left == right)),
+            Err(TypeConstraintFailure::Abort(TypeConstraintAbort::NodeLimit {
+                actual,
+                limit: observed,
+            })) if actual == limit + 1 && observed == limit
+        ));
+    }
+    panic!("fixed effect equality must complete at an admissible node limit");
 }
 
 fn source_frontier<A: TypeConstraintAccounting>(
@@ -1688,6 +1716,19 @@ fn source_frontier<A: TypeConstraintAccounting>(
         TypeConstraintTransaction::from_path(context, graph, path.root_id(), first, None).unwrap();
     transaction.frontier.push(second);
     transaction
+}
+
+fn fixture_source_frontier(
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+    cancellation: &AtomicBool,
+) -> TypeConstraintTransaction<NoConstraintClient> {
+    let (mut setup, path) = ConstraintTestSetup::<LocalConstraintAccounting<'_>, _>::with_scope(
+        TypeConstraintLimits::new(4096, 2048, 128, 128),
+        cancellation,
+        scope(),
+    )
+    .into_path(graph);
+    source_frontier(&mut setup, graph, &path)
 }
 
 #[test]
@@ -1834,14 +1875,11 @@ fn completion_and_comparison_limits_prevent_partial_materialization_ticket_issua
     let cancellation = AtomicBool::new(false);
     let mut first_accepted_limit = None;
     for limit in 4..=256 {
-        let (mut context, path) =
-            ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
-                TypeConstraintLimits::new(4096, limit, 16, 16),
-                &cancellation,
-                scope(),
-            )
-            .into_path(&mut effect_graph);
-        let mut transaction = source_frontier(&mut context, &mut effect_graph, &path);
+        let mut transaction = fixture_source_frontier(&mut effect_graph, &cancellation);
+        let mut context = TypeConstraintContext::with_accounting(LocalConstraintAccounting::new(
+            TypeConstraintLimits::new(4096, limit, 16, 16),
+            &cancellation,
+        ));
         let result = transaction.close(&mut context, &mut effect_graph);
         match result {
             Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
@@ -1850,7 +1888,7 @@ fn completion_and_comparison_limits_prevent_partial_materialization_ticket_issua
             })) => {
                 assert_eq!(observed, limit);
                 assert_eq!(actual, limit + 1);
-                assert!(transaction.materialization.pending_len() == 0);
+                assert_eq!(transaction.materialization.pending_len(), 0);
                 assert!(transaction.materialization.records_are_empty());
                 assert!(
                     transaction
@@ -1951,9 +1989,11 @@ fn incomplete_alternatives_are_rejected_before_any_materialization() {
     }
 }
 
-struct CancelBeforeComparison<'a> {
+struct CancelDuringComparison<'a> {
     cancellation: &'a AtomicBool,
+    limits: TypeConstraintLimits,
     nodes: u64,
+    first_comparison_node: u64,
 }
 
 #[derive(Default)]
@@ -2051,14 +2091,14 @@ fn transaction_completion_cannot_release_or_reset_the_surrounding_context() {
     }
 }
 
-impl TypeConstraintAccounting for CancelBeforeComparison<'_> {
+impl TypeConstraintAccounting for CancelDuringComparison<'_> {
     fn charge_constraint(
         &mut self,
         delta: &TypeConstraintWorkReport,
         _limits: TypeConstraintLimits,
     ) -> Result<(), TypeConstraintError> {
         self.nodes += delta.nodes();
-        if self.nodes == 4 {
+        if self.nodes == self.first_comparison_node {
             self.cancellation.store(true, Ordering::Release);
         }
         Ok(())
@@ -2067,9 +2107,9 @@ impl TypeConstraintAccounting for CancelBeforeComparison<'_> {
     fn commit(&mut self) {}
 }
 
-impl<'a> TypeConstraintContextIssuer<'a> for CancelBeforeComparison<'a> {
+impl<'a> TypeConstraintContextIssuer<'a> for CancelDuringComparison<'a> {
     fn context_limits(&self) -> TypeConstraintLimits {
-        TypeConstraintLimits::new(128, 128, 16, 16)
+        self.limits
     }
 
     fn context_cancellation(&self) -> &'a AtomicBool {
@@ -2079,21 +2119,59 @@ impl<'a> TypeConstraintContextIssuer<'a> for CancelBeforeComparison<'a> {
 
 #[test]
 fn comparison_cancellation_prevents_materialization_ticket_issuance() {
-    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let cancellation = AtomicBool::new(false);
-    let (mut context, path) = ConstraintTestSetup::<_, NoConstraintClient>::with_accounting(
-        CancelBeforeComparison {
-            cancellation: &cancellation,
-            nodes: 0,
-        },
-        scope(),
-    )
-    .into_path(&mut effect_graph);
-    let mut transaction = source_frontier(&mut context, &mut effect_graph, &path);
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let mut transaction = fixture_source_frontier(&mut graph, &cancellation);
+    let limits = TypeConstraintLimits::new(4096, 2048, 128, 128);
+    let mut measure = TypeConstraintContext::with_accounting(LocalConstraintAccounting::new(
+        limits,
+        &cancellation,
+    ));
+    // Measure the real normalization and completion on a separate fixture.
+    // Cancel on the first node charged by comparing the two completed rows.
+    measure
+        .with_effect_transaction(&mut graph, |context, graph| {
+            let mut normalized = Vec::new();
+            for path in core::mem::take(&mut transaction.frontier) {
+                let NormalizedPath::Acyclic(path) =
+                    transaction.normalize_path(path, graph, context)?
+                else {
+                    panic!("the fixture has two acyclic alternatives");
+                };
+                normalized.push(path);
+            }
+            for path in normalized {
+                TypeConstraintTransaction::complete_component(
+                    &path,
+                    transaction.application,
+                    graph,
+                    context,
+                )?;
+            }
+            Ok::<_, TypeConstraintError>(())
+        })
+        .unwrap();
+    let first_comparison_node = measure.accounting_mut().report().nodes() + 1;
+
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let mut transaction = fixture_source_frontier(&mut graph, &cancellation);
+    let mut context = TypeConstraintContext::with_accounting(CancelDuringComparison {
+        cancellation: &cancellation,
+        limits,
+        nodes: 0,
+        first_comparison_node,
+    });
     assert_eq!(
-        transaction.close(&mut context, &mut effect_graph),
+        transaction.close(&mut context, &mut graph),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     );
-    assert!(transaction.materialization.pending_len() == 0);
+    assert_eq!(transaction.materialization.pending_len(), 0);
     assert!(transaction.materialization.records_are_empty());
+    cancellation.store(false, Ordering::Release);
+    assert!(
+        transaction
+            .next_materialization_ticket(&mut context, &mut graph)
+            .unwrap()
+            .is_none()
+    );
 }

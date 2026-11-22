@@ -1210,7 +1210,9 @@ fn function_effect_subset_failure_is_an_ordinary_candidate_rejection() {
     assert!(matches!(
         solve(expected, actual),
         Err(TypeConstraintFailure::Rejected(
-            TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::Mismatch)
+            TypeConstraintCandidateFailure::Constraint(
+                TypeConstraintRejection::EffectUnsatisfiable
+            )
         ))
     ));
 }
