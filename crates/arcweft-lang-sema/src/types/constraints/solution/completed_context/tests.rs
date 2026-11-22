@@ -8,8 +8,8 @@ use crate::{
         DetachedGenericOwnerId, GenericBinder, GenericConstParameterId, GenericEffectParameterId,
         GenericParameterOwnerId, GenericTypeParameterId,
         constraints::{
-            NoConstraintClient, TypeConstraintConstEligibility, TypeConstraintEffectScope,
-            TypeConstraintParameterScope,
+            NoConstraintClient, OriginalRigidScope, TypeConstraintConstEligibility,
+            TypeConstraintEffectScope, TypeConstraintParameterScope,
             context::{
                 LocalConstraintAccounting, TypeConstraintConstParameterScopeRow as ConstRow,
                 TypeConstraintLimits, TypeConstraintTypeParameterScopeRow as TypeRow,
@@ -61,12 +61,31 @@ fn fixture<'a>(
         [],
     )
     .unwrap();
-    let (context, path) = crate::types::constraints::test_support::ConstraintTestSetup::with_scope(
-        TypeConstraintLimits::new(65_536, 32_768, 1024, 1024),
-        cancellation,
-        parameters,
-    )
-    .into_path(graph);
+    let (mut context, parameters) =
+        crate::types::constraints::test_support::ConstraintTestSetup::with_scope(
+            TypeConstraintLimits::new(65_536, 32_768, 1024, 1024),
+            cancellation,
+            parameters,
+        )
+        .into_parts();
+    let original = context
+        .fixture_original_context_with_rigid(OriginalRigidScope {
+            types: &references.each_ref().map(|reference| reference.ty.clone()),
+            consts: &references
+                .each_ref()
+                .map(|reference| reference.length.clone()),
+            effects: &references
+                .each_ref()
+                .map(|reference| reference.effect.clone()),
+            imported: None,
+        })
+        .unwrap();
+    let application = context
+        .application_scope((), parameters, original.clone(), graph)
+        .unwrap();
+    let path = context
+        .start_path_with_imported(application, None, original, graph.read())
+        .unwrap();
     (context, path, references)
 }
 
@@ -82,9 +101,16 @@ fn completed_type_and_const_values_cannot_reopen_with_a_siblings_capture() {
         .close_original_path_effects(&mut graph, &mut context)
         .unwrap();
     let types = references.each_ref().map(|r| {
+        let operand = context
+            .fixture_prepared_operand_in(
+                &path.lineage.original,
+                &TypeKind::GenericParam(r.ty.clone()),
+                &mut graph,
+            )
+            .unwrap();
         generic
             .reify_type(
-                &context.fixture_operand(TypeKind::GenericParam(r.ty.clone())),
+                &operand,
                 &path,
                 application,
                 None,
@@ -114,13 +140,14 @@ fn completed_type_and_const_values_cannot_reopen_with_a_siblings_capture() {
     );
 
     let lengths = references.each_ref().map(|r| {
-        generic
-            .reify_length(
-                &context.fixture_operand(ArrayLength::Generic(r.length.clone())),
-                &path,
-                application,
-                &mut context,
+        let operand = context
+            .fixture_operand_in(
+                &path.lineage.original,
+                &ArrayLength::Generic(r.length.clone()),
             )
+            .unwrap();
+        generic
+            .reify_length(&operand, &path, application, &mut context)
             .unwrap()
     });
     for value in &lengths {
@@ -496,9 +523,12 @@ fn canonical_result_predicate_prunes_only_the_root_header_captures() {
             EffectRow::closed(EffectSet::new()),
         );
         let prepared = context.prepare_fixture_type(&original).unwrap();
+        let operand = context
+            .fixture_prepared_operand_in(&path.lineage.original, &prepared, &mut graph)
+            .unwrap();
         let value = generic
             .reify_type(
-                &context.fixture_operand(prepared),
+                &operand,
                 &path,
                 application,
                 Some(&incoming),

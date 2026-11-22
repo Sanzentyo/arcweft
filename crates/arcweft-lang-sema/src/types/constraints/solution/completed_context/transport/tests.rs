@@ -10,7 +10,8 @@ use crate::{
         DetachedGenericOwnerId, GenericBinder, GenericConstParameterId, GenericEffectParameterId,
         GenericParameterOwnerId, GenericTypeParameterId, PreparedEffects,
         constraints::{
-            NoConstraintClient, TypeConstraintParameterScope,
+            NoConstraintClient, OriginalRigidScope, TypeConstraintParameterEligibility,
+            TypeConstraintParameterScope,
             context::{LocalConstraintAccounting, TypeConstraintLimits},
             normalization::close_type_operand,
             test_support::ConstraintTestSetup,
@@ -243,21 +244,54 @@ fn a_receivers_type_declaration_does_not_supply_the_operands_free_authority() {
         TypeConstraintParameterEligibility::Rigid,
     )])
     .unwrap();
-    let (mut context, path) = fixture(&cancellation, parameters, &mut graph);
     let reference: GenericTypeReference = parameter.into();
     let value = TypeKind::<PreparedEffects>::GenericParam(reference.clone());
-    let source = original(&path, &value, &mut graph, &mut context);
-    let effects =
-        ConstraintClosedEffects::for_path(&path, &source, &[], &mut graph, &mut context).unwrap();
+    let (mut context, parameters) = ConstraintTestSetup::<_, NoConstraintClient>::with_scope(
+        TypeConstraintLimits::new(131_072, 65_536, 1024, 1024),
+        &cancellation,
+        parameters,
+    )
+    .into_parts();
+    let source = context
+        .fixture_original_context_with_rigid(OriginalRigidScope {
+            types: std::slice::from_ref(&reference),
+            consts: &[],
+            effects: &[],
+            imported: None,
+        })
+        .unwrap();
+    let application = context
+        .application_scope((), parameters, source.clone(), &mut graph)
+        .unwrap();
+    let path = context.start_path(application, &mut graph).unwrap();
+    let effects = path
+        .close_original_path_effects(&mut graph, &mut context)
+        .unwrap();
     let application = path.root_scope();
-    assert!(
-        application
-            .parameters()
-            .type_reference(&reference)
-            .is_some()
+    assert_eq!(
+        context.parameter_eligibility(&reference, path.projection_view()),
+        Some(TypeConstraintParameterEligibility::Rigid),
     );
     let generic =
         CompletedGenericContext::for_application(&path, application, &mut context).unwrap();
+    let owned = context
+        .fixture_prepared_operand_in(&source, &value, &mut graph)
+        .unwrap();
+    let completed = generic
+        .reify_type(
+            &owned,
+            &path,
+            application,
+            None,
+            &effects,
+            graph.read(),
+            &mut context,
+        )
+        .unwrap();
+    assert_eq!(
+        completed.value(),
+        &TypeKind::GenericParam(reference.clone())
+    );
     let operand = context.fixture_operand(value);
     assert_eq!(
         generic.reify_type(

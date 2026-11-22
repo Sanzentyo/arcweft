@@ -692,14 +692,15 @@ fn a_completed_projection_input_keeps_its_type_const_and_effect_environment() {
         Some(&input),
     );
     context.restore_binder_scope(outer);
-    let unrelated = context.enter_binder_scope(binder);
+    let unrelated = context.enter_binder_scope(crate::types::GenericBinder::new(2, 0, 0));
+    let receiving = context.capture_lexical_scope().unwrap();
     let solved = transaction
         .finish(&mut context, &mut graph, |left, right, _| Ok(left == right))
         .unwrap();
     let projection = solved.component.projection(0, &()).unwrap();
     assert!(!projection.projection().has_exact_input_match());
     let actual = projection.projection().input_type().unwrap();
-    assert_eq!(actual.scope().binders(), &[binder, binder]);
+    assert_eq!(actual.scope().binders(), &[binder]);
     assert_eq!(actual.scope(), projection.projection().value().scope());
     assert!(actual.to_root_type().is_err());
     actual
@@ -726,6 +727,7 @@ fn a_completed_projection_input_keeps_its_type_const_and_effect_environment() {
         effects,
         &EffectRow::open(EffectSet::new(), actual.scope().bound_effect(0, 0).unwrap())
     );
+    assert_eq!(context.capture_lexical_scope().unwrap(), receiving);
     context.restore_binder_scope(unrelated);
 }
 
