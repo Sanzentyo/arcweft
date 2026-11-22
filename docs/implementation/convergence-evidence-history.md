@@ -21366,3 +21366,19 @@ Sema libは2,029件を実行し、1,986 PASS／43既知FAIL。Cargo graph上の2
 受入・公開済みの Generic Match C3/C5 は元の受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBCの継続・保存 7件がすべて通過した。
 
 [検証原本](acceptance-evidence/task-shared-application-gamma.raw.zip) は42項目、1,210,045 bytes、SHA256 `d2ac4adf5b8c0e19bcaa23e11ff0746aaa918d55afc86f37d9c5caa9d3d28f3f`。全項目の長さとSHA256を照合した。検証後の `target` は136,144,359,031 bytes。
+
+<a id="final-probe-checkpoint"></a>
+
+### 最後の引数試行をコールバックのトランザクションで実行
+
+検証日 2026-11-22。製品 Source `5314be4240ed83a78a46b713f9439ff1a0c5c699` は main への通常 push 後に、公開 ref と4つの変更 blob を照合した。先行 Source `8dfca943f980b0e00ac568df11dc56a488fd5628` の結果は [呼出し元スコープの履歴](#shared-application-gamma) に保持する。
+
+別の選択肢が後にある試行は、式と効果グラフの変更を個別に巻き戻せる子トランザクションで実行する。最後の試行と期待型を渡さない試行は、コールバックのトランザクションを使い、試行開始時に式の事実の読み取り位置を取り直す。採用済みの式とグラフの変更は元のコールバックが抽出する。拒否・失敗では同じ所有者が両方を巻き戻す。型の検査と物理プローブの記録は各候補で実行する。
+
+256候補の既存テストで完了件数が133件から151件に増えた。152件目で、下位の制約処理が引数の期待型を開く前に設定する効果グラフのチェックポイント（PreparedEffectGraph の transaction.rs:230、下位の next_probe は transaction.rs:2104）の計上が作業上限に達した。呼出し全体の上限は4,096単位。テストは引き続き CallResolutionFailed。型が一致しない2件目を同じ入口と出口で追跡したところ、下位の計上チェックは23回から20回へ減った。事実スコープを開く計上が6回から3回へ減り、型制約コンテキストの計上は11回だった。
+
+Sema libは2,030件を実行し、1,987 PASS／43既知FAIL。Cargo graph上の22パッケージを確認し、非CLIの21パッケージで4,349件を実行し、4,306 PASS／43既知FAIL／別に1 SKIP。既存の全テストIDで前回と同じ結果だった。Semaの43失敗は診断も一致した。最後の試行の事実の読み取り位置、物理プローブの同一性、効果グラフと式のロールバックを検証した。CLIのlib／bin 196件と統合6対象30件は全件通過し、前回と同じ226 IDを確認した。ワークスペース全ターゲット・全機能のcheck／Clippyと変更ファイルの書式は終了0。
+
+受入・公開済みの Generic Match C3/C5 は元の受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBCの継続・保存 7件がすべて通過した。
+
+[検証原本](acceptance-evidence/task-final-probe-checkpoint.raw.zip) は50項目、1,226,652 bytes、SHA256 `1a87826fae7c6834b1622c27e31b6c5e743e329e06f3c6d30681c509ada65d3e`。全項目の長さとSHA256を照合した。検証後の `target` は136,144,814,476 bytes。
