@@ -21444,3 +21444,19 @@ Sema library は2,034件を実行し、1,993 PASS／41既知FAIL。Core の逆�
 受入・公開済みの Generic Match C3/C5 は、元の監査の150 ID と Style Length の後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBC の継続・保存 7件がすべて通過した。
 
 [検証原本](acceptance-evidence/task-dialogue-line-callable-result.raw.zip) は31項目、1,380,298 bytes、SHA256 `430782ad05aaf2d034fac0f8d925e0d3fbc4466766c56c4ed7c451129aa4fc7c`。各項目の長さとSHA256を照合した。検証後の `target` は136,169,199,656 bytes。
+
+<a id="detached-probe-reads"></a>
+
+## 2026-11-22 — 呼出し候補の効果読み取り
+
+検証基点は `6a050199d69824f203c92014f46f3d03c5c35a7b`。製品 Source `2be07a656f0caff8613f43821a28fc5f2d601629` を main へ通常 push し、公開 ref と変更 blob を照合した。
+
+候補のコールバックで効果グラフの変更がなく、切り離した定義や祖先関係の引き継ぎも不要な場合は、元の発行元と基点を作業枠の範囲内で検査し、現在のグラフをそのまま読む。閉じた末端型は、遅延された効果本体の準備に必要な参照を持たないため、型木を走査しない。切り離した定義を使うコールバックと中断した子の受け渡しは、引き続き元の読み取り情報を保持する。元の発行元と異なるグラフ、古い基点、予算0を拒否し、別のスコープから引き継いだ定義が同じ選択を保持することを既存の回帰テストで検証した。
+
+256候補の既存テストを同じ上限4,096単位で実行した。完了数は166件から196件となり、197件目のコールバックのトランザクションを開く時点（continuation.rs:1466、上限判定は limits.rs:601）で CallResolutionFailed になった。型が一致しない2件目の下位計上は18回から15回になった。候補ごとのコールバックと物理観測を維持している。256件すべてを検査する受入条件は引き続き未達。[先行計測](#effect-request-journal)。
+
+Sema library は2,034件中1,993 PASS／41既知FAIL。Cargo graph で22パッケージを確認した。非CLI 21パッケージの逆依存は4,313 PASS／41既知FAIL、別に1 SKIP。CLI の lib／bin 196件と統合6対象30件はすべて通過した。公開済みの直前の実行から該当バイナリを絞り、既存 ID の成否を照合した。新たな失敗IDは0件。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。
+
+受入・公開済みの Generic Match C3/C5 は元の監査の150 ID と Style Length の後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBC の継続・保存 7件がすべて通過した。
+
+[検証原本](acceptance-evidence/task-detached-probe-reads.raw.zip) は31項目、1,271,858 bytes、SHA256 `0485faf872671ac027f2cbcff57a9e7aba8d3b6afde313c53708d852dcdcd1e2`。各項目の長さとSHA256を照合した。検証後の `target` は136,169,647,036 bytes。
