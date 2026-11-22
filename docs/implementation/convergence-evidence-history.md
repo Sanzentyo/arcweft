@@ -21400,3 +21400,25 @@ Sema libは2,033件を実行し、1,990 PASS／43既知FAIL。Cargo graph上の2
 受入・公開済みの Generic Match C3/C5 は元の受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBCの継続・保存 7件がすべて通過した。
 
 [検証原本](acceptance-evidence/task-effect-free-expected-types.raw.zip) は49項目、1,304,859 bytes、SHA256 `5668a2ae0747d5fd2346ee7a910a35ad5b178314a5d622d93035ac9fce05da82`。全項目の長さとSHA256を照合した。検証後の `target` は136,147,519,727 bytes。
+
+<a id="effect-request-journal"></a>
+
+### 効果投影要求のトランザクションで追加したIDを記録
+
+検証日 2026-11-22。製品 Source `03d1dbf6903a83a0eed0498e4c2d2663b381d862` は main への通常 push 後に、公開 ref と9つの変更 blob を照合した。先行 Source `2bcafa0a3a8d3f474f50d3eefd1ac749336ae35b` の結果は [期待型の履歴](#effect-free-expected-types) に保持する。
+
+呼出しグラフは効果投影要求を登録または復元したときに、受け手のトランザクションと追加順を記録する。開始時には追加記録の位置を保持する。子の確定後も親が追加記録を保持し、巻き戻しではその位置以降に追加した要求だけを取り消す。抽出時には、それ以前に存在した正確なIDを復元時の依存として保持し、追加分だけを移す。登録、抽出、複数結果の復元は、必要な格納と検査を計上してからグラフを変更する。
+
+親に既存要求を持つグラフで作業枠1の子トランザクションを開いた。子による親の要求の完了を拒否した。登録と抽出の作業上限での拒否後に再試行でき、元の要求が欠けた復元を拒否し、正しい複数結果の復元後に親の巻き戻しで全要求を破棄できた。
+
+256候補の既存テストでは前回と同じ166件を完了し、167件目の引数を調べるコールバックのトランザクション開始時（continuation.rs:1482、上限判定は limits.rs:601）に、呼出し全体の4,096単位から候補に割り当てられた枠を使い切った。終端は CallResolutionFailed。型が一致しない2件目の下位計上チェック18回、型制約コンテキスト9回、コールバックの事実スコープの開始に伴う計上3回は前回と一致した。
+
+Sema libは2,034件を実行し、1,991 PASS／43既知FAIL。Cargo graph上の22パッケージを確認し、非CLIの21パッケージで4,353件を実行し、4,310 PASS／43既知FAIL／別に1 SKIP。既存の全テストIDで前回と同じ結果だった。Semaの43失敗は診断も一致した。効果投影要求の登録と抽出の作業上限、元の要求が欠けた復元の拒否、同時復元と外側のロールバックを回帰テストで検証した。CLIのlib／bin 196件と統合6対象30件は全件通過し、前回と同じ226 IDを確認した。ワークスペース全ターゲット・全機能のcheck／Clippyと変更ファイルの書式は終了0。
+
+受入・公開済みの Generic Match C3/C5 は元の受入監査の150 IDとStyle Lengthの後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBCの継続・保存 7件がすべて通過した。
+
+Compilerでは、異なる後段型を持つ共有prefixと再帰callbackの独立効果がNative／AWBCで通過した。共有prefixのAWBC Product各停止点を公開JSONから復元する入力、効果付き呼出しの値継続と記述順の入力、再帰ジェネリッククロージャを持つattached defaultのAWBC入力も通過した。
+
+Clippyは警告を記録した。変更箇所に対応する4件は、チェックポイントの値渡し2件、既存のエラー型のサイズ1件、追加した回帰テストの行数1件。
+
+[検証原本](acceptance-evidence/task-effect-request-journal.raw.zip) は45項目、1,218,356 bytes、SHA256 `3009a69f0c6fcb225fc59c6e287f67fdcee507b91903ad93fbd66b32cf0367ce`。全項目の長さとSHA256を照合した。検証後の `target` は136,148,175,522 bytes。
