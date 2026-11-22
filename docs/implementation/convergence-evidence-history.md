@@ -21710,3 +21710,15 @@ Native の元コード位置は元の Plan の owner・body path・操作範囲�
 Core の全機能 library は2,405 PASS／0 SKIP。Cargo の実グラフで Core を含む52パッケージを確認し、動作検証は Core と、コンパイラの待機・iterator・スコープ終了の3統合スイートを実行した。コンパイラ69件はすべてPASSし、関数呼び出しをまたぐ待機と退避キューの再開を含む。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-work-codec.raw.zip) は14項目、1,004,633 bytes、SHA256 `30c5ccce1c457ceda9685658ea1f1c8b1626f8aa900ef8082d2003a2a989ff02`。各項目の長さと SHA256 を照合した。検証後の `target` は141,681,838,857 bytes。
+
+<a id="native-formatter-frame-codec"></a>
+
+## 2026-11-23 — Native フォーマッタの進行中フレームと退避キューを保存
+
+基点 `84bff8d8228a75d501f2cd448383384c4b56b0dd`。公開ソース `55aaaaa4009ee43ff09fea6493a70166ec24f65a` の `main` で追跡ファイルの差分がない状態を確認し、公開先の6 blob を照合した。
+
+進行中のフレームが元のオペランド位置と退避した caller queue を所有する。完了マーカーはフレームを再開する。既存の inert 特殊化がフレームと退避キューを記録し、復元が元 Plan の attempt、オペランド順序、値型、マーカーの対応を照合する。ループの継続も同じ順序検査を通る。Native の JSON 復元試験でオペランドの差し替えとマーカーの欠落・重複を拒否し、元のオペランド順序と値を保持して完了した。初回の試験は手動でキューを組んだ fixture が `Done` だったため、実行中と同じ `Running` に訂正した。初回ログを保存した。Native 全体の公開セッション保存は残項目。
+
+Core の全機能 library は2,406 PASS／0 SKIP。Cargo の実グラフで Core を含む52パッケージを確認し、動作検証には Core と関連するコンパイラの4統合スイートを選んだ。コンパイラ80件はすべてPASS。実ソースの `fmt` を Native で完走し、AWFB では稼働中フォーマッタを公開保存から復元して同じ戻り値を得た。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-formatter-codec.raw.zip) は15項目、1,085,305 bytes、SHA256 `4067f6f0d005a5f58cb134ead6c0dbcc363a8747a092c51b5ca78622e95612a2`。各項目の長さと SHA256 を照合した。検証後の `target` は141,697,345,513 bytes。
