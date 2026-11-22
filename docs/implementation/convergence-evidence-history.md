@@ -21722,3 +21722,15 @@ Core の全機能 library は2,405 PASS／0 SKIP。Cargo の実グラフで Core
 Core の全機能 library は2,406 PASS／0 SKIP。Cargo の実グラフで Core を含む52パッケージを確認し、動作検証には Core と関連するコンパイラの4統合スイートを選んだ。コンパイラ80件はすべてPASS。実ソースの `fmt` を Native で完走し、AWFB では稼働中フォーマッタを公開保存から復元して同じ戻り値を得た。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-formatter-codec.raw.zip) は15項目、1,085,305 bytes、SHA256 `4067f6f0d005a5f58cb134ead6c0dbcc363a8747a092c51b5ca78622e95612a2`。各項目の長さと SHA256 を照合した。検証後の `target` は141,697,345,513 bytes。
+
+<a id="native-call-frame-codec"></a>
+
+## 2026-11-23 — Native の関数フレームを元の呼び出し命令へ結び付ける
+
+基点 `2f073c4fedbb650064a009930cd833eb0dcc6fd8`。最初の実装 `c901da8aa9b29733482b20e49e3d50a07b442e53`、効果の型情報を往復する試験 `2df7a059b583c07ef5edad6a694a00228f24afbf`、修正済みの公開ソース `1cfe3542b979c44578cfefaea827b56077ffa106`。既存の `main` に順に通常の push を行い、各公開 ref と変更 blob を照合した。公開後の照合時点で追跡ファイルの差分なし。
+
+最初は退避キューに残った直後の位置から呼び出し命令を逆引きした。コンパイラ統合は607 PASS／4 FAIL。台詞の activation cursor が命令を直接発行すると対応するキュー要素がないため、再帰呼び出し・失敗時の公開抑止・registry 書込み・結果処理の4件が失敗した。この経路を含めて、フレームが元の呼び出し命令の位置を保持する形に統一した。結果パターンは元 Plan から借り、attached default の後も同じ位置を引き継ぐ。数値バッチの束縛先検査も同じ元パターンを使う。初回の数値バッチ側のコンパイル失敗と統合の4失敗は原本に保持した。
+
+修正後の Core 全機能 library は2,407 PASS／0 SKIP。JSON 復元から1操作ずつ同じ出力と終了状態まで進み、呼び出し以外の有効な命令への差し替えと効果の型情報の欠落を拒否した。Cargo の実グラフで Core を含む52パッケージを確認し、動作検証には Core と関連するコンパイラの6統合スイートを選んだ。コンパイラは611 PASS／0 SKIP。先の4件が全件通過し、named 引数の評価順、attached default からの待機復帰、台詞の捕捉値と1操作予算も確認した。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。Native セッション全体の公開保存は残項目。
+
+[検証原本](acceptance-evidence/task-native-call-frame.raw.zip) は24項目、1,147,907 bytes、SHA256 `8a9182bbba5ca83b99367f93f786dd586f0cde06146031117b8b2ea2fefabead`。各項目の長さと SHA256 を照合した。検証後の `target` は141,700,583,006 bytes。
