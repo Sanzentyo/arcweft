@@ -21520,3 +21520,17 @@ Sema library は2,035件中2,000 PASS／35既知FAIL。Cargo graph で Sema を�
 現状一覧の冒頭から、単一の「今回の検証対象」として掲げていた `e532add1f489780d75aacd5e1f356dafef4d9b5c` を削除した。検証の対象 Source は行ごとに異なる。対応する効果判定／Core の逆依存検証の SHA と結果は、該当行と検証履歴に保持した。
 
 [検証原本](acceptance-evidence/task-expression-retry-preparation.raw.zip) は28項目、1,195,845 bytes、SHA256 `92493c0f3baa0eb1d72d6c119fc1e04b39fdfb7c34b88b05e31811b204c2956b`。各項目の長さとSHA256を照合した。検証後の `target` は136,173,263,083 bytes。
+
+<a id="dialogue-rejection-source"></a>
+
+## 2026-11-22 — カスタム台詞フィールドの型不一致と元スロットの照合
+
+検証基点は `e2db48f440859780f5951de2791f4ef2363f9c03`。製品 Source `4d3b73d5f02e1f5d29ea04a27388332d473a5126` を `main` へ通常 push し、公開 ref と変更 blob を照合した。
+
+元の引数番号、式、パラメーター座標を保ち、スロットだけを差し替える回帰検査を追加した。修正前の検査は、差し替えたスロットの拒否を受理したため失敗した。検査済みの引数対応から取得したスロットを、カスタム台詞フィールドの受入情報に保持した。候補の準備と `AW-CD-015` への変換は同じ照合を使い、引数番号、スロット、式、パラメーター座標を確認する。製品のソース分析では、Character からの構成と設定済み `CharacterDialogue` の再構成で、宣言型 `String` と実値型 `i32`／`Bool`、値の主ラベルと登録宣言の副ラベルを確認した。
+
+以前の LLDB 追跡では、型付き拒否を期待していた下位テスト2件が `observes_rejected_source` の既定値 `false` を使っていた。テストのソース種別で診断の要否を指定した。同じ型不一致に対する通常の拒否と型付き拒否、拒否後の materialization ticket 不発行、全候補が失敗したときの最初の型付き行、通過候補が残るときの選択を検査する。
+
+Sema library は2,035件中2,002 PASS／33既知FAIL。Cargo graph で Sema を含む22パッケージを確認し、非CLIの21パッケージは4,322 PASS／33既知FAIL／1 SKIPだった。公開済み基点から成否が変わったのは、`rejected_source_projection_retains_exact_lower_relation_authority` と `multiple_frontier_relation_failures_choose_the_first_typed_row` の FAIL から PASS。CLI のライブラリ・バイナリ196件と統合6対象30件はすべて通過。受入・公開済みの Generic Match C3/C5 の151件も通過した。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。スロット照合の回帰テストには行数に関する Clippy の警告が1件増えた。
+
+[検証原本](acceptance-evidence/task-dialogue-rejection-source.raw.zip) は31項目、1,262,839 bytes、SHA256 `84428c1bc8a2a0783b3c54fb23480448c0769e5cd2acbd0119a99e3e189e3b71`。各項目の長さと SHA256 を照合した。検証後の `target` は136,173,519,590 bytes。
