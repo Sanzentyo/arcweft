@@ -2,14 +2,10 @@
 
 use super::*;
 use crate::{
-    effect_row::{
-        EffectRow,
-        prepared::{
-            PreparedEffectFailure, PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
-            PreparedEffectTermEdit,
-        },
+    effect_row::prepared::{
+        PreparedEffectFailure, PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
+        PreparedEffectTermEdit,
     },
-    effects::EffectSet,
     types::{
         PreparedTypeEffectProjectionFailure, TypeProjectionControl, TypeProjectionNodeKind,
         projection_control::EffectProjectionControl, structural_projection::ScopedTypeProjection,
@@ -45,11 +41,10 @@ impl<C: TypeProjectionControl> Transport<'_, '_, '_, C> {
         target: &GenericScope,
         reference: &GenericEffectReference,
         control: &mut EffectProjectionControl<'_, C>,
-    ) -> Result<Option<PreparedEffectRow>, TypeProjectionError<C::Error>> {
+    ) -> Result<Option<GenericEffectReference>, TypeProjectionError<C::Error>> {
         let projected =
             destination.effect_reference(original, source, target, reference, control.control)?;
-        Ok((projected != *reference)
-            .then(|| PreparedEffectRow::Canonical(EffectRow::open(EffectSet::new(), projected))))
+        Ok((projected != *reference).then_some(projected))
     }
 }
 
@@ -144,7 +139,7 @@ impl<C: TypeProjectionControl> ScopedTypeProjection<PreparedEffects, PreparedEff
             return Ok(row.clone());
         }
         self.edit
-            .map_row_parameters(row, &mut control, &mut |reference, control| {
+            .rebase_row_parameters(row, &mut control, &mut |reference, control| {
                 project(reference, control).map_err(PreparedEffectFailure::Control)
             })
             .map_err(PreparedTypeEffectProjectionFailure::from_effect)
@@ -180,7 +175,7 @@ impl<C: TypeProjectionControl> ScopedTypeProjection<PreparedEffects, PreparedEff
             return Ok(predicate.clone());
         }
         self.edit
-            .map_predicate_parameters(predicate, &mut control, &mut |reference, control| {
+            .rebase_predicate_parameters(predicate, &mut control, &mut |reference, control| {
                 project(reference, control).map_err(PreparedEffectFailure::Control)
             })
             .map_err(PreparedTypeEffectProjectionFailure::from_effect)

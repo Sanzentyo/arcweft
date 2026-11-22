@@ -328,28 +328,6 @@ impl<'a> Compilation<'a> {
         arguments: &[impl Borrow<CompiledRow>],
         work: &mut Work<'_, C>,
     ) -> Result<Vec<Decision>, PreparedEffectFailure<C::Error>> {
-        if let Some(reference) = self.residual_rows.and_then(|rows| rows.get(&scheme)) {
-            if !arguments.is_empty() {
-                return Err(PreparedEffectInvariant::ApplicationArity.into());
-            }
-            let parameter = self
-                .parameters
-                .binary_search(reference)
-                .map_err(|_| PreparedEffectInvariant::UndeclaredParameter(reference.clone()))?;
-            return (0..self.layout.classes())
-                .map(|class| {
-                    work.charge(DecisionWork::Node)?;
-                    Decision::variable(
-                        Atom::Formal {
-                            owner: self.owner,
-                            class,
-                            parameter,
-                        },
-                        work,
-                    )
-                })
-                .collect();
-        }
         let function = self
             .graph
             .functions
@@ -434,7 +412,7 @@ impl<'a> Compilation<'a> {
             RowTerm::Application {
                 function,
                 arguments,
-                ..
+                authority,
             } => {
                 let mut compiled = Vec::new();
                 let mut admitted = Decision::constant(true);
@@ -479,8 +457,38 @@ impl<'a> Compilation<'a> {
                         .complete_import(imported.relation.principal(), work)?;
                     admitted = admitted.and(&guard, work)?;
                 }
+                let id = function.reference().ordinal;
+                let membership =
+                    if let Some(reference) = self.residual_rows.and_then(|rows| rows.get(&id)) {
+                        // One residual row abbreviates F at its actual Γ. An
+                        // application at any other arguments can observe another
+                        // value of F, even if it has the same function identity.
+                        if !arguments.is_empty()
+                            && *authority != ApplicationArgumentAuthority::Introduction
+                        {
+                            return Err(PreparedEffectFailure::NonPointwiseObservation);
+                        }
+                        let parameter = self.parameters.binary_search(reference).map_err(|_| {
+                            PreparedEffectInvariant::UndeclaredParameter(reference.clone())
+                        })?;
+                        (0..self.layout.classes())
+                            .map(|class| {
+                                work.charge(DecisionWork::Node)?;
+                                Decision::variable(
+                                    Atom::Formal {
+                                        owner: self.owner,
+                                        class,
+                                        parameter,
+                                    },
+                                    work,
+                                )
+                            })
+                            .collect::<Result<_, _>>()?
+                    } else {
+                        self.application(id, &compiled, work)?
+                    };
                 CompiledRow {
-                    membership: self.application(function.reference().ordinal, &compiled, work)?,
+                    membership,
                     admitted,
                 }
             }

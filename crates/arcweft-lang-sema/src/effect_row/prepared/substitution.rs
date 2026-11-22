@@ -14,8 +14,20 @@ struct Substitution<'a, C, P> {
     project: &'a mut P,
     control: &'a mut C,
     parameters: BTreeMap<GenericEffectReference, Option<PreparedEffectRow>>,
-    rows: BTreeMap<u64, PreparedEffectRow>,
+    rows: BTreeMap<u64, RewrittenRow>,
     predicates: BTreeMap<u64, PreparedEffectPredicate>,
+    rewrite: ParameterRewrite,
+}
+
+struct RewrittenRow {
+    row: PreparedEffectRow,
+    substituted: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ParameterRewrite {
+    Substitute,
+    Rebase,
 }
 
 fn copy_annotation<C: DecisionControl>(
@@ -46,16 +58,6 @@ where
         self.control
             .charge(work)
             .map_err(PreparedEffectFailure::Control)
-    }
-
-    fn copy_row(
-        &mut self,
-        row: &PreparedEffectRow,
-    ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
-        if let PreparedEffectRow::Term(reference) = row {
-            self.graph.row(reference)?;
-        }
-        copy_annotation(row, self.control)
     }
 
     fn bindings<'a>(
@@ -101,22 +103,39 @@ where
         &mut self,
         row: &PreparedEffectRow,
     ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
+        self.read_rewritten_row(row).map(|rewritten| rewritten.row)
+    }
+
+    fn read_rewritten_row(
+        &mut self,
+        row: &PreparedEffectRow,
+    ) -> Result<RewrittenRow, PreparedEffectFailure<C::Error>> {
         match row {
             PreparedEffectRow::Canonical(row) => {
                 let Some(formula) = row.formula() else {
                     row.encode(&mut EffectGraphAdmission(self.control))
                         .map_err(PreparedEffectFailure::Control)?;
-                    return Ok(PreparedEffectRow::Canonical(row.clone()));
+                    return Ok(RewrittenRow {
+                        row: PreparedEffectRow::Canonical(row.clone()),
+                        substituted: false,
+                    });
                 };
                 let arguments = self.bindings(formula.variables(), BTreeMap::new())?;
                 formula
                     .encode(&mut EffectGraphAdmission(self.control))
                     .map_err(PreparedEffectFailure::Control)?;
                 if arguments.is_empty() {
-                    Ok(PreparedEffectRow::Canonical(row.clone()))
+                    Ok(RewrittenRow {
+                        row: PreparedEffectRow::Canonical(row.clone()),
+                        substituted: false,
+                    })
                 } else {
                     self.graph
                         .apply_formula(formula.clone(), arguments, self.control)
+                        .map(|row| RewrittenRow {
+                            row,
+                            substituted: true,
+                        })
                 }
             }
             PreparedEffectRow::Term(reference) => {
@@ -124,9 +143,14 @@ where
                 let mapped = self
                     .rows
                     .get(&reference.0.ordinal)
-                    .ok_or(PreparedEffectInvariant::StaleReference)?
-                    .clone();
-                self.copy_row(&mapped)
+                    .ok_or(PreparedEffectInvariant::StaleReference)?;
+                if let PreparedEffectRow::Term(reference) = &mapped.row {
+                    self.graph.row(reference)?;
+                }
+                Ok(RewrittenRow {
+                    row: copy_annotation(&mapped.row, self.control)?,
+                    substituted: mapped.substituted,
+                })
             }
         }
     }
@@ -164,6 +188,7 @@ where
                     .row_definition(id)
                     .ok_or(PreparedEffectInvariant::StaleReference)?,
             );
+            let mut substituted = false;
             let mapped = match term.as_ref() {
                 RowTerm::Application {
                     function,
@@ -173,12 +198,19 @@ where
                     let mut mapped = Vec::new();
                     for argument in arguments {
                         self.charge(DecisionWork::Node)?;
-                        mapped.push(self.read_row(argument)?);
+                        let argument = self.read_rewritten_row(argument)?;
+                        substituted |= argument.substituted;
+                        mapped.push(argument.row);
                     }
+                    let authority = if substituted && self.rewrite == ParameterRewrite::Substitute {
+                        authority.after_substitution()
+                    } else {
+                        *authority
+                    };
                     self.graph.apply_function_with_authority(
                         function.clone(),
                         mapped,
-                        *authority,
+                        authority,
                         self.control,
                     )?
                 }
@@ -186,23 +218,30 @@ where
                     let mut mapped = Vec::new();
                     for child in children {
                         self.charge(DecisionWork::Node)?;
-                        mapped.push(self.read_row(child)?);
+                        let child = self.read_rewritten_row(child)?;
+                        substituted |= child.substituted;
+                        mapped.push(child.row);
                     }
                     self.graph.union(mapped, self.control)?
                 }
                 RowTerm::Select { choice, yes, no } => {
-                    let yes = self.read_row(yes)?;
-                    let no = self.read_row(no)?;
-                    self.graph.select_row(choice, yes, no, self.control)?
+                    let yes = self.read_rewritten_row(yes)?;
+                    let no = self.read_rewritten_row(no)?;
+                    substituted = yes.substituted || no.substituted;
+                    self.graph
+                        .select_row(choice, yes.row, no.row, self.control)?
                 }
                 RowTerm::Substitution { formula, arguments } => {
                     let mut mapped = BTreeMap::new();
                     for (parameter, argument) in arguments {
-                        let argument = self.read_row(argument)?;
+                        let argument = self.read_rewritten_row(argument)?;
                         self.charge(DecisionWork::Node)?;
-                        mapped.insert(parameter.clone(), argument);
+                        substituted |= argument.substituted;
+                        mapped.insert(parameter.clone(), argument.row);
                     }
+                    let previous = mapped.len();
                     let mapped = self.bindings(formula.variables(), mapped)?;
+                    substituted |= mapped.len() != previous;
                     formula
                         .encode(&mut EffectGraphAdmission(self.control))
                         .map_err(PreparedEffectFailure::Control)?;
@@ -211,7 +250,13 @@ where
                 }
             };
             self.charge(DecisionWork::Node)?;
-            self.rows.insert(id, mapped);
+            self.rows.insert(
+                id,
+                RewrittenRow {
+                    row: mapped,
+                    substituted,
+                },
+            );
         }
         self.read_row(root)
     }
@@ -585,6 +630,47 @@ impl PreparedEffectTermEdit<'_> {
             &mut C,
         ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
     {
+        self.rewrite_row(row, control, ParameterRewrite::Substitute, project)
+    }
+
+    /// Rename references through an already validated lexical embedding.
+    pub(crate) fn rebase_row_parameters<C, P>(
+        &mut self,
+        row: &PreparedEffectRow,
+        control: &mut C,
+        project: &mut P,
+    ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>>
+    where
+        C: DecisionControl,
+        P: FnMut(
+            &GenericEffectReference,
+            &mut C,
+        )
+            -> Result<Option<GenericEffectReference>, PreparedEffectFailure<C::Error>>,
+    {
+        self.rewrite_row(
+            row,
+            control,
+            ParameterRewrite::Rebase,
+            &mut |reference, _, control| Ok(project(reference, control)?.map(open_parameter)),
+        )
+    }
+
+    fn rewrite_row<C, P>(
+        &mut self,
+        row: &PreparedEffectRow,
+        control: &mut C,
+        rewrite: ParameterRewrite,
+        project: &mut P,
+    ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>>
+    where
+        C: DecisionControl,
+        P: FnMut(
+            &GenericEffectReference,
+            &mut PreparedEffectTermEdit<'_>,
+            &mut C,
+        ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
+    {
         if !matches!(self.state, TermEditState::Open) {
             return Err(PreparedEffectInvariant::TermEditState.into());
         }
@@ -595,6 +681,7 @@ impl PreparedEffectTermEdit<'_> {
             parameters: BTreeMap::new(),
             rows: BTreeMap::new(),
             predicates: BTreeMap::new(),
+            rewrite,
         }
         .row(row);
         if result.is_err() {
@@ -635,6 +722,46 @@ impl PreparedEffectTermEdit<'_> {
             &mut C,
         ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
     {
+        self.rewrite_predicate(predicate, control, ParameterRewrite::Substitute, project)
+    }
+
+    pub(crate) fn rebase_predicate_parameters<C, P>(
+        &mut self,
+        predicate: &PreparedEffectPredicate,
+        control: &mut C,
+        project: &mut P,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>>
+    where
+        C: DecisionControl,
+        P: FnMut(
+            &GenericEffectReference,
+            &mut C,
+        )
+            -> Result<Option<GenericEffectReference>, PreparedEffectFailure<C::Error>>,
+    {
+        self.rewrite_predicate(
+            predicate,
+            control,
+            ParameterRewrite::Rebase,
+            &mut |reference, _, control| Ok(project(reference, control)?.map(open_parameter)),
+        )
+    }
+
+    fn rewrite_predicate<C, P>(
+        &mut self,
+        predicate: &PreparedEffectPredicate,
+        control: &mut C,
+        rewrite: ParameterRewrite,
+        project: &mut P,
+    ) -> Result<PreparedEffectPredicate, PreparedEffectFailure<C::Error>>
+    where
+        C: DecisionControl,
+        P: FnMut(
+            &GenericEffectReference,
+            &mut PreparedEffectTermEdit<'_>,
+            &mut C,
+        ) -> Result<Option<PreparedEffectRow>, PreparedEffectFailure<C::Error>>,
+    {
         if !matches!(self.state, TermEditState::Open) {
             return Err(PreparedEffectInvariant::TermEditState.into());
         }
@@ -648,6 +775,7 @@ impl PreparedEffectTermEdit<'_> {
                 parameters: BTreeMap::new(),
                 rows: BTreeMap::new(),
                 predicates: BTreeMap::new(),
+                rewrite,
             }
             .predicate(predicate)
         };
@@ -656,6 +784,10 @@ impl PreparedEffectTermEdit<'_> {
         }
         result
     }
+}
+
+fn open_parameter(reference: GenericEffectReference) -> PreparedEffectRow {
+    PreparedEffectRow::Canonical(EffectRow::open(crate::effects::EffectSet::new(), reference))
 }
 
 impl PreparedEffectGraph {

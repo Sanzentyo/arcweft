@@ -705,6 +705,18 @@ where
         }
     }
 
+    pub(crate) fn infer_from_next_invocation_input(
+        &mut self,
+        pattern: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
+    ) {
+        if let Err(error) = self.with_effect_relation(|lower, context, effects| {
+            lower.infer_from_next_invocation_input(context, effects, pattern, actual);
+        }) {
+            self.lower.record_failure(error);
+        }
+    }
+
     pub(crate) fn constrain_effect_equality(
         &mut self,
         left: &crate::effect_row::prepared::PreparedEffectRow,

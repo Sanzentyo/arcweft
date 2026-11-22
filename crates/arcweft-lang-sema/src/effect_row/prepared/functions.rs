@@ -275,7 +275,7 @@ impl PreparedEffectGraph {
         control: &mut C,
     ) -> Result<PreparedEffectRow, PreparedEffectFailure<C::Error>> {
         let definition = self.function(&function)?;
-        if authority == ApplicationArgumentAuthority::Introduction
+        if authority != ApplicationArgumentAuthority::Explicit
             && !matches!(
                 definition,
                 Function::Unknown {

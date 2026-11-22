@@ -28,47 +28,71 @@ pub(crate) enum ConstraintAcceptance {
 }
 
 #[derive(Clone, Copy)]
-enum ConstraintRelation {
+enum ConstraintComparison {
     Accepts(ConstraintAcceptance),
     Structural(ConstraintAcceptance),
     Equal,
 }
 
+#[derive(Clone, Copy)]
+struct ConstraintRelation {
+    comparison: ConstraintComparison,
+    check_function_effects: bool,
+}
+
 impl ConstraintRelation {
+    const EQUAL: Self = Self {
+        comparison: ConstraintComparison::Equal,
+        check_function_effects: true,
+    };
+
+    fn accepts(direction: ConstraintAcceptance) -> Self {
+        Self {
+            comparison: ConstraintComparison::Accepts(direction),
+            check_function_effects: true,
+        }
+    }
+
     fn direction(self) -> ConstraintAcceptance {
-        match self {
-            Self::Accepts(direction) | Self::Structural(direction) => direction,
-            Self::Equal => ConstraintAcceptance::PatternAcceptsActual,
+        match self.comparison {
+            ConstraintComparison::Accepts(direction)
+            | ConstraintComparison::Structural(direction) => direction,
+            ConstraintComparison::Equal => ConstraintAcceptance::PatternAcceptsActual,
         }
     }
 
     fn reverse(self) -> Self {
-        match self {
-            Self::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
-                Self::Accepts(ConstraintAcceptance::ActualAcceptsPattern)
+        let direction = match self.direction() {
+            ConstraintAcceptance::PatternAcceptsActual => {
+                ConstraintAcceptance::ActualAcceptsPattern
             }
-            Self::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => {
-                Self::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+            ConstraintAcceptance::ActualAcceptsPattern => {
+                ConstraintAcceptance::PatternAcceptsActual
             }
-            Self::Structural(ConstraintAcceptance::PatternAcceptsActual) => {
-                Self::Structural(ConstraintAcceptance::ActualAcceptsPattern)
-            }
-            Self::Structural(ConstraintAcceptance::ActualAcceptsPattern) => {
-                Self::Structural(ConstraintAcceptance::PatternAcceptsActual)
-            }
-            Self::Equal => Self::Equal,
-        }
+        };
+        let comparison = match self.comparison {
+            ConstraintComparison::Accepts(_) => ConstraintComparison::Accepts(direction),
+            ConstraintComparison::Structural(_) => ConstraintComparison::Structural(direction),
+            ConstraintComparison::Equal => ConstraintComparison::Equal,
+        };
+        Self { comparison, ..self }
     }
 
     fn structural(self) -> Self {
-        match self {
-            Self::Equal => Self::Equal,
-            _ => Self::Structural(self.direction()),
+        match self.comparison {
+            ConstraintComparison::Equal => self,
+            _ => Self {
+                comparison: ConstraintComparison::Structural(self.direction()),
+                ..self
+            },
         }
     }
 
     fn exact_header(self) -> bool {
-        matches!(self, Self::Equal | Self::Structural(_))
+        matches!(
+            self.comparison,
+            ConstraintComparison::Equal | ConstraintComparison::Structural(_)
+        )
     }
 }
 
@@ -90,7 +114,33 @@ where
         actual,
         path,
         context,
-        ConstraintRelation::Accepts(acceptance),
+        ConstraintRelation::accepts(acceptance),
+    )
+}
+
+/// Uses a later input's type to guide the current group. The invocation owning
+/// that input establishes its effect relation.
+pub(in crate::types) fn relate_next_invocation_input<A, D, L: Clone>(
+    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
+    pattern: &ConstraintOperandView<'_, D>,
+    actual: &ConstraintOperandView<'_, D>,
+    path: ConstraintInferenceBranch<D, L>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    relate_constraint(
+        graph,
+        pattern,
+        actual,
+        path,
+        context,
+        ConstraintRelation {
+            check_function_effects: false,
+            ..ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual)
+        },
     )
 }
 
@@ -113,7 +163,7 @@ where
         actual,
         path,
         context,
-        ConstraintRelation::Equal,
+        ConstraintRelation::EQUAL,
     )
 }
 
@@ -127,7 +177,7 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    relate_array_lengths(pattern, actual, path, context, ConstraintRelation::Equal)
+    relate_array_lengths(pattern, actual, path, context, ConstraintRelation::EQUAL)
 }
 
 fn fork_choice_path<A, D, L>(
@@ -713,7 +763,7 @@ where
                 context,
                 relation,
             )?;
-            if matches!(relation, ConstraintRelation::Equal) {
+            if matches!(relation.comparison, ConstraintComparison::Equal) {
                 return Ok(paths);
             }
             expected_arguments.iter().zip(&found_arguments).try_fold(
@@ -724,18 +774,18 @@ where
             )
         }
         (TypeConstraintShape::Ref(expected), TypeConstraintShape::Ref(found)) => {
-            let compatible = match relation {
-                ConstraintRelation::Equal => expected.accepts_header(found, true),
-                ConstraintRelation::Structural(ConstraintAcceptance::PatternAcceptsActual) => {
+            let compatible = match relation.comparison {
+                ConstraintComparison::Equal => expected.accepts_header(found, true),
+                ConstraintComparison::Structural(ConstraintAcceptance::PatternAcceptsActual) => {
                     expected.accepts_header(found, true)
                 }
-                ConstraintRelation::Structural(ConstraintAcceptance::ActualAcceptsPattern) => {
+                ConstraintComparison::Structural(ConstraintAcceptance::ActualAcceptsPattern) => {
                     found.accepts_header(expected, true)
                 }
-                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
+                ConstraintComparison::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
                     expected.accepts_header(found, false)
                 }
-                ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => {
+                ConstraintComparison::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => {
                     found.accepts_header(expected, false)
                 }
             };
@@ -847,7 +897,14 @@ where
                 expected_header.admit(graph.read(), context)?;
                 found_header.admit(graph.read(), context)?;
                 let mut path = path;
-                path.constrain_header_predicates(&expected_header, &found_header, graph, context)?;
+                if relation.check_function_effects {
+                    path.constrain_header_predicates(
+                        &expected_header,
+                        &found_header,
+                        graph,
+                        context,
+                    )?;
+                }
                 let expected_params = expected_children
                     .by_ref()
                     .take(expected_params.len())
@@ -870,6 +927,16 @@ where
                     context,
                     relation.reverse(),
                 )?;
+                if !relation.check_function_effects {
+                    return relate_many(
+                        graph,
+                        &expected_result,
+                        &found_result,
+                        paths,
+                        context,
+                        relation,
+                    );
+                }
                 let mut effect_paths = Vec::with_capacity(paths.len());
                 for mut path in paths {
                     let (actual_effects, permitted_effects) = match relation.direction() {
@@ -918,18 +985,18 @@ where
             relate_sliced_children(graph, pattern, actual, path, context, relation.structural())
         }
         (TypeConstraintShape::Leaf(pattern), TypeConstraintShape::Leaf(actual)) => {
-            let accepted = match relation {
-                ConstraintRelation::Equal => pattern == actual,
-                ConstraintRelation::Structural(ConstraintAcceptance::PatternAcceptsActual) => {
+            let accepted = match relation.comparison {
+                ConstraintComparison::Equal => pattern == actual,
+                ConstraintComparison::Structural(ConstraintAcceptance::PatternAcceptsActual) => {
                     pattern.accepts(actual, true)
                 }
-                ConstraintRelation::Structural(ConstraintAcceptance::ActualAcceptsPattern) => {
+                ConstraintComparison::Structural(ConstraintAcceptance::ActualAcceptsPattern) => {
                     actual.accepts(pattern, true)
                 }
-                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
+                ConstraintComparison::Accepts(ConstraintAcceptance::PatternAcceptsActual) => {
                     pattern.accepts(actual, false)
                 }
-                ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => {
+                ConstraintComparison::Accepts(ConstraintAcceptance::ActualAcceptsPattern) => {
                     actual.accepts(pattern, false)
                 }
             };

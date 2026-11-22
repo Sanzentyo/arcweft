@@ -492,6 +492,32 @@ flow main() -> i64 { return swap(report, increment, 1i64) }
 }
 
 #[test]
+fn a_staged_callback_retains_its_future_row_in_an_effect_generic_caller() {
+    for body in [
+        "let pending = staged(value)\n    pending(second)",
+        "staged(value)(second)",
+    ] {
+        let source = format!(
+            r#"
+fn staged(value: i64)(callback: i64 -> i64) -> i64 {{ callback(value) }}
+fn read_marker(value: i64) -> i64 effects {{ fs.read }} {{ value + 1i64 }}
+fn write_marker(value: i64) -> i64 effects {{ fs.write }} {{ value + 1i64 }}
+fn relay(seed: i64, first: i64 -> i64, second: i64 -> i64) -> i64 {{
+    let value = first(seed)
+    {body}
+}}
+flow main() -> i64 {{ return relay(40i64, read_marker, write_marker) }}
+"#,
+        );
+        let analysis = analyze(&fixture(&source, None)).expect("staged effect row in the caller");
+        assert_eq!(
+            application_rows(&analysis, "relay"),
+            [vec!["fs.read", "fs.write"]]
+        );
+    }
+}
+
+#[test]
 fn one_recursive_declaration_propagates_three_rotating_callback_rows() {
     let fixture = fixture(
         r"

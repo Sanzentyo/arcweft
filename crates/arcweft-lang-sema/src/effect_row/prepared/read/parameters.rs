@@ -167,7 +167,9 @@ impl PreparedEffectReadView<'_> {
                         RowTerm::Application {
                             function,
                             arguments,
-                            authority: ApplicationArgumentAuthority::Introduction,
+                            authority:
+                                ApplicationArgumentAuthority::Introduction
+                                | ApplicationArgumentAuthority::SubstitutedIntroduction,
                         } if check_introductions => {
                             let Function::Unknown {
                                 parameters,

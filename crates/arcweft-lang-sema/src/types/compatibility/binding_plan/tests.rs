@@ -61,7 +61,7 @@ fn scalar_mismatch_is_pruned_without_closing_an_unprepared_original_body() {
         prepare_relation(
             TypeKind::Bool,
             TypeKind::I64,
-            ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
+            ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual),
         ),
         0
     );
@@ -69,7 +69,7 @@ fn scalar_mismatch_is_pruned_without_closing_an_unprepared_original_body() {
         prepare_relation(
             TypeKind::Bool,
             TypeKind::Bool,
-            ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
+            ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual),
         ),
         1
     );
@@ -85,7 +85,7 @@ fn scalar_widening_preserves_direction_and_is_not_original_equality() {
             prepare_relation(
                 TypeKind::ActionName,
                 TypeKind::String,
-                ConstraintRelation::Accepts(direction),
+                ConstraintRelation::accepts(direction),
             ),
             usize::from(direction == ConstraintAcceptance::PatternAcceptsActual)
         );
@@ -94,7 +94,7 @@ fn scalar_widening_preserves_direction_and_is_not_original_equality() {
         prepare_relation(
             TypeKind::ActionName,
             TypeKind::String,
-            ConstraintRelation::Equal,
+            ConstraintRelation::EQUAL,
         ),
         0
     );
@@ -111,7 +111,7 @@ fn erased_actor_handles_do_not_erase_an_exact_expected_identity() {
         prepare_relation(
             TypeKind::StageActorHandle(StageActorHandleType::Any),
             exact(),
-            ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
+            ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual),
         ),
         1
     );
@@ -119,7 +119,7 @@ fn erased_actor_handles_do_not_erase_an_exact_expected_identity() {
         prepare_relation(
             exact(),
             TypeKind::StageActorHandle(StageActorHandleType::Any),
-            ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
+            ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual),
         ),
         0
     );
@@ -127,7 +127,7 @@ fn erased_actor_handles_do_not_erase_an_exact_expected_identity() {
         prepare_relation(
             TypeKind::StageActorHandle(StageActorHandleType::Any),
             exact(),
-            ConstraintRelation::Equal,
+            ConstraintRelation::EQUAL,
         ),
         0
     );
@@ -146,7 +146,7 @@ fn reference_payload_presence_preserves_direction_and_original_equality() {
             prepare_relation(
                 family(),
                 specialized(),
-                ConstraintRelation::Accepts(direction),
+                ConstraintRelation::accepts(direction),
             ),
             usize::from(direction == ConstraintAcceptance::PatternAcceptsActual)
         );
@@ -154,17 +154,17 @@ fn reference_payload_presence_preserves_direction_and_original_equality() {
             prepare_relation(
                 specialized(),
                 family(),
-                ConstraintRelation::Accepts(direction),
+                ConstraintRelation::accepts(direction),
             ),
             usize::from(direction == ConstraintAcceptance::ActualAcceptsPattern)
         );
     }
     assert_eq!(
-        prepare_relation(family(), specialized(), ConstraintRelation::Equal),
+        prepare_relation(family(), specialized(), ConstraintRelation::EQUAL),
         0
     );
     assert_eq!(
-        prepare_relation(specialized(), family(), ConstraintRelation::Equal),
+        prepare_relation(specialized(), family(), ConstraintRelation::EQUAL),
         0
     );
 }
@@ -176,7 +176,7 @@ fn reference_payload_mismatch_is_pruned_before_unrelated_body_preparation() {
         prepare_relation(
             TypeKind::Ref(EntityType::new(EntityKind::Signal, Some(TypeKind::Bool))),
             TypeKind::Ref(EntityType::new(EntityKind::Signal, Some(TypeKind::I64))),
-            ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
+            ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual),
         ),
         0
     );
@@ -217,7 +217,7 @@ fn composite_headers_reject_arity_kind_and_binder_mismatches_without_closure() {
             prepare_relation(
                 expected,
                 actual,
-                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+                ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual)
             ),
             0
         );
@@ -234,7 +234,7 @@ fn bottom_subtyping_preserves_both_directions_inside_composites() {
             prepare_relation(
                 TypeKind::Tuple(vec![TypeKind::Bool]),
                 TypeKind::Tuple(vec![TypeKind::Never]),
-                ConstraintRelation::Accepts(direction)
+                ConstraintRelation::accepts(direction)
             ),
             usize::from(direction == ConstraintAcceptance::PatternAcceptsActual)
         );
@@ -243,7 +243,7 @@ fn bottom_subtyping_preserves_both_directions_inside_composites() {
         prepare_relation(
             TypeKind::Tuple(vec![TypeKind::Bool]),
             TypeKind::Tuple(vec![TypeKind::Never]),
-            ConstraintRelation::Equal
+            ConstraintRelation::EQUAL
         ),
         0
     );
@@ -282,7 +282,7 @@ fn dependent_payloads_do_not_widen_bottom_family_or_choice_children() {
             prepare_relation(
                 payload(expected),
                 payload(actual),
-                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+                ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual)
             ),
             0
         );
@@ -291,7 +291,7 @@ fn dependent_payloads_do_not_widen_bottom_family_or_choice_children() {
         prepare_relation(
             payload(TypeKind::Bool),
             payload(TypeKind::Bool),
-            ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+            ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual)
         ),
         1
     );
@@ -321,7 +321,7 @@ fn a_mismatched_header_does_not_hide_an_unresolved_descendant() {
         &actual.view(),
         path,
         &mut context,
-        ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual),
+        ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual),
     );
     assert!(matches!(
         result,
@@ -350,7 +350,7 @@ fn byte_collection_relations_use_exact_elements_without_closing_bodies() {
             prepare_relation(
                 TypeKind::Bytes,
                 supplied.clone(),
-                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+                ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual)
             ),
             1
         );
@@ -358,7 +358,7 @@ fn byte_collection_relations_use_exact_elements_without_closing_bodies() {
             prepare_relation(
                 supplied,
                 TypeKind::Bytes,
-                ConstraintRelation::Accepts(ConstraintAcceptance::ActualAcceptsPattern)
+                ConstraintRelation::accepts(ConstraintAcceptance::ActualAcceptsPattern)
             ),
             1
         );
@@ -376,7 +376,7 @@ fn byte_collection_relations_use_exact_elements_without_closing_bodies() {
             prepare_relation(
                 TypeKind::Bytes,
                 supplied,
-                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+                ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual)
             ),
             0
         );
@@ -403,12 +403,12 @@ fn agent_membership_uses_the_shared_container_algebra_without_closure() {
             (supplied.clone(), TypeKind::AgentValue)
         };
         assert_eq!(
-            prepare_relation(expected, actual, ConstraintRelation::Accepts(direction)),
+            prepare_relation(expected, actual, ConstraintRelation::accepts(direction)),
             1
         );
     }
     assert_eq!(
-        prepare_relation(TypeKind::AgentValue, supplied, ConstraintRelation::Equal),
+        prepare_relation(TypeKind::AgentValue, supplied, ConstraintRelation::EQUAL),
         0
     );
     for supplied in [
@@ -425,7 +425,7 @@ fn agent_membership_uses_the_shared_container_algebra_without_closure() {
             prepare_relation(
                 TypeKind::AgentValue,
                 supplied,
-                ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+                ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual)
             ),
             0
         );
@@ -434,7 +434,7 @@ fn agent_membership_uses_the_shared_container_algebra_without_closure() {
         prepare_relation(
             TypeKind::AgentValue,
             TypeKind::Never,
-            ConstraintRelation::Accepts(ConstraintAcceptance::PatternAcceptsActual)
+            ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual)
         ),
         1
     );

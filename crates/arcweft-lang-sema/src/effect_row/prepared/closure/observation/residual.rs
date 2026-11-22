@@ -31,7 +31,7 @@ impl PreparedEffectDefinitions {
             else {
                 return Err(PreparedEffectInvariant::FutureBinding.into());
             };
-            if origin.variable() != parameter || !function.parameters().is_empty() {
+            if origin.variable() != parameter {
                 return Err(PreparedEffectInvariant::ParameterContract.into());
             }
             work.charge(DecisionWork::Node)?;

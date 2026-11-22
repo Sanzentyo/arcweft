@@ -114,6 +114,11 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             })?;
         }
         for equation in &self.equations {
+            if equation.is_next_invocation_input() {
+                // A preview contributes through the bindings it inferred.
+                // The next invocation owns the original effect operands.
+                continue;
+            }
             context.enter_node()?;
             context.enter_node()?;
             types.push((equation.pattern.value(), None));

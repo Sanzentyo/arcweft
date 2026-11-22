@@ -1,9 +1,10 @@
 use super::*;
 use crate::{
     effect_row::{
-        EffectPredicate,
+        EffectPredicate, EffectRow,
         prepared::{PreparedEffectRelation, PreparedEffectUnknownEligibility},
     },
+    effects::EffectSet,
     types::{
         constraints::{
             NoConstraintClient, TypeConstraintAbort,

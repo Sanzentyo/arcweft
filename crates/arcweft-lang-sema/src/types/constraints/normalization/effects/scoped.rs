@@ -298,7 +298,7 @@ fn transport_effect_clause<A: TypeConstraintAccounting, D: ConstraintDomain>(
     if target == source || predicate.constant_truth().is_some() {
         return Ok(edit.read().retain_predicate(predicate, context)?);
     }
-    edit.map_predicate_parameters(predicate, context, &mut |reference, context| {
+    edit.rebase_predicate_parameters(predicate, context, &mut |reference, context| {
         let mapped = target
             .effect_reference(source, source.shape(), target.shape(), reference, context)
             .map_err(|error| match error {
@@ -308,9 +308,7 @@ fn transport_effect_clause<A: TypeConstraintAccounting, D: ConstraintDomain>(
                 }
             })
             .map_err(PreparedEffectFailure::Control)?;
-        Ok((mapped != *reference).then(|| {
-            PreparedEffectRow::Canonical(EffectRow::open(crate::effects::EffectSet::new(), mapped))
-        }))
+        Ok((mapped != *reference).then_some(mapped))
     })
     .map_err(Into::into)
 }

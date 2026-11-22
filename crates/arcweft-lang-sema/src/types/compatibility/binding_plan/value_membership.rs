@@ -33,7 +33,7 @@ where
                 &element,
                 path,
                 context,
-                ConstraintRelation::Equal,
+                ConstraintRelation::EQUAL,
             )
         }
         Some(CrossShapeCompatibility::AgentValue) => {
@@ -114,7 +114,7 @@ where
                     &key,
                     path,
                     context,
-                    ConstraintRelation::Accepts(direction),
+                    ConstraintRelation::accepts(direction),
                 ),
                 ConstraintAcceptance::ActualAcceptsPattern => relate_constraint(
                     graph,
@@ -122,7 +122,7 @@ where
                     &expected.view(),
                     path,
                     context,
-                    ConstraintRelation::Accepts(direction),
+                    ConstraintRelation::accepts(direction),
                 ),
             }?;
             paths.into_iter().try_fold(Vec::new(), |mut output, path| {
@@ -148,7 +148,7 @@ where
                         role,
                         expected,
                         actual,
-                        ConstraintRelation::Accepts(direction),
+                        ConstraintRelation::accepts(direction),
                         context,
                     )?;
                     output.extend(relate_agent_value(

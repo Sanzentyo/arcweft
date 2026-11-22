@@ -185,6 +185,80 @@ fn branches_and_imports_keep_the_issued_function_with_the_complete_intro_gamma()
 }
 
 #[test]
+fn a_residual_row_observes_only_its_introduction_application() {
+    use crate::effect_row::{
+        EffectRow,
+        prepared::{BoundScopedEffectCompletion, PreparedEffectFailure, PreparedEffectRow},
+    };
+    use crate::effects::EffectSet;
+    use std::collections::BTreeMap;
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(&cancellation);
+    let mut graph = PreparedEffectGraph::default();
+    let scope = parameter_scope(EffectConstraintEligibility::FutureEligible);
+    let variable = scope.opened_effect_variables()[0].variable().clone();
+    let outside = context.enter_binder_scope(GenericBinder::new(0, 0, 1));
+    let capture = context.lexical_scope().bound_effect(0, 0).unwrap();
+    let original = context.fixture_original_context(None).unwrap();
+    let application = context
+        .application_scope((), scope, original, &mut graph)
+        .unwrap();
+    let function = application.effect_function(&variable).unwrap().clone();
+    let application = application.effect_application(&variable).unwrap();
+    let mut edit = graph.edit_terms();
+    let captured = context.capture_lexical_scope().unwrap();
+    let introduction = application
+        .transport(&captured, &mut edit, &mut context)
+        .unwrap();
+    let nested = captured.with_binder(GenericBinder::new(0, 0, 1));
+    let rebased = application
+        .transport(&nested, &mut edit, &mut context)
+        .unwrap();
+    edit.commit().unwrap();
+    let different = PreparedEffectRow::Canonical(EffectRow::closed(EffectSet::new()));
+    let explicit = graph
+        .unknown_application(&function, vec![different.clone()], &mut context)
+        .unwrap();
+    let substituted = graph
+        .substitute(
+            &introduction,
+            &BTreeMap::from([(capture, different)]),
+            &mut context,
+        )
+        .unwrap();
+    let rows = [&introduction, &rebased, &explicit, &substituted];
+    let original = graph
+        .read()
+        .freeze_scoped(&rows, &[], &[], &mut context)
+        .unwrap();
+    let completion = BoundScopedEffectCompletion::pending(original, graph.read(), &mut context)
+        .unwrap()
+        .complete_residual_rows(
+            &mut graph,
+            &rows,
+            &[],
+            &[(&function, &variable)],
+            &mut context,
+        )
+        .unwrap();
+    let expected = EffectRow::open(EffectSet::new(), variable);
+    for row in [introduction, rebased] {
+        assert_eq!(
+            completion.resolve_row(&row, &mut context).unwrap(),
+            expected
+        );
+    }
+    for row in [explicit, substituted] {
+        assert!(matches!(
+            completion.resolve_row(&row, &mut context),
+            Err(PreparedEffectFailure::NonPointwiseObservation)
+        ));
+    }
+    context.restore_binder_scope(outside);
+}
+
+#[test]
 fn equally_shaped_new_frames_cannot_redeclare_the_same_opened_variable() {
     let cancellation = AtomicBool::new(false);
     let mut context = context(&cancellation);

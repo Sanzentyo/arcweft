@@ -152,7 +152,7 @@ impl ConstraintEffectFunctionApplication<'_> {
             if self.scope == target && inner == 0 {
                 return Ok(edit.read().retain_row(&self.binding.application, context)?);
             }
-            edit.map_row_parameters(
+            edit.rebase_row_parameters(
                 &self.binding.application,
                 context,
                 &mut |reference, context| {
@@ -187,12 +187,7 @@ impl ConstraintEffectFunctionApplication<'_> {
                             return Err(PreparedEffectInvariant::ParameterContract.into());
                         }
                     };
-                    Ok((&mapped != reference).then(|| {
-                        PreparedEffectRow::Canonical(EffectRow::open(
-                            crate::effects::EffectSet::new(),
-                            mapped,
-                        ))
-                    }))
+                    Ok((&mapped != reference).then_some(mapped))
                 },
             )
             .map_err(TypeConstraintError::from)

@@ -3683,7 +3683,7 @@ impl PreparedCallOutputProjections<'_> {
         } = &self.result
         {
             if let Some((pattern, actual)) = next_parameters {
-                driver.constrain(pattern, actual, ConstraintAcceptance::PatternAcceptsActual);
+                driver.infer_from_next_invocation_input(pattern, actual);
             }
             if let Some(expected) = expected
                 && !expected.uses_function_value()

@@ -83,7 +83,7 @@ impl<C: TypeProjectionControl> ScopedTypeProjection<PreparedEffects, PreparedEff
         depth: u64,
     ) -> Result<PreparedEffectRow, TypeProjectionError<Self::Error>> {
         self.edit
-            .map_row_parameters(
+            .rebase_row_parameters(
                 row,
                 &mut EffectProjectionControl {
                     control: self.control,
@@ -96,10 +96,7 @@ impl<C: TypeProjectionControl> ScopedTypeProjection<PreparedEffects, PreparedEff
                             .map_err(|error| {
                                 PreparedEffectFailure::Control(TypeProjectionError::from(error))
                             })?;
-                    Ok(Some(PreparedEffectRow::Canonical(EffectRow::open(
-                        crate::effects::EffectSet::new(),
-                        reference,
-                    ))))
+                    Ok(Some(reference))
                 },
             )
             .map_err(PreparedTypeEffectProjectionFailure::from_effect)
@@ -113,7 +110,7 @@ impl<C: TypeProjectionControl> ScopedTypeProjection<PreparedEffects, PreparedEff
         depth: u64,
     ) -> Result<PreparedEffectPredicate, TypeProjectionError<Self::Error>> {
         self.edit
-            .map_predicate_parameters(
+            .rebase_predicate_parameters(
                 predicate,
                 &mut EffectProjectionControl {
                     control: self.control,
@@ -126,10 +123,7 @@ impl<C: TypeProjectionControl> ScopedTypeProjection<PreparedEffects, PreparedEff
                             .map_err(|error| {
                                 PreparedEffectFailure::Control(TypeProjectionError::from(error))
                             })?;
-                    Ok(Some(PreparedEffectRow::Canonical(EffectRow::open(
-                        crate::effects::EffectSet::new(),
-                        reference,
-                    ))))
+                    Ok(Some(reference))
                 },
             )
             .map_err(PreparedTypeEffectProjectionFailure::from_effect)

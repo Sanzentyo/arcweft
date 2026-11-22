@@ -82,9 +82,16 @@ impl<D: ConstraintDomain> PendingEquation<D> {
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
+        if self.is_next_invocation_input() {
+            return Ok(());
+        }
         context.with_original_scope(self.scope().clone(), |context| {
             self.validate_in_scope(branch, projection, graph, context)
         })
+    }
+
+    pub(super) fn is_next_invocation_input(&self) -> bool {
+        self.timing == ConstraintEquationTiming::NextInvocationInput
     }
 
     pub(super) fn scope(&self) -> &super::lexical::ConstraintLexicalScope {
@@ -223,6 +230,7 @@ impl<D: ConstraintDomain> PendingEquation<D> {
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum ConstraintEquationTiming {
     Immediate,
+    NextInvocationInput,
     ResultContext,
     InferredEffectResult,
 }
@@ -1526,6 +1534,25 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         }
     }
 
+    pub(crate) fn infer_from_next_invocation_input<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        effects: &mut crate::effect_row::prepared::PreparedEffectGraph,
+        pattern: &TypeKind<PreparedEffects>,
+        actual: &TypeKind<PreparedEffects>,
+    ) {
+        if let Err(error) = self.constrain_equation(
+            context,
+            effects,
+            pattern,
+            actual,
+            ConstraintAcceptance::PatternAcceptsActual,
+            ConstraintEquationTiming::NextInvocationInput,
+        ) {
+            self.first_failure = Some(error.into());
+        }
+    }
+
     /// Retains one result equation for final validation while using a
     /// satisfiable relation to guide source inference. A contradictory result
     /// does not skip the candidate's authored source-checking protocol.
@@ -1634,7 +1661,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 continue;
             }
             let retained = match timing {
-                ConstraintEquationTiming::Immediate => None,
+                ConstraintEquationTiming::Immediate
+                | ConstraintEquationTiming::NextInvocationInput => None,
                 ConstraintEquationTiming::ResultContext
                 | ConstraintEquationTiming::InferredEffectResult => {
                     let pattern_hint = project_type(
@@ -1672,14 +1700,25 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .expect("the current equation is retained");
             let pattern = equation.pattern.clone();
             let actual = equation.actual.clone();
-            match relate_selected_call(
-                effects,
-                &pattern.view(),
-                &actual.view(),
-                path,
-                context,
-                acceptance,
-            ) {
+            let relation = if timing == ConstraintEquationTiming::NextInvocationInput {
+                crate::types::compatibility::binding_plan::relate_next_invocation_input(
+                    effects,
+                    &pattern.view(),
+                    &actual.view(),
+                    path,
+                    context,
+                )
+            } else {
+                relate_selected_call(
+                    effects,
+                    &pattern.view(),
+                    &actual.view(),
+                    path,
+                    context,
+                    acceptance,
+                )
+            };
+            match relation {
                 Ok(paths) if !paths.is_empty() => advanced.extend(paths),
                 Ok(_) => {
                     if let Some(original) = retained {

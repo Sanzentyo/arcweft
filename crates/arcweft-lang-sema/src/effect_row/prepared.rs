@@ -396,7 +396,19 @@ enum RowTerm {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ApplicationArgumentAuthority {
     Explicit,
+    /// The function applied to the captures issued with its introduction.
     Introduction,
+    /// Still subject to introduction scope checks, but no longer the issued application.
+    SubstitutedIntroduction,
+}
+
+impl ApplicationArgumentAuthority {
+    fn after_substitution(self) -> Self {
+        match self {
+            Self::Introduction => Self::SubstitutedIntroduction,
+            authority => authority,
+        }
+    }
 }
 
 enum RowChildren<'a> {
