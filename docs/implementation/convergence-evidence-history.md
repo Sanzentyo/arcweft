@@ -21562,3 +21562,19 @@ Source `bb67854424e45014fd6855e2df718b55cdee298a` のテストバイナリを LL
 Sema library は2,035件中2,008 PASS／27既知FAIL。Cargo graph で Sema を含む22パッケージを確認し、非CLIの21パッケージは4,328 PASS／27既知FAIL／1 SKIPだった。公開済み基点からの成否の変化は上記3件の FAIL から PASS。CLI のライブラリ・バイナリ196件と統合6対象30件はすべて通過。受入・公開済みの Generic Match C3/C5 の151件も通過した。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。変更2ファイルの Clippy 警告は、行番号を正規化すると、前回と種類・件数が一致した。
 
 [検証原本](acceptance-evidence/task-residual-closure.raw.zip) は29項目、1,192,065 bytes、SHA256 `da5f57ce5eac1622dd41893f6b5e8f05dd8029c1ed0f9a086b7f9867c5bce422`。各項目の長さと SHA256 を照合した。検証後の `target` は136,173,661,436 bytes。
+
+<a id="constraint-fixture-budgets"></a>
+
+## 2026-11-22 — 制約操作の予算・取消し・公開順を回帰検証
+
+検証基点は `4881a4bf6298b4286b9088913f1bde3af0db24a1`。Sema のテスト4ファイルを Source `031559df3d832021e9909a7c12b7456c50ec0153` として `main` へ push し、公開 ref と変更 blob を照合した。照合時の追跡差分は0、既存の未追跡1パスがある。
+
+元のテストは適用の開始や effect 関数の検証を、後続操作用の小さな予算で準備していた。準備に独立した accounting を使い、適用の admission、projection の suspension、候補の completion／比較に対し、それぞれの実行上限を検査した。適用では子の関数検査1ノードを計上した後に3ノードの挿入を拒否する。suspension は先行1単位を含む上限3で成功し、上限2で3単位目を拒否した。
+
+Source `7793ac106ce08fd0540168ac93587c051c89bddb` のバイナリを LLDB で追跡し、比較用の取消しが root 準備中に発生していたことを確認した。初回の修正では7件が通り、取消しの試行は比較より前に作業上限128に達した。候補2個の正規化と確定を本番処理で別に測り、本実行でも同じ上限を使った。最初の比較ノードで取消し、LLDB が `CompletedConstraintComponent::equal_with` のフレームを確認した。取消し後は成果の記録もチケットも発行されなかった。
+
+固定効果の等値では入力検査から成功に必要な最初の上限まで、ノード上限を1ずつ増やして試した。2回目の試行では取消しが通り、等値成功後の照合で別のノード上限128に達した。最終版では入力準備と成功後の確定に十分なテスト用予算を使った。各失敗の `NodeLimit` と、グラフ項・成果記録・チケットが増えないことを確認し、最初の成功で固定行 `{fs.read}` を取り出した。関数効果の縮小・拡大と閉じた部分集合違反は `EffectUnsatisfiable` で拒否された。子の適用IDを先に発行したケースで、親の失敗が source trace 順で選ばれた。
+
+Sema library は2,035件中2,016 PASS／19既知FAIL。公開済み基点とのテストID照合では上記8件が FAIL から PASS となり、追加・欠落・新規FAILは0。変更ファイルの書式、Sema の全ターゲット・全機能の check／Clippy と構造ゲートは終了0。変更4ファイルの Clippy 警告は前回43件、今回39件で、種類別の増加は0。Cargo の逆依存graph を取得した。差分は4つの `#[cfg(test)]` モジュールで、非CLI逆依存の Sema library 以外2,320 PASS／1 SKIPとCLI226 PASSは、同じ製品入力の公開済みログから再利用した。現状行の過去の検証へのリンクは、今回照合した実測への参照に絞った。[前回の逆依存・CLI・workspace実測](#residual-closure)
+
+[検証原本](acceptance-evidence/task-constraint-fixture-budgets.raw.zip) は32項目、837,998 bytes、SHA256 `892cfa43fee17f92b557f442ea7897e88b20db07c428eb5d49a8db5da2ec939f`。各項目の長さと SHA256 を照合した。検証後の `target` は136,177,173,011 bytes。
