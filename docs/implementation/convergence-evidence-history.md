@@ -21684,3 +21684,17 @@ Core とその推移的逆依存の計52パッケージを選び、非CLIは8,17
 書式、workspace 全ターゲット・全機能の check／Clippy、構造ゲートは終了0。変更箇所のClippy警告メッセージは前回比で4件追加、10件解消・置換。構造のブロッキング違反は0件。初回の enum 比較によるコンパイル失敗も原本に収録した。Native の公開 save は残項目。
 
 [検証原本](acceptance-evidence/task-native-iteration-contour.raw.zip) は35項目、1,423,110 bytes、SHA256 `8e5abad38c89249e5ba4ac1a8418d398045ec9688d456a5caa1617c1656b07c1`。各項目の長さと SHA256 を照合した。検証後の `target` は138,173,782,875 bytes。
+
+<a id="shared-need-journal-save"></a>
+
+## 2026-11-23 — Need ジャーナルの保存と Source 照合を共通化
+
+基点 `f1180e7cfab3194099d5e3ce70ea837a17e2738f`。公開ソース `82ed4d2190708464fdce36ed7bda245c998b129b` の `main` で追跡ファイルの差分がない状態を確認し、公開先の5 blob を照合した。
+
+Need の所有型へ永続ジャーナルと Source 照合を移し、Product AWBC の公開保存を共有型へ接続した。保存契約は version `1`。復元は各テーブルと引数の件数を確認し、保持データを元実行プログラムに結び付けてから実行値を復元する。共通の argument と frontier、Native rollback と Product が共に使う inert image を再利用した。Core 内の責務移動で、AWBC snapshot から308行を削減し、Need 所有の codec 272行にまとめた。Cargo の依存宣言と依存方向に変更はない。
+
+Core の全機能 library は2,404 PASS／0 SKIP。実 Native Plan の selected producer を JSON で往復し、JoinSameKey の二つの呼び出しが同じ dispatch を一度だけ再登録することを確認した。同内容の別 Plan が持つ Source は拒否し、上限8に対する9件の frontier は Source 照合より前に拒否した。デコード済み AWBC の通常 Program Need と affine 移動を挟む各ステップの公開保存、および実 AWFB の Restartable Need の公開保存・復元も通過した。Native の公開セッション保存は残項目。
+
+Core を含む52パッケージの依存グラフから選んだ非CLIの実行は8,179 PASS／Sema の既知10 FAIL／18 SKIP。失敗IDに増減なし。受入済み Generic Match は元の監査150 IDと Style Length の後継1件がすべてPASS。CLI は library／binary 196件と統合30件がすべてPASS。書式、workspace 全ターゲット・全機能の check／Clippy、構造ゲートは終了0。変更箇所の Clippy 警告メッセージは前回比で6件追加、3件解消・置換。構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-need-journal.raw.zip) は22項目、1,391,550 bytes、SHA256 `fd6845dc8e13ae137241ae91196bc6a7b85a38f1fca7d27b4017acbd3683e209`。各項目の長さと SHA256 を照合した。検証後の `target` は141,678,776,319 bytes。
