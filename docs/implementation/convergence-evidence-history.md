@@ -21698,3 +21698,15 @@ Core の全機能 library は2,404 PASS／0 SKIP。実 Native Plan の selected 
 Core を含む52パッケージの依存グラフから選んだ非CLIの実行は8,179 PASS／Sema の既知10 FAIL／18 SKIP。失敗IDに増減なし。受入済み Generic Match は元の監査150 IDと Style Length の後継1件がすべてPASS。CLI は library／binary 196件と統合30件がすべてPASS。書式、workspace 全ターゲット・全機能の check／Clippy、構造ゲートは終了0。変更箇所の Clippy 警告メッセージは前回比で6件追加、3件解消・置換。構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-need-journal.raw.zip) は22項目、1,391,550 bytes、SHA256 `fd6845dc8e13ae137241ae91196bc6a7b85a38f1fca7d27b4017acbd3683e209`。各項目の長さと SHA256 を照合した。検証後の `target` は141,678,776,319 bytes。
+
+<a id="native-work-codec"></a>
+
+## 2026-11-23 — Native の継続キューを元コードの位置から復元
+
+基点 `19a25caa12ac1efc0e74acc8da25a3c2dc5347d8`。公開ソース `23bb734d64a168f19fe3372edbf91398949c63fd` の `main` で追跡ファイルの差分がない状態を確認し、公開先の8 blob を照合した。
+
+Native の元コード位置は元の Plan の owner・body path・操作範囲を記録する。既存の `NativePendingWork` の inert 特殊化が、同じ継続の形と保持値を保存する。元コードと実行値の再構築は、既存の元 Plan 照合と復元経路に通す。body path の件数はデコード中にも制限し、65,536件の受入と65,537件の拒否を実測した。Native 実行では保留キューを操作ごとに JSON で往復し、別の同型 `for` への付け替えと不正な iterator を拒否して、正しい状態では同じ出力と戻り値42を得た。式と操作列の両方の関数入口も JSON から復元した。Native 全体の公開セッション保存は残項目。
+
+Core の全機能 library は2,405 PASS／0 SKIP。Cargo の実グラフで Core を含む52パッケージを確認し、動作検証は Core と、コンパイラの待機・iterator・スコープ終了の3統合スイートを実行した。コンパイラ69件はすべてPASSし、関数呼び出しをまたぐ待機と退避キューの再開を含む。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-work-codec.raw.zip) は14項目、1,004,633 bytes、SHA256 `30c5ccce1c457ceda9685658ea1f1c8b1626f8aa900ef8082d2003a2a989ff02`。各項目の長さと SHA256 を照合した。検証後の `target` は141,681,838,857 bytes。
