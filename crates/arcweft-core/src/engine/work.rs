@@ -544,22 +544,83 @@ impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue>
                     )?;
                 }
             }
-            NativePendingWorkKind::Resume(Resume::ForNext { iterator, .. }) => {
-                if !matches!(
-                    iterator.borrowed_view(),
-                    crate::value::RuntimeValueView::Iterator(_)
-                ) {
-                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
-                        message: "native iterator continuation contains another value kind".into(),
-                    });
-                }
-                admission.validate_owned_borrowed(iterator.borrowed_value())?;
+            NativePendingWorkKind::Resume(Resume::ForNext { source, iterator }) => {
+                let Some(crate::plan::FlowOp::For { evidence, .. }) = source.operation(&plan)
+                else {
+                    unreachable!("work metadata admitted the exact original For operation")
+                };
+                admit_for_iterator(
+                    &plan,
+                    evidence,
+                    iterator.borrowed_value(),
+                    admission,
+                    binding,
+                )?;
             }
             NativePendingWorkKind::Source { .. } | NativePendingWorkKind::Resume(_) => {}
         }
         Ok(())
     }
 }
+
+fn admit_for_iterator(
+    plan: &crate::plan::RuntimePlan,
+    evidence: &crate::plan::RuntimeIteratorEvidence,
+    stored: crate::value::RuntimeBorrowedValue<'_>,
+    admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+    use crate::plan::{
+        RuntimeBuiltinIteratorEvidence as Builtin, RuntimeBuiltinIteratorFamily as Family,
+        RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable,
+    };
+    use crate::value::{RuntimeIteratorKind, RuntimeValueView};
+    let invalid = || crate::value::AwbcRuntimeValueSnapshotError::Message {
+        message: "native iterator continuation differs from its original For evidence".into(),
+    };
+    let RuntimeValueView::Iterator(iterator) = stored.view() else {
+        return Err(invalid());
+    };
+    let iterator_type = match (evidence, iterator.kind()) {
+        (
+            RuntimeIteratorEvidence::Builtin(Builtin {
+                family: Family::Range,
+                iterator,
+                ..
+            }),
+            RuntimeIteratorKind::Range(_),
+        )
+        | (
+            RuntimeIteratorEvidence::Builtin(Builtin {
+                family:
+                    Family::Seq | Family::Vec | Family::Array | Family::Slice | Family::TupleHomogeneous,
+                iterator,
+                ..
+            }),
+            RuntimeIteratorKind::Values(_),
+        ) => *iterator,
+        (RuntimeIteratorEvidence::Witness(evidence), RuntimeIteratorKind::Witness(iterator)) => {
+            let next = match &evidence.executable {
+                RuntimeIteratorWitnessExecutable::TraitCalls { next, .. }
+                | RuntimeIteratorWitnessExecutable::IdentityIntoIterator { next } => *next,
+            };
+            if iterator.next_method() != next {
+                return Err(invalid());
+            }
+            // Storage admission checks the receiver against this exact method's
+            // original executable and state contract.
+            return admission.validate_owned_borrowed(stored);
+        }
+        _ => return Err(invalid()),
+    };
+    let expected = plan
+        .type_table()
+        .get(iterator_type)
+        .expect("the admitted For evidence owns its iterator type")
+        .semantic_identity();
+    admission.validate_owned_typed_borrowed_in_invocation(stored, expected, binding)
+}
+
 impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue> NativeStoredWork
     for NativePendingWork<V, I>
 {

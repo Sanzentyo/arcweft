@@ -348,6 +348,171 @@ fn witness_next_rejects_a_copy_of_its_affine_receiver() {
     ));
 }
 
+#[test]
+fn native_for_restore_admits_the_original_iterator_storage() {
+    use crate::plan::{
+        FlowRuntimeId, RuntimeBuiltinIteratorEvidenceSeed, RuntimeBuiltinIteratorFamily,
+        RuntimeEffectSet, RuntimeExecutableBodySeed, RuntimeFlowOpSeed, RuntimeFlowSchema,
+        RuntimeFlowSeed, RuntimeFunctionDefinitionIdentity, RuntimeFunctionSiteDeclarationSeed,
+        RuntimeIteratorEvidenceSeed, RuntimePatternSeed,
+    };
+    use crate::step::{RuntimeStepBudget, RuntimeStepMode, RuntimeStepOptions};
+
+    let (int, unit, vector, iterator, payload, next, step) = (
+        semantic(10),
+        semantic(11),
+        semantic(12),
+        semantic(13),
+        semantic(14),
+        semantic(15),
+        semantic(16),
+    );
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    int,
+                    RuntimePlanTypeProjection::Signed(crate::value::RuntimeSignedIntWidth::I64),
+                ),
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(
+                    vector,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: int,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(iterator, RuntimePlanTypeProjection::Iterator(int)),
+                RuntimePlanTypeSeed::new(
+                    payload,
+                    RuntimePlanTypeProjection::Tuple(Box::new([int])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    next,
+                    RuntimePlanTypeProjection::Option {
+                        item: int,
+                        some_payload: payload,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    step,
+                    RuntimePlanTypeProjection::Tuple(Box::new([iterator, next])),
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+    let flow = FlowRuntimeId::canonical("for_restore").unwrap();
+    builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: flow.clone(),
+            parameters: vec![],
+        })
+        .unwrap();
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            RuntimeFunctionSiteDeclarationSeed::flow(
+                RuntimeFunctionDefinitionIdentity::from_accepted_identity([17; 32]),
+                None,
+                Box::new([]),
+                unit,
+                RuntimeEffectSet::empty(),
+            ),
+            RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: Box::new([
+                    RuntimeFlowOpSeed::For {
+                        pattern: RuntimePatternSeed::new(
+                            int,
+                            crate::plan::RuntimePatternSeedKind::Discard,
+                        ),
+                        source: RuntimeExprSeed::new(
+                            vector,
+                            RuntimeExprSeedKind::BracketSeq(Box::new([1, 2].map(|value| {
+                                RuntimeExprSeed::new(
+                                    int,
+                                    RuntimeExprSeedKind::Value(RuntimeValue::i64(value)),
+                                )
+                            }))),
+                        ),
+                        evidence: RuntimeIteratorEvidenceSeed::Builtin(
+                            RuntimeBuiltinIteratorEvidenceSeed {
+                                family: RuntimeBuiltinIteratorFamily::Vec,
+                                item: int,
+                                iterator,
+                                next_value: next,
+                                step,
+                            },
+                        ),
+                        body: vec![RuntimeFlowOpSeed::Noop],
+                    },
+                    RuntimeFlowOpSeed::Return("42".into()),
+                ]),
+            },
+        ))
+        .unwrap();
+    let mut live = Engine::for_flow(builder.finish().unwrap(), &flow).unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Plan(live.program_plan());
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..Default::default()
+    };
+    let first = live.step(Default::default(), options);
+    assert_eq!(first.stats.executed_ops, 1);
+    assert!(first.output.diagnostics.is_empty());
+    let original = live.inert_rollback_image().unwrap();
+
+    for invalid_iterator in [
+        RuntimeIterator::values(vec![RuntimeValue::Bool(true)]),
+        crate::value::RuntimeRange::new(
+            Some(RuntimeValue::i64(0)),
+            Some(RuntimeValue::i64(2)),
+            false,
+        )
+        .unwrap()
+        .into_iterator()
+        .unwrap(),
+    ] {
+        let mut forged = original.clone();
+        let saved_iterator = forged
+            .fiber
+            .frame
+            .pending_ops
+            .iter_mut()
+            .find_map(|work| match &mut work.kind {
+                super::NativePendingWorkKind::Resume(NativeRuntimeContinuation::ForNext {
+                    iterator,
+                    ..
+                }) => Some(iterator),
+                _ => None,
+            })
+            .expect("the first iteration retains the original rest position");
+        *saved_iterator =
+            AwbcRuntimeValueSnapshot::from_runtime_iterator_for_program(&invalid_iterator, &owner)
+                .unwrap();
+        assert!(Engine::from_rollback_image(forged, &owner).is_err());
+        assert_eq!(live.inert_rollback_image().unwrap(), original);
+    }
+
+    let mut restored = Engine::from_rollback_image(original, &owner).unwrap();
+    for _ in 0..32 {
+        let expected = live.step(Default::default(), options);
+        let actual = restored.step(Default::default(), options);
+        assert_eq!(actual, expected);
+        assert!(actual.output.diagnostics.is_empty());
+        assert!(actual.stats.executed_ops <= 1);
+        if actual.fiber_status
+            == FlowFiberStatus::Done(crate::engine::FlowExit::Return("42".into()))
+        {
+            return;
+        }
+    }
+    panic!("the original and restored For did not complete");
+}
+
 #[cfg(test)]
 fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {
     // This fixture declares a semantic binding name independent of its value,
