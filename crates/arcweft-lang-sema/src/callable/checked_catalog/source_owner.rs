@@ -350,12 +350,29 @@ mod tests {
         )
         .unwrap();
         let cancellation = std::sync::atomic::AtomicBool::new(false);
-        let mut resolver = ResolverWork::new(1);
-        let mut control = resolver
+        let mut setup = ResolverWork::new(1);
+        let mut one_visit = setup
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .unwrap();
+        assert!(matches!(
+            PreparedCallableEffectDeclarations::declare([(id, schema)], &mut one_visit),
+            Err(crate::effect_row::prepared::PreparedEffectFailure::Control(
+                crate::types::constraints::TypeConstraintError::Abort(
+                    crate::types::constraints::TypeConstraintAbort::WorkLimit { limit: 1, .. }
+                )
+            ))
+        ));
+        let mut setup = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_catalog_build_work());
+        let mut declaration_work = setup
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .unwrap();
         let declarations =
-            PreparedCallableEffectDeclarations::declare([(id, schema)], &mut control).unwrap();
+            PreparedCallableEffectDeclarations::declare([(id, schema)], &mut declaration_work)
+                .unwrap();
+        let mut resolver = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+        let mut control = resolver
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .unwrap();
         let mut graph = PreparedCallGraph::<(), ()>::default();
         graph.initialize_effect_declarations(declarations).unwrap();
 

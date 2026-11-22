@@ -75,7 +75,32 @@ impl PreparedApplicationResultEffect {
 
 pub(crate) struct PreparedCallableEffectDeclarations {
     graph: PreparedEffectGraph,
-    declarations: BTreeMap<CheckedCallableId, PreparedCallableEffectDeclaration>,
+    declarations: PreparedCallableEffectHeaders,
+}
+
+/// Registration assigns scheme slots in checked-callable order. Both queries
+/// address the same immutable records.
+#[derive(Default)]
+pub(crate) struct PreparedCallableEffectHeaders {
+    by_declaration: Box<[(CheckedCallableId, PreparedCallableEffectDeclaration)]>,
+}
+
+impl PreparedCallableEffectHeaders {
+    pub(crate) fn get(
+        &self,
+        owner: &CheckedCallableId,
+    ) -> Option<&PreparedCallableEffectDeclaration> {
+        let index = self
+            .by_declaration
+            .binary_search_by(|(registered, _)| registered.cmp(owner))
+            .ok()?;
+        Some(&self.by_declaration[index].1)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.by_declaration.len()
+    }
 }
 
 pub(crate) struct PreparedCallableEffectDeclaration {
@@ -103,7 +128,7 @@ impl PreparedCallableEffectDeclarations {
     pub(crate) fn empty_for_test() -> Self {
         Self {
             graph: PreparedEffectGraph::default(),
-            declarations: BTreeMap::new(),
+            declarations: PreparedCallableEffectHeaders::default(),
         }
     }
 
@@ -116,16 +141,20 @@ impl PreparedCallableEffectDeclarations {
         scheme: &crate::effect_row::prepared::PreparedEffectSchemeRef,
         control: &mut C,
     ) -> Result<&CheckedCallableId, PreparedEffectFailure<C::Error>> {
-        for (owner, declaration) in &self.declarations {
-            control
-                .charge(DecisionWork::Visit)
-                .map_err(PreparedEffectFailure::Control)?;
-            if declaration.header.scheme() == scheme {
-                declaration.header.validate(&self.graph)?;
-                return Ok(owner);
-            }
+        control
+            .charge(DecisionWork::Visit)
+            .map_err(PreparedEffectFailure::Control)?;
+        let slot = self.graph.read().declaration_slot(scheme)?;
+        let (owner, declaration) = self
+            .declarations
+            .by_declaration
+            .get(slot)
+            .ok_or(PreparedEffectInvariant::StaleReference)?;
+        if declaration.header.scheme() != scheme {
+            return Err(PreparedEffectInvariant::StaleReference.into());
         }
-        Err(PreparedEffectInvariant::StaleReference.into())
+        declaration.header.validate(&self.graph)?;
+        Ok(owner)
     }
 
     pub(crate) fn declaration_body_is_prepared(
@@ -275,15 +304,26 @@ impl PreparedCallableEffectDeclarations {
         inputs: impl IntoIterator<Item = (&'a CheckedCallableId, &'a CallableSignatureSchema)>,
         control: &mut C,
     ) -> Result<Self, PreparedEffectFailure<C::Error>> {
-        let mut graph = PreparedEffectGraph::default();
-        let mut declarations = BTreeMap::new();
+        let mut ordered = BTreeMap::new();
         for (owner, schema) in inputs {
             control
                 .charge(DecisionWork::Visit)
                 .map_err(PreparedEffectFailure::Control)?;
-            if declarations.contains_key(owner) {
-                return Err(PreparedEffectInvariant::SchemeState.into());
+            match ordered.entry(owner) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    control
+                        .charge(DecisionWork::Node)
+                        .map_err(PreparedEffectFailure::Control)?;
+                    entry.insert(schema);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    return Err(PreparedEffectInvariant::SchemeState.into());
+                }
             }
+        }
+        let mut graph = PreparedEffectGraph::default();
+        let mut declarations = Vec::with_capacity(ordered.len());
+        for (owner, schema) in ordered {
             let mut parameters = Vec::new();
             for parameter in schema.generic_inventory().effects() {
                 control
@@ -293,6 +333,9 @@ impl PreparedCallableEffectDeclarations {
             }
             let scheme =
                 graph.declare_borrowed_domain(parameters, schema.effect_predicate(), control)?;
+            if graph.read().declaration_slot(&scheme)? != declarations.len() {
+                return Err(PreparedEffectInvariant::SchemeState.into());
+            }
             let header = graph.declaration(&scheme, control)?;
             let mut arguments = Vec::new();
             for parameter in header.parameters() {
@@ -310,27 +353,26 @@ impl PreparedCallableEffectDeclarations {
             control
                 .charge(DecisionWork::Node)
                 .map_err(PreparedEffectFailure::Control)?;
-            declarations.insert(
+            declarations.push((
                 owner.clone(),
                 PreparedCallableEffectDeclaration {
                     schema: schema.semantic_digest(),
                     header,
                     formal_application,
                 },
-            );
+            ));
         }
         Ok(Self {
             graph,
-            declarations,
+            declarations: PreparedCallableEffectHeaders {
+                by_declaration: declarations.into_boxed_slice(),
+            },
         })
     }
 
     pub(crate) fn relation(
         &mut self,
-    ) -> (
-        &mut PreparedEffectGraph,
-        &BTreeMap<CheckedCallableId, PreparedCallableEffectDeclaration>,
-    ) {
+    ) -> (&mut PreparedEffectGraph, &PreparedCallableEffectHeaders) {
         (&mut self.graph, &self.declarations)
     }
 }

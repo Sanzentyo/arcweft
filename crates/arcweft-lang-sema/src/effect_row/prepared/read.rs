@@ -350,6 +350,15 @@ impl<'a> PreparedEffectReadView<'a> {
         ))
     }
 
+    /// The graph-local position of a live declaration scheme.
+    pub(crate) fn declaration_slot(
+        self,
+        reference: &PreparedEffectSchemeRef,
+    ) -> Result<usize, PreparedEffectInvariant> {
+        self.scheme(reference)?;
+        usize::try_from(reference.0.ordinal).map_err(|_| PreparedEffectInvariant::OrdinalExhausted)
+    }
+
     pub(in crate::effect_row::prepared) fn row(
         self,
         reference: &PreparedEffectRowRef,

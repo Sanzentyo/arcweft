@@ -1082,7 +1082,9 @@ mod tests {
         let mut preparation = CallableEffectClosureWork::new(limit, control);
         let row = {
             let (graph, headers) = declarations.relation();
-            let scheme = headers[&body.id]
+            let scheme = headers
+                .get(&body.id)
+                .unwrap()
                 .validate_schema(record.schema())
                 .unwrap()
                 .scheme();
@@ -1152,7 +1154,7 @@ mod tests {
             .iter()
             .find(|body| body.id != root.id)
             .unwrap();
-        let original = {
+        let (original, registered_terms) = {
             let (graph, declarations) = calls.effect_declarations_mut().unwrap().relation();
             assert_eq!(declarations.len(), 2);
             let schema = staged
@@ -1161,10 +1163,14 @@ mod tests {
                 .unwrap()
                 .record()
                 .schema();
-            let header = declarations[&unused.id].validate_schema(schema).unwrap();
+            let header = declarations
+                .get(&unused.id)
+                .unwrap()
+                .validate_schema(schema)
+                .unwrap();
             assert_eq!(header.parameters().len(), 2);
             header.validate(graph).unwrap();
-            header.clone()
+            (header.clone(), graph.retained_terms())
         };
         let cancellation = AtomicBool::new(false);
         let control = FinalSemanticAnalysisControl::new(&cancellation);
@@ -1198,11 +1204,15 @@ mod tests {
                 .record()
                 .schema();
             assert_eq!(
-                declarations[&unused.id].validate_schema(schema).unwrap(),
+                declarations
+                    .get(&unused.id)
+                    .unwrap()
+                    .validate_schema(schema)
+                    .unwrap(),
                 &original
             );
             original.validate(graph).unwrap();
-            assert_eq!(graph.retained_terms(), (0, 0));
+            assert_eq!(graph.retained_terms(), registered_terms);
             assert!(matches!(
                 graph.solve_principal(&mut CallableEffectClosureWork {
                     control,
@@ -1216,6 +1226,71 @@ mod tests {
                 )
             ));
         }
+    }
+
+    #[test]
+    fn observation_dependency_lookup_uses_the_exact_registered_scheme_in_one_visit() {
+        use crate::effect_row::prepared::{PreparedEffectFailure, PreparedEffectInvariant};
+
+        let (staged, mut calls) = staged_fixture("fn z() -> i64 { 1i64 }\nfn a() -> i64 { 2i64 }");
+        let last = staged.bodies.iter().max_by_key(|body| &body.id).unwrap();
+        let source = calls.effect_declarations_mut().unwrap();
+        let last_schema = staged
+            .builder
+            .pending_by_id(&last.id)
+            .unwrap()
+            .record()
+            .schema();
+        let scheme = source
+            .relation()
+            .1
+            .get(&last.id)
+            .unwrap()
+            .validate_schema(last_schema)
+            .unwrap()
+            .scheme()
+            .clone();
+        let cancellation = AtomicBool::new(false);
+        let control = FinalSemanticAnalysisControl::new(&cancellation);
+        let mut work = CallableEffectClosureWork::new(1, control);
+        assert_eq!(
+            source
+                .observation_dependency_owner(&scheme, &mut work)
+                .unwrap(),
+            &last.id
+        );
+        assert!(matches!(
+            source.observation_dependency_owner(&scheme, &mut work),
+            Err(PreparedEffectFailure::Control(
+                FinalSemanticAnalysisError::CallableEffectClosureWorkLimit { limit: 1 }
+            ))
+        ));
+
+        let mut build = CallableEffectClosureWork::new(
+            crate::callable::PRODUCTION_CALLABLE_LIMITS.max_catalog_build_work(),
+            control,
+        );
+        let mut foreign = prepare_declarations(
+            &staged.bodies,
+            &staged.builder,
+            crate::callable::PRODUCTION_CALLABLE_LIMITS.max_catalog_build_work(),
+            control,
+        )
+        .unwrap();
+        let foreign = foreign
+            .relation()
+            .1
+            .get(&last.id)
+            .unwrap()
+            .validate_schema(last_schema)
+            .unwrap()
+            .scheme();
+        assert!(matches!(
+            source.observation_dependency_owner(foreign, &mut build),
+            Err(PreparedEffectFailure::Invariant(
+                PreparedEffectInvariant::ForeignIssuer
+            ))
+        ));
     }
 
     #[test]
