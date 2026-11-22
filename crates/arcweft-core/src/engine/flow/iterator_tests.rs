@@ -457,6 +457,12 @@ fn native_for_engine() -> Engine {
 fn native_for_restore_admits_the_original_iterator_storage() {
     use crate::step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions};
 
+    let round_trip_work = |mut image: crate::engine::NativeEngineRollbackImage| {
+        let queue = &mut image.fiber.frame.pending_ops;
+        let encoded = serde_json::to_vec(queue).unwrap();
+        *queue = serde_json::from_slice(&encoded).unwrap();
+        image
+    };
     let mut live = native_for_engine();
     let owner = crate::task::RuntimeProgramOwner::Plan(live.program_plan());
     let options = RuntimeStepOptions {
@@ -498,7 +504,7 @@ fn native_for_restore_admits_the_original_iterator_storage() {
     assert_ne!(*source, alternate);
     *source = alternate;
     assert!(
-        Engine::from_rollback_image(redirected, &owner).is_err(),
+        Engine::from_rollback_image(round_trip_work(redirected), &owner).is_err(),
         "a well-typed continuation cannot resume a different loop in the same function"
     );
     let mut missing = original.clone();
@@ -534,11 +540,11 @@ fn native_for_restore_admits_the_original_iterator_storage() {
         *saved_iterator =
             AwbcRuntimeValueSnapshot::from_runtime_iterator_for_program(&invalid_iterator, &owner)
                 .unwrap();
-        assert!(Engine::from_rollback_image(forged, &owner).is_err());
+        assert!(Engine::from_rollback_image(round_trip_work(forged), &owner).is_err());
         assert_eq!(live.inert_rollback_image().unwrap(), original);
     }
 
-    let mut restored = Engine::from_rollback_image(original, &owner).unwrap();
+    let mut restored = Engine::from_rollback_image(round_trip_work(original), &owner).unwrap();
     for _ in 0..32 {
         let expected = live.step(RuntimeStepInput::default(), options);
         let actual = restored.step(RuntimeStepInput::default(), options);
@@ -550,8 +556,11 @@ fn native_for_restore_admits_the_original_iterator_storage() {
         {
             return;
         }
-        restored =
-            Engine::from_rollback_image(restored.inert_rollback_image().unwrap(), &owner).unwrap();
+        restored = Engine::from_rollback_image(
+            round_trip_work(restored.inert_rollback_image().unwrap()),
+            &owner,
+        )
+        .unwrap();
     }
     panic!("the original and restored For did not complete");
 }

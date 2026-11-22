@@ -4,16 +4,57 @@
 //! owning program must authenticate the root before resolving the coordinate.
 
 use super::{FlowOp, RuntimeFlowBodyRole};
+use serde::{Deserialize, Deserializer, Serialize, de};
+use std::fmt;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct OwnedBodyLocation {
     operation: usize,
     role: RuntimeFlowBodyRole,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RuntimeFlowBodyLocation {
+    #[serde(deserialize_with = "deserialize_parents")]
     parents: Vec<OwnedBodyLocation>,
+}
+
+fn deserialize_parents<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<OwnedBodyLocation>, D::Error> {
+    struct Parents;
+    impl<'de> de::Visitor<'de> for Parents {
+        type Value = Vec<OwnedBodyLocation>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a bounded path of original body coordinates")
+        }
+
+        fn visit_seq<A: de::SeqAccess<'de>>(self, mut rows: A) -> Result<Self::Value, A::Error> {
+            let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+            if rows
+                .size_hint()
+                .is_some_and(|len| !limits.permits_sequence_items(len))
+            {
+                return Err(de::Error::custom(
+                    "native body path exceeds its parent limit",
+                ));
+            }
+            let mut path = Vec::new();
+            while let Some(parent) = rows.next_element()? {
+                if !limits.permits_sequence_items(path.len() + 1) {
+                    return Err(de::Error::custom(
+                        "native body path exceeds its parent limit",
+                    ));
+                }
+                path.push(parent);
+            }
+            Ok(path)
+        }
+    }
+    deserializer.deserialize_seq(Parents)
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -124,6 +165,28 @@ impl RuntimeFlowOperationLocation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_code_paths_bound_parent_count_while_decoding() {
+        let limit = crate::entry::RuntimeSchemaLimits::engine_default().max_sequence_items as usize;
+        let parent = r#"{"operation":0,"role":"Body"}"#;
+        let prefix = format!(
+            "{{\"parents\":[{}{}",
+            format!("{parent},").repeat(limit - 1),
+            parent
+        );
+        let decoded: RuntimeFlowBodyLocation =
+            serde_json::from_str(&format!("{prefix}]}}")).unwrap();
+        assert_eq!(decoded.parent_count(), limit);
+        let oversized =
+            serde_json::from_str::<RuntimeFlowBodyLocation>(&format!("{prefix},{parent}]}}"))
+                .unwrap_err();
+        assert!(
+            oversized
+                .to_string()
+                .contains("native body path exceeds its parent limit")
+        );
+    }
 
     fn scope(body: Vec<FlowOp>) -> FlowOp {
         FlowOp::Scope {

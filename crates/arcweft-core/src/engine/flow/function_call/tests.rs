@@ -25,7 +25,9 @@ fn original_function_code_owner_survives_restore_and_rejects_other_valid_sites()
         let site = sites.next().unwrap().0;
         let function = RuntimePureFunctionRef::resolve(&plan, site).unwrap();
         let engine = Engine::for_function_invocation(function, vec![]).unwrap();
-        let saved = engine.inert_rollback_image().unwrap();
+        let mut saved = engine.inert_rollback_image().unwrap();
+        let queue = &mut saved.fiber.frame.pending_ops;
+        *queue = serde_json::from_slice(&serde_json::to_vec(queue).unwrap()).unwrap();
         let restored = Engine::from_rollback_image(saved.clone(), &owner).unwrap();
         assert_eq!(restored.inert_rollback_image().unwrap(), saved);
         assert_eq!(

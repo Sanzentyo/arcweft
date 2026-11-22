@@ -12,7 +12,8 @@ pub(crate) use location::{
 ///
 /// Ordinals are positions in the owning observer/arm list, including arms
 /// without a guard. These are traversal coordinates, not task identities.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub enum RuntimeFlowBodyRole {
     Body,
     Then,

@@ -6,7 +6,8 @@
 use super::NativeCodeCursor;
 use super::code_cursor::NativeSourceOperation;
 use crate::scope::{RuntimeScheduledScopeToken, RuntimeScopeIdentity};
-use crate::value::{RuntimeIterator, RuntimeLocalBinding, RuntimeValue};
+use crate::value::{InertRuntimeValueStorage, RuntimeIterator, RuntimeLocalBinding, RuntimeValue};
+use serde::{Deserialize, Serialize};
 
 pub(super) type NativePendingWorkRollbackImage = NativePendingWork<
     crate::value::AwbcRuntimeValueSnapshot,
@@ -81,12 +82,20 @@ pub(super) trait NativeStoredWork {
 
 /// One opaque native work item. Authored code stays in the original executable;
 /// runtime bindings and iterator progress remain owned by their continuation.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    transparent,
+    bound = "V: InertRuntimeValueStorage, I: InertRuntimeValueStorage"
+)]
 pub struct NativePendingWork<V = RuntimeValue, I = RuntimeIterator> {
     pub(super) kind: NativePendingWorkKind<V, I>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: InertRuntimeValueStorage, I: InertRuntimeValueStorage"
+)]
 pub(super) enum NativePendingWorkKind<V, I> {
     Source {
         position: NativeCodeCursor,
@@ -98,14 +107,18 @@ pub(super) enum NativePendingWorkKind<V, I> {
 /// Invocation completion and nested-body completion have distinct semantics.
 /// Function roots were never counted as queued source operations. Task roots
 /// and nested bodies preserve the original logical pending-operation count.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(super) enum NativeSourceRangeRole {
     FunctionRoot,
     TaskRoot,
     NestedBody,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: InertRuntimeValueStorage, I: InertRuntimeValueStorage"
+)]
 pub(super) enum NativeRuntimeContinuation<V = RuntimeValue, I = RuntimeIterator> {
     Bind(Vec<RuntimeLocalBinding<V>>),
     LoopNext {

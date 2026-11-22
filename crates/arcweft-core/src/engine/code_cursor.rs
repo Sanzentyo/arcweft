@@ -1,3 +1,4 @@
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::sync::Arc;
 
 use crate::plan::code::{RuntimeCodeBodyRef, RuntimeCodeOwner};
@@ -16,7 +17,8 @@ pub struct NativeCodeCursor {
     frontier: NativeCodeFrontier,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 enum NativeCodeFrontier {
     Expression,
     Operations { next: usize, end: usize },
@@ -25,9 +27,40 @@ enum NativeCodeFrontier {
 /// An authored operation retained by a runtime continuation. This shares its
 /// body's existing path metadata; it does not allocate an operation wrapper or
 /// copy any part of the executable operation.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(transparent)]
 pub(super) struct NativeSourceOperation {
     position: NativeCodeCursor,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct NativeCodePosition<B> {
+    owner: RuntimeCodeOwner,
+    body: B,
+    frontier: NativeCodeFrontier,
+}
+
+impl Serialize for NativeCodeCursor {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        NativeCodePosition {
+            owner: self.owner,
+            body: self.body.as_ref(),
+            frontier: self.frontier,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for NativeCodeCursor {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let saved = NativeCodePosition::deserialize(deserializer)?;
+        Ok(Self {
+            owner: saved.owner,
+            body: Arc::new(saved.body),
+            frontier: saved.frontier,
+        })
+    }
 }
 
 impl Clone for NativeCodeCursor {

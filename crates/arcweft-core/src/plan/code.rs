@@ -5,23 +5,46 @@ use super::{FlowOp, RuntimeFunctionSiteBody, RuntimePlanInventory};
 use crate::line_task::{LineTaskNode, ScopeExit};
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId};
 use crate::value::RuntimeExpr;
+use serde::{Deserialize, Serialize};
 
 /// An untrusted coordinate until resolved against its original inventory.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) enum RuntimeCodeOwner {
-    Function(RuntimeFunctionSiteId),
+    Function(#[serde(with = "function_coordinate")] RuntimeFunctionSiteId),
     LineTask {
         group: RuntimeLineTaskGroupId,
         body: RuntimeLineCodeBody,
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) enum RuntimeLineCodeBody {
     Activation,
     Action(RuntimeLineTaskNodeId),
     Cancellation { rule: usize },
     Cleanup(ScopeExit),
+}
+
+// A persisted code coordinate is inert until resolved against its Plan.
+// Give only this field a reader, keeping function site IDs constructor-bound.
+mod function_coordinate {
+    use super::*;
+    use std::num::NonZeroU32;
+
+    pub(super) fn serialize<S: serde::Serializer>(
+        site: &RuntimeFunctionSiteId,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        site.get().serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<RuntimeFunctionSiteId, D::Error> {
+        NonZeroU32::deserialize(deserializer).map(RuntimeFunctionSiteId::from_accepted_ordinal)
+    }
 }
 
 /// A view of the actual owning row. An expression root returns that original
