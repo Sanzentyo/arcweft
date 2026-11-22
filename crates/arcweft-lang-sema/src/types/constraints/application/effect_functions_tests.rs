@@ -449,6 +449,64 @@ fn a_closed_root_preserves_its_predicate_and_authenticates_imported_effects() {
 }
 
 #[test]
+fn a_closed_root_retains_ambient_frames_without_enumerating_effect_slots() {
+    let cancellation = AtomicBool::new(false);
+    let mut context = Context::with_accounting(LocalConstraintAccounting::new(
+        TypeConstraintLimits::new(128, 128, 128, 128),
+        &cancellation,
+    ));
+    let graph = PreparedEffectGraph::default();
+    let binder = GenericBinder::new(0, 0, 256);
+    let original = context
+        .with_binder(binder, |context| context.fixture_original_context(None))
+        .unwrap();
+    let parameters = TypeConstraintParameterScope::seal_call_scope(
+        GenericBinder::EMPTY,
+        [],
+        [],
+        TypeConstraintEffectScope::seal_call_scope([], []).unwrap(),
+        [],
+        [],
+    )
+    .unwrap();
+    let path = context
+        .start_closed_effect_path(graph.read(), (), parameters.clone(), original.clone(), None)
+        .unwrap();
+    let root = path
+        .applications
+        .require_application(path.root_id())
+        .unwrap();
+    assert!(std::ptr::eq(root.introduction_scope(), original.gamma()));
+
+    context
+        .with_binder(binder, |context| {
+            let path = context.start_closed_effect_path(
+                graph.read(),
+                (),
+                parameters,
+                original.clone(),
+                None,
+            )?;
+            let root = path.applications.require_application(path.root_id())?;
+            let introduction = root.introduction_scope();
+            assert_eq!(introduction.shape().binders(), &[binder, binder]);
+            let reference = original.scope().bound_effect(0, 255)?;
+            let transported = introduction
+                .effect_reference(
+                    original.gamma(),
+                    original.scope(),
+                    introduction.shape(),
+                    &reference,
+                    context,
+                )
+                .unwrap();
+            assert_eq!(transported, introduction.shape().bound_effect(0, 255)?);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
 fn original_r_instantiates_the_registered_function_under_its_actual_gamma() {
     use crate::effect_row::prepared::{
         PreparedEffectPredicate, PreparedEffectRelation, PreparedEffectRow,

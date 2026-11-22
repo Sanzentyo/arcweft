@@ -56,7 +56,7 @@ pub(crate) trait OriginalProducerSource: Any + Debug {
 struct OriginalProducer {
     source: Arc<dyn OriginalProducerSource>,
     formals: GenericDeclarationBinder,
-    gamma: ConstraintLexicalScope,
+    gamma: Arc<ConstraintLexicalScope>,
 }
 
 /// Shared unchanged across a root's branches, suspension and original value
@@ -134,7 +134,7 @@ impl OriginalProducerContext {
                 Box::new([]),
             )
             .unwrap(),
-            gamma,
+            gamma: Arc::new(gamma),
         }))
     }
     pub(crate) fn domain(&self) -> Cow<'_, EffectPredicate> {
@@ -151,6 +151,10 @@ impl OriginalProducerContext {
 
     pub(super) fn gamma(&self) -> &ConstraintLexicalScope {
         &self.0.gamma
+    }
+
+    pub(super) fn retain_gamma(&self) -> Arc<ConstraintLexicalScope> {
+        Arc::clone(&self.0.gamma)
     }
 
     /// Shape in which the producer's original prepared values occur.
@@ -258,7 +262,7 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_,
         Ok(OriginalProducerContext(Arc::new(OriginalProducer {
             source: retained_source,
             formals,
-            gamma,
+            gamma: Arc::new(gamma),
         })))
     }
 }

@@ -226,6 +226,15 @@ impl ConstraintLexicalScope {
         &self.shape
     }
 
+    pub(super) fn is_prefix_of(&self, other: &Self) -> bool {
+        self.frames.len() <= other.frames.len()
+            && self
+                .frames
+                .iter()
+                .zip(&other.frames)
+                .all(|(left, right)| Arc::ptr_eq(left, right))
+    }
+
     pub(in crate::types) fn with_binder(&self, binder: GenericBinder) -> Self {
         let mut scope = self.clone();
         if !binder.is_empty() {

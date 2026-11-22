@@ -1545,30 +1545,13 @@ where
         Ok(self.lexical_scope.clone())
     }
 
-    fn admit_application_effect_inputs(
+    fn application_effect_introduction(
         &mut self,
         original: &super::OriginalProducerContext,
         graph: PreparedEffectReadView<'_>,
-        mut retain: impl FnMut(GenericEffectReference),
     ) -> Result<Arc<ConstraintLexicalScope>, TypeConstraintError> {
-        let mut introduction = self.capture_lexical_scope()?;
-        // Imported Γ retains actual parent frames even after the lexical
-        // traversal has left them. Keep their identity in this opening.
-        introduction.merge(original.gamma(), self)?;
-        let introduction = Arc::new(introduction);
-        // The complete actual Γ is an input, independent of which effect
-        // variables happen to occur in a candidate's row or predicate.
-        let binders = introduction.shape().binders();
-        for (index, binder) in binders.iter().enumerate() {
-            let depth = u32::try_from(binders.len() - index - 1)
-                .map_err(|_| TypeConstraintAbort::ArithmeticOverflow)?;
-            for slot in 0..binder.effects() {
-                self.enter_node()?;
-                retain(introduction.shape().bound_effect(depth, slot)?);
-            }
-        }
-        let rigid = original.rigid_scope();
-        if let Some(imported) = rigid.imported {
+        self.check_cancelled()?;
+        if let Some(imported) = original.rigid_scope().imported {
             for parameter in imported.parameters() {
                 self.enter_node()?;
                 if let super::ConstraintGenericParameterId::Effect(
@@ -1584,6 +1567,42 @@ where
                 }
             }
         }
+
+        // A merge appends the original's missing frames in their original
+        // order. If the current frames already form its prefix, sharing Γ
+        // preserves those coordinates and the identity of every frame.
+        let frames = self.lexical_scope().binders().len();
+        if frames <= original.scope().binders().len() {
+            for _ in 0..frames {
+                self.enter_node()?;
+            }
+            if self.lexical_scope.is_prefix_of(original.gamma()) {
+                return Ok(original.retain_gamma());
+            }
+        }
+        let mut introduction = self.capture_lexical_scope()?;
+        introduction.merge(original.gamma(), self)?;
+        Ok(Arc::new(introduction))
+    }
+
+    fn collect_application_effect_dependencies(
+        &mut self,
+        original: &super::OriginalProducerContext,
+        introduction: &ConstraintLexicalScope,
+        dependencies: &mut BTreeSet<GenericEffectReference>,
+    ) -> Result<(), TypeConstraintError> {
+        // The complete actual Γ is an input, independent of which effect
+        // variables happen to occur in a candidate's row or predicate.
+        let binders = introduction.shape().binders();
+        for (index, binder) in binders.iter().enumerate() {
+            let depth = u32::try_from(binders.len() - index - 1)
+                .map_err(|_| TypeConstraintAbort::ArithmeticOverflow)?;
+            for slot in 0..binder.effects() {
+                self.enter_node()?;
+                dependencies.insert(introduction.shape().bound_effect(depth, slot)?);
+            }
+        }
+        let rigid = original.rigid_scope();
         for reference in rigid.effects.iter().chain(
             rigid
                 .imported
@@ -1597,16 +1616,16 @@ where
             self.enter_node()?;
             let reference = original
                 .admit_effect_reference(
-                    &introduction,
+                    introduction,
                     reference,
                     original.scope(),
                     introduction.shape(),
                     self,
                 )
                 .map_err(|error| Self::binding_transport_error(error, reference.clone().into()))?;
-            retain(reference);
+            dependencies.insert(reference);
         }
-        Ok(introduction)
+        Ok(())
     }
 
     /// Reserve the root branch before building its application. Its declared
@@ -1620,7 +1639,7 @@ where
         imported: Option<super::ImportedGenericParameterScopeLease>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         self.charge_counter(1, Counter::Branches)?;
-        let introduction = self.admit_application_effect_inputs(&original, graph, |_| {})?;
+        let introduction = self.application_effect_introduction(&original, graph)?;
         let application = ConstraintApplicationScope::new(
             application,
             parameters,
@@ -1650,11 +1669,13 @@ where
         self.with_effect_read_scope(graph, reads, |context, graph| {
             use crate::effect_row::prepared::PreparedEffectUnknownEligibility;
 
+            let introduction = context.application_effect_introduction(&original, graph.read())?;
             let mut dependencies = BTreeSet::new();
-            let introduction =
-                context.admit_application_effect_inputs(&original, graph.read(), |reference| {
-                    dependencies.insert(reference);
-                })?;
+            context.collect_application_effect_dependencies(
+                &original,
+                &introduction,
+                &mut dependencies,
+            )?;
             // Reserve the declaration inventory before opening/cloning it.
             for _ in parameters.effect_contract().variables() {
                 context.enter_node()?;

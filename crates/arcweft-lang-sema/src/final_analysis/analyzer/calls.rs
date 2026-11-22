@@ -569,6 +569,7 @@ impl PreparedCandidateBatch {
 
 struct PreparedCandidateRequest<'a, 'ctx> {
     original: &'a crate::types::constraints::OriginalProducerContext,
+    enclosing: &'a EnclosingGenericParameterScope,
     module: &'a HirModule,
     owner: ExprId,
     site: crate::callable::CheckedCallSite,
@@ -582,8 +583,6 @@ struct PreparedCandidateRequest<'a, 'ctx> {
     expected_result: Option<&'a TypeKind<PreparedEffects>>,
     expected_application_callee:
         Option<super::expressions::AnalyzerApplicationCalleeExpectation<'a>>,
-    expected_result_scope:
-        Option<&'a crate::types::constraints::ImportedGenericParameterScopeLease>,
     callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs,
     attempt: Option<&'a PhysicalCallAttemptId>,
     context: &'ctx AnalyzerExpressionContext<'ctx>,
@@ -1276,6 +1275,11 @@ impl Analyzer<'_, '_, '_> {
             .original_context()
             .map_err(|error| terminal_lower_constraint_failure(source.owner, error.into()))?
             .clone();
+        let enclosing = self.enclosing_constraint_scope(
+            source.module,
+            source.owner,
+            source.expectation.nested_call_scope_lease(),
+        )?;
         let mut candidates = Vec::new();
         for candidate in &resolution.considered {
             self.control
@@ -1303,6 +1307,7 @@ impl Analyzer<'_, '_, '_> {
             };
             let mut request = PreparedCandidateRequest {
                 original: &original,
+                enclosing: &enclosing,
                 module: source.module,
                 owner: source.owner,
                 site: source.site,
@@ -1314,7 +1319,6 @@ impl Analyzer<'_, '_, '_> {
                 current_group: candidate_group,
                 expected_result: source.expectation.nested_call_type(),
                 expected_application_callee: source.expectation.application_callee(),
-                expected_result_scope: source.expectation.nested_call_scope_lease(),
                 callee_inputs: resolution.callee_inputs.clone(),
                 attempt: Some(source.attempt),
                 context: source_context,
@@ -2402,12 +2406,13 @@ impl Analyzer<'_, '_, '_> {
         source: CallSource<'_>,
         resolution: &mut ResolvedCallQuery,
     ) -> Result<PreparedCandidateBatch, AnalyzerExpressionError> {
-        let original = self.admit_original_context(
+        let enclosing = self.enclosing_constraint_scope(
             source.module,
             source.owner,
             source.expectation.nested_call_scope_lease(),
-            &mut resolution.work,
         )?;
+        let original =
+            self.admit_original_context(&enclosing, source.owner, &mut resolution.work)?;
         let mut probes = Vec::with_capacity(resolution.considered.len());
         for candidate in &resolution.considered {
             self.control
@@ -2450,6 +2455,7 @@ impl Analyzer<'_, '_, '_> {
                     let probe = this.prepare_candidate(
                         PreparedCandidateRequest {
                             original: &original,
+                            enclosing: &enclosing,
                             module: source.module,
                             owner: source.owner,
                             site: source.site,
@@ -2463,7 +2469,6 @@ impl Analyzer<'_, '_, '_> {
                             current_group: candidate_group,
                             expected_result: source.expectation.nested_call_type(),
                             expected_application_callee: source.expectation.application_callee(),
-                            expected_result_scope: source.expectation.nested_call_scope_lease(),
                             callee_inputs: resolution.callee_inputs.clone(),
                             attempt: Some(source.attempt),
                             context: &context,
@@ -2593,7 +2598,8 @@ impl Analyzer<'_, '_, '_> {
                     owner,
                 })
             })?;
-        let original = self.admit_original_context(module, owner, None, &mut work)?;
+        let enclosing = self.enclosing_constraint_scope(module, owner, None)?;
+        let original = self.admit_original_context(&enclosing, owner, &mut work)?;
         let probe = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
             context.work(), |this, authority, _transaction_authority| {
                 let candidate_context =
@@ -2601,6 +2607,7 @@ impl Analyzer<'_, '_, '_> {
                 let outcome = this.prepare_candidate(
                     PreparedCandidateRequest {
                         original: &original,
+                        enclosing: &enclosing,
                         module,
                         owner,
                         site: crate::callable::CheckedCallSite::AttachedContentApplication {
@@ -2615,7 +2622,6 @@ impl Analyzer<'_, '_, '_> {
                         current_group: candidate.call_group(),
                         expected_result: expected,
                         expected_application_callee: None,
-                        expected_result_scope: None,
                         callee_inputs:
                             crate::callable::PreparedCallCalleeConstraintInputs::DialogueApplication,
                         attempt: None,
@@ -2897,7 +2903,8 @@ impl Analyzer<'_, '_, '_> {
                 crate::types::constraints::TypeConstraintAbort::ArithmeticOverflow,
             )
         })?;
-        let original = self.admit_original_context(module, owner, None, &mut work)?;
+        let enclosing = self.enclosing_constraint_scope(module, owner, None)?;
+        let original = self.admit_original_context(&enclosing, owner, &mut work)?;
         work.record_candidate_argument_probes(argument_count)
             .and_then(|_| work.charge_argument_mapping(argument_count))
             .map_err(|_| {
@@ -2926,6 +2933,7 @@ impl Analyzer<'_, '_, '_> {
                     let outcome = this.prepare_candidate(
                     PreparedCandidateRequest {
                         original: &original,
+                        enclosing: &enclosing,
                         module,
                         owner,
                         site: crate::callable::CheckedCallSite::AttachedContentApplication {
@@ -2941,7 +2949,6 @@ impl Analyzer<'_, '_, '_> {
                         current_group: candidate.call_group(),
                         expected_result: None,
                         expected_application_callee: None,
-                        expected_result_scope: None,
                         callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs::
                             StaticContentCallee(static_content_callee),
                         attempt: Some(attempt),
@@ -4731,12 +4738,11 @@ impl Analyzer<'_, '_, '_> {
 
     fn admit_original_context(
         &self,
-        module: &HirModule,
+        enclosing: &EnclosingGenericParameterScope,
         owner: ExprId,
-        imported: Option<&crate::types::constraints::ImportedGenericParameterScopeLease>,
         work: &mut ResolverWork,
     ) -> Result<crate::types::constraints::OriginalProducerContext, AnalyzerExpressionError> {
-        self.enclosing_constraint_scope(module, owner, imported)?
+        enclosing
             .admit_original_context::<constraints::AnalyzerCallConstraintDomain>(
                 work,
                 self.catalogs.callable_limits,
@@ -4989,7 +4995,7 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<PreparedCandidatePreparationOutcome, AnalyzerExpressionError> {
         let PreparedCandidateRequest {
             original,
-            module,
+            enclosing,
             owner,
             site,
             authored_arguments,
@@ -4997,7 +5003,6 @@ impl Analyzer<'_, '_, '_> {
             current_group,
             expected_result,
             expected_application_callee,
-            expected_result_scope,
             callee_inputs,
             attempt,
             context,
@@ -5031,7 +5036,6 @@ impl Analyzer<'_, '_, '_> {
                 )
             }
         };
-        let enclosing = self.enclosing_constraint_scope(module, owner, expected_result_scope)?;
         let staged = self.staged_callables.as_ref().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
         })?;
@@ -5062,7 +5066,7 @@ impl Analyzer<'_, '_, '_> {
             &compile_time_scalar_admissions,
             self.catalogs.world().environment().compile_time_scalars(),
             consumer.clone(),
-            &enclosing,
+            enclosing,
             original,
             parent_source.as_deref(),
             site,

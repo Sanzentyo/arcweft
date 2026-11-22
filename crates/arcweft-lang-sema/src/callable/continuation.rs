@@ -459,7 +459,7 @@ impl crate::types::constraints::OriginalProducerSource for EnclosingGenericScope
         other
             .as_any()
             .downcast_ref::<Self>()
-            .is_some_and(|other| self == other)
+            .is_some_and(|other| std::ptr::eq(self, other) || self == other)
     }
 
     fn rigid_scope(&self) -> crate::types::constraints::OriginalRigidScope<'_> {
