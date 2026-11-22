@@ -241,7 +241,22 @@ fn active_effect_frame_rollback_rejects_a_missing_frame_binding() {
     let plan = Arc::new(builder.finish().unwrap());
     let engine = Engine::for_program_invocation(plan, program, vec![]).unwrap();
     let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
-    let image = engine.inert_rollback_image().unwrap();
+    let mut image = engine.inert_rollback_image().unwrap();
+    let saved_frame = image
+        .fiber
+        .frame
+        .control_stack
+        .iter_mut()
+        .find_map(|entry| {
+            if let crate::engine::FlowControlStackEntryRollbackImage::FunctionCall(frame) = entry {
+                Some(frame)
+            } else {
+                None
+            }
+        })
+        .expect("the active effect instantiation is in the saved function frame");
+    assert!(saved_frame.type_instantiation.is_some());
+    *saved_frame = serde_json::from_slice(&serde_json::to_vec(saved_frame).unwrap()).unwrap();
     let restored = Engine::from_rollback_image(image.clone(), &owner).unwrap();
     assert_eq!(
         restored
