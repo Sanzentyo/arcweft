@@ -302,6 +302,11 @@ pub(super) struct CandidateFactCloseFailure<E = std::convert::Infallible> {
     checkpoint: Box<CandidateFactCheckpoint>,
 }
 
+pub(super) enum ProbeFactCloseFailure<E> {
+    Extract(CandidateFactCloseFailure<E>),
+    Reads(CandidateFactMutationFailure<E>),
+}
+
 impl<E> CandidateFactCloseFailure<E> {
     pub(super) fn into_parts(self) -> (CandidateFactMutationFailure<E>, CandidateFactCheckpoint) {
         (self.violation, *self.checkpoint)
@@ -462,10 +467,7 @@ impl CandidateSemanticProjection {
     pub(super) fn probe_effect_reads(
         &self,
     ) -> Option<&crate::effect_row::prepared::PreparedEffectReadScope> {
-        match &self.data.probe_effect_reads {
-            ProbeEffectReads::Detached(scope) => Some(scope),
-            ProbeEffectReads::Unprepared | ProbeEffectReads::Live => None,
-        }
+        self.data.probe_effect_reads.as_ref()
     }
 
     pub(super) fn visit_effect_types<'p, E>(
@@ -629,14 +631,8 @@ impl CandidateSemanticProjection {
 struct CandidateSemanticProjectionData {
     authority: CandidateProjectionAuthority,
     graph_delta: PreparedCallGraphDelta<AnalyzerPreparedCallPrefix, AnalyzerPreparedUnselectedCall>,
-    probe_effect_reads: ProbeEffectReads,
+    probe_effect_reads: Option<crate::effect_row::prepared::PreparedEffectReadScope>,
     facts: CandidateProjectionFacts,
-}
-
-enum ProbeEffectReads {
-    Unprepared,
-    Live,
-    Detached(crate::effect_row::prepared::PreparedEffectReadScope),
 }
 
 struct CandidateProjectionFacts {
@@ -1098,6 +1094,32 @@ impl SemanticFactState {
     ) -> Result<CandidateSemanticProjection, CandidateFactCloseFailure<C::Error>> {
         let checkpoint = scope.into_checkpoint();
         self.extract_and_rollback(checkpoint, control)
+    }
+
+    pub(super) fn extract_probe_fact_scope<C: DecisionControl>(
+        &mut self,
+        scope: ActiveCallbackFactScope,
+        control: &mut C,
+    ) -> Result<CandidateSemanticProjection, ProbeFactCloseFailure<C::Error>> {
+        let mut projection = self
+            .extract_callback_fact_scope(scope, control)
+            .map_err(ProbeFactCloseFailure::Extract)?;
+        let delta = &projection.data.graph_delta;
+        // Extraction already checked the exact relation and restored its base.
+        // An inherited detached scope would be recorded in this delta.
+        if !delta.only_live_relation_reads() {
+            let reads = self
+                .prepared_calls()
+                .map_err(CandidateFactMutationFailure::from)
+                .and_then(|graph| {
+                    graph
+                        .retain_probe_effect_reads(delta, control)
+                        .map_err(CandidateFactMutationFailure::from)
+                })
+                .map_err(ProbeFactCloseFailure::Reads)?;
+            projection.data.probe_effect_reads = Some(reads);
+        }
+        Ok(projection)
     }
 
     pub(super) fn abort_callback_scope_close_failure(
@@ -2179,7 +2201,7 @@ impl SemanticFactState {
                 epoch: self.epoch,
             },
             graph_delta,
-            probe_effect_reads: ProbeEffectReads::Unprepared,
+            probe_effect_reads: None,
             facts: CandidateProjectionFacts {
                 source_type_decisions: self.source_type_decisions.split_off(decision_start),
                 locals: owners
@@ -2560,26 +2582,6 @@ impl SemanticFactState {
         if projection.data.authority.epoch != self.epoch {
             return Err(CandidateFactTransactionViolation::ProjectionAuthorityMismatch);
         }
-        Ok(())
-    }
-
-    pub(super) fn retain_probe_effect_reads<C: DecisionControl>(
-        &self,
-        projection: &mut CandidateSemanticProjection,
-        control: &mut C,
-    ) -> Result<(), CandidateFactMutationFailure<C::Error>> {
-        self.require_candidate_projection_owner(projection)?;
-        if !matches!(
-            projection.data.probe_effect_reads,
-            ProbeEffectReads::Unprepared
-        ) {
-            return Err(CandidateFactTransactionViolation::ProjectionAuthorityMismatch.into());
-        }
-        let effects = self
-            .prepared_calls()?
-            .retain_probe_effect_reads(&projection.data.graph_delta, control)?;
-        projection.data.probe_effect_reads =
-            effects.map_or(ProbeEffectReads::Live, ProbeEffectReads::Detached);
         Ok(())
     }
 

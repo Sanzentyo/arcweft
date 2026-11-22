@@ -10,6 +10,18 @@ use crate::types::PreparedEffects;
 mod tests;
 
 impl EffectConstraintEnvironment<PreparedEffects> {
+    pub(crate) fn from_constant_predicate(truth: bool) -> Self {
+        let predicate = if truth {
+            EffectPredicate::unconstrained()
+        } else {
+            EffectPredicate::impossible()
+        };
+        Self {
+            parameters: BTreeMap::new(),
+            predicate: PreparedEffectPredicate::Canonical(predicate),
+        }
+    }
+
     /// Substitute actual registered applications in R. Validate the resulting
     /// predicate against the same Γ that was admitted before inference.
     pub(crate) fn project_registered_predicate<C: DecisionControl>(

@@ -66,6 +66,12 @@ enum PreparedEffectDeltaContents {
 }
 
 impl PreparedEffectDelta {
+    /// At extraction, an absent layer and dependency scope certify that the
+    /// producer read only its restored live relation.
+    pub(crate) fn only_live_reads(&self) -> bool {
+        self.layer().is_none() && self.dependencies.is_none()
+    }
+
     pub(super) fn layer(&self) -> Option<&Arc<PreparedEffectDeltaData>> {
         match &self.contents {
             PreparedEffectDeltaContents::Unchanged { .. } => None,

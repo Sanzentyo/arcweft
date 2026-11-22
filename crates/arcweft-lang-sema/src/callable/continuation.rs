@@ -652,6 +652,12 @@ pub(crate) struct PreparedCallGraphDelta<P, U = ()> {
 }
 
 impl<P, U> PreparedCallGraphDelta<P, U> {
+    pub(crate) fn only_live_relation_reads(&self) -> bool {
+        self.relation
+            .as_ref()
+            .is_some_and(PreparedRelationDelta::only_live_reads)
+    }
+
     pub(crate) fn has_writes(&self) -> bool {
         !self.nodes.is_empty()
             || self.effects.has_writes()

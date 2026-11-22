@@ -91,15 +91,19 @@ impl AnalyzerObservedSourceValue {
         work: &mut AnalyzerPreparationWork<'_>,
     ) -> Result<PhysicalSourceType, FinalSemanticAnalysisError> {
         work.visit_binding()?;
-        let prepared = self
-            .actual()
-            .retain_effects(self.original.occurrence_scope(), graph, work)
-            .map_err(|error| {
-                FinalSemanticAnalysisError::source_prepared_type_retention(
-                    value_owner.into(),
-                    error,
-                )
-            })?;
+        let actual = self.actual();
+        let prepared = if actual.constraint_shape().is_closed_leaf() {
+            actual.clone()
+        } else {
+            actual
+                .retain_effects(self.original.occurrence_scope(), graph, work)
+                .map_err(|error| {
+                    FinalSemanticAnalysisError::source_prepared_type_retention(
+                        value_owner.into(),
+                        error,
+                    )
+                })?
+        };
         let source = PhysicalSourceType::new(attempt.root(), prepared);
         self.physical.set(source.clone()).map_err(|_| {
             crate::final_analysis::CandidateFactTransactionViolation::PhysicalCandidateTypeObservationConflict {

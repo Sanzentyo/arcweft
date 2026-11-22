@@ -2882,9 +2882,24 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         {
             self.analyzer
                 .facts
-                .extract_callback_fact_scope(active.scope, work)
+                .extract_probe_fact_scope(active.scope, work)
                 .map(Some)
-                .map_err(|failure| self.close_controlled_fact_failure(failure, coordinate.clone()))
+                .map_err(|error| match error {
+                    super::super::state::ProbeFactCloseFailure::Extract(failure) => {
+                        self.close_controlled_fact_failure(failure, coordinate.clone())
+                    }
+                    super::super::state::ProbeFactCloseFailure::Reads(
+                        super::super::state::CandidateFactMutationFailure::Control(error),
+                    ) => crate::callable::SourceCheckpointFailure::Constraint(error),
+                    super::super::state::ProbeFactCloseFailure::Reads(
+                        super::super::state::CandidateFactMutationFailure::Invariant(violation),
+                    ) => crate::callable::SourceCheckpointFailure::client(
+                        AnalyzerCallClientInvariant::fact_transaction(
+                            checkpoint.source.local(),
+                            violation,
+                        ),
+                    ),
+                })
         } else {
             self.analyzer
                 .facts
@@ -2892,7 +2907,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 .map(|()| None)
                 .map_err(|failure| self.close_fact_failure(failure, coordinate.clone()))
         };
-        let mut preparation = close?;
+        let preparation = close?;
         if !identity_ok {
             return Err(crate::callable::SourceCheckpointFailure::Protocol(
                 crate::types::constraints::TypeConstraintSourceProtocolInvariant::Checkpoint,
@@ -2902,24 +2917,6 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             return Err(crate::callable::SourceCheckpointFailure::Protocol(
                 crate::types::constraints::TypeConstraintSourceProtocolInvariant::WrongSource,
             ));
-        }
-        if let Some(prepared) = &mut preparation {
-            self.analyzer
-                .facts
-                .retain_probe_effect_reads(prepared, work)
-                .map_err(|error| match error {
-                    super::super::state::CandidateFactMutationFailure::Control(error) => {
-                        crate::callable::SourceCheckpointFailure::Constraint(error)
-                    }
-                    super::super::state::CandidateFactMutationFailure::Invariant(violation) => {
-                        crate::callable::SourceCheckpointFailure::client(
-                            AnalyzerCallClientInvariant::fact_transaction(
-                                checkpoint.source.local(),
-                                violation,
-                            ),
-                        )
-                    }
-                })?;
         }
         Ok(preparation)
     }

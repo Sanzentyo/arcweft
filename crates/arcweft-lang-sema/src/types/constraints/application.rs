@@ -424,6 +424,15 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
         }
     }
 
+    pub(super) fn closed_declaration_effect(&self) -> Option<bool> {
+        match &self.opened_effect_predicate {
+            OpenedApplicationPredicate::ClosedDeclaration => {
+                self.effects().declared_predicate().constant_truth()
+            }
+            OpenedApplicationPredicate::Projected(_) => None,
+        }
+    }
+
     pub(super) fn validate_effect_functions<A: super::context::TypeConstraintAccounting>(
         &self,
         graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,

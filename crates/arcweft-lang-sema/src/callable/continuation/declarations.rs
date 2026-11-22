@@ -353,10 +353,10 @@ impl<P, U> PreparedCallGraph<P, U> {
         &self,
         delta: &PreparedCallGraphDelta<P, U>,
         control: &mut C,
-    ) -> Result<Option<PreparedEffectReadScope>, PreparedCallGraphMutationFailure<C::Error>> {
+    ) -> Result<PreparedEffectReadScope, PreparedCallGraphMutationFailure<C::Error>> {
         let (graph, relation) = self.extracted_effect_relation(delta)?;
         graph
-            .retain_probe_reads(relation, control)
+            .read_scope([relation], control)
             .map_err(PreparedCallGraphMutationFailure::effect)
     }
 

@@ -2008,6 +2008,23 @@ where
         original: super::OriginalProducerContext,
         graph: PreparedEffectReadView<'_>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
+        let captures = original.rigid_scope();
+        if imported.is_none()
+            && captures.imported.is_none()
+            && captures.effects.is_empty()
+            && application.effects().variables().next().is_none()
+            && let Some(predicate) = application.closed_declaration_effect()
+        {
+            let scope = self.capture_lexical_scope()?;
+            let effects = EffectConstraintEnvironment::from_constant_predicate(predicate);
+            return Ok(ConstraintPath::empty_with_imported(
+                application,
+                effects,
+                None,
+                scope,
+                original,
+            ));
+        }
         application.validate_effect_functions(graph, self)?;
         for _ in application.effects().variables() {
             self.enter_node()?;
