@@ -16,6 +16,32 @@ pub(in crate::engine) struct NativeFormatAttemptValues {
     pub first_recoverable: Option<String>,
 }
 
+impl<V, O> NativeFormatAttemptFrame<V, O> {
+    pub(in crate::engine) fn original_active_value<'a>(
+        &self,
+        plan: &'a crate::plan::RuntimePlan,
+    ) -> Option<&'a RuntimeExpr> {
+        let active = self.active.as_ref()?;
+        let original = plan
+            .format_attempt(self.attempt)?
+            .operands()
+            .get(self.next_operand)?;
+        let FlowOp::FormatOperandAttempt {
+            attempt,
+            parameter,
+            value,
+            ..
+        } = active.source.operation(plan)?
+        else {
+            return None;
+        };
+        (*attempt == self.attempt
+            && *parameter == original.parameter()
+            && value.ty() == original.ty())
+        .then_some(value)
+    }
+}
+
 impl Engine {
     /// Drops the current operand transaction when source control transfer
     /// deliberately exits the formatter before its completion marker.
@@ -99,7 +125,7 @@ impl Engine {
                 NativeSourceRangeRole::NestedBody,
             )),
             Some(NativePendingWork::resume(
-                NativeRuntimeContinuation::CompleteFormatOperand { source },
+                NativeRuntimeContinuation::CompleteFormatOperand,
             )),
         ];
         self.prepare_replacement_native_work(&work)?;
@@ -145,7 +171,7 @@ impl Engine {
             unreachable!("the prepared formatter frame remains current during commit")
         };
         frame.active = Some(NativeFormatOperandFrame {
-            ordinal,
+            source,
             caller_pending_ops,
         });
         self.fiber.frame.env.push_scope_with_capacity(0);
@@ -154,23 +180,24 @@ impl Engine {
     }
     pub(super) fn complete_format_operand_attempt(
         &mut self,
-        attempt: RuntimeFormatAttemptId,
-        parameter: RuntimeFmtParameterId,
-        value: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
+        let invalid = || {
+            RuntimeEvalError::DialogueContentConstruction(
+                "format completion does not match its active operand".into(),
+            )
+        };
+        let plan = std::sync::Arc::clone(&self.plan);
+        let Some(FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::FormatAttempt(frame),
+        }) = self.fiber.frame.control_stack.last()
+        else {
+            return Err(invalid());
+        };
+        let value = frame.original_active_value(&plan).ok_or_else(invalid)?;
+        let ordinal = frame.next_operand;
         let evaluated = self.evaluate_expr_with_backend(value, pure_backend)?;
-        let manifest = self.plan.format_attempt(attempt).ok_or_else(|| {
-            RuntimeEvalError::DialogueContentConstruction(format!(
-                "unknown format attempt {attempt}"
-            ))
-        })?;
-        let ordinal = manifest.operand_index(parameter).ok_or_else(|| {
-            RuntimeEvalError::DialogueContentConstruction(format!(
-                "format attempt {attempt} has no {parameter:?} operand"
-            ))
-        })?;
-        let expected = manifest.operands()[ordinal].ty();
+        let expected = value.ty();
         if !self
             .fiber
             .frame
@@ -178,25 +205,6 @@ impl Engine {
             .value_matches_type(&self.plan, expected, &evaluated)?
         {
             return Err(RuntimeEvalError::InvalidExpressionType(expected));
-        }
-        let Some(FlowControlStackEntry {
-            kind: FlowControlStackEntryKind::FormatAttempt(frame),
-        }) = self.fiber.frame.control_stack.last_mut()
-        else {
-            return Err(RuntimeEvalError::DialogueContentConstruction(
-                "format completion has no current attempt frame".to_owned(),
-            ));
-        };
-        if frame.attempt != attempt
-            || frame.next_operand != ordinal
-            || frame
-                .active
-                .as_ref()
-                .is_none_or(|active| active.ordinal != ordinal)
-        {
-            return Err(RuntimeEvalError::DialogueContentConstruction(
-                "format completion does not match its active operand".to_owned(),
-            ));
         }
         self.transition_presentation_return(1, false, std::iter::once(&evaluated))?;
         self.pop_runtime_scope()?;
@@ -272,8 +280,8 @@ impl Engine {
             .active
             .take()
             .expect("selected format operand is active");
-        frame.values[active.ordinal] = None;
-        frame.next_operand = active.ordinal + 1;
+        frame.values[frame.next_operand] = None;
+        frame.next_operand += 1;
         if frame.first_recoverable.is_none() {
             frame.first_recoverable = Some(failure.to_owned());
         }
@@ -522,6 +530,7 @@ mod tests {
             .unwrap();
         let plan = builder.finish().expect("attempt plan seals");
         let mut engine = Engine::new(plan);
+        engine.fiber.frame.status = FlowFiberStatus::Running;
         let position = crate::engine::NativeCodeCursor::root(
             &engine.plan,
             crate::plan::code::RuntimeCodeOwner::Function(site.id()),
@@ -548,6 +557,82 @@ mod tests {
         assert!(output.diagnostics.is_empty());
         assert!(engine.fiber.frame.pending_ops.is_empty());
         (engine, attempt)
+    }
+
+    #[test]
+    fn native_formatter_round_trips_its_active_frame_and_exact_resume_queue() {
+        use crate::engine::{FlowControlStackEntryRollbackImage, NativeEngineRollbackImage};
+
+        let round_trip = |mut image: NativeEngineRollbackImage| {
+            let queue = &mut image.fiber.frame.pending_ops;
+            *queue = serde_json::from_slice(&serde_json::to_vec(queue).unwrap()).unwrap();
+            for frame in &mut image.fiber.frame.control_stack {
+                if let FlowControlStackEntryRollbackImage::FormatAttempt(frame) = frame {
+                    *frame = serde_json::from_slice(&serde_json::to_vec(frame).unwrap()).unwrap();
+                }
+            }
+            image
+        };
+        let (mut engine, _) = format_attempt_engine(FormatFixture::Complete);
+        let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+        let mut output = RuntimeStepOutput::default();
+        let mut backend = crate::pure::VmRuntimePureCallBackend::default();
+        engine.step_flow(&mut output, &mut backend, &mut None);
+        assert!(output.diagnostics.is_empty());
+        let saved = engine.inert_rollback_image().unwrap();
+        let mut redirected = saved.clone();
+        let Some(FlowControlStackEntryRollbackImage::FormatAttempt(frame)) =
+            redirected.fiber.frame.control_stack.last_mut()
+        else {
+            panic!("active format operand remains in the frame");
+        };
+        let active = frame.active.as_mut().unwrap();
+        active.source = active
+            .caller_pending_ops
+            .front()
+            .unwrap()
+            .position()
+            .unwrap()
+            .source_operation(&engine.plan)
+            .unwrap();
+        assert!(
+            Engine::from_rollback_image(round_trip(redirected), &owner)
+                .unwrap_err()
+                .contains("original source-order frontier")
+        );
+
+        for duplicate in [false, true] {
+            let mut forged = saved.clone();
+            let queue = &mut forged.fiber.frame.pending_ops;
+            let marker = queue.pop_back().unwrap();
+            if duplicate {
+                queue.push_back(marker.clone());
+                queue.push_back(marker);
+            }
+            assert!(
+                Engine::from_rollback_image(round_trip(forged), &owner)
+                    .unwrap_err()
+                    .contains("queued resume markers")
+            );
+        }
+
+        let mut restored = Engine::from_rollback_image(round_trip(saved), &owner).unwrap();
+        for _ in 0..3 {
+            restored.step_flow(&mut output, &mut backend, &mut None);
+            restored = Engine::from_rollback_image(
+                round_trip(restored.inert_rollback_image().unwrap()),
+                &owner,
+            )
+            .unwrap();
+        }
+        assert!(output.diagnostics.is_empty());
+        let (expected, _) = completed_format_engine();
+        assert_eq!(restored.fiber.frame.status, expected.fiber.frame.status);
+        assert_eq!(
+            restored.fiber.frame.control_stack,
+            expected.fiber.frame.control_stack
+        );
+        assert!(restored.fiber.frame.pending_ops.is_empty());
     }
 
     #[test]

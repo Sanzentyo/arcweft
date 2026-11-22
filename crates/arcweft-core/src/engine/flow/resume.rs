@@ -105,23 +105,8 @@ impl Engine {
             Resume::ForNext { source, iterator } => {
                 self.push_for_next(&source, iterator, output, backend);
             }
-            Resume::CompleteFormatOperand { source } => {
-                let Some(FlowOp::FormatOperandAttempt {
-                    attempt,
-                    parameter,
-                    value,
-                    ..
-                }) = source.operation(&plan)
-                else {
-                    self.fail_eval(
-                        "native formatter completion lost its original operand",
-                        output,
-                    );
-                    return;
-                };
-                if let Err(error) =
-                    self.complete_format_operand_attempt(*attempt, *parameter, value, backend)
-                {
+            Resume::CompleteFormatOperand => {
+                if let Err(error) = self.complete_format_operand_attempt(backend) {
                     self.fail_format_aware_eval(error, output, backend);
                 }
             }

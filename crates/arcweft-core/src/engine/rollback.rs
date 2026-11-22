@@ -3,7 +3,9 @@
 use super::NativePendingWork;
 use super::code_cursor::NativeSourceOperation;
 use super::defer::{NativeDeferBoundary, NativeLexicalExitAction};
-use super::work::{NativePendingWorkKind, NativeRuntimeContinuation, NativeStoredWork};
+use super::work::{
+    NativeFrameResume, NativePendingWorkKind, NativeRuntimeContinuation, NativeStoredWork,
+};
 use super::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberOwner, FlowFiberStatus,
     FunctionCallFrame, FunctionReturnContinuation, NativeEngineRollbackImage,
@@ -282,10 +284,10 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
             ));
         }
         if let Some(active) = &self.active {
-            admission.validate_metadata(&active.ordinal)?;
-            if active.ordinal != self.next_operand || active.ordinal >= self.values.len() {
+            active.source.admit_retained(admission)?;
+            if self.original_active_value(&plan).is_none() {
                 return Err(invalid(
-                    "native formatter active operand differs from its source-order frontier",
+                    "native formatter active operand differs from its original source-order frontier",
                 ));
             }
             O::admit_queue(&active.caller_pending_ops, admission, binding)?;
@@ -519,7 +521,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             V::admission_origin(),
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
         ) {
-            self.admit_iteration_contour()?;
+            self.admit_resume_contour()?;
         }
         if let Err(message) =
             self.observations
@@ -646,40 +648,48 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         admission.validate_owned_typed_borrowed(value.borrowed_value(), expected)
     }
 
-    fn admit_iteration_contour(&self) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    fn admit_resume_contour(&self) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
         O: NativeStoredWork,
         C: ScopeControl<O>,
         S: NativeInvocationStatus,
     {
         let invalid = || crate::value::AwbcRuntimeValueSnapshotError::Message {
-            message: "native loop frames disagree with their queued iteration continuations".into(),
+            message: "native control frames disagree with their queued resume markers".into(),
         };
-        let mut iterations = self
+        let mut markers = self
             .pending_ops
             .iter()
-            .filter_map(O::loop_source)
+            .filter_map(O::frame_resume)
             .peekable();
-        // The failed operation can already have consumed its iteration
-        // continuation. Only the active terminal queue can lose such work.
+        // The failing operation may have consumed its marker. Parked queues
+        // still own every marker for their original control frames.
         let mut terminal_queue = self.status.retires_invocation_scopes();
         for frame in self.control_stack.iter().rev() {
-            if let Some(source) = frame.loop_source() {
-                if iterations.peek().copied() == Some(source) {
-                    iterations.next();
+            let scope = frame.scope_state();
+            let expected = match &scope {
+                Some(ScopeState::Pending {
+                    owner: PendingQueueOwner::FormatOperand,
+                    ..
+                }) => Some(NativeFrameResume::FormatOperand),
+                _ => frame.loop_source().map(NativeFrameResume::Iteration),
+            };
+            if let Some(expected) = expected {
+                if markers.peek().copied() == Some(expected) {
+                    markers.next();
                 } else if !terminal_queue {
                     return Err(invalid());
                 }
             }
-            if let Some(ScopeState::Pending(work)) = frame.scope_state() {
-                if iterations.next().is_some() {
+            if let Some(ScopeState::Pending { queue, .. }) = scope {
+                if markers.next().is_some() {
                     return Err(invalid());
                 }
-                iterations = work.iter().filter_map(O::loop_source).peekable();
+                markers = queue.iter().filter_map(O::frame_resume).peekable();
                 terminal_queue = false;
             }
         }
-        if iterations.next().is_some() {
+        if markers.next().is_some() {
             return Err(invalid());
         }
         Ok(())
@@ -741,8 +751,8 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                     return Err(invalid());
                 }
             }
-            if let Some(ScopeState::Pending(work)) = entry.scope_state() {
-                if let Some(pending_root) = O::queued_function_root_owner(work, admission)?
+            if let Some(ScopeState::Pending { queue, .. }) = entry.scope_state() {
+                if let Some(pending_root) = O::queued_function_root_owner(queue, admission)?
                     && root.replace(pending_root).is_some()
                 {
                     return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
@@ -803,7 +813,15 @@ impl<V, I> ScopeOperation for NativePendingWork<V, I> {
 
 pub(super) enum ScopeState<'a, O> {
     Frame(crate::scope::RuntimeScheduledScopeToken),
-    Pending(&'a VecDeque<O>),
+    Pending {
+        queue: &'a VecDeque<O>,
+        owner: PendingQueueOwner,
+    },
+}
+
+pub(super) enum PendingQueueOwner {
+    Function,
+    FormatOperand,
 }
 
 pub(super) struct FunctionContext<'a> {
@@ -945,11 +963,14 @@ where
                 origin: crate::scope::RuntimeScopeFrameOrigin::Scheduled(token),
                 ..
             } => Some(ScopeState::Frame(*token)),
-            Self::FunctionCall(frame) => Some(ScopeState::Pending(&frame.caller_pending_ops)),
-            Self::FormatAttempt(frame) => frame
-                .active
-                .as_ref()
-                .map(|active| ScopeState::Pending(&active.caller_pending_ops)),
+            Self::FunctionCall(frame) => Some(ScopeState::Pending {
+                queue: &frame.caller_pending_ops,
+                owner: PendingQueueOwner::Function,
+            }),
+            Self::FormatAttempt(frame) => frame.active.as_ref().map(|active| ScopeState::Pending {
+                queue: &active.caller_pending_ops,
+                owner: PendingQueueOwner::FormatOperand,
+            }),
             _ => None,
         }
     }
@@ -1012,8 +1033,8 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
             for entry in &frame.control_stack {
                 match entry.scope_state() {
                     Some(ScopeState::Frame(token)) => admission.validate_metadata(&token),
-                    Some(ScopeState::Pending(ops)) => {
-                        admission.validate_metadata_collection(ops.len())
+                    Some(ScopeState::Pending { queue, .. }) => {
+                        admission.validate_metadata_collection(queue.len())
                     }
                     None => Ok(()),
                 }
@@ -1073,8 +1094,8 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
             };
             pending(&frame.pending_ops)?;
             for entry in &frame.control_stack {
-                if let Some(ScopeState::Pending(ops)) = entry.scope_state() {
-                    pending(ops)?;
+                if let Some(ScopeState::Pending { queue, .. }) = entry.scope_state() {
+                    pending(queue)?;
                 }
             }
             if let Some(exit) = &frame.lexical_exit

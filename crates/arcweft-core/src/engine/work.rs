@@ -21,7 +21,7 @@ pub(super) trait NativeStoredWork {
 
     fn function_end_site(&self) -> Option<crate::runtime_id::RuntimeFunctionSiteId>;
 
-    fn loop_source(&self) -> Option<&NativeSourceOperation>;
+    fn frame_resume(&self) -> Option<NativeFrameResume<'_>>;
 
     fn queued_function_root_owner(
         work: &std::collections::VecDeque<Self>,
@@ -80,6 +80,12 @@ pub(super) trait NativeStoredWork {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum NativeFrameResume<'a> {
+    Iteration(&'a NativeSourceOperation),
+    FormatOperand,
+}
+
 /// One opaque native work item. Authored code stays in the original executable;
 /// runtime bindings and iterator progress remain owned by their continuation.
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -134,9 +140,7 @@ pub(super) enum NativeRuntimeContinuation<V = RuntimeValue, I = RuntimeIterator>
         source: NativeSourceOperation,
         iterator: I,
     },
-    CompleteFormatOperand {
-        source: NativeSourceOperation,
-    },
+    CompleteFormatOperand,
     ProgramFanout {
         source: NativeSourceOperation,
     },
@@ -215,9 +219,7 @@ impl<V, I> NativeRuntimeContinuation<V, I> {
             Self::WhileNext { .. } => NativeRuntimeContinuationKind::WhileNext,
             Self::WhileLetNext { .. } => NativeRuntimeContinuationKind::WhileLetNext,
             Self::ForNext { .. } => NativeRuntimeContinuationKind::ForNext,
-            Self::CompleteFormatOperand { .. } => {
-                NativeRuntimeContinuationKind::CompleteFormatOperand
-            }
+            Self::CompleteFormatOperand => NativeRuntimeContinuationKind::CompleteFormatOperand,
             Self::ProgramFanout { .. } => NativeRuntimeContinuationKind::ProgramFanout,
             Self::EnterTaskScope => NativeRuntimeContinuationKind::EnterTaskScope,
             Self::ExitTaskScope => NativeRuntimeContinuationKind::ExitTaskScope,
@@ -265,7 +267,6 @@ impl<V, I> NativePendingWork<V, I> {
                 | NativeRuntimeContinuation::WhileNext { source }
                 | NativeRuntimeContinuation::WhileLetNext { source }
                 | NativeRuntimeContinuation::ForNext { source, .. }
-                | NativeRuntimeContinuation::CompleteFormatOperand { source }
                 | NativeRuntimeContinuation::ProgramFanout { source },
             ) => Some(source.owner()),
             NativePendingWorkKind::Resume(_) => None,
@@ -369,9 +370,7 @@ impl<V, I> NativePendingWork<V, I> {
                     source: source.clone(),
                     iterator: iterator(i)?,
                 },
-                Resume::CompleteFormatOperand { source } => Resume::CompleteFormatOperand {
-                    source: source.clone(),
-                },
+                Resume::CompleteFormatOperand => Resume::CompleteFormatOperand,
                 Resume::ProgramFanout { source } => Resume::ProgramFanout {
                     source: source.clone(),
                 },
@@ -424,9 +423,7 @@ impl<V, I> NativePendingWork<V, I> {
                     source,
                     iterator: iterator(i)?,
                 },
-                Resume::CompleteFormatOperand { source } => {
-                    Resume::CompleteFormatOperand { source }
-                }
+                Resume::CompleteFormatOperand => Resume::CompleteFormatOperand,
                 Resume::ProgramFanout { source } => Resume::ProgramFanout { source },
                 Resume::EnterTaskScope => Resume::EnterTaskScope,
                 Resume::ExitTaskScope => Resume::ExitTaskScope,
@@ -492,7 +489,6 @@ impl<V, I> NativePendingWork<V, I> {
                     | Resume::WhileNext { source }
                     | Resume::WhileLetNext { source }
                     | Resume::ForNext { source, .. }
-                    | Resume::CompleteFormatOperand { source }
                     | Resume::ProgramFanout { source } => {
                         source.admit_retained(admission)?;
                         if !matches!(
@@ -501,10 +497,6 @@ impl<V, I> NativePendingWork<V, I> {
                                 | (Resume::WhileNext { .. }, Some(FlowOp::While { .. }))
                                 | (Resume::WhileLetNext { .. }, Some(FlowOp::WhileLet { .. }))
                                 | (Resume::ForNext { .. }, Some(FlowOp::For { .. }))
-                                | (
-                                    Resume::CompleteFormatOperand { .. },
-                                    Some(FlowOp::FormatOperandAttempt { .. })
-                                )
                                 | (
                                     Resume::ProgramFanout { .. },
                                     Some(FlowOp::ProgramTask {
@@ -536,6 +528,7 @@ impl<V, I> NativePendingWork<V, I> {
                     Resume::ExitScheduledScope { token } => admission.validate_metadata(token)?,
                     Resume::EnterTaskScope
                     | Resume::ExitTaskScope
+                    | Resume::CompleteFormatOperand
                     | Resume::CompleteAwaitObserver => {}
                 }
             }
@@ -685,8 +678,15 @@ impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue> N
         }
     }
 
-    fn loop_source(&self) -> Option<&NativeSourceOperation> {
-        Self::loop_source(self)
+    fn frame_resume(&self) -> Option<NativeFrameResume<'_>> {
+        if matches!(
+            self.kind,
+            NativePendingWorkKind::Resume(NativeRuntimeContinuation::CompleteFormatOperand)
+        ) {
+            Some(NativeFrameResume::FormatOperand)
+        } else {
+            self.loop_source().map(NativeFrameResume::Iteration)
+        }
     }
 
     fn admit_work(

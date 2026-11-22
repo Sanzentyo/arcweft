@@ -1152,7 +1152,14 @@ impl<O, P, V>
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage, O: serde::Serialize",
+        deserialize = "V: crate::value::InertRuntimeValueStorage, O: serde::Deserialize<'de>"
+    )
+)]
 pub(crate) struct NativeFormatAttemptFrame<V = RuntimeValue, O = NativePendingWork> {
     pub(crate) attempt: RuntimeFormatAttemptId,
     pub(crate) context: crate::value::RuntimeFormatContext,
@@ -1185,7 +1192,7 @@ impl Clone for NativeFormatAttemptRollbackImage {
 impl Clone for NativeFormatOperandRollbackImage {
     fn clone(&self) -> Self {
         Self {
-            ordinal: self.ordinal,
+            source: self.source.clone(),
             caller_pending_ops: self.caller_pending_ops.clone(),
         }
     }
@@ -1222,7 +1229,7 @@ impl NativeFormatAttemptFrame {
                 .map(
                     |active| -> Result<NativeFormatOperandRollbackImage, String> {
                         Ok(NativeFormatOperandRollbackImage {
-                            ordinal: active.ordinal,
+                            source: active.source.clone(),
                             caller_pending_ops: active
                                 .caller_pending_ops
                                 .iter()
@@ -1263,7 +1270,7 @@ impl NativeFormatAttemptFrame {
                 .active
                 .map(|active| -> Result<NativeFormatOperandFrame, String> {
                     Ok(NativeFormatOperandFrame {
-                        ordinal: active.ordinal,
+                        source: active.source,
                         caller_pending_ops: active
                             .caller_pending_ops
                             .into_iter()
@@ -1276,9 +1283,10 @@ impl NativeFormatAttemptFrame {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct NativeFormatOperandFrame<O = NativePendingWork> {
-    pub(crate) ordinal: usize,
+    pub(super) source: NativeSourceOperation,
     pub(crate) caller_pending_ops: VecDeque<O>,
 }
 
