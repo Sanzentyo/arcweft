@@ -223,8 +223,7 @@ fn an_ignored_invalid_submission_cannot_publish_an_earlier_sealed_candidate() {
     let mut graph = PreparedEffectGraph::default();
     let (forest, members) = original_pair(&mut context, &mut graph);
     let joint = &forest.products[0].result.as_ref().unwrap()[0];
-    let mut owner =
-        ConstraintMaterialization::new(forest.original.effect_owner.clone(), &mut context).unwrap();
+    let mut owner = ConstraintMaterialization::new(forest.original.effect_owner.clone());
     for member in members {
         let source = forest.original.original_path(member).unwrap();
         let input = MaterializationInput::from_closed_original(

@@ -65,7 +65,11 @@ fn an_unbound_root_resumes_without_issuing_an_early_solution_or_replacing_its_op
     let (mut context, mut transaction) = root(&cancellation, &mut effect_graph, parameters, 1024);
     result(&mut context, &mut effect_graph, &mut transaction, &template);
     let opening = transaction.application;
-    let issuer = Arc::clone(transaction.materialization.ticket_issuer());
+    assert!(transaction.materialization.ticket_issuer().is_none());
+    transaction
+        .materialization
+        .validate_graph(effect_graph.read())
+        .unwrap();
     let equation = transaction.next_equation;
     let suspended = transaction.suspend_result(&mut context, ()).unwrap();
     assert_eq!(suspended.result().application(), opening);
@@ -73,10 +77,18 @@ fn an_unbound_root_resumes_without_issuing_an_early_solution_or_replacing_its_op
     assert!(suspended.transaction.materialization.is_pristine());
     assert!(suspended.transaction.frontier[0].bindings.is_empty());
     let mut resumed = suspended.resume();
-    assert!(Arc::ptr_eq(
-        &issuer,
-        resumed.materialization.ticket_issuer()
-    ));
+    assert!(resumed.materialization.ticket_issuer().is_none());
+    resumed
+        .materialization
+        .validate_graph(effect_graph.read())
+        .unwrap();
+    let foreign = crate::effect_row::prepared::PreparedEffectGraph::default();
+    assert!(
+        resumed
+            .materialization
+            .validate_graph(foreign.read())
+            .is_err()
+    );
     assert_eq!(resumed.next_equation, equation);
     resumed.constrain(
         &mut context,

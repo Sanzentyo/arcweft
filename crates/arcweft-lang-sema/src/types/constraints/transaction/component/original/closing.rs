@@ -229,7 +229,7 @@ impl<D: ConstraintDomain> ClosedOriginalConstraintForest<D, ()> {
             return Err(PreparedValueFailure::ProducerApplication);
         }
         let mut materialization =
-            ConstraintMaterialization::new(self.original.effect_owner.clone(), context)?;
+            ConstraintMaterialization::new(self.original.effect_owner.clone());
         let mut accepted = false;
         let mut rejected = None;
         for product in self.products.into_vec() {

@@ -1348,7 +1348,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             probe: None,
             probe_group: None,
             prepared_sources: BTreeSet::new(),
-            materialization: ConstraintMaterialization::new(graph.owner(context)?, context)?,
+            materialization: ConstraintMaterialization::new(graph.owner(context)?),
             closed: false,
         })
     }

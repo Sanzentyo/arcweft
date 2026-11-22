@@ -338,11 +338,7 @@ mod retained_preparation {
         assert_eq!(resumed.frontier.len(), 2);
         let graph_owner = graph.owner(&mut context).unwrap();
         let mut materialization =
-            crate::types::constraints::transaction::ConstraintMaterialization::new(
-                graph_owner,
-                &mut context,
-            )
-            .unwrap();
+            crate::types::constraints::transaction::ConstraintMaterialization::new(graph_owner);
         for path in &resumed.frontier {
             let (input, _) = context
                 .with_effect_reads(

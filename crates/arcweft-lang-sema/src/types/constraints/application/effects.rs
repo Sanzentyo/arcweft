@@ -276,19 +276,23 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
         &self,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<BTreeSet<GenericEffectReference>, TypeConstraintError> {
-        let mut pending: Vec<&dyn ImportedApplicationScopeAuthority> = Vec::new();
-        for owner in self.applications.values() {
-            context.enter_node()?;
-            pending.push(owner.as_ref());
-        }
-        for lease in &self.imported {
-            context.enter_node()?;
-            pending.push(lease.owner.as_ref());
-        }
+        let mut roots = self
+            .imported
+            .iter()
+            .rev()
+            .map(|lease| lease.owner.as_ref())
+            .chain(
+                self.applications
+                    .values()
+                    .rev()
+                    .map(|owner| owner.as_ref() as &dyn ImportedApplicationScopeAuthority),
+            )
+            .peekable();
+        let mut pending = Vec::new();
         let mut visited: BTreeMap<ConstraintApplicationId, &dyn ImportedApplicationScopeAuthority> =
             BTreeMap::new();
         let mut captures = BTreeSet::new();
-        while let Some(owner) = pending.pop() {
+        while let Some(owner) = pending.pop().or_else(|| roots.next()) {
             context.enter_node()?;
             if let Some(previous) = visited.get(&owner.id()) {
                 if !previous.same_owner(owner) {
@@ -296,8 +300,17 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                 }
                 continue;
             }
-            visited.insert(owner.id(), owner);
             let source = owner.original_context().rigid_scope();
+            // A terminal owner cannot be encountered again. In particular,
+            // a root without imported owners needs no visited table entry.
+            if !pending.is_empty()
+                || roots.peek().is_some()
+                || source
+                    .imported
+                    .is_some_and(|imported| !imported.applications.is_empty())
+            {
+                visited.insert(owner.id(), owner);
+            }
             for variable in source.effects {
                 context.enter_node()?;
                 captures.insert(variable.clone());

@@ -196,7 +196,7 @@ pub(crate) struct ConstraintMaterialization<D: ConstraintDomain> {
     graph_owner: crate::effect_row::prepared::PreparedEffectGraphOwner,
     next_correlation_ordinal: u32,
     next_materialization_ticket_ordinal: u64,
-    materialization_issuer: Arc<MaterializationTicketIssuer>,
+    materialization_issuer: Option<Arc<MaterializationTicketIssuer>>,
     active_materialization: Option<MaterializationTicketIdentity>,
     materialization: VecDeque<MaterializationTicket<D>>,
     materialized: Vec<MaterializedRecord<D>>,
@@ -205,22 +205,20 @@ pub(crate) struct ConstraintMaterialization<D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> ConstraintMaterialization<D> {
-    pub(in crate::types::constraints::transaction) fn new<A: TypeConstraintAccounting>(
+    pub(in crate::types::constraints::transaction) fn new(
         graph_owner: crate::effect_row::prepared::PreparedEffectGraphOwner,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Self, TypeConstraintError> {
-        context.enter_node()?;
-        Ok(Self {
+    ) -> Self {
+        Self {
             graph_owner,
             next_correlation_ordinal: 0,
             next_materialization_ticket_ordinal: 0,
-            materialization_issuer: Arc::new(MaterializationTicketIssuer),
+            materialization_issuer: None,
             active_materialization: None,
             materialization: VecDeque::new(),
             materialized: Vec::new(),
             first_failure: None,
             first_cycle: None,
-        })
+        }
     }
 
     pub(in crate::types::constraints::transaction) fn from_component<
@@ -231,7 +229,7 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError> {
         context.enter_node()?;
-        let mut owner = Self::new(graph_owner.clone(), context)?;
+        let mut owner = Self::new(graph_owner.clone());
         owner.push_component(input, context)?;
         Ok(owner)
     }
@@ -271,9 +269,15 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
             .checked_add(1)
             .ok_or(TypeConstraintAbort::ArithmeticOverflow)?;
         context.enter_node()?;
+        if self.materialization_issuer.is_none() {
+            context.enter_node()?;
+        }
+        let issuer = self
+            .materialization_issuer
+            .get_or_insert_with(|| Arc::new(MaterializationTicketIssuer));
         let ticket = MaterializationTicket {
             identity: MaterializationTicketIdentity {
-                issuer: Arc::clone(&self.materialization_issuer),
+                issuer: Arc::clone(issuer),
                 ordinal: self.next_materialization_ticket_ordinal,
             },
             correlation: MaterializationCorrelationOrdinal(self.next_correlation_ordinal),
@@ -327,8 +331,8 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
     #[cfg(test)]
     pub(in crate::types::constraints::transaction) fn ticket_issuer(
         &self,
-    ) -> &Arc<MaterializationTicketIssuer> {
-        &self.materialization_issuer
+    ) -> Option<&Arc<MaterializationTicketIssuer>> {
+        self.materialization_issuer.as_ref()
     }
 
     pub(crate) fn next_materialization_ticket<A: TypeConstraintAccounting>(
@@ -367,20 +371,7 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
         &self,
         ticket: &MaterializationTicket<D>,
     ) -> Result<(), TypeConstraintSourceProtocolInvariant> {
-        if !materialization_identity_matches(
-            &ticket.identity,
-            &MaterializationTicketIdentity {
-                issuer: Arc::clone(&self.materialization_issuer),
-                ordinal: ticket.identity.ordinal,
-            },
-        ) {
-            return Err(TypeConstraintSourceProtocolInvariant::Ticket);
-        }
-        if !self
-            .active_materialization
-            .as_ref()
-            .is_some_and(|identity| materialization_identity_matches(identity, &ticket.identity))
-        {
+        if !self.is_active(&ticket.identity) {
             return Err(TypeConstraintSourceProtocolInvariant::Ticket);
         }
         if !matches!(ticket.phase, MaterializationTicketPhase::Ready) {
@@ -408,17 +399,7 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
         ticket: MaterializationTicket<D>,
         closed: ClosedMaterialization<D>,
     ) -> Result<(), TypeConstraintError> {
-        if !materialization_identity_matches(
-            &ticket.identity,
-            &MaterializationTicketIdentity {
-                issuer: Arc::clone(&self.materialization_issuer),
-                ordinal: ticket.identity.ordinal,
-            },
-        ) || !self
-            .active_materialization
-            .as_ref()
-            .is_some_and(|identity| materialization_identity_matches(identity, &ticket.identity))
-        {
+        if !self.is_active(&ticket.identity) {
             return Err(TypeConstraintError::Invariant(
                 TypeConstraintInvariant::SourceProtocol(
                     TypeConstraintSourceProtocolInvariant::Ticket,
@@ -469,6 +450,12 @@ impl<D: ConstraintDomain> ConstraintMaterialization<D> {
             }
         }
         Ok(())
+    }
+
+    fn is_active(&self, ticket: &MaterializationTicketIdentity) -> bool {
+        self.active_materialization
+            .as_ref()
+            .is_some_and(|identity| materialization_identity_matches(identity, ticket))
     }
 
     pub(crate) fn finish<A>(
