@@ -616,9 +616,11 @@ TaskSubmission<P>、TaskEvent<P>、RuntimeNeedProducerState<P> と producer regi
 argument／launch は同じ storage-parameterized owner を使う。live event と Ready
 state に Clone や serde reader は与えず、保存用 specialization だけが inert 値を
 保持する。Native rollback と AWBC Product の in-memory Need registry は同じ inert
-grammar を使い、wire の site／plan digest は verified program の元の plan 行を選ぶ
-locator とする。argument の型・Copy 条件、元 TaskSpec、Ready の outcome、正確な
-correlation、join／ordinal／invocation frontier を live 投影より前に検証する。
+grammar を使う。永続 journal も Need registry が所有する。保存側の Source assertion は
+enclosing executable の元の plan 行を選ぶ。wire の全 journal table と launch argument
+の件数を Source 照合より前に検査する。argument の型・Copy 条件、元 TaskSpec、Ready の
+outcome、正確な correlation、join／ordinal／invocation frontier を live 投影より前に
+検証する。
 JoinSameKey の Ready は再帰的に Copy を満たし、AlwaysStart の affine Ready は
 その値を借用して検証し、復元後も一度だけ waiter に移動する。
 

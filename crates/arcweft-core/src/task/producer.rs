@@ -5,8 +5,13 @@ use super::*;
 use crate::entry::RuntimeValueDigest;
 use std::collections::BTreeSet;
 
+mod snapshot;
 mod source;
 mod start;
+pub use snapshot::{
+    RuntimeNeedProducerInvocationSaveSnapshot, RuntimeNeedProducerLaunchOriginSaveSnapshot,
+    RuntimeNeedProducerLaunchSaveSnapshot, RuntimeNeedProducerRegistrySaveSnapshot,
+};
 pub(crate) use source::RuntimeTaskProducerSourceError;
 pub(crate) use source::RuntimeTaskTemplateArguments;
 pub use start::RuntimeNeedProducerStart;
@@ -1573,12 +1578,12 @@ pub enum NeedProducerLaunchOriginRestore<
     },
 }
 
-pub(crate) type NeedProducerLaunchSaveSnapshot = NeedProducerLaunchRestore<
+pub(crate) type NeedProducerLaunchImage = NeedProducerLaunchRestore<
     crate::value::AwbcRuntimeValueSnapshot,
     crate::value::AwbcRuntimeValueSnapshot,
 >;
 
-impl Clone for NeedProducerLaunchSaveSnapshot {
+impl Clone for NeedProducerLaunchImage {
     fn clone(&self) -> Self {
         Self {
             origin: match &self.origin {
@@ -1603,7 +1608,8 @@ impl Clone for NeedProducerLaunchSaveSnapshot {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NeedProducerInvocationFrontier {
     pub generation: GenerationId,
     pub fiber: RuntimePersistentFiberId,
@@ -1611,7 +1617,8 @@ pub struct NeedProducerInvocationFrontier {
     pub next_sequence: u64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NeedProducerLaunchFrontier {
     pub generation: GenerationId,
     pub instance_key: NeedProducerInstanceKey,
@@ -1682,12 +1689,13 @@ impl<V, P, S> NeedProducerRegistryRestore<V, P, S> {
     }
 }
 
-pub(crate) type NeedProducerRegistrySaveSnapshot = NeedProducerRegistryRestore<
+/// The inert, Source-bound journal used by private rollback and persistence.
+pub(crate) type NeedProducerRegistryImage = NeedProducerRegistryRestore<
     crate::value::AwbcRuntimeValueSnapshot,
     crate::value::AwbcRuntimeValueSnapshot,
 >;
 
-impl Clone for NeedProducerRegistrySaveSnapshot {
+impl Clone for NeedProducerRegistryImage {
     fn clone(&self) -> Self {
         Self {
             task_admissions: self.task_admissions.clone(),
@@ -1821,7 +1829,7 @@ impl<V, P, S: super::TaskExecutionSource> NeedProducerLaunchRestore<V, P, S> {
         }
     }
 }
-impl NeedProducerRegistrySaveSnapshot {
+impl NeedProducerRegistryImage {
     pub(crate) fn visit_saved_value_roots<E>(
         &self,
         visit: &mut impl FnMut(&crate::value::AwbcRuntimeValueSnapshot) -> Result<(), E>,
@@ -1928,9 +1936,6 @@ impl NeedProducerRegistrySaveSnapshot {
         })
     }
 }
-
-/// Inert rollback and Product persistence share the owning registry grammar.
-pub(crate) type NeedProducerRegistryRollbackImage = NeedProducerRegistrySaveSnapshot;
 
 struct ValidatedRestoreLaunch {
     instance_key: NeedProducerInstanceKey,
@@ -2089,7 +2094,7 @@ impl NeedProducerRegistry {
         &self,
         owner: &RuntimeProgramOwner,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
-    ) -> Result<NeedProducerRegistrySaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
+    ) -> Result<NeedProducerRegistryImage, crate::value::AwbcRuntimeValueSnapshotError> {
         self.admit_retained(admission)?;
         self.snapshot_admitted(owner)
     }
@@ -2097,8 +2102,8 @@ impl NeedProducerRegistry {
     pub(crate) fn snapshot_admitted(
         &self,
         owner: &RuntimeProgramOwner,
-    ) -> Result<NeedProducerRegistrySaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
-        Ok(NeedProducerRegistrySaveSnapshot {
+    ) -> Result<NeedProducerRegistryImage, crate::value::AwbcRuntimeValueSnapshotError> {
+        Ok(NeedProducerRegistryImage {
             task_admissions: self
                 .task_journal
                 .borrowed_submissions()
@@ -2120,7 +2125,7 @@ impl NeedProducerRegistry {
                 .values()
                 .map(|launch| {
                     let original = launch.source().program_owner();
-                    Ok(NeedProducerLaunchSaveSnapshot {
+                    Ok(NeedProducerLaunchImage {
                         origin: match &launch.origin {
                             RuntimeTaskLaunchOrigin::Need { invocation, start } => NeedProducerLaunchOriginRestore::Need {
                                 invocation: *invocation,
@@ -2152,7 +2157,7 @@ impl NeedProducerRegistry {
     pub(crate) fn inert_rollback_image(
         &self,
         owner: &RuntimeProgramOwner,
-    ) -> Result<NeedProducerRegistryRollbackImage, String> {
+    ) -> Result<NeedProducerRegistryImage, String> {
         let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
@@ -2163,7 +2168,7 @@ impl NeedProducerRegistry {
 
     #[cfg(test)]
     pub(crate) fn from_rollback_image(
-        image: NeedProducerRegistryRollbackImage,
+        image: NeedProducerRegistryImage,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
         image
@@ -2178,7 +2183,7 @@ impl NeedProducerRegistry {
     }
 
     pub(crate) fn from_admitted_rollback_image(
-        image: NeedProducerRegistryRollbackImage,
+        image: NeedProducerRegistryImage,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
         let restore = image
@@ -4537,6 +4542,103 @@ mod identity_tests {
                 .is_none()
         );
         assert_eq!(restored.pending_reensure().count(), 0);
+    }
+
+    #[test]
+    fn persistent_need_journal_rebinds_to_the_native_source_and_reensures_once() {
+        use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+        use crate::plan::task_source::RuntimeTaskSourceProgram;
+        use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+
+        let make_plan = || {
+            registry_plan(
+                5,
+                6,
+                TaskPolicy::JoinSameKey,
+                HostRestartPolicy::Restartable,
+                TaskClass::Io,
+            )
+        };
+        let plan = make_plan();
+        let owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));
+        let source = RuntimeTaskSourceProgram::native(Arc::clone(&plan));
+        let generation = GenerationId::new(11);
+        let fiber = RuntimePersistentFiberId::from_allocated(23);
+        let mut registry = NeedProducerRegistry::default();
+        let token = registry
+            .begin_invocation(generation, fiber, registry_site(&plan))
+            .unwrap();
+        let first = registry
+            .admit_start(token, start(&plan, generation))
+            .unwrap();
+        let token = registry
+            .begin_invocation(generation, fiber, registry_site(&plan))
+            .unwrap();
+        let joined = registry
+            .admit_start(token, start(&plan, generation))
+            .unwrap();
+        assert_eq!(joined.correlation(), first.correlation());
+
+        let image = registry
+            .snapshot_retained(&owner, &mut restore_admission(&plan))
+            .unwrap();
+        let wire = RuntimeNeedProducerRegistrySaveSnapshot::from_admitted(&image);
+        let json = serde_json::to_string(&wire).unwrap();
+        let wire = serde_json::from_str::<RuntimeNeedProducerRegistrySaveSnapshot>(&json).unwrap();
+
+        let equal_plan = Arc::new((*plan).clone());
+        let foreign_source = RuntimeTaskSourceProgram::native(equal_plan);
+        let error = wire
+            .clone()
+            .bind(Some(&foreign_source), &mut restore_admission(&plan))
+            .unwrap_err();
+        assert_eq!(
+            error,
+            RuntimeTaskProducerSourceError::OriginalProgram.into()
+        );
+
+        let mut oversized = wire.clone();
+        oversized
+            .invocation_frontiers
+            .extend(std::iter::repeat_n(oversized.invocation_frontiers[0], 8));
+        let mut limit = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_sequence_items: 8,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        let error = oversized
+            .bind(Some(&foreign_source), &mut limit)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+                budget: "sequence_items"
+            })
+        );
+        assert_eq!(limit.status(), Err(error));
+
+        let bound = wire
+            .bind(Some(&source), &mut restore_admission(&plan))
+            .unwrap();
+        assert_eq!(bound, image);
+        bound
+            .validate_restore_policy(NeedProducerRestorePolicy::Resume)
+            .unwrap();
+        let mut restored = NeedProducerRegistry::default();
+        restored
+            .restore_admitted_registry_with_policy(
+                bound.into_admitted_live(&owner).unwrap(),
+                NeedProducerRestorePolicy::Resume,
+            )
+            .unwrap();
+        assert_eq!(restored.invocations().count(), 2);
+        assert_eq!(restored.pending_reensure().count(), 1);
+        let submission = restored.mark_task_ensured(first.need()).unwrap().unwrap();
+        assert_eq!(submission.spec(), first.task_spec());
+        assert_eq!(submission.handle().correlation, first.correlation());
+        assert!(restored.mark_task_ensured(first.need()).unwrap().is_none());
     }
 
     #[test]

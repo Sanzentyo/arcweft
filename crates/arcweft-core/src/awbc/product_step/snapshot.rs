@@ -20,10 +20,9 @@ use crate::runtime_id::{
 use crate::step::{RuntimeDialogueContentEventKind, RuntimeHostCallId};
 use crate::stream::StreamRuntimeState;
 use crate::task::{
-    HostRestartPolicy, NeedProducerInvocationFrontier, NeedProducerInvocationToken,
-    NeedProducerLaunchFrontier, NeedProducerLaunchOriginRestore, NeedProducerLaunchRestore,
-    NeedProducerRegistry, NeedProducerRegistrySaveSnapshot, NeedProducerRuntimeArgument,
-    NeedProducerSiteDigest, RuntimeNeedProducerState, TaskId, TaskPublicationCursor,
+    NeedProducerLaunchOriginRestore, NeedProducerRegistry, NeedProducerRegistryImage,
+    RuntimeNeedProducerRegistrySaveSnapshot, RuntimeNeedProducerState, TaskId,
+    TaskPublicationCursor,
 };
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload, RuntimeStoredValue, RuntimeValue};
 use std::cmp::Ordering;
@@ -421,7 +420,7 @@ pub struct AwbcProductExecutorSnapshot {
         (RuntimePersistentFiberId, crate::task::TaskCorrelation),
         crate::task::RuntimeNeedPublicationCursor,
     >,
-    pub need_producers: NeedProducerRegistrySaveSnapshot,
+    pub need_producers: NeedProducerRegistryImage,
     pub(crate) actions: crate::action::RuntimeActionMailbox<AwbcRuntimeValueSnapshot>,
     pub queued_task_events: VecDeque<AwbcProductTaskEventSaveSnapshot>,
     pub emitted_content: BTreeSet<AwbcContentUnitId>,
@@ -461,7 +460,7 @@ pub struct AwbcProductExecutorSaveSnapshot {
     #[serde(with = "task_publication::rows")]
     pub task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
     pub need_publications: Vec<AwbcNeedPublicationSaveSnapshot>,
-    pub need_producers: AwbcNeedProducerRegistrySaveSnapshot,
+    pub need_producers: RuntimeNeedProducerRegistrySaveSnapshot,
     pub actions: Vec<(
         crate::pattern::RuntimeSemanticTypeId,
         crate::entry::RuntimeNominalDeclarationId,
@@ -501,77 +500,6 @@ pub enum AwbcProductSaveError {
     InvalidSnapshot { message: String },
 }
 
-/// Serialized registry journal. Producer plans are reprojected from the
-/// verified AWBC task-plan table during restore; saved digests only locate the
-/// sealed row and are never accepted as plan authority.
-#[derive(Clone, Debug, Default, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcNeedProducerRegistrySaveSnapshot {
-    pub task_admissions: Vec<crate::task::TaskSubmissionSaveSnapshot>,
-    pub launches: Vec<AwbcNeedProducerLaunchSaveSnapshot>,
-    pub invocations: Vec<AwbcNeedProducerInvocationSaveSnapshot>,
-    pub invocation_frontiers: Vec<AwbcNeedProducerInvocationFrontierSaveSnapshot>,
-    pub launch_frontiers: Vec<AwbcNeedProducerLaunchFrontierSaveSnapshot>,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcNeedProducerLaunchSaveSnapshot {
-    pub origin: AwbcNeedProducerLaunchOriginSaveSnapshot,
-    pub correlation: crate::task::TaskCorrelation,
-    pub state: AwbcNeedStateSaveSnapshot,
-    pub publication: Option<TaskPublicationCursor>,
-    pub task_submitted: bool,
-    pub task_terminal: bool,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum AwbcNeedProducerLaunchOriginSaveSnapshot {
-    Need {
-        invocation: NeedProducerInvocationToken,
-        source: crate::plan::RuntimeTaskSourceAssertion,
-        arguments: Vec<AwbcNeedProducerArgumentSaveSnapshot>,
-        task_spec: crate::task::TaskSpecSaveSnapshot,
-    },
-    Program {
-        retirement: crate::task::ProgramTaskRetirementPhase,
-    },
-}
-
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcNeedProducerArgumentSaveSnapshot {
-    pub name: Option<String>,
-    pub value: AwbcRuntimeValueSnapshot,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcNeedProducerInvocationSaveSnapshot {
-    pub invocation: NeedProducerInvocationToken,
-    pub correlation: crate::task::TaskCorrelation,
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcNeedProducerInvocationFrontierSaveSnapshot {
-    pub generation: crate::task::GenerationId,
-    pub fiber: RuntimePersistentFiberId,
-    pub producer_site: NeedProducerSiteDigest,
-    pub next_sequence: u64,
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcNeedProducerLaunchFrontierSaveSnapshot {
-    pub generation: crate::task::GenerationId,
-    pub instance_key: crate::task::NeedProducerInstanceKey,
-    pub next_ordinal: u64,
-}
-
-pub type AwbcNeedStateSaveSnapshot = RuntimeNeedProducerState<AwbcRuntimeValueSnapshot>;
-
 fn visit_runtime_value_graph<E>(
     value: &RuntimeValue,
     visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
@@ -595,216 +523,6 @@ fn visit_task_request_values<E>(
     }
     Ok(())
 }
-fn save_need_producer_registry(
-    registry: &NeedProducerRegistrySaveSnapshot,
-) -> Result<AwbcNeedProducerRegistrySaveSnapshot, String> {
-    Ok(AwbcNeedProducerRegistrySaveSnapshot {
-        task_admissions: registry
-            .task_admissions
-            .iter()
-            .cloned()
-            .map(|row| row.map_source_admitted(|source| Ok::<_, String>(source.assertion())))
-            .collect::<Result<_, _>>()?,
-        launches: registry
-            .launches
-            .iter()
-            .map(|launch| {
-                Ok(AwbcNeedProducerLaunchSaveSnapshot {
-                    origin: match &launch.origin {
-                        NeedProducerLaunchOriginRestore::Need { invocation, start } => {
-                            AwbcNeedProducerLaunchOriginSaveSnapshot::Need {
-                                invocation: *invocation,
-                                source: start.source().assertion(),
-                                arguments: start
-                                    .arguments()
-                                    .iter()
-                                    .map(|argument| {
-                                        Ok(AwbcNeedProducerArgumentSaveSnapshot {
-                                            name: argument.name.clone(),
-                                            value: argument.value.clone(),
-                                        })
-                                    })
-                                    .collect::<Result<_, String>>()?,
-                                task_spec: start.task_spec().clone().map_source_admitted(
-                                    |source| Ok::<_, String>(source.assertion()),
-                                )?,
-                            }
-                        }
-                        NeedProducerLaunchOriginRestore::Program { retirement } => {
-                            AwbcNeedProducerLaunchOriginSaveSnapshot::Program {
-                                retirement: *retirement,
-                            }
-                        }
-                    },
-                    correlation: launch.correlation,
-                    state: launch.state.clone(),
-                    publication: launch.publication,
-                    task_submitted: launch.task_submitted,
-                    task_terminal: launch.task_terminal,
-                })
-            })
-            .collect::<Result<_, String>>()?,
-        invocations: registry
-            .invocations
-            .iter()
-            .map(
-                |(invocation, need)| AwbcNeedProducerInvocationSaveSnapshot {
-                    invocation: *invocation,
-                    correlation: *need,
-                },
-            )
-            .collect(),
-        invocation_frontiers: registry
-            .invocation_frontiers
-            .iter()
-            .map(|frontier| AwbcNeedProducerInvocationFrontierSaveSnapshot {
-                generation: frontier.generation,
-                fiber: frontier.fiber,
-                producer_site: frontier.producer_site,
-                next_sequence: frontier.next_sequence,
-            })
-            .collect(),
-        launch_frontiers: registry
-            .launch_frontiers
-            .iter()
-            .map(|frontier| AwbcNeedProducerLaunchFrontierSaveSnapshot {
-                generation: frontier.generation,
-                instance_key: frontier.instance_key,
-                next_ordinal: frontier.next_ordinal,
-            })
-            .collect(),
-    })
-}
-
-fn restore_need_producer_registry(
-    saved: AwbcNeedProducerRegistrySaveSnapshot,
-    source_program: Option<&crate::plan::task_source::RuntimeTaskSourceProgram>,
-    admission: &mut crate::value::RuntimeRetainedValueAdmission,
-) -> Result<NeedProducerRegistrySaveSnapshot, String> {
-    admission
-        .validate_metadata_collection(saved.task_admissions.len())
-        .map_err(|error| error.to_string())?;
-    admission
-        .validate_metadata_collection(saved.launches.len())
-        .map_err(|error| error.to_string())?;
-    for row in &saved.task_admissions {
-        row.admit_retained(admission)
-            .map_err(|error| error.to_string())?;
-    }
-    let task_owner = admission.program_owner().cloned();
-    let task_admissions = saved
-        .task_admissions
-        .into_iter()
-        .map(|row| {
-            row.map_source_admitted(|assertion| {
-                let program =
-                    source_program.ok_or("program task has no admitted original Source")?;
-                let owner = task_owner
-                    .as_ref()
-                    .ok_or("program task has no enclosing executable")?;
-                crate::task::TaskSnapshotSource::restore_source(
-                    assertion,
-                    owner,
-                    Some(crate::task::TaskSourceRestore { program, admission }),
-                )
-                .map_err(|error| error.to_string())
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let mut launches = Vec::with_capacity(saved.launches.len());
-    for launch in saved.launches {
-        let origin = match launch.origin {
-            AwbcNeedProducerLaunchOriginSaveSnapshot::Program { retirement } => {
-                NeedProducerLaunchOriginRestore::Program { retirement }
-            }
-            AwbcNeedProducerLaunchOriginSaveSnapshot::Need {
-                invocation,
-                source: saved_source,
-                arguments: saved_arguments,
-                task_spec: saved_spec,
-            } => {
-                admission
-                    .validate_metadata(&saved_source)
-                    .map_err(|error| error.to_string())?;
-                admission
-                    .validate_metadata_collection(saved_arguments.len())
-                    .map_err(|error| error.to_string())?;
-                let program = source_program
-                    .ok_or("selected saved launch has no admitted original Source")?;
-                let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
-                let mut meter = admission
-                    .task_source_meter(limits)
-                    .map_err(|error| error.to_string())?;
-                let source = program
-                    .borrow_assertion(&saved_source, limits, &mut meter)
-                    .map_err(|error| error.to_string())?;
-                let prepared = source
-                    .prepare_selected_producer(program, admission)
-                    .map_err(|error| error.to_string())?;
-                if saved_arguments.len() != prepared.arguments().len() {
-                    return Err(crate::task::RuntimeTaskProducerSourceError::ArgumentCount {
-                        actual: saved_arguments.len(),
-                        expected: prepared.arguments().len(),
-                    }
-                    .to_string());
-                }
-                let arguments = saved_arguments
-                    .into_iter()
-                    .map(|argument| NeedProducerRuntimeArgument {
-                        name: argument.name,
-                        value: argument.value,
-                    })
-                    .collect();
-                let task_spec = saved_spec.map_source_admitted(|_| {
-                    Err::<crate::plan::RuntimeTaskSource, _>(
-                        "a selected host producer cannot restore program execution".to_owned(),
-                    )
-                })?;
-                let start = prepared
-                    .restore_start(arguments, task_spec)
-                    .map_err(|error| error.to_string())?;
-                NeedProducerLaunchOriginRestore::Need { invocation, start }
-            }
-        };
-        launches.push(NeedProducerLaunchRestore {
-            origin,
-            correlation: launch.correlation,
-            state: launch.state,
-            publication: launch.publication,
-            task_submitted: launch.task_submitted,
-            task_terminal: launch.task_terminal,
-        });
-    }
-    Ok(NeedProducerRegistrySaveSnapshot {
-        task_admissions,
-        launches,
-        invocations: saved
-            .invocations
-            .into_iter()
-            .map(|row| (row.invocation, row.correlation))
-            .collect(),
-        invocation_frontiers: saved
-            .invocation_frontiers
-            .into_iter()
-            .map(|frontier| NeedProducerInvocationFrontier {
-                generation: frontier.generation,
-                fiber: frontier.fiber,
-                producer_site: frontier.producer_site,
-                next_sequence: frontier.next_sequence,
-            })
-            .collect(),
-        launch_frontiers: saved
-            .launch_frontiers
-            .into_iter()
-            .map(|frontier| NeedProducerLaunchFrontier {
-                generation: frontier.generation,
-                instance_key: frontier.instance_key,
-                next_ordinal: frontier.next_ordinal,
-            })
-            .collect(),
-    })
-}
-
 pub type AwbcProductActiveDialogueSaveSnapshot = super::AwbcProductActiveDialogue<
     AwbcRuntimeValueSnapshot,
     AwbcRuntimeValueSnapshot,
@@ -3111,29 +2829,7 @@ impl AwbcProductExecutorSaveSnapshot {
             frame.visit_saved_value_roots(&mut *visit)?;
             line.visit_saved_value_roots(&mut *visit)
         })?;
-        for task in &self.need_producers.task_admissions {
-            for value in task.request_values() {
-                visit(value)?;
-            }
-        }
-        for launch in &self.need_producers.launches {
-            if let AwbcNeedProducerLaunchOriginSaveSnapshot::Need {
-                arguments,
-                task_spec,
-                ..
-            } = &launch.origin
-            {
-                for argument in arguments {
-                    visit(&argument.value)?;
-                }
-                for value in task_spec.request.payloads() {
-                    visit(value)?;
-                }
-            }
-            if let AwbcNeedStateSaveSnapshot::Ready(value) = &launch.state {
-                visit(value)?;
-            }
-        }
+        self.need_producers.visit_saved_value_roots(visit)?;
         for event in &self.queued_task_events {
             if let AwbcProductTaskEventKindSaveSnapshot::Ready(value) = &event.kind {
                 visit(value)?;
@@ -3220,8 +2916,9 @@ impl AwbcProductExecutorSaveSnapshot {
                     },
                 )
                 .collect(),
-            need_producers: save_need_producer_registry(&snapshot.need_producers)
-                .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?,
+            need_producers: RuntimeNeedProducerRegistrySaveSnapshot::from_admitted(
+                &snapshot.need_producers,
+            ),
             actions: snapshot.actions.snapshot_rows_admitted(),
             queued_task_events: snapshot.queued_task_events.clone(),
             emitted_content: snapshot.emitted_content.clone(),
@@ -3297,14 +2994,9 @@ impl AwbcProductExecutorSaveSnapshot {
                 message: "Need publication snapshot contains duplicate waiter/Need rows".to_owned(),
             });
         }
-        let need_producers = restore_need_producer_registry(
-            self.need_producers,
-            program.task_source.as_ref(),
-            &mut admission,
-        )
-        .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
-        need_producers
-            .admit_retained(&mut admission)
+        let need_producers = self
+            .need_producers
+            .bind(program.task_source.as_ref(), &mut admission)
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;
@@ -3539,7 +3231,7 @@ fn validate_task_publications(
 
 fn validate_need_publication_cursors(
     snapshot: &AwbcProductExecutorSnapshot,
-    producers: &crate::task::NeedProducerRegistrySaveSnapshot,
+    producers: &crate::task::NeedProducerRegistryImage,
 ) -> Result<(), AwbcProductStepBuildError> {
     for ((_, correlation), observed) in &snapshot.need_publications {
         if !producers
@@ -3819,7 +3511,7 @@ impl AwbcProductStepExecutor {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<
         (
-            NeedProducerRegistrySaveSnapshot,
+            NeedProducerRegistryImage,
             VecDeque<AwbcProductTaskEventSaveSnapshot>,
         ),
         AwbcProductSaveError,

@@ -175,7 +175,7 @@ pub struct Engine<
 /// values enter the image through the sealed value snapshot authority; the
 /// image may coexist with a live Engine because it carries no live values.
 type NativeEngineRollbackImage = Engine<
-    crate::task::NeedProducerRegistryRollbackImage,
+    crate::task::NeedProducerRegistryImage,
     crate::value::AwbcRuntimeValueSnapshot,
     crate::root::RootRuntimeRollbackImage,
     NativeFlowExecutionFrameRollbackImage,
