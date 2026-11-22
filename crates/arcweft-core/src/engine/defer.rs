@@ -24,19 +24,25 @@ pub(super) enum NativeDeferScopeOwner {
     Control,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) enum NativeDeferSource {
     Activation,
     Control(NativeSourceOperation),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: crate::value::InertRuntimeValueStorage"
+)]
 pub(super) struct NativeLexicalDeferred<V = RuntimeValue> {
     pub(super) packet: RuntimeLineDeferredRegistration<V>,
     pub(super) source: NativeDeferSource,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct NativeDeferInFlight {
     pub(super) id: RuntimeDeferRegistrationId,
     pub(super) site: RuntimeDeferSiteId,
@@ -72,13 +78,21 @@ pub(super) struct NativeDeferRegistrationReceipt {
     pub(super) received: Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: crate::value::InertRuntimeValueStorage"
+)]
 pub(crate) struct NativeLexicalExit<V> {
     pub(super) target: usize,
     pub(super) action: NativeLexicalExitAction<V>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: crate::value::InertRuntimeValueStorage"
+)]
 pub(super) enum NativeLexicalExitAction<V> {
     Emitted,
     Scheduled(RuntimeScheduledScopeToken),
@@ -92,19 +106,23 @@ pub(super) enum NativeLexicalExitAction<V> {
         result: NativeReturnResult<V>,
     },
     Fallthrough {
+        #[serde(with = "crate::plan::code::function_coordinate")]
         site: crate::runtime_id::RuntimeFunctionSiteId,
     },
     Goto {
         source: NativeGotoOrigin,
         transfer: crate::plan::RuntimeFlowTransfer<V>,
+        #[serde(with = "super::function_frame_instantiation")]
         source_instantiation:
             Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        #[serde(with = "super::function_frame_instantiation")]
         type_instantiation:
             Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) enum NativeGotoOrigin {
     Operation(NativeSourceOperation),
     Choice {
@@ -261,20 +279,32 @@ pub(super) enum NativeDeferBoundary {
     Flow,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: crate::value::InertRuntimeValueStorage"
+)]
 pub(super) enum NativeReturnResult<V> {
     FlowLabel(String),
     Value(V),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: crate::value::InertRuntimeValueStorage"
+)]
 pub(super) struct NativeLoopTransfer<V> {
     pub(super) source: NativeSourceOperation,
     pub(super) target: NativeSourceOperation,
     pub(super) kind: NativeLoopTransferKind<V>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: crate::value::InertRuntimeValueStorage"
+)]
 pub(super) enum NativeLoopTransferKind<V> {
     Break(V),
     Continue,
@@ -568,7 +598,11 @@ impl<V: RuntimeStoredValue> NativeLexicalExit<V> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: crate::value::InertRuntimeValueStorage"
+)]
 pub(crate) struct NativeLexicalDeferScope<V = RuntimeValue> {
     pub(super) deferred: Vec<NativeLexicalDeferred<V>>,
     pub(super) exit: Option<ScopeExit>,

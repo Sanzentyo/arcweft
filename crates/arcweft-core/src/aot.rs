@@ -64,10 +64,7 @@ pub(crate) enum AotLinearOp {
     ReturnExpr(RuntimeExpr),
     Effect(LineEffectRequest),
     EvaluatedEffect(RuntimeEffectExpr),
-    RegisterCleanup {
-        key: String,
-        effect: LineEffectRequest,
-    },
+    RegisterCleanup,
     CancelCleanup {
         key: String,
     },
@@ -100,10 +97,7 @@ impl AotLinearOp {
             FlowOp::ReturnExpr(expr) => Some(Self::ReturnExpr(expr.clone())),
             FlowOp::Effect(effect) => Some(Self::Effect(effect.clone())),
             FlowOp::EvaluatedEffect(effect) => Some(Self::EvaluatedEffect(effect.clone())),
-            FlowOp::RegisterCleanup { key, effect } => Some(Self::RegisterCleanup {
-                key: key.clone(),
-                effect: effect.clone(),
-            }),
+            FlowOp::RegisterCleanup { .. } => Some(Self::RegisterCleanup),
             FlowOp::CancelCleanup { key } => Some(Self::CancelCleanup { key: key.clone() }),
             FlowOp::EnterScope { identity } => Some(Self::EnterScope {
                 identity: identity.clone(),

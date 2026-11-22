@@ -107,23 +107,20 @@ impl Engine {
                 continue;
             };
             let next_op_index = position + 1;
-            let return_source = matches!(op, AotLinearOp::Return(_) | AotLinearOp::ReturnExpr(_))
-                .then(|| {
-                    cursor
-                        .source_operation(&self.plan)
-                        .expect("selected AOT return retains its original Plan position")
-                });
+            let source = matches!(
+                op,
+                AotLinearOp::Return(_) | AotLinearOp::ReturnExpr(_) | AotLinearOp::RegisterCleanup
+            )
+            .then(|| {
+                cursor
+                    .source_operation(&self.plan)
+                    .expect("selected AOT operation retains its original Plan position")
+            });
             let (_, control_ops) = self.with_scalar_operation_budget(
                 options.mode,
                 options.budget.max_ops - executed_ops - 1,
                 |engine| {
-                    engine.step_aot_linear_op(
-                        op,
-                        return_source,
-                        next_op_index,
-                        &mut output,
-                        pure_backend,
-                    )
+                    engine.step_aot_linear_op(op, source, next_op_index, &mut output, pure_backend)
                 },
             );
             executed_ops += 1 + control_ops;
@@ -210,7 +207,7 @@ impl Engine {
     fn step_aot_linear_op(
         &mut self,
         op: &AotLinearOp,
-        return_source: Option<super::code_cursor::NativeSourceOperation>,
+        source: Option<super::code_cursor::NativeSourceOperation>,
         next_op_index: usize,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -230,7 +227,7 @@ impl Engine {
                 }
             }
             AotLinearOp::Return(value) => self.return_from_source(
-                return_source.expect("selected AOT return source"),
+                source.expect("selected AOT return source"),
                 crate::value::RuntimeValue::String(value.clone()),
                 output,
                 pure_backend,
@@ -238,7 +235,7 @@ impl Engine {
             AotLinearOp::ReturnExpr(expr) => {
                 match self.evaluate_expr_with_backend(expr, pure_backend) {
                     Ok(value) => self.return_from_source(
-                        return_source.expect("selected AOT return source"),
+                        source.expect("selected AOT return source"),
                         value,
                         output,
                         pure_backend,
@@ -262,10 +259,12 @@ impl Engine {
                     self.advance_aot_linear_cursor(next_op_index);
                 }
             }
-            AotLinearOp::RegisterCleanup { key, effect } => {
-                self.register_scope_cleanup(key.clone(), effect.clone());
-                self.advance_aot_linear_cursor(next_op_index);
-            }
+            AotLinearOp::RegisterCleanup => match self
+                .register_scope_cleanup(source.expect("selected AOT cleanup registration"))
+            {
+                Ok(()) => self.advance_aot_linear_cursor(next_op_index),
+                Err(error) => self.fail_eval(error, output),
+            },
             AotLinearOp::CancelCleanup { key } => {
                 self.cancel_scope_cleanup(key);
                 self.advance_aot_linear_cursor(next_op_index);

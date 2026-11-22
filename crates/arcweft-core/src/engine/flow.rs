@@ -1148,13 +1148,10 @@ impl Engine {
                     output,
                 ),
             },
-            FlowOp::RegisterCleanup { .. } => {
-                let FlowOp::RegisterCleanup { key, effect } = op.into_owned() else {
-                    unreachable!("selected cleanup registration");
-                };
-                self.register_scope_cleanup(key, effect);
-                self.advance_if_needed(next_op_index);
-            }
+            FlowOp::RegisterCleanup { .. } => match self.register_scope_cleanup(source_site) {
+                Ok(()) => self.advance_if_needed(next_op_index),
+                Err(error) => self.fail_eval(error, output),
+            },
             FlowOp::CancelCleanup { key } => {
                 self.cancel_scope_cleanup(key);
                 self.advance_if_needed(next_op_index);
@@ -1645,10 +1642,14 @@ impl Engine {
 
     pub(super) fn register_scope_cleanup(
         &mut self,
-        key: impl Into<String>,
-        effect: LineEffectRequest,
-    ) {
-        let cleanup = FlowScopeCleanup::new(key, effect);
+        source: NativeSourceOperation,
+    ) -> Result<(), RuntimeEvalError> {
+        let cleanup = FlowScopeCleanup { source };
+        cleanup
+            .admit_retained(&mut self.native_work_admission()?)
+            .map_err(|source| RuntimeEvalError::NativeWorkAdmission {
+                source: Box::new(source),
+            })?;
         if let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope { cleanups, .. },
         }) = self
@@ -1663,16 +1664,20 @@ impl Engine {
         } else {
             self.fiber.frame.root_cleanups.push(cleanup);
         }
+        Ok(())
     }
 
     pub(super) fn cancel_scope_cleanup(&mut self, key: &str) {
-        self.fiber
-            .frame
-            .root_cleanups
-            .retain(|cleanup| cleanup.key != key);
+        let retain = |cleanup: &FlowScopeCleanup| {
+            let (original, _) = cleanup
+                .declaration(&self.plan)
+                .expect("admitted cleanup retains its original Plan");
+            original != key
+        };
+        self.fiber.frame.root_cleanups.retain(retain);
         for entry in &mut self.fiber.frame.control_stack {
             if let FlowControlStackEntryKind::Scope { cleanups, .. } = &mut entry.kind {
-                cleanups.retain(|cleanup| cleanup.key != key);
+                cleanups.retain(retain);
             }
         }
     }
@@ -2143,8 +2148,13 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        let plan = Arc::clone(&self.plan);
         while let Some(cleanup) = cleanups.pop() {
-            self.emit_line_effect(cleanup.effect, output, pure_backend);
+            let Some((_, effect)) = cleanup.declaration(&plan) else {
+                self.fail_eval("native cleanup has no original registration", output);
+                return;
+            };
+            self.emit_line_effect(effect.clone(), output, pure_backend);
         }
     }
 }

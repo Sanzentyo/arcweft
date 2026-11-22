@@ -10,6 +10,31 @@ use crate::tests::function_application::returning_function_builder;
 
 mod choice;
 
+fn roundtrip_lexical_state(
+    mut image: crate::engine::NativeEngineRollbackImage,
+) -> crate::engine::NativeEngineRollbackImage {
+    for fiber in std::iter::once(&mut image.fiber)
+        .chain(image.parked_main.iter_mut())
+        .chain(&mut image.child_fibers)
+    {
+        let frame = &mut fiber.frame;
+        let encoded = serde_json::to_vec(&(
+            &frame.control_stack,
+            &frame.lexical_exit,
+            &frame.root_cleanups,
+            &frame.pending_ops,
+        ))
+        .unwrap();
+        (
+            frame.control_stack,
+            frame.lexical_exit,
+            frame.root_cleanups,
+            frame.pending_ops,
+        ) = serde_json::from_slice(&encoded).unwrap();
+    }
+    image
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OrdinaryFlowExit {
     End,
@@ -536,7 +561,7 @@ fn ordinary_native_flow_unwinds_defer_and_restores_its_exact_owner() {
                     None
                 }
             }));
-            let image = engine.inert_rollback_image().unwrap();
+            let image = roundtrip_lexical_state(engine.inert_rollback_image().unwrap());
             if image
                 .child_fibers
                 .iter()
@@ -643,7 +668,7 @@ fn ordinary_native_early_return_drains_the_reached_invocation_after_restore() {
                         _ => None,
                     }),
             );
-            let image = engine.inert_rollback_image().unwrap();
+            let image = roundtrip_lexical_state(engine.inert_rollback_image().unwrap());
             if !observed_return
                 && !image.child_fibers.is_empty()
                 && let Some(NativeLexicalExitAction::Return { result, .. }) = image
@@ -857,7 +882,7 @@ fn native_goto_finishes_inner_and_caller_cleanup_before_transferring() {
                 );
                 transferred = true;
             }
-            let image = engine.inert_rollback_image().unwrap();
+            let image = roundtrip_lexical_state(engine.inert_rollback_image().unwrap());
             if let Some(exit) = &image.fiber.frame.lexical_exit
                 && let NativeLexicalExitAction::Goto { transfer, .. } = &exit.action
             {

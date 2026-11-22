@@ -8,7 +8,7 @@ use super::work::{
 };
 use super::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberOwner, FlowFiberStatus,
-    FunctionCallFrame, FunctionReturnContinuation, NativeEngineRollbackImage,
+    FlowScopeCleanup, FunctionCallFrame, FunctionReturnContinuation, NativeEngineRollbackImage,
     NativeFlowExecutionFrame, NativeFormatAttemptFrame, NativeInvocationRoot, eval,
 };
 use crate::runtime_id::DialogueActivationId;
@@ -17,6 +17,25 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 mod await_state;
+
+impl FlowScopeCleanup {
+    pub(super) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        self.source.admit_retained(admission)?;
+        let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner().cloned()
+        else {
+            unreachable!("an admitted cleanup registration has its Plan owner")
+        };
+        let (key, _) = self.declaration(&plan).ok_or_else(|| {
+            crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "native cleanup has no original registration".into(),
+            }
+        })?;
+        admission.validate_metadata_string(key)
+    }
+}
 
 pub(super) trait NativeInvocationStatus {
     fn retires_invocation_scopes(&self) -> bool;
@@ -512,7 +531,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         admission.validate_metadata(&(self.line_cursor, self.presentation_bank))?;
         admission.validate_metadata_collection(self.root_cleanups.len())?;
         for cleanup in &self.root_cleanups {
-            admission.validate_metadata_string(&cleanup.key)?;
+            cleanup.admit_retained(admission)?;
         }
         admission.validate_metadata_collection(self.stream_states.len())?;
         admission.validate_metadata_collection(self.control_stack.len())?;
@@ -905,10 +924,15 @@ where
             Self::Scope {
                 match_guard,
                 defers,
+                cleanups,
                 ..
             } => {
                 if let Some(guard) = match_guard {
                     guard.admit_retained(admission)?;
+                }
+                admission.validate_metadata_collection(cleanups.len())?;
+                for cleanup in cleanups {
+                    cleanup.admit_retained(admission)?;
                 }
                 defers.admit_roots(admission, super::defer::NativeDeferScopeOwner::Control)
             }

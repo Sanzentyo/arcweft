@@ -10,7 +10,8 @@ use crate::engine::code_cursor::NativeSourceOperation;
 use crate::engine::work::{NativeRuntimeContinuation, NativeSourceRangeRole};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct NativeMatchGuardContinuation {
     source: NativeSourceOperation,
     next_arm: usize,

@@ -1,15 +1,16 @@
 use crate::{
     aot::AotProgram,
-    effect::LineEffectRequest,
-    engine::{Engine, FlowExit, FlowFiberStatus},
+    effect::{LineEffectRequest, RuntimeLog},
+    engine::{Engine, FlowControlStackEntryKind, FlowExit, FlowFiberStatus, NativeCodeCursor},
     executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor},
     pattern::RuntimeCheckedType,
     plan::{
         FlowRuntimeId, RuntimeDropPolicySeed, RuntimeEffectFieldSeed, RuntimeEffectSet,
         RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed, RuntimeExprSeed,
         RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
-        RuntimeFunctionDefinitionIdentity, RuntimeFunctionSiteDeclarationSeed, RuntimePlan,
-        RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        RuntimeFunctionDefinitionIdentity, RuntimeFunctionSiteDeclarationSeed,
+        RuntimeLineEffectSeed, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
+        RuntimePlanTypeSeed,
     },
     pure::VmRuntimePureCallBackend,
     root::RootEventInput,
@@ -165,6 +166,89 @@ fn aot_step_replenishes_the_same_bounded_task_allowance_as_native() {
     }
 }
 
+#[test]
+fn aot_cleanup_restores_original_registration_and_preserves_cancellation() {
+    let register = |key: &str| RuntimeFlowOpSeed::RegisterCleanup {
+        key: key.into(),
+        effect: RuntimeLineEffectSeed::Static(LineEffectRequest::Log(RuntimeLog {
+            level: "info".into(),
+            message: key.into(),
+            fields: Vec::new(),
+        })),
+    };
+    let (plan, flow) = log_plan(vec![
+        register("keep"),
+        register("cancel"),
+        RuntimeFlowOpSeed::CancelCleanup {
+            key: "cancel".into(),
+        },
+    ]);
+    let program = AotProgram::from_runtime_plan(&plan);
+    let mut engine = Engine::for_flow(plan.clone(), &flow).unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+    let options = budgets()[0];
+    let mut backend = VmRuntimePureCallBackend::default();
+    assert!(engine.can_start_aot_linear_step(&program, &RuntimeStepInput::default()));
+    let (result, fast) =
+        engine.step_prechecked_aot_linear_with_pure_backend(&program, options, &mut backend);
+    assert_eq!(fast, 1);
+    assert!(result.output.effects.line.is_empty());
+
+    let mut image = engine.inert_rollback_image().unwrap();
+    let wire = serde_json::to_vec(&(
+        &image.fiber.frame.control_stack,
+        &image.fiber.frame.root_cleanups,
+    ))
+    .unwrap();
+    (
+        image.fiber.frame.control_stack,
+        image.fiber.frame.root_cleanups,
+    ) = serde_json::from_slice(&wire).unwrap();
+    let mut foreign = image.clone();
+    let frame = &mut foreign.fiber.frame;
+    let cleanup = frame
+        .control_stack
+        .iter_mut()
+        .find_map(|entry| match entry {
+            FlowControlStackEntryKind::Scope { cleanups, .. } => cleanups.first_mut(),
+            _ => None,
+        })
+        .or_else(|| frame.root_cleanups.first_mut())
+        .unwrap();
+    let site = plan.flows()[0].function_site();
+    cleanup.source =
+        NativeCodeCursor::root(&plan, crate::plan::code::RuntimeCodeOwner::Function(site))
+            .unwrap()
+            .source_operation_at_offset(&plan, 2)
+            .unwrap();
+    assert!(
+        Engine::from_rollback_image(foreign, &owner)
+            .unwrap_err()
+            .contains("native cleanup has no original registration")
+    );
+
+    let mut restored = Engine::from_rollback_image(image, &owner).unwrap();
+    let mut effects = Vec::new();
+    for _ in 0..3 {
+        assert!(restored.can_start_aot_linear_step(&program, &RuntimeStepInput::default()));
+        let (result, fast) =
+            restored.step_prechecked_aot_linear_with_pure_backend(&program, options, &mut backend);
+        assert_eq!(fast, 1);
+        effects.extend(result.output.effects.line);
+    }
+    let (expected, status, fast) = compare_execution(&plan, &flow, options);
+    assert_eq!(
+        status,
+        FlowFiberStatus::Done(FlowExit::Return("done".into()))
+    );
+    assert_eq!(fast, 4);
+    assert_eq!(effects, expected);
+    let [LineEffectRequest::Log(log)] = effects.as_slice() else {
+        panic!("only the uncanceled cleanup should emit a log");
+    };
+    assert_eq!(log.message, "keep");
+}
+
 fn budgets() -> [RuntimeStepOptions; 3] {
     [
         (RuntimeStepMode::OneOp, 1),
@@ -244,6 +328,23 @@ fn string(value: &str) -> RuntimeExprSeed {
 }
 
 fn effect_plan(after_log: Option<RuntimeEvaluatedEffectSeed>) -> (RuntimePlan, FlowRuntimeId) {
+    let mut ops = vec![RuntimeFlowOpSeed::EvaluatedEffect(
+        RuntimeEvaluatedEffectSeed::Log {
+            level: "info".into(),
+            message: string("typed = \"quotes\""),
+            fields: vec![RuntimeEffectFieldSeed {
+                name: "payload".into(),
+                value: string("value = \"kept\""),
+            }],
+        },
+    )];
+    if let Some(effect) = after_log {
+        ops.push(RuntimeFlowOpSeed::EvaluatedEffect(effect));
+    }
+    log_plan(ops)
+}
+
+fn log_plan(mut ops: Vec<RuntimeFlowOpSeed>) -> (RuntimePlan, FlowRuntimeId) {
     let mut builder = RuntimePlanBuilder::new();
     let string_type = RuntimeCheckedType::String.semantic_identity_digest();
     builder
@@ -266,19 +367,6 @@ fn effect_plan(after_log: Option<RuntimeEvaluatedEffectSeed>) -> (RuntimePlan, F
         })
         .unwrap();
     let effects = RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::log_write()]).unwrap();
-    let mut ops = vec![RuntimeFlowOpSeed::EvaluatedEffect(
-        RuntimeEvaluatedEffectSeed::Log {
-            level: "info".into(),
-            message: string("typed = \"quotes\""),
-            fields: vec![RuntimeEffectFieldSeed {
-                name: "payload".into(),
-                value: string("value = \"kept\""),
-            }],
-        },
-    )];
-    if let Some(effect) = after_log {
-        ops.push(RuntimeFlowOpSeed::EvaluatedEffect(effect));
-    }
     ops.push(RuntimeFlowOpSeed::ReturnExpr(string("done")));
     builder
         .push_flow_seed(RuntimeFlowSeed::new(

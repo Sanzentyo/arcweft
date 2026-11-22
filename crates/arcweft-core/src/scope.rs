@@ -145,11 +145,15 @@ impl RuntimeScheduledScopeToken {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) enum RuntimeScopeFrameOrigin {
     EmittedLexical,
     Scheduled(RuntimeScheduledScopeToken),
-    FunctionBody(crate::runtime_id::RuntimeFunctionSiteId),
+    FunctionBody(
+        #[serde(with = "crate::plan::code::function_coordinate")]
+        crate::runtime_id::RuntimeFunctionSiteId,
+    ),
 }
 impl RuntimeScopeFrameOrigin {
     pub(crate) const fn token(self) -> Option<RuntimeScheduledScopeToken> {

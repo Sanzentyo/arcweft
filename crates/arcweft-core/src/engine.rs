@@ -1076,23 +1076,30 @@ pub struct FlowControlStackEntry {
 }
 
 /// One deterministic cleanup effect registered against a lexical flow scope.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct FlowScopeCleanup {
-    pub key: String,
-    pub effect: LineEffectRequest,
+    source: NativeSourceOperation,
 }
 
 impl FlowScopeCleanup {
-    pub fn new(key: impl Into<String>, effect: LineEffectRequest) -> Self {
-        Self {
-            key: key.into(),
-            effect,
+    fn declaration<'a>(&self, plan: &'a RuntimePlan) -> Option<(&'a str, &'a LineEffectRequest)> {
+        match self.source.operation(plan)? {
+            FlowOp::RegisterCleanup { key, effect } => Some((key, effect)),
+            _ => None,
         }
     }
 }
 
 /// Structured frame kind for the minimal flow executor.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage, Function: serde::Serialize, Format: serde::Serialize",
+        deserialize = "V: crate::value::InertRuntimeValueStorage, Function: serde::Deserialize<'de>, Format: serde::Deserialize<'de>"
+    )
+)]
 pub(crate) enum FlowControlStackEntryKind<
     Function = FunctionCallFrame,
     Format = NativeFormatAttemptFrame,
