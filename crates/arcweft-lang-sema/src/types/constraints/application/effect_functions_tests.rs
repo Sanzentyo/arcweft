@@ -666,17 +666,24 @@ fn an_application_row_can_be_stale_while_its_registered_function_is_still_live()
     first
         .validate_effect_functions(graph.read(), &mut context)
         .unwrap();
-    let result = context.start_path_with_imported(stale, None, original, graph.read());
-    assert!(matches!(
-        result,
-        Err(TypeConstraintError::Invariant(
-            TypeConstraintInvariant::PreparedEffect(
-                crate::effect_row::prepared::PreparedEffectFailure::Invariant(
-                    PreparedEffectInvariant::StaleReference,
-                )
-            ),
-        ))
-    ));
+    for result in [
+        first.require_original_opening(&stale, graph.read(), &mut context),
+        stale.require_original_opening(&first, graph.read(), &mut context),
+        context
+            .start_path_with_imported(stale, None, original, graph.read())
+            .map(|_| ()),
+    ] {
+        assert!(matches!(
+            result,
+            Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::PreparedEffect(
+                    crate::effect_row::prepared::PreparedEffectFailure::Invariant(
+                        PreparedEffectInvariant::StaleReference,
+                    )
+                ),
+            ))
+        ));
+    }
 }
 
 #[test]

@@ -253,6 +253,15 @@ fn binding_owners_keep_their_original_source_across_imports_and_equal_frame_shap
     .unwrap();
     assert!(owner.same_owner(&same));
     assert!(!owner.same_owner(&substituted));
+    owner
+        .require_original_opening(&same, effect_graph.read(), &mut context)
+        .unwrap();
+    assert!(matches!(
+        owner.require_original_opening(&substituted, effect_graph.read(), &mut context),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::OriginalProducer
+        ))
+    ));
     let root = context
         .start_path_with_imported(owner, None, original.clone(), effect_graph.read())
         .unwrap();

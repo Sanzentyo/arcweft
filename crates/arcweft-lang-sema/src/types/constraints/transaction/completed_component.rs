@@ -50,15 +50,11 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
         let mut ordered = BTreeMap::new();
         for application in source.applications.applications() {
             context.enter_node()?;
-            let owner = branch
+            branch
                 .applications
-                .require_application_owner(application.id())?;
-            if !Arc::ptr_eq(
-                owner,
-                source
-                    .applications
-                    .require_application_owner(application.id())?,
-            ) || ordered
+                .require_application(application.id())?
+                .require_original_opening(application, graph, context)?;
+            if ordered
                 .insert(application.application(), application.id())
                 .is_some()
             {

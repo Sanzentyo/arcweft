@@ -36,7 +36,7 @@ pub(crate) enum PreparedValueFailure {
     #[error(transparent)]
     Instantiation(#[from] TypeInstantiationError),
     #[error(transparent)]
-    Effect(#[from] PreparedEffectFailure<TypeConstraintError>),
+    Effect(PreparedEffectFailure<TypeConstraintError>),
     #[error("prepared value reference belongs to another component")]
     ForeignIssuer,
     #[error("prepared value reference is absent from its component")]
@@ -55,6 +55,15 @@ pub(crate) enum PreparedValueFailure {
     UseContext,
     #[error("prepared value ordinal overflow")]
     OrdinalOverflow,
+}
+
+impl From<PreparedEffectFailure<TypeConstraintError>> for PreparedValueFailure {
+    fn from(error: PreparedEffectFailure<TypeConstraintError>) -> Self {
+        match error {
+            PreparedEffectFailure::Control(error) => Self::Constraint(error),
+            error => Self::Effect(error),
+        }
+    }
 }
 
 #[derive(Debug)]

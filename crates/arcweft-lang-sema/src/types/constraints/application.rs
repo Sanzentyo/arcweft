@@ -397,6 +397,39 @@ impl<D: ConstraintDomain> ConstraintApplicationScope<D> {
         &self.original
     }
 
+    fn same_opening(&self, other: &Self) -> bool {
+        // The opening, its introduction scope, and the issued functions
+        // establish ownership of independently retained application rows.
+        self.application() == other.application()
+            && self.parameters() == other.parameters()
+            && self.introduction_scope() == other.introduction_scope()
+            && self.original_context() == other.original_context()
+            && self.effect_functions.len() == other.effect_functions.len()
+            && self
+                .effect_functions
+                .iter()
+                .zip(&other.effect_functions)
+                .all(|((left_key, left), (right_key, right))| {
+                    left_key == right_key && left.function() == right.function()
+                })
+    }
+
+    pub(super) fn require_original_opening<A: super::context::TypeConstraintAccounting>(
+        &self,
+        source: &Self,
+        graph: crate::effect_row::prepared::PreparedEffectReadView<'_>,
+        context: &mut super::context::TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), super::TypeConstraintError> {
+        if std::ptr::eq(self, source) {
+            return Ok(());
+        }
+        if !self.same_opening(source) {
+            return Err(TypeConstraintInvariant::OriginalProducer.into());
+        }
+        self.validate_effect_functions(graph, context)?;
+        source.validate_effect_functions(graph, context)
+    }
+
     pub(super) fn effect_function(
         &self,
         parameter: &GenericEffectReference,
@@ -506,23 +539,10 @@ impl<D: ConstraintDomain + 'static> ImportedApplicationScopeAuthority
     }
 
     fn same_owner(&self, other: &dyn ImportedApplicationScopeAuthority) -> bool {
-        // Application rows are derived allocation artifacts. The exact opening,
-        // Γ and issued function identities establish this owner. Each retained
-        // application row must independently pass live-reference validation.
-        other.as_any().downcast_ref::<Self>().is_some_and(|other| {
-            self.application() == other.application()
-                && self.parameters() == other.parameters()
-                && self.introduction_scope() == other.introduction_scope()
-                && self.original_context() == other.original_context()
-                && self.effect_functions.len() == other.effect_functions.len()
-                && self
-                    .effect_functions
-                    .iter()
-                    .zip(&other.effect_functions)
-                    .all(|((left_key, left), (right_key, right))| {
-                        left_key == right_key && left.function() == right.function()
-                    })
-        })
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .is_some_and(|other| self.same_opening(other))
     }
 
     fn admits(&self, parameter: &super::ConstraintGenericParameterId) -> bool {
