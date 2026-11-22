@@ -72,7 +72,7 @@ use super::expression_error::{
     AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionFactAuthority,
 };
 use super::state::{
-    ActiveProbeFactAttempt, CandidateFactOperationFailure, CandidateFactTransactionAction,
+    CandidateFactOperationFailure, CandidateFactTransactionAction,
     CandidateFactTransactionAuthority, CandidateFactTransactionOutcome,
 };
 
@@ -602,25 +602,16 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expectation: AnalyzerExpressionExpectation<'_>,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
-        self.evaluate_expression_with_probe_attempt(context, owner, expectation, None)
+        self.evaluate_expression_with_probe_transaction(context, owner, expectation, None)
     }
 
-    pub(super) fn evaluate_expression_with_probe_attempt(
+    pub(super) fn evaluate_expression_with_probe_transaction(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
         expectation: AnalyzerExpressionExpectation<'_>,
-        attempt: Option<&ActiveProbeFactAttempt>,
+        transaction: Option<&CandidateFactTransactionAuthority<'_>>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
-        let transaction = attempt
-            .map(|attempt| {
-                // Reads may use the caller's candidate cursor. Writes and
-                // their rollback belong to the active argument attempt.
-                self.facts
-                    .probe_fact_attempt_transaction(attempt)
-                    .map_err(AnalyzerExpressionError::fact)
-            })
-            .transpose()?;
         // Check the token domain before consulting candidate/published caches:
         // a prior string fact must not erase another parameter's family rule.
         if let Some(family) = expectation.public_id_reference_family() {
@@ -640,16 +631,10 @@ impl Analyzer<'_, '_, '_> {
             }
         }
         match self.cached_expression_fact(context, owner)? {
-            Some(checked) => self.evaluate_cached_expression(
-                context,
-                owner,
-                expectation,
-                checked,
-                transaction.as_ref(),
-            ),
-            None => {
-                self.evaluate_uncached_expression(context, owner, expectation, transaction.as_ref())
+            Some(checked) => {
+                self.evaluate_cached_expression(context, owner, expectation, checked, transaction)
             }
+            None => self.evaluate_uncached_expression(context, owner, expectation, transaction),
         }
     }
 

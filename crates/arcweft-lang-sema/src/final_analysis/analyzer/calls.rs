@@ -80,7 +80,7 @@ use super::expression_error::{
     PhysicalCallAttemptId,
 };
 use super::state::{
-    ActiveProbeFactAttempt, CandidateFactOperationFailure, CandidateFactTransactionAction,
+    CandidateFactOperationFailure, CandidateFactTransactionAction,
     CandidateFactTransactionAuthority, CandidateFactTransactionOutcome, PhysicalCallAttemptClose,
 };
 
@@ -5198,7 +5198,7 @@ impl Analyzer<'_, '_, '_> {
         source: AnalyzerCallConstraintSource,
         expectation: super::expressions::AnalyzerExpressionExpectation<'_>,
         source_admission: Option<&constraints::AnalyzerCallSourceAdmission>,
-        probe_attempt: Option<&ActiveProbeFactAttempt>,
+        probe_transaction: Option<&CandidateFactTransactionAuthority<'_>>,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
         match source {
             AnalyzerCallConstraintSource::BaseInstantiation
@@ -5251,7 +5251,7 @@ impl Analyzer<'_, '_, '_> {
                 expression,
                 expectation,
                 source_admission,
-                probe_attempt,
+                probe_transaction,
             ),
             AnalyzerCallConstraintSource::Receiver { source }
             | AnalyzerCallConstraintSource::Result { source } => {
@@ -5260,11 +5260,11 @@ impl Analyzer<'_, '_, '_> {
                         FinalSemanticAnalysisError::WrongPayloadFamily,
                     ));
                 }
-                self.evaluate_expression_with_probe_attempt(
+                self.evaluate_expression_with_probe_transaction(
                     context,
                     source,
                     expectation,
-                    probe_attempt,
+                    probe_transaction,
                 )
             }
         }
@@ -5280,16 +5280,16 @@ impl Analyzer<'_, '_, '_> {
         expression: ExprId,
         expectation: super::expressions::AnalyzerExpressionExpectation<'_>,
         admission: Option<&constraints::AnalyzerCallSourceAdmission>,
-        probe_attempt: Option<&ActiveProbeFactAttempt>,
+        probe_transaction: Option<&CandidateFactTransactionAuthority<'_>>,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
         let Some(constraints::AnalyzerCallSourceAdmission::CompileTimeScalar(admission)) =
             admission
         else {
-            return self.evaluate_expression_with_probe_attempt(
+            return self.evaluate_expression_with_probe_transaction(
                 context,
                 expression,
                 expectation,
-                probe_attempt,
+                probe_transaction,
             );
         };
         let exact_type = self

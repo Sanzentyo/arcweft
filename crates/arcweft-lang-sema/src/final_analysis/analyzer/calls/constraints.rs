@@ -1312,15 +1312,22 @@ struct AnalyzerCallActiveFactScope {
     coordinate: AnalyzerCallScopeCoordinate,
 }
 
+#[derive(Clone, Copy)]
+enum ProbeAttemptPosition {
+    BeforeAlternative,
+    Last,
+}
+
 enum AnalyzerSourceCheckScope<'a> {
-    Probe(&'a ActiveProbeFactAttempt),
+    ProbeAlternative(&'a ActiveProbeFactAttempt),
+    FinalProbe,
     Materialize,
 }
 
 impl AnalyzerSourceCheckScope<'_> {
     fn phase(&self) -> SourcePhase {
         match self {
-            Self::Probe(_) => SourcePhase::Probe,
+            Self::ProbeAlternative(_) | Self::FinalProbe => SourcePhase::Probe,
             Self::Materialize => SourcePhase::Materialize,
         }
     }
@@ -1666,6 +1673,7 @@ impl<'a, 'project, 'catalog, 'control>
     fn check_probe_attempt(
         &mut self,
         source_id: AnalyzerCallConstraintSourceId,
+        position: ProbeAttemptPosition,
         work: &mut crate::callable::CandidateConstraintWorkLoan<'_>,
         evaluate: impl FnOnce(
             &mut Self,
@@ -1687,22 +1695,37 @@ impl<'a, 'project, 'catalog, 'control>
         };
         self.active_source_check(source_id, SourcePhase::Probe)
             .map_err(SourceCallbackFailure::invariant)?;
-        let parent = &self
-            .active_fact_scope
-            .as_ref()
-            .expect("checked probe scope")
-            .scope;
-        let attempt = self
-            .analyzer
-            .facts
-            .open_probe_fact_attempt(parent, work)
-            .map_err(|failure| match failure {
-                CandidateFactMutationFailure::Control(error) => {
-                    SourceCallbackFailure::Constraint(error)
-                }
-                CandidateFactMutationFailure::Invariant(violation) => fact_failure(violation),
-            })?;
-        let checked = evaluate(self, AnalyzerSourceCheckScope::Probe(&attempt));
+        let attempt = match position {
+            ProbeAttemptPosition::BeforeAlternative => {
+                let parent = &self
+                    .active_fact_scope
+                    .as_ref()
+                    .expect("checked probe scope")
+                    .scope;
+                Some(
+                    self.analyzer
+                        .facts
+                        .open_probe_fact_attempt(parent, work)
+                        .map_err(|failure| match failure {
+                            CandidateFactMutationFailure::Control(error) => {
+                                SourceCallbackFailure::Constraint(error)
+                            }
+                            CandidateFactMutationFailure::Invariant(violation) => {
+                                fact_failure(violation)
+                            }
+                        })?,
+                )
+            }
+            ProbeAttemptPosition::Last => {
+                work.check().map_err(SourceCallbackFailure::Constraint)?;
+                None
+            }
+        };
+        let scope = attempt.as_ref().map_or(
+            AnalyzerSourceCheckScope::FinalProbe,
+            AnalyzerSourceCheckScope::ProbeAlternative,
+        );
+        let checked = evaluate(self, scope);
         let selected = checked
             .as_ref()
             .is_ok_and(|checked| accepts(&checked.evidence));
@@ -1726,15 +1749,19 @@ impl<'a, 'project, 'catalog, 'control>
         } else {
             Ok(None)
         };
-        let disposition = if selected {
-            ProbeCheckpointDisposition::Retain
-        } else {
-            ProbeCheckpointDisposition::Discard
-        };
-        self.analyzer
-            .facts
-            .close_probe_fact_attempt(attempt, disposition)
-            .map_err(fact_failure)?;
+        // The callable driver closes the enclosing checkpoint after the
+        // final attempt and observation, including rejection and failure.
+        if let Some(attempt) = attempt {
+            let disposition = if selected {
+                ProbeCheckpointDisposition::Retain
+            } else {
+                ProbeCheckpointDisposition::Discard
+            };
+            self.analyzer
+                .facts
+                .close_probe_fact_attempt(attempt, disposition)
+                .map_err(fact_failure)?;
+        }
         match checked {
             Ok(checked) if selected => Ok(AnalyzerSourceProbeAttempt::Selected(checked)),
             Ok(checked) => {
@@ -1960,22 +1987,26 @@ impl<'a, 'project, 'catalog, 'control>
                 crate::final_analysis::CandidateFactTransactionViolation::StaleCheckpoint,
             ))
         })?;
-        let probe_attempt = match check_scope {
-            AnalyzerSourceCheckScope::Probe(attempt) => Some(attempt),
-            AnalyzerSourceCheckScope::Materialize => None,
-        };
-        let authority = match probe_attempt {
-            Some(attempt) => self.analyzer.facts.probe_fact_attempt_authority(attempt),
-            None => self.analyzer.facts.callback_fact_authority(&scope.scope),
-        }
-        .map_err(|violation| {
+        let fact_failure = |violation| {
             AnalyzerCallCheckFailure::Invariant(AnalyzerCallClientInvariant::fact_transaction(
                 source, violation,
             ))
-        })?;
+        };
+        let authority = match check_scope {
+            AnalyzerSourceCheckScope::ProbeAlternative(attempt) => {
+                self.analyzer.facts.probe_fact_attempt_authority(attempt)
+            }
+            AnalyzerSourceCheckScope::FinalProbe => {
+                self.analyzer.facts.final_probe_fact_authority(&scope.scope)
+            }
+            AnalyzerSourceCheckScope::Materialize => {
+                self.analyzer.facts.callback_fact_authority(&scope.scope)
+            }
+        }
+        .map_err(fact_failure)?;
         let child_context = self
             .context
-            .child_candidate(authority)
+            .child_candidate(authority.reborrow())
             .with_work(preparation_work);
         let selected_candidate = application_context
             .map(|recipe| &recipe.candidate)
@@ -2172,12 +2203,16 @@ impl<'a, 'project, 'catalog, 'control>
         let callback_target = (phase == SourcePhase::Probe && parent_probe.is_some())
             .then(|| expectation.function_value_target())
             .flatten();
+        let transaction = (phase == SourcePhase::Probe)
+            .then(|| self.analyzer.facts.expression_transaction(&authority))
+            .transpose()
+            .map_err(fact_failure)?;
         let result = self.analyzer.evaluate_call_constraint_source(
             &child_context,
             source,
             expectation,
             source_admission,
-            probe_attempt,
+            transaction.as_ref(),
         );
         match result {
             Ok(checked) => {
@@ -2628,6 +2663,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 };
                 let attempt = self.check_probe_attempt(
                     source_id,
+                    ProbeAttemptPosition::BeforeAlternative,
                     &mut attempt_work,
                     |client, scope| {
                         let checked = client.check_source(
@@ -2660,6 +2696,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 ExpectedHint::Unchecked => {
                     let attempt = self.check_probe_attempt(
                         source_id,
+                        ProbeAttemptPosition::Last,
                         &mut attempt_work,
                         |client, scope| {
                             client.check_source(
@@ -2684,7 +2721,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     }
                 }
                 ExpectedHint::Alternatives(alternatives) => {
-                    for alternative in alternatives {
+                    for (index, alternative) in alternatives.iter().enumerate() {
                         let expectation = match *alternative.value_expected() {
                             ProjectedExpectedHint::Complete(expected)
                                 if alternative.source_projection().is_scalar() =>
@@ -2717,8 +2754,14 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                                 AnalyzerExpressionExpectation::Unconstrained
                             }
                         };
+                        let position = if index + 1 == alternatives.len() {
+                            ProbeAttemptPosition::Last
+                        } else {
+                            ProbeAttemptPosition::BeforeAlternative
+                        };
                         let attempt = self.check_probe_attempt(
                             source_id,
+                            position,
                             &mut attempt_work,
                             |client, scope| {
                                 client.check_source(
@@ -8075,9 +8118,10 @@ mod tests {
         let source = crate::types::constraints::test_support::source_id(
             AnalyzerCallConstraintSource::Result { source: owner },
         );
-        for disposition in [
-            ProbeCheckpointDisposition::Retain,
-            ProbeCheckpointDisposition::Discard,
+        for (accepts_last, disposition) in [
+            (true, ProbeCheckpointDisposition::Retain),
+            (true, ProbeCheckpointDisposition::Discard),
+            (false, ProbeCheckpointDisposition::Discard),
         ] {
             let checkpoint = AnalyzerCallConstraintOperations::open_probe_checkpoint(
                 &mut client,
@@ -8109,9 +8153,10 @@ mod tests {
             let attempted = client
                 .check_probe_attempt(
                     source,
+                    ProbeAttemptPosition::BeforeAlternative,
                     &mut attempt_work,
                     |client, scope| {
-                        let AnalyzerSourceCheckScope::Probe(attempt) = scope else {
+                        let AnalyzerSourceCheckScope::ProbeAlternative(attempt) = scope else {
                             panic!("the trial ran in the probe phase");
                         };
                         let attempt_physical = client
@@ -8172,11 +8217,34 @@ mod tests {
                     .is_err()
             );
 
-            let selected = client
+            let mut final_row = None;
+            let last = client
                 .check_probe_attempt(
                     source,
+                    ProbeAttemptPosition::Last,
                     &mut attempt_work,
                     |client, scope| {
+                        assert!(matches!(scope, AnalyzerSourceCheckScope::FinalProbe));
+                        if disposition == ProbeCheckpointDisposition::Discard {
+                            let (graph, _) = client
+                                .analyzer
+                                .facts
+                                .effect_declarations_mut()
+                                .unwrap()
+                                .relation();
+                            let declared = graph
+                                .declare(
+                                    vec![],
+                                    crate::effect_row::EffectPredicate::unconstrained(),
+                                    &mut declaration_work,
+                                )
+                                .unwrap();
+                            final_row = Some(
+                                graph
+                                    .application(&declared, vec![], &mut declaration_work)
+                                    .unwrap(),
+                            );
+                        }
                         client.check_source(
                             source,
                             AnalyzerExpressionExpectation::from_complete(Some(&TypeKind::I64)),
@@ -8187,19 +8255,20 @@ mod tests {
                             None,
                         )
                     },
-                    |_| true,
+                    |_| accepts_last,
                 )
-                .unwrap_or_else(|_| panic!("evaluate the selected source expression"));
-            let AnalyzerSourceProbeAttempt::Selected(observed) = selected else {
-                panic!("the second alternative is selected");
-            };
-            assert_eq!(
-                observed
-                    .actual
-                    .as_deref()
-                    .map(AnalyzerObservedSourceValue::actual),
-                Some(&TypeKind::I64)
-            );
+                .unwrap_or_else(|_| panic!("evaluate the last source alternative"));
+            match last {
+                AnalyzerSourceProbeAttempt::Selected(observed) if accepts_last => assert_eq!(
+                    observed
+                        .actual
+                        .as_deref()
+                        .map(AnalyzerObservedSourceValue::actual),
+                    Some(&TypeKind::I64)
+                ),
+                AnalyzerSourceProbeAttempt::Rejected(None) if !accepts_last => {}
+                _ => panic!("the last alternative returns its actual disposition"),
+            }
             let original = client
                 .analyzer
                 .facts
@@ -8285,7 +8354,11 @@ mod tests {
                     ));
                     assert_eq!(transferred, &original);
                 }
-                ProbeCheckpointDisposition::Discard => assert!(preparation.is_none()),
+                ProbeCheckpointDisposition::Discard => {
+                    assert!(preparation.is_none());
+                    let outside = client.analyzer.facts.effect_declarations().unwrap().read();
+                    assert!(outside.validate_retained_row(&final_row.unwrap()).is_err());
+                }
             }
         }
         assert!(client.active_fact_scope.is_none());

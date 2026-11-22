@@ -1017,8 +1017,9 @@ impl SemanticFactState {
         control: &mut C,
     ) -> Result<ActiveProbeFactAttempt, CandidateFactMutationFailure<C::Error>> {
         self.transaction_authority(&probe.checkpoint)?;
-        // Each alternative gets its own fact visibility cursor. Physical
-        // accounting still belongs to the enclosing source probe.
+        // A trial followed by another alternative must undo its writes
+        // before that alternative can run. Physical accounting stays with
+        // the enclosing source probe.
         let physical_checkpoint = probe.checkpoint.id;
         let checkpoint = self.begin_candidate_transaction(control)?;
         Ok(ActiveProbeFactAttempt {
@@ -1036,11 +1037,25 @@ impl SemanticFactState {
         Ok(authority)
     }
 
-    pub(super) fn probe_fact_attempt_transaction<'a>(
+    /// The final trial closes with its probe. It still starts at a fresh
+    /// visibility cursor so it cannot reuse facts written before this trial.
+    pub(super) fn final_probe_fact_authority<'a>(
         &self,
-        attempt: &'a ActiveProbeFactAttempt,
+        probe: &'a ActiveCallbackFactScope,
+    ) -> Result<CandidateExpressionFactAuthority<'a>, CandidateFactTransactionViolation> {
+        self.transaction_authority(&probe.checkpoint)?;
+        Ok(CandidateExpressionFactAuthority {
+            checkpoint: &probe.checkpoint,
+            visibility: self.candidate_journal_cursor(),
+            physical_checkpoint: probe.checkpoint.id,
+        })
+    }
+
+    pub(super) fn expression_transaction<'a>(
+        &self,
+        authority: &CandidateExpressionFactAuthority<'a>,
     ) -> Result<CandidateFactTransactionAuthority<'a>, CandidateFactTransactionViolation> {
-        self.transaction_authority(&attempt.checkpoint)
+        self.transaction_authority(authority.checkpoint)
     }
 
     pub(super) fn close_probe_fact_attempt(
@@ -1969,10 +1984,7 @@ impl SemanticFactState {
         let checkpoint = CandidateFactCheckpoint {
             issuer: Arc::clone(&self.issuer),
             id,
-            journal_start: CandidateFactJournalCursor {
-                mutations: self.candidate_journal.len(),
-                source_type_decisions: self.source_type_decisions.len(),
-            },
+            journal_start: self.candidate_journal_cursor(),
             epoch: self.epoch,
             graph,
         };
@@ -3014,6 +3026,13 @@ impl SemanticFactState {
                     previous,
                     order_index: order_index.expect("present capture has an order index"),
                 });
+        }
+    }
+
+    fn candidate_journal_cursor(&self) -> CandidateFactJournalCursor {
+        CandidateFactJournalCursor {
+            mutations: self.candidate_journal.len(),
+            source_type_decisions: self.source_type_decisions.len(),
         }
     }
 
@@ -4081,6 +4100,55 @@ mod tests {
         ));
         assert!(state.rollback_candidate_transaction(inner).is_ok());
         assert!(state.rollback_candidate_transaction(outer).is_ok());
+    }
+
+    #[test]
+    fn final_probe_has_fresh_fact_visibility_with_the_original_physical_owner() {
+        use crate::final_analysis::{
+            CheckedExpressionResolution, CheckedTypeSelection, prepared::PreparedResolvedExpression,
+        };
+
+        let (owner, _, _) = call_identity();
+        let mut state = SemanticFactState::new();
+        let probe = state.open_callback_fact_scope(None, &mut work()).unwrap();
+        let observed = |ty| {
+            PreparedResolvedExpression::value(
+                ty,
+                CheckedTypeSelection::Inferred,
+                crate::effects::EffectSet::new(),
+                CheckedExpressionResolution::Structural,
+            )
+        };
+        state
+            .publish_new_expression(owner, observed(TypeKind::I64))
+            .unwrap();
+        let enclosing = state.callback_fact_authority(&probe).unwrap();
+        let last = state.final_probe_fact_authority(&probe).unwrap();
+        assert!(
+            enclosing
+                .physical_attempt_context()
+                .same_issued_context(&last.physical_attempt_context())
+        );
+        assert!(
+            state
+                .candidate_expression(&enclosing, owner)
+                .unwrap()
+                .is_some()
+        );
+        assert!(state.candidate_expression(&last, owner).unwrap().is_none());
+        state
+            .replace_contextual_expression(owner, observed(TypeKind::U64))
+            .unwrap();
+        assert_eq!(
+            state
+                .candidate_expression(&last, owner)
+                .unwrap()
+                .as_ref()
+                .and_then(PreparedExpressionFact::value_type),
+            Some(&TypeKind::U64),
+        );
+        assert!(state.rollback_callback_fact_scope(probe).is_ok());
+        assert!(!state.expressions().contains_key(&owner));
     }
 
     #[test]
