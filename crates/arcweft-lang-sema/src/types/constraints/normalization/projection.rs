@@ -46,6 +46,16 @@ impl<'ty, D: ConstraintDomain> ConstraintProjectionView<'ty, D> {
         graph: PreparedEffectReadView<'_>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<(), TypeConstraintError> {
+        self.admit_operand_structure(input, graph, false, context)
+    }
+
+    pub(in crate::types) fn admit_operand_structure<A: TypeConstraintAccounting>(
+        self,
+        input: ConstraintOperandView<'ty, D>,
+        graph: PreparedEffectReadView<'_>,
+        allow_omitted_effects: bool,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
         if input.value().constraint_shape().is_closed_leaf() {
             return context.check_cancelled();
         }
@@ -57,7 +67,9 @@ impl<'ty, D: ConstraintDomain> ConstraintProjectionView<'ty, D> {
             project_type_fold::<A, D, AdmitOrigins>(
                 input,
                 self,
-                ConstraintClosurePolicy::Validation,
+                ConstraintClosurePolicy::Validation {
+                    allow_omitted_effects,
+                },
                 &mut ConstraintProjectionPhase::Admission(graph),
                 context,
                 &mut BTreeSet::new(),
@@ -107,7 +119,9 @@ pub(super) fn validate_type_structure<A: TypeConstraintAccounting, D: Constraint
     project_type_fold::<A, D, InspectValues>(
         ty,
         view,
-        ConstraintClosurePolicy::Validation,
+        ConstraintClosurePolicy::Validation {
+            allow_omitted_effects: false,
+        },
         &mut ConstraintProjectionPhase::Admission(graph),
         context,
         &mut BTreeSet::new(),
@@ -432,7 +446,7 @@ where
                             ))
                         },
                     )?;
-                    if !matches!(policy, ConstraintClosurePolicy::Validation)
+                    if !matches!(policy, ConstraintClosurePolicy::Validation { .. })
                         && let Some(bound) = view.binding(parameter)?
                     {
                         if visiting.insert(parameter.clone()) {
@@ -447,7 +461,7 @@ where
                             continue;
                         }
                         match policy {
-                            ConstraintClosurePolicy::Validation
+                            ConstraintClosurePolicy::Validation { .. }
                             | ConstraintClosurePolicy::Hint
                             | ConstraintClosurePolicy::ResultAnnotation => {
                                 remaining
@@ -527,7 +541,8 @@ where
                         )?;
                         // Scope admission is not a decision about a live row or
                         // predicate. The original relation closes them jointly.
-                        // Preserve the existing authored-unknown policy only.
+                        // An admitted annotation may carry shape while its
+                        // effects are still supplied by a later operation.
                         if let crate::effect_row::prepared::PreparedEffectRow::Canonical(row) =
                             effects
                             && !row.is_known()
@@ -535,6 +550,9 @@ where
                                 policy,
                                 ConstraintClosurePolicy::ProjectionFuture
                                     | ConstraintClosurePolicy::ResultAnnotation
+                                    | ConstraintClosurePolicy::Validation {
+                                        allow_omitted_effects: true
+                                    }
                             )
                         {
                             context.validate_effect_row(row, view)?;
@@ -642,7 +660,7 @@ fn allows_unbound_type(
     eligibility: TypeConstraintParameterEligibility,
 ) -> bool {
     match policy {
-        ConstraintClosurePolicy::Validation
+        ConstraintClosurePolicy::Validation { .. }
         | ConstraintClosurePolicy::Hint
         | ConstraintClosurePolicy::ResultAnnotation => true,
         ConstraintClosurePolicy::ProjectionClosed => {
@@ -704,12 +722,12 @@ where
                                 },
                             ))
                         })?;
-                    if !matches!(policy, ConstraintClosurePolicy::Validation)
+                    if !matches!(policy, ConstraintClosurePolicy::Validation { .. })
                         && let Some(bound) = view.const_binding(parameter)?
                     {
                         if !visiting.insert(parameter.clone()) {
                             return match policy {
-                                ConstraintClosurePolicy::Validation
+                                ConstraintClosurePolicy::Validation { .. }
                                 | ConstraintClosurePolicy::Hint
                                 | ConstraintClosurePolicy::ResultAnnotation => {
                                     remaining.insert(RemainingConstraintParameter(
@@ -775,7 +793,7 @@ fn allows_unbound_const(
     eligibility: TypeConstraintConstEligibility,
 ) -> bool {
     match policy {
-        ConstraintClosurePolicy::Validation
+        ConstraintClosurePolicy::Validation { .. }
         | ConstraintClosurePolicy::Hint
         | ConstraintClosurePolicy::ResultAnnotation => true,
         ConstraintClosurePolicy::ProjectionClosed => {

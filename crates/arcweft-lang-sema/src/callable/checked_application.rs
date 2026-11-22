@@ -746,25 +746,11 @@ impl ResolvedCallableBase {
                 });
             }
         };
-        self.schema()
-            .project_function_type_from_group(
-                self.base_call_group(),
-                effects,
-                || {
-                    result_schema
-                        .unwrap_or_else(|| self.schema().result_schema())
-                        .value_type()
-                        .cloned()
-                        .ok_or(CallConstraintInvariant::PreparedSchemaMismatch)
-                },
-                |_, parameter| {
-                    parameter
-                        .declared_type()
-                        .cloned()
-                        .ok_or(CallConstraintInvariant::MalformedSchemaInventory)
-                },
-            )
-            .map_err(CallConstraintInvariant::from)
+        self.schema().function_type_from_position(
+            CallableParameterCoordinate::group_start(self.base_call_group()),
+            effects,
+            result_schema.unwrap_or_else(|| self.schema().result_schema()),
+        )
     }
 
     /// Formal parameter type projected by this exact checked callable owner.
@@ -787,8 +773,9 @@ impl ResolvedCallableBase {
         terminal_effects: &EffectRow,
         inferred_result_schema: Option<&CallableResultSchema>,
     ) -> Result<CallableResultSchema, CallConstraintInvariant> {
+        let result = inferred_result_schema.unwrap_or_else(|| self.schema().result_schema());
         match transition.remaining_position() {
-            None => match inferred_result_schema.unwrap_or_else(|| self.schema().result_schema()) {
+            None => match result {
                 CallableResultSchema::Value(result) => solution
                     .instantiate_result(result)
                     .map(CallableResultSchema::Value),
@@ -798,7 +785,7 @@ impl ResolvedCallableBase {
             },
             Some(next) => self
                 .schema()
-                .declared_function_type_from_position(next, terminal_effects)
+                .function_type_from_position(next, terminal_effects, result)
                 .and_then(|result| solution.instantiate_result(&result))
                 .map(CallableResultSchema::Value),
         }

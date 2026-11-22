@@ -516,9 +516,10 @@ impl CallableSignatureSchema {
         first_group: CallableGroupIndex,
         terminal_effects: &EffectRow,
     ) -> Result<TypeKind, crate::callable::CallConstraintInvariant> {
-        self.declared_function_type_from_position(
+        self.function_type_from_position(
             CallableParameterCoordinate::group_start(first_group),
             terminal_effects,
+            self.result_schema(),
         )
     }
 
@@ -532,16 +533,20 @@ impl CallableSignatureSchema {
         self.quantify_function_value(&ty).map_err(Into::into)
     }
 
-    pub(crate) fn declared_function_type_from_position(
+    /// Project the remaining arrows with the result from the same terminal
+    /// interface as the invocation effects.
+    pub(crate) fn function_type_from_position(
         &self,
         position: CallableParameterCoordinate,
         terminal_effects: &EffectRow,
+        result_schema: &super::CallableResultSchema,
     ) -> Result<TypeKind, crate::callable::CallConstraintInvariant> {
         self.project_function_type_from_position(
             position,
             terminal_effects,
             || {
-                self.value_type()
+                result_schema
+                    .value_type()
                     .cloned()
                     .ok_or(crate::callable::CallConstraintInvariant::MalformedSchemaInventory)
             },

@@ -518,6 +518,36 @@ flow main() -> i64 {{ return relay(40i64, read_marker, write_marker) }}
 }
 
 #[test]
+fn a_staged_callable_can_return_the_callers_inferred_callback() {
+    for binding in [
+        "let result = deliver(value)(second)",
+        "let pending = deliver(value)\n    let result = pending(second)",
+        "let result: i64 -> i64 = deliver(value)(second)",
+        "let pending = deliver(value)\n    let result: i64 -> i64 = pending(second)",
+    ] {
+        let source = format!(
+            r"
+fn deliver(seed: i64)(callback: i64 -> i64) -> (i64 -> i64) {{ callback }}
+fn read_marker(value: i64) -> i64 effects {{ fs.read }} {{ value + 1i64 }}
+fn write_marker(value: i64) -> i64 effects {{ fs.write }} {{ value + 1i64 }}
+fn relay(seed: i64, first: i64 -> i64, second: i64 -> i64) -> i64 {{
+    let value = first(seed)
+    {binding}
+    result(value)
+}}
+flow main() -> i64 {{ return relay(40i64, read_marker, write_marker) }}
+",
+        );
+        let analysis =
+            analyze(&fixture(&source, None)).unwrap_or_else(|error| panic!("{binding}: {error:?}"));
+        assert_eq!(
+            application_rows(&analysis, "relay"),
+            [vec!["fs.read", "fs.write"]]
+        );
+    }
+}
+
+#[test]
 fn one_recursive_declaration_propagates_three_rotating_callback_rows() {
     let fixture = fixture(
         r"

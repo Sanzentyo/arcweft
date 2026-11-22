@@ -705,13 +705,14 @@ where
         }
     }
 
-    pub(crate) fn infer_from_next_invocation_input(
+    pub(crate) fn infer_from_next_invocation(
         &mut self,
         pattern: &TypeKind<PreparedEffects>,
         actual: &TypeKind<PreparedEffects>,
+        acceptance: ConstraintAcceptance,
     ) {
         if let Err(error) = self.with_effect_relation(|lower, context, effects| {
-            lower.infer_from_next_invocation_input(context, effects, pattern, actual);
+            lower.infer_from_next_invocation(context, effects, pattern, actual, acceptance);
         }) {
             self.lower.record_failure(error);
         }

@@ -114,7 +114,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             })?;
         }
         for equation in &self.equations {
-            if equation.is_next_invocation_input() {
+            if equation.is_next_invocation() {
                 // A preview contributes through the bindings it inferred.
                 // The next invocation owns the original effect operands.
                 continue;

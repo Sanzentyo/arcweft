@@ -8210,7 +8210,7 @@ fn runtime_executable_semantic_facts<'abi>(
     let type_projection = lexical.type_projection(
         origin,
         &partition,
-        executable_types::source_type_abis(module, origin, source_type_abis)?,
+        (module, source_type_abis),
         symbols,
         world,
         analysis,

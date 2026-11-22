@@ -777,7 +777,6 @@ pub(crate) struct PreparedChildCandidateRun {
 pub(crate) enum AnalyzerCallProjection {
     BaseInstantiation,
     Result,
-    NextInvocationResult,
     Future(GenericTypeReference),
 }
 
@@ -3683,16 +3682,30 @@ impl PreparedCallOutputProjections<'_> {
         } = &self.result
         {
             if let Some((pattern, actual)) = next_parameters {
-                driver.infer_from_next_invocation_input(pattern, actual);
-            }
-            if let Some(expected) = expected
-                && !expected.uses_function_value()
-            {
-                driver.constrain_result(
-                    expected.pattern(ty),
-                    expected.expected,
-                    ConstraintAcceptance::ActualAcceptsPattern,
+                driver.infer_from_next_invocation(
+                    pattern,
+                    actual,
+                    ConstraintAcceptance::PatternAcceptsActual,
                 );
+            }
+            if let Some(expected) = expected {
+                match expected.target {
+                    PreparedCallResultTarget::Whole if !expected.uses_function_value() => {
+                        driver.constrain_result(
+                            ty,
+                            expected.expected,
+                            ConstraintAcceptance::ActualAcceptsPattern,
+                        );
+                    }
+                    PreparedCallResultTarget::Whole => {}
+                    PreparedCallResultTarget::NextInvocation => {
+                        driver.infer_from_next_invocation(
+                            expected.pattern(ty),
+                            expected.expected,
+                            ConstraintAcceptance::ActualAcceptsPattern,
+                        );
+                    }
+                }
             }
         }
     }
@@ -3720,17 +3733,6 @@ impl PreparedCallOutputProjections<'_> {
                 .filter(|expected| expected.compare_exact)
                 .map(|expected| expected.expected);
             visit(AnalyzerCallProjection::Result, ty, self.closure, rank_input);
-            if let Some(expected) = expected
-                && matches!(expected.target, PreparedCallResultTarget::NextInvocation)
-                && expected.uses_function_value()
-            {
-                visit(
-                    AnalyzerCallProjection::NextInvocationResult,
-                    expected.pattern(ty),
-                    self.closure,
-                    None,
-                );
-            }
         }
         for parameter in &self.future_parameters {
             visit(
@@ -3769,17 +3771,12 @@ impl PreparedCallOutputProjections<'_> {
             expected: Some(expected),
             ..
         } = &self.result
+            && matches!(expected.target, PreparedCallResultTarget::Whole)
             && expected.uses_function_value()
         {
-            let key = match expected.target {
-                PreparedCallResultTarget::Whole => AnalyzerCallProjection::Result,
-                PreparedCallResultTarget::NextInvocation => {
-                    AnalyzerCallProjection::NextInvocationResult
-                }
-            };
             driver.constrain_function_result_use(
                 CallableConstraintApplication::Specialize(application),
-                key,
+                AnalyzerCallProjection::Result,
                 expected.expected,
                 enclosing,
                 limits,

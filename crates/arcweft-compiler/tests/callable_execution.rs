@@ -785,6 +785,25 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    returned_callback_completes_its_annotated_runtime_type,
+    r"
+fn deliver(seed: i64)(callback: i64 -> i64) -> (i64 -> i64) { callback }
+fn forward(seed: i64, callback: i64 -> i64) -> (i64 -> i64) { callback }
+fn read_marker(value: i64) -> i64 effects { fs.read } { value + 1i64 }
+fn write_marker(value: i64) -> i64 effects { fs.write } { value + 1i64 }
+fn relay(seed: i64, first: i64 -> i64, second: i64 -> i64) -> i64 {
+    let value = first(seed)
+    let staged: i64 -> i64 = deliver(value)(second)
+    let ordinary: i64 -> i64 = forward(value, staged)
+    ordinary(value)
+}
+flow main() -> i64 { return relay(40i64, read_marker, write_marker) }
+",
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     curried_function_value_retains_a_prefix_between_later_groups,
     r#"
 fn invoke(seed: i64)(left: i64, right: i64)(callback: i64 -> i64) -> i64 {

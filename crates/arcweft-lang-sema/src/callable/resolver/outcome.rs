@@ -100,9 +100,13 @@ impl PreparedResolvedCallableDefinition {
         &self,
         start: CallableGroupIndex,
         effects: &crate::effect_row::EffectRow,
+        result_schema: Option<&CallableResultSchema>,
     ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
-        self.schema()
-            .declared_function_type_from_group(start, effects)
+        self.schema().function_type_from_position(
+            CallableParameterCoordinate::group_start(start),
+            effects,
+            result_schema.unwrap_or_else(|| self.schema().result_schema()),
+        )
     }
 
     fn complete_group(
@@ -131,9 +135,16 @@ impl PreparedResolvedCallableDefinition {
             ));
         };
         match terminal_effects {
-            CallableTerminalEffectProjection::Known { effects, .. } => self
+            CallableTerminalEffectProjection::Known {
+                effects,
+                result_schema,
+            } => self
                 .schema()
-                .declared_function_type_from_position(next, effects)
+                .function_type_from_position(
+                    next,
+                    effects,
+                    result_schema.unwrap_or_else(|| self.schema().result_schema()),
+                )
                 .map(CallableResultSchema::Value)
                 .map(CallableProjection::Ready),
             CallableTerminalEffectProjection::Pending(checked) => {
@@ -877,7 +888,7 @@ impl PreparedResolvedCallable {
         effects: &crate::effect_row::EffectRow,
     ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
         self.definition
-            .projected_function_type_from_group(self.base_call_group(), effects)
+            .projected_function_type_from_group(self.base_call_group(), effects, None)
     }
 
     /// Checks a value callee against the authority that selected it. A saved
@@ -899,10 +910,15 @@ impl PreparedResolvedCallable {
                 Err(super::super::CallConstraintInvariant::PreparedBaseMismatch)
             }
             PreparedResolvedCallableState::Base => match terminal_effects {
-                CallableTerminalEffectProjection::Known { effects, .. } => {
-                    let pattern = self
-                        .definition
-                        .projected_function_type_from_group(current_group, effects)?;
+                CallableTerminalEffectProjection::Known {
+                    effects,
+                    result_schema,
+                } => {
+                    let pattern = self.definition.projected_function_type_from_group(
+                        current_group,
+                        effects,
+                        result_schema,
+                    )?;
                     if matches!(actual, TypeKind::Function { binder, .. } if !binder.is_empty()) {
                         // The candidate opening already owns these quantifiers.
                         // Constraining its opened arrow against the whole scheme

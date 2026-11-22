@@ -27,7 +27,9 @@ mod tests;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ConstraintClosurePolicy {
     /// Admit source type structure and scope without following active bindings.
-    Validation,
+    Validation {
+        allow_omitted_effects: bool,
+    },
     Hint,
     /// An owner-retained result annotation may omit function effects until
     /// the actual result has completed inference. It is never a source term.

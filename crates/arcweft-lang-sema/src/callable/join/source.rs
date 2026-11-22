@@ -870,23 +870,10 @@ fn declared_function_type(
 ) -> Result<TypeKind, CheckedProjectFunctionRuntimeSelectionError> {
     checked
         .signature()
-        .project_function_type_from_group(
-            group,
+        .function_type_from_position(
+            CallableParameterCoordinate::group_start(group),
             checked.exposed_row(),
-            || {
-                checked
-                    .result_schema()
-                    .value_type()
-                    .cloned()
-                    .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)
-            },
-            |_, parameter| {
-                parameter
-                    .declared_type()
-                    .cloned()
-                    .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)
-            },
+            checked.result_schema(),
         )
-        .map_err(super::super::CallConstraintInvariant::from)
         .map_err(Into::into)
 }

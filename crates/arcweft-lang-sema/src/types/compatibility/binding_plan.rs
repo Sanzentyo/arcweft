@@ -118,14 +118,15 @@ where
     )
 }
 
-/// Uses a later input's type to guide the current group. The invocation owning
-/// that input establishes its effect relation.
-pub(in crate::types) fn relate_next_invocation_input<A, D, L: Clone>(
+/// Uses the types of a later invocation to guide the current group. The later
+/// application establishes the effect relation.
+pub(in crate::types) fn relate_next_invocation<A, D, L: Clone>(
     graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
     pattern: &ConstraintOperandView<'_, D>,
     actual: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
+    acceptance: ConstraintAcceptance,
 ) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
@@ -139,7 +140,7 @@ where
         context,
         ConstraintRelation {
             check_function_effects: false,
-            ..ConstraintRelation::accepts(ConstraintAcceptance::PatternAcceptsActual)
+            ..ConstraintRelation::accepts(acceptance)
         },
     )
 }
@@ -239,8 +240,12 @@ where
     // header mismatch can hide a bad descendant. Read each actual operand's
     // frames without solving its effects or following active type bindings.
     for operand in [pattern, actual] {
-        path.projection_view()
-            .admit_operand(operand.clone(), graph.read(), context)?;
+        path.projection_view().admit_operand_structure(
+            operand.clone(),
+            graph.read(),
+            !relation.check_function_effects,
+            context,
+        )?;
     }
     if relation.exact_header() {
         // Original products close after every original binding/effect relation
@@ -551,6 +556,7 @@ fn bind_type_parameter<A, D, L>(
     value: &ConstraintOperandView<'_, D>,
     path: ConstraintInferenceBranch<D, L>,
     context: &mut TypeConstraintContext<'_, A, D>,
+    relation: ConstraintRelation,
 ) -> Result<Vec<ConstraintInferenceBranch<D, L>>, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
@@ -562,6 +568,21 @@ where
         TypeConstraintParameterEligibility::Rigid
     ) {
         return Ok(Vec::new());
+    }
+    if !relation.check_function_effects
+        && value
+            .value()
+            .has_omitted_function_effect_rows_with_control(context)
+            .map_err(|error| match error {
+                crate::types::TypeProjectionError::Control(error) => error,
+                crate::types::TypeProjectionError::Instantiation(error) => {
+                    TypeConstraintInvariant::Instantiation(error).into()
+                }
+            })?
+    {
+        // The annotation guides other type bindings in this relation. This
+        // operand still needs the later invocation to supply its effects.
+        return Ok(vec![path]);
     }
     context
         .add_binding(path, parameter.clone(), value.clone(), graph)
@@ -691,19 +712,19 @@ where
                 _ if actual_active => (actual_parameter, pattern),
                 _ => return Ok(Vec::new()),
             };
-            return bind_type_parameter(graph, parameter, value, path, context);
+            return bind_type_parameter(graph, parameter, value, path, context, relation);
         }
         (TypeConstraintShape::Generic(parameter), _)
             if type_parameter_eligibility(parameter, &path, context)?
                 != TypeConstraintParameterEligibility::Rigid =>
         {
-            return bind_type_parameter(graph, parameter, actual, path, context);
+            return bind_type_parameter(graph, parameter, actual, path, context, relation);
         }
         (_, TypeConstraintShape::Generic(parameter)) => {
             if type_parameter_eligibility(parameter, &path, context)?
                 != TypeConstraintParameterEligibility::Rigid
             {
-                return bind_type_parameter(graph, parameter, pattern, path, context);
+                return bind_type_parameter(graph, parameter, pattern, path, context, relation);
             }
             return Ok(Vec::new());
         }

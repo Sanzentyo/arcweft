@@ -82,7 +82,14 @@ where
     }
     if let TypeConstraintShape::Generic(parameter) = supplied.value().constraint_shape() {
         let expected = supplied.scalar_expectation(TypeLeaf::AgentValue, context)?;
-        return bind_type_parameter(graph, parameter, &expected.view(), path, context);
+        return bind_type_parameter(
+            graph,
+            parameter,
+            &expected.view(),
+            path,
+            context,
+            ConstraintRelation::accepts(direction),
+        );
     }
     match supplied.value().agent_value_shape() {
         AgentValueShape::Accept => Ok(vec![path]),

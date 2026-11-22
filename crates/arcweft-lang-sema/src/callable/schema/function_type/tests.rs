@@ -216,7 +216,7 @@ fn canonical_and_prepared_projection_share_prefix_and_terminal_contracts() {
         position(2, 0),
     ] {
         let canonical = signature
-            .declared_function_type_from_position(position, &terminal)
+            .function_type_from_position(position, &terminal, signature.result_schema())
             .unwrap();
         let expected = canonical
             .prepare_effects(

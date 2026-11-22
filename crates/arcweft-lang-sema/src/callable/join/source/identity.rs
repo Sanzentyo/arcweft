@@ -57,11 +57,7 @@ impl CheckedProjectFunctionCallableSource {
         // complete signature or its predicate. Projecting all groups therefore
         // seals earlier known bindings as well as the remaining scheme. Merely
         // hashing the remaining arrow would lose earlier type arguments.
-        let declared = self
-            .checked
-            .signature()
-            .declared_function_type_from_group(CallableGroupIndex::ZERO, self.checked.exposed_row())
-            .map_err(CheckedProjectFunctionRuntimeSelectionError::from)?;
+        let declared = super::declared_function_type(&self.checked, CallableGroupIndex::ZERO)?;
         let full = self.project_template(&declared, control)?;
         hasher.update(
             full.view()
