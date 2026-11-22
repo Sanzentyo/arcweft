@@ -1387,6 +1387,35 @@ fn loop_waits_preserve_the_owning_continuation_across_save_and_time_overshoot() 
 }
 
 #[test]
+fn loop_return_unwinds_parked_work_in_defer_order_after_wait() {
+    let body = r#"
+fn retained() -> i64 {
+    defer { log.info("function cleanup") }
+    for _ in [1i64, 2i64] {
+        defer { log.info("iteration cleanup") }
+        loop { return 42i64 }
+    }
+    0i64
+}
+flow main() -> i64 {
+    for _ in [1i64, 2i64] {
+        wait(0.1s)
+        let result = retained()
+        return result
+    }
+    return 0i64
+}
+"#;
+    let (engine, executor) = artifact_bound_entry(body, "loop-return-defer.arcw");
+    assert_wait_in_both_executors(
+        engine,
+        executor,
+        &[],
+        &["iteration cleanup", "function cleanup"],
+    );
+}
+
+#[test]
 fn decoded_awbc_one_operation_steps_save_before_and_during_the_wait() {
     for selected in [false, true] {
         let mut runtime = product("flow main() -> i64 { wait(0.1s); return 42i64 }", selected);
