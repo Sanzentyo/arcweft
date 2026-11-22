@@ -668,6 +668,10 @@ Native の `for` が保持する継続は、元の操作から iterator の根�
 では元の iterator 型と Range／列挙値の表現を照合する。witness では元の操作が
 選んだ正確な `next` と、そのメソッドの receiver を照合する。保持値を
 構築する前に、復元が使用する共通の allowance で検査する。
+内部保存からの復元では、内側から順にループフレームと継続キューの元操作を
+照合する。関数呼び出しや formatter が退避したキューも、それぞれのフレームに
+照合する。実行時は継続を取り出した時点で現在のループを照合する。
+スコープを巻き戻すときは、終了するループの継続をそのフレームと一緒に退役させる。
 
 durable root の保存値も Core DTO を使う。active entry の identity・kind・binding
 から original program の stateful roles を選び、state/event identity と layout を

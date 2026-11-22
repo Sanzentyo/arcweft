@@ -21668,3 +21668,19 @@ Core の全機能 library は2,403 PASS／0 SKIP。実際の Cargo graph で Cor
 CLI は library／binary の196件と統合30件がすべてPASS。書式、workspace 全ターゲット・全機能の check／Clippy、構造ゲートは終了0。変更箇所のClippy警告はエラー型の大きさ1件とテスト6件が増え、構造のブロッキング違反は0件だった。Native の公開 save は残項目。
 
 [検証原本](acceptance-evidence/task-native-for-restore-admission.raw.zip) は21項目、1,376,942 bytes、SHA256 `a926cbece116e50548ba640a4018daaa1a396d27ecd363955fd11d13ee32e3f5`。各項目の長さと SHA256 を照合した。検証後の `target` は136,376,906,142 bytes。
+
+<a id="native-iteration-contour"></a>
+
+## 2026-11-23 — Native の継続キューを実行中のループへ照合
+
+検証基点は `e187c5085c7fa4ac610d9f6c4471170311307e96`。Core 実装 `6e1774ec10affba818797e15f5499a4abdf1a0a9` とソース統合テスト `be5f84fbc43ecffc3028f2a7f12f480956ea6cb4` を `main` に push し、公開 ref と変更 blob を照合した。最終ソースの照合時の追跡差分は0、既存の未追跡1パスがある。
+
+基点では、作業キューに保存された For 継続の座標を同じ関数内にある型・種類の等しい別の For に置き換えると、内部復元が成功した。復元時は現在のキューと関数・formatter の退避キューごとに、元の操作座標を実行中のループフレームと内側から照合する。実行開始時は現在のフレームで座標を確認し、巻き戻しで終了したフレームの継続は一緒に退役させる。すでに継続を消費して失敗した終端フレームは、その継続を欠いたまま cleanup できる。
+
+Core の全機能 library は2,403 PASS。改変テストは別の For への変更、欠落、重複、既存の型・表現の誤りを拒否し、入れ子ループを1操作ごとに内部復元して同じ結果まで進んだ。Compiler の待機・iterator・スコープ終了の69件もすべて通過。実ソースからは100msの待機後に入れ子ループ内の関数が return し、反復の defer、関数の defer の順で各1件を出して42を返した。Native の実行と、各ステップで公開JSONから復元するデコード済みAWBCで検証した。
+
+Core とその推移的逆依存の計52パッケージを選び、非CLIは8,178 PASS／Semaの既知10 FAIL／18 SKIP。前回と失敗IDが一致し、新規失敗は0件。Generic Match は元の監査150 IDと Style Lengthの後継1件がすべてPASS。CLI は library／binary 196件と統合30件がすべてPASS。待ち時間ゼロのCLI対照は修正前後とも bytecode VM 24／AWBC Product 52ステップ、最大1操作、診断0件で、同じログ順と戻り値を得た。
+
+書式、workspace 全ターゲット・全機能の check／Clippy、構造ゲートは終了0。変更箇所のClippy警告メッセージは前回比で4件追加、10件解消・置換。構造のブロッキング違反は0件。初回の enum 比較によるコンパイル失敗も原本に収録した。Native の公開 save は残項目。
+
+[検証原本](acceptance-evidence/task-native-iteration-contour.raw.zip) は35項目、1,423,110 bytes、SHA256 `8e5abad38c89249e5ba4ac1a8418d398045ec9688d456a5caa1617c1656b07c1`。各項目の長さと SHA256 を照合した。検証後の `target` は138,173,782,875 bytes。
