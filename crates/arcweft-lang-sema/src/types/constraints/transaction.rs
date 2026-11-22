@@ -15,7 +15,7 @@ use super::application::{
     ConstraintApplicationId, ConstraintApplicationInventory, ConstraintApplicationScope,
 };
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
-use super::hints::{ConstraintSourceValueOwner, PreparedSourceExpectation, SourceProbeTerm};
+use super::hints::{ConstraintSourceValueOwner, SourceProbeTerm};
 use super::normalization::{ConstraintClosedEffects, ConstraintEffectProjection, project_type};
 use super::{
     CheckedConstraintSourceProjection, ClosedMaterializationSubmission, ConstraintAcceptance,
@@ -276,8 +276,8 @@ pub(crate) struct DeferredCycleWitness {
 }
 
 mod source;
-use source::ActiveConstraintProbe;
 pub(super) use source::SourceProbeObservation;
+use source::{ActiveConstraintProbe, open_source_alternatives};
 pub(crate) use source::{ClosedConstraintProbe, ClosedConstraintSourceTrace};
 
 pub(crate) enum StoredSourceSelection<D: ConstraintDomain> {
@@ -979,7 +979,8 @@ impl<D: ConstraintDomain> ProbeInput<D> {
         if self.prepared.is_unchecked() {
             return callback(ExpectedHint::Unchecked);
         }
-        let hints =
+        let source_projection = self.prepared.source_projection();
+        let mut hints =
             self.alternatives()
                 .map(|(alternative, opened)| {
                     let value_expected = if opened.unbound.is_empty() {
@@ -997,10 +998,15 @@ impl<D: ConstraintDomain> ProbeInput<D> {
                         alternative.alternative(),
                         alternative.evidence(),
                         value_expected,
-                        self.prepared.source_projection(),
+                        source_projection,
                     )
                 })
-                .collect::<Vec<_>>();
+                .peekable();
+        let first = hints.next();
+        if hints.peek().is_none() {
+            return callback(ExpectedHint::Alternatives(first.as_slice()));
+        }
+        let hints = first.into_iter().chain(hints).collect::<Vec<_>>();
         callback(ExpectedHint::Alternatives(&hints))
     }
 }
@@ -2101,54 +2107,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             }
             return Ok(None);
         };
-        let (opened_alternatives, effect_reads) = context.with_effect_reads(
+        let (opened_alternatives, effect_reads) = open_source_alternatives(
+            &operation.prepared,
+            &self.original,
+            self.application,
+            &path,
             graph,
-            path.lineage.effect_read_scope(),
-            |context, graph| -> Result<_, TypeConstraintError> {
-                let mut opened_alternatives = Vec::new();
-                for alternative in operation.prepared.alternatives() {
-                    let scope = Arc::new(context.capture_lexical_scope()?);
-                    let expected = bind_source_expectation(
-                        alternative.expectation(),
-                        &self.original,
-                        self.application,
-                        &path,
-                        scope,
-                        graph,
-                        context,
-                    )?;
-                    let (projected_hint, unbound) =
-                        if expected.value().constraint_shape().is_closed_leaf() {
-                            (None, Box::default())
-                        } else {
-                            let projected = project_type(
-                                expected.value(),
-                                path.projection_view(),
-                                ConstraintClosurePolicy::Hint,
-                                graph,
-                                context,
-                            )?;
-                            let unbound = projected
-                                .remaining
-                                .iter()
-                                .map(|parameter| parameter.parameter().clone())
-                                .collect::<Box<[_]>>();
-                            (Some(projected.value), unbound)
-                        };
-                    let scope_lease = if unbound.is_empty() {
-                        None
-                    } else {
-                        Some(path.applications.import_parameters(&unbound, context)?)
-                    };
-                    opened_alternatives.push(OpenedSourceAlternative {
-                        operand: expected,
-                        projected_hint,
-                        unbound,
-                        scope_lease,
-                    });
-                }
-                Ok(opened_alternatives)
-            },
+            context,
         )?;
         path.lineage.effect_reads = effect_reads;
         let input = Arc::new(ProbeInput {
@@ -2865,34 +2830,6 @@ pub(crate) use component::{
     PreparedValueOutput, PreparedValueRef, PreparedValueUnavailable, PreparedValueUse,
     PreparedValueUseAlternative, PreparedValueUseTicket,
 };
-
-fn bind_source_expectation<A: TypeConstraintAccounting, D: ConstraintDomain>(
-    expected: &PreparedSourceExpectation,
-    original: &super::OriginalProducerContext,
-    application: ConstraintApplicationId,
-    path: &ConstraintPath<D>,
-    scope: Arc<super::lexical::ConstraintLexicalScope>,
-    graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<ConstraintOperand<D>, TypeConstraintError> {
-    match expected {
-        PreparedSourceExpectation::Declaration(ty) => {
-            let value = context.open_template_type(ty, path, application, graph)?;
-            Ok(ConstraintOperand::template(
-                value,
-                scope,
-                path.applications.require_application_owner(application)?,
-            ))
-        }
-        PreparedSourceExpectation::Original(ty) => ConstraintOperand::from_prepared_original_in(
-            ty,
-            scope,
-            original.clone(),
-            &mut operand::ConstraintEffectPhase::new(graph),
-            context,
-        ),
-    }
-}
 
 fn validate_source_selection<'a, D: ConstraintDomain>(
     input: &'a ProbeInput<D>,

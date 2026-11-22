@@ -254,14 +254,26 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
     }
 
     pub(in crate::types::constraints::transaction) fn template(
-        value: T,
+        value: impl Into<Arc<T>>,
         scope: Arc<ConstraintLexicalScope>,
         owner: &Arc<ConstraintApplicationScope<D>>,
     ) -> Self {
         Self {
-            value: Arc::new(value),
+            value: value.into(),
             scope,
             origin: Arc::new(ConstraintOperandOrigin::Template(Arc::clone(owner))),
+        }
+    }
+
+    pub(super) fn original(
+        value: impl Into<Arc<T>>,
+        scope: Arc<ConstraintLexicalScope>,
+        original: OriginalProducerContext,
+    ) -> Self {
+        Self {
+            value: value.into(),
+            scope,
+            origin: Arc::new(ConstraintOperandOrigin::Original(original)),
         }
     }
 

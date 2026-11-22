@@ -16,6 +16,8 @@ use super::{ConstraintInferenceBranch, ConstraintOperand};
 
 #[cfg(test)]
 mod canonical_tests;
+mod expectation;
+pub(super) use expectation::open_source_alternatives;
 #[cfg(test)]
 mod tests;
 use super::super::{ConstraintSourceValueOwner, OriginalProducerContext};

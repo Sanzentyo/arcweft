@@ -84,6 +84,155 @@ impl crate::types::constraints::ConstraintSourceValueOwner<ApplicationSourceDoma
 }
 
 #[test]
+fn unchecked_probe_reserves_its_input_without_opening_an_effect_checkpoint() {
+    let cancellation = AtomicBool::new(false);
+    for limit in [0, 1] {
+        let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+        let (mut setup, parameters) = ConstraintTestSetup::<_, ApplicationSourceDomain>::new(
+            TypeConstraintLimits::new(4096, 2048, 128, 128),
+            &cancellation,
+        )
+        .into_parts();
+        let mut transaction = TypeConstraintTransaction::initialize_fixture(
+            &mut setup, &mut graph, 0, parameters, None,
+        )
+        .unwrap();
+        let mut context =
+            ApplicationSourceContext::with_accounting(LocalConstraintAccounting::new(
+                TypeConstraintLimits::new(limit, limit, 0, 0),
+                &cancellation,
+            ));
+        transaction
+            .begin_prepared_probe(
+                &mut context,
+                PreparedSourceConstraint::unchecked(7, PreparedConstraintSourceProjection::Scalar),
+                ConstraintAcceptance::PatternAcceptsActual,
+            )
+            .unwrap();
+        let result = transaction.next_probe(&mut context, &mut graph);
+        if limit == 0 {
+            assert!(matches!(
+                result,
+                Err(TypeConstraintError::Abort(TypeConstraintAbort::WorkLimit {
+                    requested: 1,
+                    consumed: 0,
+                    limit: 0,
+                }))
+            ));
+            assert!(transaction.probe.as_ref().unwrap().active_input.is_none());
+        } else {
+            let ticket = result.unwrap().unwrap();
+            assert!(ticket.effect_reads().is_none());
+            ticket
+                .input()
+                .with_hint(|hint| assert!(matches!(hint, ExpectedHint::Unchecked)));
+        }
+    }
+}
+
+#[test]
+fn closed_source_expectations_share_values_within_the_leaf_budget() {
+    use super::super::{PreparedSourceAlternative, hints::PreparedSourceExpectation};
+
+    let cancellation = AtomicBool::new(false);
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let (mut setup, parameters) = ConstraintTestSetup::<_, ApplicationSourceDomain>::new(
+        TypeConstraintLimits::new(4096, 2048, 128, 128),
+        &cancellation,
+    )
+    .into_parts();
+    let mut transaction =
+        TypeConstraintTransaction::initialize_fixture(&mut setup, &mut graph, 0, parameters, None)
+            .unwrap();
+    let declaration = PreparedSourceAlternative::new(0, (), TypeKind::I64);
+    let PreparedSourceExpectation::Declaration(first) = declaration.expectation() else {
+        unreachable!("declaration expectation")
+    };
+    let first = Arc::clone(first);
+    let second = Arc::new(TypeKind::Never);
+    let prepared = PreparedSourceConstraint::checked(
+        7,
+        PreparedConstraintSourceProjection::Scalar,
+        [declaration],
+        PreparedSourceAlternative::from_original(1, (), Arc::clone(&second)),
+    )
+    .unwrap();
+
+    let mut context = ApplicationSourceContext::with_accounting(LocalConstraintAccounting::new(
+        TypeConstraintLimits::new(2, 2, 0, 0),
+        &cancellation,
+    ));
+    transaction
+        .begin_prepared_probe(
+            &mut context,
+            prepared,
+            ConstraintAcceptance::PatternAcceptsActual,
+        )
+        .unwrap();
+    let ticket = transaction
+        .next_probe(&mut context, &mut graph)
+        .unwrap()
+        .unwrap();
+    assert!(ticket.effect_reads().is_none());
+    ticket.input().with_hint(|hint| {
+        let ExpectedHint::Alternatives([declared, original]) = hint else { panic!("both expected alternatives") };
+        assert!(matches!(declared.value_expected(), ProjectedExpectedHint::Complete(value) if std::ptr::eq(*value, first.as_ref())));
+        assert!(matches!(original.value_expected(), ProjectedExpectedHint::Complete(value) if std::ptr::eq(*value, second.as_ref())));
+    });
+}
+
+#[test]
+fn mixed_source_expectations_keep_their_order_across_graph_projection() {
+    use super::super::PreparedSourceAlternative;
+
+    let cancellation = AtomicBool::new(false);
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let (mut context, parameters) = ConstraintTestSetup::<_, ApplicationSourceDomain>::new(
+        TypeConstraintLimits::new(4096, 2048, 128, 128),
+        &cancellation,
+    )
+    .into_parts();
+    let mut transaction = TypeConstraintTransaction::initialize_fixture(
+        &mut context,
+        &mut graph,
+        0,
+        parameters,
+        None,
+    )
+    .unwrap();
+    let middle = TypeKind::Vec(Box::new(TypeKind::I64));
+    let last = Arc::new(TypeKind::Bool);
+    let prepared = PreparedSourceConstraint::checked(
+        8,
+        PreparedConstraintSourceProjection::Scalar,
+        [
+            PreparedSourceAlternative::new(0, (), TypeKind::I64),
+            PreparedSourceAlternative::new(1, (), middle.clone()),
+        ],
+        PreparedSourceAlternative::from_original(2, (), Arc::clone(&last)),
+    )
+    .unwrap();
+    transaction
+        .begin_prepared_probe(
+            &mut context,
+            prepared,
+            ConstraintAcceptance::PatternAcceptsActual,
+        )
+        .unwrap();
+    let ticket = transaction
+        .next_probe(&mut context, &mut graph)
+        .unwrap()
+        .unwrap();
+    ticket.input().with_hint(|hint| {
+        let ExpectedHint::Alternatives([first, projected, original]) = hint else { panic!("three expected alternatives") };
+        assert_eq!([first.alternative(), projected.alternative(), original.alternative()], [0, 1, 2]);
+        assert_eq!(*first.value_expected(), ProjectedExpectedHint::Complete(&TypeKind::I64));
+        assert_eq!(*projected.value_expected(), ProjectedExpectedHint::Complete(&middle));
+        assert!(matches!(original.value_expected(), ProjectedExpectedHint::Complete(value) if std::ptr::eq(*value, last.as_ref())));
+    });
+}
+
+#[test]
 fn checked_and_unchecked_source_values_keep_their_owner_and_reject_a_foreign_source() {
     for checked in [false, true] {
         let cancellation = AtomicBool::new(false);

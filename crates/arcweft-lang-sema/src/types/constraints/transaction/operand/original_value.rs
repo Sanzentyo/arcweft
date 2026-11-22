@@ -60,11 +60,7 @@ impl<D: ConstraintDomain, T> ConstraintOperand<D, T> {
         T: OriginalOperandValue,
     {
         let value = value.admit(&scope, &original, context)?;
-        Ok(Self {
-            value: Arc::new(value),
-            scope,
-            origin: Arc::new(ConstraintOperandOrigin::Original(original)),
-        })
+        Ok(Self::original(value, scope, original))
     }
 }
 
@@ -81,11 +77,7 @@ impl<D: ConstraintDomain> ConstraintOperand<D, TypeKind<PreparedEffects>> {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError> {
         let value = phase.admit_type(value, &scope, &original, context)?;
-        Ok(Self {
-            value: Arc::new(value),
-            scope,
-            origin: Arc::new(ConstraintOperandOrigin::Original(original)),
-        })
+        Ok(Self::original(value, scope, original))
     }
 }
 

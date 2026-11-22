@@ -294,6 +294,16 @@ pub(super) enum PreparedSourceExpectation {
     Original(Arc<TypeKind<PreparedEffects>>),
 }
 
+impl PreparedSourceExpectation {
+    pub(super) fn is_closed_leaf(&self) -> bool {
+        match self {
+            Self::Declaration(value) | Self::Original(value) => {
+                value.constraint_shape().is_closed_leaf()
+            }
+        }
+    }
+}
+
 impl<D: ConstraintDomain> PreparedSourceAlternative<D> {
     pub(crate) fn new(
         alternative: D::AlternativeIndex,
