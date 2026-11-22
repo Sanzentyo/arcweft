@@ -155,30 +155,6 @@ impl NativeCodeCursor {
         }
     }
 
-    /// A parked caller has consumed the call and still owns its advanced range,
-    /// including an empty range when the call was the last operation in a body.
-    pub(super) fn preceding_call_result<'a>(
-        &self,
-        plan: &'a RuntimePlan,
-    ) -> Option<&'a crate::pattern::RuntimePattern> {
-        let NativeCodeFrontier::Operations { next, end } = self.frontier else {
-            return None;
-        };
-        let RuntimeCodeBodyRef::Operations(ops) =
-            plan.inventory.code_body_at(self.owner, &self.body)?
-        else {
-            return None;
-        };
-        if end != ops.len() || next > end {
-            return None;
-        }
-        match ops.get(next.checked_sub(1)?)? {
-            FlowOp::ApplyGroup { result, .. } => Some(result),
-            FlowOp::ProjectCall { site } => Some(plan.project_call_sites().get(*site)?.result()),
-            _ => None,
-        }
-    }
-
     pub(super) fn source_operation(&self, plan: &RuntimePlan) -> Option<NativeSourceOperation> {
         self.operations(plan)?.first()?;
         Some(NativeSourceOperation {
@@ -273,6 +249,17 @@ impl NativeSourceOperation {
 
     pub(super) fn operation<'a>(&self, plan: &'a RuntimePlan) -> Option<&'a FlowOp> {
         self.position.operations(plan)?.first()
+    }
+
+    pub(super) fn call_result<'a>(
+        &self,
+        plan: &'a RuntimePlan,
+    ) -> Option<&'a crate::pattern::RuntimePattern> {
+        match self.operation(plan)? {
+            FlowOp::ApplyGroup { result, .. } => Some(result),
+            FlowOp::ProjectCall { site } => Some(plan.project_call_sites().get(*site)?.result()),
+            _ => None,
+        }
     }
 
     /// Rechecks the selected loop against the original body path of a

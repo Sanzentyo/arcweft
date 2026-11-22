@@ -348,7 +348,7 @@ impl Engine {
             self.execute_native_resume(resume, output, pure_backend);
             return;
         }
-        let (op, source_site, next_op_index, call) = if let Some(work) =
+        let (op, source_site, next_op_index) = if let Some(work) =
             self.fiber.frame.pending_ops.front_mut()
         {
             let NativePendingWorkKind::Source { position, role } = &mut work.kind else {
@@ -396,13 +396,11 @@ impl Engine {
                 );
                 None
             };
-            // A call parks its advanced range, including EOF, so its return
-            // can borrow the original call pattern from that same range.
-            let call = matches!(op, FlowOp::ApplyGroup { .. } | FlowOp::ProjectCall { .. });
-            if !call {
-                self.fiber.frame.normalize_pending_source_ranges(&plan);
-            }
-            (Cow::Borrowed(op), source, advance, call)
+            // The selected source operation has been consumed before it
+            // can suspend or save its caller. Only function-root EOF is
+            // an executable completion transition.
+            self.fiber.frame.normalize_pending_source_ranges(&plan);
+            (Cow::Borrowed(op), source, advance)
         } else {
             if self.fiber.frame.active_function().is_some() {
                 self.fail_eval("active function lost its queued original root", output);
@@ -418,9 +416,6 @@ impl Engine {
             drop_policy,
             line_registry,
         );
-        if call {
-            self.fiber.frame.normalize_pending_source_ranges(&plan);
-        }
     }
 
     // Authored dispatch borrows original plan rows. Runtime state is consumed
@@ -818,20 +813,16 @@ impl Engine {
                 });
             }
             FlowOp::ProjectCall { site } => {
-                self.start_project_call(*site, next_op_index, output, pure_backend);
+                self.start_project_call(*site, source_site, next_op_index, output, pure_backend);
             }
-            FlowOp::ApplyGroup {
-                callee,
-                args,
-                result,
-            } => {
+            FlowOp::ApplyGroup { callee, args, .. } => {
                 let application = (|| {
                     let callee = self.evaluate_expr_with_backend(callee, pure_backend)?;
                     let args = self.evaluate_function_call_args(args, pure_backend)?;
                     self.start_function_value_call(
                         callee,
                         args,
-                        result,
+                        source_site,
                         next_op_index,
                         output,
                         pure_backend,
@@ -1220,6 +1211,7 @@ impl Engine {
     fn start_project_call(
         &mut self,
         site: crate::runtime_id::RuntimeProjectCallSiteId,
+        source: NativeSourceOperation,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -1321,7 +1313,7 @@ impl Engine {
             arguments,
             attached,
             order,
-            row.result(),
+            source,
             next_op_index,
             output,
             pure_backend,

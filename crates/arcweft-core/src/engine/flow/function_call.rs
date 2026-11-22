@@ -5,13 +5,12 @@ mod tests;
 
 use std::sync::Arc;
 
-use crate::engine::work::NativeStoredWork;
+use crate::engine::code_cursor::NativeSourceOperation;
 use crate::engine::{
     Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberStatus, FunctionCallFrame,
     FunctionReturnContinuation, RuntimeCallBackend, RuntimeEvalError, RuntimeStepOutput,
     runtime_value_label,
 };
-use crate::pattern::RuntimePattern;
 use crate::plan::RuntimeFunctionSiteBody;
 use crate::value::{RuntimeFunctionApplyError, RuntimeValue};
 
@@ -238,47 +237,39 @@ impl Engine {
                     Some((crate::engine::NativeInvocationRoot::Function(site), value));
                 self.fiber.frame.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
             }
-            continuation @ (FunctionReturnContinuation::CallableDefault { .. }
-            | FunctionReturnContinuation::Bind) => {
-                let Some(result) = self
-                    .fiber
-                    .frame
-                    .pending_ops
-                    .front()
-                    .and_then(|work| work.original_call_result(&plan_owner))
-                else {
-                    self.fail_eval(
-                        "native function return has no original caller operation",
-                        output,
-                    );
-                    return;
-                };
-                if let FunctionReturnContinuation::CallableDefault { pending } = continuation {
-                    if let Err(error) = self.finish_callable_group_default(
-                        pending,
-                        value,
-                        result,
-                        output,
-                        pure_backend,
-                    ) {
-                        self.fail_eval(error, output);
-                    }
-                } else {
-                    self.complete_function_call_result(result, None, value, output);
+            FunctionReturnContinuation::CallableDefault { pending, source } => {
+                if let Err(error) =
+                    self.finish_callable_group_default(pending, value, source, output, pure_backend)
+                {
+                    self.fail_eval(error, output);
+                }
+            }
+            FunctionReturnContinuation::Bind { source } => {
+                if let Err(error) = self.complete_native_source_result(&source, None, value, output)
+                {
+                    self.fail_eval(error, output);
                 }
             }
         }
     }
 
-    pub(super) fn complete_function_call_result(
+    pub(super) fn complete_native_source_result(
         &mut self,
-        result: &RuntimePattern,
+        source: &NativeSourceOperation,
         next_op_index: Option<usize>,
         value: RuntimeValue,
         output: &mut RuntimeStepOutput,
-    ) {
-        let bound = self.try_bind_pattern_owned(result, value);
-        match bound {
+    ) -> Result<(), RuntimeEvalError> {
+        let plan = Arc::clone(&self.plan);
+        let result =
+            source
+                .call_result(&plan)
+                .ok_or_else(|| RuntimeEvalError::NativeWorkAdmission {
+                    source: Box::new(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "native function return has no original caller operation".into(),
+                    }),
+                })?;
+        match self.try_bind_pattern_owned(result, value) {
             Ok(None) => {
                 self.advance_if_needed(next_op_index);
                 self.fiber.frame.status = FlowFiberStatus::Running;
@@ -289,7 +280,7 @@ impl Engine {
             ),
             Err(error) => self.fail_eval(error, output),
         }
-        self.fiber.frame.normalize_pending_source_ranges(&self.plan);
+        Ok(())
     }
 
     fn take_function_call_frame(

@@ -174,6 +174,13 @@ fn native_slot_replacement_returns_the_original_body_type_and_invocation() {
         .validate_function_site_input_refs(replacing_site, &[], &[])
         .unwrap();
     let replacing_binding = Arc::clone(invocation.type_instantiation.as_ref().unwrap());
+    let source = engine
+        .fiber
+        .frame
+        .function_root_position()
+        .unwrap()
+        .source_operation(&plan)
+        .unwrap();
     engine
         .stage_admitted_function_site_call(
             invocation,
@@ -183,7 +190,7 @@ fn native_slot_replacement_returns_the_original_body_type_and_invocation() {
                 vec![],
             )
             .unwrap(),
-            FunctionCallFrame::new(replacing_site, FunctionReturnContinuation::Bind),
+            FunctionCallFrame::new(replacing_site, FunctionReturnContinuation::Bind { source }),
             Some(1),
         )
         .unwrap();

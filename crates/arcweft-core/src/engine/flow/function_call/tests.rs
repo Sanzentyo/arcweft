@@ -120,7 +120,7 @@ fn native_function_frame_round_trips_its_original_caller_operation() {
         let result = live.step(RuntimeStepInput::default(), options);
         assert!(result.output.diagnostics.is_empty());
         live.fiber.frame.control_stack.iter().position(|entry| matches!(&entry.kind,
-            crate::engine::FlowControlStackEntryKind::FunctionCall(frame) if matches!(frame.continuation, FunctionReturnContinuation::Bind)))
+            crate::engine::FlowControlStackEntryKind::FunctionCall(frame) if matches!(frame.continuation, FunctionReturnContinuation::Bind { .. })))
     }).expect("the executable call suspends with its original caller");
     let original = live.inert_rollback_image().unwrap();
     let round_trip = |mut image: NativeEngineRollbackImage| {
@@ -138,14 +138,15 @@ fn native_function_frame_round_trips_its_original_caller_operation() {
     else {
         panic!("saved caller frame");
     };
-    let position = frame
-        .caller_pending_ops
-        .front_mut()
-        .unwrap()
-        .position_mut()
-        .unwrap();
-    assert_eq!(position.remaining_operation_count(), Some(0));
-    assert!(position.set_operation(1));
+    let position = crate::engine::NativeCodeCursor::root(
+        &live.plan,
+        crate::plan::code::RuntimeCodeOwner::Function(live.plan.flows()[0].function_site()),
+    )
+    .unwrap();
+    let FunctionReturnContinuation::Bind { source } = &mut frame.continuation else {
+        panic!("saved caller binds its result")
+    };
+    *source = position.source_operation(&live.plan).unwrap();
     let error = Engine::from_rollback_image(round_trip(redirected), &owner).unwrap_err();
     assert!(error.contains("no original caller operation"), "{error}");
     assert_eq!(live.inert_rollback_image().unwrap(), original);
@@ -900,9 +901,13 @@ fn surplus_arguments_reject_before_creating_an_executable_frame() {
     )
     .unwrap();
     let plan = engine.program_plan();
-    let crate::plan::FlowOp::ApplyGroup { result, .. } = &plan.flows()[0].body().ops()[1] else {
-        panic!("fixture retains the original call result");
-    };
+    let mut position = crate::engine::NativeCodeCursor::root(
+        &plan,
+        crate::plan::code::RuntimeCodeOwner::Function(plan.flows()[0].function_site()),
+    )
+    .unwrap();
+    assert!(position.set_operation(1));
+    let source = position.source_operation(&plan).unwrap();
     let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&engine.plan));
     let before = engine.fiber().inert_rollback_image(&owner).unwrap();
     let mut backend = crate::pure::VmRuntimePureCallBackend::default();
@@ -911,7 +916,7 @@ fn surplus_arguments_reject_before_creating_an_executable_frame() {
         engine.start_function_value_call(
             RuntimeValue::Callable(function),
             vec![RuntimeValue::Unit],
-            result,
+            source,
             None,
             &mut output,
             &mut backend,

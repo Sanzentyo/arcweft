@@ -1329,12 +1329,12 @@ mod function_frame_instantiation {
 type FunctionCallFrameRollbackImage =
     FunctionCallFrame<NativePendingWorkRollbackImage, crate::value::RuntimeCallablePendingSnapshot>;
 
-impl<O: work::NativeStoredWork, P> FunctionCallFrame<O, P> {
+impl<O, P> FunctionCallFrame<O, P> {
     fn original_caller_result<'plan>(
         &self,
         plan: &'plan RuntimePlan,
     ) -> Option<&'plan RuntimePattern> {
-        self.caller_pending_ops.front()?.original_call_result(plan)
+        self.continuation.call_source()?.call_result(plan)
     }
 }
 
@@ -1544,8 +1544,11 @@ pub(crate) enum FunctionReturnContinuation<P = crate::value::RuntimeCallablePend
     },
     CallableDefault {
         pending: P,
+        source: NativeSourceOperation,
     },
-    Bind,
+    Bind {
+        source: NativeSourceOperation,
+    },
 }
 
 type FunctionReturnContinuationRollbackImage =
@@ -1554,11 +1557,14 @@ type FunctionReturnContinuationRollbackImage =
 impl<P> FunctionReturnContinuation<P> {
     /// A nested invocation resumes the same task instead of ending its work.
     const fn returns_to_caller(&self) -> bool {
-        matches!(self, Self::Expression) || self.resumes_call_site()
+        matches!(self, Self::Expression) || self.call_source().is_some()
     }
 
-    const fn resumes_call_site(&self) -> bool {
-        matches!(self, Self::CallableDefault { .. } | Self::Bind)
+    const fn call_source(&self) -> Option<&NativeSourceOperation> {
+        match self {
+            Self::CallableDefault { source, .. } | Self::Bind { source } => Some(source),
+            _ => None,
+        }
     }
 }
 
@@ -1574,10 +1580,13 @@ impl Clone for FunctionReturnContinuationRollbackImage {
             },
             Self::Program { program } => Self::Program { program: *program },
             Self::Function { site } => Self::Function { site: *site },
-            Self::CallableDefault { pending } => Self::CallableDefault {
+            Self::CallableDefault { pending, source } => Self::CallableDefault {
                 pending: pending.clone(),
+                source: source.clone(),
             },
-            Self::Bind => Self::Bind,
+            Self::Bind { source } => Self::Bind {
+                source: source.clone(),
+            },
         }
     }
 }
@@ -1608,15 +1617,18 @@ impl FunctionReturnContinuation {
             Self::Function { site } => {
                 FunctionReturnContinuationRollbackImage::Function { site: *site }
             }
-            Self::CallableDefault { pending } => {
+            Self::CallableDefault { pending, source } => {
                 FunctionReturnContinuationRollbackImage::CallableDefault {
                     pending: crate::value::RuntimeCallablePendingSnapshot::from_live_admitted(
                         pending, owner,
                     )
                     .map_err(|error| error.to_string())?,
+                    source: source.clone(),
                 }
             }
-            Self::Bind => FunctionReturnContinuationRollbackImage::Bind,
+            Self::Bind { source } => FunctionReturnContinuationRollbackImage::Bind {
+                source: source.clone(),
+            },
         })
     }
 
@@ -1661,14 +1673,15 @@ impl FunctionReturnContinuation {
             FunctionReturnContinuationRollbackImage::Function { site: target } => {
                 Self::Function { site: target }
             }
-            FunctionReturnContinuationRollbackImage::CallableDefault { pending } => {
+            FunctionReturnContinuationRollbackImage::CallableDefault { pending, source } => {
                 Self::CallableDefault {
                     pending: pending
                         .into_live_admitted(owner)
                         .map_err(|error| error.to_string())?,
+                    source,
                 }
             }
-            FunctionReturnContinuationRollbackImage::Bind => Self::Bind,
+            FunctionReturnContinuationRollbackImage::Bind { source } => Self::Bind { source },
         })
     }
 }

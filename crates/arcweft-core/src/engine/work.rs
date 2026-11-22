@@ -23,11 +23,6 @@ pub(super) trait NativeStoredWork {
 
     fn frame_resume(&self) -> Option<NativeFrameResume<'_>>;
 
-    fn original_call_result<'plan>(
-        &self,
-        plan: &'plan crate::plan::RuntimePlan,
-    ) -> Option<&'plan crate::pattern::RuntimePattern>;
-
     fn queued_function_root_owner(
         work: &std::collections::VecDeque<Self>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -692,13 +687,6 @@ impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue> N
         } else {
             self.loop_source().map(NativeFrameResume::Iteration)
         }
-    }
-
-    fn original_call_result<'plan>(
-        &self,
-        plan: &'plan crate::plan::RuntimePlan,
-    ) -> Option<&'plan crate::pattern::RuntimePattern> {
-        self.position()?.preceding_call_result(plan)
     }
 
     fn admit_work(

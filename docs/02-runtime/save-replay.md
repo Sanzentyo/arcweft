@@ -445,9 +445,10 @@ deferred child の対応は、子 fiber と対話 ledger から借用で検査�
 main／child frame の環境・観測値・stream・選択済み結果は、同じ親の資源枠で検査して
 から、それらの値を変換する。function frame の callee context は環境の順序と照合し、
 formatter の保持値はその位置の caller context と元 operand ABI で検査する。
-Native の関数フレームは呼び出し元の進行済みキューと戻り方を保存する。範囲末尾の
-呼び出しも復帰まで元の範囲を保持し、直前の命令から結果パターンを借りる。
-attached default から次の関数へ進む間も同じ呼び出し元を保持する。
+Native の関数フレームは退避キューと、戻り方に対応する元の呼び出し命令の位置を
+保持する。Flow のキューと台詞の activation cursor からの呼び出しは同じ方式で
+元の命令から結果パターンを借りる。attached default から次の関数へ進む間も同じ
+呼び出し元を保持する。
 進行中の formatter は現在の operand の元コード位置と退避した caller queue を持つ。
 完了マーカーはその frame を再開し、frame の operand を評価する。保存復元では
 元 Plan の attempt と operand の順序を照合し、退避境界ごとにマーカーを検査する。

@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
+use crate::engine::code_cursor::NativeSourceOperation;
 use crate::engine::{
     Engine, FunctionCallFrame, FunctionReturnContinuation, RuntimeCallBackend, RuntimeEvalError,
     RuntimeStepOutput, runtime_value_label,
 };
-use crate::pattern::RuntimePattern;
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallablePendingGroup,
@@ -18,7 +18,7 @@ impl Engine {
         &mut self,
         callee: RuntimeValue,
         args: Vec<RuntimeValue>,
-        result: &RuntimePattern,
+        source: NativeSourceOperation,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
@@ -35,8 +35,7 @@ impl Engine {
                     .try_bind_prefix(args)
                     .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?,
             );
-            self.complete_function_call_result(result, next_op_index, value, output);
-            return Ok(());
+            return self.complete_native_source_result(&source, next_op_index, value, output);
         }
         let arguments = callable
             .materialize_arrow_arguments(args)
@@ -48,7 +47,7 @@ impl Engine {
             arguments,
             None,
             order,
-            result,
+            source,
             next_op_index,
             output,
             backend,
@@ -61,7 +60,7 @@ impl Engine {
         arguments: Vec<RuntimeValue>,
         attached: Option<RuntimeValue>,
         argument_order: crate::value::RuntimeInputOrder,
-        result: &RuntimePattern,
+        source: NativeSourceOperation,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
@@ -70,41 +69,41 @@ impl Engine {
         let application = callable
             .prepare_group_in_order(arguments, attached, argument_order)
             .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?;
-        self.start_callable_application(application, result, next_op_index, output, backend)
+        self.start_callable_application(application, source, next_op_index, output, backend)
     }
 
     pub(super) fn finish_callable_group_default(
         &mut self,
         pending: RuntimeCallablePendingGroup,
         attached: RuntimeValue,
-        result: &RuntimePattern,
+        source: NativeSourceOperation,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
         let application = pending
             .complete_default(attached)
             .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?;
-        self.start_callable_application(application, result, None, output, backend)
+        self.start_callable_application(application, source, None, output, backend)
     }
 
     fn start_callable_application(
         &mut self,
         application: RuntimeCallableApplication,
-        result: &RuntimePattern,
+        source: NativeSourceOperation,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
         match application {
             RuntimeCallableApplication::Complete(value) => {
-                self.complete_function_call_result(result, next_op_index, value, output);
-                Ok(())
+                self.complete_native_source_result(&source, next_op_index, value, output)
             }
             RuntimeCallableApplication::Invoke(invocation) => {
                 let RuntimeCallableBodyReference::Plan(site) = invocation.body else {
                     return Err(RuntimeCallableValueError::ForeignProgram.into());
                 };
-                let frame = FunctionCallFrame::new(site, FunctionReturnContinuation::Bind);
+                let frame =
+                    FunctionCallFrame::new(site, FunctionReturnContinuation::Bind { source });
                 self.start_function_site_call(invocation, frame, next_op_index, output, backend)
             }
             RuntimeCallableApplication::AttachedDefault {
@@ -116,7 +115,7 @@ impl Engine {
                 };
                 let frame = FunctionCallFrame::new(
                     site,
-                    FunctionReturnContinuation::CallableDefault { pending },
+                    FunctionReturnContinuation::CallableDefault { pending, source },
                 );
                 self.start_function_site_call(invocation, frame, next_op_index, output, backend)
             }

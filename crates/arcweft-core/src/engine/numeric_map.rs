@@ -478,11 +478,13 @@ impl Engine {
                         | Return::Function { .. }
                         | Return::RootReducer { .. }
                         | Return::RootInitializer { .. } => true,
-                        Return::Bind => frame.original_caller_result(plan).is_some_and(|result| {
-                            result
-                                .binding_declarations()
-                                .all(|binding| !elided.contains(&binding.local()))
-                        }),
+                        Return::Bind { .. } => {
+                            frame.original_caller_result(plan).is_some_and(|result| {
+                                result
+                                    .binding_declarations()
+                                    .all(|binding| !elided.contains(&binding.local()))
+                            })
+                        }
                         Return::CallableDefault { .. } => false,
                     };
                     continuation_avoids
