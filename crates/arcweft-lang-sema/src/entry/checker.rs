@@ -32,7 +32,7 @@ use arcweft_source::SourceSpan;
 use crate::{
     callable::{
         CallAnalysisOutcome, CallTargetFacts, CallableCandidateId, CallableFamily,
-        CheckedCallableCatalog, CheckedCallableDeclaration, CheckedCallableFacts,
+        CheckedCallableCatalog, CheckedCallableFacts,
     },
     final_analysis::{
         CheckedItem, CheckedProjectNominal, PreparedEntryIngressSeal, PreparedEventScrutineeProof,
@@ -42,12 +42,12 @@ use crate::{
 };
 
 use super::{
-    AgentBudget, BoundNominalKind, BoundNominalTypeKey, CheckedAgentEntry, CheckedAgentPolicy,
-    CheckedCallableRole, CheckedEntryBinding, CheckedEntryCatalog, CheckedEntryFlowParameter,
-    CheckedEntryFlowTarget, CheckedEntryId, CheckedEntryKind, CheckedEntryRoute,
-    CheckedEntryRouteBinding, CheckedEntryRouteBindingSource, CheckedExistingEntry,
-    CheckedExistingEntryTarget, CheckedFlowId, CheckedInitialFlowRole, CheckedNominalRole,
-    CheckedStatefulEntry, CheckedStatefulEntryKind, PreparedEntryFlowTarget, digest,
+    AdmittedInitialFlowTarget, AgentBudget, BoundNominalKind, BoundNominalTypeKey,
+    CheckedAgentEntry, CheckedAgentPolicy, CheckedCallableRole, CheckedEntryBinding,
+    CheckedEntryCatalog, CheckedEntryFlowParameter, CheckedEntryFlowTarget, CheckedEntryId,
+    CheckedEntryKind, CheckedEntryRoute, CheckedEntryRouteBinding, CheckedEntryRouteBindingSource,
+    CheckedExistingEntry, CheckedExistingEntryTarget, CheckedFlowId, CheckedInitialFlowRole,
+    CheckedNominalRole, CheckedStatefulEntry, CheckedStatefulEntryKind, digest,
 };
 
 mod contract;
@@ -161,11 +161,11 @@ impl<'a> PreparedEntrySemanticAuthority<'a> {
 
 /// Resolves every final-HIR Entry against one unpublished semantic draft and
 /// its cache-only runtime-nominal seal.
-pub(crate) fn check_prepared_project_entries(
-    project: HirAnalysisProjectView<'_>,
-    symbols: &ProjectSymbolTable,
-    authority: &PreparedEntrySemanticAuthority<'_>,
-    ingress: PreparedEntryIngressSeal,
+pub(crate) fn check_prepared_project_entries<'a>(
+    project: HirAnalysisProjectView<'a>,
+    symbols: &'a ProjectSymbolTable,
+    authority: &'a PreparedEntrySemanticAuthority<'a>,
+    ingress: PreparedEntryIngressSeal<AdmittedInitialFlowTarget<'a>>,
 ) -> Result<CheckedEntryCatalog, Vec<CheckedEntryDiagnostic>> {
     EntryCheckContext::new(project, symbols, authority, ingress).check()
 }
@@ -175,7 +175,7 @@ struct EntryCheckContext<'a> {
     symbols: &'a ProjectSymbolTable,
     authority: &'a PreparedEntrySemanticAuthority<'a>,
     ingress_facts: PreparedExecutableIngressFacts,
-    roots: super::PreparedEntryRootCatalog,
+    roots: super::PreparedEntryRootCatalog<AdmittedInitialFlowTarget<'a>>,
     event_proofs: BTreeMap<arcweft_lang_hir::identity::StmtId, PreparedEventScrutineeProof>,
 }
 
@@ -234,7 +234,7 @@ impl<'a> EntryCheckContext<'a> {
         project: HirAnalysisProjectView<'a>,
         symbols: &'a ProjectSymbolTable,
         authority: &'a PreparedEntrySemanticAuthority<'a>,
-        ingress: PreparedEntryIngressSeal,
+        ingress: PreparedEntryIngressSeal<AdmittedInitialFlowTarget<'a>>,
     ) -> Self {
         let (ingress_facts, roots, event_proofs) = ingress.into_parts();
         Self {
@@ -1577,35 +1577,11 @@ impl<'a> EntryCheckContext<'a> {
 
     fn check_prepared_initial_flow(
         &self,
-        target: PreparedEntryFlowTarget,
+        target: AdmittedInitialFlowTarget<'_>,
         state: &BoundNominalTypeKey,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
     ) -> Option<CheckedInitialFlowRole> {
         let (source_item, declaration, id, source) = target.into_parts();
-        let checked_declaration = CallableDeclarationKey::Flow(declaration.clone());
-        let checked = self
-            .authority
-            .checked_callables()
-            .project_callable(&checked_declaration);
-        let Ok(checked) = checked else {
-            diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.initial_flow_not_checked",
-                "prepared initial Flow is absent from the accepted checked callable catalog",
-                source,
-            ));
-            return None;
-        };
-        if !matches!(
-            checked.id().declaration(),
-            CheckedCallableDeclaration::Project(retained) if retained == &checked_declaration
-        ) {
-            diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.initial_flow_not_checked",
-                "prepared initial Flow differs from its accepted checked callable row",
-                source,
-            ));
-            return None;
-        }
         let Some(flow_module) = self
             .project
             .modules()
@@ -1664,7 +1640,7 @@ impl<'a> EntryCheckContext<'a> {
         };
         Some(CheckedInitialFlowRole {
             source_item,
-            declaration,
+            declaration: declaration.clone(),
             contract_digest: digest::flow_contract(&id, &contract),
             state_parameter_name: name.as_str().to_owned(),
             id,

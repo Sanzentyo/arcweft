@@ -1512,6 +1512,7 @@ pub(super) fn validate_checked_nominal(
 
 pub(super) fn seal_nominal_draft(
     draft: FinalSemanticAnalysisDraft,
+    entry_ingress: super::PreparedEntryIngressSeal,
     project: crate::final_analysis::HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     semantic_shapes: super::AcceptedSemanticShapeCatalog,
@@ -1520,6 +1521,7 @@ pub(super) fn seal_nominal_draft(
     type_effects: PublicationTypeEffects<'_, '_>,
 ) -> Result<FinalSemanticAnalysis, FinalSemanticProjectError> {
     let callables = Arc::clone(&draft.checked_callables);
+    let entry_ingress = entry_ingress.admit_initial_flows(&callables, control)?;
     let topology = Arc::clone(draft.selected_expressions.topology());
     let mut types = PublicationTypes::new(&callables, &topology, type_effects);
     let type_roots = project
@@ -1645,13 +1647,13 @@ pub(super) fn seal_nominal_draft(
                 .map(|fact| (owner, fact))
         })
         .collect::<Result<_, _>>()?;
-    let (entry_ingress, mut draft) = parts.into_post_entry(expressions, patterns, statements)?;
+    let mut draft = parts.into_post_entry(expressions, patterns, statements)?;
     let checked_entries = {
         let authority = crate::entry::PreparedEntrySemanticAuthority::new(
             &draft.types,
             &draft.items,
             &draft.calls,
-            draft.checked_callables.as_ref(),
+            &callables,
             &seal,
         );
         crate::entry::check_prepared_project_entries(project, symbols, &authority, entry_ingress)

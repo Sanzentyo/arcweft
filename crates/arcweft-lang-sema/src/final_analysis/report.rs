@@ -1438,7 +1438,7 @@ pub(crate) struct FinalSemanticAnalysisDraft {
     pub(super) callable_joins: super::match_edges::PreparedCallableJoins,
     pub(super) selected_expressions: super::match_edges::CheckedSelectedExpressionGraph,
     pub(super) structural_edges: super::match_edges::CheckedStructuralEdgeDraft,
-    pub(super) ingress: super::PreparedExecutableIngressSeal,
+    pub(super) statement_ingress: super::PreparedStatementIngressSeal,
     pub(super) text_proxies: crate::checked_text_proxy::PreparedCheckedTextProxyCatalog,
     pub(super) fx_definitions: super::CheckedFxDefinitionCatalog,
     pub(super) physical_candidate_argument_evaluations:
@@ -1464,7 +1464,7 @@ pub(crate) struct FinalSemanticAnalysisDraftParts {
     pub(super) callable_joins: super::match_edges::PreparedCallableJoins,
     pub(super) selected_expressions: super::match_edges::CheckedSelectedExpressionGraph,
     pub(super) structural_edges: super::match_edges::CheckedStructuralEdgeDraft,
-    pub(super) ingress: super::PreparedExecutableIngressSeal,
+    pub(super) statement_ingress: super::PreparedStatementIngressSeal,
     pub(super) text_proxies: crate::checked_text_proxy::PreparedCheckedTextProxyCatalog,
     pub(super) fx_definitions: super::CheckedFxDefinitionCatalog,
     pub(super) physical_candidate_argument_evaluations:
@@ -1490,7 +1490,7 @@ impl FinalSemanticAnalysisDraft {
             callable_joins,
             selected_expressions,
             structural_edges,
-            ingress,
+            statement_ingress,
             text_proxies,
             fx_definitions,
             physical_candidate_argument_evaluations,
@@ -1511,7 +1511,7 @@ impl FinalSemanticAnalysisDraft {
             callable_joins,
             selected_expressions,
             structural_edges,
-            ingress,
+            statement_ingress,
             text_proxies,
             fx_definitions,
             physical_candidate_argument_evaluations,
@@ -1556,13 +1556,7 @@ impl FinalSemanticAnalysisDraftParts {
             StmtId,
             super::PreparedStatementPayload<crate::types::CanonicalEffects>,
         >,
-    ) -> Result<
-        (
-            super::PreparedEntryIngressSeal,
-            FinalSemanticAnalysisPostEntryDraft,
-        ),
-        FinalSemanticAnalysisError,
-    > {
+    ) -> Result<FinalSemanticAnalysisPostEntryDraft, FinalSemanticAnalysisError> {
         if !self.expressions.is_empty() || !self.patterns.is_empty() || !self.statements.is_empty()
         {
             return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
@@ -1582,37 +1576,33 @@ impl FinalSemanticAnalysisDraftParts {
             callable_joins,
             selected_expressions,
             structural_edges,
-            ingress,
+            statement_ingress,
             text_proxies,
             fx_definitions,
             physical_candidate_argument_evaluations,
             executable_suspensions,
         } = self;
-        let (entry_ingress, statement_ingress) = ingress.into_phase_seals();
-        Ok((
-            entry_ingress,
-            FinalSemanticAnalysisPostEntryDraft {
-                checked_callables,
-                accepted_roots,
-                types,
-                type_resolutions,
-                locals,
-                captures,
-                expressions,
-                patterns,
-                statements,
-                items,
-                calls,
-                callable_joins,
-                selected_expressions,
-                structural_edges,
-                statement_ingress,
-                text_proxies,
-                fx_definitions,
-                physical_candidate_argument_evaluations,
-                executable_suspensions,
-            },
-        ))
+        Ok(FinalSemanticAnalysisPostEntryDraft {
+            checked_callables,
+            accepted_roots,
+            types,
+            type_resolutions,
+            locals,
+            captures,
+            expressions,
+            patterns,
+            statements,
+            items,
+            calls,
+            callable_joins,
+            selected_expressions,
+            structural_edges,
+            statement_ingress,
+            text_proxies,
+            fx_definitions,
+            physical_candidate_argument_evaluations,
+            executable_suspensions,
+        })
     }
 }
 
@@ -2501,6 +2491,7 @@ impl FinalSemanticAnalysis {
             .map_err(|error| FinalSemanticAnalysisError::CheckedCallableJoin(Box::new(error)))?;
         let physical_candidate_argument_evaluations = input.physical_candidate_argument_evaluations;
         control.check()?;
+        let (entry_ingress, statement_ingress) = ingress.into_phase_seals();
         let draft = FinalSemanticAnalysisDraft {
             checked_callables,
             accepted_roots,
@@ -2516,7 +2507,7 @@ impl FinalSemanticAnalysis {
             callable_joins,
             selected_expressions,
             structural_edges,
-            ingress,
+            statement_ingress,
             text_proxies,
             fx_definitions,
             physical_candidate_argument_evaluations,
@@ -2524,6 +2515,7 @@ impl FinalSemanticAnalysis {
         };
         super::nominal_schema::seal_nominal_draft(
             draft,
+            entry_ingress,
             project,
             symbols,
             semantic_shapes,

@@ -347,34 +347,54 @@ fn n23_mutated_event_digest_is_rejected_by_the_consuming_entry_seal() {
 }
 
 #[test]
-fn initial_flow_late_join_rejects_missing_foreign_and_stale_checked_rows() {
-    let fixture = one_entry_fixture("", "");
+fn initial_flow_publication_rejects_invalid_checked_rows_at_the_goto_span() {
+    let fixture = one_entry_fixture("", "flow @flow.other other(current: GameState) {}");
     let report = analyze(&fixture).expect("baseline stateful Entry publication");
     let declaration = flow_declaration(&fixture, "flow.shared");
+    let goto = report
+        .checked_entries()
+        .entries()
+        .find_map(|entry| entry.stateful())
+        .unwrap()
+        .initial_flow()
+        .source();
+    let other = flow_declaration(&fixture, "flow.other");
+    let wrong_row = report
+        .checked_callables()
+        .project_callable(&other)
+        .unwrap()
+        .id()
+        .clone();
 
-    assert_entry_diagnostic(
-        analyze_with_mutation(
-            &fixture,
-            FinalAuthorityMutationForTest::MissingCheckedCallable {
-                declaration: declaration.clone(),
-            },
-        ),
-        "sema.entry.initial_flow_not_checked",
-    );
-    for kind in [
+    let invalid_rows = [
         RejectedCheckedIdKind::ForeignWorld,
         RejectedCheckedIdKind::StaleRevision,
-    ] {
-        assert_entry_diagnostic(
-            analyze_with_mutation(
-                &fixture,
-                FinalAuthorityMutationForTest::SubstituteCheckedCallable {
-                    declaration: declaration.clone(),
-                    replacement: rejected_checked_id(&report, &declaration, kind),
-                },
-            ),
-            "sema.entry.initial_flow_not_checked",
+    ]
+    .map(|kind| rejected_checked_id(&report, &declaration, kind));
+    let missing = FinalAuthorityMutationForTest::MissingCheckedCallable {
+        declaration: declaration.clone(),
+    };
+    let substitutions = invalid_rows
+        .into_iter()
+        .chain([wrong_row])
+        .map(
+            |replacement| FinalAuthorityMutationForTest::SubstituteCheckedCallable {
+                declaration: declaration.clone(),
+                replacement,
+            },
         );
+    for mutation in std::iter::once(missing).chain(substitutions) {
+        let Err(FinalSemanticProjectError::Entry(diagnostics)) =
+            analyze_with_mutation(&fixture, mutation)
+        else {
+            panic!("invalid initial Flow must fail Entry publication");
+        };
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code(), "sema.entry.initial_flow_not_checked");
+        assert_eq!(diagnostics[0].primary(), goto);
+        let retry =
+            analyze(&fixture).expect("the original generation still publishes after rejection");
+        assert_eq!(retry.checked_entries(), report.checked_entries());
     }
 }
 

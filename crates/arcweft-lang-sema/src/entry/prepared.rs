@@ -19,14 +19,18 @@ use arcweft_lang_hir::{
 };
 use arcweft_source::SourceSpan;
 
-use crate::types::{SemanticTypeDigest, TypeKind};
+use crate::{
+    callable::{CheckedCallableCatalog, CheckedCallableDeclaration},
+    final_analysis::{FinalSemanticAnalysisControl, FinalSemanticProjectError},
+    types::{SemanticTypeDigest, TypeKind},
+};
 
 use super::{CheckedEntryDiagnostic, CheckedFlowId};
 
 /// Exact accepted Flow target resolved once from an Entry member.
 ///
 /// This proof deliberately has no `Clone` implementation. The early ingress
-/// worklist borrows it and the late Entry checker consumes it.
+/// worklist borrows it and publication resolves it against the checked catalog.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct PreparedEntryFlowTarget {
     source_item: ItemId,
@@ -40,11 +44,45 @@ impl PreparedEntryFlowTarget {
         &self.declaration
     }
 
-    pub(crate) const fn source(&self) -> &SourceSpan {
+    fn admit<'a>(
+        self,
+        catalog: &'a CheckedCallableCatalog,
+    ) -> Result<AdmittedInitialFlowTarget<'a>, CheckedEntryDiagnostic> {
+        let key = CallableDeclarationKey::Flow(self.declaration);
+        if let Ok(checked) = catalog.project_callable(&key)
+            && let CheckedCallableDeclaration::Project(CallableDeclarationKey::Flow(declaration)) =
+                checked.id().declaration()
+        {
+            return Ok(AdmittedInitialFlowTarget {
+                source_item: self.source_item,
+                declaration,
+                id: self.id,
+                source: self.source,
+            });
+        }
+        Err(CheckedEntryDiagnostic::new(
+            "sema.entry.initial_flow_not_checked",
+            "prepared initial Flow does not resolve to its exact row in the accepted checked callable catalog",
+            self.source,
+        ))
+    }
+}
+
+/// Entry's root carries the actual declaration from the accepted callable row.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct AdmittedInitialFlowTarget<'a> {
+    source_item: ItemId,
+    declaration: &'a FlowDeclarationId,
+    id: CheckedFlowId,
+    source: SourceSpan,
+}
+
+impl<'a> AdmittedInitialFlowTarget<'a> {
+    pub(super) const fn source(&self) -> &SourceSpan {
         &self.source
     }
 
-    pub(crate) fn into_parts(self) -> (ItemId, FlowDeclarationId, CheckedFlowId, SourceSpan) {
+    pub(super) fn into_parts(self) -> (ItemId, &'a FlowDeclarationId, CheckedFlowId, SourceSpan) {
         (self.source_item, self.declaration, self.id, self.source)
     }
 }
@@ -54,14 +92,14 @@ impl PreparedEntryFlowTarget {
 /// The semantic type is selected by its already-resolved `TypeId`; no owned
 /// `TypeKind`, source spelling, or fallback type is retained here.
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct PreparedEntryRootSeed {
+pub(crate) struct PreparedEntryRootSeed<T = PreparedEntryFlowTarget> {
     entry: ItemId,
     event_type: TypeId,
     event_digest: SemanticTypeDigest,
-    target: PreparedEntryFlowTarget,
+    target: T,
 }
 
-impl PreparedEntryRootSeed {
+impl<T> PreparedEntryRootSeed<T> {
     pub(crate) const fn entry(&self) -> ItemId {
         self.entry
     }
@@ -74,36 +112,84 @@ impl PreparedEntryRootSeed {
         self.event_digest
     }
 
-    pub(crate) const fn target(&self) -> &PreparedEntryFlowTarget {
+    pub(crate) const fn target(&self) -> &T {
         &self.target
     }
 
-    pub(crate) fn into_target(self) -> PreparedEntryFlowTarget {
+    pub(crate) fn into_target(self) -> T {
         self.target
     }
 }
 
 /// Deterministically keyed move-only root inventory.
-#[derive(Debug, Default, Eq, PartialEq)]
-pub(crate) struct PreparedEntryRootCatalog {
-    roots: BTreeMap<ItemId, PreparedEntryRootSeed>,
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct PreparedEntryRootCatalog<T = PreparedEntryFlowTarget> {
+    roots: BTreeMap<ItemId, PreparedEntryRootSeed<T>>,
 }
 
-impl PreparedEntryRootCatalog {
-    pub(crate) fn roots(&self) -> impl ExactSizeIterator<Item = &PreparedEntryRootSeed> {
+impl Default for PreparedEntryRootCatalog {
+    fn default() -> Self {
+        Self {
+            roots: BTreeMap::new(),
+        }
+    }
+}
+
+impl<T> PreparedEntryRootCatalog<T> {
+    pub(crate) fn roots(&self) -> impl ExactSizeIterator<Item = &PreparedEntryRootSeed<T>> {
         self.roots.values()
     }
 
-    pub(crate) fn get(&self, entry: ItemId) -> Option<&PreparedEntryRootSeed> {
+    pub(crate) fn get(&self, entry: ItemId) -> Option<&PreparedEntryRootSeed<T>> {
         self.roots.get(&entry)
     }
 
-    pub(crate) fn take(&mut self, entry: ItemId) -> Option<PreparedEntryRootSeed> {
+    pub(crate) fn take(&mut self, entry: ItemId) -> Option<PreparedEntryRootSeed<T>> {
         self.roots.remove(&entry)
     }
 
     pub(crate) fn is_empty(&self) -> bool {
         self.roots.is_empty()
+    }
+}
+
+impl PreparedEntryRootCatalog {
+    pub(crate) fn admit_initial_flows<'a>(
+        self,
+        catalog: &'a CheckedCallableCatalog,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<PreparedEntryRootCatalog<AdmittedInitialFlowTarget<'a>>, FinalSemanticProjectError>
+    {
+        let mut admitted = BTreeMap::new();
+        let mut diagnostics = Vec::new();
+        for (item, root) in self.roots {
+            control.check()?;
+            let PreparedEntryRootSeed {
+                entry,
+                event_type,
+                event_digest,
+                target,
+            } = root;
+            match target.admit(catalog) {
+                Ok(target) => {
+                    admitted.insert(
+                        item,
+                        PreparedEntryRootSeed {
+                            entry,
+                            event_type,
+                            event_digest,
+                            target,
+                        },
+                    );
+                }
+                Err(diagnostic) => diagnostics.push(diagnostic),
+            }
+        }
+        if diagnostics.is_empty() {
+            Ok(PreparedEntryRootCatalog { roots: admitted })
+        } else {
+            Err(FinalSemanticProjectError::Entry(diagnostics.into()))
+        }
     }
 }
 

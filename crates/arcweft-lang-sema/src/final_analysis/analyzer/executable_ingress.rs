@@ -15,7 +15,7 @@ use arcweft_lang_hir::{
 };
 
 use crate::{
-    entry::PreparedEntryRootCatalog,
+    entry::{AdmittedInitialFlowTarget, PreparedEntryFlowTarget, PreparedEntryRootCatalog},
     final_analysis::{
         PreparedEventScrutineeProof, PreparedIncludeFlowProof, PreparedStatementScrutineeProof,
     },
@@ -60,9 +60,9 @@ pub(crate) struct PreparedExecutableIngressSeal {
 
 /// Entry-owned half of the completed ingress transaction.
 #[derive(Debug)]
-pub(crate) struct PreparedEntryIngressSeal {
+pub(crate) struct PreparedEntryIngressSeal<T = PreparedEntryFlowTarget> {
     facts: PreparedExecutableIngressFacts,
-    roots: PreparedEntryRootCatalog,
+    roots: PreparedEntryRootCatalog<T>,
     events: BTreeMap<StmtId, PreparedEventScrutineeProof>,
 }
 
@@ -127,11 +127,28 @@ impl PreparedExecutableIngressSeal {
 }
 
 impl PreparedEntryIngressSeal {
+    pub(crate) fn admit_initial_flows<'a>(
+        self,
+        catalog: &'a crate::callable::CheckedCallableCatalog,
+        control: super::FinalSemanticAnalysisControl<'_>,
+    ) -> Result<
+        PreparedEntryIngressSeal<AdmittedInitialFlowTarget<'a>>,
+        crate::final_analysis::FinalSemanticProjectError,
+    > {
+        Ok(PreparedEntryIngressSeal {
+            facts: self.facts,
+            roots: self.roots.admit_initial_flows(catalog, control)?,
+            events: self.events,
+        })
+    }
+}
+
+impl<T> PreparedEntryIngressSeal<T> {
     pub(crate) fn into_parts(
         self,
     ) -> (
         PreparedExecutableIngressFacts,
-        PreparedEntryRootCatalog,
+        PreparedEntryRootCatalog<T>,
         BTreeMap<StmtId, PreparedEventScrutineeProof>,
     ) {
         (self.facts, self.roots, self.events)

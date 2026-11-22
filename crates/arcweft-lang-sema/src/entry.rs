@@ -31,8 +31,8 @@ use crate::types::SemanticTypeDigest;
 pub use checker::CheckedEntryDiagnostic;
 pub(crate) use checker::{PreparedEntrySemanticAuthority, check_prepared_project_entries};
 pub(crate) use prepared::{
-    PreparedEntryFlowTarget, PreparedEntryRootCatalog, PreparedEntryRootSeed,
-    prepare_entry_root_seeds,
+    AdmittedInitialFlowTarget, PreparedEntryFlowTarget, PreparedEntryRootCatalog,
+    PreparedEntryRootSeed, prepare_entry_root_seeds,
 };
 
 /// Canonical public identity of one checked source entry.
