@@ -515,6 +515,12 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             self.env.function_instantiation(),
         )?;
         self.admit_function_contexts(admission)?;
+        if matches!(
+            V::admission_origin(),
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        ) {
+            self.admit_iteration_contour()?;
+        }
         if let Err(message) =
             self.observations
                 .admit_values(admission, P::borrowed_value, "retained")
@@ -640,6 +646,45 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         admission.validate_owned_typed_borrowed(value.borrowed_value(), expected)
     }
 
+    fn admit_iteration_contour(&self) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        O: NativeStoredWork,
+        C: ScopeControl<O>,
+        S: NativeInvocationStatus,
+    {
+        let invalid = || crate::value::AwbcRuntimeValueSnapshotError::Message {
+            message: "native loop frames disagree with their queued iteration continuations".into(),
+        };
+        let mut iterations = self
+            .pending_ops
+            .iter()
+            .filter_map(O::loop_source)
+            .peekable();
+        // The failed operation can already have consumed its iteration
+        // continuation. Only the active terminal queue can lose such work.
+        let mut terminal_queue = self.status.retires_invocation_scopes();
+        for frame in self.control_stack.iter().rev() {
+            if let Some(source) = frame.loop_source() {
+                if iterations.peek().copied() == Some(source) {
+                    iterations.next();
+                } else if !terminal_queue {
+                    return Err(invalid());
+                }
+            }
+            if let Some(ScopeState::Pending(work)) = frame.scope_state() {
+                if iterations.next().is_some() {
+                    return Err(invalid());
+                }
+                iterations = work.iter().filter_map(O::loop_source).peekable();
+                terminal_queue = false;
+            }
+        }
+        if iterations.next().is_some() {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+
     fn admit_function_contexts(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -696,21 +741,16 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
                     return Err(invalid());
                 }
             }
-            entry.visit_scope_state(|state| {
-                if let ScopeState::Pending(work) = state {
-                    let pending_root = O::queued_function_root_owner(work, admission)?;
-                    if let Some(pending_root) = pending_root {
-                        if root.replace(pending_root).is_some() {
-                            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
-                                message:
-                                    "native code context retains multiple original function roots"
-                                        .into(),
-                            });
-                        }
-                    }
+            if let Some(ScopeState::Pending(work)) = entry.scope_state() {
+                if let Some(pending_root) = O::queued_function_root_owner(work, admission)?
+                    && root.replace(pending_root).is_some()
+                {
+                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "native code context retains multiple original function roots"
+                            .into(),
+                    });
                 }
-                Ok(())
-            })?;
+            }
             let binding = contexts
                 .peek()
                 .and_then(|(_, binding)| binding.map(Arc::as_ref));
@@ -793,10 +833,7 @@ pub(super) trait ScopeControl<O> {
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>;
-    fn visit_scope_state<E>(
-        &self,
-        visit: impl FnMut(ScopeState<'_, O>) -> Result<(), E>,
-    ) -> Result<(), E>;
+    fn scope_state(&self) -> Option<ScopeState<'_, O>>;
 }
 
 impl<O, P, V> ScopeControl<O>
@@ -902,23 +939,18 @@ where
         }
     }
 
-    fn visit_scope_state<E>(
-        &self,
-        mut visit: impl FnMut(ScopeState<'_, O>) -> Result<(), E>,
-    ) -> Result<(), E> {
+    fn scope_state(&self) -> Option<ScopeState<'_, O>> {
         match self {
             Self::Scope {
                 origin: crate::scope::RuntimeScopeFrameOrigin::Scheduled(token),
                 ..
-            } => visit(ScopeState::Frame(*token)),
-            Self::FunctionCall(frame) => visit(ScopeState::Pending(&frame.caller_pending_ops)),
-            Self::FormatAttempt(frame) => {
-                if let Some(active) = &frame.active {
-                    visit(ScopeState::Pending(&active.caller_pending_ops))?;
-                }
-                Ok(())
-            }
-            _ => Ok(()),
+            } => Some(ScopeState::Frame(*token)),
+            Self::FunctionCall(frame) => Some(ScopeState::Pending(&frame.caller_pending_ops)),
+            Self::FormatAttempt(frame) => frame
+                .active
+                .as_ref()
+                .map(|active| ScopeState::Pending(&active.caller_pending_ops)),
+            _ => None,
         }
     }
 }
@@ -950,11 +982,8 @@ impl ScopeControl<NativePendingWork> for FlowControlStackEntry {
         self.kind.function_context()
     }
 
-    fn visit_scope_state<E>(
-        &self,
-        visit: impl FnMut(ScopeState<'_, NativePendingWork>) -> Result<(), E>,
-    ) -> Result<(), E> {
-        self.kind.visit_scope_state(visit)
+    fn scope_state(&self) -> Option<ScopeState<'_, NativePendingWork>> {
+        self.kind.scope_state()
     }
 }
 
@@ -981,14 +1010,14 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
                 .validate_metadata_collection(frame.control_stack.len())
                 .map_err(|error| error.to_string())?;
             for entry in &frame.control_stack {
-                entry.visit_scope_state(|state| match state {
-                    ScopeState::Frame(token) => admission
-                        .validate_metadata(&token)
-                        .map_err(|error| error.to_string()),
-                    ScopeState::Pending(ops) => admission
-                        .validate_metadata_collection(ops.len())
-                        .map_err(|error| error.to_string()),
-                })?;
+                match entry.scope_state() {
+                    Some(ScopeState::Frame(token)) => admission.validate_metadata(&token),
+                    Some(ScopeState::Pending(ops)) => {
+                        admission.validate_metadata_collection(ops.len())
+                    }
+                    None => Ok(()),
+                }
+                .map_err(|error| error.to_string())?;
             }
         }
         if self.next_scheduled_scope_sequence == 0 {
@@ -1003,17 +1032,13 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
                     && token.ordinal().get() < self.next_scheduled_scope_sequence
             };
             for entry in &frame.control_stack {
-                entry.visit_scope_state::<String>(|state| {
-                    if let ScopeState::Frame(token) = state
-                        && (!valid(token) || !opened.insert(token))
-                    {
-                        return Err(
-                            "native scope frame has a foreign, repeated, or unallocated token"
-                                .into(),
-                        );
-                    }
-                    Ok(())
-                })?;
+                if let Some(ScopeState::Frame(token)) = entry.scope_state()
+                    && (!valid(token) || !opened.insert(token))
+                {
+                    return Err(
+                        "native scope frame has a foreign, repeated, or unallocated token".into(),
+                    );
+                }
             }
             let mut pending = |ops: &VecDeque<O>| -> Result<(), String> {
                 for op in ops {
@@ -1048,10 +1073,9 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
             };
             pending(&frame.pending_ops)?;
             for entry in &frame.control_stack {
-                entry.visit_scope_state(|state| match state {
-                    ScopeState::Pending(ops) => pending(ops),
-                    ScopeState::Frame(_) => Ok(()),
-                })?;
+                if let Some(ScopeState::Pending(ops)) = entry.scope_state() {
+                    pending(ops)?;
+                }
             }
             if let Some(exit) = &frame.lexical_exit
                 && let NativeLexicalExitAction::Scheduled(token) = exit.action
@@ -1060,13 +1084,10 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
                     .control_stack
                     .get(exit.target)
                     .ok_or_else(|| "native lexical exit target is absent".to_owned())?;
-                let mut target_matches = false;
-                target.visit_scope_state::<String>(|state| {
-                    target_matches |=
-                        matches!(state, ScopeState::Frame(frame_token) if frame_token == token);
-                    Ok(())
-                })?;
-                if !target_matches || !valid(token) || !closed.insert(token) {
+                if !matches!(target.scope_state(), Some(ScopeState::Frame(frame_token)) if frame_token == token)
+                    || !valid(token)
+                    || !closed.insert(token)
+                {
                     return Err("native lexical exit does not own the exact scheduled close".into());
                 }
             }

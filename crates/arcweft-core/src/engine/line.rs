@@ -350,7 +350,22 @@ impl Engine {
                     self.fiber.frame.pending_ops = active.caller_pending_ops;
                 }
             }
-            _ => {}
+            FlowControlStackEntryKind::Loop { source }
+            | FlowControlStackEntryKind::While { source }
+            | FlowControlStackEntryKind::WhileLet { source }
+            | FlowControlStackEntryKind::For { source } => {
+                let pending = &mut self.fiber.frame.pending_ops;
+                // A failure during iteration may already have consumed this
+                // marker. An enclosing loop's marker stays with its frame.
+                if let Some((index, queued)) = pending
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, work)| work.loop_source().map(|queued| (index, queued)))
+                    && *queued == source
+                {
+                    pending.remove(index);
+                }
+            }
         }
         Ok(())
     }

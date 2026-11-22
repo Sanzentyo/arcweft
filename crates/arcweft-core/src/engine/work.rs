@@ -20,6 +20,8 @@ pub(super) trait NativeStoredWork {
 
     fn function_end_site(&self) -> Option<crate::runtime_id::RuntimeFunctionSiteId>;
 
+    fn loop_source(&self) -> Option<&NativeSourceOperation>;
+
     fn queued_function_root_owner(
         work: &std::collections::VecDeque<Self>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -183,6 +185,16 @@ impl NativeRuntimeContinuationKind {
 }
 
 impl<V, I> NativeRuntimeContinuation<V, I> {
+    pub(super) const fn loop_source(&self) -> Option<&NativeSourceOperation> {
+        match self {
+            Self::LoopNext { source }
+            | Self::WhileNext { source }
+            | Self::WhileLetNext { source }
+            | Self::ForNext { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+
     pub(super) const fn kind(&self) -> NativeRuntimeContinuationKind {
         match self {
             Self::Bind(_) => NativeRuntimeContinuationKind::Bind,
@@ -244,6 +256,13 @@ impl<V, I> NativePendingWork<V, I> {
                 | NativeRuntimeContinuation::ProgramFanout { source },
             ) => Some(source.owner()),
             NativePendingWorkKind::Resume(_) => None,
+        }
+    }
+
+    pub(super) fn loop_source(&self) -> Option<&NativeSourceOperation> {
+        match &self.kind {
+            NativePendingWorkKind::Source { .. } => None,
+            NativePendingWorkKind::Resume(resume) => resume.loop_source(),
         }
     }
 
@@ -651,6 +670,10 @@ impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue> N
             }
             _ => None,
         }
+    }
+
+    fn loop_source(&self) -> Option<&NativeSourceOperation> {
+        Self::loop_source(self)
     }
 
     fn admit_work(

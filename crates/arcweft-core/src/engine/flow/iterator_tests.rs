@@ -348,16 +348,13 @@ fn witness_next_rejects_a_copy_of_its_affine_receiver() {
     ));
 }
 
-#[test]
-fn native_for_restore_admits_the_original_iterator_storage() {
+fn native_for_engine() -> Engine {
     use crate::plan::{
         FlowRuntimeId, RuntimeBuiltinIteratorEvidenceSeed, RuntimeBuiltinIteratorFamily,
         RuntimeEffectSet, RuntimeExecutableBodySeed, RuntimeFlowOpSeed, RuntimeFlowSchema,
         RuntimeFlowSeed, RuntimeFunctionDefinitionIdentity, RuntimeFunctionSiteDeclarationSeed,
         RuntimeIteratorEvidenceSeed, RuntimePatternSeed,
     };
-    use crate::step::{RuntimeStepBudget, RuntimeStepMode, RuntimeStepOptions};
-
     let (int, unit, vector, iterator, payload, next, step) = (
         semantic(10),
         semantic(11),
@@ -410,6 +407,29 @@ fn native_for_restore_admits_the_original_iterator_storage() {
             parameters: vec![],
         })
         .unwrap();
+    let for_loop = |items: [i64; 2]| RuntimeFlowOpSeed::For {
+        pattern: RuntimePatternSeed::new(int, crate::plan::RuntimePatternSeedKind::Discard),
+        source: RuntimeExprSeed::new(
+            vector,
+            RuntimeExprSeedKind::BracketSeq(Box::new(items.map(|value| {
+                RuntimeExprSeed::new(int, RuntimeExprSeedKind::Value(RuntimeValue::i64(value)))
+            }))),
+        ),
+        evidence: RuntimeIteratorEvidenceSeed::Builtin(RuntimeBuiltinIteratorEvidenceSeed {
+            family: RuntimeBuiltinIteratorFamily::Vec,
+            item: int,
+            iterator,
+            next_value: next,
+            step,
+        }),
+        body: vec![RuntimeFlowOpSeed::Loop {
+            result: None,
+            body: vec![RuntimeFlowOpSeed::Break {
+                depth: 0,
+                value: None,
+            }],
+        }],
+    };
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
@@ -423,47 +443,74 @@ fn native_for_restore_admits_the_original_iterator_storage() {
             RuntimeExecutableBodySeed {
                 effects: RuntimeEffectSet::empty(),
                 ops: Box::new([
-                    RuntimeFlowOpSeed::For {
-                        pattern: RuntimePatternSeed::new(
-                            int,
-                            crate::plan::RuntimePatternSeedKind::Discard,
-                        ),
-                        source: RuntimeExprSeed::new(
-                            vector,
-                            RuntimeExprSeedKind::BracketSeq(Box::new([1, 2].map(|value| {
-                                RuntimeExprSeed::new(
-                                    int,
-                                    RuntimeExprSeedKind::Value(RuntimeValue::i64(value)),
-                                )
-                            }))),
-                        ),
-                        evidence: RuntimeIteratorEvidenceSeed::Builtin(
-                            RuntimeBuiltinIteratorEvidenceSeed {
-                                family: RuntimeBuiltinIteratorFamily::Vec,
-                                item: int,
-                                iterator,
-                                next_value: next,
-                                step,
-                            },
-                        ),
-                        body: vec![RuntimeFlowOpSeed::Noop],
-                    },
+                    for_loop([1, 2]),
+                    for_loop([3, 4]),
                     RuntimeFlowOpSeed::Return("42".into()),
                 ]),
             },
         ))
         .unwrap();
-    let mut live = Engine::for_flow(builder.finish().unwrap(), &flow).unwrap();
+    Engine::for_flow(builder.finish().unwrap(), &flow).unwrap()
+}
+
+#[test]
+fn native_for_restore_admits_the_original_iterator_storage() {
+    use crate::step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions};
+
+    let mut live = native_for_engine();
     let owner = crate::task::RuntimeProgramOwner::Plan(live.program_plan());
     let options = RuntimeStepOptions {
         mode: RuntimeStepMode::OneOp,
         budget: RuntimeStepBudget { max_ops: 1 },
         ..Default::default()
     };
-    let first = live.step(Default::default(), options);
+    let first = live.step(RuntimeStepInput::default(), options);
     assert_eq!(first.stats.executed_ops, 1);
     assert!(first.output.diagnostics.is_empty());
     let original = live.inert_rollback_image().unwrap();
+    let index = original
+        .fiber
+        .frame
+        .pending_ops
+        .iter()
+        .position(|work| work.loop_source().is_some())
+        .expect("the first iteration retains its continuation");
+    let mut redirected = original.clone();
+    let alternate = redirected
+        .fiber
+        .frame
+        .pending_ops
+        .iter()
+        .filter_map(|work| work.position())
+        .find(|position| position.is_root())
+        .unwrap()
+        .source_operation(&live.plan)
+        .unwrap();
+    assert!(matches!(
+        alternate.operation(&live.plan),
+        Some(FlowOp::For { .. })
+    ));
+    let NativePendingWorkKind::Resume(NativeRuntimeContinuation::ForNext { source, .. }) =
+        &mut redirected.fiber.frame.pending_ops[index].kind
+    else {
+        panic!("the retained iteration is a For continuation");
+    };
+    assert_ne!(*source, alternate);
+    *source = alternate;
+    assert!(
+        Engine::from_rollback_image(redirected, &owner).is_err(),
+        "a well-typed continuation cannot resume a different loop in the same function"
+    );
+    let mut missing = original.clone();
+    missing.fiber.frame.pending_ops.remove(index);
+    assert!(Engine::from_rollback_image(missing, &owner).is_err());
+    let mut duplicate = original.clone();
+    duplicate
+        .fiber
+        .frame
+        .pending_ops
+        .insert(index, original.fiber.frame.pending_ops[index].clone());
+    assert!(Engine::from_rollback_image(duplicate, &owner).is_err());
 
     for invalid_iterator in [
         RuntimeIterator::values(vec![RuntimeValue::Bool(true)]),
@@ -477,19 +524,13 @@ fn native_for_restore_admits_the_original_iterator_storage() {
         .unwrap(),
     ] {
         let mut forged = original.clone();
-        let saved_iterator = forged
-            .fiber
-            .frame
-            .pending_ops
-            .iter_mut()
-            .find_map(|work| match &mut work.kind {
-                super::NativePendingWorkKind::Resume(NativeRuntimeContinuation::ForNext {
-                    iterator,
-                    ..
-                }) => Some(iterator),
-                _ => None,
-            })
-            .expect("the first iteration retains the original rest position");
+        let NativePendingWorkKind::Resume(NativeRuntimeContinuation::ForNext {
+            iterator: saved_iterator,
+            ..
+        }) = &mut forged.fiber.frame.pending_ops[index].kind
+        else {
+            panic!("the retained iteration owns its iterator");
+        };
         *saved_iterator =
             AwbcRuntimeValueSnapshot::from_runtime_iterator_for_program(&invalid_iterator, &owner)
                 .unwrap();
@@ -499,8 +540,8 @@ fn native_for_restore_admits_the_original_iterator_storage() {
 
     let mut restored = Engine::from_rollback_image(original, &owner).unwrap();
     for _ in 0..32 {
-        let expected = live.step(Default::default(), options);
-        let actual = restored.step(Default::default(), options);
+        let expected = live.step(RuntimeStepInput::default(), options);
+        let actual = restored.step(RuntimeStepInput::default(), options);
         assert_eq!(actual, expected);
         assert!(actual.output.diagnostics.is_empty());
         assert!(actual.stats.executed_ops <= 1);
@@ -509,6 +550,8 @@ fn native_for_restore_admits_the_original_iterator_storage() {
         {
             return;
         }
+        restored =
+            Engine::from_rollback_image(restored.inert_rollback_image().unwrap(), &owner).unwrap();
     }
     panic!("the original and restored For did not complete");
 }

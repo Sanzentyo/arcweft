@@ -17,6 +17,21 @@ impl Engine {
         backend: &mut impl RuntimeCallBackend,
     ) {
         use NativeRuntimeContinuation as Resume;
+        if let Some(source) = resume.loop_source()
+            && self
+                .fiber
+                .frame
+                .control_stack
+                .last()
+                .and_then(|frame| frame.kind.loop_source())
+                != Some(source)
+        {
+            self.fail_eval(
+                "native iteration continuation differs from its active loop frame",
+                output,
+            );
+            return;
+        }
         let plan = Arc::clone(&self.plan);
         match resume {
             Resume::Bind(bindings) => self.fiber.frame.env.bind_all(bindings),

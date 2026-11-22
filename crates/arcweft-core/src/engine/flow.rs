@@ -1973,12 +1973,8 @@ impl Engine {
 
     pub(super) fn discard_pending_until_loop_next(&mut self) -> Option<NativeRuntimeContinuation> {
         while let Some(op) = self.fiber.frame.pending_ops.pop_front() {
-            if let NativePendingWorkKind::Resume(
-                next @ (NativeRuntimeContinuation::LoopNext { .. }
-                | NativeRuntimeContinuation::WhileNext { .. }
-                | NativeRuntimeContinuation::WhileLetNext { .. }
-                | NativeRuntimeContinuation::ForNext { .. }),
-            ) = op.kind
+            if let NativePendingWorkKind::Resume(next) = op.kind
+                && next.loop_source().is_some()
             {
                 return Some(next);
             }
@@ -2061,15 +2057,7 @@ impl Engine {
                     );
                     return false;
                 };
-                use NativeRuntimeContinuation as Resume;
-                let continuation_source = match &next {
-                    Resume::LoopNext { source }
-                    | Resume::WhileNext { source }
-                    | Resume::WhileLetNext { source }
-                    | Resume::ForNext { source, .. } => source,
-                    _ => unreachable!("the queue selected an iteration continuation"),
-                };
-                if continuation_source != &source {
+                if next.loop_source() != Some(&source) {
                     self.fail_eval(
                         "native iteration continuation differs from its loop frame",
                         output,
