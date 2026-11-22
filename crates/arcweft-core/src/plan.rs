@@ -1534,6 +1534,25 @@ impl RuntimeDialogueResultTarget {
     pub const fn pattern(&self) -> &RuntimePattern {
         &self.pattern
     }
+
+    pub(crate) fn validate_value(
+        &self,
+        plan: &RuntimePlan,
+        value: &crate::value::RuntimeValue,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), crate::program_types::RuntimeProgramTypeError> {
+        crate::program_types::RuntimeProgramValueType::Plan {
+            program: &plan.inventory,
+            ty: self.ty,
+        }
+        .validate_view(
+            value.view(),
+            binding,
+            &mut crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+    }
 }
 
 /// Direct host-call request surface for runtime-step hosts.

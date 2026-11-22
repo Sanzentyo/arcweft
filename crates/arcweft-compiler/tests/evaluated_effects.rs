@@ -2332,7 +2332,7 @@ entry cli @entry.main { goto @flow.main }
 
 #[test]
 fn cancellation_out_selects_the_dialogue_result_in_native_and_decoded_awbc() {
-    let compiled = compile_attached_dialogue_project(
+    assert_line_result_in_native_and_decoded_awbc(
         r#"
 pub character alice { display = "Alice" }
 flow main() -> Unit {
@@ -2345,8 +2345,40 @@ flow main() -> Unit {
 }
 entry cli @entry.main { goto @flow.main }
 "#,
-    )
-    .expect("checked cancel out and normal result compile");
+        &[],
+        &["cancelled"],
+    );
+}
+
+#[test]
+fn dialogue_selects_and_invokes_the_published_function_in_native_and_decoded_awbc() {
+    assert_line_result_in_native_and_decoded_awbc(
+        r#"
+pub character alice { display = "Alice" }
+fn normal() -> String { "normal function" }
+fn skipped() -> String { "cancelled function" }
+flow main() -> Unit {
+    let reply = alice[Hello[p]] with {
+        cancel on input(.SkipLine) { out skipped }
+        out normal
+    }
+    let alias = reply
+    log.info(alias())
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        &["normal function"],
+        &["cancelled function"],
+    );
+}
+
+fn assert_line_result_in_native_and_decoded_awbc(
+    source: &str,
+    normal: &[&str],
+    cancelled: &[&str],
+) {
+    let compiled = compile_attached_dialogue_project(source)
+        .expect("checked cancel out and normal result compile");
     let runtime = compiled.runtime_plan();
     let report = AwbcLowerer::new(
         &runtime.plan,
@@ -2364,7 +2396,7 @@ entry cli @entry.main { goto @flow.main }
     let [flow] = runtime.plan.flows() else {
         panic!("one flow")
     };
-    for (cancelled, expected) in [(false, &[][..]), (true, &["cancelled"][..])] {
+    for (cancelled, expected) in [(false, normal), (true, cancelled)] {
         let mut plan = runtime.plan.clone();
         plan.bind_artifact(
             arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
@@ -3696,7 +3728,7 @@ fn execute_dialogue_result_with_action(
         let result = step(input, RuntimeStepOptions::default());
         assert!(
             result.output.diagnostics.is_empty(),
-            "{:?}",
+            "{backend} tick {tick}: {:?}",
             result.output.diagnostics
         );
         effects.extend(result.output.effects.line);

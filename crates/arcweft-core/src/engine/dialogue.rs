@@ -2635,14 +2635,14 @@ impl Engine {
         if !matches!(activation.result(), RuntimeDialogueResultState::Uncommitted) {
             return Err(LineRuntimeError::ResultAlreadyCommitted.into());
         }
-        let checked = self
-            .plan
-            .checked_type(state.result_target.ty())
-            .map_err(|_| LineRuntimeError::ResultPatternOrTypeMismatch)?
-            .ok_or(LineRuntimeError::ResultPatternOrTypeMismatch)?;
-        if !checked.accepts_value(&value) {
-            return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
-        }
+        state
+            .result_target
+            .validate_value(
+                &self.plan,
+                &value,
+                state.execution.env.function_instantiation(),
+            )
+            .map_err(|_| LineRuntimeError::ResultPatternOrTypeMismatch)?;
         let handles = unique_affine_line_handles(&value)?;
         let mut ledger = activation.ledger().clone();
         for handle in handles
@@ -2786,14 +2786,14 @@ impl Engine {
         if ty != state.result_target.ty() {
             return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
         }
-        let checked = self
-            .plan
-            .checked_type(ty)
-            .map_err(|_| LineRuntimeError::ResultPatternOrTypeMismatch)?
-            .ok_or(LineRuntimeError::ResultPatternOrTypeMismatch)?;
-        if !checked.accepts_value(&value) {
-            return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
-        }
+        state
+            .result_target
+            .validate_value(
+                &self.plan,
+                value,
+                self.fiber.frame.env.function_instantiation(),
+            )
+            .map_err(|_| LineRuntimeError::ResultPatternOrTypeMismatch)?;
         if !crate::pattern::inspect_runtime_pattern_owned(
             &self.plan,
             state.result_target.pattern(),

@@ -4415,7 +4415,7 @@ impl Analyzer<'_, '_, '_> {
                 }
                 PreparedFunctionValueOriginProgress::CheckBinding(need) => {
                     let initializer_owner = need.initializer();
-                    self.check_function_alias_binding(
+                    self.check_function_value_binding(
                         context,
                         module,
                         need.statement(),

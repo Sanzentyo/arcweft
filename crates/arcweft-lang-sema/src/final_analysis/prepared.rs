@@ -13,7 +13,7 @@ use arcweft_lang_hir::{
 use arcweft_source::SourceSpan;
 use std::{borrow::Cow, sync::Arc};
 pub(super) use type_updates::PreparedExpressionTypeUpdates;
-pub(crate) use typed_binding::PreparedTypedBindingPattern;
+pub(crate) use typed_binding::{InitializerBindingProjection, PreparedTypedBindingPattern};
 
 #[cfg(test)]
 #[path = "prepared/record_pattern_tests.rs"]

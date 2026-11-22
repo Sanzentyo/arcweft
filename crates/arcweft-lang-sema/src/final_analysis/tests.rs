@@ -3635,14 +3635,11 @@ fn assert_dialogue_application_result_authority(
     let application = selected_application(call);
     assert_eq!(expression.value_type(), Some(expected));
     assert_eq!(application.result().value_type(), Some(expected));
+    let core = application.core();
+    let template = core.candidates().selected().schema().value_type().unwrap();
     assert_eq!(
-        application
-            .core()
-            .candidates()
-            .selected()
-            .schema()
-            .value_type(),
-        Some(expected)
+        &core.solution().instantiate_result(template).unwrap(),
+        expected
     );
 }
 

@@ -65,7 +65,8 @@ use crate::{
     effect_model::CallableId,
     final_analysis::{
         CheckedCaptureAuthorityViolation, CheckedExpressionResolution, CheckedValueResolution,
-        FinalSemanticAnalysisError, PreparedExpressionFact, PreparedOwnerBoundResolution,
+        FinalSemanticAnalysisError, InitializerBindingProjection, PreparedExpressionFact,
+        PreparedOwnerBoundResolution,
     },
     nominal::{ResolvedAssociatedTypeReceiver, TypeResolutionReport},
     registration::RegisteredSemanticWorld,
@@ -1358,13 +1359,14 @@ pub(crate) enum PreparedFunctionValueOriginProgress {
     Ready(PreparedFunctionValueOriginEvidence),
 }
 
-/// An authored interface can change how the local is called. Require the
-/// statement's binding check before using that interface or its initializer.
+/// An annotation or a result projection changes how an initializer supplies
+/// the local. Require the exact statement's binding check before selection.
 pub(crate) struct PreparedFunctionValueBindingNeed {
     query: PreparedFunctionValueOriginQuery,
     statement: StmtId,
     local: LocalId,
     interface: TypeKind<PreparedEffects>,
+    projection: InitializerBindingProjection,
 }
 
 impl PreparedFunctionValueBindingNeed {
@@ -1392,8 +1394,9 @@ impl PreparedFunctionValueBindingNeed {
         }
         let actual = initializer
             .value_type()
+            .and_then(|ty| self.projection.binding_type(ty))
             .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
-        if actual == interface {
+        if self.projection == InitializerBindingProjection::Value && actual == interface {
             self.query.advance_with_fact(module, initializer)
         } else {
             Ok(self.query.ready(
@@ -1664,6 +1667,12 @@ impl PreparedFunctionValueOriginQuery {
                         .value_type()
                         .cloned()
                         .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+                    let initializer_kind = module
+                        .resolve_expr(initializer)
+                        .map_err(|_| PreparedFunctionValueOriginQueryError::Invalid)?
+                        .kind();
+                    let projection =
+                        InitializerBindingProjection::from_initializer(initializer_kind);
                     let statement_kind = module
                         .resolve_stmt(statement)
                         .map_err(|_| PreparedFunctionValueOriginQueryError::Invalid)?
@@ -1681,13 +1690,14 @@ impl PreparedFunctionValueOriginQuery {
                         }
                         _ => return Err(PreparedFunctionValueOriginQueryError::Invalid),
                     };
-                    if authored {
+                    if authored || projection == InitializerBindingProjection::DialogueResult {
                         return Ok(PreparedFunctionValueOriginProgress::CheckBinding(
                             PreparedFunctionValueBindingNeed {
                                 query: self,
                                 statement,
                                 local: *local,
                                 interface,
+                                projection,
                             },
                         ));
                     }

@@ -5243,6 +5243,16 @@ impl Engine {
             if failed || !joined || !live.accepts_result_selection(group, tag) {
                 return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
             }
+            let frame = transaction.frame();
+            frame
+                .result_target
+                .validate_value(
+                    &self.plan,
+                    &value,
+                    frame.execution.env.function_instantiation(),
+                )
+                .map_err(|_| crate::line_task::LineRuntimeError::ResultPatternOrTypeMismatch)?;
+            let ty = frame.result_target.ty();
             for handle in value
                 .affine_line_handles()
                 .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
@@ -5257,15 +5267,6 @@ impl Engine {
                 return Err(
                     crate::line_task::LineRuntimeError::UnexpectedChildHandleOccurrence.into(),
                 );
-            }
-            let ty = transaction.frame().result_target.ty();
-            let checked = self
-                .plan
-                .checked_type(ty)
-                .map_err(|_| crate::line_task::LineRuntimeError::ResultPatternOrTypeMismatch)?
-                .ok_or(crate::line_task::LineRuntimeError::ResultPatternOrTypeMismatch)?;
-            if !checked.accepts_value(&value) {
-                return Err(crate::line_task::LineRuntimeError::ResultPatternOrTypeMismatch.into());
             }
             transaction.line_mut().select_result(tag, ty, value)?;
         }

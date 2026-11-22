@@ -1,12 +1,13 @@
 //! Local binding inference in the expression owner's fact transaction.
 
 use super::{
-    Analyzer, ExprId, FinalSemanticAnalysisError, HirExprKind, HirModule, HirStmtKind, PatternId,
-    PreparedExpressionFact, StmtId, TypeId, TypeKind,
+    Analyzer, ExprId, FinalSemanticAnalysisError, HirModule, HirStmtKind, PatternId,
+    PreparedExpressionFact, StmtId, TypeId,
     expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError},
     expressions::AnalyzerExpressionExpectation,
     pending_effects::SourceTypeDecisionUse,
 };
+use crate::final_analysis::prepared::InitializerBindingProjection;
 
 impl Analyzer<'_, '_, '_> {
     /// Publication entrypoint for declaration and residual statement roots.
@@ -169,9 +170,9 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    /// Reuse the original lexical initializer when resolution reaches a
-    /// binding from inside a candidate with a different expression cache.
-    pub(super) fn check_function_alias_binding(
+    /// Check the binding before resolving a call through its local interface.
+    /// A candidate can reuse the original checked initializer.
+    pub(super) fn check_function_value_binding(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
@@ -224,10 +225,8 @@ impl Analyzer<'_, '_, '_> {
         let initializer_expression = module.resolve_expr(initializer).map_err(|_| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
         })?;
-        let binds_dialogue_result = matches!(
-            initializer_expression.kind(),
-            HirExprKind::AttachedContentApplication(application) if application.is_dialogue_line()
-        );
+        let projection =
+            InitializerBindingProjection::from_initializer(initializer_expression.kind());
         let authored_type = annotation.or(module
             .resolve_pattern(pattern)
             .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
@@ -240,14 +239,8 @@ impl Analyzer<'_, '_, '_> {
             })
             .transpose()
             .map_err(AnalyzerExpressionError::fatal)?;
-        // The call produces a line operation. The pattern receives its published result.
-        let initializer_expectation = prepared_expected.map(|result| {
-            if binds_dialogue_result {
-                TypeKind::DialogueLine(Box::new(result))
-            } else {
-                result
-            }
-        });
+        let initializer_expectation =
+            prepared_expected.map(|ty| projection.initializer_expectation(ty));
         let actual = match checked_initializer {
             Some(checked) => checked,
             None => self.evaluate_expression_with_expectation(
@@ -262,20 +255,12 @@ impl Analyzer<'_, '_, '_> {
         let actual_type = actual
             .value_type()
             .ok_or_else(|| AnalyzerExpressionError::rejected(initializer))?;
-        let binding_type = if binds_dialogue_result {
-            let TypeKind::DialogueLine(result) = actual_type else {
-                return Err(AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::WrongPayloadFamily,
-                ));
-            };
-            result.as_ref()
-        } else {
-            actual_type
-        };
-        let expected = match initializer_expectation.as_ref() {
-            Some(TypeKind::DialogueLine(result)) if binds_dialogue_result => Some(result.as_ref()),
-            expected => expected,
-        };
+        let binding_type = projection.binding_type(actual_type).ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
+        })?;
+        let expected = initializer_expectation
+            .as_ref()
+            .and_then(|ty| projection.binding_type(ty));
         let binding = if let Some(expected) = expected {
             if !self.source_type_accepts(
                 context,

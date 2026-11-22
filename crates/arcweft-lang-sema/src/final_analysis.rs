@@ -242,6 +242,7 @@ pub use nominal_schema::{
 pub(crate) use nominal_semantic::{
     ProjectNominalSemanticCatalog, ProjectNominalSemanticDefinition,
 };
+pub(crate) use prepared::InitializerBindingProjection;
 #[cfg(test)]
 pub(crate) use prepared::PreparedResolvedExpression;
 pub(crate) use prepared::{
