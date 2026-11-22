@@ -21460,3 +21460,19 @@ Sema library は2,034件中1,993 PASS／41既知FAIL。Cargo graph で22パッ�
 受入・公開済みの Generic Match C3/C5 は元の監査の150 ID と Style Length の後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBC の継続・保存 7件がすべて通過した。
 
 [検証原本](acceptance-evidence/task-detached-probe-reads.raw.zip) は31項目、1,271,858 bytes、SHA256 `0485faf872671ac027f2cbcff57a9e7aba8d3b6afde313c53708d852dcdcd1e2`。各項目の長さとSHA256を照合した。検証後の `target` は136,169,647,036 bytes。
+
+<a id="closed-probe-preparation"></a>
+
+## 2026-11-22 — 256候補の検査上限
+
+検証基点は `c64897a6053536a03c3d9599e617637e4d508dc5`。製品 Source `ec3624371a56765fcb089eaa72bdc0cbe897dcba` を main へ通常 push し、公開 ref と変更 blob を照合した。
+
+効果変数や引き継ぐ捕捉を持たない閉じた宣言では、定数の効果条件から候補の環境を構築する。定数が真の場合と偽の場合を保持する。観測対象が閉じた末端型なら既存の型を直接記録する。コールバックを閉じる処理は、照合して抽出した差分に切り離した定義や依存スコープがある場合に読み取りスコープを保持する。切り離した定義を含まない差分と、その定義を引き継いだ差分を回帰テストで確認した。
+
+呼出し全体の4,096単位とテストのアサーションを保持し、既存の境界テストが通過した。LLDBで256件の候補検査が開始・完了したことを照合した。テストは候補ごとに物理観測が1件、論理引数チェックと解決が各1回、選んだ候補の再検査0回、引数の検査結果の公開1回を確認する。型が一致しない2件目の下位計上は15回から11回となった。[196件完了時の原本](#detached-probe-reads)。
+
+Sema library は2,034件中1,994 PASS／40既知FAIL。Cargo graph で22パッケージを確認した。非CLI 21パッケージの逆依存は4,314 PASS／40既知FAIL、別に1 SKIP。CLIのライブラリ・バイナリ196件と統合6対象30件が通過した。前回とID単位で照合し、成否が変わったのは256候補のテストのみ。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式と構造ゲートは終了0。Clippyはコールバックを閉じた後の読み取りエラーを受け渡す箇所で、エラー型のサイズに関する警告を記録した。
+
+受入・公開済みの Generic Match C3/C5 も再検証した。元の監査の150 IDとStyle Lengthの後継1件を照合し、transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBCの継続・保存7件が通過した。
+
+[検証原本](acceptance-evidence/task-closed-probe-preparation.raw.zip) は31項目、1,226,004 bytes、SHA256 `c102d2755f93866831a29a32991cd0154eb2bc2cd3818c7b52e460f5183aba9f`。各項目の長さとSHA256を照合した。検証後の `target` は136,169,847,532 bytes。
