@@ -21578,3 +21578,19 @@ Source `7793ac106ce08fd0540168ac93587c051c89bddb` のバイナリを LLDB で追
 Sema library は2,035件中2,016 PASS／19既知FAIL。公開済み基点とのテストID照合では上記8件が FAIL から PASS となり、追加・欠落・新規FAILは0。変更ファイルの書式、Sema の全ターゲット・全機能の check／Clippy と構造ゲートは終了0。変更4ファイルの Clippy 警告は前回43件、今回39件で、種類別の増加は0。Cargo の逆依存graph を取得した。差分は4つの `#[cfg(test)]` モジュールで、非CLI逆依存の Sema library 以外2,320 PASS／1 SKIPとCLI226 PASSは、同じ製品入力の公開済みログから再利用した。現状行の過去の検証へのリンクは、今回照合した実測への参照に絞った。[前回の逆依存・CLI・workspace実測](#residual-closure)
 
 [検証原本](acceptance-evidence/task-constraint-fixture-budgets.raw.zip) は32項目、837,998 bytes、SHA256 `892cfa43fee17f92b557f442ea7897e88b20db07c428eb5d49a8db5da2ec939f`。各項目の長さと SHA256 を照合した。検証後の `target` は136,177,173,011 bytes。
+
+<a id="prepared-owner-boundaries"></a>
+
+## 2026-11-22 — 元の効果述語と型参照の所有境界を回帰検証
+
+検証基点は `6e5b42e743aceda739891c74e087ef42edc9d34d`。Semaのテスト4ファイルを Source `404bbf456dc614699e8c63e0854ce7ea1f8d23d9` として `main` に push し、公開 ref と変更 blob を照合した。照合時の追跡差分は0、既存の未追跡1パスがある。
+
+元の効果述語を一度だけ開く試験は、Future 実入力がない場合に `FutureBinding` を期待していた。LLDB で `UnresolvedFuture` を返す箇所を特定した。元の関係を保持する `BoundScopedEffectCompletion::pending` で確定を試み、宣言本体がなければその宣言の `ObservationNeedsBody`、本体があって実入力がなければ `UnresolvedFuture` を検査した。両方を用意すると、実際の2つの効果を含む行と確定した真の述語を取り出せた。
+
+入れ子の関数では、準備済みグラフに保持した述語を確定し、外側から移送した型・定数・効果と関数自身の参照を含む関数型全体を照合した。新規の型変数に束縛を作る場合と、元の宣言が捕捉する固定型をその変数として扱えない場合を、未準備の無関係な宣言本体を残したまま検証した。合同関係の確定は自身の分岐の投影に使える。単独ソース用の証明として使う要求と、制約の異なる分岐への投影をそれぞれ拒否した。
+
+Sema library は2,035件中2,020 PASS／15既知FAIL。前回の実行から4件が FAIL から PASSとなり、追加・欠落・新規FAILは0。変更ファイルの書式、Semaの全ターゲット・全機能の check と Clippy、構造ゲートは終了0。変更4ファイルの Clippy 警告は36件から32件に減り、種類別の増加はなかった。変更はテスト用モジュールで、逆依存の製品入力に前回から差分がないことを照合した。非CLI逆依存の Sema library 以外2,320 PASS／1 SKIPとCLI226 PASSは、公開済みの同じ製品入力の実測を参照した。[前回の横断実測](#residual-closure)・[予算と取消しの検証](#constraint-fixture-budgets)
+
+初期のコンパイル失敗、中断したビルド、import配置を修正する前の集計も原本に収録した。
+
+[検証原本](acceptance-evidence/task-prepared-owner-boundaries.raw.zip) は25項目、697,338 bytes、SHA256 `3985416abe88d2f0096e01748b873bbf870e82907995687e9ec19080ea533b66`。各項目の長さと SHA256 を照合した。検証後の `target` は136,177,163,058 bytes。
