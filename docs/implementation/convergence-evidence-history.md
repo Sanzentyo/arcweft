@@ -21638,3 +21638,19 @@ Sema library は2,038件中2,028 PASS／10既知FAIL。非CLI逆依存は4,350 P
 CLI の主検証10ケースと追加対照3ケースは bytecode VM／AWBC Product の全26実行で戻り値42、各ステップ最大1操作、診断0件だった。実際に発生したログは `first`、`returned` の順で各1件。一段・二段とも `fs.write` を許す明示注釈は通過し、空の効果行は型検査で拒否された。
 
 [検証原本](acceptance-evidence/task-returned-callback-effects.raw.zip) は120項目、1,538,578 bytes、SHA256 `567c523fd7eefb3bf42c614383cc5205209c9d411b5f03cb742f8d5e37a161db`。各項目の長さと SHA256 を照合した。検証後の `target` は136,355,815,201 bytes。
+
+<a id="flow-returned-callback-resume"></a>
+
+## 2026-11-23 — 型注釈付きの返却コールバックを Flow の待機後に実行
+
+検証基点は `630e3750dfb95eaf282bec1a0b02cdf9004f5dc6`。Source `1ffe528d8e92c8eacc4635c088c62f5bc4cc1a72` を `main` に push し、公開 ref と変更3 blob を照合した。照合時の追跡差分は0、既存の未追跡1パスがある。
+
+基点の `arcw check` では、Flow の明示型付き束縛が `compiler.runtime_semantic_projection` で拒否された。元の型注釈を実行型へ変換する経路に、確定前の効果行が到達していた。Compiler の全体投影と関数インスタンスの投影が、同じ検査済み束縛と構造型の対応を使うように修復した。基点の対照では、型注釈を省くと両CLI executor が待機まで進んだ。最初の fixture で attached default を持つ関数から直接コールバックを返した際の登録拒否も原本に保持した。維持仕様の結果型は `DialogueContent` のため、受入の fixture ではその条件を満たす関数を段階適用の終端グループの本体から呼ぶ。
+
+Compiler の待機テスト33件が通過した。追加ケースは同じ前段から `String` と `i64` 用のコールバックを作り、待機前に前段・各実引数・各 attached default のログを記述順に1回ずつ出す。Native とデコード済みAWBC はいずれも1ステップ最大1操作で、40ms 経過時点では操作も追加出力も0。さらに60msで復帰し、捕捉された文字列を1回だけログに出し、両方のコールバックを再帰経由で実行して42を返した。AWBC は毎ステップで公開JSONを保存し、同じ生成物で executor を復元した。
+
+実際の Cargo graph で Compiler を含む10パッケージを選択した。非CLIは65バイナリで1,568 PASS／0 SKIP、CLIは library／binary の196件と統合30件がすべてPASS。書式、workspace 全ターゲット・全機能の check／Clippy、CLI ビルド、構造ゲートは終了0。変更箇所のClippy警告は大きいエラー型に関する1件が増え、構造のブロッキング違反は0件だった。
+
+実CLIでは元の型注釈付き入力を受理し、`log.write` を行うコールバックに明示的な空の効果行を付けた入力は型検査で拒否した。bytecode VM／AWBC Product の各2実行では、100ms の待機状態を確認し、待ち時間ゼロの入力はそれぞれ75／260ステップで42を返した。4実行とも1ステップ最大1操作、診断・アサーション失敗0件。基点対照のAWBCは256ステップ時点で実行中だったため、完走の観測上限には512ステップを使った。
+
+[検証原本](acceptance-evidence/task-flow-returned-callback-resume.raw.zip) は42項目、1,128,332 bytes、SHA256 `2218428f81167b286741d4830746185bc46340a7130ae0daf99f13af67657fd6`。各項目の長さと SHA256 を照合した。検証後の `target` は140,371,275,111 bytes。
