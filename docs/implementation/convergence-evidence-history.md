@@ -21548,3 +21548,17 @@ LLDB で、型と定数の別名を共有するケースと、一方の入力が
 Sema library は2,035件中2,005 PASS／30既知FAIL。Cargo graph で Sema を含む22パッケージを確認し、非CLIの21パッケージは4,325 PASS／30既知FAIL／1 SKIPだった。公開済み基点からの成否の変化は上記3件の FAIL から PASS。CLI のライブラリ・バイナリ196件と統合6対象30件はすべて通過。受入・公開済みの Generic Match C3/C5 の151件も通過した。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。変更5ファイルの Clippy 警告は、行数の数値を正規化すると前回と種類・件数が一致した。
 
 [検証原本](acceptance-evidence/task-forest-opening.raw.zip) は31項目、1,198,242 bytes、SHA256 `b4c2e12a43b631ca62f25ca04e3a19ed49c7ad78dc0540d07f8979df04c48c88`。各項目の長さと SHA256 を照合した。検証後の `target` は136,173,668,604 bytes。
+
+<a id="residual-closure"></a>
+
+## 2026-11-22 — 量化された効果関係の確定を回帰検証
+
+検証基点は `7793ac106ce08fd0540168ac93587c051c89bddb`。Source `4672dbcce9895ec672d1e14b62f51cd7c6b47f9b` を `main` へ通常 push し、公開 ref と変更 blob を照合した。
+
+Source `bb67854424e45014fd6855e2df718b55cdee298a` のテストバイナリを LLDB で追跡し、2件で `ScopedEffectCompletion::reduce` が量化された関係を保持する分岐に入り、1件でパラメーター付き関数に対する早期保持に入ることを確認した。3件とも、保持された関係をスカラーの真偽値へ簡約できると仮定していた。量化の構造を照合し、受理・拒否には Sema が使う `PreparedConstraintEffects` と `ConstraintClosedEffects` の確定処理を使う。
+
+元の効果前提がある場合は確定し、前提を外した場合は `EffectUnsatisfiable` を返した。推論関数に属するパラメーターを量化入力から除外し、残した3依存と確定した効果行、元のスコープを照合した。合同ケースでは合同前提が矛盾していても個別の前提を保持し、各入力が妥当な場合の受理と個別の関係が不成立の場合の拒否を確かめた。
+
+Sema library は2,035件中2,008 PASS／27既知FAIL。Cargo graph で Sema を含む22パッケージを確認し、非CLIの21パッケージは4,328 PASS／27既知FAIL／1 SKIPだった。公開済み基点からの成否の変化は上記3件の FAIL から PASS。CLI のライブラリ・バイナリ196件と統合6対象30件はすべて通過。受入・公開済みの Generic Match C3/C5 の151件も通過した。全ターゲット・全機能の workspace check／Clippy、変更ファイルの書式、構造ゲートは終了0。変更2ファイルの Clippy 警告は、行番号を正規化すると、前回と種類・件数が一致した。
+
+[検証原本](acceptance-evidence/task-residual-closure.raw.zip) は29項目、1,192,065 bytes、SHA256 `da5f57ce5eac1622dd41893f6b5e8f05dd8029c1ed0f9a086b7f9867c5bce422`。各項目の長さと SHA256 を照合した。検証後の `target` は136,173,661,436 bytes。
