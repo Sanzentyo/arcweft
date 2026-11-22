@@ -664,6 +664,10 @@ item 型をその program の型・signature・frame layout から読み、recei
 inclusive な最大値を返した後の `end + 1` を正当な終端カーソルとして扱う。
 live／snapshot admission は同じ grammar で Witness の state と Range の全 header
 を encoded-byte budget に含め、偽造 bound・cursor・早すぎる done を拒否する。
+Native の `for` が保持する継続は、元の操作から iterator の根拠を読む。builtin
+では元の iterator 型と Range／列挙値の表現を照合する。witness では元の操作が
+選んだ正確な `next` と、そのメソッドの receiver を照合する。保持値を
+構築する前に、復元が使用する共通の allowance で検査する。
 
 durable root の保存値も Core DTO を使う。active entry の identity・kind・binding
 から original program の stateful roles を選び、state/event identity と layout を

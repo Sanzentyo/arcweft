@@ -21654,3 +21654,17 @@ Compiler の待機テスト33件が通過した。追加ケースは同じ前段
 実CLIでは元の型注釈付き入力を受理し、`log.write` を行うコールバックに明示的な空の効果行を付けた入力は型検査で拒否した。bytecode VM／AWBC Product の各2実行では、100ms の待機状態を確認し、待ち時間ゼロの入力はそれぞれ75／260ステップで42を返した。4実行とも1ステップ最大1操作、診断・アサーション失敗0件。基点対照のAWBCは256ステップ時点で実行中だったため、完走の観測上限には512ステップを使った。
 
 [検証原本](acceptance-evidence/task-flow-returned-callback-resume.raw.zip) は42項目、1,128,332 bytes、SHA256 `2218428f81167b286741d4830746185bc46340a7130ae0daf99f13af67657fd6`。各項目の長さと SHA256 を照合した。検証後の `target` は140,371,275,111 bytes。
+
+<a id="native-for-restore-admission"></a>
+
+## 2026-11-23 — Native の For 継続を元の iterator 宣言で照合
+
+検証基点は `5ac6ceb66740cad7b646fea7ea9728eefec0b4a2`。Source `bed0dc40a6a0d967fbc0a4491043952d5201ab7f` を `main` に push し、公開 ref と変更2 blob を照合した。照合時の追跡差分は0、既存の未追跡1パスがある。
+
+基点では `Vec<i64>` の元ループに `Bool` を含む iterator の内部保存状態を渡すと復元に成功した。継続を元の For 操作が保持する型と表現へ結び付けた。組み込み iterator の型検査は同じ保持値 allowance と実行中の型束縛を使う。witness は元の `next` を選び、その receiver を既存の保存用型検査で照合する。修正後の1-op テストは異型の要素と、同じ `i64` を返す Range 表現を両方拒否し、正しい内部保存状態から同じ実行結果まで復帰した。
+
+Core の全機能 library は2,403 PASS／0 SKIP。実際の Cargo graph で Core を含む52パッケージを選択した。非CLIは8,177 PASS／10 FAIL／18 SKIP。失敗10件のテストIDは Sema の[前回実行](convergence-evidence-history.md#returned-callback-effects)と一致し、新規失敗は0件。実ソースの iterator 検証3件はすべて通過し、Native は既存の32ステップ上限・1ステップ1操作・4回の関数呼び出しを満たした。Generic Match の受入監査から150 IDと Style Length の後継1件を照合し、151件すべてのPASSを記録した。
+
+CLI は library／binary の196件と統合30件がすべてPASS。書式、workspace 全ターゲット・全機能の check／Clippy、構造ゲートは終了0。変更箇所のClippy警告はエラー型の大きさ1件とテスト6件が増え、構造のブロッキング違反は0件だった。Native の公開 save は残項目。
+
+[検証原本](acceptance-evidence/task-native-for-restore-admission.raw.zip) は21項目、1,376,942 bytes、SHA256 `a926cbece116e50548ba640a4018daaa1a396d27ecd363955fd11d13ee32e3f5`。各項目の長さと SHA256 を照合した。検証後の `target` は136,376,906,142 bytes。
