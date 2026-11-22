@@ -10083,47 +10083,72 @@ fn custom_dialogue_field_fixture(
 
 #[test]
 fn character_dialogue_custom_field_type_mismatch_has_typed_diagnostic() {
-    let (fixture, field) = custom_dialogue_field_fixture(
-        r"
+    use arcweft_source::DiagnosticLabelStyle;
+
+    for (source, wrong_value, wrong_type) in [
+        (
+            r"
 pub character alice {}
 
 fn configure() {
     let configured = alice(mood = 7)
 }
 ",
-        true,
-    );
-    let error = analyze(&fixture).expect_err("custom field type mismatch must reject");
-    let FinalSemanticAnalysisError::CharacterDialogueCustomFieldTypeMismatch {
-        field: actual_field,
-        declared,
-        actual,
-        value_span,
-        declaration_span,
-    } = &error
-    else {
-        panic!("unexpected custom-field mismatch result: {error:?}")
-    };
-    assert_eq!(actual_field, &field);
-    assert_eq!(declared.as_ref(), &TypeKind::String);
-    assert_eq!(actual.as_ref(), &TypeKind::I32);
-    assert_eq!(error.diagnostic_code(), "AW-CD-015");
-    assert_eq!(
-        &fixture.root_document.text()[value_span.range().start()..value_span.range().end()],
-        "7"
-    );
-    assert_eq!(
-        declaration_span.source().id().as_str(),
-        "arcweft-test://sema/final/dialogue-custom-field"
-    );
-    assert_eq!(
-        error
+            "7",
+            TypeKind::I32,
+        ),
+        (
+            r#"
+pub character alice {}
+
+fn configure() {
+    let dialogue = alice(mood = "quiet")
+    let configured = dialogue(source_locale = "ja-JP", mood = false)
+}
+"#,
+            "false",
+            TypeKind::Bool,
+        ),
+    ] {
+        let (fixture, field) = custom_dialogue_field_fixture(source, true);
+        let error = analyze(&fixture).expect_err("custom field type mismatch must reject");
+        let FinalSemanticAnalysisError::CharacterDialogueCustomFieldTypeMismatch {
+            field: actual_field,
+            declared,
+            actual,
+            value_span,
+            declaration_span,
+        } = &error
+        else {
+            panic!("unexpected custom-field mismatch result: {error:?}")
+        };
+        assert_eq!(actual_field, &field);
+        assert_eq!(declared.as_ref(), &TypeKind::String);
+        assert_eq!(actual.as_ref(), &wrong_type);
+        assert_eq!(error.diagnostic_code(), "AW-CD-015");
+        assert_eq!(
+            &fixture.root_document.text()[value_span.range().as_range()],
+            wrong_value,
+        );
+        assert_eq!(
+            declaration_span.source().id().as_str(),
+            "arcweft-test://sema/final/dialogue-custom-field"
+        );
+        let diagnostic = error
             .source_diagnostic()
-            .expect("typed custom-field mismatch diagnostic")
-            .labels()
-            .len(),
-        2
-    );
+            .expect("typed custom-field mismatch diagnostic");
+        assert_eq!(
+            diagnostic
+                .labels()
+                .iter()
+                .map(|label| (label.style(), label.span()))
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticLabelStyle::Primary, value_span),
+                (DiagnosticLabelStyle::Secondary, declaration_span),
+            ],
+        );
+    }
 }
 
 #[test]

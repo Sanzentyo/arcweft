@@ -4148,12 +4148,18 @@ enum PreparedRule {
 #[derive(PartialEq)]
 struct PreparedSealed(u8);
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum PreparedTestSource {
+    Ordinary(u8),
+    WithMismatchDiagnostic(u8),
+}
+
 #[derive(Debug)]
 struct PreparedDomain;
 
 impl ConstraintDomain for PreparedDomain {
     type Application = ();
-    type Source = u8;
+    type Source = PreparedTestSource;
     type AlternativeIndex = u8;
     type EvidenceRule = PreparedRule;
     type ObservedEvidence = PreparedRule;
@@ -4174,6 +4180,10 @@ impl ConstraintDomain for PreparedDomain {
         }
     }
 
+    fn observes_rejected_source(source: Self::Source) -> bool {
+        matches!(source, PreparedTestSource::WithMismatchDiagnostic(_))
+    }
+
     fn project_checked_evidence(
         checked: &Self::ObservedEvidence,
         _: &TypeKind,
@@ -4186,7 +4196,7 @@ impl ConstraintDomain for PreparedDomain {
     }
 
     fn client_invariant_source(_: &Self::ClientInvariant) -> Self::Source {
-        0
+        PreparedTestSource::Ordinary(0)
     }
 
     fn empty_sealed_branch() -> Self::SealedBranchValue {
@@ -4209,7 +4219,7 @@ fn checked_prepared_source(
     projection: PreparedConstraintSourceProjection,
 ) -> PreparedSourceConstraint<PreparedDomain> {
     PreparedSourceConstraint::checked(
-        source,
+        PreparedTestSource::Ordinary(source),
         projection,
         [PreparedSourceAlternative::new(
             0,
@@ -4309,79 +4319,100 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
 
 #[test]
 fn rejected_source_projection_retains_exact_lower_relation_authority() {
-    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
-    let cancellation = AtomicBool::new(false);
-    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
-        &mut context,
-        &mut effect_graph,
-        (),
-        test_parameters,
-        None,
-    )
-    .expect("valid test initialization");
-    transaction
-        .begin_prepared_probe(
-            &mut context,
-            PreparedSourceConstraint::checked(
-                17,
-                PreparedConstraintSourceProjection::Scalar,
-                [],
-                PreparedSourceAlternative::new(0, PreparedRule::Otherwise, TypeKind::String),
-            )
-            .expect("one checked source"),
-            ConstraintAcceptance::PatternAcceptsActual,
-        )
-        .expect("prepared probe starts");
-    let mut ticket = transaction
-        .next_probe(&mut context, &mut effect_graph)
-        .expect("probe ticket")
-        .expect("one source row");
-    transaction
-        .submit_probe(
+    for source in [
+        PreparedTestSource::WithMismatchDiagnostic(17),
+        PreparedTestSource::Ordinary(17),
+    ] {
+        let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+        let cancellation = AtomicBool::new(false);
+        let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+        let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize_fixture(
             &mut context,
             &mut effect_graph,
-            ticket.input(),
-            ProbeSubmission::Accepted(
-                (ticket
-                    .observe(SourceProbeResult::checked(
-                        TypeKind::I32,
-                        PreparedBranch("mismatch"),
-                        0,
-                        PreparedRule::Otherwise,
-                    ))
-                    .expect("observed source branch"))
-                .close_preparation(()),
-            ),
+            (),
+            test_parameters,
+            None,
         )
-        .expect("typed mismatch is retained until lower closes the row");
-    assert!(
+        .expect("valid test initialization");
         transaction
+            .begin_prepared_probe(
+                &mut context,
+                PreparedSourceConstraint::checked(
+                    source,
+                    PreparedConstraintSourceProjection::Scalar,
+                    [],
+                    PreparedSourceAlternative::new(0, PreparedRule::Otherwise, TypeKind::String),
+                )
+                .expect("one checked source"),
+                ConstraintAcceptance::PatternAcceptsActual,
+            )
+            .expect("prepared probe starts");
+        let mut ticket = transaction
             .next_probe(&mut context, &mut effect_graph)
-            .expect("close probe")
-            .is_none()
-    );
+            .expect("probe ticket")
+            .expect("one source row");
+        transaction
+            .submit_probe(
+                &mut context,
+                &mut effect_graph,
+                ticket.input(),
+                ProbeSubmission::Accepted(
+                    (ticket
+                        .observe(SourceProbeResult::checked(
+                            TypeKind::I32,
+                            PreparedBranch("mismatch"),
+                            0,
+                            PreparedRule::Otherwise,
+                        ))
+                        .expect("observed source branch"))
+                    .close_preparation(()),
+                ),
+            )
+            .expect("typed mismatch is retained until lower closes the row");
+        assert!(
+            transaction
+                .next_probe(&mut context, &mut effect_graph)
+                .expect("close probe")
+                .is_none()
+        );
+        assert!(
+            transaction
+                .next_materialization_ticket(&mut context, &mut effect_graph)
+                .expect("ordinary rejection closes materialization")
+                .is_none()
+        );
 
-    let Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::SourceProjection(
-        rejected,
-    ))) = transaction.finish(&mut context, &mut effect_graph, |left, right, _| {
-        Ok(left == right)
-    })
-    else {
-        panic!("source relation mismatch must retain a typed rejected projection")
-    };
-    assert_eq!(rejected.source().local(), 17);
-    assert_eq!(rejected.alternative(), Some(0));
-    assert_eq!(
-        rejected.source_projection(),
-        &CheckedConstraintSourceProjection::Scalar
-    );
-    assert_eq!(
-        rejected.acceptance(),
-        ConstraintAcceptance::PatternAcceptsActual
-    );
-    assert_eq!(rejected.expected(), &TypeKind::String);
-    assert_eq!(rejected.actual(), &TypeKind::I32);
+        let result = transaction.finish(&mut context, &mut effect_graph, |left, right, _| {
+            Ok(left == right)
+        });
+        if matches!(source, PreparedTestSource::Ordinary(_)) {
+            assert!(matches!(
+                result,
+                Err(TypeConstraintFailure::Rejected(
+                    TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::Mismatch)
+                ))
+            ));
+            continue;
+        }
+        let Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::SourceProjection(
+            rejected,
+        ))) = result
+        else {
+            panic!("source relation mismatch must retain a typed rejected projection")
+        };
+        assert_eq!(rejected.source().local(), source);
+        assert_eq!(rejected.alternative(), Some(0));
+        assert_eq!(
+            rejected.source_projection(),
+            &CheckedConstraintSourceProjection::Scalar
+        );
+        assert_eq!(
+            rejected.acceptance(),
+            ConstraintAcceptance::PatternAcceptsActual
+        );
+        assert_eq!(rejected.expected(), &TypeKind::String);
+        assert_eq!(rejected.actual(), &TypeKind::I32);
+    }
 }
 
 #[test]
@@ -4408,7 +4439,7 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
         .begin_prepared_probe(
             &mut context,
             PreparedSourceConstraint::checked(
-                23,
+                PreparedTestSource::WithMismatchDiagnostic(23),
                 PreparedConstraintSourceProjection::Scalar,
                 [PreparedSourceAlternative::new(
                     0,
@@ -4498,11 +4529,12 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
         &TypeKind::Never,
         ConstraintAcceptance::PatternAcceptsActual,
     );
+    let source = PreparedTestSource::WithMismatchDiagnostic(29);
     transaction
         .begin_prepared_probe(
             &mut context,
             PreparedSourceConstraint::checked(
-                29,
+                source,
                 PreparedConstraintSourceProjection::Scalar,
                 [PreparedSourceAlternative::new(
                     0,
@@ -4554,7 +4586,7 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
     else {
         panic!("all rejected frontiers must retain the deterministic first row")
     };
-    assert_eq!(rejected.source().local(), 29);
+    assert_eq!(rejected.source().local(), source);
     assert_eq!(rejected.alternative(), Some(0));
     assert_eq!(rejected.expected(), &TypeKind::String);
     assert_eq!(rejected.actual(), &TypeKind::I32);
@@ -4576,7 +4608,10 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
     transaction
         .begin_prepared_probe(
             &mut context,
-            PreparedSourceConstraint::unchecked(7, PreparedConstraintSourceProjection::Scalar),
+            PreparedSourceConstraint::unchecked(
+                PreparedTestSource::Ordinary(7),
+                PreparedConstraintSourceProjection::Scalar,
+            ),
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("unchecked probe starts");
@@ -4661,7 +4696,7 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
     )
     .expect("valid test initialization");
     let prepared = PreparedSourceConstraint::checked(
-        8,
+        PreparedTestSource::Ordinary(8),
         PreparedConstraintSourceProjection::InferSpreadContainer {
             policy: ConstraintSourceContainerPolicy::Positional,
         },
@@ -4768,7 +4803,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
     )
     .expect("valid test initialization");
     let prepared = PreparedSourceConstraint::checked(
-        13,
+        PreparedTestSource::Ordinary(13),
         PreparedConstraintSourceProjection::InferSpreadContainer {
             policy: ConstraintSourceContainerPolicy::Positional,
         },
@@ -4919,7 +4954,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         ConstraintAcceptance::PatternAcceptsActual,
     );
     let prepared = PreparedSourceConstraint::checked(
-        14,
+        PreparedTestSource::Ordinary(14),
         PreparedConstraintSourceProjection::InferSpreadContainer {
             policy: ConstraintSourceContainerPolicy::Named,
         },
@@ -5148,7 +5183,7 @@ fn duplicate_matching_guards_are_rejected_as_tampered_evidence() {
     )
     .expect("valid test initialization");
     let prepared = PreparedSourceConstraint::checked(
-        11,
+        PreparedTestSource::Ordinary(11),
         PreparedConstraintSourceProjection::Scalar,
         [
             PreparedSourceAlternative::new(0, PreparedRule::Tag(1), TypeKind::I32),
@@ -5197,7 +5232,7 @@ fn duplicate_matching_guards_are_rejected_as_tampered_evidence() {
 fn prepared_source_structurally_owns_otherwise_and_requires_exact_ordinals() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
     let gapped_ordinal = PreparedSourceConstraint::<PreparedDomain>::checked(
-        12,
+        PreparedTestSource::Ordinary(12),
         PreparedConstraintSourceProjection::Scalar,
         [PreparedSourceAlternative::new(
             0,
@@ -5224,7 +5259,7 @@ fn prepared_source_structurally_owns_otherwise_and_requires_exact_ordinals() {
     )
     .expect("valid test initialization");
     let malformed = PreparedSourceConstraint::Checked {
-        source: 13,
+        source: PreparedTestSource::Ordinary(13),
         source_projection: PreparedConstraintSourceProjection::Scalar,
         guarded: Arc::from([PreparedSourceAlternative::new(
             0,

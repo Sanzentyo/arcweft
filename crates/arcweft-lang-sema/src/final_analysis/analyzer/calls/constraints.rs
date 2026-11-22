@@ -402,6 +402,7 @@ impl AnalyzerNestedCallChoice {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AnalyzerPreparedDialoguePatchAdmission {
     argument: HirCallArgumentOrdinal,
+    slot: CallableArgumentSlotIndex,
     source: ExprId,
     coordinate: CallableParameterCoordinate,
     field: arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId,
@@ -448,6 +449,7 @@ impl AnalyzerPreparedDialoguePatchAdmission {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         argument: HirCallArgumentOrdinal,
+        slot: CallableArgumentSlotIndex,
         source: ExprId,
         coordinate: CallableParameterCoordinate,
         field: arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId,
@@ -460,6 +462,7 @@ impl AnalyzerPreparedDialoguePatchAdmission {
     ) -> Self {
         Self {
             argument,
+            slot,
             source,
             coordinate,
             field,
@@ -472,14 +475,8 @@ impl AnalyzerPreparedDialoguePatchAdmission {
         }
     }
 
-    pub(crate) const fn argument(&self) -> HirCallArgumentOrdinal {
-        self.argument
-    }
     pub(crate) const fn source(&self) -> ExprId {
         self.source
-    }
-    pub(crate) const fn coordinate(&self) -> CallableParameterCoordinate {
-        self.coordinate
     }
     pub(crate) const fn declared(&self) -> &TypeKind {
         &self.declared
@@ -567,23 +564,30 @@ impl AnalyzerPreparedDialoguePatchAdmission {
             AnalyzerCallConstraintDomain,
         >,
     ) -> bool {
-        matches!(
-            rejected.source().local(),
-            AnalyzerCallConstraintSource::DialoguePatch {
-                argument,
-                source: CheckedCallArgumentSlotSource::Expression(source),
-                coordinate,
-                ..
-            } if argument == self.argument
-                && source == self.source
-                && coordinate == self.coordinate
-        ) && rejected.alternative() == Some(self.supply_alternative)
+        self.matches_mapped_source(rejected.source().local())
+            && rejected.alternative() == Some(self.supply_alternative)
             && matches!(
                 rejected.source_projection(),
                 crate::types::constraints::CheckedConstraintSourceProjection::Scalar
             )
             && rejected.acceptance() == ConstraintAcceptance::PatternAcceptsActual
             && rejected.expected() == &self.declared
+    }
+
+    fn matches_mapped_source(&self, source: AnalyzerCallConstraintSource) -> bool {
+        matches!(
+            source,
+            AnalyzerCallConstraintSource::DialoguePatch {
+                argument,
+                slot,
+                source: CheckedCallArgumentSlotSource::Expression(source),
+                coordinate,
+                ..
+            } if argument == self.argument
+                && slot == self.slot
+                && source == self.source
+                && coordinate == self.coordinate
+        )
     }
 }
 
@@ -5875,12 +5879,9 @@ pub(super) fn validate_and_prepare_call_constraints(
                             candidate.schema().argument_policy().spread(),
                         ),
                     };
-                    let mut rows = dialogue_patch_admissions.iter().filter(|row| {
-                        row.argument() == ordinal
-                            && slot.source()
-                                == CheckedCallArgumentSlotSource::Expression(row.source())
-                            && row.coordinate() == coordinate
-                    });
+                    let mut rows = dialogue_patch_admissions
+                        .iter()
+                        .filter(|row| row.matches_mapped_source(source));
                     if let Some(row) = rows.next().cloned() {
                         let parameter = candidate
                             .schema()
@@ -8547,6 +8548,7 @@ mod tests {
         .expect("custom field ID");
         let admission = AnalyzerPreparedDialoguePatchAdmission::new(
             argument,
+            slot,
             owner,
             coordinate,
             field,
@@ -8578,6 +8580,20 @@ mod tests {
         };
         assert!(admission.accepts_rejected_source_projection(&rejected(
             exact_source,
+            Some(1),
+            crate::types::constraints::CheckedConstraintSourceProjection::Scalar,
+            ConstraintAcceptance::PatternAcceptsActual,
+            TypeKind::String,
+        )));
+        let other_slot = CallableArgumentSlotIndex::try_from_usize(1).expect("other slot index");
+        assert!(!admission.accepts_rejected_source_projection(&rejected(
+            AnalyzerCallConstraintSource::DialoguePatch {
+                argument,
+                slot: other_slot,
+                source: CheckedCallArgumentSlotSource::Expression(owner),
+                coordinate,
+                physical_kind: PhysicalArgumentEvaluationKind::Authored,
+            },
             Some(1),
             crate::types::constraints::CheckedConstraintSourceProjection::Scalar,
             ConstraintAcceptance::PatternAcceptsActual,

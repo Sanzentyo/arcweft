@@ -1734,6 +1734,7 @@ impl Analyzer<'_, '_, '_> {
             .map_err(AnalyzerExpressionError::fatal)?;
             prepared.push(AnalyzerPreparedDialoguePatchAdmission::new(
                 argument_ordinal,
+                slot.slot(),
                 argument.value(),
                 parameter_coordinate,
                 field,
