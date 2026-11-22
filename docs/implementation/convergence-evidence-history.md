@@ -21422,3 +21422,25 @@ Compilerでは、異なる後段型を持つ共有prefixと再帰callbackの独�
 Clippyは警告を記録した。変更箇所に対応する4件は、チェックポイントの値渡し2件、既存のエラー型のサイズ1件、追加した回帰テストの行数1件。
 
 [検証原本](acceptance-evidence/task-effect-request-journal.raw.zip) は45項目、1,218,356 bytes、SHA256 `3009a69f0c6fcb225fc59c6e287f67fdcee507b91903ad93fbd66b32cf0367ce`。全項目の長さとSHA256を照合した。検証後の `target` は136,148,175,522 bytes。
+
+<a id="dialogue-line-callable-result"></a>
+
+## 2026-11-22 — 行が選んだ関数の束縛と呼出し
+
+検証基点は `e08eae8881df4d8635ce7e7e6f4a73c68692a064`。製品 Source `e532add1f489780d75aacd5e1f356dafef4d9b5c` は main へ通常 push し、公開 ref と変更 blob を照合した。
+
+行プランが通常時と取消時に同じ効果型の別々の関数を返す既存入力は、元の初期化式が持つ行の型を、その実行結果を受け取るローカル変数の型と比較して失敗していた。元バイナリを LLDB で実行し、関数値の出所を確定する処理の型比較（resolver.rs:1537）で InvalidOwner が発生することを確認した。束縛の型検査と関数値の呼出し先の追跡は、ひとつの型付き投影で行の結果を受け取る。呼出しは検査済みのローカル変数を経由する。
+
+記述順を検証する既存テストは、式と適用結果の型に加えて、呼出し候補の宣言スキーマを適用結果と直接比較していた。行プランの出力は呼出しごとに解決する型引数なので、宣言スキーマに実際の適用で得た型解を適用し、同じ結果型になることを検査するよう訂正した。
+
+Sema の修復後、Native の行の実行で正しい関数値が型検査に拒まれることを再現した。通常の out、取消や mark での結果選択、親への引き渡しは、実行計画に登録された結果型をそのフレームの型引数で検査する。関数値のプログラム所有元と保持入力を、値の移動や公開の前に検査する。
+
+Compiler の新しい入力では、通常の out と取消時の out が別々の関数を選び、別名のローカル変数を通じて選んだ関数を実際に呼び出す。Native とデコード済み AWBC の両方で各経路の期待ログを確認した。AWBC は各ステップで公開JSONに保存し、同じプログラムと元のソースに結び付けて復元した。従来の取消、子の予算付き再開、ワイルドカード結果の解放待ちを含め、Compiler の対象4件が通過した。
+
+Sema library は2,034件を実行し、1,993 PASS／41既知FAIL。Core の逆依存52パッケージのうち非CLIの51パッケージは8,179件を実行し、8,138 PASS／41既知FAIL、別に18 SKIP。前回の Sema 逆依存と Core 逆依存の各バイナリの記録を照合した。失敗から成功に変わった既存テストは2件で、新たに通過したテストは1件だった。CLIのライブラリ・バイナリ196件と統合6対象30件は全件通過した。全ターゲット・全機能の workspace check／Clippy、書式と構造ゲートは終了0。256候補の上限テストは引き続き失敗した。
+
+比較には [直前の Sema 逆依存](#effect-request-journal) の Source `03d1dbf6903a83a0eed0498e4c2d2663b381d862` を使った。それ以外のバイナリは [Core 逆依存の先行試験](#shared-effect-coefficient-tables) の Source `ebbe273b5da767d53bad37affe160f96a1551c6e` と照合した。
+
+受入・公開済みの Generic Match C3/C5 は、元の監査の150 ID と Style Length の後継1件を照合した。transcript 115件、coverage 24件、公開query 5件、Native／decoded-AWBC の継続・保存 7件がすべて通過した。
+
+[検証原本](acceptance-evidence/task-dialogue-line-callable-result.raw.zip) は31項目、1,380,298 bytes、SHA256 `430782ad05aaf2d034fac0f8d925e0d3fbc4466766c56c4ed7c451129aa4fc7c`。各項目の長さとSHA256を照合した。検証後の `target` は136,169,199,656 bytes。
