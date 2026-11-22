@@ -378,6 +378,7 @@ mod tests {
             .request_effect_projection(
                 PreparedCallableEffectProjectionSite::CallableValue(owner),
                 &candidate,
+                &mut control,
             )
             .unwrap();
         graph
@@ -449,6 +450,121 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn effect_request_journal_retains_exact_baselines_and_restores_into_the_receiving_frame() {
+        use crate::callable::{
+            CallableInstantiation, PRODUCTION_CALLABLE_LIMITS, PreparedCallGraph,
+            PreparedCallGraphMutationFailure, PreparedCallableEffectProjectionSite,
+            PreparedCatalogCallee, PreparedResolvedCallable,
+        };
+        use crate::effect_row::{DecisionControl, DecisionWork};
+        use crate::effects::EffectSet;
+
+        struct Work(u32);
+        impl DecisionControl for Work {
+            type Error = ();
+            fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
+                self.0 = self.0.checked_sub(1).ok_or(())?;
+                Ok(())
+            }
+        }
+
+        let world = fixture("fn first() -> i64 { 1 }\nfn second() -> i64 { 2 }\n", None);
+        let analysis = analyze(&world).unwrap();
+        let builder = builder(&analysis);
+        let candidate = |name| {
+            let expression = expression(&analysis, name);
+            let source = builder
+                .constraint_source_owner(analysis.hir_topology(), expression)
+                .unwrap();
+            let SourceContract::Declaration { id, record } = source.contract else {
+                panic!("project callable")
+            };
+            let candidate = PreparedResolvedCallable::try_from_checked_record(
+                id,
+                record,
+                PreparedCatalogCallee::Direct {
+                    project_binding: None,
+                },
+                CallableInstantiation::None,
+                Vec::new(),
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .unwrap();
+            (
+                PreparedCallableEffectProjectionSite::CallableValue(expression),
+                candidate,
+            )
+        };
+        let (first_site, first) = candidate("first");
+        let (second_site, second) = candidate("second");
+        let row = || crate::effect_row::EffectRow::closed(EffectSet::new());
+        let mut graph = PreparedCallGraph::<()>::new();
+        let outer = graph.begin_delta(&mut Work(1)).unwrap();
+        assert!(matches!(
+            graph.request_effect_projection(first_site, &first, &mut Work(1)),
+            Err(PreparedCallGraphMutationFailure::Control(()))
+        ));
+        let first_ref = graph
+            .request_effect_projection(first_site, &first, &mut Work(2))
+            .unwrap();
+        // Opening the inner frame has the same cost with a live parent request.
+        let inner = graph.begin_delta(&mut Work(1)).unwrap();
+        assert!(matches!(
+            graph.complete_effect_projection(&first_ref, first.checked().unwrap(), row(), None),
+            Err(crate::callable::CallConstraintInvariant::InvalidPreparedNodeState)
+        ));
+        let second_ref = graph
+            .request_effect_projection(second_site, &second, &mut Work(3))
+            .unwrap();
+        let Err(failure) = graph.extract_delta(inner, &mut Work(1)) else {
+            panic!("extraction must reserve its baseline before removing writes");
+        };
+        let (error, inner) = failure.into_parts();
+        assert!(matches!(
+            error,
+            PreparedCallGraphMutationFailure::Control(())
+        ));
+        assert!(matches!(
+            graph.request_effect_projection(second_site, &second, &mut Work(8)),
+            Err(PreparedCallGraphMutationFailure::Invariant(
+                crate::callable::CallConstraintInvariant::PendingCallableEffectProjection { .. }
+            ))
+        ));
+        let second_delta = graph.extract_delta(inner, &mut Work(8)).unwrap();
+        let first_delta = graph.extract_delta(outer, &mut Work(8)).unwrap();
+
+        let outer = graph.begin_delta(&mut Work(1)).unwrap();
+        let inner = graph.begin_delta(&mut Work(1)).unwrap();
+        let (error, mut deltas) = graph
+            .restore_deltas(&inner, vec![second_delta], &mut Work(32))
+            .unwrap_err()
+            .into_parts();
+        assert!(matches!(
+            error,
+            PreparedCallGraphMutationFailure::Invariant(
+                crate::callable::CallConstraintInvariant::MissingOrStalePreparedNode
+            )
+        ));
+        deltas.push(first_delta);
+        graph.restore_deltas(&inner, deltas, &mut Work(32)).unwrap();
+        graph
+            .complete_effect_projection(&second_ref, second.checked().unwrap(), row(), None)
+            .unwrap();
+        graph.commit_delta(inner).unwrap();
+        graph
+            .complete_effect_projection(&first_ref, first.checked().unwrap(), row(), None)
+            .unwrap();
+        assert_eq!(graph.effect_rows().rows().count(), 2);
+        graph.rollback_delta(outer).unwrap();
+        assert_eq!(graph.effect_rows().rows().count(), 0);
+        let retry = graph.begin_delta(&mut Work(1)).unwrap();
+        graph
+            .request_effect_projection(first_site, &first, &mut Work(2))
+            .unwrap();
+        graph.rollback_delta(retry).unwrap();
     }
 
     #[test]

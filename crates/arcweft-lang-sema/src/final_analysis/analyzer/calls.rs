@@ -1330,8 +1330,12 @@ impl Analyzer<'_, '_, '_> {
             else {
                 continue;
             };
-            self.prepare_application_result_schema(source.site, candidate)
-                .map_err(AnalyzerExpressionError::fatal)?;
+            self.prepare_application_result_schema(
+                source.site,
+                candidate,
+                &mut source_context.work(),
+            )
+            .map_err(AnalyzerExpressionError::fatal)?;
             let prepared = self
                 .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
                     source_context.work(),
@@ -1403,6 +1407,7 @@ impl Analyzer<'_, '_, '_> {
                             source.site,
                             &recipe.candidate,
                             effect,
+                            &mut source_context.work(),
                         )
                         .map_err(AnalyzerExpressionError::fatal)?;
                     }
@@ -4713,8 +4718,12 @@ impl Analyzer<'_, '_, '_> {
                 });
             }
         };
-        self.prepare_application_result_schema(request.site, &request.candidate)
-            .map_err(AnalyzerExpressionError::fatal)?;
+        self.prepare_application_result_schema(
+            request.site,
+            &request.candidate,
+            &mut request.context.work(),
+        )
+        .map_err(AnalyzerExpressionError::fatal)?;
         match self.prepare_candidate_impl(request, inputs, work, None)? {
             PreparedCandidatePreparationOutcome::Accepted { transaction, rank } => {
                 Ok(PreparedCandidateRunOutcome::Accepted { transaction, rank })

@@ -832,10 +832,13 @@ where
     pub(crate) fn prepare_viable_result(
         &mut self,
         source: D::Source,
-        prepare: impl FnOnce(&mut C) -> Result<(), D::SourceErrorCause>,
+        prepare: impl FnOnce(
+            &mut C,
+            &mut CandidateConstraintWorkSession<'_>,
+        ) -> Result<(), D::SourceErrorCause>,
     ) {
         if let Some(source) = self.lower.viable_result_source(source)
-            && let Err(cause) = prepare(&mut self.callbacks.client)
+            && let Err(cause) = self.callbacks.with_callback(prepare)
         {
             self.lower
                 .record_failure(TypeConstraintFailure::fatal_source(SourceError::new(

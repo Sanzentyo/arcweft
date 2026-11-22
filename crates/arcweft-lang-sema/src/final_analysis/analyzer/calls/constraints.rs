@@ -6753,11 +6753,19 @@ pub(crate) fn run_prepared_candidate(
                         AnalyzerCallConstraintSource::Result {
                             source: application,
                         },
-                        |client| {
+                        |client, work| {
                             client
                                 .operations
                                 .analyzer
-                                .prepare_application_result_effects(site, &candidate, effect)
+                                .prepare_application_result_effects(
+                                    site,
+                                    &candidate,
+                                    effect,
+                                    &mut AnalyzerPreparationWork::candidate(
+                                        work.loan(),
+                                        application,
+                                    ),
+                                )
                                 .map_err(|error| {
                                     AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error))
                                 })

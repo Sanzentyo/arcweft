@@ -33,7 +33,11 @@ use super::{
     },
     expression_error::AnalyzerExpressionError,
     items::{inferred_callable_result_schema, result_schema_has_omitted_function_rows},
-    state::{CandidateFactTransactionAction, CandidateFactTransactionOutcome},
+    preparation_work::AnalyzerPreparationWork,
+    state::{
+        CandidateFactMutationFailure, CandidateFactTransactionAction,
+        CandidateFactTransactionOutcome,
+    },
 };
 
 /// The exact source operands of a compatibility requirement or a decision
@@ -340,6 +344,7 @@ impl Analyzer<'_, '_, '_> {
         self.prepare_callable_body_effects(
             PreparedCallableEffectProjectionSite::CallableValue(operand),
             &candidate,
+            work,
         )?;
         if !self
             .facts
@@ -406,6 +411,7 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         site: CheckedCallSite,
         candidate: &PreparedResolvedCallable,
+        work: &mut AnalyzerPreparationWork<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         if result_schema_has_omitted_function_rows(candidate.schema())
             && self
@@ -413,7 +419,7 @@ impl Analyzer<'_, '_, '_> {
                 .inferred_result_schema()
                 .is_none()
         {
-            self.prepare_callable_body_effects(site.into(), candidate)?;
+            self.prepare_callable_body_effects(site.into(), candidate, work)?;
         }
         Ok(())
     }
@@ -424,6 +430,7 @@ impl Analyzer<'_, '_, '_> {
         site: CheckedCallSite,
         candidate: &PreparedResolvedCallable,
         effect: &PreparedApplicationResultEffect,
+        work: &mut AnalyzerPreparationWork<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         if candidate.checked() != Some(effect.owner()) {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
@@ -437,15 +444,16 @@ impl Analyzer<'_, '_, '_> {
             self.source_callable_terminal_effects(candidate)?,
             CallableTerminalEffectProjection::Pending(_)
         ) {
-            self.prepare_callable_body_effects(site.into(), candidate)?;
+            self.prepare_callable_body_effects(site.into(), candidate, work)?;
         }
         Ok(())
     }
 
-    pub(super) fn prepare_callable_body_effects(
+    fn prepare_callable_body_effects(
         &mut self,
         site: PreparedCallableEffectProjectionSite,
         candidate: &PreparedResolvedCallable,
+        work: &mut AnalyzerPreparationWork<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let terminal = self.source_callable_terminal_effects(candidate)?;
         let needs_result = result_schema_has_omitted_function_rows(candidate.schema())
@@ -464,8 +472,11 @@ impl Analyzer<'_, '_, '_> {
         let declaration = declaration.clone();
         let reference = self
             .facts
-            .request_effect_projection(site, candidate)
-            .map_err(FinalSemanticAnalysisError::from)?;
+            .request_effect_projection(site, candidate, work)
+            .map_err(|error| match error {
+                CandidateFactMutationFailure::Control(error) => error,
+                CandidateFactMutationFailure::Invariant(error) => error.into(),
+            })?;
 
         // A declaration body has its own lexical execution contexts. Inference
         // must not treat its parameter uses as captures of the requesting call.

@@ -55,7 +55,20 @@ struct PreparedEffectRequest {
 #[derive(Default)]
 pub(crate) struct PreparedCallableEffectRows {
     next_request: u64,
-    requests: BTreeMap<u64, PreparedEffectRequest>,
+    requests: BTreeMap<u64, LiveEffectRequest>,
+    writes: Vec<u64>,
+}
+
+struct LiveEffectRequest {
+    frame: u64,
+    request: PreparedEffectRequest,
+}
+
+/// The graph issues increasing frame IDs. A restored request joins the
+/// receiving frame regardless of when it was originally issued.
+pub(super) struct PreparedEffectRequestCheckpoint {
+    frame: u64,
+    journal_start: usize,
 }
 
 pub(super) struct PreparedEffectDelta {
@@ -129,76 +142,106 @@ impl PreparedCallableEffectRows {
         })
     }
     pub(crate) fn row(&self, checked: &CheckedCallableId) -> Option<&EffectRow> {
-        self.requests.values().find_map(|request| {
-            (&request.checked == checked)
-                .then_some(request.row.as_ref())
-                .flatten()
-        })
+        self.requests
+            .values()
+            .map(|entry| &entry.request)
+            .find_map(|request| {
+                (&request.checked == checked)
+                    .then_some(request.row.as_ref())
+                    .flatten()
+            })
     }
 
     pub(crate) fn result_schema(
         &self,
         checked: &CheckedCallableId,
     ) -> Option<&CallableResultSchema> {
-        self.requests.values().find_map(|request| {
-            (&request.checked == checked)
-                .then_some(request.result_schema.as_ref())
-                .flatten()
-        })
+        self.requests
+            .values()
+            .map(|entry| &entry.request)
+            .find_map(|request| {
+                (&request.checked == checked)
+                    .then_some(request.result_schema.as_ref())
+                    .flatten()
+            })
     }
 
     pub(crate) fn rows(&self) -> impl Iterator<Item = (&CheckedCallableId, &EffectRow)> {
         self.requests
             .values()
+            .map(|entry| &entry.request)
             .filter_map(|request| request.row.as_ref().map(|row| (&request.checked, row)))
     }
 
     pub(super) fn is_ready(&self) -> bool {
-        self.requests.values().all(|request| request.row.is_some())
+        self.requests
+            .values()
+            .all(|entry| entry.request.row.is_some())
     }
 
-    pub(super) fn snapshot<C: crate::effect_row::DecisionControl>(
+    pub(super) fn checkpoint(&self, frame: u64) -> PreparedEffectRequestCheckpoint {
+        PreparedEffectRequestCheckpoint {
+            frame,
+            journal_start: self.writes.len(),
+        }
+    }
+
+    pub(super) fn preflight_extract<C: DecisionControl>(
         &self,
+        checkpoint: &PreparedEffectRequestCheckpoint,
         control: &mut C,
     ) -> Result<BTreeSet<u64>, C::Error> {
         let mut baseline = BTreeSet::new();
-        for key in self.requests.keys() {
-            control.charge(crate::effect_row::DecisionWork::Visit)?;
-            control.charge(crate::effect_row::DecisionWork::Node)?;
-            baseline.insert(*key);
+        for (&id, entry) in &self.requests {
+            control.charge(DecisionWork::Visit)?;
+            if entry.frame < checkpoint.frame {
+                control.charge(DecisionWork::Node)?;
+                baseline.insert(id);
+            }
+        }
+        for _ in &self.writes[checkpoint.journal_start..] {
+            control.charge(DecisionWork::Node)?;
         }
         Ok(baseline)
     }
 
-    pub(super) fn request(
+    pub(super) fn request<C: DecisionControl>(
         &mut self,
         issuer: &Arc<PreparedCallGraphIssuer>,
+        checkpoint: &PreparedEffectRequestCheckpoint,
         site: PreparedCallableEffectProjectionSite,
         candidate: &PreparedResolvedCallable,
-    ) -> Result<PreparedCallResultRef, CallConstraintInvariant> {
+        control: &mut C,
+    ) -> Result<PreparedCallResultRef, super::PreparedCallGraphMutationFailure<C::Error>> {
+        use super::PreparedCallGraphMutationFailure::Control;
         let checked = candidate
             .checked()
             .ok_or(CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
         if !matches!((candidate.schema().effects(), checked.declaration()),
             (crate::callable::CallableEffectSchema::Project { declaration }, crate::callable::CheckedCallableDeclaration::Project(actual)) if declaration == actual)
         {
-            return Err(CallConstraintInvariant::CheckedCallableAuthorityMismatch);
+            return Err(CallConstraintInvariant::CheckedCallableAuthorityMismatch.into());
         }
-        if self
-            .requests
-            .values()
-            .any(|request| &request.checked == checked)
-        {
-            return Err(CallConstraintInvariant::PendingCallableEffectProjection {
-                checked: Box::new(checked.clone()),
-                group: candidate.call_group(),
-            });
+        for entry in self.requests.values() {
+            control.charge(DecisionWork::Visit).map_err(Control)?;
+            if &entry.request.checked == checked {
+                return Err(CallConstraintInvariant::PendingCallableEffectProjection {
+                    checked: Box::new(checked.clone()),
+                    group: candidate.call_group(),
+                }
+                .into());
+            }
         }
         let request = self.next_request;
-        self.next_request = request
+        let next_request = request
             .checked_add(1)
             .ok_or(CallConstraintInvariant::InvalidPreparedDependencyOrder)?;
-        self.requests.insert(
+        // Admit the live entry and the journal record before either changes.
+        control.charge(DecisionWork::Node).map_err(Control)?;
+        control.charge(DecisionWork::Node).map_err(Control)?;
+        self.next_request = next_request;
+        self.insert(
+            checkpoint,
             request,
             PreparedEffectRequest {
                 site,
@@ -219,7 +262,7 @@ impl PreparedCallableEffectRows {
     pub(super) fn complete(
         &mut self,
         issuer: &Arc<PreparedCallGraphIssuer>,
-        baseline: &BTreeSet<u64>,
+        checkpoint: &PreparedEffectRequestCheckpoint,
         reference: &PreparedCallResultRef,
         checked: &CheckedCallableId,
         row: EffectRow,
@@ -228,13 +271,17 @@ impl PreparedCallableEffectRows {
         if !Arc::ptr_eq(issuer, &reference.issuer) {
             return Err(CallConstraintInvariant::ForeignPreparedIssuer);
         }
-        if baseline.contains(&reference.request) || !row.is_known() {
+        if !row.is_known() {
             return Err(CallConstraintInvariant::InvalidPreparedNodeState);
         }
-        let request = self
+        let entry = self
             .requests
             .get_mut(&reference.request)
             .ok_or(CallConstraintInvariant::MissingOrStalePreparedNode)?;
+        if entry.frame < checkpoint.frame {
+            return Err(CallConstraintInvariant::InvalidPreparedNodeState);
+        }
+        let request = &mut entry.request;
         if &request.checked != checked || request.row.is_some() || request.result_schema.is_some() {
             return Err(CallConstraintInvariant::CheckedCallableAuthorityMismatch);
         }
@@ -243,20 +290,29 @@ impl PreparedCallableEffectRows {
         Ok(())
     }
 
-    pub(super) fn rollback(&mut self, baseline: &BTreeSet<u64>) {
-        self.requests.retain(|id, _| baseline.contains(id));
+    pub(super) fn rollback(&mut self, checkpoint: PreparedEffectRequestCheckpoint) {
+        for id in self.writes.drain(checkpoint.journal_start..) {
+            self.requests.remove(&id).expect("journaled effect request");
+        }
     }
 
-    pub(super) fn extract(&mut self, baseline: BTreeSet<u64>) -> PreparedEffectDelta {
-        let ids = self
-            .requests
-            .keys()
-            .filter(|id| !baseline.contains(id))
-            .copied()
-            .collect::<Vec<_>>();
-        let requests = ids
-            .into_iter()
-            .filter_map(|id| self.requests.remove(&id).map(|request| (id, request)))
+    pub(super) fn extract(
+        &mut self,
+        checkpoint: PreparedEffectRequestCheckpoint,
+        baseline: BTreeSet<u64>,
+    ) -> PreparedEffectDelta {
+        let requests = self
+            .writes
+            .drain(checkpoint.journal_start..)
+            .map(|id| {
+                (
+                    id,
+                    self.requests
+                        .remove(&id)
+                        .expect("journaled effect request")
+                        .request,
+                )
+            })
             .collect();
         PreparedEffectDelta { baseline, requests }
     }
@@ -291,8 +347,10 @@ impl PreparedCallableEffectRows {
         for delta in deltas.clone() {
             for (&id, request) in &delta.requests {
                 control.charge(DecisionWork::Visit).map_err(Control)?;
-                control.charge(DecisionWork::Node).map_err(Control)?;
-                control.charge(DecisionWork::Node).map_err(Control)?;
+                // Two scratch indexes, one live entry, and one journal record.
+                for _ in 0..4 {
+                    control.charge(DecisionWork::Node).map_err(Control)?;
+                }
                 if self.requests.contains_key(&id)
                     || delta.baseline.contains(&id)
                     || !requests.insert(id)
@@ -315,8 +373,9 @@ impl PreparedCallableEffectRows {
             }
         }
         if !callables.is_empty() {
-            for request in self.requests.values() {
+            for entry in self.requests.values() {
                 control.charge(DecisionWork::Visit).map_err(Control)?;
+                let request = &entry.request;
                 if callables.contains(&request.checked) {
                     return Err(CallConstraintInvariant::PendingCallableEffectProjection {
                         checked: Box::new(request.checked.clone()),
@@ -329,11 +388,38 @@ impl PreparedCallableEffectRows {
         Ok(())
     }
 
-    pub(super) fn restore(&mut self, delta: PreparedEffectDelta) {
-        self.requests.extend(delta.requests);
+    pub(super) fn restore(
+        &mut self,
+        checkpoint: &PreparedEffectRequestCheckpoint,
+        delta: PreparedEffectDelta,
+    ) {
+        for (id, request) in delta.requests {
+            self.insert(checkpoint, id, request);
+        }
+    }
+
+    fn insert(
+        &mut self,
+        checkpoint: &PreparedEffectRequestCheckpoint,
+        id: u64,
+        request: PreparedEffectRequest,
+    ) {
+        self.requests.insert(
+            id,
+            LiveEffectRequest {
+                frame: checkpoint.frame,
+                request,
+            },
+        );
+        self.writes.push(id);
+    }
+
+    pub(super) fn commit_root(&mut self) {
+        self.writes.clear();
     }
 
     pub(super) fn clear(&mut self) {
         self.requests.clear();
+        self.writes.clear();
     }
 }

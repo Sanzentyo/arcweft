@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::effect_row::prepared::{PreparedEffectGraph, PreparedEffectReadScope};
 use crate::types::constraints::{
-    ConstraintClosurePolicy, ConstraintDomain, OriginalProducerContext, PreparedSourceConstraint,
-    TypeConstraintError,
+    ConstraintClosurePolicy, ConstraintDomain, OriginalProducerContext, PreparedSourceAlternative,
+    PreparedSourceConstraint, TypeConstraintError,
     context::{TypeConstraintAccounting, TypeConstraintContext},
     hints::PreparedSourceExpectation,
     lexical::ConstraintLexicalScope,
@@ -43,7 +43,7 @@ pub(in crate::types::constraints::transaction) fn open_source_alternatives<
     context.check_cancelled()?;
     let mut alternatives = prepared
         .alternatives()
-        .map(|row| row.expectation())
+        .map(PreparedSourceAlternative::expectation)
         .peekable();
     let mut opened = Vec::new();
     let mut scope = None;

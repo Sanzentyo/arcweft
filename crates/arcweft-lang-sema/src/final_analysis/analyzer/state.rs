@@ -1320,15 +1320,17 @@ impl SemanticFactState {
             .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
     }
 
-    pub(super) fn request_effect_projection(
+    pub(super) fn request_effect_projection<C: DecisionControl>(
         &mut self,
         site: crate::callable::PreparedCallableEffectProjectionSite,
         candidate: &crate::callable::PreparedResolvedCallable,
-    ) -> Result<crate::callable::PreparedCallResultRef, CandidateFactTransactionViolation> {
+        control: &mut C,
+    ) -> Result<crate::callable::PreparedCallResultRef, CandidateFactMutationFailure<C::Error>>
+    {
         self.ensure_healthy()?;
         self.prepared_calls_mut()?
-            .request_effect_projection(site, candidate)
-            .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
+            .request_effect_projection(site, candidate, control)
+            .map_err(Into::into)
     }
 
     pub(super) fn complete_effect_projection(
