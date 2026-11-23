@@ -21948,3 +21948,17 @@ Cargo の逆依存は Runtime Host、CLI、Native Player、LSP、Verify LSP の5
 全ターゲット・全機能の workspace Clippy は警告付きで終了0。逆依存実行で失敗した7件を、対象 Rust 7ファイルを基点 `e2072ab0b7d43ca33686d3e059c8bf9043e06cd9` の内容に合わせて同じ5パッケージ・Windows・既定 feature で選び直した。基点でも7件すべて失敗、選択外489件、終了100。失敗ID、全7件の panic 位置、JIT bench 3件の実測・期待値（2／4、31／32、40／39）が前後で一致した。比較後にソースを公開済み `ba42519d3ba0529e50c75837941427d76d743b0e` と照合した。
 
 公開済みソースへ戻した後に対象 nextest を再実行し、82件成功・選択外195件・終了0。変更 Rust 7ファイルの書式も終了0。検証後の `target` は168,101,981,621 bytes（約168.1 GB）。
+
+<a id="cli-scalar-jit-budget-recheck"></a>
+
+## 2026-11-23 — スカラーのスコープ退出と CLI ベンチの操作予算を再照合
+
+基点 `001bc53d2a62eabf509c37823e08af14028dbd17`。前回の逆依存実行で失敗した7件のうち、スカラーの2件は実行前の Plan の期待と不一致だった。現行 Plan では両分岐で匿名の字句スコープが追加され、早期 `return` はそのスコープと外側の未実行の退出を捨てる。正常終了の分岐は `Unit` を内側と外側へ順に移動し、消費してから数値を返す。`14d5dba704e6ceef12175475249c6a4a18ec9348` はその型・束縛・移動を検査し、両分岐の VM／AOT／JIT 結果と操作数、AOT／JIT 各一回、fallback・引数コピー・Vec 割当てゼロ、3入力の借用24 bytes の条件を維持した。9件成功・選択外487件で `main` へ公開し、ファイルの blob を照合した。
+
+元のソースと step 上限のまま `arcw bench` と実 `arcw run --flow` を両バックエンドで実行した。JIT の `executed_ops` は 79／219／153、JIT・VM 呼び出しは 2／6、31／1、40／0。上限8の単純分岐では VM も79操作で、JIT 完了は step 5・6 に各1件。上限192の反復は16要素を一度の flat batch で処理し、step 0 は30 JIT と1 VM、step 1 は1 JIT。上限128の混合反復は24要素を3回の flat batch で処理し、step 0／1 の JIT は37／3。3入力とも `done` と VM／JIT の最終ログ値が順序ごとに一致した。引数コピーは3入力とも0 bytes。フレームごとの操作数、JIT／VM 回数、終了イベントと全ログ値を CLI 回帰へ加えた。
+
+昇格証明の `verify_json_reports_missing_promotion_proof` と `verify_json_records_required_solver_checks` は残っている。実 CLI の `--mode test` で `emit`／`oxiz` を比較すると、旧 `promote('flow)` は `sema.call.unknown_target`、現行の owned String を受け手とする `"owned".promote('flow)` は `sema.lifetime.promotion_execution`。4条件すべて型検査で終了1で、solver check は0件。所有権移管の実装と証明義務の接続が必要で、構文だけ直しても solver には到達しない。
+
+追加プローブでは、上限6の分岐は全8呼び出しをVMで完了し、上限224の反復は全32呼び出しをJITで完了した。混合反復は上限126でVM 1件、128で0件。いずれも対応する入力の総操作数と batch 件数は一致した。`a5c509fe899d8f856a29df3c9067d2e9f999fbde` を `main` に公開し、変更した2ファイルの blob を照合した。最終入力の CLI `check` の対象48件成功、448件選択外。前回の失敗IDだけを再実行した結果は5件成功、上記昇格証明の2件失敗、489件選択外、終了100。`cargo clippy --locked -p arcweft-cli --test check --all-features` は警告付きで終了0。変更 Rust の書式と構造ゲートも終了0、ブロッキング違反0件。
+
+検証後の `target` は169,718,155,712 bytes（約169.7 GB）。
