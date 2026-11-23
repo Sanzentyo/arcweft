@@ -21876,3 +21876,17 @@ Engine のフレームと台帳の保存には既存の inert 状態を用いる
 初回の Core 確認は型パラメーターを変える構造体更新で失敗し、型を移す処理を明示して修正した。続くビルドは Entry kind の所有権で終了101となり、値の clone で修正した。初回の全機能テストは2,415件成功・1件失敗・スキップ0件。失敗した fanout のテストは内部の Program 完了に伴う外部通知を要求していた。外部通知の検査を実際に通知を受け取る回帰へ移し、fanout は実行中の子と完了結果を検査した。
 
 最終の Core 全機能ライブラリは2,416件成功・失敗0件・スキップ0件。全ターゲット・全機能の workspace check、Core 全ターゲット・全機能の Clippy、変更ファイルの書式、構造ゲートは終了0。Clippy には警告があり、新しい保存エラーの型サイズも指摘された。構造のブロッキング違反は0件。Cargo の全ターゲット逆依存グラフは Core を含む53パッケージで、実行テストは Core を対象とした。公開 executor と Runtime Driver からの Native 保存は今回の検証範囲外。検証後の `target` は146,315,627,484 bytes（約146.3 GB）。
+
+<a id="native-executor-save"></a>
+
+## 2026-11-23 — 公開 executor で Native の起動状態を保存・再開する
+
+基点 `6bce6ecb3d461689ddac15d49bf4e27ddb5d5bce`。開始時の追跡ファイルに変更はなく、既存の未追跡ディレクトリが一つあった。実装は `3f9f7b7c02ae7e6a711e10610e394f33ba4cbd93`、回帰テストの Flow ID 修正は `6a07c2ee0e20c05ade44f175df311e81bb423c8c`。両コミットを `main` に通常 push し、公開 ref と25変更 blob を照合した。
+
+Native Engine は起動時の選択を保持し、ステートフルな Root を持たない Entry も個別に照合する。起動有無のフラグと保存専用の Root Entry 欄を一つの起動状態へ統合した。RuntimePlan VM と Structured AOT は同じ Native スナップショットを使う。公開 executor が復元を拒否した場合は元の executor を返す。AWFB から起動する Runtime Driver は Product AWBC 専用の取得口を使い、既存の v1 保存ペイロードを保持する。
+
+Compiler の `flow_wait` は、DSL で定義した二つの Flow と同じ Flow を参照する二つの Entry を使う。残り1 nsの待機を RuntimePlan VM から Structured AOT に移し、元の Entry の結果 `42` を確認した。別 Flow と別 Entry への復元を拒否し、失敗後の保存状態を照合した。初回は34件成功・1件失敗・スキップ0件。テストが手で組み立てた直接起動の識別子を使い `UnknownFlow { flow: "main" }` になったため、コンパイル済み Plan から識別子を取得するよう修正した。再実行は35件成功・失敗0件・スキップ0件。
+
+Core 全機能ライブラリは2,416件、Runtime Driver の `awbc_product_session` は40件成功し、失敗・スキップは0件。変更ファイルの書式と構造ゲートは終了0、構造のブロッキング違反は0件。Cargo の全ターゲット逆依存グラフは Core を含む53パッケージで、実行検証は上記の範囲。
+
+全ターゲット・全機能の workspace check と、Core・Runtime Driver の全ターゲット・全機能 Clippy は終了0。Clippy には警告があった。Source を直接起動する headless Native のファイル保存とホストタスクの再開は検証範囲外。検証後の `target` は146,585,761,439 bytes（約146.6 GB）。
