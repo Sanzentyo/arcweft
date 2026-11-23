@@ -2656,7 +2656,12 @@ impl AwbcProductStepExecutor {
         let task_events_in = task_events.len();
         Self::append_task_event_diagnostics(&mut output, &task_events);
         self.latch_task_events(task_events, &mut output);
-        self.emit_pending_need_reensure(&mut output);
+        if let Err(error) = self
+            .need_producers
+            .reensure_pending_tasks(&mut output.requests.tasks)
+        {
+            self.fail_with_error(ProductStepError::Internal(error.to_string()), &mut output);
+        }
         self.step_stream_plans(&mut output, pure_backend);
 
         budgets.main = if matches!(

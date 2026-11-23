@@ -3658,6 +3658,17 @@ impl Engine {
             ))
         }));
         let events = self.latch_need_publications(need_states, events, &mut output);
+        if let Err(error) = self
+            .need_producers
+            .reensure_pending_tasks(&mut output.requests.tasks)
+        {
+            let message = error.to_string();
+            self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
+            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                RuntimeDiagnosticCategory::Host,
+                message,
+            ));
+        }
         self.latch_host_call_results(&mut input, &mut output);
         self.step_stream_plans(&mut output, pure_backend);
 

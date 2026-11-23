@@ -35,6 +35,9 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 use thiserror::Error;
 
+mod save;
+pub use save::{NativeTaskBridgeSaveError, NativeTaskBridgeSaveSnapshot};
+
 pub type NativeAdapterRegistrar =
     fn(&Path, HostAdapterRegistryBuilder) -> Result<HostAdapterRegistryBuilder, HostAdapterError>;
 
@@ -55,6 +58,7 @@ pub struct NativeTaskBridge {
     sequence: u64,
     dispatches: BTreeMap<TaskId, HostTaskAttempt>,
     publication_frontiers: BTreeMap<TaskId, TaskPublicationRevision>,
+    restored_dispatches: BTreeMap<TaskId, (TaskDispatchStart, TaskSubmission)>,
     scheduler: RuntimeScheduler,
     pending_host_calls: BTreeMap<TaskId, PendingRuntimeHostCall>,
     retired_host_call_tasks: BTreeMap<TaskId, HostTaskAttempt>,
@@ -227,6 +231,7 @@ impl NativeTaskBridge {
             sequence: 0,
             dispatches: BTreeMap::new(),
             publication_frontiers: BTreeMap::new(),
+            restored_dispatches: BTreeMap::new(),
             scheduler: RuntimeScheduler::default(),
             pending_host_calls: BTreeMap::new(),
             retired_host_call_tasks: BTreeMap::new(),
@@ -738,8 +743,13 @@ impl NativeTaskBridge {
                 }
                 .into());
             }
-            let identity = if let Some(identity) = self.dispatches.get(&task.task_id()) {
-                identity.identity().clone()
+            let start = if let Some((start, _)) = self.restored_dispatches.get(&task.task_id()) {
+                start.clone()
+            } else if let Some(attempt) = self.dispatches.get(&task.task_id()) {
+                TaskDispatchStart::new(
+                    attempt.identity().clone(),
+                    self.publication_frontiers.get(&task.task_id()).copied(),
+                )
             } else {
                 let identity = TaskDispatchIdentity::new(
                     task.handle().correlation,
@@ -749,21 +759,15 @@ impl NativeTaskBridge {
                 next_sequence = next_sequence
                     .checked_add(1)
                     .ok_or(NativeTaskBridgeError::DispatchSequenceExhausted)?;
-                identity
+                TaskDispatchStart::new(identity, None)
             };
-            let last_publication_revision =
-                self.publication_frontiers.get(&task.task_id()).copied();
             let task_asset_context = bundle_asset_context.filter(|_| {
                 matches!(
                     task.spec().request.as_host(),
                     Some(HostTaskRequest::AssetLoad(_))
                 )
             });
-            dispatches.push(NativeTaskDispatch::new(
-                TaskDispatchStart::new(identity, last_publication_revision),
-                task,
-                task_asset_context,
-            ));
+            dispatches.push(NativeTaskDispatch::new(start, task, task_asset_context));
         }
         self.complete_tasks_with_dispatches(program, dispatches)
     }
@@ -798,6 +802,14 @@ impl NativeTaskBridge {
             }
             let identity = start.identity();
             if identity.correlation != task.handle().correlation {
+                return Err(TaskCompletionError::DispatchMismatch {
+                    task_id: task.task_id(),
+                }
+                .into());
+            }
+            if let Some((saved, submission)) = self.restored_dispatches.get(&task.task_id())
+                && (saved != &start || submission != &task)
+            {
                 return Err(TaskCompletionError::DispatchMismatch {
                     task_id: task.task_id(),
                 }
@@ -850,14 +862,23 @@ impl NativeTaskBridge {
                 identity.logical_epoch,
                 identity.sequence,
             );
+            let conflicts = |task_id: &TaskId, existing: &TaskDispatchIdentity| {
+                task_id != &task.task_id()
+                    && (
+                        existing.correlation.generation,
+                        existing.logical_epoch,
+                        existing.sequence,
+                    ) == tuple
+            };
             if !identities.insert(tuple)
-                || self.dispatches.iter().any(|(task_id, existing)| {
-                    let existing = existing.identity();
-                    task_id != &task.task_id()
-                        && existing.correlation.generation == identity.correlation.generation
-                        && existing.logical_epoch == identity.logical_epoch
-                        && existing.sequence == identity.sequence
-                })
+                || self
+                    .dispatches
+                    .iter()
+                    .any(|(task_id, existing)| conflicts(task_id, existing.identity()))
+                || self
+                    .restored_dispatches
+                    .iter()
+                    .any(|(task_id, (saved, _))| conflicts(task_id, saved.identity()))
             {
                 return Err(TaskCompletionError::DispatchMismatch {
                     task_id: task.task_id(),
@@ -947,6 +968,7 @@ impl NativeTaskBridge {
             return Err(error.into());
         }
         for (task_id, identity) in candidate_dispatches {
+            self.restored_dispatches.remove(&task_id);
             self.dispatches.entry(task_id).or_insert(identity);
         }
         for (task_id, frontier) in candidate_start_frontiers {
@@ -2833,15 +2855,11 @@ mod tests {
             initial_registry,
         )
         .expect("implemented policy");
+        let dispatch = native_dispatch(TaskDispatchStart::new(identity.clone(), None), task);
+        let submission = dispatch.task.clone();
         assert!(
             initial
-                .complete_tasks_with_dispatches(
-                    standalone_test_program(),
-                    vec![native_dispatch(
-                        TaskDispatchStart::new(identity.clone(), None),
-                        task.clone(),
-                    )],
-                )
+                .complete_tasks_with_dispatches(standalone_test_program(), vec![dispatch],)
                 .expect("initial start")
                 .is_empty()
         );
@@ -2854,6 +2872,18 @@ mod tests {
                 .iter()
                 .all(|event| matches!(event.kind, TaskEventKind::Progress(_)))
         );
+        let mut launch = arcweft_core::task::RuntimeNeedProducerDispatch {
+            submission,
+            restart: arcweft_core::task::HostRestartPolicy::Restartable,
+            publication: Some(progress[1].cursor),
+            needs_reensure: false,
+        };
+        let snapshot = initial
+            .snapshot_dispatch_journal(std::slice::from_ref(&launch))
+            .unwrap();
+        let wire = serde_json::to_vec(&snapshot).unwrap();
+        drop(initial);
+        launch.needs_reensure = true;
 
         // A restored bridge has no in-memory scheduler or adapter task. The
         // exact saved dispatch and publication frontier resume at revision 3.
@@ -2870,24 +2900,40 @@ mod tests {
             restored_registry,
         )
         .expect("implemented policy");
+        let mut wrong = snapshot.clone();
+        wrong.dispatches[0] = TaskDispatchStart::new(identity.clone(), None);
+        assert!(matches!(
+            restored.restore_dispatch_journal(wrong, std::slice::from_ref(&launch)),
+            Err(NativeTaskBridgeSaveError::DispatchJournal),
+        ));
+        assert_eq!(restored.sequence, 0);
+        assert!(restored.restored_dispatches.is_empty());
+        restored
+            .restore_dispatch_journal(
+                serde_json::from_slice(&wire).unwrap(),
+                std::slice::from_ref(&launch),
+            )
+            .unwrap();
+        assert_eq!(
+            restored
+                .snapshot_dispatch_journal(std::slice::from_ref(&launch))
+                .unwrap(),
+            snapshot,
+        );
         let ready = restored
-            .complete_tasks_with_dispatches(
+            .complete_tasks_with_generation(
                 standalone_test_program(),
-                vec![native_dispatch(
-                    TaskDispatchStart::new(
-                        identity.clone(),
-                        Some(TaskPublicationRevision::new(
-                            std::num::NonZeroU64::new(2).expect("nonzero revision"),
-                        )),
-                    ),
-                    task,
-                )],
+                identity.correlation.generation,
+                LogicalEpoch(99),
+                vec![launch.submission],
             )
             .expect("restored re-ensure");
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].correlation, identity.correlation);
         assert_eq!(ready[0].cursor.logical_epoch, identity.logical_epoch);
         assert_eq!(ready[0].cursor.sequence.0, 3);
+        assert!(restored.restored_dispatches.is_empty());
+        assert_eq!(restored.sequence, snapshot.next_sequence);
         assert!(matches!(
             &ready[0].kind,
             TaskEventKind::Ready(value)

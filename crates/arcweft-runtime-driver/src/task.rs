@@ -201,8 +201,12 @@ impl RuntimeTaskRegistry {
                 .iter()
                 .find(|launch| launch.submission.handle().correlation == row.correlation)
                 .ok_or_else(|| "saved dispatch has no restored accepted Need launch".to_owned())?;
+            let start = TaskDispatchStart::new(
+                TaskDispatchIdentity::new(row.correlation, row.logical_epoch, row.sequence),
+                row.last_publication_revision,
+            );
             if !launch.needs_reensure
-                || launch.restart != HostRestartPolicy::Restartable
+                || !launch.matches_dispatch_start(&start)
                 || row.sequence.0 >= next_sequence
                 || !row.status.is_active()
                 || (row.status == RuntimeTaskStatus::Running)

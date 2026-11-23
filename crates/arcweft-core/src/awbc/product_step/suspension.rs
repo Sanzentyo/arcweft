@@ -87,43 +87,6 @@ impl DeferredSuspensionDispatch {
 }
 
 impl AwbcProductStepExecutor {
-    pub(super) fn emit_pending_need_reensure(&mut self, output: &mut RuntimeStepOutput) -> bool {
-        let pending = self
-            .need_producers
-            .pending_reensure()
-            .map(|launch| launch.need().clone())
-            .collect::<Vec<_>>();
-        if pending.is_empty() {
-            return true;
-        }
-
-        let mut proofs = Vec::with_capacity(pending.len());
-        for need in &pending {
-            match self.need_producers.inspect_task_ensured(need) {
-                Ok(proof) => proofs.push(proof),
-                Err(error) => {
-                    self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
-                    return false;
-                }
-            }
-        }
-        if proofs.iter().all(|proof| proof.task_spec().is_none()) {
-            self.fail_with_error(
-                ProductStepError::Internal(
-                    "Restartable Need re-registration produced no task specification".to_owned(),
-                ),
-                output,
-            );
-            return false;
-        }
-        let requests = proofs
-            .into_iter()
-            .filter_map(|proof| self.need_producers.mark_task_ensured_prepared(proof))
-            .collect::<Vec<_>>();
-        output.requests.tasks.extend(requests);
-        true
-    }
-
     pub(super) fn latch_task_events(
         &mut self,
         events: Vec<TaskEvent>,

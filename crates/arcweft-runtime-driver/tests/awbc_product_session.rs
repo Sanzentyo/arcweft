@@ -1575,6 +1575,122 @@ fn product_session_from_bytes(bytes: &[u8]) -> BundleSession {
 }
 
 #[test]
+fn native_executor_reensures_an_accepted_need_once_after_json_restore() {
+    use arcweft_core::engine::{FlowExit, FlowFiberStatus};
+    use arcweft_core::executor::{
+        ArcweftExecutionTier, ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot,
+        RuntimeExecutor,
+    };
+    use arcweft_core::step::{
+        RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+    };
+    use arcweft_core::task::{
+        LogicalEpoch, Progress, TaskDispatchIdentity, TaskEvent, TaskEventKind,
+        TaskPublicationRevision, TaskSequence,
+    };
+    use std::num::NonZeroU64;
+    let plan = std::sync::Arc::new(restartable_need_plan());
+    let entry = &plan.entries()[0].id;
+    for tier in [
+        ArcweftExecutionTier::RuntimePlanVm,
+        ArcweftExecutionTier::StructuredAot,
+    ] {
+        let new = || {
+            let mut executor =
+                ArcweftRuntimeExecutor::from_runtime_plan(std::sync::Arc::clone(&plan), tier)
+                    .unwrap();
+            executor.start_structured_entry(entry).unwrap();
+            executor
+        };
+        let options = RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 64 },
+            max_new_task_requests: 1,
+        };
+        let mut executor = new();
+        let issued = executor.step(RuntimeStepInput::default(), options);
+        let [submission] = issued.output.requests.tasks.as_slice() else {
+            panic!("the original step issues one Need");
+        };
+        let submission = submission.clone();
+        let identity = TaskDispatchIdentity::new(
+            submission.handle().correlation,
+            LogicalEpoch(17),
+            TaskSequence(52),
+        );
+        let event = |revision, kind| {
+            TaskEvent::from_dispatch(
+                identity.clone(),
+                TaskPublicationRevision::new(NonZeroU64::new(revision).unwrap()),
+                kind,
+            )
+        };
+        let pending = executor.step(
+            RuntimeStepInput {
+                task_events: vec![event(
+                    1,
+                    TaskEventKind::Progress(Progress::new(0.5).unwrap()),
+                )],
+                ..Default::default()
+            },
+            options,
+        );
+        assert!(matches!(
+            pending.fiber_status,
+            FlowFiberStatus::NeedWaiting(_)
+        ));
+        let launches = executor.restartable_dispatches();
+        let [launch] = launches.as_slice() else {
+            panic!("one Restartable Need is retained");
+        };
+        assert_eq!(launch.publication.unwrap().sequence, TaskSequence(1));
+        assert!(!launch.needs_reensure);
+        let ArcweftRuntimeExecutorSnapshot::Native(snapshot) = executor.snapshot().unwrap() else {
+            panic!("Native Engine snapshot");
+        };
+        let bytes = serde_json::to_vec(snapshot.as_ref()).unwrap();
+        drop(executor);
+        let mut executor = new()
+            .restore_snapshot(ArcweftRuntimeExecutorSnapshot::Native(
+                serde_json::from_slice(&bytes).unwrap(),
+            ))
+            .unwrap();
+        assert!(executor.restartable_dispatches()[0].needs_reensure);
+        let no_new_requests = RuntimeStepOptions {
+            budget: RuntimeStepBudget { max_ops: 0 },
+            max_new_task_requests: 0,
+            ..options
+        };
+        let issued = executor.step(RuntimeStepInput::default(), no_new_requests);
+        assert_eq!(issued.stats.executed_ops, 0);
+        assert_eq!(issued.output.requests.tasks, vec![submission.clone()]);
+        assert!(
+            executor
+                .step(RuntimeStepInput::default(), no_new_requests)
+                .output
+                .requests
+                .tasks
+                .is_empty()
+        );
+        let complete = executor.step(
+            RuntimeStepInput {
+                task_events: vec![event(
+                    2,
+                    TaskEventKind::Ready(arcweft_core::value::RuntimePayload::from("ready")),
+                )],
+                ..Default::default()
+            },
+            options,
+        );
+        assert_eq!(
+            complete.fiber_status,
+            FlowFiberStatus::Done(FlowExit::Return("done".into()))
+        );
+        assert!(executor.restartable_dispatches().is_empty());
+    }
+}
+
+#[test]
 fn restartable_need_session_save_reensures_the_exact_dispatch_once() {
     let bytes = restartable_need_awfb_bytes();
     let mut original = product_session_from_bytes(&bytes);
@@ -1785,6 +1901,17 @@ fn product_awfb_bytes(entry: &str) -> Vec<u8> {
 }
 
 fn restartable_need_awfb_bytes() -> Vec<u8> {
+    let plan = restartable_need_plan();
+    let program = AwbcLowerer::new(&plan, &DialogueContentCatalog::new(), "need-session.arcw")
+        .lower()
+        .expect("Need AWBC lowers")
+        .program;
+    product_bundle_with_program("entry.main", "need-session.arcw", program)
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("Need bundle encodes")
+}
+
+fn restartable_need_plan() -> arcweft_core::plan::RuntimePlan {
     use arcweft_core::plan::*;
     let flow = FlowRuntimeId::from_runtime_target_value("flow.restartable_need")
         .expect("fixture flow ID is valid");
@@ -1956,14 +2083,7 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
             roles: RuntimeEntryRoles::None,
         })
         .expect("Need entry admits");
-    let plan = builder.finish().expect("Need plan seals");
-    let program = AwbcLowerer::new(&plan, &DialogueContentCatalog::new(), "need-session.arcw")
-        .lower()
-        .expect("Need AWBC lowers")
-        .program;
-    product_bundle_with_program("entry.main", "need-session.arcw", program)
-        .to_format_bytes(BundleFormat::Awfb)
-        .expect("Need bundle encodes")
+    builder.finish().expect("Need plan seals")
 }
 
 fn assertion_product_bundle(condition: bool) -> ArcweftBundle {

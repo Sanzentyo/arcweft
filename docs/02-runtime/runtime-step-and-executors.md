@@ -68,6 +68,14 @@ invocation from a selected Entry, including Entries that target the same Flow.
 The portable AWFB session captures the Product AWBC specialization of this
 boundary. Restore publishes the candidate only after admission succeeds.
 
+On resume, Native and Product AWBC reissue accepted Restartable Need receipts
+after admitting step ingress. A reissued receipt keeps its original task
+correlation and consumes no fresh task request slot. The Native host bridge
+validates saved dispatch starts against those receipts and their accepted
+publication positions before it installs the dispatch sequence. When the
+executor reissues a receipt, the bridge starts a fresh adapter attempt at the
+saved epoch, dispatch sequence, and next publication revision.
+
 Runtime external producers retain the same accepted resource generation as
 their executable. Bundle admission binds the CharacterDialogue declaration,
 validated Character catalog, accepted View definitions and actual Style digest

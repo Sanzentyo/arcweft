@@ -1398,6 +1398,8 @@ pub struct NeedProducerRegistry {
     joined: BTreeMap<(GenerationId, NeedProducerInstanceKey), NeedProducerLaunchKey>,
     invocation_launches: BTreeMap<NeedProducerInvocationToken, NeedProducerLaunchKey>,
     task_journal: super::TaskAdmissionJournal,
+    // Derived at restore. Ordinary steps do not scan historical launches.
+    needs_resume_dispatch_pass: bool,
     next_invocation_sequence: BTreeMap<
         (
             GenerationId,
@@ -1517,21 +1519,6 @@ enum NeedProducerReadyOrigin {
     Program,
 }
 
-pub struct NeedProducerTaskEnsuredProof {
-    key: Option<NeedProducerLaunchKey>,
-    submission: Option<TaskSubmission>,
-}
-
-impl NeedProducerTaskEnsuredProof {
-    #[must_use]
-    pub const fn task_spec(&self) -> Option<&TaskSpec> {
-        match &self.submission {
-            Some(submission) => Some(submission.spec()),
-            None => None,
-        }
-    }
-}
-
 impl NeedProducerReadyRestoreError {
     pub fn into_parts(self) -> (NeedProducerAdmissionError, RuntimePayload) {
         (self.reason, self.value)
@@ -1634,6 +1621,25 @@ pub struct RuntimeNeedProducerDispatch {
     pub restart: HostRestartPolicy,
     pub publication: Option<TaskPublicationCursor>,
     pub needs_reensure: bool,
+}
+
+impl RuntimeNeedProducerDispatch {
+    /// A saved host dispatch must continue the accepted Need publication at
+    /// the same epoch and next revision.
+    #[must_use]
+    pub fn matches_dispatch_start(&self, start: &super::TaskDispatchStart) -> bool {
+        let identity = start.identity();
+        self.restart == HostRestartPolicy::Restartable
+            && self.submission.handle().correlation == identity.correlation
+            && self.publication
+                == start
+                    .last_publication_revision()
+                    .map(|revision| TaskPublicationCursor {
+                        logical_epoch: identity.logical_epoch,
+                        sequence: super::TaskSequence(revision.get()),
+                    })
+            && start.next_publication_revision().is_some()
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -3433,11 +3439,10 @@ impl NeedProducerRegistry {
         launch.state = RuntimeNeedProducerState::Ready(value);
     }
 
-    /// Lists active Restartable launches whose host request must be ensured
-    /// after Product restore. `mark_task_ensured` should be committed with the
-    /// corresponding Product step output.
-    pub fn pending_reensure(&self) -> impl Iterator<Item = &RuntimeNeedProducerLaunch> {
-        self.launches.values().filter(|launch| {
+    fn pending_reensure(
+        &self,
+    ) -> impl Iterator<Item = (&NeedProducerLaunchKey, &RuntimeNeedProducerLaunch)> {
+        self.launches.iter().filter(|(_, launch)| {
             launch.restart() == Some(HostRestartPolicy::Restartable)
                 && !launch.task_terminal
                 && !launch.state.is_terminal()
@@ -3445,65 +3450,39 @@ impl NeedProducerRegistry {
         })
     }
 
-    pub fn mark_task_ensured(
-        &mut self,
-        need: &NeedId,
-    ) -> Result<Option<TaskSubmission>, NeedProducerAdmissionError> {
-        let proof = self.inspect_task_ensured(need)?;
-        Ok(self.mark_task_ensured_prepared(proof))
+    pub(crate) fn has_pending_reensure(&self) -> bool {
+        self.needs_resume_dispatch_pass
     }
 
-    pub fn inspect_task_ensured(
-        &self,
-        need: &NeedId,
-    ) -> Result<NeedProducerTaskEnsuredProof, NeedProducerAdmissionError> {
-        let Some((key, launch)) = self
-            .launches
-            .iter()
-            .find(|(_, launch)| &launch.correlation.need == need)
-        else {
-            return Ok(NeedProducerTaskEnsuredProof {
-                key: None,
-                submission: None,
-            });
-        };
-        if launch.task_terminal || launch.state.is_terminal() || launch.task_submitted {
-            return Ok(NeedProducerTaskEnsuredProof {
-                key: None,
-                submission: None,
-            });
+    /// Re-issues only accepted Host receipts. The original dispatch still
+    /// owns the host sequence, so this does not consume fresh request quota.
+    pub(crate) fn reensure_pending_tasks(
+        &mut self,
+        output: &mut Vec<TaskSubmission>,
+    ) -> Result<(), NeedProducerAdmissionError> {
+        if !self.needs_resume_dispatch_pass {
+            return Ok(());
         }
-        if launch.restart() != Some(HostRestartPolicy::Restartable) {
-            return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
-        }
-        Ok(NeedProducerTaskEnsuredProof {
-            key: Some(*key),
-            submission: Some(
+        let prepared = self
+            .pending_reensure()
+            .map(|(key, launch)| {
                 self.task_journal
                     .submission(TaskHandle {
                         correlation: launch.correlation,
                     })
-                    .expect("restored launch retains its accepted journal receipt"),
-            ),
-        })
-    }
-
-    pub fn mark_task_ensured_prepared(
-        &mut self,
-        proof: NeedProducerTaskEnsuredProof,
-    ) -> Option<TaskSubmission> {
-        if let Some(key) = proof.key {
-            let launch = self
-                .launches
+                    .map(|submission| (*key, submission))
+                    .ok_or(NeedProducerAdmissionError::InvalidRestoredLaunch)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for (key, submission) in prepared {
+            self.launches
                 .get_mut(&key)
-                .expect("prepared reensure launch exists");
-            assert!(
-                !launch.task_terminal && !launch.state.is_terminal() && !launch.task_submitted,
-                "prepared reensure requires unchanged producer state"
-            );
-            launch.task_submitted = true;
+                .expect("prepared re-ensure retains its launch")
+                .task_submitted = true;
+            output.push(submission);
         }
-        proof.submission
+        self.needs_resume_dispatch_pass = false;
+        Ok(())
     }
 
     fn insert_validated_restore_launch(
@@ -3569,6 +3548,10 @@ impl NeedProducerRegistry {
         {
             launch.task_submitted = false;
         }
+        self.needs_resume_dispatch_pass |= launch.restart() == Some(HostRestartPolicy::Restartable)
+            && !launch.task_submitted
+            && !launch.task_terminal
+            && !launch.state.is_terminal();
         self.launches.insert(key, launch);
     }
     /// Restores a committed invocation alias for a previously restored
@@ -4368,10 +4351,7 @@ mod identity_tests {
         let admission = registry.commit_start_visit(proof);
         let need = admission.need().clone();
         let correlation = admission.correlation();
-        let ensured = registry
-            .inspect_task_ensured(&need)
-            .expect("task ensured preflight");
-        registry.mark_task_ensured_prepared(ensured);
+        assert!(registry.launch_for_need(&need).unwrap().task_submitted());
         let inner = || {
             crate::tests::reusable_need_with_outcome(
                 "need.inner.affine",
@@ -4589,18 +4569,15 @@ mod identity_tests {
             2
         );
         assert_eq!(restored.pending_reensure().count(), 1);
-        let reissued = restored
-            .mark_task_ensured(first_launch.need())
-            .expect("mark one restartable ensure")
-            .expect("active task needs ensure");
+        let mut requests = Vec::new();
+        restored.reensure_pending_tasks(&mut requests).unwrap();
+        let [reissued] = requests.as_slice() else {
+            panic!("one accepted receipt is reissued");
+        };
         assert_eq!(reissued.spec(), first_launch.task_spec());
         assert_eq!(reissued.handle().correlation, first_launch.correlation());
-        assert!(
-            restored
-                .mark_task_ensured(first_launch.need())
-                .expect("duplicate ensure is harmless")
-                .is_none()
-        );
+        restored.reensure_pending_tasks(&mut requests).unwrap();
+        assert_eq!(requests.len(), 1);
         assert_eq!(restored.pending_reensure().count(), 0);
     }
 
@@ -4695,10 +4672,15 @@ mod identity_tests {
             .unwrap();
         assert_eq!(restored.invocations().count(), 2);
         assert_eq!(restored.pending_reensure().count(), 1);
-        let submission = restored.mark_task_ensured(first.need()).unwrap().unwrap();
+        let mut requests = Vec::new();
+        restored.reensure_pending_tasks(&mut requests).unwrap();
+        let [submission] = requests.as_slice() else {
+            panic!("one accepted receipt is reissued");
+        };
         assert_eq!(submission.spec(), first.task_spec());
         assert_eq!(submission.handle().correlation, first.correlation());
-        assert!(restored.mark_task_ensured(first.need()).unwrap().is_none());
+        restored.reensure_pending_tasks(&mut requests).unwrap();
+        assert_eq!(requests.len(), 1);
     }
 
     #[test]

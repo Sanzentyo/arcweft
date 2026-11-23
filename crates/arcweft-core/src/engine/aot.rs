@@ -174,6 +174,7 @@ impl Engine {
     ) -> bool {
         input == &RuntimeStepInput::default()
             && self.root.is_none()
+            && !self.need_producers.has_pending_reensure()
             && !self.has_executor_work()
             && self.plan.stream_plans.is_empty()
             && self.fiber.frame.pending_ops.len() == 1
