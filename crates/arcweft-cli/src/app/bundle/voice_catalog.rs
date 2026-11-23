@@ -59,7 +59,7 @@ pub(super) fn collect<'a>(
     }
     let assets = assets
         .into_iter()
-        .map(|(id, (path, format))| {
+        .map(|(id, (path, format))| -> Result<AudioAsset, ExitCode> {
             let asset_id = id.bundle_asset_id();
             let id = AudioResourceId::new(asset_id.as_str()).map_err(|error| {
                 eprintln!("error: invalid audio resource ID for {path}: {error}");
