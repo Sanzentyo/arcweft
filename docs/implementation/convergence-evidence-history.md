@@ -22322,3 +22322,11 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 修正後のSema、CLIと実行計画の検証を開始した。`cargo tree --offline --locked -p arcweft-player-web --target wasm32-unknown-unknown --edges normal,build` で解決したWeb製品の239パッケージにSemaは含まれない。Semaの修正を反映したCLIで AWFB を再生成し、配信Wasmのハッシュを固定してブラウザーで読み込む。
 
 修正前の対象nextestは `runtime_native_options` の実WAV回帰に加え、Core の元Source付きproducer検査2件で失敗した。Core を個別再現すると、Native は音声producerに画像familyの値を渡して `PlanValue` が拒否し、decoded AWBC は元Sourceが `Voice`、テスト実行型が `Asset` のため引数0のidentity照合で拒否した。どちらも終了101。`1f99ab5e77fe4b63d521726c2fe5b120f6f81a95` で元Source、Nativeの値、AWBCの型が同じfixture familyを使うよう揃えた。元キー、型、copy予算の検査を保ち、再検証にこの2件を含める。
+
+兄弟列の修正 `a5cf7422fa000c60dd441c23efab14a86a24c2fe` を含む `cargo check --offline --locked -p arcweft-cli -p arcweft-player-web -p arcweft-runtime-plan --tests` は終了0。`4ae92428392066cf356f0bc61a97df67bd34e185` の `just structure-audit-gate` は blocking 0件、終了0。Windows全機能のCargo依存グラフでは Sema の推移的逆依存22パッケージは `arcweft-id` の逆依存70パッケージに含まれる。
+
+兄弟列の修正前のCLIで、診断用に 2 個の `Result` を個別の Match で照合する実WAV入力を実行した。記録済みのタプル Match を使う回帰の入力は維持した。診断用のAWFBは `AudioGraph` と `AssetCatalog` を version 1 で収録した。Native VM の2ステップで音声1件を完了し、未完了の `asset.voice.alice.missing` を1件保存した。AOTはステップ2から同じタスクIDとキーの1件だけを再発行して `voice_ready` に到達した。パッケージ済み AWBC も2件を完了して同じ結果を返した。入力 `.arcw`、AWFB、AWFS の SHA-256 は順に `b1a554c2da99c839d7c206f0f10d5e8e71c6d7e34d6746f109227a44e44bcd79`、`13081952a344f4fba343df89e0885424bfa12b2a1dd309d38508ca42e1d0a565`、`455df243ba8536c8d5006f21e8d2cd3a737cc8c7a49e2a4bb96aea5ef43fc2cc`。
+
+同じ診断用AWFBを Chrome WebGPU で実行した初回は、正常な配信2件も空であると仮定した観測側のアサーションが終了1だった。再実行では Native の AWBC 実行とステップ0〜2の要求数・配信診断を完全一致で照合し、それぞれ異なるタスクIDの sequence 1 を2件、既定の起動上限10秒、`done return voice_ready`、ブラウザーエラー0件で終了0とした。検証した Wasm の SHA-256 は `f4f49ea723aea7bd246da308892fb011a2af0e26264de1b278c43c30d4605b98`。
+
+修正前の全対象nextestは実行ID `37e4ee58-36d5-4dc4-93b0-5273fa2002ba`、5,928 PASS（slow 5）／3 FAIL／9 skip、終了100。失敗は上記の音声回帰1件とCore 2件だった。Core fixtureの最初の再構築では `RuntimeEntityReferenceType<RuntimeSemanticTypeId>` と `RuntimeEntityReferenceType<AwbcTypeId>` を同じ変数で扱って `E0308` を受けた。`f9921fd5d8ef0275bd05b54b53dba85f8ac61c41` では同じ素材familyから、意味の型参照と実行の型参照をそれぞれ構築する。
