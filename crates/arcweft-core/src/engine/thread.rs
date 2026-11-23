@@ -45,9 +45,19 @@ pub(super) struct PreparedProgramTask {
     pub(super) child: FlowFiber,
     pub(super) next_fiber_id: u64,
     captures: Vec<crate::plan::RuntimeProgramTaskCapture>,
+    operation: super::NativeSourceOperation,
 }
 
 impl Engine {
+    pub(super) fn program_task_launch(
+        &self,
+        correlation: crate::task::TaskCorrelation,
+    ) -> Option<&crate::task::ProgramTaskLaunch> {
+        self.need_producers
+            .program_launch_for_handle(crate::task::TaskHandle { correlation })
+            .filter(|launch| launch.source().belongs_to(&self.plan))
+    }
+
     pub(super) fn complete_program_task_return(
         &mut self,
         value: crate::value::RuntimeValue,
@@ -55,8 +65,12 @@ impl Engine {
         output: &mut crate::step::RuntimeStepOutput,
         backend: &mut impl super::RuntimeCallBackend,
     ) {
-        let super::FlowFiberLaunch::Program(launch) = &self.fiber.launch else {
+        let super::FlowFiberLaunch::Program { task, .. } = &self.fiber.launch else {
             unreachable!("task return is dispatched only with an accepted Program launch")
+        };
+        let Some(launch) = self.program_task_launch(*task) else {
+            self.fail_eval("returning Program task has no executing launch", output);
+            return;
         };
         let mut admission = RuntimeRetainedValueAdmission::for_program(
             launch.source().program_owner(),
@@ -76,14 +90,13 @@ impl Engine {
         output: &mut crate::step::RuntimeStepOutput,
         backend: &mut impl super::RuntimeCallBackend,
     ) {
-        let super::FlowFiberLaunch::Program(launch) = &self.fiber.launch else {
+        let super::FlowFiberLaunch::Program { task, .. } = &self.fiber.launch else {
             unreachable!("task return is dispatched only with an accepted Program launch")
         };
-        let launch = launch.clone();
         self.fiber.frame.pending_ops.clear();
         self.fiber.frame.await_observer = None;
         self.fiber.frame.invocation_result =
-            Some((super::NativeInvocationRoot::Task(launch), value));
+            Some((super::NativeInvocationRoot::Task(*task), value));
         if let Err(error) = self.unwind_control_stack(output, backend) {
             self.fail_eval(error, output);
             return;
@@ -186,6 +199,7 @@ impl Engine {
             child,
             next_fiber_id,
             captures: captures.to_vec(),
+            operation: operation.clone(),
         })
     }
 
@@ -199,6 +213,7 @@ impl Engine {
             mut child,
             next_fiber_id,
             captures,
+            operation,
         } = prepared;
         let captured = self
             .fiber
@@ -222,7 +237,13 @@ impl Engine {
         // exclusive Move commit and the parent/child scheduler mutation.
         let deliver = launch.delivery() == crate::task::ProgramTaskDelivery::HostMetadata;
         child.frame.env = captured.commit();
-        child.launch = super::FlowFiberLaunch::Program(launch);
+        child.launch = super::FlowFiberLaunch::Program {
+            task: accepted.handle().correlation,
+            origin: super::NativeProgramTaskOrigin {
+                source: operation,
+                role: super::NativeProgramTaskRole::Body,
+            },
+        };
         child.frame.status = super::FlowFiberStatus::Running;
         self.child_fibers.push_back(child);
         self.next_fiber_id = next_fiber_id;

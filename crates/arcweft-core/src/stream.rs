@@ -135,6 +135,77 @@ pub struct StreamRuntimeState<V = RuntimePayload> {
     pub emitted_count: u64,
 }
 
+pub(crate) mod retained_states {
+    use super::{StreamRuntimeId, StreamRuntimeState};
+    use crate::entry::RuntimeSchemaLimits;
+    use crate::value::InertRuntimeValueStorage;
+    use serde::{Deserializer, Serializer, de, ser};
+    use std::{collections::BTreeMap, fmt, marker::PhantomData};
+
+    pub(crate) fn serialize<P: InertRuntimeValueStorage, S: Serializer>(
+        states: &BTreeMap<StreamRuntimeId, StreamRuntimeState<P>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        use ser::SerializeSeq;
+        let mut rows = serializer.serialize_seq(Some(states.len()))?;
+        for (id, state) in states {
+            if id != &state.id {
+                return Err(ser::Error::custom(
+                    "stream row differs from its retained identity",
+                ));
+            }
+            rows.serialize_element(state)?;
+        }
+        rows.end()
+    }
+
+    pub(crate) fn deserialize<'de, P: InertRuntimeValueStorage, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<BTreeMap<StreamRuntimeId, StreamRuntimeState<P>>, D::Error> {
+        struct Rows<P>(PhantomData<P>);
+
+        impl<'de, P: InertRuntimeValueStorage> de::Visitor<'de> for Rows<P> {
+            type Value = BTreeMap<StreamRuntimeId, StreamRuntimeState<P>>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a bounded sequence of distinct retained streams")
+            }
+
+            fn visit_seq<A: de::SeqAccess<'de>>(
+                self,
+                mut rows: A,
+            ) -> Result<Self::Value, A::Error> {
+                let limits = RuntimeSchemaLimits::engine_default();
+                if rows
+                    .size_hint()
+                    .is_some_and(|count| !limits.permits_sequence_items(count))
+                {
+                    return Err(de::Error::custom(
+                        "retained stream count exceeds the decoder limit",
+                    ));
+                }
+                let mut states = BTreeMap::new();
+                while limits.permits_sequence_items(states.len() + 1) {
+                    let Some(state) = rows.next_element::<StreamRuntimeState<P>>()? else {
+                        return Ok(states);
+                    };
+                    if states.insert(state.id.clone(), state).is_some() {
+                        return Err(de::Error::custom("duplicate retained stream identity"));
+                    }
+                }
+                if rows.next_element::<de::IgnoredAny>()?.is_some() {
+                    return Err(de::Error::custom(
+                        "retained stream count exceeds the decoder limit",
+                    ));
+                }
+                Ok(states)
+            }
+        }
+
+        deserializer.deserialize_seq(Rows(PhantomData))
+    }
+}
+
 impl Clone for StreamRuntimeState<crate::value::AwbcRuntimeValueSnapshot> {
     fn clone(&self) -> Self {
         Self {
@@ -465,6 +536,33 @@ mod semantic_tests {
         assert!(
             matches!(foreign.admit_native_retained(&mut admission()), Err(crate::value::AwbcRuntimeValueSnapshotError::Message { message }) if message == "native stream is absent from its original executable")
         );
+    }
+
+    #[test]
+    fn retained_stream_rows_roundtrip_and_reject_ambiguous_identities() {
+        use crate::value::AwbcRuntimeValueSnapshot;
+        use std::collections::BTreeMap;
+
+        #[derive(Debug, Deserialize, PartialEq, Serialize)]
+        struct Rows(
+            #[serde(with = "retained_states")]
+            BTreeMap<StreamRuntimeId, StreamRuntimeState<AwbcRuntimeValueSnapshot>>,
+        );
+
+        let (_, _, state) = native_queue();
+        let accepted = Rows(BTreeMap::from([(state.id.clone(), state.clone())]));
+        let wire = serde_json::to_value(&accepted).unwrap();
+        assert_eq!(
+            serde_json::from_value::<Rows>(wire.clone()).unwrap(),
+            accepted
+        );
+        let [entry] = wire.as_array().unwrap().as_slice() else {
+            panic!("one stream row")
+        };
+        assert!(serde_json::from_value::<Rows>(serde_json::json!([entry, entry])).is_err());
+
+        let foreign = StreamRuntimeId::canonical("foreign").unwrap();
+        assert!(serde_json::to_value(Rows(BTreeMap::from([(foreign, state)]))).is_err());
     }
 
     #[test]

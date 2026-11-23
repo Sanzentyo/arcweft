@@ -49,7 +49,8 @@ pub(super) struct NativeDeferInFlight {
     pub(super) source: NativeDeferSource,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) enum NativeDeferParent {
     Root,
     Activation,
@@ -819,7 +820,7 @@ impl super::Engine {
         backend: &mut impl crate::pure::RuntimeCallBackend,
     ) {
         let result = if self.fiber.frame.active_function().is_some()
-            || matches!(self.fiber.launch, super::FlowFiberLaunch::Program(_))
+            || matches!(self.fiber.launch, super::FlowFiberLaunch::Program { .. })
         {
             NativeReturnResult::Value(value)
         } else {

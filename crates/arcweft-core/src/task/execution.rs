@@ -1,7 +1,7 @@
 //! A task executes either a host request or an admitted original program row.
 
 use super::descriptor::TaskDescriptorVisitor;
-use super::{HostTaskRequest, TaskPlanSemanticDigest};
+use super::{HostTaskRequest, TaskPlanSemanticDigest, TaskSpec};
 use crate::entry::RuntimeSchemaError;
 use crate::plan::{RuntimeTaskSource, RuntimeTaskSourceAssertion};
 use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
@@ -99,14 +99,26 @@ impl ProgramTaskLaunch {
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.receipt.admit_retained(admission)?;
+        self.receipt
+            .spec()
+            .admit_program_result_view(view, origin, admission)
+    }
+}
+
+impl<P> TaskSpec<P> {
+    /// Admits a result under its already validated Program receipt.
+    pub(crate) fn admit_program_result_view(
+        &self,
+        view: crate::value::RuntimeValueView<'_>,
+        origin: crate::entry::schema::value_encoding::ValueAdmissionOrigin,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         admission.admit_composite(origin, |owner, resources| {
             resources.validate_view(view, 0, None)?;
             crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
                 view, owner, resources,
             )?;
-            self.receipt
-                .spec()
-                .validate_admitted_value_view(view, owner, resources)?;
+            self.validate_admitted_value_view(view, owner, resources)?;
             Ok(())
         })
     }

@@ -354,7 +354,7 @@ impl Engine {
         }
         if matches!(
             &self.fiber.launch,
-            crate::engine::FlowFiberLaunch::Program(_)
+            crate::engine::FlowFiberLaunch::Program { .. }
         ) {
             self.complete_program_task_return(value, true, output, pure_backend);
             return None;

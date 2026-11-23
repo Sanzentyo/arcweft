@@ -707,18 +707,26 @@ mod tests {
         };
         let mut exact =
             crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
-        engine.fiber.frame.admit_owned_values(&mut exact).unwrap();
+        engine
+            .fiber
+            .frame
+            .admit_owned_values(&mut exact, None)
+            .unwrap();
         let mut exact =
             crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
-        image.fiber.frame.admit_owned_values(&mut exact).unwrap();
+        image
+            .fiber
+            .frame
+            .admit_owned_values(&mut exact, None)
+            .unwrap();
         for inert in [false, true] {
             let mut shared =
                 crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
             shared.validate(&RuntimeValue::Bool(true)).unwrap();
             let error = if inert {
-                image.fiber.frame.admit_owned_values(&mut shared)
+                image.fiber.frame.admit_owned_values(&mut shared, None)
             } else {
-                engine.fiber.frame.admit_owned_values(&mut shared)
+                engine.fiber.frame.admit_owned_values(&mut shared, None)
             }
             .unwrap_err();
             assert!(matches!(
@@ -731,7 +739,7 @@ mod tests {
                 engine
                     .fiber
                     .frame
-                    .admit_owned_values(&mut shared)
+                    .admit_owned_values(&mut shared, None)
                     .unwrap_err(),
                 error
             );

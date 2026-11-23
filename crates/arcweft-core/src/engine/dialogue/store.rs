@@ -466,7 +466,7 @@ impl DialogueActivationStoreRollbackImage {
                     admission,
                     active.frame.execution.env.function_instantiation(),
                     |frame, admission| {
-                        frame.admit_owned_values(admission)?;
+                        frame.admit_owned_values(admission, None)?;
                         admit_waits(frame)
                     },
                 )
@@ -1268,7 +1268,7 @@ impl DialogueActivationStore {
                     .function_instantiation(),
                 |frame, admission| {
                     let frame = executing_frame(activation).unwrap_or(frame);
-                    frame.admit_owned_values(admission)
+                    frame.admit_owned_values(admission, None)
                 },
             )
         })?;
@@ -2178,7 +2178,7 @@ mod tests {
             .admit_frame_roots(
                 &mut first_admission,
                 first.execution.env.function_instantiation(),
-                |frame, admission| frame.admit_owned_values(admission),
+                |frame, admission| frame.admit_owned_values(admission, None),
             )
             .unwrap_err()
             .to_string();

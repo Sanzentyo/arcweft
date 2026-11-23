@@ -26,9 +26,9 @@ use crate::stream::{
 };
 use crate::task::{
     CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
-    NeedProducerRegistry, RuntimeNeedPublication, TaskEvent, TaskEventKind, TaskId, TaskKey,
-    TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec, normalize_runtime_need_states,
-    normalize_task_events,
+    NeedProducerRegistry, RuntimeNeedPublication, TaskCorrelation, TaskEvent, TaskEventKind,
+    TaskId, TaskKey, TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec,
+    normalize_runtime_need_states, normalize_task_events,
 };
 use crate::value::{
     RuntimeCallableValue, RuntimeCallableZeroArgInvocationProof,
@@ -97,11 +97,15 @@ struct NativeScalarStepCharge {
 /// invocations of the exact admitted site; program roots retain their public
 /// program binding. Task roots retain their exact accepted launch. Each uses
 /// the same frame, transaction and value custody.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) enum NativeInvocationRoot {
     Program(arcweft_id::runtime_program::RuntimePureProgramId),
-    Function(crate::runtime_id::RuntimeFunctionSiteId),
-    Task(crate::task::ProgramTaskLaunch),
+    Function(
+        #[serde(with = "crate::plan::code::function_coordinate")]
+        crate::runtime_id::RuntimeFunctionSiteId,
+    ),
+    Task(TaskCorrelation),
 }
 
 /// Native execution ownership shared by live state and inert rollback storage.
@@ -311,7 +315,8 @@ pub(super) struct NativePreparedDialogueEffectCallback {
 }
 
 /// Executor identity and its current owned execution frame.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct FlowFiber<F = NativeFlowExecutionFrame> {
     pub frame: F,
     pub id: FlowFiberId,
@@ -363,42 +368,51 @@ impl FlowFiber {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub(crate) enum FlowFiberLaunch {
-    Local,
-    Program(crate::task::ProgramTaskLaunch),
+impl<F> FlowFiber<F> {
+    fn try_map_frame<T, E>(self, map: impl FnOnce(F) -> Result<T, E>) -> Result<FlowFiber<T>, E> {
+        let Self {
+            frame,
+            id,
+            parent,
+            launch,
+            persistent_id,
+            execution,
+            owner,
+        } = self;
+        Ok(FlowFiber {
+            frame: map(frame)?,
+            id,
+            parent,
+            launch,
+            persistent_id,
+            execution,
+            owner,
+        })
+    }
 }
 
-fn validate_program_task_launches<V, P, O, C, A, S, G>(
-    active: &FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S, G>>,
-    suspended: Option<&NativeFlowExecutionFrame<V, P, O, C, A, S, G>>,
-    children: &VecDeque<FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S, G>>>,
-    parked_main: Option<&FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S, G>>>,
-    mut accepted_program: impl FnMut(&crate::task::ProgramTaskLaunch) -> bool,
-) -> Result<(), String> {
-    let mut tasks = BTreeSet::new();
-    for child in std::iter::once(active).chain(parked_main).chain(children) {
-        if let FlowFiberLaunch::Program(launch) = &child.launch
-            && (!tasks.insert(launch.handle().correlation.task_id) || !accepted_program(launch))
-        {
-            return Err("native child launch differs from its accepted program task".into());
-        }
-        let frame = if child.id == active.id {
-            suspended.unwrap_or(&child.frame)
-        } else {
-            &child.frame
-        };
-        match (&child.launch, &frame.invocation_result) {
-            (FlowFiberLaunch::Program(launch), Some((NativeInvocationRoot::Task(result), _)))
-                if launch == result => {}
-            (FlowFiberLaunch::Program(_), Some(_))
-            | (FlowFiberLaunch::Local, Some((NativeInvocationRoot::Task(_), _))) => {
-                return Err("native task result differs from its owning accepted launch".into());
-            }
-            _ => {}
-        }
-    }
-    Ok(())
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) enum FlowFiberLaunch {
+    Local,
+    Program {
+        task: TaskCorrelation,
+        origin: NativeProgramTaskOrigin,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeProgramTaskOrigin {
+    source: NativeSourceOperation,
+    role: NativeProgramTaskRole,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+enum NativeProgramTaskRole {
+    Body,
+    FanoutWorker,
 }
 
 /// Budgeted native execution state shared by root, child and dialogue execution.
@@ -409,7 +423,14 @@ fn validate_program_task_launches<V, P, O, C, A, S, G>(
 /// use arcweft_core::engine::NativeFlowExecutionFrame;
 /// fn copy(value: &NativeFlowExecutionFrame) { let _: NativeFlowExecutionFrame = value.clone(); }
 /// ```
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage, P: crate::value::InertRuntimeValueStorage, RuntimeEnv<V, G>: serde::Serialize, O: serde::Serialize, C: serde::Serialize, A: serde::Serialize, S: serde::Serialize",
+        deserialize = "V: crate::value::InertRuntimeValueStorage, P: crate::value::InertRuntimeValueStorage, RuntimeEnv<V, G>: serde::Deserialize<'de>, O: serde::Deserialize<'de>, C: serde::Deserialize<'de>, A: serde::Deserialize<'de>, S: serde::Deserialize<'de>, Program: Default"
+    )
+)]
 pub struct NativeFlowExecutionFrame<
     V = RuntimeValue,
     P = RuntimePayload,
@@ -418,9 +439,11 @@ pub struct NativeFlowExecutionFrame<
     A = AwaitState,
     S = FlowFiberStatus,
     G = crate::presentation::RuntimePresentationScopeBinding,
+    Program = crate::task::RuntimeProgramOwner,
 > {
     /// Immutable code and type authority retained by this execution frame.
-    pub(crate) program: crate::task::RuntimeProgramOwner,
+    #[serde(skip)]
+    pub(crate) program: Program,
     /// The activation owns presentation even while borrowing its parent fiber.
     pub(crate) presentation_bank: crate::runtime_id::RuntimePresentationBankId,
     pub line_cursor: usize,
@@ -430,6 +453,7 @@ pub struct NativeFlowExecutionFrame<
     pub root_cleanups: Vec<FlowScopeCleanup>,
     pub env: RuntimeEnv<V, G>,
     pub observations: RuntimeObservationState<P>,
+    #[serde(with = "crate::stream::retained_states")]
     pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState<P>>,
     /// The terminal value remains with the exact fiber that returned it.
     pub(crate) invocation_result: Option<(NativeInvocationRoot, V)>,
@@ -455,15 +479,57 @@ impl Clone for FlowFiberRollbackImage {
     }
 }
 
-type NativeFlowExecutionFrameRollbackImage = NativeFlowExecutionFrame<
-    crate::value::AwbcRuntimeValueSnapshot,
-    crate::value::AwbcRuntimeValueSnapshot,
-    NativePendingWorkRollbackImage,
-    FlowControlStackEntryRollbackImage,
-    AwaitStateRollbackImage,
-    FlowFiberStatusRollbackImage,
-    crate::presentation::RuntimePresentationScopeSnapshot,
->;
+type NativeFlowExecutionFrameRollbackImage<Program = crate::task::RuntimeProgramOwner> =
+    NativeFlowExecutionFrame<
+        crate::value::AwbcRuntimeValueSnapshot,
+        crate::value::AwbcRuntimeValueSnapshot,
+        NativePendingWorkRollbackImage,
+        FlowControlStackEntryRollbackImage,
+        AwaitStateRollbackImage,
+        FlowFiberStatusRollbackImage,
+        crate::presentation::RuntimePresentationScopeSnapshot,
+        Program,
+    >;
+
+impl NativeFlowExecutionFrameRollbackImage<()> {
+    fn bind_program(
+        self,
+        program: crate::task::RuntimeProgramOwner,
+    ) -> NativeFlowExecutionFrameRollbackImage {
+        let Self {
+            program: (),
+            presentation_bank,
+            line_cursor,
+            pending_ops,
+            control_stack,
+            await_observer,
+            root_cleanups,
+            env,
+            observations,
+            stream_states,
+            invocation_result,
+            selected_dialogue_result,
+            lexical_exit,
+            status,
+        } = self;
+        NativeFlowExecutionFrameRollbackImage {
+            program,
+            presentation_bank,
+            line_cursor,
+            pending_ops,
+            control_stack,
+            await_observer,
+            root_cleanups,
+            env,
+            observations,
+            stream_states,
+            invocation_result,
+            selected_dialogue_result,
+            lexical_exit,
+            status,
+        }
+    }
+}
 
 impl Clone for NativeFlowExecutionFrameRollbackImage {
     fn clone(&self) -> Self {
@@ -498,6 +564,7 @@ impl FlowFiber {
                     owner.clone(),
                     crate::entry::RuntimeSchemaLimits::engine_default(),
                 ),
+                None,
             )
             .map_err(|error| error.to_string())?;
         self.snapshot_with_admitted_values(owner)
@@ -530,14 +597,8 @@ impl FlowFiber {
         image: FlowFiberRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        Ok(Self {
-            frame: NativeFlowExecutionFrame::from_image_with_admitted_values(image.frame, owner)?,
-            id: image.id,
-            parent: image.parent,
-            launch: image.launch,
-            persistent_id: image.persistent_id,
-            execution: image.execution,
-            owner: image.owner,
+        image.try_map_frame(|frame| {
+            NativeFlowExecutionFrame::from_image_with_admitted_values(frame, owner)
         })
     }
 }
@@ -644,6 +705,7 @@ impl NativeFlowExecutionFrame {
                 owner.clone(),
                 crate::entry::RuntimeSchemaLimits::engine_default(),
             ),
+            None,
         )
         .map_err(|error| error.to_string())?;
         self.snapshot_with_admitted_values(owner)
@@ -655,7 +717,7 @@ impl NativeFlowExecutionFrame {
     ) -> Result<NativeFlowExecutionFrameRollbackImage, String> {
         self.ensure_program_owner(owner)?;
         Ok(NativeFlowExecutionFrameRollbackImage {
-            program: self.program.clone(),
+            program: (),
             presentation_bank: self.presentation_bank,
             line_cursor: self.line_cursor,
             pending_ops: self
@@ -692,7 +754,7 @@ impl NativeFlowExecutionFrame {
                     crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                         value, owner,
                     )
-                    .map(|snapshot| (program.clone(), snapshot))
+                    .map(|snapshot| (*program, snapshot))
                     .map_err(|error| error.to_string())
                 })
                 .transpose()?,
@@ -712,7 +774,8 @@ impl NativeFlowExecutionFrame {
                 .map(|exit| exit.snapshot(owner))
                 .transpose()?,
             status: self.status.snapshot_with_admitted_values(owner)?,
-        })
+        }
+        .bind_program(owner.clone()))
     }
 
     #[cfg(test)]
@@ -726,6 +789,7 @@ impl NativeFlowExecutionFrame {
                     owner.clone(),
                     crate::entry::RuntimeSchemaLimits::engine_default(),
                 ),
+                None,
             )
             .map_err(|error| error.to_string())?;
         Self::from_image_with_admitted_values(image, owner)
@@ -792,7 +856,18 @@ impl NativeFlowExecutionFrame {
 
 /// Stable executor-local identity. It is allocated independently from a
 /// plan node so an old child completion cannot be attributed to a later run.
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, serde::Serialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Eq,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct FlowFiberId(u64);
 
 impl FlowFiberId {
@@ -806,7 +881,8 @@ impl FlowFiberId {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) enum FlowFiberOwner {
     Executor,
     FlowDefer {
@@ -824,7 +900,8 @@ pub(crate) enum FlowFiberOwner {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct LineTaskFiberOwner {
     pub(crate) tag: LineTaskWorkTag,
     pub(crate) join_policy: ChildJoinPolicy,
@@ -2440,19 +2517,6 @@ impl Engine {
     > {
         let inline = self.inline_dialogue_execution();
         let suspended = inline.suspended_frame();
-        validate_program_task_launches(
-            &self.fiber,
-            suspended,
-            &self.child_fibers,
-            self.parked_main.as_ref(),
-            |launch| {
-                self.need_producers
-                    .accepted_task_spec(launch.handle())
-                    .is_some_and(|spec| {
-                        launch.matches_spec(spec) && launch.source().belongs_to(&self.plan)
-                    })
-            },
-        )?;
         self.dialogue_activations
             .validate_parent_allocations(self.next_fiber_id)?;
         inline.validate_parent_allocations(self.next_fiber_id, limits)?;
@@ -2548,20 +2612,6 @@ impl Engine {
         image: NativeEngineRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        validate_program_task_launches(
-            &image.fiber,
-            None,
-            &image.child_fibers,
-            image.parked_main.as_ref(),
-            |launch| {
-                image
-                    .need_producers
-                    .task_spec(launch.handle().correlation)
-                    .is_some_and(|spec| {
-                        launch.matches_spec(spec) && launch.source().belongs_to(&image.plan)
-                    })
-            },
-        )?;
         image
             .dialogue_activations
             .validate_parent_allocations(image.next_fiber_id)?;
@@ -4993,19 +5043,13 @@ impl Engine {
         ) {
             match &child.launch {
                 FlowFiberLaunch::Local => None,
-                FlowFiberLaunch::Program(launch) => {
-                    if !self
-                        .need_producers
-                        .accepted_task_spec(launch.handle())
-                        .is_some_and(|spec| launch.matches_spec(spec))
-                        || !launch.source().belongs_to(&self.plan)
-                    {
-                        return Err(dialogue::DialogueExecutionError::ChildFailed {
-                            message: "retiring program task differs from its accepted launch"
+                FlowFiberLaunch::Program { task, .. } => {
+                    Some(self.program_task_launch(*task).cloned().ok_or_else(|| {
+                        dialogue::DialogueExecutionError::ChildFailed {
+                            message: "retiring program task differs from its executing launch"
                                 .into(),
-                        });
-                    }
-                    Some(launch)
+                        }
+                    })?)
                 }
             }
         } else {
@@ -5016,7 +5060,7 @@ impl Engine {
                 if let Some(launch) = completion_launch {
                     if !owner.requests_scope_close()
                         && !matches!(&child.frame.invocation_result,
-                        Some((NativeInvocationRoot::Task(result), _)) if result == launch)
+                        Some((NativeInvocationRoot::Task(result), _)) if *result == launch.handle().correlation)
                     {
                         return Err(dialogue::DialogueExecutionError::ChildFailed {
                             message: "retiring program task has no matching owned body result"
@@ -5049,8 +5093,10 @@ impl Engine {
                             if let crate::task::ProgramTaskOutcome::Returned(value) =
                                 rejected.outcome
                             {
-                                retained =
-                                    Some((NativeInvocationRoot::Task(launch.clone()), value));
+                                retained = Some((
+                                    NativeInvocationRoot::Task(launch.handle().correlation),
+                                    value,
+                                ));
                             }
                             child.frame.invocation_result = retained;
                             self.child_fibers.push_front(child);
@@ -5101,7 +5147,7 @@ impl Engine {
                         crate::entry::RuntimeSchemaLimits::engine_default(),
                     );
                     match self.need_producers.complete_program_task(
-                        launch,
+                        &launch,
                         crate::task::ProgramTaskOutcome::Failed(failure),
                         &mut admission,
                     ) {
@@ -5468,7 +5514,7 @@ impl Engine {
             && !self.has_active_project_call()
             && !self.has_joined_work()
         {
-            if matches!(&self.fiber.launch, FlowFiberLaunch::Program(_)) {
+            if matches!(&self.fiber.launch, FlowFiberLaunch::Program { .. }) {
                 self.finish(output, pure_backend);
             } else {
                 if !self.fiber.frame.has_scope_defer_work()
@@ -6115,7 +6161,7 @@ mod rollback_tests {
             RuntimeProgramOwner::Plan(Arc::new(RuntimePlanBuilder::new().finish().unwrap()));
         let limits = crate::entry::RuntimeSchemaLimits::engine_default();
         let mut admission = RuntimeRetainedValueAdmission::for_program(foreign.clone(), limits);
-        let error = frame.admit_owned_values(&mut admission).unwrap_err();
+        let error = frame.admit_owned_values(&mut admission, None).unwrap_err();
         assert_eq!(
             error,
             AwbcRuntimeValueSnapshotError::Message {
@@ -6125,7 +6171,7 @@ mod rollback_tests {
         let matching_frame = NativeFlowExecutionFrame::new(foreign);
         assert_eq!(
             matching_frame
-                .admit_owned_values(&mut admission)
+                .admit_owned_values(&mut admission, None)
                 .unwrap_err(),
             error
         );
@@ -6133,7 +6179,7 @@ mod rollback_tests {
 
         let mut standalone = RuntimeRetainedValueAdmission::standalone(limits);
         assert_eq!(
-            frame.admit_owned_values(&mut standalone).unwrap_err(),
+            frame.admit_owned_values(&mut standalone, None).unwrap_err(),
             AwbcRuntimeValueSnapshotError::Message {
                 message: "execution frame requires its original executable".into(),
             },

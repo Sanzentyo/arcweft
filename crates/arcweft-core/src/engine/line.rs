@@ -377,7 +377,7 @@ impl Engine {
         if self.defer_function_fallthrough(output) {
             return;
         }
-        if matches!(&self.fiber.launch, super::FlowFiberLaunch::Program(_))
+        if matches!(&self.fiber.launch, super::FlowFiberLaunch::Program { .. })
             && self.fiber.frame.invocation_result.is_none()
         {
             self.complete_program_task_return(

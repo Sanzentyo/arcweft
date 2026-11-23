@@ -298,10 +298,15 @@ fn native_program_fanout_runs_original_workers_and_restores_every_owned_frontier
                             .chain(image.parked_main.iter_mut())
                             .chain(&mut image.child_fibers)
                         {
-                            if let FlowFiberStatus::WaitingMany(state) = &mut fiber.frame.status {
-                                let wire = serde_json::to_vec(state).unwrap();
-                                *state = serde_json::from_slice(&wire).unwrap();
-                            }
+                            let wire = serde_json::to_vec(&*fiber).unwrap();
+                            let decoded: crate::engine::FlowFiber<
+                                crate::engine::NativeFlowExecutionFrameRollbackImage<()>,
+                            > = serde_json::from_slice(&wire).unwrap();
+                            *fiber = decoded
+                                .try_map_frame::<_, std::convert::Infallible>(|frame| {
+                                    Ok(frame.bind_program(owner.clone()))
+                                })
+                                .unwrap();
                         }
                         engine = Engine::from_rollback_image(image, &owner).unwrap();
                     }
@@ -419,5 +424,149 @@ fn native_program_fanout_restore_rejects_changed_limit_and_consumed_item_frontie
     assert_eq!(
         restored.inert_rollback_image().unwrap(),
         engine.inert_rollback_image().unwrap()
+    );
+}
+
+#[test]
+fn native_program_fibers_require_distinct_executing_receipts_after_frame_decode() {
+    use crate::engine::{
+        FlowFiber, FlowFiberLaunch, NativeFlowExecutionFrameRollbackImage, NativeInvocationRoot,
+    };
+    use crate::task::{TaskCorrelation, TaskLaunchOrdinal};
+    use crate::value::AwbcRuntimeValueSnapshot;
+
+    let mut engine = fixture(&[true, false, true], 2);
+    for _ in 0..64 {
+        let step = engine.step(Default::default(), Default::default());
+        assert!(
+            step.output.diagnostics.is_empty(),
+            "{:?}",
+            step.output.diagnostics
+        );
+        if engine.child_fibers.len() >= 2 {
+            break;
+        }
+    }
+    let original = engine.inert_rollback_image().unwrap();
+    let owner = RuntimeProgramOwner::Plan(Arc::clone(&engine.plan));
+    let controller = original
+        .child_fibers
+        .iter()
+        .position(|fiber| {
+            matches!(
+                &fiber.frame.status,
+                FlowFiberStatus::WaitingMany(WaitingManyStatus::Program(_))
+            )
+        })
+        .expect("the controller waits on its launched worker");
+    let worker = (0..original.child_fibers.len())
+        .find(|index| *index != controller)
+        .expect("a worker is executing");
+    let FlowFiberLaunch::Program {
+        task: controller_correlation,
+        ..
+    } = original.child_fibers[controller].launch
+    else {
+        unreachable!()
+    };
+    let FlowFiberLaunch::Program {
+        task: worker_correlation,
+        origin: ref worker_origin,
+    } = original.child_fibers[worker].launch
+    else {
+        unreachable!()
+    };
+
+    let wire = serde_json::to_value(&original.child_fibers[worker]).unwrap();
+    assert!(wire["frame"].get("program").is_none());
+    assert!(wire["launch"]["Program"].get("receipt").is_none());
+    let mut with_receipt = wire.clone();
+    with_receipt["launch"]["Program"]["receipt"] = serde_json::Value::Null;
+    assert!(
+        serde_json::from_value::<FlowFiber<NativeFlowExecutionFrameRollbackImage<()>>>(
+            with_receipt
+        )
+        .is_err()
+    );
+    let mut with_plan = wire.clone();
+    with_plan["frame"]["program"] = serde_json::Value::Null;
+    assert!(
+        serde_json::from_value::<FlowFiber<NativeFlowExecutionFrameRollbackImage<()>>>(with_plan)
+            .is_err()
+    );
+    let worker_spec = original
+        .need_producers
+        .task_spec(worker_correlation)
+        .unwrap();
+    let unissued = TaskCorrelation::try_for(
+        worker_spec.generation,
+        &worker_spec.producer,
+        worker_spec.policy,
+        TaskLaunchOrdinal::try_for_policy(
+            worker_spec.policy,
+            worker_correlation.launch_ordinal.get() + 1,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    for (launch, message) in [
+        (
+            original.child_fibers[controller].launch.clone(),
+            "repeats an executing Program receipt",
+        ),
+        (
+            FlowFiberLaunch::Program {
+                task: unissued,
+                origin: worker_origin.clone(),
+            },
+            "differs from its executing Program receipt",
+        ),
+        (
+            FlowFiberLaunch::Local,
+            "receipts differ from the Native fibers",
+        ),
+    ] {
+        let mut altered = wire.clone();
+        altered["launch"] = serde_json::to_value(launch).unwrap();
+        let decoded: FlowFiber<NativeFlowExecutionFrameRollbackImage<()>> =
+            serde_json::from_value(altered).unwrap();
+        let mut candidate = original.clone();
+        candidate.child_fibers[worker] = decoded
+            .try_map_frame::<_, std::convert::Infallible>(|frame| {
+                Ok(frame.bind_program(owner.clone()))
+            })
+            .unwrap();
+        let error = Engine::from_rollback_image(candidate, &owner).unwrap_err();
+        assert!(error.contains(message), "{error}");
+    }
+    let mut swapped = original.clone();
+    for (index, replacement) in [
+        (controller, worker_correlation),
+        (worker, controller_correlation),
+    ] {
+        let FlowFiberLaunch::Program { task, .. } = &mut swapped.child_fibers[index].launch else {
+            unreachable!()
+        };
+        *task = replacement;
+    }
+    let error = Engine::from_rollback_image(swapped, &owner).unwrap_err();
+    assert!(error.contains("different original Program task"), "{error}");
+    let mut wrong_result = original.clone();
+    wrong_result.child_fibers[controller]
+        .frame
+        .invocation_result = Some((
+        NativeInvocationRoot::Task(controller_correlation),
+        AwbcRuntimeValueSnapshot::Bool(true),
+    ));
+    assert!(Engine::from_rollback_image(wrong_result, &owner).is_err());
+    let mut swapped_result = original.clone();
+    swapped_result.child_fibers[worker].frame.invocation_result = Some((
+        NativeInvocationRoot::Task(controller_correlation),
+        AwbcRuntimeValueSnapshot::Bool(true),
+    ));
+    let error = Engine::from_rollback_image(swapped_result, &owner).unwrap_err();
+    assert!(
+        error.contains("result differs from its owning accepted launch"),
+        "{error}"
     );
 }

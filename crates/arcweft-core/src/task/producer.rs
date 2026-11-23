@@ -1653,6 +1653,7 @@ pub struct NeedProducerRegistryRestore<
 /// the registry image while waiters and launch state inspect their receipts.
 pub(crate) struct RetainedTaskReceiptIndex<'a, P, S = crate::plan::RuntimeTaskSource> {
     by_task: BTreeMap<TaskId, &'a TaskSubmission<P, TaskPlanSemanticDigest, S>>,
+    executing_programs: BTreeSet<TaskCorrelation>,
 }
 
 impl<P, S: super::TaskExecutionSource> RetainedTaskReceiptIndex<'_, P, S> {
@@ -1662,6 +1663,20 @@ impl<P, S: super::TaskExecutionSource> RetainedTaskReceiptIndex<'_, P, S> {
     ) -> Option<&TaskSpec<P, TaskPlanSemanticDigest, S>> {
         let row = self.by_task.get(&correlation.task_id)?;
         (row.handle().correlation == correlation).then_some(row.spec())
+    }
+
+    pub(crate) fn executing_program(
+        &self,
+        correlation: TaskCorrelation,
+    ) -> Option<&TaskSpec<P, TaskPlanSemanticDigest, S>> {
+        self.executing_programs
+            .contains(&correlation)
+            .then(|| self.task_spec(correlation))
+            .flatten()
+    }
+
+    pub(crate) fn executing_program_count(&self) -> usize {
+        self.executing_programs.len()
     }
 }
 
@@ -1741,6 +1756,19 @@ impl<V, P, S: super::TaskExecutionSource + PartialEq> NeedProducerRegistryRestor
                 .task_admissions
                 .iter()
                 .map(|row| (row.task_id(), row))
+                .collect(),
+            executing_programs: self
+                .launches
+                .iter()
+                .filter_map(|launch| {
+                    matches!(
+                        &launch.origin,
+                        NeedProducerLaunchOriginRestore::Program {
+                            retirement: super::ProgramTaskRetirementPhase::Executing,
+                        }
+                    )
+                    .then_some(launch.correlation)
+                })
                 .collect(),
         }
     }

@@ -5,7 +5,8 @@ use crate::engine::code_cursor::NativeSourceOperation;
 use crate::plan::{FlowOp, RuntimeFlowBodyRole, RuntimeProgramTaskBody};
 use crate::task::{NeedProducerInstance, RuntimeNeedProducerState, RuntimeTaskTemplateArguments};
 use crate::value::{
-    RuntimePayload, RuntimeRetainedValueAdmission, RuntimeStoredValue, RuntimeValue,
+    AwbcRuntimeValueSnapshotError, RuntimePayload, RuntimeRetainedValueAdmission,
+    RuntimeStoredValue, RuntimeValue,
 };
 use std::sync::Arc;
 
@@ -202,9 +203,12 @@ impl Engine {
     ) {
         let prepare = (|| {
             let (producer, fanout) = original_fanout(&source, &self.plan)?;
-            let super::FlowFiberLaunch::Program(launch) = &self.fiber.launch else {
+            let super::FlowFiberLaunch::Program { task, .. } = &self.fiber.launch else {
                 return Err("Program fanout requires an accepted Program launch".into());
             };
+            let launch = self
+                .program_task_launch(*task)
+                .ok_or("Program fanout has no executing launch")?;
             if self.plan.task_plan(&producer.plan).map(|row| row.key())
                 != Some(launch.source().task_plan().key())
             {
@@ -360,10 +364,15 @@ impl Engine {
                 return;
             }
         };
-        let super::FlowFiberLaunch::Program(launch) = &self.fiber.launch else {
+        let super::FlowFiberLaunch::Program { task, .. } = &self.fiber.launch else {
             unreachable!("the fanout executes only under its admitted launch")
         };
         if let Err(error) = aggregate.with_view(|view| {
+            let launch = self.program_task_launch(*task).ok_or_else(|| {
+                AwbcRuntimeValueSnapshotError::Message {
+                    message: "Program fanout has no executing launch".into(),
+                }
+            })?;
             launch.admit_result_view(
                 view.inspect(),
                 crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
@@ -508,7 +517,13 @@ impl Engine {
                     .expect("the admitted item remains owned until launch commit"),
             }]);
         let deliver = launch.delivery() == crate::task::ProgramTaskDelivery::HostMetadata;
-        child.launch = super::FlowFiberLaunch::Program(launch);
+        child.launch = super::FlowFiberLaunch::Program {
+            task: receipt.handle().correlation,
+            origin: super::NativeProgramTaskOrigin {
+                source: state.source.clone(),
+                role: super::NativeProgramTaskRole::FanoutWorker,
+            },
+        };
         child.frame.status = FlowFiberStatus::Running;
         self.child_fibers.push_back(child);
         self.next_fiber_id = next_id;

@@ -7,16 +7,88 @@ use super::work::{
     NativeFrameResume, NativePendingWorkKind, NativeRuntimeContinuation, NativeStoredWork,
 };
 use super::{
-    Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberOwner, FlowFiberStatus,
-    FlowScopeCleanup, FunctionCallFrame, FunctionReturnContinuation, NativeEngineRollbackImage,
-    NativeFlowExecutionFrame, NativeFormatAttemptFrame, NativeInvocationRoot, eval,
+    Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowFiberLaunch, FlowFiberOwner,
+    FlowFiberStatus, FlowScopeCleanup, FunctionCallFrame, FunctionReturnContinuation,
+    NativeEngineRollbackImage, NativeFlowExecutionFrame, NativeFormatAttemptFrame,
+    NativeInvocationRoot, NativeProgramTaskOrigin, NativeProgramTaskRole, eval,
 };
 use crate::runtime_id::DialogueActivationId;
-use crate::task::TaskPublicationCursor;
+use crate::task::{TaskCorrelation, TaskPublicationCursor, TaskRequest, TaskSpec};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 mod await_state;
+
+impl FlowFiberLaunch {
+    fn admit_program<'a, P>(
+        &self,
+        plan: &crate::plan::RuntimePlan,
+        executing: impl FnOnce(TaskCorrelation) -> Option<&'a TaskSpec<P>>,
+        seen: &mut BTreeSet<TaskCorrelation>,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<
+        Option<(TaskCorrelation, &'a TaskSpec<P>)>,
+        crate::value::AwbcRuntimeValueSnapshotError,
+    > {
+        let Self::Program {
+            task: correlation,
+            origin,
+        } = self
+        else {
+            return Ok(None);
+        };
+        admission.validate_metadata(correlation)?;
+        let Some(spec) = executing(*correlation).filter(|spec| {
+            matches!(&spec.request,
+            TaskRequest::Program(source) if source.belongs_to(plan))
+        }) else {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "native child launch differs from its executing Program receipt".into(),
+            });
+        };
+        if !seen.insert(*correlation) {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "native child launch repeats an executing Program receipt".into(),
+            });
+        }
+        if origin.admit_original_plan(plan, admission)? != spec.producer.plan() {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "native child launch belongs to a different original Program task".into(),
+            });
+        }
+        Ok(Some((*correlation, spec)))
+    }
+}
+
+impl NativeProgramTaskOrigin {
+    fn admit_original_plan(
+        &self,
+        plan: &crate::plan::RuntimePlan,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<crate::task::TaskPlanSemanticDigest, crate::value::AwbcRuntimeValueSnapshotError>
+    {
+        use crate::plan::{FlowOp, RuntimeProgramTaskBody};
+        let invalid = || crate::value::AwbcRuntimeValueSnapshotError::Message {
+            message: "native child launch has no original Program task operation".into(),
+        };
+        self.source.admit_retained(admission)?;
+        let Some(FlowOp::ProgramTask { template, .. }) = self.source.operation(plan) else {
+            return Err(invalid());
+        };
+        let producer = match (self.role, &template.body) {
+            (NativeProgramTaskRole::Body, _) => &template.producer,
+            (NativeProgramTaskRole::FanoutWorker, RuntimeProgramTaskBody::Fanout(fanout)) => {
+                &fanout.worker.producer
+            }
+            (NativeProgramTaskRole::FanoutWorker, RuntimeProgramTaskBody::Flow(_)) => {
+                return Err(invalid());
+            }
+        };
+        plan.task_plan(&producer.plan)
+            .map(|row| row.key())
+            .ok_or_else(invalid)
+    }
+}
 
 impl FlowScopeCleanup {
     pub(super) fn admit_retained(
@@ -509,6 +581,7 @@ impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
     pub(super) fn admit_owned_values(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        task: Option<(TaskCorrelation, &TaskSpec<P>)>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
         V: crate::value::RuntimeStoredValue,
@@ -636,13 +709,14 @@ impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
                 ));
             }
         }
-        self.admit_invocation_result(admission)?;
+        self.admit_invocation_result(admission, task)?;
         Ok(())
     }
 
     fn admit_invocation_result(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        task: Option<(TaskCorrelation, &TaskSpec<P>)>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
         V: crate::value::RuntimeStoredValue,
@@ -652,6 +726,21 @@ impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
         };
         let invalid =
             |message: String| crate::value::AwbcRuntimeValueSnapshotError::Message { message };
+        match (root, task) {
+            (NativeInvocationRoot::Task(actual), Some((expected, spec))) if *actual == expected => {
+                return spec.admit_program_result_view(
+                    value.borrowed_view(),
+                    V::admission_origin(),
+                    admission,
+                );
+            }
+            (NativeInvocationRoot::Task(_), _) | (_, Some(_)) => {
+                return Err(invalid(
+                    "native task result differs from its owning accepted launch".into(),
+                ));
+            }
+            _ => {}
+        }
         let crate::task::RuntimeProgramOwner::Plan(plan) = &self.program else {
             return Err(invalid(
                 "native invocation result has no original Plan".into(),
@@ -675,8 +764,8 @@ impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
                     })?
                     .semantic_identity()
             }
-            NativeInvocationRoot::Task(launch) => {
-                return launch.admit_result(value, admission);
+            NativeInvocationRoot::Task(_) => {
+                unreachable!("task roots were resolved through the fiber receipt")
             }
         };
         admission.validate_owned_typed_borrowed(value.borrowed_value(), expected)
@@ -1411,7 +1500,7 @@ impl<N, P, R, V, FP, O, C, A, S, G, D>
                 ..
             }) = &child.frame.lexical_exit
             {
-                let typed = matches!(child.launch, super::FlowFiberLaunch::Program(_))
+                let typed = matches!(child.launch, super::FlowFiberLaunch::Program { .. })
                     || child
                         .frame
                         .control_stack
@@ -1648,9 +1737,19 @@ impl Engine {
             .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
         self.validate_scheduled_scope_state(admission, suspended)
             .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
+        let mut program_launches = BTreeSet::new();
         for fiber in self.session_fibers() {
             let frame = self.session_frame(fiber, suspended);
-            frame.admit_owned_values(admission)?;
+            let task = fiber.launch.admit_program(
+                &self.plan,
+                |correlation| {
+                    self.program_task_launch(correlation)
+                        .map(crate::task::ProgramTaskLaunch::spec)
+                },
+                &mut program_launches,
+                admission,
+            )?;
+            frame.admit_owned_values(admission, task)?;
             frame.env.validate_presentation_context(
                 &frame.program,
                 fiber.execution,
@@ -1757,6 +1856,7 @@ impl NativeEngineRollbackImage {
         self.validate_scheduled_scope_state(&mut admission, None)?;
         let mut host_sequences = BTreeSet::new();
         let mut host_correlations = BTreeSet::new();
+        let mut program_launches = BTreeSet::new();
         let mut validate_waits = |frame: &super::NativeFlowExecutionFrameRollbackImage,
                                   launch: Option<crate::task::TaskCorrelation>|
          -> Result<(), String> {
@@ -1809,9 +1909,18 @@ impl NativeEngineRollbackImage {
             Ok(())
         };
         for fiber in self.session_fibers() {
+            let task = fiber
+                .launch
+                .admit_program(
+                    expected,
+                    |correlation| receipts.executing_program(correlation),
+                    &mut program_launches,
+                    &mut admission,
+                )
+                .map_err(|error| error.to_string())?;
             fiber
                 .frame
-                .admit_owned_values(&mut admission)
+                .admit_owned_values(&mut admission, task)
                 .map_err(|error| error.to_string())?;
             fiber
                 .frame
@@ -1823,11 +1932,12 @@ impl NativeEngineRollbackImage {
                     fiber.frame.presentation_bank,
                 )
                 .map_err(|error| error.to_string())?;
-            let launch = match &fiber.launch {
-                super::FlowFiberLaunch::Local => None,
-                super::FlowFiberLaunch::Program(launch) => Some(launch.handle().correlation),
-            };
-            validate_waits(&fiber.frame, launch)?;
+            validate_waits(&fiber.frame, task.map(|(correlation, _)| correlation))?;
+        }
+        if program_launches.len() != receipts.executing_program_count() {
+            return Err(
+                "executing Program receipts differ from the Native fibers that own them".into(),
+            );
         }
         let expected_deferred_children = self.expected_deferred_children(|activation| {
             self.dialogue_activations
