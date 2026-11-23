@@ -22236,3 +22236,13 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 公開状態 `d7a659cc3b9b6353cddfa77392c9d75deeda3eda` では開始時の追跡ファイルに差分がなく、既存の未追跡ディレクトリが一つあった。`cargo nextest run --offline --locked -p arcweft-render-wgpu --all-features --test prepared_text --run-ignored all --test-threads 1 --no-fail-fast --no-tests fail` は11成功、選択外0、19.535秒、終了0。実行 ID `3a70097b-b7a5-4ef9-a0a0-3e176058ebac`。過去の実行で選択対象外だった `missing_view_text_id_is_a_typed_compositor_failure` を含む。
 
 同じ公開状態で `just webgpu-parity` を実行した。デモ AWFB の SHA-256 は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4`、リリース Wasm は62,588,615 bytes、SHA-256 `926771caeb22dcfea2ab476484ed4a5037fa04b9f6201105ac61ed20c0aae908`。Native の5地点を160 msで採取した。Chrome は `[p]` の起動待ちで既定の10秒を超え、レシピは終了1。失敗時点では `fatal=""`、`loadingHidden=false`、`ready=null`、`observation=null`。Web の採取と画像比較には到達しなかった。この実行中は CLI の全 `check` と HIR の本番上限検証も実行していた。タイムアウトの原因はこの実行では特定できていない。
+
+同じ AWFB とリリース Wasm に対して `ARW_WEB_PARITY_DIR`／`ARW_WEB_PARITY_CHECKPOINTS` をレシピと同じ値に設定し、ブラウザー側の `npm --prefix web test` を再実行した。`[p]` は成功し、続く DOM を使わないキャンバス描画の起動で10秒を超え、同じ起動前の状態で終了1。Web の画像採取はこの実行でも未到達。
+
+<a id="cli-native-check-current"></a>
+
+## 2026-11-24 — Native capture を含む全 CLI `check` の再検証
+
+検証対象 `d7a659cc3b9b6353cddfa77392c9d75deeda3eda`。開始時はローカルと公開 `main` が一致し、追跡ファイルに差分はなかった。既存の未追跡ディレクトリが一つあった。
+
+`cargo nextest run --offline --locked -p arcweft-cli --features native-capture --test check --no-fail-fast --no-tests fail --status-level slow --final-status-level fail --failure-output final` は1バイナリで475成功（slow 39）、23選択外、726.381秒、終了0。実行 ID `d7ad83da-2a2e-4599-9c8b-5c04426e1fbf`。過去の逆依存実行で失敗した Scroll の capture／release filtering、寿命昇格の二つの監査診断、および JLREQ の geometry／raw crop の実行対象が通過した。過去の失敗と実行条件は原本に保持する。今回の結果は CLI の `check` バイナリの通常選択範囲を示す。[旧 Scroll と昇格診断の原本](acceptance-evidence/task-unvoiced-line-lease-reverse.raw.zip)・[旧 JLREQ 診断](acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.failure-recon.json)。
