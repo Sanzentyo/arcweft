@@ -146,6 +146,44 @@ impl AssetLoadKind {
             Self::Voice => "voice",
         }
     }
+
+    pub(crate) fn from_request_name(name: &str) -> Option<Self> {
+        match name {
+            "image" => Some(Self::Image),
+            "voice" => Some(Self::Voice),
+            _ => None,
+        }
+    }
+
+    // Version 1 host requests use lowercase strings. Producer-plan serde
+    // and the AWBC producer codec retain their own existing representations.
+    pub(super) fn serialize_request_name<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+
+    pub(super) fn deserialize_request_name<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {
+        struct RequestName;
+
+        impl serde::de::Visitor<'_> for RequestName {
+            type Value = AssetLoadKind;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("an asset request kind (`image` or `voice`)")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, name: &str) -> Result<Self::Value, E> {
+                AssetLoadKind::from_request_name(name)
+                    .ok_or_else(|| E::custom("expected asset request kind `image` or `voice`"))
+            }
+        }
+
+        deserializer.deserialize_str(RequestName)
+    }
 }
 
 /// Closed producer family used by the canonical instance-key transcript.
@@ -681,7 +719,7 @@ impl NeedProducerTaskPlan {
                 };
                 Ok(HostTaskRequest::AssetLoad(AssetRequest {
                     id: reference.runtime_label(),
-                    kind: kind.as_str().to_owned(),
+                    kind: *kind,
                 }))
             }
             NeedProducerRequestProjection::ExternCapability {
@@ -749,7 +787,7 @@ impl NeedProducerTaskPlan {
                 else {
                     return Err(NeedProducerRequestError::ExpectedEntityReference);
                 };
-                Ok(saved.id == reference.runtime_label() && saved.kind == kind.as_str())
+                Ok(saved.kind == *kind && saved.id == reference.runtime_label())
             }
             (
                 NeedProducerRequestProjection::ExternCapability {

@@ -192,26 +192,6 @@ impl BundleAssetResolver {
             .map_err(|_| BundleAssetResolverError::GenerationTablePoisoned)
     }
 
-    /// Resolves an image request into the exact `Result<ImageHandle, AssetError>`
-    /// runtime value. Missing and invalid resources are typed `Result::Err`.
-    pub fn load_image(
-        &self,
-        context: RuntimeBundleAssetContext,
-        id: &str,
-    ) -> Result<RuntimeValue, BundleAssetResolverError> {
-        self.load(AssetLoadKind::Image, context, id)
-    }
-
-    /// Resolves a voice request into the exact `Result<AudioHandle, VoiceError>`
-    /// runtime value. Missing and invalid resources are typed `Result::Err`.
-    pub fn load_voice(
-        &self,
-        context: RuntimeBundleAssetContext,
-        id: &str,
-    ) -> Result<RuntimeValue, BundleAssetResolverError> {
-        self.load(AssetLoadKind::Voice, context, id)
-    }
-
     /// Revalidates a saved image success or `AssetError` against its embedded
     /// generation and complete artifact identity.
     pub fn validate_image_result(
@@ -302,7 +282,9 @@ impl BundleAssetResolver {
         self.resolve_handle(AssetLoadKind::Voice, handle.binding())
     }
 
-    fn load(
+    /// Resolves a host asset request to its image or audio result. A missing or
+    /// invalid resource is a typed `Result::Err` in the corresponding family.
+    pub fn load(
         &self,
         kind: AssetLoadKind,
         context: RuntimeBundleAssetContext,

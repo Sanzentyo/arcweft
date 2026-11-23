@@ -245,7 +245,7 @@ public-id prefix を持つ family を参照する場合は、absolute ID を手�
 goto @flow:.next
 include @flow:.intro
 view = @view:.SideDialogue
-asset.load(@asset:.room)
+asset.image(@asset:.room)
 ```
 
 つまり `@.suffix` は `IdRef::Relative`、参照文脈の `@flow:.suffix` は

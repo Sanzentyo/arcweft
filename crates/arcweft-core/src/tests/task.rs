@@ -151,7 +151,7 @@ fn task_spec_uses_typed_request_and_debug_label() {
         TaskOutcomeContract::new(RuntimeCheckedType::String),
         HostTaskRequest::AssetLoad(AssetRequest {
             id: "asset.bg.room".to_owned(),
-            kind: "image".to_owned(),
+            kind: AssetLoadKind::Image,
         }),
     );
     spec.priority = TaskPriority(3);
@@ -159,7 +159,7 @@ fn task_spec_uses_typed_request_and_debug_label() {
     assert_eq!(spec.debug_label, "asset.load image asset.bg.room");
     assert!(
         matches!(spec.request.as_host().expect("host request fixture"), HostTaskRequest::AssetLoad(AssetRequest { id, kind })
-        if id == "asset.bg.room" && kind == "image")
+        if id == "asset.bg.room" && *kind == AssetLoadKind::Image)
     );
     let receipt = crate::tests::task_submission(spec);
     assert_eq!(

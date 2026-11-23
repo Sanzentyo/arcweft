@@ -110,16 +110,7 @@ impl BundleAssetAdapter {
                 "bundle asset task has no retained generation artifact identity",
             ));
         };
-        let result = match request.kind.as_str() {
-            "image" => self.resolver.load_image(context, &request.id),
-            "voice" => self.resolver.load_voice(context, &request.id),
-            kind => {
-                return Some(failed(format!(
-                    "unsupported bundle asset kind `{kind}` for task {:?}",
-                    task.debug_label
-                )));
-            }
-        };
+        let result = self.resolver.load(request.kind, context, &request.id);
         let completion = match result {
             Ok(value) => outcome.try_payload(value).map_or_else(
                 |error| HostTaskCompletion::Failed(error.to_string()),

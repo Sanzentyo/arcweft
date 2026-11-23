@@ -68,7 +68,7 @@ fn requests() -> [HostTaskRequest; 14] {
         }),
         HostTaskRequest::AssetLoad(AssetRequest {
             id: text(),
-            kind: "image".into(),
+            kind: AssetLoadKind::Image,
         }),
         HostTaskRequest::ShaderCompile(ShaderRequest {
             id: text(),
@@ -98,6 +98,33 @@ fn requests() -> [HostTaskRequest; 14] {
             manifest_contract: None,
         },
     ]
+}
+
+#[test]
+fn asset_request_v1_serde_accepts_only_the_two_resource_kinds() {
+    for (name, kind) in [
+        ("image", AssetLoadKind::Image),
+        ("voice", AssetLoadKind::Voice),
+    ] {
+        let encoded = format!(r#"{{"AssetLoad":{{"id":"asset.opening","kind":"{name}"}}}}"#);
+        let request = HostTaskRequest::<AwbcRuntimeValueSnapshot>::AssetLoad(AssetRequest {
+            id: "asset.opening".into(),
+            kind,
+        });
+        let decoded = serde_json::from_str::<HostTaskRequest<AwbcRuntimeValueSnapshot>>(&encoded)
+            .expect("valid v1 asset request decodes");
+        assert_eq!(decoded, request);
+        assert_eq!(serde_json::to_string(&request).unwrap(), encoded);
+    }
+
+    let unsupported = r#"{"AssetLoad":{"id":"asset.opening","kind":"shader"}}"#;
+    let error = serde_json::from_str::<HostTaskRequest<AwbcRuntimeValueSnapshot>>(unsupported)
+        .expect_err("unsupported asset kind fails before constructing a saved request");
+    assert!(
+        error
+            .to_string()
+            .contains("expected asset request kind `image` or `voice`")
+    );
 }
 
 #[test]

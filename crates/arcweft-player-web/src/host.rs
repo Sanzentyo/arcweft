@@ -243,16 +243,10 @@ impl BrowserTaskBroker {
                         "asset task context does not match its dispatch generation".to_owned(),
                     ));
                 }
-                let value = match request.kind.as_str() {
-                    "image" => self.asset_resolver.load_image(context, &request.id),
-                    "voice" => self.asset_resolver.load_voice(context, &request.id),
-                    kind => {
-                        return Err(BrowserHostTaskError::UnsupportedHostCall(format!(
-                            "asset.{kind}"
-                        )));
-                    }
-                }
-                .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
+                let value = self
+                    .asset_resolver
+                    .load(request.kind, context, &request.id)
+                    .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
                 Ok(TaskEventKind::Ready(outcome.try_payload(value)?))
             }
             HostTaskRequest::SystemInfo(request) => {
@@ -361,8 +355,8 @@ mod tests {
     };
     use arcweft_core::plan::{RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed};
     use arcweft_core::task::{
-        AssetRequest, GenerationId, TaskClass, TaskOutcomeContract, TaskPolicy, TaskPriority,
-        TaskSpec,
+        AssetLoadKind, AssetRequest, GenerationId, TaskClass, TaskOutcomeContract, TaskPolicy,
+        TaskPriority, TaskSpec,
     };
     use arcweft_core::value::{
         RuntimeAssetErrorValue, RuntimeAudioHandleValue, RuntimeBundleAssetArtifactDigest,
@@ -512,8 +506,20 @@ mod tests {
         let owner = RuntimeProgramOwner::Plan(Arc::clone(&program));
 
         let dispatches = vec![
-            asset_dispatch(context, 0, "image", "asset.image.good", image_result),
-            asset_dispatch(context, 1, "voice", "asset.voice.good", voice_result),
+            asset_dispatch(
+                context,
+                0,
+                AssetLoadKind::Image,
+                "asset.image.good",
+                image_result,
+            ),
+            asset_dispatch(
+                context,
+                1,
+                AssetLoadKind::Voice,
+                "asset.voice.good",
+                voice_result,
+            ),
         ];
         let correlations = dispatches
             .iter()
@@ -574,10 +580,34 @@ mod tests {
         let owner = RuntimeProgramOwner::Plan(program);
 
         let dispatches = vec![
-            asset_dispatch(context, 0, "image", "asset.image.missing", image_result),
-            asset_dispatch(context, 1, "voice", "asset.voice.missing", voice_result),
-            asset_dispatch(context, 2, "image", "asset.image.malformed", image_result),
-            asset_dispatch(context, 3, "voice", "asset.voice.malformed", voice_result),
+            asset_dispatch(
+                context,
+                0,
+                AssetLoadKind::Image,
+                "asset.image.missing",
+                image_result,
+            ),
+            asset_dispatch(
+                context,
+                1,
+                AssetLoadKind::Voice,
+                "asset.voice.missing",
+                voice_result,
+            ),
+            asset_dispatch(
+                context,
+                2,
+                AssetLoadKind::Image,
+                "asset.image.malformed",
+                image_result,
+            ),
+            asset_dispatch(
+                context,
+                3,
+                AssetLoadKind::Voice,
+                "asset.voice.malformed",
+                voice_result,
+            ),
         ];
         let correlations = dispatches
             .iter()
@@ -663,7 +693,7 @@ mod tests {
             vec![asset_dispatch(
                 wrong_context,
                 0,
-                "image",
+                AssetLoadKind::Image,
                 "asset.image.good",
                 image_result,
             )],
@@ -969,7 +999,7 @@ mod tests {
     fn asset_dispatch(
         context: RuntimeBundleAssetContext,
         sequence: u64,
-        kind: &str,
+        kind: AssetLoadKind,
         id: &str,
         result_type: RuntimeSemanticTypeId,
     ) -> HostTaskDispatch {
@@ -988,7 +1018,7 @@ mod tests {
                 payload: RuntimeTypeSemanticDigest::from_bytes(*result_type.as_bytes()),
             },
             RuntimeValue::Tuple(vec![
-                RuntimeValue::String(kind.into()),
+                RuntimeValue::String(kind.as_str().into()),
                 RuntimeValue::String(id.into()),
             ])
             .try_digest(1024)
@@ -1004,7 +1034,7 @@ mod tests {
             outcome,
             request: (HostTaskRequest::AssetLoad(AssetRequest {
                 id: id.into(),
-                kind: kind.into(),
+                kind,
             }))
             .into(),
             debug_label: id.into(),

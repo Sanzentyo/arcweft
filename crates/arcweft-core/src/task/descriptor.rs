@@ -263,7 +263,7 @@ impl<P> HostTaskRequest<P> {
                     next,
                 )?;
                 visitor.string(&r.id, next)?;
-                visitor.string(&r.kind, next)?;
+                visitor.string(r.kind.as_str(), next)?;
             }
             Self::ShaderCompile(r) => {
                 visitor.fixed(

@@ -1137,7 +1137,7 @@ mod tests {
             outcome,
             request: (HostTaskRequest::AssetLoad(AssetRequest {
                 id: id.into(),
-                kind: kind.as_str().into(),
+                kind,
             }))
             .into(),
             debug_label: id.into(),

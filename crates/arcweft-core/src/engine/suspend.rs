@@ -16,12 +16,13 @@ use crate::plan::task_source::RuntimeTaskSourceProgram;
 use crate::pure::RuntimeCallBackend;
 use crate::step::RuntimeDiagnosticCategory;
 use crate::task::{
-    AssetRequest, AudioDecodeRequest, AwaitManyTarget, FileReadBytesRequest, FileReadTextRequest,
-    FileWriteBytesRequest, FileWriteTextRequest, HostTaskRequest, HostTaskRequestTemplate,
-    HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
-    NeedProducerTaskDisposition, ProcessRunRequest, RuntimeHostArgumentTemplate,
-    RuntimeNeedProducerState, RuntimeNeedPublication, RuntimeTaskTemplateArguments, ShaderRequest,
-    SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
+    AssetLoadKind, AssetRequest, AudioDecodeRequest, AwaitManyTarget, FileReadBytesRequest,
+    FileReadTextRequest, FileWriteBytesRequest, FileWriteTextRequest, HostTaskRequest,
+    HostTaskRequestTemplate, HttpFetchRequest, HttpRespondRequest, NeedId,
+    NeedProducerRuntimeArgument, NeedProducerTaskDisposition, ProcessRunRequest,
+    RuntimeHostArgumentTemplate, RuntimeNeedProducerState, RuntimeNeedPublication,
+    RuntimeTaskTemplateArguments, ShaderRequest, SystemInfoKind, SystemInfoRequest, TaskId,
+    TtsRequest, WasmCallRequest,
 };
 use crate::value::{
     DenseSeq, RuntimeFieldValue, RuntimeRetainedValueAdmission, RuntimeValueSource,
@@ -1832,17 +1833,17 @@ fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTask
             args: named_string_seq(call.args, "args").unwrap_or_default(),
             env: named_headers(call.args, "env").unwrap_or_default(),
         })),
-        ("asset", "load") => Ok(HostTaskRequest::AssetLoad(AssetRequest {
-            id: positional_string(call.args, 0)?,
-            kind: named_string(call.args, "kind").unwrap_or_else(|| "asset".to_owned()),
-        })),
-        ("asset", kind) => Ok(HostTaskRequest::AssetLoad(AssetRequest {
-            id: positional_string(call.args, 0)?,
-            kind: kind.to_owned(),
-        })),
+        ("asset", operation) => {
+            let kind = AssetLoadKind::from_request_name(operation)
+                .ok_or_else(|| format!("unsupported asset operation `{operation}`"))?;
+            Ok(HostTaskRequest::AssetLoad(AssetRequest {
+                id: positional_string(call.args, 0)?,
+                kind,
+            }))
+        }
         ("voice", "load") => Ok(HostTaskRequest::AssetLoad(AssetRequest {
             id: positional_string(call.args, 0)?,
-            kind: "voice".to_owned(),
+            kind: AssetLoadKind::Voice,
         })),
         ("shader", "compile") => Ok(HostTaskRequest::ShaderCompile(ShaderRequest {
             id: positional_string(call.args, 0)?,

@@ -1524,7 +1524,11 @@ pub struct ProcessRunRequest {
 #[serde(deny_unknown_fields)]
 pub struct AssetRequest {
     pub id: String,
-    pub kind: String,
+    #[serde(
+        serialize_with = "AssetLoadKind::serialize_request_name",
+        deserialize_with = "AssetLoadKind::deserialize_request_name"
+    )]
+    pub kind: AssetLoadKind,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -2071,7 +2075,9 @@ impl<P> HostTaskRequest<P> {
                 format!("http.respond {} {}", request.request_id, request.status)
             }
             Self::ProcessRun(request) => format!("process.run {}", request.program),
-            Self::AssetLoad(request) => format!("asset.load {} {}", request.kind, request.id),
+            Self::AssetLoad(request) => {
+                format!("asset.load {} {}", request.kind.as_str(), request.id)
+            }
             Self::ShaderCompile(request) => format!("shader.compile {}", request.id),
             Self::AudioDecode(request) => format!("audio.decode {}", request.id),
             Self::TtsSynthesis(request) => {
@@ -2103,7 +2109,7 @@ impl HostTaskRequest {
             Self::HttpFetch(_) => "http.fetch".to_owned(),
             Self::HttpRespond(_) => "http.respond".to_owned(),
             Self::ProcessRun(_) => "process.run".to_owned(),
-            Self::AssetLoad(request) => format!("asset.{}", request.kind),
+            Self::AssetLoad(request) => format!("asset.{}", request.kind.as_str()),
             Self::ShaderCompile(_) => "shader.compile".to_owned(),
             Self::AudioDecode(_) => "audio.decode".to_owned(),
             Self::TtsSynthesis(_) => "tts.synthesize".to_owned(),
