@@ -1371,7 +1371,17 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
         &mut effect_graph,
         &mut context,
     );
-    let parent = scope(0, &mut effect_graph, &mut context);
+    let parent_original = context
+        .fixture_original_context_with_rigid(crate::types::constraints::OriginalRigidScope {
+            types: &[],
+            consts: &[],
+            effects: std::slice::from_ref(&row),
+            imported: None,
+        })
+        .unwrap();
+    let parent = context
+        .application_scope(0, parameters(0), parent_original.clone(), &mut effect_graph)
+        .unwrap();
     let parent_array = array(&parent);
     let parent_effect = EffectRow::open(EffectSet::new(), effect(&parent));
     let type_keys = parent
@@ -1472,8 +1482,9 @@ fn completed_parent_retains_chosen_child_captures_read_only_in_its_continuation(
         const_keys.iter().cloned(),
     )
     .unwrap();
-    let next =
-        ConstraintApplicationScope::test_root(2, continuation, &mut effect_graph, &mut context);
+    let next = context
+        .application_scope(2, continuation, parent_original, &mut effect_graph)
+        .unwrap();
     let next = context.start_path(next, &mut effect_graph).unwrap();
     assert_eq!(
         context.parameter_eligibility(&ty, next.projection_view()),
