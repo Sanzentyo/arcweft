@@ -288,13 +288,7 @@ impl<'a, 'control> MatchCoverageAnalyzer<'a, 'control> {
             self.match_coordinate.clone(),
         );
         let witness = self
-            .useful(
-                &matrix,
-                &[wildcard],
-                std::slice::from_ref(scrutinee_type),
-                0,
-                &mut Vec::new(),
-            )?
+            .useful(&matrix, &[wildcard], scrutinee_type)?
             .and_then(|mut witnesses| (witnesses.len() == 1).then(|| witnesses.remove(0)));
         let exhaustive = witness.is_none();
         Ok(CheckedMatchCoverage {
@@ -339,15 +333,7 @@ impl<'a, 'control> MatchCoverageAnalyzer<'a, 'control> {
         for alternative in expanded {
             self.poll()?;
             let query = vec![alternative.pattern.clone()];
-            let useful = self
-                .useful(
-                    &arm_matrix,
-                    &query,
-                    std::slice::from_ref(scrutinee_type),
-                    0,
-                    &mut Vec::new(),
-                )?
-                .is_some();
+            let useful = self.useful(&arm_matrix, &query, scrutinee_type)?.is_some();
             if useful {
                 self.push_matrix_row(&mut arm_matrix, query.clone())?;
                 useful_rows.push(query);

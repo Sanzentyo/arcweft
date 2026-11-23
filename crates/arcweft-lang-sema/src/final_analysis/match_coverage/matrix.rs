@@ -12,26 +12,64 @@ use crate::{
     types::{SemanticTypeDigest, TypeKind, VariantPayloadShape},
 };
 
+struct WitnessAncestor<'a> {
+    ty: SemanticTypeDigest,
+    parent: Option<&'a Self>,
+}
+
+impl WitnessAncestor<'_> {
+    fn contains(&self, ty: SemanticTypeDigest) -> bool {
+        let mut next = Some(self);
+        while let Some(ancestor) = next {
+            if ancestor.ty == ty {
+                return true;
+            }
+            next = ancestor.parent;
+        }
+        false
+    }
+}
+
+#[derive(Clone, Copy)]
+struct WitnessColumn<'a> {
+    ty: &'a TypeKind,
+    ancestry: Option<&'a WitnessAncestor<'a>>,
+}
+
+impl<'a> WitnessColumn<'a> {
+    /// Expanding a constructor extends the ancestry of its fields. The tail
+    /// columns still belong to the branches from which they were introduced.
+    fn specialize(
+        fields: &'a [TypeKind],
+        tail: &[Self],
+        ancestry: Option<&'a WitnessAncestor<'a>>,
+    ) -> Vec<Self> {
+        fields
+            .iter()
+            .map(|ty| Self { ty, ancestry })
+            .chain(tail.iter().copied())
+            .collect()
+    }
+}
+
 struct UsefulConstructorContext<'a> {
     matrix: &'a Matrix,
     query: &'a [DeconstructedPattern],
-    head_type: &'a TypeKind,
-    tail_types: &'a [TypeKind],
+    head_type: WitnessColumn<'a>,
+    tail_types: &'a [WitnessColumn<'a>],
     head: &'a DeconstructedPattern,
     constructor: &'a CoverageConstructorId,
     fields: &'a [DeconstructedPattern],
     child_depth: u64,
-    active_witness_types: &'a mut Vec<SemanticTypeDigest>,
 }
 
 struct UsefulWildcardContext<'a> {
     matrix: &'a Matrix,
     query: &'a [DeconstructedPattern],
-    head_type: &'a TypeKind,
-    tail_types: &'a [TypeKind],
+    head_type: WitnessColumn<'a>,
+    tail_types: &'a [WitnessColumn<'a>],
     head: &'a DeconstructedPattern,
     child_depth: u64,
-    active_witness_types: &'a mut Vec<SemanticTypeDigest>,
 }
 
 impl MatchCoverageAnalyzer<'_, '_> {
@@ -39,9 +77,17 @@ impl MatchCoverageAnalyzer<'_, '_> {
         &mut self,
         matrix: &Matrix,
         query: &[DeconstructedPattern],
-        types: &[TypeKind],
+        ty: &TypeKind,
+    ) -> Result<Option<Vec<CheckedCoverageWitness>>, CheckedMatchBuildError> {
+        self.useful_columns(matrix, query, &[WitnessColumn { ty, ancestry: None }], 0)
+    }
+
+    fn useful_columns(
+        &mut self,
+        matrix: &Matrix,
+        query: &[DeconstructedPattern],
+        types: &[WitnessColumn<'_>],
         depth: u64,
-        active_witness_types: &mut Vec<SemanticTypeDigest>,
     ) -> Result<Option<Vec<CheckedCoverageWitness>>, CheckedMatchBuildError> {
         self.poll()?;
         self.budget.observe_depth(depth)?;
@@ -72,23 +118,21 @@ impl MatchCoverageAnalyzer<'_, '_> {
             } => self.useful_constructor_head(UsefulConstructorContext {
                 matrix,
                 query,
-                head_type,
+                head_type: *head_type,
                 tail_types,
                 head,
                 constructor,
                 fields,
                 child_depth,
-                active_witness_types,
             }),
             DeconstructedPatternKind::Wildcard => {
                 self.useful_wildcard_head(UsefulWildcardContext {
                     matrix,
                     query,
-                    head_type,
+                    head_type: *head_type,
                     tail_types,
                     head,
                     child_depth,
-                    active_witness_types,
                 })
             }
         }
@@ -107,9 +151,8 @@ impl MatchCoverageAnalyzer<'_, '_> {
             constructor,
             fields,
             child_depth,
-            active_witness_types,
         } = context;
-        let domain = self.domain(head_type, &head.semantic_coordinate)?;
+        let domain = self.domain(head_type.ty, &head.semantic_coordinate)?;
         let CoverageTypeDomain::Constructors(constructors) = domain else {
             return Ok(None);
         };
@@ -128,14 +171,13 @@ impl MatchCoverageAnalyzer<'_, '_> {
         let specialized = self.specialize(matrix, selected)?;
         let mut specialized_query = fields.to_vec();
         specialized_query.extend_from_slice(&query[1..]);
-        let mut specialized_types = selected.field_types.to_vec();
-        specialized_types.extend_from_slice(tail_types);
-        let Some(mut witnesses) = self.useful(
+        let specialized_types =
+            WitnessColumn::specialize(&selected.field_types, tail_types, head_type.ancestry);
+        let Some(mut witnesses) = self.useful_columns(
             &specialized,
             &specialized_query,
             &specialized_types,
             child_depth,
-            active_witness_types,
         )?
         else {
             return Ok(None);
@@ -159,38 +201,33 @@ impl MatchCoverageAnalyzer<'_, '_> {
             tail_types,
             head,
             child_depth,
-            active_witness_types,
         } = context;
-        let domain = self.domain(head_type, &head.semantic_coordinate)?;
+        let domain = self.domain(head_type.ty, &head.semantic_coordinate)?;
         let CoverageTypeDomain::Constructors(constructors) = domain else {
             return Ok(None);
         };
         let default = self.default_matrix(matrix)?;
         if !default.is_empty()
             && self
-                .useful(
-                    &default,
-                    &query[1..],
-                    tail_types,
-                    child_depth,
-                    active_witness_types,
-                )?
+                .useful_columns(&default, &query[1..], tail_types, child_depth)?
                 .is_none()
         {
             return Ok(None);
         }
-        let type_digest = head_type.semantic_identity_digest()?;
-        let already_active = active_witness_types.contains(&type_digest);
-        if !already_active {
-            active_witness_types.push(type_digest);
-        }
+        let type_digest = head_type.ty.semantic_identity_digest()?;
+        let recursive_ancestry = head_type.ancestry.filter(|path| path.contains(type_digest));
+        let extended_ancestry = WitnessAncestor {
+            ty: type_digest,
+            parent: head_type.ancestry,
+        };
+        let field_ancestry = Some(recursive_ancestry.unwrap_or(&extended_ancestry));
         let mut recursive_witness_skipped = false;
         for constructor in &constructors {
             self.poll()?;
             let mut repeats_active_type = false;
-            if already_active {
+            if let Some(ancestry) = recursive_ancestry {
                 for field in &constructor.field_types {
-                    if active_witness_types.contains(&field.semantic_identity_digest()?) {
+                    if ancestry.contains(field.semantic_identity_digest()?) {
                         repeats_active_type = true;
                         break;
                     }
@@ -213,18 +250,14 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 })
                 .collect::<Vec<_>>();
             specialized_query.extend_from_slice(&query[1..]);
-            let mut specialized_types = constructor.field_types.to_vec();
-            specialized_types.extend_from_slice(tail_types);
-            if let Some(mut witnesses) = self.useful(
+            let specialized_types =
+                WitnessColumn::specialize(&constructor.field_types, tail_types, field_ancestry);
+            if let Some(mut witnesses) = self.useful_columns(
                 &specialized,
                 &specialized_query,
                 &specialized_types,
                 child_depth,
-                active_witness_types,
             )? {
-                if !already_active {
-                    active_witness_types.pop();
-                }
                 let field_count = constructor.field_types.len();
                 let tail = witnesses.split_off(field_count);
                 let witness =
@@ -233,9 +266,6 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 result.extend(tail);
                 return Ok(Some(result));
             }
-        }
-        if !already_active {
-            active_witness_types.pop();
         }
         if recursive_witness_skipped {
             return Err(CheckedMatchBuildError::UnsupportedDomain { type_digest });

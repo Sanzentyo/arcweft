@@ -276,9 +276,7 @@ fn recursive_usefulness_distinguishes_covered_cycles_finite_witnesses_and_no_bas
             .useful(
                 &vec![vec![base_pattern.clone()], vec![recursive_pattern]],
                 std::slice::from_ref(&wildcard),
-                std::slice::from_ref(&recursive_type),
-                0,
-                &mut Vec::new(),
+                &recursive_type,
             )
             .expect("covered recursive domain")
             .is_none()
@@ -288,9 +286,7 @@ fn recursive_usefulness_distinguishes_covered_cycles_finite_witnesses_and_no_bas
         .useful(
             &vec![vec![base_pattern]],
             std::slice::from_ref(&wildcard),
-            std::slice::from_ref(&recursive_type),
-            0,
-            &mut Vec::new(),
+            &recursive_type,
         )
         .expect("recursive branch has the finite base witness")
         .expect("missing recursive branch is useful");
@@ -305,13 +301,7 @@ fn recursive_usefulness_distinguishes_covered_cycles_finite_witnesses_and_no_bas
         CoverageTypeDomain::Constructors(vec![recursive].into_boxed_slice()),
     );
     assert!(matches!(
-        analyzer.useful(
-            &Vec::new(),
-            &[wildcard],
-            &[recursive_type],
-            0,
-            &mut Vec::new(),
-        ),
+        analyzer.useful(&Vec::new(), &[wildcard], &recursive_type),
         Err(CheckedMatchBuildError::UnsupportedDomain { type_digest })
             if type_digest == owner
     ));
@@ -544,13 +534,7 @@ fn invalid_checked_constructor_precedes_the_witness_budget() {
         },
     };
     assert!(matches!(
-        analyzer.useful(
-            &Vec::new(),
-            &[invalid],
-            &[TypeKind::Bool],
-            0,
-            &mut Vec::new(),
-        ),
+        analyzer.useful(&Vec::new(), &[invalid], &TypeKind::Bool),
         Err(CheckedMatchBuildError::InvalidCheckedRow { coordinate })
             if coordinate == semantic_coordinate
     ));
@@ -647,6 +631,20 @@ fn exact_work_limits(work: CheckedMatchWork) -> CheckedMatchLimits {
         .fold(CheckedMatchLimits::uniform(0), |limits, kind| {
             limits.with_limit(kind, work.observed(kind))
         })
+}
+
+#[test]
+fn repeated_result_in_sibling_columns_has_independent_coverage() {
+    let source = r"
+fn root(first: Result<i64, String>, second: Result<i64, String>) -> bool {
+    match (first, second) {
+        (.Ok(_), .Err(_)) => true
+        _ => false
+    }
+}
+";
+    execute_match_work(source, CheckedMatchLimits::PRODUCTION)
+        .expect("sibling results admit an exhaustive Match");
 }
 
 fn with_one_less(limits: CheckedMatchLimits, kind: CheckedMatchLimitKind) -> CheckedMatchLimits {
@@ -967,13 +965,7 @@ fn assert_oracle_matrices<F>(
                 .collect::<Vec<_>>();
             let lowered_query = [lower(query)];
             let actual = analyzer
-                .useful(
-                    &lowered_matrix,
-                    &lowered_query,
-                    std::slice::from_ref(ty),
-                    0,
-                    &mut Vec::new(),
-                )
+                .useful(&lowered_matrix, &lowered_query, ty)
                 .expect("finite matrix usefulness")
                 .is_some();
             assert_eq!(
