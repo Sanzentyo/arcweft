@@ -21890,3 +21890,15 @@ Compiler の `flow_wait` は、DSL で定義した二つの Flow と同じ Flow 
 Core 全機能ライブラリは2,416件、Runtime Driver の `awbc_product_session` は40件成功し、失敗・スキップは0件。変更ファイルの書式と構造ゲートは終了0、構造のブロッキング違反は0件。Cargo の全ターゲット逆依存グラフは Core を含む53パッケージで、実行検証は上記の範囲。
 
 全ターゲット・全機能の workspace check と、Core・Runtime Driver の全ターゲット・全機能 Clippy は終了0。Clippy には警告があった。Source を直接起動する headless Native のファイル保存とホストタスクの再開は検証範囲外。検証後の `target` は146,585,761,439 bytes（約146.6 GB）。
+
+<a id="native-host-dispatch-resume"></a>
+
+## 2026-11-23 — Native の Restartable Need とホスト発行記録を再開する
+
+基点 `05923254995c7ed37adf0051c41d6766c66fcb26`。開始時の追跡ファイルに変更はなく、既存の未追跡ディレクトリが一つあった。実装 `5326eae13998119eac0e5b361b1ac17446e60523` を `main` に通常 push し、公開 ref と10変更 blob を照合した。
+
+Native と Product AWBC は同じ Need 台帳から元の受理済み要求を再発行する。ステップ入力の通知を先に反映してから再発行対象を確定し、新規要求の枠を消費しない。初回起動で動作する通常ステップでは、再発行対象を探すために過去のタスクを走査しない。Native ホストは保存した発行開始情報を復元済みの受領票、進捗位置、現在のアダプター方針と照合する。すべての行が一致してから発行番号を引き継ぎ、executor が受理済み要求を再発行した時点で次の通知番号を持つ新しいアダプター実行を開始する。
+
+Runtime Driver の `awbc_product_session` は41件成功、スキップ0件。Native 回帰は RuntimePlan VM と Structured AOT の両方で、進捗を受け取った待機を JSON で復元し、新規発行枠と処理予算をゼロにしたステップで元の要求を一度だけ得た。次の Ready 通知で Flow の成功結果を確認した。Runtime Host のライブラリは60件成功、スキップ0件。ホスト側回帰では進捗1・2を受理して発行記録を保存し、改変した位置を状態変更前に拒否した。正しい記録を読み戻し、元の epoch と発行番号を保持して通知3を受理した。
+
+Core 全機能ライブラリ2,416件と Runtime Driver ライブラリ77件が成功し、失敗・スキップは0件。全ターゲット・全機能の workspace check と、Core・Runtime Driver・Runtime Host の全ターゲット・全機能 Clippy、変更ファイルの書式、構造ゲートは終了0。Clippy には警告があり、構造のブロッキング違反は0件。Cargo の全ターゲット逆依存グラフは Core を含む53パッケージ、Runtime Host を含む5パッケージで、実行検証は上記の範囲。headless CLI のファイル入出力を介した Native 再開は検証範囲外。検証後の `target` は151,763,965,870 bytes（約151.8 GB）。
