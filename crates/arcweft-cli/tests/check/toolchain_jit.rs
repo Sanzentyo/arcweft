@@ -2266,9 +2266,8 @@ pub fn root(value: i64, unused: i64) -> i64 effects {} {
 flow main() -> String { return "ok" }
 "#,
         );
-        // Inspect the original admitted rows, whose emitted lexical scope is
-        // distinct from the Engine's generated branch frame. Namespace text
-        // never selects a runtime exit.
+        // Both authored branch blocks have an emitted lexical scope in
+        // addition to the Engine's generated branch frame.
         assert!(
             selected
                 .plan()
@@ -2296,7 +2295,9 @@ flow main() -> String { return "ok" }
                         return false;
                     };
                     let [
-                        FlowOp::EnterScope { .. },
+                        FlowOp::EnterScope {
+                            identity: arcweft_core::scope::RuntimeScopeIdentity::Named(_),
+                        },
                         FlowOp::If {
                             then_ops, else_ops, ..
                         },
@@ -2306,7 +2307,17 @@ flow main() -> String { return "ok" }
                         return false;
                     };
                     [then_ops, else_ops].into_iter().all(|ops| {
-                        matches!(ops.as_slice(), [FlowOp::Let { .. }, FlowOp::ReturnExpr(_)])
+                        matches!(
+                            ops.as_slice(),
+                            [
+                                FlowOp::EnterScope {
+                                    identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous
+                                },
+                                FlowOp::Let { .. },
+                                FlowOp::ReturnExpr(_),
+                                FlowOp::ExitScope
+                            ]
+                        )
                     })
                 }),
             "the admitted three-formal numeric body retains emitted scope entry, both early-return arms, and its discarded lexical exit"
@@ -2371,47 +2382,62 @@ flow main() -> String { return "ok" }
 "#,
         );
         fn unit_continuation(plan: &arcweft_core::plan::RuntimePlan, ops: &[FlowOp]) -> bool {
+            use arcweft_core::pattern::{RuntimePattern, RuntimePatternKind};
+            use arcweft_core::value::{RuntimeExpr, RuntimeExprKind, RuntimeLocalReadMode};
+
+            fn moves_binding(expr: &RuntimeExpr, pattern: &RuntimePattern) -> bool {
+                let RuntimePatternKind::Bind { binding, .. } = pattern.kind() else {
+                    return false;
+                };
+                matches!(expr.kind(), RuntimeExprKind::Local(read)
+                    if read.local() == binding.local() && read.fields().is_empty()
+                        && read.mode() == RuntimeLocalReadMode::Move)
+            }
+
             let [
+                FlowOp::EnterScope {
+                    identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
+                },
                 FlowOp::Let { .. },
-                FlowOp::ExitScopeBind { pattern, expr },
+                FlowOp::ExitScopeBind {
+                    pattern: branch_unit,
+                    expr: unit_value,
+                },
+                FlowOp::ExitScopeBind {
+                    pattern: outer_unit,
+                    expr: branch_move,
+                },
                 FlowOp::Let {
                     pattern: discard,
-                    expr: moved,
+                    expr: outer_move,
                 },
                 FlowOp::ReturnExpr(result),
             ] = ops
             else {
                 return false;
             };
-            let Some(unit) = plan.type_table().get(expr.ty()) else {
-                return false;
-            };
-            if !matches!(
-                unit.projection(),
-                arcweft_core::plan::RuntimePlanTypeProjection::Unit
-            ) || !matches!(
-                expr.kind(),
-                arcweft_core::value::RuntimeExprKind::Value(RuntimeValue::Unit)
-            ) || pattern.ty() != expr.ty()
-                || discard.ty() != expr.ty()
-                || moved.ty() != expr.ty()
-                || result.ty() == expr.ty()
-            {
-                return false;
-            }
-            let arcweft_core::pattern::RuntimePatternKind::Bind { binding, .. } = pattern.kind()
-            else {
-                return false;
-            };
-            let arcweft_core::value::RuntimeExprKind::Local(read) = moved.kind() else {
+            let Some(unit) = plan.type_table().get(unit_value.ty()) else {
                 return false;
             };
             matches!(
-                discard.kind(),
-                arcweft_core::pattern::RuntimePatternKind::Discard
-            ) && read.local() == binding.local()
-                && read.fields().is_empty()
-                && read.mode() == arcweft_core::value::RuntimeLocalReadMode::Move
+                unit.projection(),
+                arcweft_core::plan::RuntimePlanTypeProjection::Unit
+            ) && matches!(
+                unit_value.kind(),
+                RuntimeExprKind::Value(RuntimeValue::Unit)
+            ) && [
+                branch_unit.ty(),
+                outer_unit.ty(),
+                branch_move.ty(),
+                discard.ty(),
+                outer_move.ty(),
+            ]
+            .into_iter()
+            .all(|ty| ty == unit_value.ty())
+                && matches!(discard.kind(), RuntimePatternKind::Discard)
+                && moves_binding(branch_move, branch_unit)
+                && moves_binding(outer_move, outer_unit)
+                && result.ty() != unit_value.ty()
         }
         assert!(
             selected
@@ -2440,7 +2466,9 @@ flow main() -> String { return "ok" }
                         return false;
                     };
                     let [
-                        FlowOp::EnterScope { .. },
+                        FlowOp::EnterScope {
+                            identity: arcweft_core::scope::RuntimeScopeIdentity::Named(_),
+                        },
                         FlowOp::Let { .. },
                         FlowOp::If {
                             then_ops, else_ops, ..
@@ -2452,7 +2480,7 @@ flow main() -> String { return "ok" }
                     unit_continuation(selected.plan(), then_ops)
                         && unit_continuation(selected.plan(), else_ops)
                 }),
-            "both admitted branches exit the emitted scope, transfer and consume its typed Unit result, then reach the outer numeric return"
+            "both admitted branches exit both lexical scopes, move and consume the typed Unit result, then reach the outer numeric return"
         );
         let options = RuntimeStepOptions {
             mode: RuntimeStepMode::Drain,
