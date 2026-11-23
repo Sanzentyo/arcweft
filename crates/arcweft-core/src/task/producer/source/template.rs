@@ -28,6 +28,10 @@ pub(crate) enum RuntimeTaskTemplateArguments<'value, V> {
         captures: &'value [V],
         source: RuntimeValueSource<'value>,
     },
+    AwaitManyBaseItems {
+        captures: &'value [V],
+        items: &'value [V],
+    },
     AwaitManyChild {
         captures: &'value [V],
         index: u32,
@@ -41,6 +45,7 @@ impl<'value, V: RuntimeStoredValue> RuntimeTaskTemplateArguments<'value, V> {
             Self::ProgramTask { captures }
             | Self::FanoutProgramWorker { captures, .. }
             | Self::AwaitManyBase { captures, .. }
+            | Self::AwaitManyBaseItems { captures, .. }
             | Self::AwaitManyChild { captures, .. } => captures,
         }
     }
@@ -76,6 +81,18 @@ impl<'value, V: RuntimeStoredValue> RuntimeTaskTemplateArguments<'value, V> {
         }
         Ok(locals)
     }
+}
+
+fn await_many_base_digest(
+    admission: &RuntimeRetainedValueAdmission,
+    captures: RuntimeValueView<'_>,
+    items: &[RuntimeValueView<'_>],
+) -> Result<crate::entry::RuntimeValueDigest, AwbcRuntimeValueSnapshotError> {
+    let fields = [
+        captures,
+        RuntimeValueView::Tuple(RuntimeTupleView::Views(items)),
+    ];
+    admission.admitted_arguments_digest(RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)))
 }
 
 impl RuntimeTaskSourceRef<'_> {
@@ -231,6 +248,16 @@ impl RuntimeTaskSourceRef<'_> {
                 Some(FlowOp::AwaitMany { target, .. }),
                 RuntimeTaskTemplateArguments::AwaitManyBase { .. },
             ) if self.request_endpoint().kind() == EndpointKind::AwaitManyBase => {
+                locals = arguments.capture_locals(&target, admission)?;
+            }
+            (
+                None,
+                Some(FlowOp::AwaitMany { target, .. }),
+                RuntimeTaskTemplateArguments::AwaitManyBaseItems { items, .. },
+            ) if values_admitted
+                && self.request_endpoint().kind() == EndpointKind::AwaitManyBase =>
+            {
+                admission.validate_metadata_collection(items.len())?;
                 locals = arguments.capture_locals(&target, admission)?;
             }
             (
@@ -417,13 +444,13 @@ impl RuntimeTaskSourceRef<'_> {
                         .collect(),
                     _ => unreachable!("source shape was checked"),
                 };
-                let fields = [
-                    captured,
-                    RuntimeValueView::Tuple(RuntimeTupleView::Views(&source)),
-                ];
-                admission.admitted_arguments_digest(RuntimeValueView::Tuple(
-                    RuntimeTupleView::Views(&fields),
-                ))
+                await_many_base_digest(admission, captured, &source)
+            }
+            RuntimeTaskTemplateArguments::AwaitManyBaseItems { items, .. } => {
+                // The suspended owner already checked item types and custody.
+                // The launch normalized a tuple or sequence to these same ordered fields.
+                let items: Vec<_> = items.iter().map(V::borrowed_view).collect();
+                await_many_base_digest(admission, captured, &items)
             }
             RuntimeTaskTemplateArguments::AwaitManyChild { index, item, .. } => {
                 let Some(FlowOp::AwaitMany { target, .. }) = self.request_endpoint().operation()

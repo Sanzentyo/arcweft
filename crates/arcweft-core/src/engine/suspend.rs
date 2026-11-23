@@ -1265,12 +1265,17 @@ impl Engine {
 
     pub(super) fn start_await_many_state(
         &mut self,
-        binding: Option<crate::pattern::RuntimePattern>,
-        target: AwaitManyTarget,
+        operation: super::code_cursor::NativeSourceOperation,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        let plan = Arc::clone(&self.plan);
+        let Some((binding, target, pending)) = operation.await_many(&plan) else {
+            self.fail_eval("native AwaitMany requires its original operation", output);
+            return;
+        };
+        self.emit_line_effects(pending.iter().cloned(), output, pure_backend);
         let source_value = match self.evaluate_expr_with_backend(&target.source, pure_backend) {
             Ok(value) => value,
             Err(error) => {
@@ -1375,9 +1380,8 @@ impl Engine {
             crate::task::RuntimeNeedHandle::try_from_accepted_launch(spec, submission.handle())
                 .expect("aggregate base uses its actual accepted journal receipt");
         let mut state = AwaitManyState {
+            source: operation,
             source_context: self.fiber.frame.env.source_function_context(),
-            binding,
-            target,
             base,
             captured,
             next_index: 0,
@@ -1385,9 +1389,9 @@ impl Engine {
             results: vec![None; items.len()],
             items,
         };
-        if self.fill_await_many_queue(&mut state, output, pure_backend) {
+        if self.fill_await_many_queue(&mut state, target, output, pure_backend) {
             self.advance_if_needed(next_op_index);
-            self.commit_await_many_state(state, output);
+            self.commit_await_many_state(state, target, binding, output);
         }
     }
 
@@ -1397,6 +1401,11 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        let plan = Arc::clone(&self.plan);
+        let Some((binding, target, _)) = state.source.await_many(&plan) else {
+            self.fail_eval("native AwaitMany requires its original operation", output);
+            return;
+        };
         let mut position = 0;
         while position < state.in_flight.len() {
             let in_flight = &state.in_flight[position];
@@ -1482,19 +1491,19 @@ impl Engine {
                 }
             }
         }
-        if self.fill_await_many_queue(&mut state, output, pure_backend) {
-            self.commit_await_many_state(state, output);
+        if self.fill_await_many_queue(&mut state, target, output, pure_backend) {
+            self.commit_await_many_state(state, target, binding, output);
         }
     }
 
     fn fill_await_many_queue(
         &mut self,
         state: &mut AwaitManyState,
+        target: &AwaitManyTarget,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        while state.in_flight.len() < state.target.limit as usize
-            && state.next_index < state.items.len()
+        while state.in_flight.len() < target.limit as usize && state.next_index < state.items.len()
         {
             if self.task_request_quota_remaining == 0 {
                 if state.in_flight.is_empty() {
@@ -1516,7 +1525,7 @@ impl Engine {
                 return false;
             }
             let Some(spec) = self.await_many_task_spec(
-                &state.target,
+                target,
                 &state.captured,
                 index,
                 item,
@@ -1564,6 +1573,8 @@ impl Engine {
     fn commit_await_many_state(
         &mut self,
         mut state: AwaitManyState,
+        target: &AwaitManyTarget,
+        pattern: Option<&crate::pattern::RuntimePattern>,
         output: &mut RuntimeStepOutput,
     ) {
         if !state.in_flight.is_empty() || state.results.iter().any(Option::is_none) {
@@ -1577,8 +1588,8 @@ impl Engine {
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
         let aggregate = match admission.prepare_fanout(
-            state.target.base.outcome().payload_semantic_identity(),
-            state.target.child.outcome().payload_semantic_identity(),
+            target.base.outcome().payload_semantic_identity(),
+            target.child.outcome().payload_semantic_identity(),
             state.source_context.instantiation(),
             &mut state.results,
         ) {
@@ -1592,7 +1603,7 @@ impl Engine {
                 return;
             }
         };
-        let binding = if let Some(pattern) = &state.binding {
+        let binding = if let Some(pattern) = pattern {
             let prepared = aggregate.with_view(|value| {
                 admission.admit_composite(
                     crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,

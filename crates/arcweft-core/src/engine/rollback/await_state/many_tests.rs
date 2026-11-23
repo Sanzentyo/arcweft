@@ -25,18 +25,29 @@ fn fanout_plan() -> (RuntimePlan, FlowRuntimeId) {
                     },
                 ),
             ],
-            [RuntimeLocalDeclarationSeed::new(
-                RuntimeLocalDeclarationSource::Binding {
-                    identity: *blake3::hash(b"arcweft.fixture.native-await-many.item.v1\0")
-                        .as_bytes(),
-                    declaration: RuntimeLocalBindingDeclaration::new(
-                        RuntimeLocalBindingKind::PatternBinding,
-                        false,
-                        RuntimeLocalBindingStorage::Derived,
-                    ),
-                },
-                boolean,
-            )],
+            [
+                (
+                    b"arcweft.fixture.native-await-many.item.v1\0".as_slice(),
+                    boolean,
+                ),
+                (
+                    b"arcweft.fixture.native-await-many.result.v1\0".as_slice(),
+                    sequence,
+                ),
+            ]
+            .map(|(identity, ty)| {
+                RuntimeLocalDeclarationSeed::new(
+                    RuntimeLocalDeclarationSource::Binding {
+                        identity: *blake3::hash(identity).as_bytes(),
+                        declaration: RuntimeLocalBindingDeclaration::new(
+                            RuntimeLocalBindingKind::PatternBinding,
+                            false,
+                            RuntimeLocalBindingStorage::Derived,
+                        ),
+                    },
+                    ty,
+                )
+            }),
         )
         .unwrap();
     let base_coordinate = builder
@@ -93,32 +104,41 @@ fn fanout_plan() -> (RuntimePlan, FlowRuntimeId) {
             ),
             RuntimeExecutableBodySeed {
                 effects: RuntimeEffectSet::empty(),
-                ops: vec![RuntimeFlowOpSeed::AwaitMany {
-                    binding: None,
-                    target: RuntimeAwaitManyTargetSeed {
-                        source: RuntimeExprSeed::new(
+                ops: vec![
+                    RuntimeFlowOpSeed::AwaitMany {
+                        binding: Some(RuntimePatternSeed::new(
                             sequence,
-                            RuntimeExprSeedKind::Value(crate::value::runtime_sequence_values(
-                                vec![RuntimeValue::Bool(true); 3],
-                            )),
-                        ),
-                        item_binding: admitted.local_ids()[0].clone(),
-                        limit: 2,
-                        base: template(
-                            base_coordinate.clone(),
-                            NeedProducerFamily::AwaitManyBase,
-                            sequence,
-                            21,
-                        ),
-                        child: template(
-                            child_coordinate.clone(),
-                            NeedProducerFamily::AwaitManyChild,
-                            boolean,
-                            22,
-                        ),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: admitted.local_ids()[1].clone(),
+                            },
+                        )),
+                        target: RuntimeAwaitManyTargetSeed {
+                            source: RuntimeExprSeed::new(
+                                sequence,
+                                RuntimeExprSeedKind::Value(crate::value::runtime_sequence_values(
+                                    vec![RuntimeValue::Bool(true); 3],
+                                )),
+                            ),
+                            item_binding: admitted.local_ids()[0].clone(),
+                            limit: 2,
+                            base: template(
+                                base_coordinate.clone(),
+                                NeedProducerFamily::AwaitManyBase,
+                                sequence,
+                                21,
+                            ),
+                            child: template(
+                                child_coordinate.clone(),
+                                NeedProducerFamily::AwaitManyChild,
+                                boolean,
+                                22,
+                            ),
+                        },
+                        pending: vec![],
                     },
-                    pending: vec![],
-                }]
+                    RuntimeFlowOpSeed::Noop,
+                ]
                 .into_boxed_slice(),
             },
         ))
@@ -166,6 +186,14 @@ fn native_fanout_publications_survive_rollback_without_repeating_progress() {
     use crate::plan::FlowEvent;
     use crate::step::{RuntimeStepInput, RuntimeStepOptions};
     let (plan, flow) = fanout_plan();
+    let FlowOp::AwaitMany {
+        binding: Some(binding),
+        ..
+    } = &plan.flows()[0].body().ops()[0]
+    else {
+        panic!("the original wait binds its aggregate result");
+    };
+    let local = binding.binding_declarations().next().unwrap().local();
     let mut engine = Engine::for_flow(plan, &flow).unwrap();
     let mut pending = vec![];
     let mut launched = 0;
@@ -221,7 +249,13 @@ fn native_fanout_publications_survive_rollback_without_repeating_progress() {
             }
         }
         let owner = RuntimeProgramOwner::Plan(engine.program_plan());
-        let image = engine.inert_rollback_image().unwrap();
+        let mut image = engine.inert_rollback_image().unwrap();
+        if let FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(suspended)) =
+            &mut image.fiber.frame.status
+        {
+            let wire = serde_json::to_vec(suspended.as_ref()).unwrap();
+            *suspended = Box::new(serde_json::from_slice(&wire).unwrap());
+        }
         engine = Engine::from_rollback_image(image, &owner).unwrap();
         if pending.is_empty() && delay == 0 {
             pending = std::mem::take(&mut ready);
@@ -246,6 +280,7 @@ fn native_fanout_publications_survive_rollback_without_repeating_progress() {
             RuntimeValue::Bool(true),
         ]))
     );
+    assert_eq!(engine.fiber.frame.env.get(local), result.as_ref());
 }
 
 #[test]
@@ -253,7 +288,13 @@ fn native_fanout_preflight_rejects_corrupt_frontiers_indices_and_results() {
     let engine = suspended_engine();
     let owner = RuntimeProgramOwner::Plan(engine.program_plan());
     let image = engine.inert_rollback_image().unwrap();
-    for case in 0..10 {
+    let plan = engine.program_plan();
+    let cursor = crate::engine::NativeCodeCursor::root(
+        &plan,
+        crate::plan::code::RuntimeCodeOwner::Function(plan.flows()[0].function_site()),
+    )
+    .unwrap();
+    for case in 0..13 {
         let mut corrupt = image.clone();
         let state = state(&mut corrupt);
         assert_eq!(state.next_index, 2);
@@ -283,6 +324,13 @@ fn native_fanout_preflight_rejects_corrupt_frontiers_indices_and_results() {
                     logical_epoch: LogicalEpoch(99),
                     sequence: TaskSequence(99),
                 })
+            }
+            10 => state.source = cursor.source_operation_at_offset(&plan, 1).unwrap(),
+            11 => state.items[0] = AwbcRuntimeValueSnapshot::Bool(false),
+            12 => {
+                state.in_flight.swap(0, 1);
+                state.in_flight[0].index = 0;
+                state.in_flight[1].index = 1;
             }
             _ => unreachable!(),
         }

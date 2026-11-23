@@ -742,16 +742,7 @@ impl Engine {
                 self.start_need_producer(binding, target, next_op_index, output, pure_backend);
             }
             FlowOp::AwaitMany { .. } => {
-                let FlowOp::AwaitMany {
-                    binding,
-                    target,
-                    pending,
-                } = op.into_owned()
-                else {
-                    unreachable!("selected aggregate await");
-                };
-                self.emit_line_effects(pending, output, pure_backend);
-                self.start_await_many_state(binding, target, next_op_index, output, pure_backend);
+                self.start_await_many_state(source_site, next_op_index, output, pure_backend);
             }
             FlowOp::HostCall { binding, target } => {
                 let arguments = match self.evaluate_host_call_arguments(&target.args, pure_backend)

@@ -2,8 +2,12 @@
 
 use super::SuspendedValues;
 use crate::engine::{AwaitManyState, AwaitState, FlowFiberStatus, WaitingManyStatus};
-use crate::task::RuntimeNeedPublication;
-use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeNeedView, RuntimeRetainedValueAdmission};
+use crate::plan::{RuntimeTaskPlanSealLimits, task_source::RuntimeTaskSourceProgram};
+use crate::task::{RuntimeNeedPublication, RuntimeProgramOwner, RuntimeTaskTemplateArguments};
+use crate::value::{
+    AwbcRuntimeValueSnapshotError, RuntimeNeedView, RuntimeRetainedValueAdmission,
+    RuntimeValueSource,
+};
 
 #[cfg(test)]
 mod many_tests;
@@ -114,6 +118,22 @@ where
     V: crate::value::RuntimeStoredValue,
     P: crate::value::RuntimeStoredValue,
 {
+    fn admit_frame_context<W: crate::value::RuntimeStoredValue, G>(
+        &self,
+        env: &crate::value::RuntimeEnv<W, G>,
+        _admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        if &self.source_context != env.source_function_context_ref()
+            || matches!(self.source.owner(), crate::plan::code::RuntimeCodeOwner::Function(site)
+                if env.function_contexts().next_back().map(|(active, _)| active) != Some(site))
+        {
+            return Err(invalid(
+                "native AwaitMany source differs from its owning frame",
+            ));
+        }
+        Ok(())
+    }
+
     fn admit_suspended_values(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
@@ -121,16 +141,26 @@ where
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.source_context
             .admit_retained(admission, V::admission_origin())?;
+        self.source.admit_retained(admission)?;
+        let Some(RuntimeProgramOwner::Plan(plan)) = admission.program_owner().cloned() else {
+            return Err(invalid(
+                "native AwaitMany requires its original Plan executable",
+            ));
+        };
+        let Some((_, target, _)) = self.source.await_many(&plan) else {
+            return Err(invalid(
+                "native AwaitMany source is not its original AwaitMany operation",
+            ));
+        };
         let binding = self.source_context.instantiation();
-        admission.validate_metadata(&(self.target.limit, self.next_index))?;
+        admission.validate_metadata(&self.next_index)?;
         admission.validate_metadata_collection(self.captured.len())?;
         admission.validate_metadata_collection(self.items.len())?;
         admission.validate_metadata_collection(self.in_flight.len())?;
         admission.validate_metadata_collection(self.results.len())?;
-        admission.validate_metadata_collection(self.target.base.request.captures().len())?;
-        admission.validate_metadata_collection(self.target.child.request.captures().len())?;
-        admission.validate_metadata(&(self.target.base.outcome(), self.target.child.outcome()))?;
-        if self.captured.len() != self.target.captures().count() {
+        admission.validate_metadata_collection(target.base.request.captures().len())?;
+        admission.validate_metadata_collection(target.child.request.captures().len())?;
+        if self.captured.len() != target.captures().count() {
             return Err(invalid(
                 "native AwaitMany inventories disagree with its frontier",
             ));
@@ -141,7 +171,7 @@ where
         crate::task::RuntimeFanoutProgress {
             total: self.items.len(),
             next_index: self.next_index,
-            limit: self.target.limit,
+            limit: target.limit,
             initialized: true,
         }
         .validate(
@@ -151,21 +181,10 @@ where
         .map_err(|error| invalid(&error.to_string()))?;
         let base = RuntimeNeedView::from(&self.base);
         base.admit_retained(admission)?;
-        if base.outcome() != &self.target.base.outcome() {
-            return Err(invalid(
-                "native AwaitMany base outcome differs from its target",
-            ));
+        if !base.requires_producer_custody() {
+            return Err(invalid("native AwaitMany base requires an accepted launch"));
         }
-        let owner = admission
-            .program_owner()
-            .cloned()
-            .ok_or_else(|| invalid("native AwaitMany requires its original Plan executable"))?;
-        let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
-            return Err(invalid(
-                "native AwaitMany requires its original Plan executable",
-            ));
-        };
-        let item = local_type(&plan, self.target.item_binding, binding)?;
+        let item = local_type(&plan, target.item_binding, binding)?;
         for value in &self.items {
             admission.validate_typed_borrowed_in_invocation(
                 value.borrowed_value(),
@@ -173,7 +192,7 @@ where
                 binding,
             )?;
         }
-        for (local, value) in self.target.captures().zip(&self.captured) {
+        for (local, value) in target.captures().zip(&self.captured) {
             let expected = local_type(&plan, local, binding)?;
             admission.validate_typed_borrowed_in_invocation(
                 value.borrowed_value(),
@@ -181,32 +200,74 @@ where
                 binding,
             )?;
         }
+        let limits = RuntimeTaskPlanSealLimits::default();
+        let mut meter = admission.task_source_meter(limits)?;
+        let program = RuntimeTaskSourceProgram::native(plan.clone());
+        let base_source = plan
+            .task_source(&target.base.definition.plan, limits, &mut meter)
+            .map_err(|error| invalid(&error.to_string()))?;
+        let checked_base = base_source
+            .template_producer_spec_after_value_admission(
+                &program,
+                RuntimeTaskTemplateArguments::AwaitManyBaseItems {
+                    captures: &self.captured,
+                    items: &self.items,
+                },
+                binding,
+                admission,
+            )
+            .map_err(|error| invalid(&error.to_string()))?;
+        base_source
+            .validate_template_handle(&checked_base, base, admission)
+            .map_err(|error| invalid(&error.to_string()))?;
+        let child_source = plan
+            .task_source(&target.child.definition.plan, limits, &mut meter)
+            .map_err(|error| invalid(&error.to_string()))?;
         let mut correlations = std::collections::BTreeSet::new();
         for flight in &self.in_flight {
             let handle = RuntimeNeedView::from(&flight.handle);
             handle.admit_retained(admission)?;
             if !correlations.insert(handle.correlation())
                 || handle.correlation().generation != base.correlation().generation
-                || handle.outcome() != &self.target.child.outcome()
+                || !handle.requires_producer_custody()
             {
                 return Err(invalid(
                     "native AwaitMany in-flight child custody is inconsistent",
                 ));
             }
+            let index = u32::try_from(flight.index).map_err(|_| {
+                invalid("native AwaitMany in-flight index exceeds its task argument domain")
+            })?;
+            let item = self.items[flight.index].borrowed_view();
+            let checked = child_source
+                .template_producer_spec_after_value_admission(
+                    &program,
+                    RuntimeTaskTemplateArguments::AwaitManyChild {
+                        captures: &self.captured,
+                        index,
+                        item: RuntimeValueSource::Borrowed {
+                            value: &item,
+                            origin: V::admission_origin(),
+                        },
+                    },
+                    binding,
+                    admission,
+                )
+                .map_err(|error| invalid(&error.to_string()))?;
+            child_source
+                .validate_template_handle(&checked, handle, admission)
+                .map_err(|error| invalid(&error.to_string()))?;
         }
         for result in &self.results {
             if let Some(value) = result {
                 admission.validate_owned_borrowed(value.borrowed_value())?;
                 admission.admit_composite(P::admission_origin(), |owner, resources| {
-                    self.target
-                        .child
-                        .outcome()
-                        .validate_admitted_in_invocation(
-                            value.borrowed_view(),
-                            owner,
-                            binding,
-                            resources,
-                        )?;
+                    target.child.outcome().validate_admitted_in_invocation(
+                        value.borrowed_view(),
+                        owner,
+                        binding,
+                        resources,
+                    )?;
                     Ok(())
                 })?;
             }
@@ -372,8 +433,14 @@ where
         env: &crate::value::RuntimeEnv<V, G>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        if let Self::WaitingMany(WaitingManyStatus::Program(state)) = self {
-            state.admit_frame_context(env, admission)?;
+        match self {
+            Self::WaitingMany(WaitingManyStatus::Program(state)) => {
+                state.admit_frame_context(env, admission)?
+            }
+            Self::WaitingMany(WaitingManyStatus::Native(state)) => {
+                state.admit_frame_context(env, admission)?
+            }
+            _ => {}
         }
         if let Self::ActionWaiting(state) = self {
             let crate::engine::ActionWaitingStatus::Native(state) = state else {

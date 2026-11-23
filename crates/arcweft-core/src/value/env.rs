@@ -532,16 +532,18 @@ impl RuntimeEnv {
 
 impl<V, G> RuntimeEnv<V, G> {
     pub(crate) fn source_function_context(&self) -> super::RuntimeScopeFunctionContext {
+        self.source_function_context_ref().clone()
+    }
+
+    pub(crate) fn source_function_context_ref(&self) -> &super::RuntimeScopeFunctionContext {
         self.scopes
             .iter()
             .rev()
             .find_map(|scope| match &scope.function_context {
                 super::RuntimeScopeFunctionContext::Lexical => None,
-                context @ super::RuntimeScopeFunctionContext::Function { .. } => {
-                    Some(context.clone())
-                }
+                context @ super::RuntimeScopeFunctionContext::Function { .. } => Some(context),
             })
-            .unwrap_or_default()
+            .unwrap_or(&super::RuntimeScopeFunctionContext::Lexical)
     }
 
     pub(crate) fn function_instantiation(

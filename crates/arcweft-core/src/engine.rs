@@ -25,7 +25,7 @@ use crate::stream::{
     RuntimeStreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState,
 };
 use crate::task::{
-    AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+    CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
     NeedProducerRegistry, RuntimeNeedPublication, TaskEvent, TaskEventKind, TaskId, TaskKey,
     TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec, normalize_runtime_need_states,
     normalize_task_events,
@@ -2040,12 +2040,18 @@ impl<H, P> AwaitState<H, P> {
 }
 
 /// Suspended bounded fanout await state.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "H: serde::Serialize, V: crate::value::InertRuntimeValueStorage, P: crate::value::InertRuntimeValueStorage",
+        deserialize = "H: serde::Deserialize<'de>, V: crate::value::InertRuntimeValueStorage, P: crate::value::InertRuntimeValueStorage"
+    )
+)]
 pub struct AwaitManyState<H = crate::task::RuntimeNeedHandle, V = RuntimeValue, P = RuntimePayload>
 {
+    source: NativeSourceOperation,
     pub(crate) source_context: crate::value::RuntimeScopeFunctionContext,
-    pub binding: Option<RuntimePattern>,
-    pub target: AwaitManyTarget,
     pub base: H,
     pub captured: Vec<V>,
     pub items: Vec<V>,
@@ -2063,9 +2069,8 @@ type AwaitManyStateRollbackImage = AwaitManyState<
 impl Clone for AwaitManyStateRollbackImage {
     fn clone(&self) -> Self {
         Self {
+            source: self.source.clone(),
             source_context: self.source_context.clone(),
-            binding: self.binding.clone(),
-            target: self.target.clone(),
             base: self.base.clone(),
             captured: self.captured.clone(),
             items: self.items.clone(),
@@ -2086,9 +2091,8 @@ impl AwaitManyState {
                 .map_err(|error| error.to_string())
         };
         Ok(AwaitManyStateRollbackImage {
+            source: self.source.clone(),
             source_context: self.source_context.clone(),
-            binding: self.binding.clone(),
-            target: self.target.clone(),
             base: crate::task::RuntimeNeedHandleSaveSnapshot::from_live_admitted(
                 &self.base,
                 Some(owner),
@@ -2139,9 +2143,8 @@ impl AwaitManyState {
                 .map_err(|error| error.to_string())
         };
         Ok(Self {
+            source: image.source,
             source_context: image.source_context,
-            binding: image.binding,
-            target: image.target,
             base: image
                 .base
                 .into_live_admitted(owner)
@@ -2185,7 +2188,8 @@ impl AwaitManyState {
 }
 
 /// One in-flight child task inside a bounded fanout await.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwaitManyInFlight<H = crate::task::RuntimeNeedHandle> {
     pub index: usize,
     pub handle: H,

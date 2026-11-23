@@ -262,6 +262,24 @@ impl NativeSourceOperation {
         }
     }
 
+    pub(super) fn await_many<'a>(
+        &self,
+        plan: &'a RuntimePlan,
+    ) -> Option<(
+        Option<&'a crate::pattern::RuntimePattern>,
+        &'a crate::task::AwaitManyTarget,
+        &'a [crate::effect::LineEffectRequest],
+    )> {
+        match self.operation(plan)? {
+            FlowOp::AwaitMany {
+                binding,
+                target,
+                pending,
+            } => Some((binding.as_ref(), target, pending)),
+            _ => None,
+        }
+    }
+
     /// Rechecks the selected loop against the original body path of a
     /// suspended transfer. The active stack supplies custody of that same
     /// operation, while the authored path determines its lexical depth.
