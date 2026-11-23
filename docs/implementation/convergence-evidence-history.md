@@ -22158,3 +22158,25 @@ Native の直接タスクと manifest 経由の読み取りは、受理済みの
 Desktop Adapter の `native_integration` は実 Native Backend の capability 応答を Host Registry で受理する1件が成功、選択外0件、終了0。実行 ID は `505ba784-0275-4d7e-bae8-45ae281f947b`。これらの実行はファイル読み取りと影響した結果受理を対象とする。全 producer の統合受入と Native／Web の画像比較は該当範囲の検証結果を使う。
 
 最終 Source の `cargo clippy --offline --locked --workspace --all-targets --all-features` は警告付きで終了0。変更 Rust の書式と差分の空白検査は終了0。検証後の `target` は202,841,093,482 bytes（約202.8 GB）。
+
+<a id="native-shared-generic-prefix-cold-restore"></a>
+
+## 2026-11-24 — 共有ジェネリック prefix を Native の保存から再開する
+
+検証基点 `2e5a04c7a1c126d8848da80a0717f5aea87024bc`。開始時はローカルと `origin/main` が一致し、追跡ファイルに差分はなかった。既存の未追跡ディレクトリが一つあった。
+
+同じ `choose(7i64)` の prefix を保持し、後続の呼び出しに `String` と `i64` を与える `.arcw` を実 CLI で実行した。Bytecode VM の連続実行は7ステップで `done Return("true")`。同じモードと `max_ops=1` で1ステップ実行した別プロセスは `running` のまま 2,832 bytes の `AWFS` を出力した。さらに別の AOT プロセスで `--session-load` し、ステップ1〜6の実行命令数、fiber status、flow event が連続実行の続きと一致し、診断0件で同じ結果を返した。CLI の SHA-256 は `55e10e1161435975986ca84e4ba29615996263e30043cd4cfee539d19bdda045`、入力は `6ba9fd6acd11568e03717b6eb96225c4416290fe3d525ff131195d3d2522ed28`、停止時の AWFS は `7f79710a4da62adad9830cd2b3fd87c6ee7bb14f2dec957a5571f0be5a95916e`。
+
+Compiler 回帰は同じ入力を使い、型・宣言・捕捉を確認した prefix を Native Engine の JSON に保存する。別の実体へコンパイルした元 Plan に復元し、直後の保存状態、復元側の prefix、残りの各ステップの命令数・イベント・状態、完了時の保存状態を照合した。後続の `prefix(42i64)` を `prefix(43i64)` にした Plan は元の保存を拒否し、復元先の状態は一致した。`cargo nextest run --offline --locked -p arcweft-compiler -p arcweft-runtime-driver -p arcweft-cli --test generic_continuation_snapshot --test awbc_product_session --test runtime_native_options --no-fail-fast --no-tests fail --status-level fail` は3バイナリで59件すべて成功、選択外0件、終了0。実行 ID は `b4823e52-d30e-444e-bef5-122416170670`。既存の AWFB の共有 prefix、Task の再発行、Native CLI の別プロセス復元も含む。検証した回帰 `2d25a633d71105b95925d6758f9b91eb9b202dda` を `main` へ通常 push し、公開 ref と変更1ファイルの blob を照合した。推移的逆依存の Cargo グラフは Compiler 自身を含め10パッケージ。変更は Compiler のテストだけで、選択した3バイナリが保存・復元の該当経路を実行した。
+
+<a id="webgpu-parity-release-tooling"></a>
+
+## 2026-11-24 — 現行ソースのデモを固定起動上限で比較する
+
+比較した製品 Source の基点は `2e5a04c7a1c126d8848da80a0717f5aea87024bc`。同じ `.arcw` から `just webgpu-parity` が生成した AWFB の SHA-256 は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4` で、11月9日の受入 Source `818e8ef71a7ce00d04633ed4ed21f8f2bd482224` と一致した。ブラウザーは Chrome `157.0.8103.79`、`wasm-bindgen` は lockfile と同じ `0.2.122`。
+
+初回は従来の `debug` プロファイルで生成した Wasm を使用。Native では160 ms の5枚を取得し、Chrome は `[p]` のケースに成功した。続く通常表示ケースは `openBooted` の起動上限10秒で終了1。失敗後の診断では `ready=true`、致命的エラーの表示なし、論理 tick 1 の観測が得られた。画像比較には到達しなかった。デモの比較レシピの Wasm を `release` で生成し、固定起動上限、論理 tick、画像比較しきい値を保持した。
+
+リリースWasmの比較では、起動上限10秒でChromeの8件が成功し、論理tick 10（160 ms）のNative／Web画像5組が既定のしきい値を通過した。通常のフォーカス、ホバー、押下、高DPIは1280×720、縮小は960×540。高DPIの論理寸法は640×360。各組で `imq 0.1.0` の全RGBAチャネルの直接比較を実行した。MSE、MAE、最大誤差は全組で0、色のSSIMは1。RGBAサンプル数は1280×720の各組で3,686,400、縮小で2,073,600。製品の比較器でも全組でPSNRは無限大、変化画素率は0だった。
+
+`wasm-bindgen` 後のWasmはdebugで201,274,351 bytes、releaseで62,589,176 bytes。releaseのSHA-256は `bb94963f18b8fdd70210694c12581a2b6ae68315eaf86f7704291e787430e801`。レシピと手順の変更 `9a975e0d1b202f78763aa493acf9725c4d428501` を `main` へ通常 push し、公開 ref と変更2ファイルの blob を照合した。公開コミットでも `just webgpu-parity` を再実行し、Chrome 8件、画像比較5組とも成功し、終了0だった。検証後の `target` は215,494,922,879 bytes（約215.5 GB）。
