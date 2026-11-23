@@ -21902,3 +21902,29 @@ Native と Product AWBC は同じ Need 台帳から元の受理済み要求を�
 Runtime Driver の `awbc_product_session` は41件成功、スキップ0件。Native 回帰は RuntimePlan VM と Structured AOT の両方で、進捗を受け取った待機を JSON で復元し、新規発行枠と処理予算をゼロにしたステップで元の要求を一度だけ得た。次の Ready 通知で Flow の成功結果を確認した。Runtime Host のライブラリは60件成功、スキップ0件。ホスト側回帰では進捗1・2を受理して発行記録を保存し、改変した位置を状態変更前に拒否した。正しい記録を読み戻し、元の epoch と発行番号を保持して通知3を受理した。
 
 Core 全機能ライブラリ2,416件と Runtime Driver ライブラリ77件が成功し、失敗・スキップは0件。全ターゲット・全機能の workspace check と、Core・Runtime Driver・Runtime Host の全ターゲット・全機能 Clippy、変更ファイルの書式、構造ゲートは終了0。Clippy には警告があり、構造のブロッキング違反は0件。Cargo の全ターゲット逆依存グラフは Core を含む53パッケージ、Runtime Host を含む5パッケージで、実行検証は上記の範囲。headless CLI のファイル入出力を介した Native 再開は検証範囲外。検証後の `target` は151,763,965,870 bytes（約151.8 GB）。
+
+<a id="headless-native-source-save"></a>
+
+## 2026-11-23 — headless Native の保存ファイルから再開する
+
+基点 `a585d7b221ce5b0c9642c6bba4dc3985254aac64`。開始時の追跡ファイルに変更はなく、既存の未追跡ディレクトリが一つあった。実装 `77f4e474e101c18dafc3bab92b7091262084e53d`、拒否とファイル置換の追加回帰 `734ce313e54640b10669d428a69e7916d486b20b`。
+
+`arcw run --runner headless` の Native 実行に `--session-load` と `--session-save-out` を接続した。v1 AWFS は元の Plan に結び直す executor、受理済みのホスト発行台帳、次の論理ステップ番号を保持する。読み込みと出力には共通の AWFS 制限と厳格な型付き JSON codec を使う。復元中の保持値は、ホストアダプターと共有するアセットカタログへ照合する。executor 候補はホスト台帳が全件受理された後に公開する。CLI は同じディレクトリで保存の全体を書いて同期した後に出力先を置き換える。
+
+CLI の `runtime_native_options` は4件成功・スキップ0件。Native VM をステップ0で区切って保存し、別プロセスの AOT がステップ1から結果 `7` まで進んだ。正常な再保存は既存の出力先を AWFS で置き換えた。同じ Flow を指す別 Entry と、破損したエンベロープは拒否し、既存の保存を保持した。
+
+Core の全機能ライブラリは2,416件成功・スキップ0件。外部値の検査が拒否した場合とホスト台帳が拒否した場合に、復元先の executor が元の state を保持する回帰を含む。構造ゲートのブロッキング違反は0件。Cargo の全対応ターゲットの逆依存は Core を含む53パッケージ、Runtime Host を含む5パッケージ。ソースの最新 `734ce313e54640b10669d428a69e7916d486b20b` を通常の fast-forward で `origin/main` に公開し、変更25ファイルの blob を照合した。
+
+Runtime Host のライブラリは60件成功・スキップ0件。実 CLI の `native-file` profile と `fs.read_text` では、`--steps 1 --mode drain --max-ops 64` で未配送の直接ホスト結果1件を検出して終了1となり、既存の保存を保持した。手動確認の初回は TaskEvent を予想していたため判定が失敗し、実際に通る直接ホスト呼び出しの結果として訂正した。同じ入力の `--steps 8` は `done Return("native-host-result")` と AWFS を出力し、終了0となった。これは未配送結果の保存拒否と配送後の保存の実測である。
+
+実ファイルを読む直前の `let` を1操作だけ実行して、ステップ0で別の AWFS を保存した。プロセス間で入力ファイルを `before-save` から `after-save` に書き換えると、別プロセスの AOT がステップ1から1ステップ1操作の予算で進み、`done Return("after-save")` を返した。
+
+続く CLI プローブでは `done Return("7")` の AWFS を `--steps 0 --session-load` で開くと、出力ステップ0件・`final_status` が `running` となった。`e669cb016203b4012e2413cc6666337adc375018` ではステップに共通する executor の観測状態を読み、実行やホストの poll を行わずに結果を返す。
+
+修復後の `cargo nextest run --locked -p arcweft-core -p arcweft-cli -E 'binary_id(arcweft-cli::runtime_native_options) | package(arcweft-core)' --lib --test runtime_native_options --no-fail-fast` は Core 2,416件と CLI 4件の計2,420件成功・選択内スキップ0件。CLI のライブラリ binary 一つはフィルタ対象外。完了済み保存の出力はステップ0件・`done Return("7")` となり、入力 AWFS を byte-for-byte で保持した。修復後の構造ゲートも終了0・ブロッキング違反0件。`e669cb016203b4012e2413cc6666337adc375018` を `origin/main` に公開し、この修復の6ファイルの blob を照合した。
+
+修復後の Runtime Driver の `awbc_product_session` は41件成功・スキップ0件。元の dispatch の一度だけの再発行、元 bundle manifest と generation の照合、opaque asset value の復元と偽造時の原子拒否を対象に含む。進行中の外部タスクを CLI の別プロセスへ引き継ぐ実行と、最終 workspace 全体の受入はこの検証範囲に含まない。
+
+修復前のプローブで出力した AWFS を修復後の別プロセスの AOT でも照会し、終了0、ステップ0件、`done Return("7")` を確認した。入力 AWFS の SHA-256 `511a1944cf4fa7520f0e3f5e2494d135872e95a3278d7c4ceaf192f825d3be04` は照会前後で一致した。Windows の `cargo check --locked --workspace --all-targets --all-features` は終了0。
+
+Core、Runtime Host、CLI の全ターゲット・全機能の Clippy は終了0。追加した CLI 回帰で `too_many_lines` が出たため、同じ起動引数を共有する形に `8043322c865337b9daeb3361bc2a3605c4abf7c8` で整理した。最終入力で Core と CLI の2,420件が再び成功・選択内スキップ0件。Clippy は再び終了0で、CLI 回帰の警告は解消し、他箇所の警告は残った。書式と構造ゲートも終了0・構造のブロッキング違反0件。検証後の `target` は156,450,352,868 bytes（約156.5 GB）。
