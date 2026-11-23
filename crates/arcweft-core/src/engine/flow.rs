@@ -539,11 +539,12 @@ impl Engine {
                     target,
                     content,
                     result,
-                } = op.into_owned()
+                } = op.as_ref()
                 else {
                     unreachable!("selected dialogue activation");
                 };
-                let target_value = match self.evaluate_expr_with_backend(&target, pure_backend) {
+                let content = *content;
+                let target_value = match self.evaluate_expr_with_backend(target, pure_backend) {
                     Ok(value) => value,
                     Err(error) => {
                         self.fail_format_aware_eval(error, output, pure_backend);
@@ -687,7 +688,7 @@ impl Engine {
                     line_task: DialogueLineTaskState::NotStarted,
                     elapsed: LogicalDuration::default(),
                     phase: super::DialogueRuntimePhase::Activating,
-                    result_target: result,
+                    origin: super::dialogue::DialogueOrigin::Operation(source_site),
                     voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
                     values: values.into_boxed_slice(),
                     effect_callbacks: effect_callbacks.into_boxed_slice(),

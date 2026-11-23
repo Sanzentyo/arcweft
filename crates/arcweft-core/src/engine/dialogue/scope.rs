@@ -516,11 +516,13 @@ mod tests {
                 line_task: super::super::DialogueLineTaskState::NotStarted,
                 elapsed: Default::default(),
                 phase: DialogueRuntimePhase::Closing,
-                result_target: RuntimeDialogueResultTarget::new(
-                    unit,
-                    RuntimePattern::from_admitted_parts(
+                origin: super::super::store::DialogueOrigin::Fixture(
+                    RuntimeDialogueResultTarget::new(
                         unit,
-                        crate::pattern::RuntimePatternKind::Discard,
+                        RuntimePattern::from_admitted_parts(
+                            unit,
+                            crate::pattern::RuntimePatternKind::Discard,
+                        ),
                     ),
                 ),
                 voice: crate::presentation::RuntimeDialogueVoiceState::Absent,

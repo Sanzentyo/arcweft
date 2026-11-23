@@ -1,6 +1,6 @@
 //! Borrowed admission of Native dialogue frame roots in the session allowance.
 
-use super::{DialogueActivationFrame, PendingLineOperation};
+use super::{DialogueActivationFrame, DialogueOrigin, PendingLineOperation};
 use crate::value::{
     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue,
     RuntimeValueView,
@@ -27,11 +27,41 @@ where
             self.content,
             self.task_group.index(),
             self.elapsed,
-            self.result_target.ty().get().get(),
             &self.voice,
             self.activation_pc,
             self.exiting_for_result,
         ))?;
+        match &self.origin {
+            DialogueOrigin::Operation(source) => {
+                source.admit_retained(admission)?;
+                let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
+                else {
+                    return Err(invalid_shape(
+                        "dialogue origin requires its original Plan",
+                        admission,
+                    ));
+                };
+                let content = plan.dialogue_content().get(self.content);
+                let valid = self.result_target(plan).is_ok_and(|result| {
+                    plan.line_task_groups()
+                        .get(self.task_group.index())
+                        .is_some_and(|group| group.result_type() == result.ty())
+                }) && content.is_some_and(|content| {
+                    content.line() == &self.line
+                        && content.line_task_group() == Some(self.task_group)
+                });
+                if !valid {
+                    return Err(invalid_shape(
+                        "dialogue origin differs from its line or result contract",
+                        admission,
+                    ));
+                }
+            }
+            #[cfg(test)]
+            DialogueOrigin::Fixture(result) => {
+                admission.validate_metadata(&result.ty().get().get())?
+            }
+        }
         if let Some(target) = &self.target {
             if !matches!(target.borrowed_view(), RuntimeValueView::Opaque(_)) {
                 return Err(invalid_shape(

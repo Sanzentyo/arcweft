@@ -13,7 +13,7 @@ pub use store::DialogueActivationStore;
 pub(in crate::engine) use store::{
     DialogueActivationFrame, DialogueActivationScope, DialogueActivationStoreRollbackImage,
     DialogueActivationTransaction, DialogueCommitDisposition, DialogueLineTaskState,
-    PendingLineOperation,
+    DialogueOrigin, PendingLineOperation,
 };
 
 use super::{
@@ -2694,8 +2694,8 @@ impl Engine {
         if !matches!(activation.result(), RuntimeDialogueResultState::Uncommitted) {
             return Err(LineRuntimeError::ResultAlreadyCommitted.into());
         }
-        state
-            .result_target
+        let result_target = state.result_target(&self.plan)?;
+        result_target
             .validate_value(
                 &self.plan,
                 &value,
@@ -2728,7 +2728,7 @@ impl Engine {
             )?;
         }
         activation.commit_ledger(ledger);
-        activation.commit_result(state.result_target.ty(), value)?;
+        activation.commit_result(result_target.ty(), value)?;
         Ok(handles)
     }
 
@@ -2842,11 +2842,11 @@ impl Engine {
                 return Err(LineRuntimeError::ResultNotCommitted.into());
             }
         };
-        if ty != state.result_target.ty() {
+        let result_target = state.result_target(&self.plan)?;
+        if ty != result_target.ty() {
             return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
         }
-        state
-            .result_target
+        result_target
             .validate_value(
                 &self.plan,
                 value,
@@ -2855,7 +2855,7 @@ impl Engine {
             .map_err(|_| LineRuntimeError::ResultPatternOrTypeMismatch)?;
         if !crate::pattern::inspect_runtime_pattern_owned(
             &self.plan,
-            state.result_target.pattern(),
+            result_target.pattern(),
             value,
             self.fiber.frame.env.function_instantiation(),
         )? {
@@ -2865,7 +2865,7 @@ impl Engine {
             .into_iter()
             .map(|handle| {
                 let destination = preview_result_destination_local(
-                    state.result_target.pattern(),
+                    result_target.pattern(),
                     value,
                     handle.token(),
                 )?
@@ -2987,7 +2987,10 @@ impl Engine {
             .expect("prepared publication transfers its sole result owner");
         let bindings = crate::pattern::match_runtime_pattern_owned(
             &self.plan,
-            state.result_target.pattern(),
+            state
+                .result_target(&self.plan)
+                .expect("prepared publication retains its original operation")
+                .pattern(),
             value,
             self.fiber.frame.env.function_instantiation(),
         )
@@ -3680,10 +3683,10 @@ mod tests {
             line_task: DialogueLineTaskState::NotStarted,
             elapsed: LogicalDuration::default(),
             phase: DialogueRuntimePhase::Activating,
-            result_target: RuntimeDialogueResultTarget::new(
+            origin: super::store::DialogueOrigin::Fixture(RuntimeDialogueResultTarget::new(
                 ty,
                 RuntimePattern::from_admitted_parts(ty, RuntimePatternKind::Discard),
-            ),
+            )),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             values: Box::new([]),
             effect_callbacks: Box::new([]),

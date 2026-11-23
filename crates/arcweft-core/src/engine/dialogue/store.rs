@@ -82,7 +82,7 @@ pub(crate) struct DialogueActivationFrame<
     /// Logical time accumulated while this line has been active.
     pub(in crate::engine) elapsed: crate::time::LogicalDuration,
     pub(in crate::engine) phase: DialogueRuntimePhase,
-    pub(in crate::engine) result_target: crate::plan::RuntimeDialogueResultTarget,
+    pub(in crate::engine) origin: DialogueOrigin,
     pub(in crate::engine) voice: crate::presentation::RuntimeDialogueVoiceState,
     pub(in crate::engine) values: Box<[crate::plan::RuntimeDialogueValueBinding<V>]>,
     /// Exact callback closures captured when this dialogue content was
@@ -104,6 +104,55 @@ pub(crate) struct DialogueActivationFrame<
     pub(in crate::engine) failure: Option<super::DialogueExecutionError>,
 }
 
+/// The reached Dialogue operation owns the result binder for the life of the
+/// activation. Codec input can name an operation, never provide a pattern.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::engine) enum DialogueOrigin {
+    Operation(super::super::NativeSourceOperation),
+    #[cfg(test)]
+    Fixture(crate::plan::RuntimeDialogueResultTarget),
+}
+
+impl serde::Serialize for DialogueOrigin {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Operation(source) => source.serialize(serializer),
+            #[cfg(test)]
+            Self::Fixture(_) => Err(serde::ser::Error::custom(
+                "fixture has no original Dialogue",
+            )),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DialogueOrigin {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        super::super::NativeSourceOperation::deserialize(deserializer).map(Self::Operation)
+    }
+}
+
+impl DialogueOrigin {
+    fn result_target<'a>(
+        &'a self,
+        plan: &'a crate::plan::RuntimePlan,
+        content: crate::runtime_id::RuntimeDialogueContentPlanId,
+    ) -> Result<&'a crate::plan::RuntimeDialogueResultTarget, LineRuntimeError> {
+        let source = match self {
+            Self::Operation(source) => source,
+            #[cfg(test)]
+            Self::Fixture(target) => return Ok(target),
+        };
+        match source.operation(plan) {
+            Some(crate::plan::FlowOp::Dialogue {
+                content: original,
+                result,
+                ..
+            }) if *original == content => Ok(result),
+            _ => Err(LineRuntimeError::InvalidActivationOperation),
+        }
+    }
+}
+
 type NativeDialogueBindingRollbackImage =
     RuntimeLocalBinding<crate::value::AwbcRuntimeValueSnapshot>;
 type NativeDialogueValueRollbackImage =
@@ -122,6 +171,13 @@ type NativeEngineDialogueFrameRollbackImage =
     EngineDialogueActivationFrame<NativeDialogueActivationFrameRollbackImage>;
 
 impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
+    pub(in crate::engine) fn result_target<'a>(
+        &'a self,
+        plan: &'a crate::plan::RuntimePlan,
+    ) -> Result<&'a crate::plan::RuntimeDialogueResultTarget, LineRuntimeError> {
+        self.origin.result_target(plan, self.content)
+    }
+
     pub(in crate::engine) fn activation_operation<'a>(
         &self,
         plan: &'a crate::plan::RuntimePlan,
@@ -286,7 +342,7 @@ impl Clone for NativeDialogueActivationFrameRollbackImage {
             line_task: self.line_task.clone(),
             elapsed: self.elapsed,
             phase: self.phase,
-            result_target: self.result_target.clone(),
+            origin: self.origin.clone(),
             voice: self.voice.clone(),
             values: self.values.clone(),
             effect_callbacks: self.effect_callbacks.clone(),
@@ -449,9 +505,14 @@ impl DialogueActivationStoreRollbackImage {
                         })
             },
             |_, active, value, retired| {
+                let crate::task::RuntimeProgramOwner::Plan(plan) = &active.frame.execution.program
+                else {
+                    return Err(LineRuntimeError::InvalidRestoredResultState);
+                };
+                let result = active.frame.result_target(plan)?;
                 for token in retired {
                     let destinations = crate::pattern::runtime_pattern_handle_destinations_view(
-                        active.frame.result_target.pattern(),
+                        result.pattern(),
                         value,
                         token,
                     )
@@ -663,7 +724,7 @@ impl DialogueActivationFrame {
             line_task: self.line_task.clone(),
             elapsed: self.elapsed,
             phase: self.phase,
-            result_target: self.result_target.clone(),
+            origin: self.origin.clone(),
             voice: self.voice.clone(),
             values: self
                 .values
@@ -750,7 +811,7 @@ impl DialogueActivationFrame {
             line_task: image.line_task,
             elapsed: image.elapsed,
             phase: image.phase,
-            result_target: image.result_target,
+            origin: image.origin,
             voice: image.voice,
             values: image
                 .values
@@ -2165,6 +2226,110 @@ mod tests {
         ))
     }
 
+    #[test]
+    fn dialogue_origin_roundtrips_only_the_reached_operation() {
+        use crate::engine::NativeCodeCursor;
+        use crate::pattern::RuntimeOpaqueTypeAdmission;
+        use crate::plan::*;
+        use crate::value::{RuntimeCharacterDialogueProducerId, RuntimeValue};
+
+        let (mut builder, content) = crate::plan::body_semantic::content_root_builder_fixture();
+        let result_type = RuntimeSemanticTypeId::from_bytes([1; 32]);
+        let target_type = RuntimeSemanticTypeId::from_bytes([0x79; 32]);
+        let producer = RuntimeCharacterDialogueProducerId::get();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    target_type,
+                    RuntimePlanTypeProjection::Opaque {
+                        producer: producer.clone(),
+                        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                        value_class: RuntimeOpaqueValueClass::Plain,
+                        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+                        arguments: Box::new([]),
+                    },
+                )],
+                [],
+            )
+            .unwrap();
+        let definition = RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xab; 32]);
+        let declaration = builder
+            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                definition,
+                role: RuntimeFunctionSemanticRole::Effect,
+                function_type: None,
+                inputs: Box::default(),
+                result: result_type,
+                body_kind: RuntimeFunctionSiteBodyKind::Executable,
+                effects: RuntimeEffectSet::empty(),
+            })
+            .unwrap();
+        builder
+            .define_function_site_seed(
+                &declaration,
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: Box::new([
+                        RuntimeFlowOpSeed::Dialogue {
+                            target: RuntimeExprSeed::new(
+                                target_type,
+                                RuntimeExprSeedKind::Value(RuntimeValue::Opaque(
+                                    RuntimeOpaqueValue::new_exact(
+                                        &RuntimeOpaqueTypeOwner::exact(producer, target_type),
+                                        RuntimeValue::Unit,
+                                    ),
+                                )),
+                            ),
+                            content,
+                            result: RuntimeDialogueResultTargetSeed::discard(result_type),
+                        },
+                        RuntimeFlowOpSeed::Noop,
+                    ]),
+                }),
+            )
+            .unwrap();
+        let plan = builder.finish().unwrap();
+        let (function_id, function) = plan
+            .function_sites()
+            .iter_with_ids()
+            .find(|(_, site)| site.definition() == definition)
+            .unwrap();
+        let RuntimeFunctionSiteBody::Executable(body) = function.body() else {
+            panic!("original executable body")
+        };
+        let FlowOp::Dialogue {
+            content, result, ..
+        } = &body.ops()[0]
+        else {
+            panic!("original Dialogue operation")
+        };
+        let cursor =
+            NativeCodeCursor::root(&plan, RuntimeCodeOwner::Function(function_id)).unwrap();
+        let origin =
+            DialogueOrigin::Operation(cursor.source_operation_at_offset(&plan, 0).unwrap());
+        let encoded = serde_json::to_value(&origin).unwrap();
+        let decoded: DialogueOrigin = serde_json::from_value(encoded.clone()).unwrap();
+        assert!(std::ptr::eq(
+            decoded.result_target(&plan, *content).unwrap(),
+            result
+        ));
+        assert!(
+            decoded
+                .result_target(
+                    &plan,
+                    RuntimeDialogueContentPlanId::from_accepted_ordinal(
+                        NonZeroU32::new(2).unwrap()
+                    )
+                )
+                .is_err()
+        );
+        let wrong = DialogueOrigin::Operation(cursor.source_operation_at_offset(&plan, 1).unwrap());
+        assert!(wrong.result_target(&plan, *content).is_err());
+        let mut forged_pattern = encoded;
+        forged_pattern["pattern"] = serde_json::json!({"Discard": {}});
+        assert!(serde_json::from_value::<DialogueOrigin>(forged_pattern).is_err());
+    }
+
     fn frame(
         program: crate::task::RuntimeProgramOwner,
         phase: DialogueRuntimePhase,
@@ -2191,10 +2356,10 @@ mod tests {
             line_task: DialogueLineTaskState::NotStarted,
             elapsed: LogicalDuration::default(),
             phase,
-            result_target: crate::plan::RuntimeDialogueResultTarget::new(
+            origin: DialogueOrigin::Fixture(crate::plan::RuntimeDialogueResultTarget::new(
                 ty,
                 RuntimePattern::from_admitted_parts(ty, RuntimePatternKind::Discard),
-            ),
+            )),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             values: Box::default(),
             effect_callbacks: Box::default(),

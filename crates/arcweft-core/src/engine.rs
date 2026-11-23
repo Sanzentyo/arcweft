@@ -5362,15 +5362,15 @@ impl Engine {
                 return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
             }
             let frame = transaction.frame();
-            frame
-                .result_target
+            let result_target = frame.result_target(&self.plan)?;
+            result_target
                 .validate_value(
                     &self.plan,
                     &value,
                     frame.execution.env.function_instantiation(),
                 )
                 .map_err(|_| crate::line_task::LineRuntimeError::ResultPatternOrTypeMismatch)?;
-            let ty = frame.result_target.ty();
+            let ty = result_target.ty();
             for handle in value
                 .affine_line_handles()
                 .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
