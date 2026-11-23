@@ -21794,3 +21794,15 @@ Choice は元の命令位置と選択番号を保持する。JSON から戻し�
 初回は producer helper の型 import とエラー変換で終了101。次の Core は2,408 PASS／2 FAIL。TaskRoot は関数の呼び出しスコープを作らずに元命令を実行できるため、その経路を復元時の照合で受け入れた。発行台帳を消すと台帳の構造検査で先に拒否されたため、テストは台帳を保持して未発行の正規相関を渡す形に改めた。台詞フレームの照合を追加した際のエラー型の参照不足も記録した。最終 Core は2,410 PASS／0 SKIP。Core を含む52パッケージの Cargo 逆依存を確認し、コンパイラの `callable_execution`、`flow_wait`、`scoped_defer`、`action_channel`、`evaluated_effects` は610 PASS（1 slow）／0 SKIP。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-status-wire.raw.zip) は21項目、1,106,452 bytes、SHA256 `f1098ebe70c013f4008f7c8e343240ae4291cc2a8d5c74daa910f03c1ed8e436`。各項目の長さと SHA256 を照合した。検証後の `target` は145,752,235,087 bytes。
+
+<a id="native-fiber-wire"></a>
+
+## 2026-11-23 — Native の実行ファイバーを元の Program 受領票に結び直す
+
+基点 `20236d1f4bb60408f1f3ce28eee422b41ab7c060`。公開ソース `6c817970b797b256b41a57f61a64391cf97b1aab`。`main` への通常の push 後に公開 ref と14変更 blob を照合した。検証時に追跡ファイルの差分なし。
+
+Native の実行ファイバーとフレームを、元の Plan を含まない JSON で往復した。復元は元の Plan に結び直し、発行相関と起点の命令を台帳の実行中の Program 受領票と照合してから結果型を検査する。ファンアウト48条件のうち復元ありの24条件で、各ステップのファイバー全体を変換し、到着順が異なる結果の元の順序と操作予算を確認した。未発行の相関、重複・孤立した受領票、コントローラーとワーカーの相関の入れ替え、別タスクへの結果の付け替え、結果型の改変を拒否した。ストリームの行は識別子順に保存し、重複識別子を拒否する。Native セッション全体の公開保存は残項目。
+
+起点命令の照合を加える前の Core は2,411 PASS。その追加後は Product AWBC の観測用ファイバーが参照する型の可視性で E0603 が出たため、観測側の入口を維持して修正した。最終 Core は2,412 PASS／0 SKIP。Core を含む52パッケージの Cargo 逆依存を確認し、コンパイラの `callable_execution`、`flow_wait`、`scoped_defer`、`generic_continuation_snapshot` は466 PASS（1 slow）／0 SKIP。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-fiber-wire.raw.zip) は19項目、1,098,409 bytes、SHA256 `33737240d5b0dd06409eca9315b1970acbea3752d9fa5b46a50fb0c07c44ef32`。各項目の長さと SHA256 を照合した。検証後の `target` は145,755,081,742 bytes。
