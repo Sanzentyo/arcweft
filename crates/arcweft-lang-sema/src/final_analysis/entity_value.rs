@@ -131,7 +131,9 @@ impl CheckedEntityValueProjection {
     }
 }
 
-pub(super) fn catalog_asset_type(asset: &arcweft_id::CatalogResourceId) -> TypeKind {
+pub(super) fn catalog_asset_type<E: crate::types::TypeEffectDomain>(
+    asset: &arcweft_id::CatalogResourceId,
+) -> TypeKind<E> {
     use arcweft_id::CatalogResourceId;
 
     TypeKind::entity_ref(match asset {
