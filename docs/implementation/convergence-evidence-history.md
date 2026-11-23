@@ -21770,3 +21770,15 @@ inert control stack と lexical exit を JSON で往復し、元コード位置�
 Core 全機能 library は2,410 PASS／0 SKIP。Core を含む52パッケージの Cargo 逆依存を確認し、コンパイラの `callable_execution` と `flow_wait` は423 PASS（1 slow）／0 SKIP。共有資源枠の上限一致と1件超過、1操作予算、待機や並列実行の復元を確認した。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-await-many-wire.raw.zip) は15項目、1,013,268 bytes、SHA256 `fb003f1d7f8e979350918f796c81e1fb980e51fef0a0c74544195d5e4ad696d7`。各項目の長さと SHA256 を照合した。検証後の `target` は144,845,821,884 bytes。
+
+<a id="native-wait-wire"></a>
+
+## 2026-11-23 — Native の単独 Await と Program fanout の待機を復元する
+
+基点 `db7efa3b7eb88c87f719f2e6a6d1342bafff9ebf`。公開ソース `2067f655dbeae4b13b9d17f98c0da14ad656157c`。`main` への通常の push 後に公開 ref と13変更 blob を照合した。検証時に追跡ファイルの差分なし。
+
+単独 Await は待機中の状態と Pending observer に退避した状態を同じ JSON 形式に載せた。実際に両方から再開し、進捗を1回通知して最初に一致した observer を実行した。キューに保持する Ready 値を JSON で往復し、型・相関・観測位置の改変を拒否した。Program fanout は項目数0／1／3／17、同時実行上限1／2／5、元 Plan／デコードした Plan、復元あり／なしの48条件を実行し、復元ありの24条件で停止中の状態を JSON で往復した。実行数、1操作予算、同時実行上限、元の順序の結果を確認した。
+
+メインと子の待機が保持する発行済みハンドルは、台帳の元の受領票と照合する。台帳検証が作る借用索引を待機検証にも渡す。索引追加前の Core は2,410 PASS。索引追加後の最初のビルドで `TaskExecutionSource` 制約が不足して終了101となり、修正前のログを保存した。最終 Core は2,410 PASS／0 SKIP。Core を含む52パッケージの Cargo 逆依存を確認し、コンパイラの `callable_execution`、`flow_wait`、`scoped_defer` は455 PASS（1 slow）／0 SKIP。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。Native セッション全体の公開保存は残項目。
+
+[検証原本](acceptance-evidence/task-native-wait-wire.raw.zip) は19項目、1,096,680 bytes、SHA256 `617937a501d700780b55cb4c18ab05ba9ecbc83834de9ed97b8d80b370d10f31`。各項目の長さと SHA256 を照合した。検証後の `target` は144,849,004,292 bytes。
