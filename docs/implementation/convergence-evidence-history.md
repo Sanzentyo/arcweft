@@ -22110,3 +22110,21 @@ Windows の `cargo nextest run --offline --locked -p arcweft-lang-sema --lib --n
 全機能・全ターゲットの Cargo 逆依存グラフは Sema を含め22パッケージ。前回と同じ4バイナリ、同じフィルターで実行した Compiler 25件と Runtime Plan 2件はすべて成功、46件選択外、終了0。Native／AWBC の共有 prefix、再帰 callback、attached default、保存復元を含む。構造ゲートは98パッケージを走査し、ブロッキング違反0件、終了0。Rust の書式検査と差分の空白チェックも終了0。
 
 最終ソースの `cargo check --offline --locked --workspace --all-targets --all-features` と同範囲の Clippy は警告付きで終了0。検証後の `target` は188,382,060,901 bytes（約188.4 GB）。
+
+<a id="web-task-outcome-admission"></a>
+
+## 2026-11-24 — Web の仮想ファイル結果とタスク発行時の実行プログラムを照合する
+
+基点 `c1df19ad88c593de1f54ddf125881220ef0c2a94`。開始時の追跡ファイルに差分はなく、既存の未追跡ディレクトリが一つあった。実装 `72abd0098edb22cadb01fc12c73d76d49b0f26bf` を `main` に通常 push し、公開 ref と変更14ファイルの blob を照合した。
+
+Web の同期仮想ファイル処理は、成功値が宣言型に合うことを VM が確認する前にファイルを上書きできた。Core が受理済み receipt の型と呼出し元の束縛を照合し、読み取り結果を借用したまま型・資源上限を検査する。書き込みは成功値を検査してから反映する。`Result` 契約には標準の `Ok` を使う。回帰では成功型 `String` の書き込みを拒否して元の内容を保持し、後続の `Result<Unit, String>` の書き込みと `Result<Bytes, String>` の読み取りで更新内容を確認した。
+
+Runtime Driver は発行時に実際の実行プログラムを既存のタスク世代情報へ保持する。元 Source を持つ Need はその実行プログラムを、AwaitMany の受理済みテンプレート要求は発行した実行プログラムを使う。保存復元は受理済み launch から実行プログラムを取り戻す。AWBC の回帰では不一致の dispatch、復元前の古い公開位置および終端済み task を拒否した。同じコードを別インスタンスで読み込むコンテンツ置換も行い、タスクが元の実行プログラムを参照し続けることを確認した。保存形式は v1 の既存形状を使う。
+
+初回の Windows nextest は共用の借用 Variant の変更で既存の `RuntimeVariantIdentity` の import が不足し、テスト実行前にコンパイル終了101を返した。import を修正した最終 Source では `cargo nextest run --offline --locked -p arcweft-player-web -p arcweft-runtime-driver -p arcweft-core --lib --test awbc_product_session --no-fail-fast --no-tests fail --status-level fail` が4バイナリ、2,558件すべて成功、選択外0件、終了0。実行 ID は `68a3ca86-3dd9-46a2-bb01-30183b95d742`。`cargo check --offline --locked -p arcweft-player-web --target wasm32-unknown-unknown --lib` は終了0。
+
+Cargo の全機能・全ターゲットの逆依存グラフは Core を含む53パッケージ。そこから選んだ Runtime Host の `awbc_product_runner` と `bundle_runner`、Runtime Plan の `awbc_product_parity`、Compiler の `catalog_asset_execution` を `rdeps(=arcweft-core)` で実行し、26件すべて成功、選択外0件、終了0。実行 ID は `d2547ea8-f6d3-4be3-8ffa-21fb650bdcbe`。
+
+構造ゲートは98パッケージを走査し、ブロッキング違反0件、終了0。ブラウザ側の `host.rs` は1,134行から1,240行になり、うち902行はブラウザタスクの同じ境界を検査するテスト。VFS、許可判定、完了イベントの公開は引き続き Web Player 内の同期ブローカーが所有し、Core は借用した値の受理と正準の成功値を所有する。Runtime Driver は既存の世代保持を通じて実行プログラムを保持する。Cargo 依存の追加は0件。変更した Rust の書式と差分の空白検査も終了0。
+
+同じ Source で `cargo check --offline --locked --workspace --all-targets --all-features` と同範囲の Clippy は警告付きで終了0。検証後の `target` は197,789,491,094 bytes（約197.8 GB）。検証範囲は既存の Web ブローカーと AWBC セッション、および実際に選択した逆依存のテスト。全 adapter の動作および Native／Web の画像比較は別途検証する。
