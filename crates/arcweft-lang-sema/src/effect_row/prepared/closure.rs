@@ -14,7 +14,7 @@ mod component;
 pub(crate) use component::PreparedEffectActualInputs;
 use component::{
     ClosedEffectCoefficients, ClosedEffectWitnesses, CompiledComponent, ComponentCompletion,
-    FixedCells,
+    EffectCoefficients, FixedCells,
 };
 mod imports;
 use imports::ImportedRelations;
@@ -544,6 +544,38 @@ pub(crate) struct PrincipalEffectClosure {
     functions: BTreeMap<u64, EffectRow>,
     coefficients: ClosedEffectCoefficients,
     witnesses: ClosedEffectWitnesses,
+}
+
+/// A product with no symbolic roots, inference functions or inherited facts.
+pub(crate) struct ConstantEffectProduct(PrincipalEffectClosure);
+
+impl ConstantEffectProduct {
+    /// The read view has proved every original clause and the absence of
+    /// functions, choices and symbolic queries. Its unique tuple is empty.
+    pub(super) fn from_proved_definitions<C: DecisionControl>(
+        graph: PreparedEffectDefinitions,
+        work: &mut Work<'_, C>,
+    ) -> Result<Self, PreparedEffectFailure<C::Error>> {
+        let fixed = BTreeMap::new();
+        let layout = Layout::new(&graph, &fixed, FunctionInventory::All, work)?;
+        let (_, _, least) = Decision::constant(true)
+            .complete_conditionally(BTreeSet::new(), work)?
+            .into_parts();
+        let coefficients = EffectCoefficients::new(FixedCells::EMPTY, least).close(work)?;
+        work.charge(DecisionWork::Node)?;
+        work.charge(DecisionWork::Node)?;
+        Ok(Self(PrincipalEffectClosure {
+            graph: Arc::new(graph),
+            layout: Arc::new(layout),
+            functions: fixed,
+            coefficients,
+            witnesses: ClosedEffectWitnesses::unique(),
+        }))
+    }
+
+    pub(crate) fn into_principal(self) -> PrincipalEffectClosure {
+        self.0
+    }
 }
 
 pub(crate) enum PreparedEffectCompletion {

@@ -241,12 +241,11 @@ pub(super) fn compile_with_imports<C: DecisionControl>(
     work: &mut Work<'_, C>,
 ) -> Result<CompiledComponent, PreparedEffectFailure<C::Error>> {
     let compiled;
-    let program = match inventory {
-        FunctionInventory::Frozen(program) => program,
-        _ => {
-            compiled = EffectResidualProgram::with_inventory(graph, inventory, work)?;
-            &compiled
-        }
+    let program = if let FunctionInventory::Frozen(program) = inventory {
+        program
+    } else {
+        compiled = EffectResidualProgram::with_inventory(graph, inventory, work)?;
+        &compiled
     };
     let fixed = fixed.admit_finiteness(graph, program, work)?;
     let LoweredImports {

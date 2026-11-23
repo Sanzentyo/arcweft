@@ -25,6 +25,53 @@ pub(in crate::effect_row::prepared) enum SnapshotSource<'a> {
 }
 
 impl PreparedEffectReadView<'_> {
+    /// A product with no symbolic roots or published facts needs no conditional
+    /// program when each of its own implications is already a canonical truth.
+    pub(crate) fn close_constant_product<C: DecisionControl>(
+        self,
+        rows: &[&PreparedEffectRow],
+        predicates: &[&PreparedEffectPredicate],
+        constraints: &[&PreparedEffectScopedConstraint],
+        introduced: &[&PreparedEffectUnknownRef],
+        control: &mut C,
+    ) -> Result<Option<ConstantEffectProduct>, PreparedEffectFailure<C::Error>> {
+        if !rows.is_empty()
+            || !predicates.is_empty()
+            || !introduced.is_empty()
+            || !self.relation.obligations.is_empty()
+            || self
+                .scope
+                .is_some_and(|scope| scope.input.detached().is_some())
+            || self.extracted.is_some()
+            || self.dependencies.is_some()
+        {
+            return Ok(None);
+        }
+        let mut work = Work(control);
+        let mut obligations = Vec::new();
+        for constraint in constraints {
+            work.charge(DecisionWork::Visit)?;
+            self.validate_owner(&constraint.owner)?;
+            if constraint.obligation.constant_truth() != Some(true) {
+                return Ok(None);
+            }
+            work.charge(DecisionWork::Node)?;
+            obligations.push(Arc::clone(&constraint.obligation));
+        }
+        ConstantEffectProduct::from_proved_definitions(
+            PreparedEffectDefinitions {
+                issuer: Arc::clone(&self.relation.issuer),
+                choices: BTreeSet::new(),
+                functions: BTreeMap::new(),
+                obligations,
+                rows: BTreeMap::new(),
+                predicates: BTreeMap::new(),
+            },
+            &mut work,
+        )
+        .map(Some)
+    }
+
     /// Named declarations are inputs even when their bodies are already known.
     /// Keep original C and the declared inference unknowns. Named and imported
     /// functions enter the relation through the actual roots and constraints.

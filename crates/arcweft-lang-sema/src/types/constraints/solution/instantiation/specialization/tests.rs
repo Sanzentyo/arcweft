@@ -142,8 +142,9 @@ fn closing_a_residual_effect_enforces_the_retained_predicate_and_work_limits() {
             expected.instantiate_effect_row(&declaration_row).unwrap(),
             EffectSet::from_labels(labels.iter().copied()).unwrap()
         );
-        assert!(!recorder.nodes.is_empty());
-        for limit in 0..recorder.nodes.len() {
+        let visited = recorder.nodes.len();
+        assert!(visited > 0);
+        for limit in 0..visited {
             assert!(matches!(
                 prefix.close_residual_with_control(
                     &actual,

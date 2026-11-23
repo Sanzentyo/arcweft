@@ -5,7 +5,8 @@ use super::*;
 use crate::{
     effect_row::prepared::{
         PreparedEffectFailure, PreparedEffectGraph, PreparedEffectInvariant,
-        PreparedEffectReadView, PreparedEffectScopedConstraint, ScopedEffectCompletion,
+        PreparedEffectReadView, PreparedEffectScopedConstraint, PreparedEffectUnknownRef,
+        ScopedEffectCompletion,
     },
     types::{GenericEffectReference, TypeProjectionError, effect_domain::PreparedTypeEffectRoots},
 };
@@ -55,7 +56,6 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<ConstraintClosedEffects<D>>, TypeConstraintError> {
-        let original = self.prepare_original_path_effects(graph, context)?;
         let mut residual = BTreeSet::new();
         for request in self.lineage.projections.iter().filter(|request| {
             request.closure == TypeConstraintProjectionClosure::AllowFutureEligible
@@ -77,7 +77,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             }
         }
         let residual = residual.into_iter().collect::<Vec<_>>();
-        ConstraintClosedEffects::for_original_path(self, original, &residual, graph, context)
+        self.close_path_effects(&residual, graph, context)
     }
 
     #[cfg(test)]
@@ -89,8 +89,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Arc<ConstraintClosedEffects<D>>, TypeConstraintError> {
-        let original = self.prepare_original_path_effects(graph, context)?;
-        ConstraintClosedEffects::for_original_path(self, original, residual, graph, context)
+        self.close_path_effects(residual, graph, context)
     }
 
     pub(super) fn collect_original_effect_types<'a, A: TypeConstraintAccounting>(
@@ -131,11 +130,12 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         Ok(())
     }
 
-    pub(super) fn prepare_original_path_effects<A: TypeConstraintAccounting>(
+    fn close_path_effects<A: TypeConstraintAccounting>(
         &self,
+        residual: &[GenericEffectReference],
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<PreparedConstraintEffects, TypeConstraintError> {
+    ) -> Result<Arc<ConstraintClosedEffects<D>>, TypeConstraintError> {
         let constraints = self.prepare_effect_constraints(graph, context)?;
         let mut types = Vec::new();
         self.collect_original_effect_types(&mut types, context)?;
@@ -145,10 +145,32 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             context.enter_node()?;
             clauses.push(header);
         }
-        let original = self.freeze_original_effect_roots::<_, TypeConstraintError>(
-            &roots, &clauses, graph, context,
+        let introduced = self.original_effect_functions(context)?;
+        if residual.is_empty()
+            && let Some(proof) = graph.read().close_constant_product(
+                roots.rows(),
+                roots.predicates(),
+                &clauses,
+                &introduced,
+                context,
+            )?
+        {
+            return ConstraintClosedEffects::for_constant_path(
+                self,
+                proof,
+                constraints.primary,
+                context,
+            );
+        }
+        let frozen = graph.read().freeze_product(
+            roots.rows(),
+            roots.predicates(),
+            &clauses,
+            &introduced,
+            context,
         )?;
-        PreparedConstraintEffects::new(original, constraints.primary, context)
+        let original = PreparedConstraintEffects::new(frozen, constraints.primary, context)?;
+        ConstraintClosedEffects::for_original_path(self, original, residual, graph, context)
     }
 }
 
@@ -164,6 +186,20 @@ impl<D: ConstraintDomain, L> ConstraintInferenceBranch<D, L> {
         A: TypeConstraintAccounting,
         E: From<TypeConstraintError> + From<PreparedEffectFailure<TypeConstraintError>>,
     {
+        let introduced = self.original_effect_functions(context)?;
+        Ok(graph.read().freeze_product(
+            roots.rows(),
+            roots.predicates(),
+            constraints,
+            &introduced,
+            context,
+        )?)
+    }
+
+    fn original_effect_functions<A: TypeConstraintAccounting>(
+        &self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Vec<&PreparedEffectUnknownRef>, TypeConstraintError> {
         let mut introduced = Vec::new();
         for parameter in self.effects.ambient.original_variables() {
             context.enter_node()?;
@@ -177,12 +213,6 @@ impl<D: ConstraintDomain, L> ConstraintInferenceBranch<D, L> {
                 introduced.push(function);
             }
         }
-        Ok(graph.read().freeze_product(
-            roots.rows(),
-            roots.predicates(),
-            constraints,
-            &introduced,
-            context,
-        )?)
+        Ok(introduced)
     }
 }

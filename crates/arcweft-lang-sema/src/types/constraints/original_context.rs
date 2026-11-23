@@ -154,7 +154,6 @@ impl OriginalProducerContext {
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<EffectPredicate, TypeProjectionError<TypeConstraintError>> {
         let domain = self.0.source.domain();
-        crate::types::projection_control::visit_effect_predicate(context, &domain, 1)?;
         let source = self.0.domain_scope.as_deref().unwrap_or(self.gamma());
         target.transport_predicate(source, &domain, context)
     }

@@ -353,14 +353,7 @@ mod retained_preparation {
                     &mut graph,
                     path.lineage.effect_read_scope(),
                     |context, graph| {
-                        let original = path.prepare_original_path_effects(graph, context)?;
-                        let effects = ConstraintClosedEffects::for_original_path(
-                            path,
-                            original,
-                            &[],
-                            graph,
-                            context,
-                        )?;
+                        let effects = path.close_original_path_effects(graph, context)?;
                         let query = path.lineage.probe_trace[0]
                             .branch
                             .preparation()
@@ -647,12 +640,9 @@ fn an_unclosed_probe_preparation_cannot_issue_a_completed_source() {
     let (mut context, path) = context(&cancellation).into_path(&mut graph);
     let mut probe = source(&context, path.root_id(), TypeKind::I32);
     probe.branch = SourceProbeObservation::new(());
-    let original = path
-        .prepare_original_path_effects(&mut graph, &mut context)
+    let effects = path
+        .close_original_path_effects(&mut graph, &mut context)
         .unwrap();
-    let effects =
-        ConstraintClosedEffects::for_original_path(&path, original, &[], &mut graph, &mut context)
-            .unwrap();
     assert!(matches!(
         probe.close(&path, &mut effects.projection(), graph.read(), &mut context),
         Err(TypeConstraintError::Invariant(

@@ -11,9 +11,10 @@ use super::super::{
 };
 use super::*;
 use crate::effect_row::prepared::{
-    BoundScopedEffectCompletion, PreparedEffectActualInputs, PreparedEffectCompletion,
-    PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow, PreparedEffectRowProjection,
-    PreparedEffectScopedConstraint, PreparedEffectUnknownRef, ScopedEffectCompletion,
+    BoundScopedEffectCompletion, ConstantEffectProduct, PreparedEffectActualInputs,
+    PreparedEffectCompletion, PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow,
+    PreparedEffectRowProjection, PreparedEffectScopedConstraint, PreparedEffectUnknownRef,
+    ScopedEffectCompletion,
 };
 use crate::effect_row::{EffectConstraintEnvironment, EffectPredicate, EffectRow};
 use crate::types::{GenericEffectReference, PreparedEffects, TypeProjectionControl};
@@ -280,6 +281,28 @@ impl<D: ConstraintDomain, E: crate::types::TypeEffectDomain>
 }
 
 impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
+    pub(in crate::types::constraints) fn for_constant_path<A: TypeConstraintAccounting>(
+        path: &ConstraintPath<D>,
+        product: ConstantEffectProduct,
+        constraint: PreparedEffectScopedConstraint,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Arc<Self>, TypeConstraintError> {
+        let completion = product.into_principal();
+        let domain = completion.confirm_scoped_constraint(&constraint, context)?;
+        for _ in path.scope.shape().binders() {
+            context.enter_node()?;
+        }
+        Self::seal_product(
+            path,
+            Arc::new(path.scope.clone()),
+            ConstraintEffectCompletionOrigin::Source(path.lineage.original.clone()),
+            constraint,
+            (PreparedEffectCompletion::Closed(completion), domain),
+            [],
+            context,
+        )
+    }
+
     pub(in crate::types::constraints) fn for_original_path<A: TypeConstraintAccounting>(
         path: &ConstraintPath<D>,
         original: PreparedConstraintEffects,
@@ -436,30 +459,55 @@ impl<D: ConstraintDomain> ConstraintClosedEffects<D> {
                     (PreparedEffectCompletion::Residual(residual), domain)
                 }
             };
-            let owner = Arc::new(ConstraintEffectCompletionContext {
-                constraints: branch.effects.clone(),
-                applications: Arc::clone(&branch.applications),
+            Self::seal_product(
+                branch,
                 scope,
                 origin,
-                domain: Arc::new(domain),
-                completion: Arc::new(completion),
-                source_constraint: source_constraint.clone(),
-            });
-            let predicate =
-                owner.seal(Arc::clone(&owner.domain), owner.domain.variables(), context)?;
-            let mut rows = BTreeMap::new();
-            for (key, function, query) in queries {
-                let row = Arc::new(owner.completion.terms().resolve_row(&query, context)?);
-                let value = owner.seal(Arc::clone(&row), row.variables()?, context)?;
-                context.enter_node()?;
-                rows.insert(key, ConstraintEffectBinding { function, value });
-            }
-            Ok(Arc::new(Self {
-                substitution: rows,
-                predicate,
-                context: owner,
-            }))
+                source_constraint.clone(),
+                (completion, domain),
+                queries,
+                context,
+            )
         })
+    }
+
+    fn seal_product<A: TypeConstraintAccounting, L>(
+        branch: &ConstraintInferenceBranch<D, L>,
+        scope: Arc<ConstraintLexicalScope>,
+        origin: ConstraintEffectCompletionOrigin,
+        source_constraint: PreparedEffectScopedConstraint,
+        (completion, domain): (PreparedEffectCompletion, EffectPredicate),
+        queries: impl IntoIterator<
+            Item = (
+                GenericEffectReference,
+                PreparedEffectUnknownRef,
+                PreparedEffectRow,
+            ),
+        >,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Arc<Self>, TypeConstraintError> {
+        let owner = Arc::new(ConstraintEffectCompletionContext {
+            constraints: branch.effects.clone(),
+            applications: Arc::clone(&branch.applications),
+            scope,
+            origin,
+            domain: Arc::new(domain),
+            completion: Arc::new(completion),
+            source_constraint,
+        });
+        let predicate = owner.seal(Arc::clone(&owner.domain), owner.domain.variables(), context)?;
+        let mut rows = BTreeMap::new();
+        for (key, function, query) in queries {
+            let row = Arc::new(owner.completion.terms().resolve_row(&query, context)?);
+            let value = owner.seal(Arc::clone(&row), row.variables()?, context)?;
+            context.enter_node()?;
+            rows.insert(key, ConstraintEffectBinding { function, value });
+        }
+        Ok(Arc::new(Self {
+            substitution: rows,
+            predicate,
+            context: owner,
+        }))
     }
 
     pub(in crate::types::constraints) fn require_branch<L>(

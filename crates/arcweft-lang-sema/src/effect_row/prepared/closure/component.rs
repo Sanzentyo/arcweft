@@ -273,7 +273,7 @@ pub(super) struct EffectCoefficients {
 }
 
 impl EffectCoefficients {
-    fn new(fixed: FixedCells, least: DecisionLowerEnvelope<Atom>) -> Self {
+    pub(super) fn new(fixed: FixedCells, least: DecisionLowerEnvelope<Atom>) -> Self {
         Self {
             fixed,
             least,

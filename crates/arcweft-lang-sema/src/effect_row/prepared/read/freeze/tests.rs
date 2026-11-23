@@ -6,6 +6,58 @@ fn truth() -> PreparedEffectPredicate {
     PreparedEffectPredicate::Canonical(EffectPredicate::unconstrained())
 }
 
+#[test]
+fn constant_completion_keeps_the_receipt_and_respects_live_obligations() {
+    let mut graph = PreparedEffectGraph::default();
+    let mut work = budget();
+    let fact = graph
+        .read()
+        .scoped_constraint(&[], &truth(), &truth(), &mut work)
+        .unwrap();
+    let proof = graph
+        .read()
+        .close_constant_product(&[], &[], &[&fact], &[], &mut work)
+        .unwrap()
+        .expect("constant implication");
+    assert!(
+        proof
+            .into_principal()
+            .confirm_scoped_constraint(&fact, &mut Budget(1))
+            .unwrap()
+            .is_unconstrained()
+    );
+    assert!(matches!(
+        graph
+            .read()
+            .close_constant_product(&[], &[], &[&fact], &[], &mut Budget(0)),
+        Err(PreparedEffectFailure::Control(Exhausted))
+    ));
+    let foreign = PreparedEffectGraph::default();
+    assert!(matches!(
+        foreign
+            .read()
+            .close_constant_product(&[], &[], &[&fact], &[], &mut work),
+        Err(PreparedEffectFailure::Invariant(
+            PreparedEffectInvariant::ForeignIssuer
+        ))
+    ));
+    graph
+        .add_scoped_obligation(
+            vec![],
+            truth(),
+            PreparedEffectPredicate::Canonical(EffectPredicate::impossible()),
+            &mut work,
+        )
+        .unwrap();
+    assert!(
+        graph
+            .read()
+            .close_constant_product(&[], &[], &[&fact], &[], &mut work)
+            .unwrap()
+            .is_none()
+    );
+}
+
 fn constrained_named_value(
     graph: &mut PreparedEffectGraph,
     pure: bool,
@@ -403,11 +455,13 @@ fn freezing_an_extracted_relation_retains_all_constraints_without_publishing_its
     let (named, output, row) = constrained_named_value(&mut graph, true);
     let delta = graph.extract_delta(&mut checkpoint, &mut budget()).unwrap();
     let state = graph.state;
-    let frozen = graph
-        .read_extracted(&delta, &mut budget())
-        .unwrap()
-        .freeze_scoped(&[], &[], &[], &mut budget())
-        .unwrap();
+    let read = graph.read_extracted(&delta, &mut budget()).unwrap();
+    assert!(
+        read.close_constant_product(&[], &[], &[], &[], &mut budget())
+            .unwrap()
+            .is_none()
+    );
+    let frozen = read.freeze_scoped(&[], &[], &[], &mut budget()).unwrap();
     assert_eq!(frozen.graph.obligations.len(), 2);
     assert_eq!(graph.state, state);
     assert_eq!(graph.retained_terms(), (0, 0));

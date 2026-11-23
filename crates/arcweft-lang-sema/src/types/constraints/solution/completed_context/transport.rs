@@ -237,6 +237,14 @@ impl CompletedGenericContext {
         application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<CompletedValue<EffectPredicate>, TypeConstraintError> {
+        // The canonical true predicate has no label or reference to project.
+        if predicate.value().is_unconstrained() {
+            context.visit_node(TypeProjectionNodeKind::Effect, 1)?;
+            return Ok(CompletedValue {
+                value: EffectPredicate::unconstrained(),
+                captures: RetainedRigidGenericScope::default(),
+            });
+        }
         context.with_original_scope(predicate.scope().clone(), |context| {
             for reference in predicate.value().variables() {
                 context.enter_node()?;
