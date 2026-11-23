@@ -149,7 +149,8 @@ fn try_run_runtime_steps_with_executor(
         .source
         .map(|source| build_native_task_bridge_with_assets(source, host_config, assets.clone()))
         .transpose()?;
-    let mut next_step_index = session.restore(executor, host.as_mut(), assets)?;
+    let asset_context = host_config.bundle_assets.map(|assets| assets.context);
+    let mut next_step_index = session.restore(executor, host.as_mut(), asset_context, assets)?;
     let mut task_events = Vec::new();
     let mut host_call_results = Vec::new();
     let mut summaries = Vec::new();
@@ -200,7 +201,7 @@ fn try_run_runtime_steps_with_executor(
                 executor.source_executor().generation(),
                 epoch,
                 task_requests,
-                host_config.bundle_assets.map(|assets| assets.context),
+                asset_context,
             )?;
             task_events.extend(host.complete_program_tasks(&mut program_completions)?);
             host_call_results =
@@ -213,6 +214,7 @@ fn try_run_runtime_steps_with_executor(
     session.capture(
         executor,
         host.as_ref(),
+        asset_context,
         next_step_index,
         &task_events,
         &host_call_results,
@@ -277,6 +279,8 @@ pub(in crate::app) enum RuntimeStepRunError {
     Session(#[from] arcweft_runtime_host::native_session::NativeSourceSessionSaveError),
     #[error("source session files require a native host bridge")]
     SessionHostRequired,
+    #[error("source session files require a source bundle asset catalog")]
+    SessionAssetCatalogRequired,
     #[error("source session file {} could not be accessed: {source}", .path.display())]
     SessionFile {
         path: std::path::PathBuf,

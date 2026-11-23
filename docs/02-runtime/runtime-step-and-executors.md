@@ -79,10 +79,12 @@ saved epoch, dispatch sequence, and next publication revision.
 For a foreground Source run, `arcw run --runner headless` accepts
 `--session-save-out` and `--session-load` with the Native `bytecode-vm` or
 `aot` executor. The v1 AWFS payload stores the Native executor, the host
-dispatch journal, and the next logical step index. Saving requires the driver
-to have delivered buffered task events and direct host-call results. Load
-checks retained values against the installed bundle asset catalog during the
-executor's value admission pass. The host dispatch journal and executor are
+dispatch journal, the next logical step index, and the generation's complete
+bundle asset context. Saving requires the driver to have delivered buffered
+task events and direct host-call results. Load checks the original bundle
+artifact before restoring either owner. It checks retained values against the
+installed bundle asset catalog during the executor's value admission pass.
+The host dispatch journal and executor are
 installed together after their checks succeed. The CLI writes the complete
 envelope to a temporary file in the destination directory before publishing
 it at the requested path. Loading with `--steps 0` reports the restored fiber

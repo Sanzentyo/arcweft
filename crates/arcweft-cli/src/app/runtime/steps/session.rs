@@ -1,4 +1,5 @@
 use super::{RuntimeExecutorInstance, RuntimeStepRunError};
+use arcweft_core::value::RuntimeBundleAssetContext;
 use arcweft_runtime_host::native_session::NativeSourceSessionSave;
 use arcweft_runtime_host::{BundleAssetAdapter, NativeTaskBridge};
 use std::fs::File;
@@ -16,28 +17,32 @@ impl NativeSessionFiles<'_> {
         self,
         executor: &mut RuntimeExecutorInstance,
         host: Option<&mut NativeTaskBridge>,
+        asset_context: Option<RuntimeBundleAssetContext>,
         assets: Option<BundleAssetAdapter>,
     ) -> Result<u64, RuntimeStepRunError> {
         let Some(path) = self.load else {
             return Ok(0);
         };
         let host = host.ok_or(RuntimeStepRunError::SessionHostRequired)?;
+        let asset_context =
+            asset_context.ok_or(RuntimeStepRunError::SessionAssetCatalogRequired)?;
+        let assets = assets
+            .ok_or(RuntimeStepRunError::SessionAssetCatalogRequired)?
+            .resolver();
         let bytes = read_save(path)?;
         let saved = NativeSourceSessionSave::decode(&bytes)?;
-        let assets = assets.map(|adapter| adapter.resolver());
         saved
-            .restore(executor.source_executor_mut(), host, move |value| {
-                if let Some(assets) = &assets {
+            .restore(
+                executor.source_executor_mut(),
+                host,
+                asset_context,
+                move |value| {
                     assets
                         .validate_owned_value(value)
                         .map(|_| ())
                         .map_err(|error| error.to_string())
-                } else if arcweft_core::value::runtime_bundle_asset_opaque_role(value).is_some() {
-                    Err("saved asset value requires the original bundle asset catalog".into())
-                } else {
-                    Ok(())
-                }
-            })
+                },
+            )
             .map_err(Into::into)
     }
 
@@ -45,6 +50,7 @@ impl NativeSessionFiles<'_> {
         self,
         executor: &RuntimeExecutorInstance,
         host: Option<&NativeTaskBridge>,
+        asset_context: Option<RuntimeBundleAssetContext>,
         next_step_index: u64,
         task_events: &[arcweft_core::task::TaskEvent],
         host_results: &[arcweft_core::step::RuntimeHostCallResult],
@@ -53,9 +59,12 @@ impl NativeSessionFiles<'_> {
             return Ok(());
         };
         let host = host.ok_or(RuntimeStepRunError::SessionHostRequired)?;
+        let asset_context =
+            asset_context.ok_or(RuntimeStepRunError::SessionAssetCatalogRequired)?;
         let save = NativeSourceSessionSave::capture(
             executor.source_executor(),
             host,
+            asset_context,
             next_step_index,
             task_events,
             host_results,

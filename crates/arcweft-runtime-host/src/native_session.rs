@@ -7,7 +7,7 @@ use arcweft_core::engine::NativeEngineSaveSnapshot;
 use arcweft_core::executor::{
     ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, ArcweftRuntimeExecutorSnapshotError,
 };
-use arcweft_core::value::RuntimeBorrowedValue;
+use arcweft_core::value::{RuntimeBorrowedValue, RuntimeBundleAssetContext};
 use arcweft_save::{SaveDecodeOptions, SaveEnvelopeLimits, SaveSchemaId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -18,6 +18,7 @@ const VERSION: u32 = 1;
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeSourceSessionSave {
+    asset_context: RuntimeBundleAssetContext,
     next_step_index: u64,
     executor: Box<NativeEngineSaveSnapshot>,
     dispatches: NativeTaskBridgeSaveSnapshot,
@@ -27,6 +28,10 @@ pub struct NativeSourceSessionSave {
 pub enum NativeSourceSessionSaveError {
     #[error("source session save requires a Native executor, received {tier}")]
     ExecutorTier { tier: &'static str },
+    #[error(
+        "source session bundle asset context does not match the selected generation and artifact"
+    )]
+    BundleAssetContext,
     #[error(
         "source session has {tasks} task events and {calls} host results to deliver before saving"
     )]
@@ -45,6 +50,7 @@ impl NativeSourceSessionSave {
     pub fn capture(
         executor: &ArcweftRuntimeExecutor,
         host: &NativeTaskBridge,
+        asset_context: RuntimeBundleAssetContext,
         next_step_index: u64,
         task_events: &[arcweft_core::task::TaskEvent],
         host_results: &[arcweft_core::step::RuntimeHostCallResult],
@@ -55,12 +61,16 @@ impl NativeSourceSessionSave {
                 calls: host_results.len(),
             });
         }
+        if asset_context.generation() != executor.generation() {
+            return Err(NativeSourceSessionSaveError::BundleAssetContext);
+        }
         let ArcweftRuntimeExecutorSnapshot::Native(snapshot) = executor.snapshot()? else {
             return Err(NativeSourceSessionSaveError::ExecutorTier {
                 tier: executor.tier().as_str(),
             });
         };
         let save = Self {
+            asset_context,
             next_step_index,
             dispatches: host.snapshot_dispatch_journal(&executor.restartable_dispatches())?,
             executor: snapshot,
@@ -97,11 +107,17 @@ impl NativeSourceSessionSave {
         self,
         executor: &mut ArcweftRuntimeExecutor,
         host: &mut NativeTaskBridge,
+        asset_context: RuntimeBundleAssetContext,
         validate_value: impl for<'a> Fn(RuntimeBorrowedValue<'a>) -> Result<(), String>
         + Send
         + Sync
         + 'static,
     ) -> Result<u64, NativeSourceSessionSaveError> {
+        if self.asset_context != asset_context
+            || asset_context.generation() != executor.generation()
+        {
+            return Err(NativeSourceSessionSaveError::BundleAssetContext);
+        }
         self.validate_epoch()?;
         executor.restore_native_session(*self.executor, validate_value, |launches| {
             host.restore_dispatch_journal(self.dispatches, launches)

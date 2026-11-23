@@ -127,6 +127,87 @@ fn headless_native_session_preserves_restart_point_and_rejects_a_different_entry
 }
 
 #[test]
+fn headless_native_session_requires_the_original_asset_before_dispatch() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("asset-checkpoint.arcw");
+    let saved = directory.path().join("before-asset.awfs");
+    let assets = directory.path().join("assets/bg");
+    std::fs::create_dir_all(&assets).unwrap();
+    let image = assets.join("room.png");
+    let original_image = single_pixel_png([255, 0, 0, 255]);
+    std::fs::write(&image, &original_image).unwrap();
+    std::fs::write(
+        &source,
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String effects { asset.read } {
+    let background = @asset:.bg.room
+    return match (await asset.image(background)) {
+        .Ok(_) => "asset_ready"
+        .Err(_) => "asset_error"
+    }
+}
+"#,
+    )
+    .unwrap();
+    let save = saved.to_str().unwrap();
+    let capture = run_headless_entry(
+        &source,
+        "entry.main",
+        &["--steps", "1", "--session-save-out", save],
+    );
+    assert!(capture.status.success(), "{capture:?}");
+    let original_save = std::fs::read(&saved).unwrap();
+
+    std::fs::write(&image, single_pixel_png([0, 0, 255, 255])).unwrap();
+    let changed = run_headless_entry(
+        &source,
+        "entry.main",
+        &["--session-load", save, "--session-save-out", save],
+    );
+    assert!(!changed.status.success(), "{changed:?}");
+    assert!(
+        String::from_utf8_lossy(&changed.stderr).contains("source session bundle asset context")
+    );
+    assert_eq!(std::fs::read(&saved).unwrap(), original_save);
+
+    std::fs::write(&image, original_image).unwrap();
+    let resumed = run_headless_entry(
+        &source,
+        "entry.main",
+        &[
+            "--executor",
+            "aot",
+            "--json",
+            "--steps",
+            "8",
+            "--mode",
+            "drain",
+            "--max-ops",
+            "64",
+            "--session-load",
+            save,
+        ],
+    );
+    assert!(resumed.status.success(), "{resumed:?}");
+    let report: serde_json::Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    assert_eq!(report["steps"][0]["index"], 1);
+    assert_eq!(report["final_status"], "done Return(\"asset_ready\")");
+    assert_eq!(report["native_io"]["completed_tasks"], 1);
+}
+
+fn single_pixel_png(pixel: [u8; 4]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_image_data(&pixel).unwrap();
+    writer.finish().unwrap();
+    bytes
+}
+
+#[test]
 fn session_io_rejects_watch_mode() {
     let fixture = fixture();
     for (option, path) in session_options() {
