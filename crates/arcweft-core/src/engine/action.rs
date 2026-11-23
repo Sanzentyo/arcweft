@@ -10,14 +10,16 @@ use crate::task::RuntimeProgramOwner;
 use crate::value::{RuntimePayload, RuntimeRetainedValueAdmission};
 
 /// A parked original receive operation owns no message or reconstructed code.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeActionReceiveState {
     pub(super) source: NativeSourceOperation,
     pub(super) payload: crate::pattern::RuntimeSemanticTypeId,
 }
 
 /// Native custody or an observation of a Product-owned suspended instruction.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub enum ActionWaitingStatus {
     Native(NativeActionReceiveState),
     Observed {

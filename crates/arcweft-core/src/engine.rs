@@ -17,8 +17,8 @@ use crate::root::{
 use crate::runtime_id::{DialogueActivationId, RuntimePersistentFiberId};
 use crate::runtime_id::{RuntimeFormatAttemptId, RuntimePlanTypeId};
 use crate::step::{
-    RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeStepInput,
-    RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats,
+    RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeStepInput, RuntimeStepMode,
+    RuntimeStepOptions, RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats,
     RuntimeStepStopReason,
 };
 use crate::stream::{
@@ -61,6 +61,8 @@ mod fanout;
 mod frame_progress;
 mod function_scope;
 pub use fanout::ProgramFanoutState;
+mod host_call;
+pub use host_call::HostCallState;
 mod numeric_map;
 mod presentation;
 #[cfg(test)]
@@ -1697,7 +1699,7 @@ pub enum EngineStartError {
 }
 
 /// Execution phase of the sole dialogue activation owner.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum DialogueRuntimePhase {
     Activating,
     Ready,
@@ -1706,7 +1708,8 @@ pub enum DialogueRuntimePhase {
 }
 
 /// Published projection of a suspended dialogue activation.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DialogueExecutionStatus {
     activation: DialogueActivationId,
     phase: DialogueRuntimePhase,
@@ -1740,16 +1743,18 @@ impl DialogueExecutionStatus {
 }
 
 /// High-level flow status for the minimal runtime spine.
-#[derive(Debug, PartialEq)]
-pub enum FlowFiberStatus<A = AwaitState, M = WaitingManyStatus> {
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub enum FlowFiberStatus<A = AwaitState, M = WaitingManyStatus, H = HostCallState, C = ChoiceState>
+{
     Running,
     ActionWaiting(ActionWaitingStatus),
     DurationWaiting(crate::time::LogicalWait),
     Dialogue(DialogueExecutionStatus),
     NeedWaiting(Box<A>),
     WaitingMany(M),
-    HostCall(HostCallState),
-    Choice(ChoiceState),
+    HostCall(H),
+    Choice(C),
     Done(FlowExit),
     Failed(String),
 }
@@ -1757,6 +1762,8 @@ pub enum FlowFiberStatus<A = AwaitState, M = WaitingManyStatus> {
 type FlowFiberStatusRollbackImage = FlowFiberStatus<
     AwaitStateRollbackImage,
     WaitingManyStatus<AwaitManyStateRollbackImage, fanout::ProgramFanoutRollbackImage>,
+    host_call::NativeHostCallContinuation,
+    choice::NativeChoiceContinuation,
 >;
 
 impl Clone for WaitingManyStatus<AwaitManyStateRollbackImage, fanout::ProgramFanoutRollbackImage> {
@@ -1818,8 +1825,18 @@ impl FlowFiberStatus {
                     state.snapshot_with_admitted_values(owner)?,
                 )))
             }
-            Self::HostCall(state) => FlowFiberStatusRollbackImage::HostCall(state.clone()),
-            Self::Choice(state) => FlowFiberStatusRollbackImage::Choice(state.clone()),
+            Self::HostCall(state) => FlowFiberStatusRollbackImage::HostCall(
+                state
+                    .continuation()
+                    .cloned()
+                    .ok_or("observed HostCall has no Native continuation")?,
+            ),
+            Self::Choice(state) => FlowFiberStatusRollbackImage::Choice(
+                state
+                    .continuation()
+                    .cloned()
+                    .ok_or("observed Choice has no Native continuation")?,
+            ),
             Self::Done(exit) => FlowFiberStatusRollbackImage::Done(exit.clone()),
             Self::Failed(message) => FlowFiberStatusRollbackImage::Failed(message.clone()),
         })
@@ -1850,8 +1867,12 @@ impl FlowFiberStatus {
                     ProgramFanoutState::from_image_with_admitted_values(*state, owner)?,
                 )))
             }
-            FlowFiberStatusRollbackImage::HostCall(state) => Self::HostCall(state),
-            FlowFiberStatusRollbackImage::Choice(state) => Self::Choice(state),
+            FlowFiberStatusRollbackImage::HostCall(state) => {
+                Self::HostCall(state.into_admitted_live(owner)?)
+            }
+            FlowFiberStatusRollbackImage::Choice(state) => {
+                Self::Choice(state.into_admitted_live(owner)?)
+            }
             FlowFiberStatusRollbackImage::Done(exit) => Self::Done(exit),
             FlowFiberStatusRollbackImage::Failed(message) => Self::Failed(message),
         })
@@ -2275,32 +2296,8 @@ impl WaitingManyStatus {
     }
 }
 
-/// Suspended direct host call awaiting a typed host result.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum HostCallResultType {
-    Plan(RuntimePlanTypeId),
-    Awbc(AwbcTypeId),
-    Unit,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct HostCallState {
-    pub binding: Option<RuntimePattern>,
-    pub id: RuntimeHostCallId,
-    pub result_type: HostCallResultType,
-}
-
-impl HostCallState {
-    fn result_index(&self, input: &RuntimeStepInput) -> Option<usize> {
-        input
-            .host_call_results
-            .iter()
-            .position(|result| result.id == self.id)
-    }
-}
-
 /// Terminal flow result observed by the minimal runtime.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum FlowExit {
     Done,
     Return(String),
@@ -6618,7 +6615,12 @@ mod dialogue_readiness_tests {
                 ..RuntimeStepOptions::default()
             };
             let issued = engine.step(RuntimeStepInput::default(), drain);
-            assert_eq!(issued.output.requests.host_calls.len(), 2);
+            assert_eq!(
+                issued.output.requests.host_calls.len(),
+                2,
+                "{:?}",
+                issued.output.diagnostics
+            );
             let resumed = engine.step(
                 RuntimeStepInput {
                     host_call_results: issued

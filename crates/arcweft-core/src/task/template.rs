@@ -2,6 +2,7 @@
 //! value visitor before the sole producer-instance issuer constructs a spec.
 
 use super::*;
+use crate::entry::RuntimeValueDigest;
 use crate::value::{RuntimeTupleView, RuntimeValueView};
 
 /// Static call producer seal emitted from the accepted semantic expression.
@@ -45,19 +46,9 @@ impl HostCallProducerDefinition {
             crate::entry::RuntimeSchemaLimits::engine_default().platform_encoded_bytes(),
         )
         .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)?;
-        let producer = NeedProducerSpec::new(
-            NeedProducerFamily::HostAdapterTask,
-            self.contract,
-            self.plan,
-            self.site,
-            crate::task::TaskHandleType::Need {
-                payload: RuntimeTypeSemanticDigest::from_bytes(*result.as_bytes()),
-            },
-            arguments,
-        );
         Ok(TaskSpec {
             generation,
-            producer: NeedProducerInstance::try_from(&producer)?,
+            producer: self.producer_for(result, arguments)?,
             class: request.task_class(),
             priority: TaskPriority(0),
             cancel_scope: CancelScopeId("runtime-host-call".to_owned()),
@@ -66,6 +57,23 @@ impl HostCallProducerDefinition {
             debug_label: request.host_call_id(),
             request: request.into(),
         })
+    }
+
+    pub(crate) fn producer_for(
+        self,
+        result: crate::pattern::RuntimeSemanticTypeId,
+        arguments: RuntimeValueDigest,
+    ) -> Result<NeedProducerInstance, NeedProducerAdmissionError> {
+        Ok(NeedProducerInstance::try_from(&NeedProducerSpec::new(
+            NeedProducerFamily::HostAdapterTask,
+            self.contract,
+            self.plan,
+            self.site,
+            TaskHandleType::Need {
+                payload: RuntimeTypeSemanticDigest::from_bytes(*result.as_bytes()),
+            },
+            arguments,
+        ))?)
     }
 }
 

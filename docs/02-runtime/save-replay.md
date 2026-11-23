@@ -487,6 +487,12 @@ Program fanout の待機状態は未移動の項目、実行中の worker と完
 復元は基底タスクを担当 fiber の発行記録と、実行中の worker を元のタスク台帳と照合する。
 この計上は pending operation／control／Await 全体や session の総予算を代替しない。
 
+Native Choice の継続は元の命令位置と、選択済みなら option の番号を保持する。
+復元時に番号を元の選択肢と照合し、再開時もその命令から表示項目、効果、遷移先を得る。
+直接 HostCall の継続は元の命令位置、発行時の連番とタスク相関を保持する。
+復元時に連番の範囲と重複を確認し、発行台帳のタスクを元の producer と結果型に照合する。
+返答 ID は元の公開 ID と連番から導き、元命令の結果型で返答を検査してから元のパターンに束縛する。
+
 所有する保存欄は affine 値を inert のまま保持できる。資源・型・元 storage の検査は
 Copy 用の入口と共有し、Copy を要求する入口には unrestricted 条件を残す。
 Need descriptor の検証済み入力は、TaskSpec が所有する outcome／payload の規則を

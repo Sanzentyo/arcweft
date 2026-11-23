@@ -537,17 +537,7 @@ impl AwbcProductStepExecutor {
             || RuntimeHostCallId(public_id.clone()),
             |pending| pending.id.clone(),
         );
-        FlowFiberStatus::HostCall(HostCallState {
-            binding: None,
-            id,
-            result_type: record
-                .and_then(|record| self.program.signatures.get(record.signature.index()))
-                .and_then(|signature| signature.result)
-                .map_or(
-                    crate::engine::HostCallResultType::Unit,
-                    crate::engine::HostCallResultType::Awbc,
-                ),
-        })
+        FlowFiberStatus::HostCall(HostCallState::observed(id))
     }
 
     pub(super) fn choice_runtime_option(

@@ -744,7 +744,12 @@ impl Engine {
             FlowOp::AwaitMany { .. } => {
                 self.start_await_many_state(source_site, next_op_index, output, pure_backend);
             }
-            FlowOp::HostCall { binding, target } => {
+            FlowOp::HostCall { target, .. } => {
+                let sequence = self.next_host_call_sequence;
+                if sequence == u64::MAX {
+                    self.fail_eval("host-call sequence is exhausted", output);
+                    return;
+                }
                 let arguments = match self.evaluate_host_call_arguments(&target.args, pure_backend)
                 {
                     Ok(arguments) => arguments,
@@ -769,7 +774,8 @@ impl Engine {
                     output.diagnostics.push(RuntimeDiagnostic::new(error));
                     return;
                 };
-                let id = self.next_host_call_id(&target.public_id);
+                let id = self.preview_host_call_id(&target.public_id);
+                self.advance_host_call_sequence();
                 let request = crate::task::HostTaskRequest::Custom {
                     capability: crate::task::HostCapabilityId(target.capability.clone()),
                     operation: target.operation.clone(),
@@ -795,13 +801,15 @@ impl Engine {
                         return;
                     }
                 };
+                let continuation = super::host_call::NativeHostCallContinuation {
+                    operation: source_site,
+                    sequence,
+                    correlation: request.submission().handle().correlation,
+                };
                 output.requests.host_calls.push(request);
                 self.advance_if_needed(next_op_index);
-                self.fiber.frame.status = FlowFiberStatus::HostCall(HostCallState {
-                    binding: binding.clone(),
-                    id,
-                    result_type: super::HostCallResultType::Plan(target.result),
-                });
+                self.fiber.frame.status =
+                    FlowFiberStatus::HostCall(HostCallState::native(id, continuation));
             }
             FlowOp::ProjectCall { site } => {
                 self.start_project_call(*site, source_site, next_op_index, output, pure_backend);
@@ -1525,19 +1533,11 @@ impl Engine {
         }
     }
 
-    pub(super) fn next_host_call_id(&mut self, public_id: &str) -> RuntimeHostCallId {
-        let id = self.preview_host_call_id(public_id);
-        self.advance_host_call_sequence();
-        id
-    }
-
     pub(super) fn preview_host_call_id(&self, public_id: &str) -> RuntimeHostCallId {
-        let sequence = self.next_host_call_sequence;
-        RuntimeHostCallId(if sequence == 0 {
-            public_id.to_owned()
-        } else {
-            format!("{public_id}.{sequence}")
-        })
+        super::host_call::NativeHostCallContinuation::render_id(
+            public_id,
+            self.next_host_call_sequence,
+        )
     }
 
     pub(super) fn advance_host_call_sequence(&mut self) {

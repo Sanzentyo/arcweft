@@ -381,6 +381,9 @@ impl DialogueActivationStoreRollbackImage {
         execution_for_parent: impl Fn(
             super::super::FlowFiberId,
         ) -> Option<crate::runtime_id::ExecutionInstanceId>,
+        mut admit_waits: impl FnMut(
+            &super::super::NativeFlowExecutionFrameRollbackImage,
+        ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
         use crate::plan::{FlowOp, RuntimeLineOperation};
         use crate::task::RuntimeProgramOwner;
@@ -462,7 +465,10 @@ impl DialogueActivationStoreRollbackImage {
                 .admit_frame_roots(
                     admission,
                     active.frame.execution.env.function_instantiation(),
-                    |frame, admission| frame.admit_owned_values(admission),
+                    |frame, admission| {
+                        frame.admit_owned_values(admission)?;
+                        admit_waits(frame)
+                    },
                 )
                 .map_err(Into::into)
         })

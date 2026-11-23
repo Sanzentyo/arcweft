@@ -906,21 +906,24 @@ impl Engine {
             self.fiber.frame.status = FlowFiberStatus::HostCall(state);
             return;
         };
+        let plan = Arc::clone(&self.plan);
+        let Some((binding, target)) = state
+            .continuation()
+            .and_then(|state| state.declaration(&plan))
+        else {
+            let message = super::host_call::invalid_host_call().to_string();
+            self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
+            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                RuntimeDiagnosticCategory::Host,
+                message,
+            ));
+            return;
+        };
         let result = input.host_call_results.remove(index);
         match result.outcome {
             Ok(value) => {
-                let super::HostCallResultType::Plan(ty) = state.result_type else {
-                    self.fiber.frame.status = FlowFiberStatus::Failed(
-                        "host-call result has no selected plan type".to_owned(),
-                    );
-                    output.diagnostics.push(RuntimeDiagnostic::categorized(
-                        RuntimeDiagnosticCategory::Host,
-                        "host-call result has no selected plan type".to_owned(),
-                    ));
-                    return;
-                };
-                if let Err(error) = self.plan.validate_live_value(
-                    ty,
+                if let Err(error) = plan.validate_live_value(
+                    target.result,
                     value.value(),
                     crate::entry::RuntimeSchemaLimits::engine_default(),
                 ) {
@@ -931,7 +934,7 @@ impl Engine {
                     ));
                     return;
                 }
-                if let Some(binding) = &state.binding {
+                if let Some(binding) = binding {
                     match self.try_bind_pattern_owned(binding, value.into_value()) {
                         Ok(None) => {}
                         Ok(Some(_value)) => {
@@ -2195,51 +2198,4 @@ fn input_choice_selection(input: &RuntimeStepInput) -> Option<(Option<&str>, &st
                 .map(|choice| (Some(choice), selection)),
         }
     })
-}
-
-#[cfg(test)]
-mod host_result_tests {
-    use super::*;
-    use crate::engine::{FlowFiberStatus, HostCallResultType};
-    use crate::pattern::RuntimeCheckedType;
-    use crate::plan::{RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed};
-    use crate::step::{RuntimeHostCallId, RuntimeHostCallResult};
-
-    #[test]
-    fn native_raw_host_result_is_validated_before_unbound_resume() {
-        let semantic = RuntimeCheckedType::String.semantic_identity_digest();
-        let mut builder = RuntimePlanBuilder::new();
-        let admission = builder
-            .admit_type_batch(
-                [RuntimePlanTypeSeed::new(
-                    semantic,
-                    RuntimePlanTypeProjection::String,
-                )],
-                [],
-            )
-            .expect("string result type is admitted");
-        let mut engine = Engine::new(builder.finish().expect("valid plan"));
-        let state = HostCallState {
-            binding: None,
-            id: RuntimeHostCallId("host.probe".to_owned()),
-            result_type: HostCallResultType::Plan(admission.type_ids()[0]),
-        };
-        let mut input = RuntimeStepInput {
-            host_call_results: vec![RuntimeHostCallResult {
-                id: state.id.clone(),
-                outcome: Ok(RuntimePayload(RuntimeValue::Bool(true))),
-            }],
-            ..RuntimeStepInput::default()
-        };
-        let mut output = RuntimeStepOutput::default();
-
-        engine.resume_host_call_state(state, &mut input, &mut output);
-
-        assert!(matches!(
-            engine.fiber.frame.status,
-            FlowFiberStatus::Failed(_)
-        ));
-        assert!(!output.diagnostics.is_empty());
-        assert!(output.flow_events.is_empty());
-    }
 }

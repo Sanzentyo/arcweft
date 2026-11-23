@@ -450,11 +450,91 @@ where
     }
 }
 
-impl<A, M, P> SuspendedValues for FlowFiberStatus<A, WaitingManyStatus<M, P>>
+impl SuspendedValues for crate::engine::ChoiceState {
+    fn admit_suspended_values(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        _binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.admit_native(admission)
+    }
+
+    fn admit_frame_context<V: crate::value::RuntimeStoredValue, G>(
+        &self,
+        env: &crate::value::RuntimeEnv<V, G>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.continuation()
+            .ok_or_else(|| invalid("observed Choice has no Native continuation"))?
+            .admit_frame_context(env, admission)
+    }
+}
+
+impl SuspendedValues for crate::engine::choice::NativeChoiceContinuation {
+    fn admit_suspended_values(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        _binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.admit_retained(admission)
+    }
+
+    fn admit_frame_context<V: crate::value::RuntimeStoredValue, G>(
+        &self,
+        env: &crate::value::RuntimeEnv<V, G>,
+        _admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.operation.admit_invocation(env)
+    }
+}
+
+impl SuspendedValues for crate::engine::HostCallState {
+    fn admit_suspended_values(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.continuation()
+            .ok_or_else(crate::engine::host_call::invalid_host_call)?
+            .admit_suspended_values(admission, binding)
+    }
+
+    fn admit_frame_context<V: crate::value::RuntimeStoredValue, G>(
+        &self,
+        env: &crate::value::RuntimeEnv<V, G>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.continuation()
+            .ok_or_else(crate::engine::host_call::invalid_host_call)?
+            .admit_frame_context(env, admission)
+    }
+}
+
+impl SuspendedValues for crate::engine::host_call::NativeHostCallContinuation {
+    fn admit_suspended_values(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        _binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.admit_retained(admission)
+    }
+
+    fn admit_frame_context<V: crate::value::RuntimeStoredValue, G>(
+        &self,
+        env: &crate::value::RuntimeEnv<V, G>,
+        _admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.operation.admit_invocation(env)
+    }
+}
+
+impl<A, M, P, H, C> SuspendedValues for FlowFiberStatus<A, WaitingManyStatus<M, P>, H, C>
 where
     A: SuspendedValues,
     M: SuspendedValues,
     P: SuspendedValues,
+    H: SuspendedValues,
+    C: SuspendedValues,
 {
     fn admit_frame_context<V: crate::value::RuntimeStoredValue, G>(
         &self,
@@ -462,6 +542,8 @@ where
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         match self {
+            Self::Choice(state) => state.admit_frame_context(env, admission)?,
+            Self::HostCall(state) => state.admit_frame_context(env, admission)?,
             Self::NeedWaiting(state) => state.admit_frame_context(env, admission)?,
             Self::WaitingMany(WaitingManyStatus::Program(state)) => {
                 state.admit_frame_context(env, admission)?
@@ -497,7 +579,10 @@ where
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         match self {
-            Self::Choice(state) => state.admit_native(admission),
+            Self::Choice(state) => state.admit_suspended_values(admission, binding),
+            Self::HostCall(state) => state.admit_suspended_values(admission, binding),
+            Self::Dialogue(activation) => admission.validate_metadata(activation),
+            Self::DurationWaiting(wait) => admission.validate_metadata(wait),
             Self::ActionWaiting(state) => {
                 let crate::engine::ActionWaitingStatus::Native(state) = state else {
                     return Err(invalid(

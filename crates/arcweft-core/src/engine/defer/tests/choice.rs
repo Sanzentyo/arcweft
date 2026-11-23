@@ -1,6 +1,6 @@
 use super::*;
 use crate::effect::LineEffectRequest;
-use crate::engine::{ChoiceState, Engine, FlowEvent, FlowExit, FlowFiberStatus};
+use crate::engine::{Engine, FlowEvent, FlowExit, FlowFiberStatus, FlowFiberStatusRollbackImage};
 use crate::step::{RuntimeStepInput, RuntimeStepOptions};
 
 fn selection(choice: &str, option: &str) -> RuntimeStepInput {
@@ -90,14 +90,21 @@ fn native_choice_target_drains_callee_and_caller_scopes_once_across_restore() {
                     _ => {}
                 }
             }
-            let image = engine.inert_rollback_image().unwrap();
-            if let FlowFiberStatus::Choice(state) = &engine.fiber.frame.status {
+            let mut image = engine.inert_rollback_image().unwrap();
+            if matches!(&image.fiber.frame.status, FlowFiberStatus::Choice(_)) {
+                let wire = serde_json::to_value(&image.fiber.frame.status).unwrap();
+                image.fiber.frame.status = serde_json::from_value(wire.clone()).unwrap();
+                let mut with_observed_options = wire;
+                with_observed_options["Choice"]["options"] = serde_json::json!([]);
+                assert!(
+                    serde_json::from_value::<FlowFiberStatusRollbackImage>(with_observed_options)
+                        .is_err()
+                );
                 let mut forged = image.clone();
-                // Public projection is display data, even with exactly the same rows.
-                forged.fiber.frame.status = FlowFiberStatus::Choice(ChoiceState::observed(
-                    state.id().map(str::to_owned),
-                    state.options().to_vec(),
-                ));
+                let FlowFiberStatus::Choice(state) = &mut forged.fiber.frame.status else {
+                    unreachable!()
+                };
+                state.selected = Some(usize::MAX);
                 assert!(Engine::from_rollback_image(forged, &owner).is_err());
             }
             if let Some(exit) = &image.fiber.frame.lexical_exit

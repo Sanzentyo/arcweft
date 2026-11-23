@@ -247,6 +247,23 @@ impl NativeSourceOperation {
         self.position.owner
     }
 
+    pub(super) fn admit_invocation<V: crate::value::RuntimeStoredValue, G>(
+        &self,
+        env: &crate::value::RuntimeEnv<V, G>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        // Task-root work may run an original function body without creating
+        // a callable invocation scope.
+        if let RuntimeCodeOwner::Function(site) = self.owner()
+            && let Some((active, _)) = env.function_contexts().next_back()
+            && active != site
+        {
+            return Err(AwbcRuntimeValueSnapshotError::Message {
+                message: "native suspension source differs from its owning invocation".into(),
+            });
+        }
+        Ok(())
+    }
+
     pub(super) fn operation<'a>(&self, plan: &'a RuntimePlan) -> Option<&'a FlowOp> {
         self.position.operations(plan)?.first()
     }

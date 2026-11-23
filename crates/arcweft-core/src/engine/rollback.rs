@@ -41,7 +41,7 @@ pub(super) trait NativeInvocationStatus {
     fn retires_invocation_scopes(&self) -> bool;
 }
 
-impl<A, M> NativeInvocationStatus for FlowFiberStatus<A, M> {
+impl<A, M, H, C> NativeInvocationStatus for FlowFiberStatus<A, M, H, C> {
     fn retires_invocation_scopes(&self) -> bool {
         matches!(self, Self::Done(_) | Self::Failed(_))
     }
@@ -352,18 +352,20 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
     }
 }
 
-impl<N, P, Q, FV, FP, O, C, A, AS, MS, G, D>
+impl<N, P, Q, FV, FP, O, C, A, AS, MS, HS, CS, G, D>
     Engine<
         N,
         P,
         crate::root::RootRuntime<Q>,
-        NativeFlowExecutionFrame<FV, FP, O, C, A, FlowFiberStatus<AS, MS>, G>,
+        NativeFlowExecutionFrame<FV, FP, O, C, A, FlowFiberStatus<AS, MS, HS, CS>, G>,
         D,
     >
 {
     pub(super) fn admit_root_execution(
         &self,
-        suspended: Option<&NativeFlowExecutionFrame<FV, FP, O, C, A, FlowFiberStatus<AS, MS>, G>>,
+        suspended: Option<
+            &NativeFlowExecutionFrame<FV, FP, O, C, A, FlowFiberStatus<AS, MS, HS, CS>, G>,
+        >,
     ) -> Result<(), String>
     where
         C: ScopeControl<O>,
@@ -1753,6 +1755,59 @@ impl NativeEngineRollbackImage {
         }
         self.admit_root_execution(None)?;
         self.validate_scheduled_scope_state(&mut admission, None)?;
+        let mut host_sequences = BTreeSet::new();
+        let mut host_correlations = BTreeSet::new();
+        let mut validate_waits = |frame: &super::NativeFlowExecutionFrameRollbackImage,
+                                  launch: Option<crate::task::TaskCorrelation>|
+         -> Result<(), String> {
+            if let Some(wait) = &frame.await_observer {
+                self.validate_wait_receipt(&receipts, &wait.handle, wait.observed_through)?;
+            }
+            match &frame.status {
+                FlowFiberStatus::HostCall(state) => {
+                    if state.sequence >= self.next_host_call_sequence
+                        || !host_sequences.insert(state.sequence)
+                        || !host_correlations.insert(state.correlation)
+                        || !receipts
+                            .task_spec(state.correlation)
+                            .is_some_and(|spec| state.matches_receipt(expected, spec))
+                    {
+                        return Err(
+                            "Native HostCall differs from its issued task receipt or sequence"
+                                .into(),
+                        );
+                    }
+                }
+                FlowFiberStatus::NeedWaiting(wait) => {
+                    self.validate_wait_receipt(&receipts, &wait.handle, wait.observed_through)?;
+                }
+                FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Native(state)) => {
+                    self.validate_wait_receipt(&receipts, &state.base, None)?;
+                    for flight in &state.in_flight {
+                        self.validate_wait_receipt(
+                            &receipts,
+                            &flight.handle,
+                            flight.observed_through,
+                        )?;
+                    }
+                }
+                FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Program(state)) => {
+                    if launch != Some(state.base.correlation()) {
+                        return Err("Program fanout base differs from its owning launch".into());
+                    }
+                    self.validate_wait_receipt(&receipts, &state.base, None)?;
+                    for flight in &state.in_flight {
+                        self.validate_wait_receipt(
+                            &receipts,
+                            &flight.handle,
+                            flight.observed_through,
+                        )?;
+                    }
+                }
+                _ => {}
+            }
+            Ok(())
+        };
         for fiber in self.session_fibers() {
             fiber
                 .frame
@@ -1768,40 +1823,11 @@ impl NativeEngineRollbackImage {
                     fiber.frame.presentation_bank,
                 )
                 .map_err(|error| error.to_string())?;
-            if let Some(wait) = &fiber.frame.await_observer {
-                self.validate_wait_receipt(&receipts, &wait.handle, wait.observed_through)?;
-            }
-            match &fiber.frame.status {
-                FlowFiberStatus::NeedWaiting(wait) => {
-                    self.validate_wait_receipt(&receipts, &wait.handle, wait.observed_through)?;
-                }
-                FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Native(state)) => {
-                    self.validate_wait_receipt(&receipts, &state.base, None)?;
-                    for flight in &state.in_flight {
-                        self.validate_wait_receipt(
-                            &receipts,
-                            &flight.handle,
-                            flight.observed_through,
-                        )?;
-                    }
-                }
-                FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Program(state)) => {
-                    if !matches!(&fiber.launch, super::FlowFiberLaunch::Program(launch)
-                        if launch.handle().correlation == state.base.correlation())
-                    {
-                        return Err("Program fanout base differs from its owning launch".into());
-                    }
-                    self.validate_wait_receipt(&receipts, &state.base, None)?;
-                    for flight in &state.in_flight {
-                        self.validate_wait_receipt(
-                            &receipts,
-                            &flight.handle,
-                            flight.observed_through,
-                        )?;
-                    }
-                }
-                _ => {}
-            }
+            let launch = match &fiber.launch {
+                super::FlowFiberLaunch::Local => None,
+                super::FlowFiberLaunch::Program(launch) => Some(launch.handle().correlation),
+            };
+            validate_waits(&fiber.frame, launch)?;
         }
         let expected_deferred_children = self.expected_deferred_children(|activation| {
             self.dialogue_activations
@@ -1813,11 +1839,20 @@ impl NativeEngineRollbackImage {
             |token| self.dialogue_activations.published_lease(token),
         )?;
         self.dialogue_activations
-            .admit_values(&mut admission, &expected_deferred_children, |parent| {
-                self.session_fibers()
-                    .find(|fiber| fiber.id == parent)
-                    .map(|fiber| fiber.execution)
-            })
+            .admit_values(
+                &mut admission,
+                &expected_deferred_children,
+                |parent| {
+                    self.session_fibers()
+                        .find(|fiber| fiber.id == parent)
+                        .map(|fiber| fiber.execution)
+                },
+                |frame| {
+                    validate_waits(frame, None).map_err(|message| {
+                        crate::value::AwbcRuntimeValueSnapshotError::Message { message }
+                    })
+                },
+            )
             .map_err(|error| error.to_string())?;
         admission
             .finish_presentation_custody()

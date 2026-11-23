@@ -6,7 +6,7 @@ use crate::pure::RuntimeCallBackend;
 use crate::step::RuntimeStepOutput;
 use crate::time::{LogicalDuration, LogicalWait};
 
-impl<A, M> FlowFiberStatus<A, M> {
+impl<A, M, H, C> FlowFiberStatus<A, M, H, C> {
     /// Latches only a suspension already present at runtime step ingress.
     pub(in crate::engine) fn advance_duration_wait(&mut self, elapsed: LogicalDuration) {
         if let Self::DurationWaiting(wait) = self {
@@ -53,7 +53,9 @@ mod tests {
         );
         engine.latch_duration_waits(LogicalDuration::from_nanos(1));
         let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
-        let image = engine.inert_rollback_image().unwrap();
+        let mut image = engine.inert_rollback_image().unwrap();
+        let wire = serde_json::to_vec(&image.fiber.frame.status).unwrap();
+        image.fiber.frame.status = serde_json::from_slice(&wire).unwrap();
         let mut restored = Engine::from_rollback_image(image.clone(), &owner).unwrap();
         assert_eq!(restored, engine);
         restored.latch_duration_waits(LogicalDuration::from_nanos(u64::MAX - 2));

@@ -17,13 +17,19 @@ pub struct ChoiceState {
 enum ChoiceSource {
     Native {
         plan: Arc<RuntimePlan>,
-        operation: NativeSourceOperation,
-        selected: Option<usize>,
+        continuation: NativeChoiceContinuation,
     },
     Observed {
         id: Option<String>,
         options: Vec<ChoiceRuntimeOption>,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct NativeChoiceContinuation {
+    pub(super) operation: NativeSourceOperation,
+    pub(super) selected: Option<usize>,
 }
 
 impl ChoiceState {
@@ -43,8 +49,10 @@ impl ChoiceState {
         let state = Self {
             source: ChoiceSource::Native {
                 plan,
-                operation,
-                selected: None,
+                continuation: NativeChoiceContinuation {
+                    operation,
+                    selected: None,
+                },
             },
         };
         state.admit_native(admission)?;
@@ -54,10 +62,8 @@ impl ChoiceState {
     /// Authored public choice identity, if present.
     pub fn id(&self) -> Option<&str> {
         match &self.source {
-            ChoiceSource::Native {
-                plan, operation, ..
-            } => {
-                let Some(FlowOp::Choice { id, .. }) = operation.operation(plan) else {
+            ChoiceSource::Native { plan, continuation } => {
+                let Some(FlowOp::Choice { id, .. }) = continuation.operation.operation(plan) else {
                     unreachable!("admitted original Choice operation")
                 };
                 id.as_deref()
@@ -69,10 +75,9 @@ impl ChoiceState {
     /// Original options in source order, without copying executable effects.
     pub fn options(&self) -> &[ChoiceRuntimeOption] {
         match &self.source {
-            ChoiceSource::Native {
-                plan, operation, ..
-            } => {
-                let Some(FlowOp::Choice { options, .. }) = operation.operation(plan) else {
+            ChoiceSource::Native { plan, continuation } => {
+                let Some(FlowOp::Choice { options, .. }) = continuation.operation.operation(plan)
+                else {
                     unreachable!("admitted original Choice operation")
                 };
                 options
@@ -82,24 +87,27 @@ impl ChoiceState {
     }
 
     pub(super) fn selected(&self) -> Option<usize> {
-        match self.source {
-            ChoiceSource::Native { selected, .. } => selected,
+        match &self.source {
+            ChoiceSource::Native { continuation, .. } => continuation.selected,
             ChoiceSource::Observed { .. } => None,
         }
     }
 
     pub(super) fn select(&mut self, index: usize) {
         assert!(index < self.options().len(), "original option ordinal");
-        let ChoiceSource::Native { selected, .. } = &mut self.source else {
+        let ChoiceSource::Native { continuation, .. } = &mut self.source else {
             unreachable!("only an admitted Native choice can accept input")
         };
-        *selected = Some(index);
+        continuation.selected = Some(index);
     }
 
     pub(super) fn selected_goto(&self) -> Option<super::defer::NativeGotoOrigin> {
         let ChoiceSource::Native {
-            operation,
-            selected: Some(option),
+            continuation:
+                NativeChoiceContinuation {
+                    operation,
+                    selected: Some(option),
+                },
             ..
         } = &self.source
         else {
@@ -123,27 +131,44 @@ impl ChoiceState {
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        let invalid = || AwbcRuntimeValueSnapshotError::Message {
-            message: "Native Choice requires its original Plan operation and option ordinal".into(),
-        };
-        let ChoiceSource::Native {
-            plan,
-            operation,
-            selected,
-        } = &self.source
-        else {
-            return Err(invalid());
+        let ChoiceSource::Native { plan, continuation } = &self.source else {
+            return Err(invalid_choice());
         };
         if !admission
             .program_owner()
             .is_some_and(|owner| owner.same_program(&RuntimeProgramOwner::Plan(plan.clone())))
         {
-            return Err(invalid());
+            return Err(invalid_choice());
         }
-        operation.admit_retained(admission)?;
-        admission.validate_metadata(selected)?;
-        let Some(FlowOp::Choice { id, options }) = operation.operation(plan) else {
-            return Err(invalid());
+        continuation.admit_retained(admission)
+    }
+
+    pub(super) fn continuation(&self) -> Option<&NativeChoiceContinuation> {
+        match &self.source {
+            ChoiceSource::Native { continuation, .. } => Some(continuation),
+            ChoiceSource::Observed { .. } => None,
+        }
+    }
+}
+
+fn invalid_choice() -> AwbcRuntimeValueSnapshotError {
+    AwbcRuntimeValueSnapshotError::Message {
+        message: "Native Choice requires its original Plan operation and option ordinal".into(),
+    }
+}
+
+impl NativeChoiceContinuation {
+    pub(super) fn admit_retained(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.operation.admit_retained(admission)?;
+        admission.validate_metadata(&self.selected)?;
+        let Some(RuntimeProgramOwner::Plan(plan)) = admission.program_owner().cloned() else {
+            return Err(invalid_choice());
+        };
+        let Some(FlowOp::Choice { id, options }) = self.operation.operation(&plan) else {
+            return Err(invalid_choice());
         };
         admission.validate_metadata(id)?;
         admission.validate_metadata_collection(options.len())?;
@@ -158,10 +183,25 @@ impl ChoiceState {
             // immutable Plan. No effect payload is retained in this state.
             admission.validate_metadata_collection(option.effects.len())?;
         }
-        if selected.is_some_and(|index| index >= options.len()) {
-            return Err(invalid());
+        if self.selected.is_some_and(|index| index >= options.len()) {
+            return Err(invalid_choice());
         }
         Ok(())
+    }
+
+    pub(super) fn into_admitted_live(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<ChoiceState, String> {
+        let RuntimeProgramOwner::Plan(plan) = owner else {
+            return Err(invalid_choice().to_string());
+        };
+        Ok(ChoiceState {
+            source: ChoiceSource::Native {
+                plan: Arc::clone(plan),
+                continuation: self,
+            },
+        })
     }
 }
 
