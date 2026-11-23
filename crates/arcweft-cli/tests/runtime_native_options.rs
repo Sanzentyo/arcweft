@@ -228,6 +228,47 @@ fn headless_native_session_reissues_an_in_flight_asset_across_processes() {
     assert_eq!(completed["native_io"]["completed_tasks"], 1);
 }
 
+#[test]
+fn headless_native_session_restores_a_retained_asset_result_and_reissues_only_pending_work() {
+    let directory = tempfile::tempdir().unwrap();
+    let (source, image) = write_asset_checkpoint_source(
+        directory.path(),
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String effects { asset.read } {
+    let background = @asset:.bg.room
+    let first = await asset.image(background)
+    let second = await asset.image(background)
+    return match (first, second) {
+        (.Ok(_), .Ok(_)) => "assets_ready"
+        _ => "asset_error"
+    }
+}
+"#,
+    );
+    std::fs::write(image, single_pixel_png([255, 0, 0, 255])).unwrap();
+    let save = directory.path().join("retained-asset.awfs");
+    let save = save.to_str().unwrap();
+
+    let stopped =
+        run_headless_asset_steps(&source, "bytecode-vm", "2", &["--session-save-out", save]);
+    assert_eq!(stopped["native_io"]["completed_tasks"], 1);
+    assert_eq!(stopped["native_io"]["scheduler"]["in_flight"], 1);
+    let first_request = &stopped["steps"][0]["task_requests"];
+    let pending_request = &stopped["steps"][1]["task_requests"];
+    assert_eq!(first_request.as_array().unwrap().len(), 1);
+    assert_eq!(pending_request.as_array().unwrap().len(), 1);
+    assert_ne!(first_request, pending_request);
+
+    let resumed = run_headless_asset_steps(&source, "aot", "8", &["--session-load", save]);
+    assert_eq!(resumed["steps"][0]["index"], 2);
+    assert_eq!(&resumed["steps"][0]["task_requests"], pending_request);
+    assert_eq!(resumed["steps"][1]["task_requests"], serde_json::json!([]));
+    assert_eq!(resumed["native_io"]["scheduler"]["dispatched"], 1);
+    assert_eq!(resumed["native_io"]["completed_tasks"], 1);
+    assert_eq!(resumed["final_status"], "done Return(\"assets_ready\")");
+}
+
 fn run_headless_asset_steps(
     source: &Path,
     executor: &str,
@@ -252,11 +293,8 @@ fn run_headless_asset_steps(
 }
 
 fn asset_checkpoint_source(directory: &Path) -> (PathBuf, PathBuf) {
-    let source = directory.join("asset-checkpoint.arcw");
-    let assets = directory.join("assets/bg");
-    std::fs::create_dir_all(&assets).unwrap();
-    std::fs::write(
-        &source,
+    write_asset_checkpoint_source(
+        directory,
         r#"
 entry cli @entry.main { goto @flow.main }
 flow main() -> String effects { asset.read } {
@@ -268,7 +306,13 @@ flow main() -> String effects { asset.read } {
 }
 "#,
     )
-    .unwrap();
+}
+
+fn write_asset_checkpoint_source(directory: &Path, text: &str) -> (PathBuf, PathBuf) {
+    let source = directory.join("asset-checkpoint.arcw");
+    let assets = directory.join("assets/bg");
+    std::fs::create_dir_all(&assets).unwrap();
+    std::fs::write(&source, text).unwrap();
     (source, assets.join("room.png"))
 }
 

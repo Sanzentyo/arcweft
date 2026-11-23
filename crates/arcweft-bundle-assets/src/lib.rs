@@ -47,8 +47,6 @@ pub enum BundleAssetResolverError {
     InvalidResourceId(#[source] RuntimeBundleAssetValueError),
     #[error("bundle catalog lookup failed: {0}")]
     BundleLookup(#[source] BundleCodecError),
-    #[error("asset content length cannot be represented by the digest contract")]
-    ContentLengthOverflow,
     #[error(transparent)]
     Validation(#[from] BundleAssetValidationError),
     #[error(transparent)]
@@ -83,18 +81,60 @@ pub enum BundleAssetValidationError {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AssetContentStatus {
-    MissingResource,
-    MissingBytes,
+enum EncodedAssetStatus {
     Valid,
     Decode,
     MetadataMismatch,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct AssetContentState {
-    status: AssetContentStatus,
-    digest: Option<RuntimeAssetContentDigest>,
+impl EncodedAssetStatus {
+    const fn failure_reason(self) -> Option<RuntimeBundleAssetFailureReason> {
+        match self {
+            Self::Valid => None,
+            Self::Decode => Some(RuntimeBundleAssetFailureReason::Decode),
+            Self::MetadataMismatch => Some(RuntimeBundleAssetFailureReason::MetadataMismatch),
+        }
+    }
+}
+
+enum AssetContentState<'a> {
+    MissingResource,
+    MissingBytes,
+    Encoded {
+        bytes: &'a [u8],
+        digest: RuntimeAssetContentDigest,
+        status: EncodedAssetStatus,
+    },
+}
+
+enum AssetContentAdmission {
+    Load,
+    RetainedMissing,
+    RetainedDigest(RuntimeAssetContentDigest),
+}
+
+impl AssetContentAdmission {
+    fn inspect_encoded<'a>(
+        self,
+        bytes: &'a [u8],
+        inspect: impl FnOnce() -> EncodedAssetStatus,
+    ) -> Result<AssetContentState<'a>, BundleAssetValidationError> {
+        if matches!(self, Self::RetainedMissing) {
+            return Err(BundleAssetValidationError::ResultReasonMismatch);
+        }
+        let digest = RuntimeAssetContentDigest::try_for_bytes(bytes)
+            .map_err(|_| BundleAssetValidationError::ContentLengthFailure)?;
+        if let Self::RetainedDigest(expected) = self
+            && digest != expected
+        {
+            return Err(BundleAssetValidationError::ContentDigestMismatch);
+        }
+        Ok(AssetContentState::Encoded {
+            bytes,
+            digest,
+            status: inspect(),
+        })
+    }
 }
 
 impl BundleAssetResolver {
@@ -198,20 +238,30 @@ impl BundleAssetResolver {
         value: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<bool, BundleAssetValidationError> {
         let value = value.into();
-        match runtime_bundle_asset_opaque_role(value) {
-            Some(RuntimeBundleAssetOpaqueRole::ImageHandle) => {
+        let Some(role) = runtime_bundle_asset_opaque_role(value) else {
+            return Ok(false);
+        };
+        self.validate_asset_value(role, value)?;
+        Ok(true)
+    }
+
+    fn validate_asset_value(
+        &self,
+        role: RuntimeBundleAssetOpaqueRole,
+        value: RuntimeBorrowedValue<'_>,
+    ) -> Result<(), BundleAssetValidationError> {
+        match role {
+            RuntimeBundleAssetOpaqueRole::ImageHandle => {
                 let handle = RuntimeImageHandleValue::try_from_runtime_value(value)
                     .map_err(|_| BundleAssetValidationError::InvalidImageResult)?;
-                let _ = self.resolve_image_handle(&handle)?;
-                Ok(true)
+                self.validate_binding(AssetLoadKind::Image, handle.binding())
             }
-            Some(RuntimeBundleAssetOpaqueRole::AudioHandle) => {
+            RuntimeBundleAssetOpaqueRole::AudioHandle => {
                 let handle = RuntimeAudioHandleValue::try_from_runtime_value(value)
                     .map_err(|_| BundleAssetValidationError::InvalidVoiceResult)?;
-                let _ = self.resolve_voice_handle(&handle)?;
-                Ok(true)
+                self.validate_binding(AssetLoadKind::Voice, handle.binding())
             }
-            Some(RuntimeBundleAssetOpaqueRole::AssetError) => {
+            RuntimeBundleAssetOpaqueRole::AssetError => {
                 let error = RuntimeAssetErrorValue::try_from_runtime_value(value)
                     .map_err(|_| BundleAssetValidationError::InvalidImageResult)?;
                 self.validate_failure(
@@ -220,10 +270,9 @@ impl BundleAssetResolver {
                     error.failure().id(),
                     error.failure().reason(),
                     error.failure().content_digest(),
-                )?;
-                Ok(true)
+                )
             }
-            Some(RuntimeBundleAssetOpaqueRole::VoiceError) => {
+            RuntimeBundleAssetOpaqueRole::VoiceError => {
                 let error = RuntimeVoiceErrorValue::try_from_runtime_value(value)
                     .map_err(|_| BundleAssetValidationError::InvalidVoiceResult)?;
                 self.validate_failure(
@@ -232,10 +281,8 @@ impl BundleAssetResolver {
                     error.failure().id(),
                     error.failure().reason(),
                     error.failure().content_digest(),
-                )?;
-                Ok(true)
+                )
             }
-            None => Ok(false),
         }
     }
 
@@ -244,12 +291,7 @@ impl BundleAssetResolver {
         &self,
         handle: &RuntimeImageHandleValue,
     ) -> Result<Arc<[u8]>, BundleAssetValidationError> {
-        self.resolve_handle(
-            AssetLoadKind::Image,
-            handle.binding().context(),
-            handle.binding().id(),
-            handle.binding().content_digest(),
-        )
+        self.resolve_handle(AssetLoadKind::Image, handle.binding())
     }
 
     /// Returns validated encoded voice bytes for a successfully loaded handle.
@@ -257,12 +299,7 @@ impl BundleAssetResolver {
         &self,
         handle: &RuntimeAudioHandleValue,
     ) -> Result<Arc<[u8]>, BundleAssetValidationError> {
-        self.resolve_handle(
-            AssetLoadKind::Voice,
-            handle.binding().context(),
-            handle.binding().id(),
-            handle.binding().content_digest(),
-        )
+        self.resolve_handle(AssetLoadKind::Voice, handle.binding())
     }
 
     fn load(
@@ -274,9 +311,13 @@ impl BundleAssetResolver {
         let id = RuntimeBundleAssetResourceId::try_new(id)
             .map_err(BundleAssetResolverError::InvalidResourceId)?;
         let catalog = self.catalog_for_context(context)?;
-        let state = asset_content_state(catalog.artifact.bundle(), kind, id.as_str())?;
-        match state.status {
-            AssetContentStatus::MissingResource | AssetContentStatus::MissingBytes => {
+        let digest = match asset_content_state(
+            catalog.artifact.bundle(),
+            kind,
+            id.as_str(),
+            AssetContentAdmission::Load,
+        )? {
+            AssetContentState::MissingResource | AssetContentState::MissingBytes => {
                 return domain_failure(
                     kind,
                     context,
@@ -285,29 +326,13 @@ impl BundleAssetResolver {
                     None,
                 );
             }
-            AssetContentStatus::Decode => {
-                return domain_failure(
-                    kind,
-                    context,
-                    id,
-                    RuntimeBundleAssetFailureReason::Decode,
-                    state.digest,
-                );
+            AssetContentState::Encoded { digest, status, .. } => {
+                if let Some(reason) = status.failure_reason() {
+                    return domain_failure(kind, context, id, reason, Some(digest));
+                }
+                digest
             }
-            AssetContentStatus::MetadataMismatch => {
-                return domain_failure(
-                    kind,
-                    context,
-                    id,
-                    RuntimeBundleAssetFailureReason::MetadataMismatch,
-                    state.digest,
-                );
-            }
-            AssetContentStatus::Valid => {}
-        }
-        let digest = state
-            .digest
-            .ok_or(BundleAssetResolverError::ContentLengthOverflow)?;
+        };
         let binding = RuntimeBundleAssetBinding::try_new(context, id, digest)?;
         let handle = match kind {
             AssetLoadKind::Image => {
@@ -325,47 +350,24 @@ impl BundleAssetResolver {
         kind: AssetLoadKind,
         value: &RuntimeValue,
     ) -> Result<(), BundleAssetValidationError> {
-        let (case, payload) = value
-            .clone()
-            .try_into_builtin_variant_case()
-            .map_err(|_| invalid_result(kind))?;
-        match (kind, case, payload) {
-            (AssetLoadKind::Image, RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value)) => {
-                let handle = RuntimeImageHandleValue::try_from_runtime_value(&value)
-                    .map_err(|_| invalid_result(kind))?;
-                let _ = self.resolve_image_handle(&handle)?;
-                Ok(())
-            }
-            (AssetLoadKind::Voice, RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value)) => {
-                let handle = RuntimeAudioHandleValue::try_from_runtime_value(&value)
-                    .map_err(|_| invalid_result(kind))?;
-                let _ = self.resolve_voice_handle(&handle)?;
-                Ok(())
-            }
-            (AssetLoadKind::Image, RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(value)) => {
-                let error = RuntimeAssetErrorValue::try_from_runtime_value(&value)
-                    .map_err(|_| invalid_result(kind))?;
-                self.validate_failure(
-                    kind,
-                    error.failure().context(),
-                    error.failure().id(),
-                    error.failure().reason(),
-                    error.failure().content_digest(),
-                )
-            }
-            (AssetLoadKind::Voice, RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(value)) => {
-                let error = RuntimeVoiceErrorValue::try_from_runtime_value(&value)
-                    .map_err(|_| invalid_result(kind))?;
-                self.validate_failure(
-                    kind,
-                    error.failure().context(),
-                    error.failure().id(),
-                    error.failure().reason(),
-                    error.failure().content_digest(),
-                )
-            }
-            _ => Err(invalid_result(kind)),
+        use RuntimeBuiltinVariantCaseIdentity::{ResultErr, ResultOk};
+        use RuntimeBundleAssetOpaqueRole::{AssetError, AudioHandle, ImageHandle, VoiceError};
+
+        let Some((case, Some(payload))) = RuntimeBorrowedValue::from(value).builtin_variant_case()
+        else {
+            return Err(invalid_result(kind));
+        };
+        let role = runtime_bundle_asset_opaque_role(payload).ok_or_else(|| invalid_result(kind))?;
+        if !matches!(
+            (kind, case, role),
+            (AssetLoadKind::Image, ResultOk, ImageHandle)
+                | (AssetLoadKind::Image, ResultErr, AssetError)
+                | (AssetLoadKind::Voice, ResultOk, AudioHandle)
+                | (AssetLoadKind::Voice, ResultErr, VoiceError)
+        ) {
+            return Err(invalid_result(kind));
         }
+        self.validate_asset_value(role, payload)
     }
 
     fn validate_failure(
@@ -377,22 +379,19 @@ impl BundleAssetResolver {
         expected_digest: Option<RuntimeAssetContentDigest>,
     ) -> Result<(), BundleAssetValidationError> {
         let catalog = self.catalog_for_context(context)?;
-        let state = asset_content_state(catalog.artifact.bundle(), kind, id.as_str())?;
-        let reason_matches = match reason {
-            RuntimeBundleAssetFailureReason::Missing => matches!(
-                state.status,
-                AssetContentStatus::MissingResource | AssetContentStatus::MissingBytes
-            ),
-            RuntimeBundleAssetFailureReason::Decode => state.status == AssetContentStatus::Decode,
-            RuntimeBundleAssetFailureReason::MetadataMismatch => {
-                state.status == AssetContentStatus::MetadataMismatch
-            }
-        };
-        if !reason_matches {
+        let admission = expected_digest.map_or(
+            AssetContentAdmission::RetainedMissing,
+            AssetContentAdmission::RetainedDigest,
+        );
+        let actual =
+            match asset_content_state(catalog.artifact.bundle(), kind, id.as_str(), admission)? {
+                AssetContentState::MissingResource | AssetContentState::MissingBytes => {
+                    Some(RuntimeBundleAssetFailureReason::Missing)
+                }
+                AssetContentState::Encoded { status, .. } => status.failure_reason(),
+            };
+        if actual != Some(reason) {
             return Err(BundleAssetValidationError::ResultReasonMismatch);
-        }
-        if state.digest != expected_digest {
-            return Err(BundleAssetValidationError::ContentDigestMismatch);
         }
         Ok(())
     }
@@ -400,38 +399,19 @@ impl BundleAssetResolver {
     fn resolve_handle(
         &self,
         kind: AssetLoadKind,
-        context: RuntimeBundleAssetContext,
-        id: &RuntimeBundleAssetResourceId,
-        expected_digest: RuntimeAssetContentDigest,
+        binding: &RuntimeBundleAssetBinding,
     ) -> Result<Arc<[u8]>, BundleAssetValidationError> {
-        let catalog = self.catalog_for_context(context)?;
-        let bundle = catalog.artifact.bundle();
-        let state = asset_content_state(bundle, kind, id.as_str())?;
-        match state.status {
-            AssetContentStatus::MissingResource => {
-                return Err(BundleAssetValidationError::MissingResource);
-            }
-            AssetContentStatus::MissingBytes => {
-                return Err(BundleAssetValidationError::MissingBytes);
-            }
-            AssetContentStatus::Valid => {}
-            AssetContentStatus::Decode | AssetContentStatus::MetadataMismatch => {
-                return Err(BundleAssetValidationError::ResultReasonMismatch);
-            }
-        }
-        if state.digest != Some(expected_digest) {
-            return Err(BundleAssetValidationError::ContentDigestMismatch);
-        }
-        let bytes = match kind {
-            AssetLoadKind::Image => bundle
-                .image_asset_bytes(id.as_str())
-                .map_err(|_| BundleAssetValidationError::CatalogLookupFailure)?,
-            AssetLoadKind::Voice => bundle
-                .audio_asset_bytes(id.as_str())
-                .map_err(|_| BundleAssetValidationError::CatalogLookupFailure)?,
-        }
-        .ok_or(BundleAssetValidationError::MissingBytes)?;
-        Ok(Arc::from(bytes))
+        let catalog = self.catalog_for_context(binding.context())?;
+        Ok(Arc::from(catalog.validated_asset_bytes(kind, binding)?))
+    }
+
+    fn validate_binding(
+        &self,
+        kind: AssetLoadKind,
+        binding: &RuntimeBundleAssetBinding,
+    ) -> Result<(), BundleAssetValidationError> {
+        let catalog = self.catalog_for_context(binding.context())?;
+        catalog.validated_asset_bytes(kind, binding).map(|_| ())
     }
 
     fn catalog_for_context(
@@ -449,6 +429,32 @@ impl BundleAssetResolver {
             return Err(BundleAssetValidationError::ArtifactIdentityMismatch);
         }
         Ok(catalog.clone())
+    }
+}
+
+impl BoundBundleCatalog {
+    fn validated_asset_bytes(
+        &self,
+        kind: AssetLoadKind,
+        binding: &RuntimeBundleAssetBinding,
+    ) -> Result<&[u8], BundleAssetValidationError> {
+        match asset_content_state(
+            self.artifact.bundle(),
+            kind,
+            binding.id().as_str(),
+            AssetContentAdmission::RetainedDigest(binding.content_digest()),
+        )? {
+            AssetContentState::MissingResource => Err(BundleAssetValidationError::MissingResource),
+            AssetContentState::MissingBytes => Err(BundleAssetValidationError::MissingBytes),
+            AssetContentState::Encoded {
+                bytes,
+                status: EncodedAssetStatus::Valid,
+                ..
+            } => Ok(bytes),
+            AssetContentState::Encoded { .. } => {
+                Err(BundleAssetValidationError::ResultReasonMismatch)
+            }
+        }
     }
 }
 
@@ -471,31 +477,25 @@ fn domain_failure(
     Ok(RuntimeValue::result_err(error))
 }
 
-fn asset_content_state(
-    bundle: &ArcweftBundle,
+fn asset_content_state<'a>(
+    bundle: &'a ArcweftBundle,
     kind: AssetLoadKind,
     id: &str,
-) -> Result<AssetContentState, BundleAssetValidationError> {
-    let (bytes, status) = match kind {
+    admission: AssetContentAdmission,
+) -> Result<AssetContentState<'a>, BundleAssetValidationError> {
+    match kind {
         AssetLoadKind::Image => {
             let Some(asset) = bundle.image_asset(id) else {
-                return Ok(AssetContentState {
-                    status: AssetContentStatus::MissingResource,
-                    digest: None,
-                });
+                return Ok(AssetContentState::MissingResource);
             };
             let bytes = match bundle.image_asset_bytes(id) {
                 Ok(Some(bytes)) => bytes,
                 Ok(None) | Err(BundleCodecError::MissingImageFile { .. }) => {
-                    return Ok(AssetContentState {
-                        status: AssetContentStatus::MissingBytes,
-                        digest: None,
-                    });
+                    return Ok(AssetContentState::MissingBytes);
                 }
                 Err(_) => return Err(BundleAssetValidationError::CatalogLookupFailure),
             };
-            let status = image_status(asset, bytes);
-            (bytes, status)
+            admission.inspect_encoded(bytes, || image_status(asset, bytes))
         }
         AssetLoadKind::Voice => {
             let Some(asset) = bundle
@@ -503,46 +503,35 @@ fn asset_content_state(
                 .as_ref()
                 .and_then(|graph| graph.assets.iter().find(|asset| asset.id.as_str() == id))
             else {
-                return Ok(AssetContentState {
-                    status: AssetContentStatus::MissingResource,
-                    digest: None,
-                });
+                return Ok(AssetContentState::MissingResource);
             };
             let bytes = match bundle.audio_asset_bytes(id) {
                 Ok(Some(bytes)) => bytes,
                 Ok(None) | Err(BundleCodecError::MissingAudioFile { .. }) => {
-                    return Ok(AssetContentState {
-                        status: AssetContentStatus::MissingBytes,
-                        digest: None,
-                    });
+                    return Ok(AssetContentState::MissingBytes);
                 }
                 Err(_) => return Err(BundleAssetValidationError::CatalogLookupFailure),
             };
-            let status = if asset.validate().is_err() {
-                AssetContentStatus::MetadataMismatch
-            } else if decode_audio(bytes, asset.format, AudioDecodeLimits::default()).is_err() {
-                AssetContentStatus::Decode
-            } else {
-                AssetContentStatus::Valid
-            };
-            (bytes, status)
+            admission.inspect_encoded(bytes, || {
+                if asset.validate().is_err() {
+                    EncodedAssetStatus::MetadataMismatch
+                } else if decode_audio(bytes, asset.format, AudioDecodeLimits::default()).is_err() {
+                    EncodedAssetStatus::Decode
+                } else {
+                    EncodedAssetStatus::Valid
+                }
+            })
         }
-    };
-    let digest = RuntimeAssetContentDigest::try_for_bytes(bytes)
-        .map_err(|_| BundleAssetValidationError::ContentLengthFailure)?;
-    Ok(AssetContentState {
-        status,
-        digest: Some(digest),
-    })
+    }
 }
 
-fn image_status(asset: &BundleImageAsset, bytes: &[u8]) -> AssetContentStatus {
+fn image_status(asset: &BundleImageAsset, bytes: &[u8]) -> EncodedAssetStatus {
     let Ok(image) = arcweft_image::decode_image_bytes(
         image_decode_format(asset.format),
         bytes,
         arcweft_image::ImageDecodeOptions::default(),
     ) else {
-        return AssetContentStatus::Decode;
+        return EncodedAssetStatus::Decode;
     };
     let animation = if image.is_animated() {
         BundleImageAnimation::Animated
@@ -550,15 +539,15 @@ fn image_status(asset: &BundleImageAsset, bytes: &[u8]) -> AssetContentStatus {
         BundleImageAnimation::Static
     };
     if asset.animation != animation {
-        return AssetContentStatus::MetadataMismatch;
+        return EncodedAssetStatus::MetadataMismatch;
     }
     if let Some(expected) = asset.dimensions {
         let actual = image.dimensions();
         if expected != arcweft_bundle::BundleImageDimensions::new(actual.width(), actual.height()) {
-            return AssetContentStatus::MetadataMismatch;
+            return EncodedAssetStatus::MetadataMismatch;
         }
     }
-    AssetContentStatus::Valid
+    EncodedAssetStatus::Valid
 }
 
 const fn image_decode_format(format: BundleImageFormat) -> arcweft_image::ImageFormat {
@@ -574,5 +563,38 @@ fn invalid_result(kind: AssetLoadKind) -> BundleAssetValidationError {
     match kind {
         AssetLoadKind::Image => BundleAssetValidationError::InvalidImageResult,
         AssetLoadKind::Voice => BundleAssetValidationError::InvalidVoiceResult,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retained_asset_admits_borrowed_bytes_before_decoder_work() {
+        let bytes: &[u8] = b"retained encoded bytes";
+        let digest = RuntimeAssetContentDigest::try_for_bytes(bytes).unwrap();
+        let wrong = RuntimeAssetContentDigest::try_for_bytes(b"another resource").unwrap();
+        assert!(matches!(
+            AssetContentAdmission::RetainedDigest(wrong)
+                .inspect_encoded(bytes, || panic!("wrong digest reached the decoder")),
+            Err(BundleAssetValidationError::ContentDigestMismatch)
+        ));
+        assert!(matches!(
+            AssetContentAdmission::RetainedMissing
+                .inspect_encoded(bytes, || panic!("present bytes reached the decoder")),
+            Err(BundleAssetValidationError::ResultReasonMismatch)
+        ));
+
+        let state = AssetContentAdmission::RetainedDigest(digest)
+            .inspect_encoded(bytes, || EncodedAssetStatus::Valid)
+            .expect("matching content is inspected");
+        let AssetContentState::Encoded {
+            bytes: admitted, ..
+        } = state
+        else {
+            panic!("matching bytes must be returned");
+        };
+        assert!(std::ptr::eq(admitted, bytes));
     }
 }

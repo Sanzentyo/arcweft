@@ -794,6 +794,12 @@ payload を公開し、子の live／inert provenance を保持する。表示�
 typed Content を検証用 carrier に複製せず、同じ asset-handle codec が live と
 inert の両方を検査する。参照の取得は executable lease や復元の許可を発行しない。
 
+画像・音声の保持値は元の generation と完全な artifact identity のカタログから
+エンコード済みのバイト列を借りる。デコードの前に保存済みダイジェストを照合し、
+欠落を記録した結果にはカタログ上の欠落を要求する。一致した素材は元のデコードと
+メタデータ検査を通す。復元の検証は借用のまま行い、利用側が素材バイト列を要求した
+ときに所有バッファを作る。
+
 Style の reusable property codec もこの参照を使い、元の generation role が
 要求する outer／payload 型と、presentation catalog の property domain を確認する。
 保存データの property も同じ grammar で列挙値・単位・数値範囲・PublicId を検証する。

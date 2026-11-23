@@ -1054,6 +1054,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn saved_voice_handle_rejects_wrong_content_before_classifying_decode_failure() {
+        let corrupt = b"invalid encoded voice";
+        let (bundle, _) = asset_test_bundle(corrupt.to_vec());
+        let artifact = BundleArtifact::from_logical(Arc::new(bundle)).expect("logical artifact");
+        let context = bundle_asset_context(GenerationId::new(9), artifact.artifact_identity())
+            .expect("generation-bound asset context");
+        let adapter = BundleAssetAdapter::try_new(context, artifact).expect("asset catalog");
+        let resolver = adapter.resolver();
+        for (bytes, expected) in [
+            (
+                b"another resource".as_slice(),
+                BundleAssetValidationError::ContentDigestMismatch,
+            ),
+            (
+                corrupt.as_slice(),
+                BundleAssetValidationError::ResultReasonMismatch,
+            ),
+        ] {
+            let binding = RuntimeBundleAssetBinding::try_new(
+                context,
+                RuntimeBundleAssetResourceId::try_new("asset.voice.opening").unwrap(),
+                RuntimeAssetContentDigest::try_for_bytes(bytes).unwrap(),
+            )
+            .unwrap();
+            let handle = RuntimeAudioHandleValue::from_binding(binding)
+                .into_runtime_value()
+                .expect("typed audio handle");
+            assert_eq!(resolver.validate_owned_value(&handle), Err(expected));
+            assert_eq!(
+                resolver.validate_voice_result(&RuntimeValue::result_ok(handle)),
+                Err(expected)
+            );
+        }
+    }
+
     fn asset_task(kind: AssetLoadKind, id: &str) -> BoundTaskSpec {
         let (ok, error) = match kind {
             AssetLoadKind::Image => (
