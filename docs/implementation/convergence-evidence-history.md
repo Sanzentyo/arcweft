@@ -21782,3 +21782,15 @@ Core 全機能 library は2,410 PASS／0 SKIP。Core を含む52パッケージ�
 メインと子の待機が保持する発行済みハンドルは、台帳の元の受領票と照合する。台帳検証が作る借用索引を待機検証にも渡す。索引追加前の Core は2,410 PASS。索引追加後の最初のビルドで `TaskExecutionSource` 制約が不足して終了101となり、修正前のログを保存した。最終 Core は2,410 PASS／0 SKIP。Core を含む52パッケージの Cargo 逆依存を確認し、コンパイラの `callable_execution`、`flow_wait`、`scoped_defer` は455 PASS（1 slow）／0 SKIP。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。Native セッション全体の公開保存は残項目。
 
 [検証原本](acceptance-evidence/task-native-wait-wire.raw.zip) は19項目、1,096,680 bytes、SHA256 `617937a501d700780b55cb4c18ab05ba9ecbc83834de9ed97b8d80b370d10f31`。各項目の長さと SHA256 を照合した。検証後の `target` は144,849,004,292 bytes。
+
+<a id="native-status-wire"></a>
+
+## 2026-11-23 — Native Choice と直接 HostCall の停止状態を復元する
+
+基点 `94a5f7e1d0996c00b31d2fb100ef1c9a96b058a8`。公開ソース `3a13f81c6a6aa9ad74aff3ebc2884c5fe1b03a56`。`main` への通常の push 後に公開 ref と16変更 blob を照合した。検証時に追跡ファイルの差分なし。
+
+Choice は元の命令位置と選択番号を保持する。JSON から戻した選択待ちに入力を渡し、選択効果、内外の cleanup、遷移の順序と各一回の実行を確認した。範囲外の選択番号と追加の表示用選択肢を拒否した。直接 HostCall は元の命令位置と発行時の連番・タスク相関から再開する。元の producer と結果型を発行台帳と照合し、実行中の fiber と台詞内の実行フレームに共通の検査を適用する。未発行の相関、範囲外の連番、追加の結果パターンを拒否した。結果パターンの有無を変えて、型が異なる返答の拒否、正しい返答の操作予算ゼロでの受理、元変数への束縛と再発行なしの完了を確認した。時間待機も残り時間を JSON で往復した。Native セッション全体の公開保存は残項目。
+
+初回は producer helper の型 import とエラー変換で終了101。次の Core は2,408 PASS／2 FAIL。TaskRoot は関数の呼び出しスコープを作らずに元命令を実行できるため、その経路を復元時の照合で受け入れた。発行台帳を消すと台帳の構造検査で先に拒否されたため、テストは台帳を保持して未発行の正規相関を渡す形に改めた。台詞フレームの照合を追加した際のエラー型の参照不足も記録した。最終 Core は2,410 PASS／0 SKIP。Core を含む52パッケージの Cargo 逆依存を確認し、コンパイラの `callable_execution`、`flow_wait`、`scoped_defer`、`action_channel`、`evaluated_effects` は610 PASS（1 slow）／0 SKIP。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-status-wire.raw.zip) は21項目、1,106,452 bytes、SHA256 `f1098ebe70c013f4008f7c8e343240ae4291cc2a8d5c74daa910f03c1ed8e436`。各項目の長さと SHA256 を照合した。検証後の `target` は145,752,235,087 bytes。
