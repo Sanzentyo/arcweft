@@ -22014,3 +22014,7 @@ Cargo の全ターゲット・全機能の依存グラフでは HIR と推移的
 実装 `a48772fadedcf35251c323545760634f374e8a6b` で、コンテナ・名目参照・定義の組立てを宣言順の明示的な作業スタックへ移した。名目型の再訪は同じ型識別子を参照する。型ノード数、型の深さ、名目定義数とその深さ、フィールドと列挙ケース、元の診断経路の各制約を従来の箇所で適用する。実装を `main` に通常 push し、公開 ref と変更6ファイルの blob を照合した。
 
 Windows の Sema 対象 nextest は `test(nominal_schema) | test(rust_adt) | test(safe_lifetime_promotion)` で43件成功、2,022件選択外、終了0。新しい回帰では、1 MiB の作業スレッド上で `Option` を挟む名目定義64個のグラフを構築し、65個の入力を `TypeDepth` の observed 129／maximum 128 で拒否した。Sema の default check、全体の書式検査、差分検査、構造ゲートが終了0。構造ゲートのブロッキング違反は0件。
+
+`cargo build --offline --locked -p arcweft-cli --bin arcw` は終了0。修正後の Windows 実 `arcw.exe`（SHA-256 `7eb31e361a87407a5669e129211b9bdee81bb7c589b798dc4dfe8c062bf426ec`）で、同じ `verify --mode test --json` の入力12件を再実行した。直接参照の20・32・48・60・63段は終了0、64・65・180段は `ActiveNominalDepth` の observed 65／maximum 64 で終了1。各辺に `Option` を挟む32・48・63段は `local-use type ownership exceeded its bounded traversal allowance`、64段は `TypeDepth` の observed 129／maximum 128 で終了1。全4件とも `type-check` の `sema.final_analysis` を JSON で返し、標準エラーは0 bytes。
+
+Cargo の全機能・全ターゲットの依存グラフでは Sema と推移的逆依存の計22パッケージ。Windows の `cargo check --offline --locked --workspace --all-targets --all-features` は終了0。
