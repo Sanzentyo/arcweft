@@ -22300,3 +22300,7 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 同じ `voice_catalog.rs` をリンクし、対照プログラムの AWFB に実PCM WAVと収集済み音声グラフを載せて往復した。32,208 bytesの AWFB を2回生成して完全一致を確認し、再読込後に `asset.voice.alice.001` から元の204 bytesを取得した。欠落したIDは空の検索結果を返した。`arcw inspect` は `AudioGraph` 425 bytesと `AssetCatalog` 652 bytesをどちらも schema 1 と報告した。AWFB の SHA-256 は `05ca9068f9a55d98a8ebfcea56e64c69bb85ddf26ad5d745c41c72e9af2410c0`。この往復はバンドルのコードと実素材の照合を確認する。
 
 先行の Windows 52 パッケージの `nextest --all-features` は `E0308` でテスト構築に失敗し、終了101だった。修正後に `cargo tree --offline --locked --workspace --all-features --target x86_64-pc-windows-msvc --invert arcweft-id` で重複を除いた結果、所有クレートを含む逆依存範囲は70パッケージだった。
+
+`2ef0935e7049499e0b9fe0d86d41b874ccf70c3e` の `just structure-audit-gate` はブロッキング違反0件、`cargo fmt --all --check` は終了0。画像カタログの既存3テストで旧引数が残っていたため、`bb638edf586974e82b661ac4cbd8d042443aca4a` で収集関数の現行シグネチャに合わせた。WebPの種別・寸法、無効な名前、正規化後の衝突を確認するアサーションは維持した。修正ファイルの `rustfmt --edition 2024 --check` は終了0だった。
+
+`cargo check --offline --locked -p arcweft-cli -p arcweft-player-web -p arcweft-runtime-plan --tests` は終了0（29分42秒、先行ビルドのロック待ちを含む）。`2581c1d1d4a8d719931f5cd8befd5d6f54fd2c5f` で待ち行列に入り、コンパイル開始前に本番ソースを `4cf55a351233a928586d15a56f54ba93384bce3c` に更新した。CLIのテスト構築より前に `bb638edf586974e82b661ac4cbd8d042443aca4a` の呼び出し修正が入った。続く `nextest` は同じ本番・テスト入力で構築を開始した。
