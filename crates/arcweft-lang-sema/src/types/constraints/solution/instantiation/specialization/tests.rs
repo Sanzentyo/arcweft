@@ -61,6 +61,108 @@ fn arguments(binder: GenericBinder, effects: &[&str]) -> ClosedTypeInstantiation
 }
 
 #[test]
+fn closing_a_residual_effect_enforces_the_retained_predicate_and_work_limits() {
+    use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable};
+    use crate::types::constraints::{TypeConstraintEffectScope, TypeConstraintParameterScope};
+    use crate::types::{DetachedGenericOwnerId, GenericEffectParameterId, GenericParameterOwnerId};
+
+    let declared = GenericEffectReference::Free(GenericEffectParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(735)),
+        0,
+    ));
+    let scope = TypeConstraintParameterScope::seal_call_scope(
+        GenericBinder::EMPTY,
+        [],
+        [],
+        TypeConstraintEffectScope::seal_call_scope(
+            [EffectConstraintVariable::new(
+                declared.clone(),
+                EffectConstraintEligibility::FutureEligible,
+            )],
+            [],
+        )
+        .unwrap(),
+        [],
+        [],
+    )
+    .unwrap();
+    let cancellation = AtomicBool::new(false);
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let (mut context, mut path) = context(scope, &cancellation).into_path(&mut graph);
+    let opened = path
+        .root_scope()
+        .parameters()
+        .effect_reference(&declared)
+        .unwrap();
+    path.effects
+        .ambient
+        .constrain_fixture_subset(
+            &mut graph,
+            &EffectRow::open(EffectSet::new(), opened.clone()),
+            &EffectRow::closed(EffectSet::from_labels(["fs.read"]).unwrap()),
+            &mut context,
+        )
+        .unwrap();
+    let completion = path
+        .close_fixture_continuation_effects(&[opened], &mut graph, &mut context)
+        .unwrap();
+    let prefix = TypeConstraintSolution::complete_application(
+        &path,
+        path.root_id(),
+        &completion,
+        graph.read(),
+        &mut context,
+    )
+    .unwrap();
+
+    let binder = GenericBinder::new(0, 0, 1);
+    let mut missing = arguments(binder, &[]);
+    let slot = missing.template_scope.bound_effect(0, 0).unwrap();
+    missing.effect_bindings = Box::new([]);
+    assert!(matches!(
+        prefix.close_residual_with_control(&missing, None, &mut UnmeteredTypeProjection),
+        Err(TypeProjectionError::Instantiation(TypeInstantiationError::UnboundEffect { parameter }))
+            if parameter == slot
+    ));
+    let invalid = arguments(binder, &["fs.write"]);
+    assert!(matches!(
+        prefix.close_residual_with_control(&invalid, None, &mut UnmeteredTypeProjection),
+        Err(TypeProjectionError::Instantiation(
+            TypeInstantiationError::UnsatisfiedEffectConstraint
+        ))
+    ));
+    let declaration_row = EffectRow::open(EffectSet::new(), declared);
+    for labels in [&[][..], &["fs.read"][..]] {
+        let actual = arguments(binder, labels);
+        let mut recorder = ProjectionRecorder::new(usize::MAX);
+        let expected = prefix
+            .close_residual_with_control(&actual, None, &mut recorder)
+            .unwrap();
+        assert_eq!(
+            expected.instantiate_effect_row(&declaration_row).unwrap(),
+            EffectSet::from_labels(labels.iter().copied()).unwrap()
+        );
+        assert!(!recorder.nodes.is_empty());
+        for limit in 0..recorder.nodes.len() {
+            assert!(matches!(
+                prefix.close_residual_with_control(
+                    &actual,
+                    None,
+                    &mut ProjectionRecorder::new(limit)
+                ),
+                Err(TypeProjectionError::Control(ProjectionStop::Node { .. }))
+            ));
+        }
+        assert_eq!(
+            prefix
+                .close_residual_with_control(&actual, None, &mut UnmeteredTypeProjection)
+                .unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
 fn project_callable_source_declaration_arguments_round_trip_all_namespaces() {
     let template = GenericScope::default().with_binder(GenericBinder::new(2, 1, 1));
     // The declaration key and value-scheme ordinal are deliberately different.

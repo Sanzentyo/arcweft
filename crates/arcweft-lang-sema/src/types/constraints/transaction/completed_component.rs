@@ -100,7 +100,6 @@ impl<D: ConstraintDomain> MaterializationInput<D> {
                 error,
             })?;
         }
-        context.validate_type_and_const_completion(branch)?;
         let mut completed = BTreeMap::new();
         for (domain, application) in ordered {
             context.enter_node()?;

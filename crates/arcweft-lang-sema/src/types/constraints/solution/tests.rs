@@ -36,7 +36,7 @@ pub(super) enum ProjectionStop {
 pub(super) struct ProjectionRecorder {
     limit: usize,
     pub(super) reject_binding: bool,
-    nodes: Vec<(crate::types::TypeProjectionNodeKind, u64)>,
+    pub(super) nodes: Vec<(crate::types::TypeProjectionNodeKind, u64)>,
     bindings: usize,
 }
 
@@ -758,102 +758,6 @@ fn residual_effect_replacements_lift_through_existing_function_binders() {
         )
     );
     assert!(quantified.semantic_identity_digest().is_ok());
-}
-
-#[test]
-fn closed_instantiation_enforces_retained_effect_predicate_and_work_limits() {
-    let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
-    use crate::effect_row::{EffectConstraintEligibility as Role, EffectConstraintVariable};
-    let reference =
-        crate::types::GenericEffectReference::Free(crate::types::GenericEffectParameterId::new(
-            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(735)),
-            0,
-        ));
-    let mut solve = |role, labels: &[&str]| {
-        let scope = TypeConstraintParameterScope::seal_call_scope(
-            GenericBinder::EMPTY,
-            [],
-            [],
-            crate::types::constraints::TypeConstraintEffectScope::seal_call_scope(
-                [EffectConstraintVariable::new(reference.clone(), role)],
-                [],
-            )
-            .expect("effect scope"),
-            [],
-            [],
-        )
-        .expect("parameter scope");
-        let cancellation = AtomicBool::new(false);
-        let (mut context, mut path) = context(scope, &cancellation).into_path(&mut effect_graph);
-        let variable = if role == Role::Rigid {
-            reference.clone()
-        } else {
-            path.root_scope()
-                .parameters()
-                .effect_reference(&reference)
-                .expect("opened effect")
-        };
-        let row = EffectRow::open(crate::effects::EffectSet::new(), variable);
-        let permitted = EffectRow::closed(
-            crate::effects::EffectSet::from_labels(labels.iter().copied()).expect("effects"),
-        );
-        path.effects
-            .ambient
-            .constrain_fixture_subset(&mut effect_graph, &row, &permitted, &mut context)
-            .expect("upper bound");
-        if role == Role::Bindable {
-            path.effects
-                .ambient
-                .constrain_fixture_subset(&mut effect_graph, &permitted, &row, &mut context)
-                .expect("exact binding");
-        }
-        TypeConstraintSolution::complete_fixture_application(
-            &path,
-            path.root_id(),
-            &mut effect_graph,
-            &mut context,
-        )
-        .expect("retained predicate")
-    };
-    let restricted = solve(Role::Rigid, &["fs.read"]);
-    assert!(matches!(
-        restricted.close_instantiation(None),
-        Err(TypeInstantiationError::UnboundEffect { .. })
-    ));
-    let invalid = solve(Role::Bindable, &["fs.write"])
-        .close_instantiation(None)
-        .expect("caller instance");
-    assert!(matches!(
-        restricted.close_instantiation(Some(&invalid)),
-        Err(TypeInstantiationError::UnsatisfiedEffectConstraint)
-    ));
-    for labels in [&[][..], &["fs.read"][..]] {
-        let caller = solve(Role::Bindable, labels)
-            .close_instantiation(None)
-            .expect("valid caller");
-        let mut recorder = ProjectionRecorder::new(usize::MAX);
-        let expected = restricted
-            .close_instantiation_with_control(Some(&caller), &mut recorder)
-            .expect("predicate satisfied");
-        assert!(!recorder.nodes.is_empty());
-        for limit in 0..recorder.nodes.len() {
-            assert!(matches!(
-                restricted.close_instantiation_with_control(
-                    Some(&caller),
-                    &mut ProjectionRecorder::new(limit)
-                ),
-                Err(crate::types::TypeProjectionError::Control(
-                    ProjectionStop::Node { .. }
-                ))
-            ));
-        }
-        assert_eq!(
-            restricted
-                .close_instantiation(Some(&caller))
-                .expect("inputs unchanged after aborts"),
-            expected
-        );
-    }
 }
 
 #[test]

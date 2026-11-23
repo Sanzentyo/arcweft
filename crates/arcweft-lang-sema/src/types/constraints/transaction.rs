@@ -2695,6 +2695,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         graph: &mut crate::effect_row::prepared::PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<MaterializationInput<D>, TypeConstraintError> {
+        context.check_cancelled()?;
+        context.validate_type_and_const_completion(path)?;
         context.with_original_scope(path.scope.clone(), |context| {
             context.validate_in_effect_read_scope(
                 graph,

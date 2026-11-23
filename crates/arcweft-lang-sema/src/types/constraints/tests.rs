@@ -819,14 +819,21 @@ fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_ro
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
-    assert!(matches!(
-        incomplete_transaction.finish(),
-        Err(super::TypeConstraintFailure::Rejected(
-            super::TypeConstraintCandidateFailure::Constraint(
-                super::TypeConstraintRejection::IncompleteInstantiation { .. },
-            ),
-        ))
-    ));
+    let failure = incomplete_transaction
+        .finish()
+        .err()
+        .expect("terminal completion must reject the unbound parameter");
+    assert!(
+        matches!(
+            &failure,
+            super::TypeConstraintFailure::Rejected(
+                super::TypeConstraintCandidateFailure::Constraint(
+                    super::TypeConstraintRejection::IncompleteInstantiation { parameter },
+                ),
+            ) if parameter == &bindable.clone().into()
+        ),
+        "{failure:?}"
+    );
     assert_eq!(bindable.ordinal(), 1);
 }
 

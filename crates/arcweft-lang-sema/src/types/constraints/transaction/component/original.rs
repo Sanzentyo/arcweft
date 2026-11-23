@@ -415,15 +415,15 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     TypeConstraintRejection::CyclicInstantiation { parameter }.into(),
                 ));
             }
+            context
+                .validate_type_and_const_completion(&branch)
+                .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
             let (relation, constraint) =
                 self.freeze_original_effects(&branch, members, &original_effects, graph, context)?;
             let effects = crate::types::constraints::normalization::PreparedConstraintEffects::new(
                 relation, constraint, context,
             )?
             .bind(graph, context)?;
-            context
-                .validate_type_and_const_completion(&branch)
-                .map_err(|error| reject(OriginalProductCheck::Completion, error))?;
             context.enter_node()?;
             solutions.push(PreparedOriginalProduct { branch, effects });
         }
