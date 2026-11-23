@@ -21836,3 +21836,15 @@ AWBC の回帰では生成した HostCall が元の計画キーを保持し、�
 Core と推移的逆依存の52パッケージを Cargo で確認した。最初の `just test-affected` は非CLIの8,199件中5,870件で停止し、5,868件成功、Semaの2件失敗、18件スキップ。失敗後も続行する設定で非CLIの8,199件を再実行し、8,189件成功、Semaの10件失敗、18件スキップ。失敗10件は[返却コールバックの効果の検証](#returned-callback-effects)などの原本にあるテスト名と一致した。最初の2件は今回の作業前にビルドされたバイナリ2本でも同じエラーを再現した。CLI はライブラリ・バイナリ196件と6対象の統合テスト30件がすべて成功した。
 
 [検証原本](acceptance-evidence/task-line-task-producer.raw.zip) は33項目、1,629,342 bytes、SHA256 `01901c9bbc739416ee52d6862d9dbe589bebdd833ead43c599f3e675be597ccb`。各項目の長さと SHA256 を照合した。検証後の `target` は145,850,580,706 bytes。
+
+<a id="native-dialogue-result-origin"></a>
+
+## 2026-11-23 — Native 台詞の結果を元の命令から束縛する
+
+基点 `7d548e7635bb854e85c47495c12f59d1cd64b019`。公開ソース `bc61df5271a0c0aeb953359ef07397e610bcc410`。`main` へ通常 push し、公開 ref と7変更 blob を照合した。
+
+Native の台詞フレームは起点の命令位置を保持する。結果の確定、取消時の選択、親への引き渡し、復元時の破棄済みハンドル検査では同じ命令のパターンを借りる。復元時は元の台詞コンテンツ、行タスク、結果型を照合する。実際の Plan の命令位置を JSON で往復し、元パターンへの参照を確認した。別の台詞、別種の命令、JSON に付加したパターンを拒否した。
+
+最初の Core ビルドは移行した呼び出し箇所とテストの参照で終了101。修正後の Core 全機能ライブラリは2,414件成功。Compiler の `evaluated_effects` と `scoped_defer` は174件成功し、通常時と取消時に選んだ関数の実行、およびスコープ終了時の処理を含む。両方の実行でスキップ0件。Cargo で Core を含む52パッケージを確認し、今回の実行は Native 台詞とスコープ制御を扱う対象へ絞った。Core 全ターゲット・全機能 Clippy は警告ありで終了0、書式と構造ゲートも終了0。構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-dialogue-origin.raw.zip) は12項目、487,938 bytes、SHA256 `582b00d94166ac9e529aabdabacef7b8e7f08b01e7c1355eb4b2d3d1f0e48f28`。各項目の長さと SHA256 を照合した。検証後の `target` は145,852,418,094 bytes。
