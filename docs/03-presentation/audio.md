@@ -21,6 +21,11 @@ operations use typed `AudioCommandEnvelope` values. Their Rust owners are
 commands and their deterministic dispatch identity are defined by the shared
 interaction model; this chapter does not duplicate their Rust data types.
 
+The optional AWFB `AudioGraph` section encodes the validated graph with the
+[version 1 product catalog codec](../../crates/arcweft-bundle/src/resource_codec/product_catalog.rs).
+Each graph asset identifies its encoded format and an asset-space virtual file.
+The bundle resolves the recorded virtual path through its asset catalog.
+
 ## Audio device I/O
 
 Arcweft uses CPAL as the primary low-level audio I/O backend. CPAL is wrapped by `arcweft-audio-device-cpal`, so the DSL never opens devices directly.

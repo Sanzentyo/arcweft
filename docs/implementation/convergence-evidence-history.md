@@ -22274,3 +22274,13 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 `cargo check --offline --locked --workspace --all-targets --all-features` と変更Rustの書式・差分空白検査は終了0。Cargoの全機能で解決した Core の逆依存は全ターゲット53パッケージ、Windowsは52パッケージ。全workspace Clippy、構造ゲート、このRust変更での一括WebGPU比較、全Windows逆依存の終端は未確認。
 
 `.arcw` の最小 Flow で `let _result = await voice.load(@voice.alice.opening.001)` を `arcw check --json` すると、`sema.final_analysis` の `semantic value resolution failed` で終了1。同じ形で `asset.image(@asset:.bg.room)` は終了0。`voice.load(@asset:.voice.opening)` は `has no admissible final type` で終了1だった。CLI SHA-256 は `a20cda58b619e651a377569743ffca9a4deaa1fed22d296e10bbd8327ea68fe8`。ソースの `Ref<Voice>` とバンドルの音声資源を結び付ける条件が残る。
+
+<a id="voice-catalog-baseline"></a>
+
+### 音声の参照とバンドル登録の再現
+
+基点 `527cdd118c2a25466291c4165a7815e14c41b5e5` のローカルと公開 `main` は一致し、開始時の追跡ファイルに差分はなかった。既存の未追跡ディレクトリが一つあった。
+
+最小の Flow と `assets/audio/voice/alice/001.wav` を置いたプロジェクトを `arcw bundle <source> --output <bundle> --json` で構築した。WAVは8 kHz、モノラルPCM 16 bit、80フレーム。終了0で仮想ファイル1件を収録した。`arcw inspect <bundle> --json` も終了0で、version 1 `AssetCatalog` は存在し、`AudioGraph` セクションは出力されなかった。CLI、WAV、AWFB の SHA-256 は順に `bde1233df3ae77ba43e0033aa13eef5c7643ace4b09f5f2675e99f17e33ba1f3`、`c2cad459c846d39738398058a31d73109d5884ca977cb835780de92502d5b5e8`、`0ea79aa31023082c0f5822c7a475c49f39a441ed8729239062b36a17e0fef7d0`。
+
+旧 `docs/schemas/audio-manifest.md` の `AudioManifest`、`CueDef`、`BgmDef` はスキーマ案だったため削除した。AWFB が実際に保持する `AudioGraph` と version 1 の codec を音声章から参照する。BGM と TTS の用例は音声章にあるため、旧 `docs/examples/audio.md` の独立した例を削除した。削除した両資料は基点の Git で参照できる。

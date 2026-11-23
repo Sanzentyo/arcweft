@@ -10,7 +10,7 @@ over strings or byte slices.
 - [GraphPatch](graph-patch.md)
 - [Adapter Manifest](adapter-manifest.md)
 - [Module Manifest](module-manifest.md)
-- [Audio Manifest](audio-manifest.md)
+- [Audio Graph](../03-presentation/audio.md#audio-model)
 - [Layer Manifest](layer-manifest.md)
 - [Character Manifest](character-manifest.md)
 - [Layer Tree](layer-tree.md)

@@ -5,7 +5,7 @@ This schema records microphone and camera capture declarations, device constrain
 Related:
 
 - [Microphone / Camera Capture Devices](../03-presentation/capture-devices.md)
-- [Audio Manifest](audio-manifest.md)
+- [Audio Graph](../03-presentation/audio.md#audio-model)
 - [Agent Protocol](agent-protocol.md)
 
 ## Top-level shape
