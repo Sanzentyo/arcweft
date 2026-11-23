@@ -480,7 +480,7 @@ outcome・相関・cursor 順序と照合する。Native AwaitMany の待機状�
 位置を保持し、その宣言から子タスクの設定と結果の束縛を得る。保持 item／capture は
 元 Plan の local declaration と実行中の呼び出し binding で型検査する。復元は
 frontier・in-flight・result の対応を確認し、元の設定と保持引数から基底タスクと
-実行中の子タスクの識別子を再計算して、発行済みの Need ハンドルと照合する。
+実行中の子タスクの producer key を再計算して、発行済みの Need ハンドルと照合する。
 この計上は pending operation／control／Await 全体や session の総予算を代替しない。
 
 所有する保存欄は affine 値を inert のまま保持できる。資源・型・元 storage の検査は

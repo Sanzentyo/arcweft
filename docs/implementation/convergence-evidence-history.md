@@ -21758,3 +21758,15 @@ inert control stack と lexical exit を JSON で往復し、元コード位置�
 最初の Core ビルドは generic storage の Serde 型制約、バンク座標を保持するクロージャ、移行したテストの引数で終了101。再ビルドで残っていたテスト1箇所の引数不足を修正した。両方の失敗ログを保存した。最終 Core は2,410 PASS／0 SKIP。Cargo グラフで Core を含む52パッケージを確認し、コンパイラの `callable_execution`、`scoped_defer`、`evaluated_effects` は563 PASS／0 SKIP、Product AWBC の表示権限・保存・ロールバックは対象3 PASS／37選択外。`RuntimeEnv` の compile-fail doctest 2 PASS。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-env-wire.raw.zip) は23項目、1,066,114 bytes、SHA256 `a96299566b1cbe30e79a9fbdff18338848e98860fb4d221bc8889fc5f0f8d671`。各項目の長さと SHA256 を照合した。検証後の `target` は144,843,973,685 bytes。
+
+<a id="native-await-many-wire"></a>
+
+## 2026-11-23 — Native AwaitMany を元の命令から再開する
+
+基点 `9245facdfddb33ad54ff2ee8d007e22e41a76724`。公開ソース `c51fa0bb226cf0c92561200e7a809d4a318fd007`。`main` への通常の push 後に公開 ref と9変更 blob を照合した。検証時に追跡ファイルの差分なし。
+
+待機状態は元命令の位置を保持し、元の子タスク設定と結果パターンを実行時に借りる。復元時は保持値を元の型と照合してから、基底タスクの順序付き入力と実行中の子タスクの引数・index を共通の producer key 計算に渡す。早期に resource 上限と frontier を検査する。実行中の状態を JSON で往復しながら3件の子タスクを実行し、進捗を各1回だけ出力して、到着順が異なる結果を元の順序で元の変数に束縛した。元 Plan の別種命令、型が同じ別の入力、子タスク間の発行済みハンドルの入れ替えを拒否した。Native と Product AWBC の順序付き結果および Product AWBC の公開保存・復元の既存比較も通過した。Native セッション全体の公開保存は残項目。
+
+Core 全機能 library は2,410 PASS／0 SKIP。Core を含む52パッケージの Cargo 逆依存を確認し、コンパイラの `callable_execution` と `flow_wait` は423 PASS（1 slow）／0 SKIP。共有資源枠の上限一致と1件超過、1操作予算、待機や並列実行の復元を確認した。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-await-many-wire.raw.zip) は15項目、1,013,268 bytes、SHA256 `fb003f1d7f8e979350918f796c81e1fb980e51fef0a0c74544195d5e4ad696d7`。各項目の長さと SHA256 を照合した。検証後の `target` は144,845,821,884 bytes。
