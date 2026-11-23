@@ -74,6 +74,7 @@ pollster = { workspace = true, optional = true }
 reedline = { version = "0.48.0", default-features = false, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 wgpu = { workspace = true, optional = true }
 

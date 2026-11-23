@@ -20,6 +20,7 @@ arcweft-presentation = { workspace = true }
 arcweft-runtime-accelerator = { workspace = true, default-features = true }
 arcweft-resource-model = { workspace = true }
 arcweft-runtime-scheduler = { workspace = true }
+arcweft-save = { workspace = true }
 arcweft-view = { workspace = true }
 num_cpus.workspace = true
 rayon.workspace = true

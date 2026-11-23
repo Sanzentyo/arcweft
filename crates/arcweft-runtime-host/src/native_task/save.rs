@@ -14,6 +14,14 @@ pub struct NativeTaskBridgeSaveSnapshot {
     pub(super) dispatches: Vec<TaskDispatchStart>,
 }
 
+impl NativeTaskBridgeSaveSnapshot {
+    pub(crate) fn precedes_epoch(&self, next_epoch: u64) -> bool {
+        self.dispatches
+            .iter()
+            .all(|start| start.identity().logical_epoch.0 < next_epoch)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum NativeTaskBridgeSaveError {
     #[error("direct host calls or their results are still in flight")]

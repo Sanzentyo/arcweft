@@ -72,8 +72,15 @@ pub(in crate::app) fn runtime_run_command(
         eprintln!("error: --text-input-trace-out requires --runner native");
         return Err(ExitCode::from(2));
     }
-    if has_session_save_options(options) && !matches!(options.runner, CliRuntimeRunner::Native) {
-        eprintln!("error: --session-load and --session-save-out require --runner native");
+    if has_session_save_options(options)
+        && !matches!(
+            options.runner,
+            CliRuntimeRunner::Native | CliRuntimeRunner::Headless
+        )
+    {
+        eprintln!(
+            "error: --session-load and --session-save-out require --runner native or headless"
+        );
         return Err(ExitCode::from(2));
     }
     if has_session_save_options(options) && options.watch {
@@ -103,6 +110,25 @@ fn runtime_run_headless_command(
     adapter_registrars: &[NativeAdapterRegistrar],
     selection: &SourceSelection,
 ) -> Result<(), ExitCode> {
+    if has_session_save_options(options) {
+        if options.runner != CliRuntimeRunner::Headless
+            || options.executor == CliRuntimeExecutorTier::AwbcProduct
+        {
+            eprintln!(
+                "error: headless session files require --runner headless with a Native executor (bytecode-vm or aot)"
+            );
+            return Err(ExitCode::from(2));
+        }
+        if selection.profile().is_some_and(|profile| {
+            matches!(
+                profile.kind(),
+                LaunchKind::Server | LaunchKind::Test | LaunchKind::Bench
+            )
+        }) {
+            eprintln!("error: headless session files require a foreground launch profile");
+            return Err(ExitCode::from(2));
+        }
+    }
     let pure_config = runtime_pure_config_for_selection(
         selection,
         options.pure_backend,

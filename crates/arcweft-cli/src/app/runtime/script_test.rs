@@ -37,6 +37,7 @@ pub(in crate::app) fn script_test_command(
     script_test_selection(
         &selection,
         RuntimeStepRunConfig {
+            session: Default::default(),
             steps: options.steps,
             mode: options.mode,
             max_ops: options.max_ops,
@@ -50,7 +51,7 @@ pub(in crate::app) fn script_test_command(
 
 pub(in crate::app) fn script_test_selection(
     selection: &SourceSelection,
-    config: RuntimeStepRunConfig,
+    config: RuntimeStepRunConfig<'_>,
     adapter_registrars: &[NativeAdapterRegistrar],
     json: bool,
 ) -> Result<(), ExitCode> {
@@ -119,7 +120,7 @@ fn run_script_test(
     test: &ScriptTest,
     plan: &RuntimePlan,
     host_config: NativeRunHost<'_>,
-    config: RuntimeStepRunConfig,
+    config: RuntimeStepRunConfig<'_>,
     execution_diagnostics: &arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext,
 ) -> ScriptTestRunSummary {
     if test.kind != "scenario" {

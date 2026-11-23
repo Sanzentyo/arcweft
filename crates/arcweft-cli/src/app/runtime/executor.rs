@@ -107,6 +107,14 @@ impl RuntimeExecutorCore {
 }
 
 impl RuntimeExecutorInstance {
+    pub(super) fn source_executor(&self) -> &ArcweftRuntimeExecutor {
+        &self.executor
+    }
+
+    pub(super) fn source_executor_mut(&mut self) -> &mut ArcweftRuntimeExecutor {
+        &mut self.executor
+    }
+
     pub(in crate::app) fn bind_bundle_external_calls(
         &mut self,
         bundle: &arcweft_bundle::ArcweftBundle,

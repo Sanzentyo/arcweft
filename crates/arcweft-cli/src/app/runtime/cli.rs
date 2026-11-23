@@ -48,6 +48,7 @@ pub(in crate::app) fn runtime_cli_command(
             cli_args: &options.args,
         },
         RuntimeStepRunConfig {
+            session: Default::default(),
             steps: options.steps,
             mode: options.mode,
             max_ops: options.max_ops,

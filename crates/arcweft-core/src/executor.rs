@@ -1062,26 +1062,49 @@ impl ArcweftRuntimeExecutor {
         snapshot: NativeEngineSaveSnapshot,
         target: AwbcProductSnapshotRestoreTarget<'_>,
     ) -> Result<(), ArcweftRuntimeExecutorSnapshotError> {
-        let vm = match &mut self.inner {
-            ArcweftRuntimeExecutorInner::RuntimePlanVm(vm)
-            | ArcweftRuntimeExecutorInner::StructuredAot(AotExecutor { vm, .. }) => vm,
-            _ => {
-                return Err(ArcweftRuntimeExecutorSnapshotError::TierMismatch {
-                    snapshot: "native_plan",
-                    actual: self.tier().as_str(),
-                });
-            }
-        };
+        let engine = self.native_engine_mut()?;
         if let AwbcProductSnapshotRestoreTarget::Entry(entry) = target
-            && vm.engine.selected_entry() != Some(entry)
+            && engine.selected_entry() != Some(entry)
         {
             return Err(ArcweftRuntimeExecutorSnapshotError::Root {
                 message: "restore target differs from the selected Native entry".into(),
             });
         }
-        vm.engine
-            .restore_save_snapshot(snapshot)
-            .map_err(Into::into)
+        engine.restore_save_snapshot(snapshot).map_err(Into::into)
+    }
+
+    /// Restores a Native session after admitting external value and dispatch
+    /// custody. The dispatch owner must validate its complete journal before
+    /// publishing it. A refused candidate leaves the original executor intact.
+    pub fn restore_native_session(
+        &mut self,
+        snapshot: NativeEngineSaveSnapshot,
+        validate_value: impl for<'a> Fn(crate::value::RuntimeBorrowedValue<'a>) -> Result<(), String>
+        + Send
+        + Sync
+        + 'static,
+        admit_dispatches: impl FnOnce(&[RuntimeNeedProducerDispatch]) -> Result<(), String>,
+    ) -> Result<(), ArcweftRuntimeExecutorSnapshotError> {
+        let engine = self.native_engine_mut()?;
+        let candidate = engine.prepare_save_restore(snapshot, Some(Box::new(validate_value)))?;
+        admit_dispatches(&candidate.restartable_dispatches())
+            .map_err(|message| ArcweftRuntimeExecutorSnapshotError::Native { message })?;
+        *engine = candidate;
+        Ok(())
+    }
+
+    fn native_engine_mut(&mut self) -> Result<&mut Engine, ArcweftRuntimeExecutorSnapshotError> {
+        let actual = self.tier().as_str();
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(vm)
+            | ArcweftRuntimeExecutorInner::StructuredAot(AotExecutor { vm, .. }) => {
+                Ok(&mut vm.engine)
+            }
+            _ => Err(ArcweftRuntimeExecutorSnapshotError::TierMismatch {
+                snapshot: "native_plan",
+                actual,
+            }),
+        }
     }
 
     /// Confirms the exact committed root-command prefix after the driver has

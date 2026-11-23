@@ -148,6 +148,20 @@ fn native_save_resumes_stateful_entry_and_rejects_a_redirected_frame_atomically(
     let outcome = finish_initializer(&mut restored);
     assert_eq!(outcome.entry, plan.entries()[0].id);
     let ready = restored.snapshot_for_save().unwrap();
+    let refused = restored
+        .prepare_save_restore(
+            ready.clone(),
+            Some(Box::new(|_| {
+                Err("external retained-value validation refused".into())
+            })),
+        )
+        .unwrap_err();
+    assert!(
+        refused
+            .to_string()
+            .contains("external retained-value validation refused")
+    );
+    assert_eq!(restored.snapshot_for_save().unwrap(), ready);
     let mut forged = serde_json::to_value(&snapshot).unwrap();
     forged["state"]["fiber"]["parent"] = serde_json::json!(1);
     assert!(matches!(

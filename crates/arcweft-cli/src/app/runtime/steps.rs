@@ -7,7 +7,7 @@ use arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext;
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::{EntryRuntimeId, RuntimeFlowInvocation, RuntimePlan};
 use arcweft_core::step::RuntimeStepInput;
-use arcweft_core::task::{GenerationId, LogicalEpoch};
+use arcweft_core::task::LogicalEpoch;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::native_task::standard_cli_registry_builder;
@@ -19,11 +19,14 @@ use std::path::Path;
 use std::process::ExitCode;
 use thiserror::Error;
 
+mod session;
+pub(in crate::app) use session::NativeSessionFiles;
+
 pub(in crate::app) fn run_runtime_steps(
     plan: RuntimePlan,
     entry: &EntryRuntimeId,
     host_config: NativeRunHost<'_>,
-    config: RuntimeStepRunConfig,
+    config: RuntimeStepRunConfig<'_>,
     execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, ExitCode> {
     let mut executor = RuntimeExecutorInstance::new(
@@ -42,12 +45,13 @@ pub(in crate::app) fn run_runtime_steps(
         );
         ExitCode::FAILURE
     })?;
-    run_runtime_steps_with_executor(
+    run_runtime_steps_with_files(
         &mut executor,
         host_config,
         config.steps,
         config.mode,
         config.max_ops,
+        config.session,
         execution_diagnostics,
     )
 }
@@ -55,7 +59,7 @@ pub(in crate::app) fn run_runtime_steps(
 pub(in crate::app) fn run_runtime_flow_steps(
     invocation: RuntimeFlowInvocation,
     host_config: NativeRunHost<'_>,
-    config: RuntimeStepRunConfig,
+    config: RuntimeStepRunConfig<'_>,
     execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, ExitCode> {
     let mut executor = RuntimeExecutorInstance::from_flow_invocation(
@@ -70,12 +74,13 @@ pub(in crate::app) fn run_runtime_flow_steps(
         eprintln!("error: failed to start explicit Flow invocation: {error}");
         ExitCode::FAILURE
     })?;
-    run_runtime_steps_with_executor(
+    run_runtime_steps_with_files(
         &mut executor,
         host_config,
         config.steps,
         config.mode,
         config.max_ops,
+        config.session,
         execution_diagnostics,
     )
 }
@@ -88,12 +93,33 @@ pub(in crate::app) fn run_runtime_steps_with_executor(
     max_ops: usize,
     execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, ExitCode> {
+    run_runtime_steps_with_files(
+        executor,
+        host_config,
+        steps,
+        mode,
+        max_ops,
+        NativeSessionFiles::default(),
+        execution_diagnostics,
+    )
+}
+
+fn run_runtime_steps_with_files(
+    executor: &mut RuntimeExecutorInstance,
+    host_config: NativeRunHost<'_>,
+    steps: usize,
+    mode: CliRuntimeStepMode,
+    max_ops: usize,
+    session: NativeSessionFiles<'_>,
+    execution_diagnostics: &ExecutionDiagnosticContext,
+) -> Result<RuntimeRunTrace, ExitCode> {
     try_run_runtime_steps_with_executor(
         executor,
         host_config,
         steps,
         mode,
         max_ops,
+        session,
         execution_diagnostics,
     )
     .map_err(|error| {
@@ -108,20 +134,33 @@ fn try_run_runtime_steps_with_executor(
     steps: usize,
     mode: CliRuntimeStepMode,
     max_ops: usize,
+    session: NativeSessionFiles<'_>,
     execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, RuntimeStepRunError> {
     if let Some(assets) = host_config.bundle_assets {
         executor.bind_bundle_external_calls(assets.artifact.bundle())?;
     }
+    let assets = host_config
+        .source
+        .and(host_config.bundle_assets)
+        .map(|assets| BundleAssetAdapter::try_new(assets.context, assets.artifact.clone()))
+        .transpose()?;
     let mut host = host_config
         .source
-        .map(|source| build_native_task_bridge(source, host_config))
+        .map(|source| build_native_task_bridge_with_assets(source, host_config, assets.clone()))
         .transpose()?;
+    let mut next_step_index = session.restore(executor, host.as_mut(), assets)?;
     let mut task_events = Vec::new();
     let mut host_call_results = Vec::new();
     let mut summaries = Vec::new();
     let mut final_status = FlowFiberStatus::Running;
-    for step_index in 0..steps {
+    for _ in 0..steps {
+        let step_index = usize::try_from(next_step_index)
+            .map_err(|_| RuntimeStepRunError::LogicalEpochOverflow)?;
+        let epoch = LogicalEpoch(next_step_index);
+        next_step_index = next_step_index
+            .checked_add(1)
+            .ok_or(RuntimeStepRunError::LogicalEpochOverflow)?;
         if let Some(host) = host.as_mut() {
             host.pump_main_thread()?;
             task_events.extend(host.poll_completions()?);
@@ -154,28 +193,26 @@ fn try_run_runtime_steps_with_executor(
         if let Some(host) = host.as_mut() {
             task_events = host.complete_tasks_with_generation_and_bundle_asset_context(
                 executor.program_owner(),
-                GenerationId::new(0),
-                LogicalEpoch(
-                    u64::try_from(step_index)
-                        .map_err(|_| RuntimeStepRunError::LogicalEpochOverflow)?,
-                ),
+                executor.source_executor().generation(),
+                epoch,
                 task_requests,
                 host_config.bundle_assets.map(|assets| assets.context),
             )?;
             task_events.extend(host.complete_program_tasks(&mut program_completions)?);
-            host_call_results = host.complete_host_calls(
-                executor.program_owner(),
-                LogicalEpoch(
-                    u64::try_from(step_index)
-                        .map_err(|_| RuntimeStepRunError::LogicalEpochOverflow)?,
-                ),
-                host_call_requests,
-            );
+            host_call_results =
+                host.complete_host_calls(executor.program_owner(), epoch, host_call_requests);
         }
         if done {
             break;
         }
     }
+    session.capture(
+        executor,
+        host.as_ref(),
+        next_step_index,
+        &task_events,
+        &host_call_results,
+    )?;
     Ok(RuntimeRunTrace {
         steps: summaries,
         final_status,
@@ -190,6 +227,18 @@ pub(in crate::app) fn build_native_task_bridge(
     source: NativeRunSource<'_>,
     host_config: NativeRunHost<'_>,
 ) -> Result<NativeTaskBridge, RuntimeStepRunError> {
+    let assets = host_config
+        .bundle_assets
+        .map(|assets| BundleAssetAdapter::try_new(assets.context, assets.artifact.clone()))
+        .transpose()?;
+    build_native_task_bridge_with_assets(source, host_config, assets)
+}
+
+fn build_native_task_bridge_with_assets(
+    source: NativeRunSource<'_>,
+    host_config: NativeRunHost<'_>,
+    asset_adapter: Option<BundleAssetAdapter>,
+) -> Result<NativeTaskBridge, RuntimeStepRunError> {
     let builder = standard_cli_registry_builder(source.file_roots().clone(), host_config.cli_args)?;
     let builder = host_config
         .adapter_registrars
@@ -197,11 +246,8 @@ pub(in crate::app) fn build_native_task_bridge(
         .try_fold(builder, |builder, register| {
             register(source.path(), builder)
         })?;
-    let builder = if let Some(assets) = host_config.bundle_assets {
-        builder.register(BundleAssetAdapter::try_new(
-            assets.context,
-            assets.artifact.clone(),
-        )?)?
+    let builder = if let Some(assets) = asset_adapter {
+        builder.register(assets)?
     } else {
         builder
     };
@@ -223,6 +269,15 @@ pub(in crate::app) enum RuntimeStepRunError {
     BundleAsset(#[from] arcweft_runtime_host::BundleAssetAdapterError),
     #[error("runtime step index does not fit a task logical epoch")]
     LogicalEpochOverflow,
+    #[error(transparent)]
+    Session(#[from] arcweft_runtime_host::native_session::NativeSourceSessionSaveError),
+    #[error("source session files require a native host bridge")]
+    SessionHostRequired,
+    #[error("source session file {} could not be accessed: {source}", .path.display())]
+    SessionFile {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
 }
 
 pub(in crate::app) struct RuntimeRunTrace {
@@ -269,23 +324,28 @@ impl<'a> NativeRunSource<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(in crate::app) struct RuntimeStepRunConfig {
+pub(in crate::app) struct RuntimeStepRunConfig<'a> {
     pub(in crate::app) steps: usize,
     pub(in crate::app) mode: CliRuntimeStepMode,
     pub(in crate::app) max_ops: usize,
     pub(in crate::app) executor: CliRuntimeExecutorTier,
     pub(in crate::app) pure_config: RuntimePureAcceleratorConfig,
+    pub(in crate::app) session: NativeSessionFiles<'a>,
 }
 
 pub(in crate::app) fn runtime_step_run_config_from_run_options(
     options: &RuntimeRunOptions,
     pure_config: RuntimePureAcceleratorConfig,
-) -> RuntimeStepRunConfig {
+) -> RuntimeStepRunConfig<'_> {
     RuntimeStepRunConfig {
         steps: options.steps,
         mode: options.mode,
         max_ops: options.max_ops,
         executor: options.executor,
         pure_config,
+        session: NativeSessionFiles {
+            load: options.session_load.as_deref(),
+            save: options.session_save_out.as_deref(),
+        },
     }
 }

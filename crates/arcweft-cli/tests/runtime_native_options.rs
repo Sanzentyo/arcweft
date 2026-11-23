@@ -17,20 +17,120 @@ fn text_input_trace_rejects_headless_runner() {
 }
 
 #[test]
-fn session_io_rejects_headless_runner() {
+fn session_io_requires_an_explicit_native_or_headless_runner() {
     let fixture = fixture();
-    for (option, path) in session_options() {
-        assert_run_usage_error(
-            &[
-                "--runner",
-                "headless",
-                fixture.to_str().expect("fixture path is UTF-8"),
-                option,
-                path,
-            ],
-            "--session-load and --session-save-out require --runner native",
-        );
+    for runner in ["auto", "web"] {
+        for (option, path) in session_options() {
+            assert_run_usage_error(
+                &[
+                    "--runner",
+                    runner,
+                    fixture.to_str().expect("fixture path is UTF-8"),
+                    option,
+                    path,
+                ],
+                "--session-load and --session-save-out require --runner native or headless",
+            );
+        }
     }
+}
+
+#[test]
+fn headless_native_session_preserves_restart_point_and_rejects_a_different_entry() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("checkpoint.arcw");
+    let saved = directory.path().join("checkpoint.awfs");
+    let completed = directory.path().join("completed.awfs");
+    std::fs::write(
+        &source,
+        "flow main() -> i64 {
+             let first = 6i64
+             let second = first + 1i64
+             return second
+         }
+         entry cli @entry.main { goto @flow.main }
+         entry cli @entry.alias { goto @flow.main }",
+    )
+    .unwrap();
+    let path = source.to_str().unwrap();
+    let save = saved.to_str().unwrap();
+    let finished_save = completed.to_str().unwrap();
+    let capture = run(&[
+        "--runner",
+        "headless",
+        path,
+        "--entry",
+        "entry.main",
+        "--json",
+        "--steps",
+        "1",
+        "--session-save-out",
+        save,
+    ]);
+    assert!(capture.status.success(), "{capture:?}");
+    let initial: serde_json::Value = serde_json::from_slice(&capture.stdout).unwrap();
+    assert_eq!(initial["steps"][0]["index"], 0);
+    assert_eq!(initial["final_status"], "running");
+    let original = std::fs::read(&saved).unwrap();
+
+    let wrong_entry = run(&[
+        "--runner",
+        "headless",
+        path,
+        "--entry",
+        "entry.alias",
+        "--session-load",
+        save,
+        "--session-save-out",
+        save,
+    ]);
+    assert!(!wrong_entry.status.success(), "{wrong_entry:?}");
+    assert!(String::from_utf8_lossy(&wrong_entry.stderr).contains("original invocation or entry"));
+    assert_eq!(std::fs::read(&saved).unwrap(), original);
+
+    let resumed = run(&[
+        "--runner",
+        "headless",
+        path,
+        "--entry",
+        "entry.main",
+        "--executor",
+        "aot",
+        "--json",
+        "--steps",
+        "32",
+        "--mode",
+        "drain",
+        "--max-ops",
+        "64",
+        "--session-load",
+        save,
+        "--session-save-out",
+        finished_save,
+    ]);
+    assert!(resumed.status.success(), "{resumed:?}");
+    let report: serde_json::Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    assert_eq!(report["steps"][0]["index"], 1);
+    assert_eq!(report["final_status"], "done Return(\"7\")");
+    assert_ne!(std::fs::read(&completed).unwrap(), original);
+
+    let mut corrupt = std::fs::read(&completed).unwrap();
+    *corrupt.last_mut().unwrap() ^= 1;
+    std::fs::write(&completed, &corrupt).unwrap();
+    let corrupted = run(&[
+        "--runner",
+        "headless",
+        path,
+        "--entry",
+        "entry.main",
+        "--session-load",
+        finished_save,
+        "--session-save-out",
+        save,
+    ]);
+    assert!(!corrupted.status.success(), "{corrupted:?}");
+    assert!(String::from_utf8_lossy(&corrupted.stderr).contains("source session save codec error"));
+    assert_eq!(std::fs::read(&saved).unwrap(), original);
 }
 
 #[test]

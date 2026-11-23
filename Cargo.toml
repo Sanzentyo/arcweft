@@ -265,6 +265,7 @@ serde_repr = "0.1.20"
 proc-macro2 = "1.0.106"
 quote = "1.0.45"
 syn = { version = "2.0.117", features = ["full", "extra-traits"] }
+tempfile = "3.27.0"
 thiserror = "2.0.18"
 toml = "1.1.2"
 ureq = "3.3.0"

@@ -203,6 +203,7 @@ fn bench_expectation_failures(
             cli_args: &[],
         },
         RuntimeStepRunConfig {
+            session: Default::default(),
             steps: options.steps,
             mode: options.mode,
             max_ops: options.max_ops,
@@ -383,6 +384,7 @@ fn run_bench_flow_section(
                 Some(NativeRunSource::new(source_path, runtime.file_roots)),
                 runtime.bundle_assets,
                 RuntimeStepRunConfig {
+                    session: Default::default(),
                     steps: options.steps,
                     mode: options.mode,
                     max_ops: options.max_ops,

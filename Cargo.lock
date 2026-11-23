@@ -651,6 +651,7 @@ dependencies = [
  "reedline",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "wgpu",
 ]
@@ -1564,6 +1565,7 @@ dependencies = [
  "arcweft-runtime-accelerator",
  "arcweft-runtime-plan",
  "arcweft-runtime-scheduler",
+ "arcweft-save",
  "arcweft-source",
  "arcweft-text-model",
  "arcweft-view",

@@ -264,6 +264,7 @@ view SourceProbe(enabled: bool = true) {
                     cli_args: &[],
                 },
                 RuntimeStepRunConfig {
+                    session: Default::default(),
                     steps: 8,
                     mode: CliRuntimeStepMode::Drain,
                     max_ops: 32,

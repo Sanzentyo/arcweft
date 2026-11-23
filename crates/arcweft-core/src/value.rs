@@ -98,6 +98,7 @@ mod shape;
 mod storage;
 pub(crate) use storage::{InertRuntimeValueStorage, RuntimeStoredValue};
 mod view;
+pub(crate) use borrowed::RetainedValueValidator;
 pub use borrowed::{
     RuntimeBorrowedOpaque, RuntimeBorrowedSequence, RuntimeBorrowedTuple, RuntimeBorrowedValue,
     RuntimeBorrowedValueVisitError,

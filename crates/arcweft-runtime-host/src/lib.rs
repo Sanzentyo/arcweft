@@ -5,6 +5,7 @@ pub mod bundle_asset;
 pub mod bundle_runner;
 pub mod capabilities;
 pub mod clipboard_host;
+pub mod native_session;
 pub mod native_system;
 pub mod native_task;
 pub mod presentation_dispatch;

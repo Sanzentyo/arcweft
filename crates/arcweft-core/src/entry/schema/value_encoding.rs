@@ -495,6 +495,7 @@ pub(crate) struct ValueResourceAdmission<Work = ValidationWork> {
     encoding: ValueEncoding,
     program_storage_obligations: bool,
     presentation: PresentationCustodyAdmission,
+    retained_validator: Option<crate::value::RetainedValueValidator>,
 }
 
 /// The same allowance between validation calls, with no shared local handle.
@@ -509,6 +510,7 @@ impl<Work> ValueResourceAdmission<Work> {
             encoding: self.encoding,
             program_storage_obligations: self.program_storage_obligations,
             presentation: self.presentation,
+            retained_validator: self.retained_validator,
         }
     }
 }
@@ -535,6 +537,7 @@ impl ValueResourceAdmission {
             encoding,
             program_storage_obligations,
             presentation,
+            retained_validator,
         } = self;
         match work.try_into_state() {
             Ok(work) => Ok(ValueResourceAdmission {
@@ -544,6 +547,7 @@ impl ValueResourceAdmission {
                 encoding,
                 program_storage_obligations,
                 presentation,
+                retained_validator,
             }),
             Err(work) => Err(Self {
                 budget,
@@ -552,6 +556,7 @@ impl ValueResourceAdmission {
                 encoding,
                 program_storage_obligations,
                 presentation,
+                retained_validator,
             }),
         }
     }
@@ -579,11 +584,19 @@ impl ValueResourceAdmission {
             encoding,
             program_storage_obligations: false,
             presentation: PresentationCustodyAdmission::Unobserved,
+            retained_validator: None,
         }
     }
 
     pub(crate) fn work(&self) -> ValidationWork {
         self.work.clone()
+    }
+
+    pub(crate) fn set_retained_validator(
+        &mut self,
+        validator: crate::value::RetainedValueValidator,
+    ) {
+        self.retained_validator = Some(validator);
     }
 
     pub(crate) fn require_presentation_custody(&mut self) {
@@ -684,10 +697,17 @@ impl ValueResourceAdmission {
             max_string_bytes: Some(limits.max_string_bytes),
         };
         let mut program_storage = false;
+        let origin = self.origin;
         let mut inspect = |value: RuntimeValueView<'_>| {
             program_storage |= value.requires_program_storage_admission();
             if let Some(observer) = &mut observer {
                 observer(value)?;
+            }
+            if let Some(validator) = &self.retained_validator {
+                validator(crate::value::RuntimeBorrowedValue::from_retained_view(
+                    value, origin,
+                ))
+                .map_err(|message| RuntimeSchemaError::Encoding { message })?;
             }
             if !matches!(self.presentation, PresentationCustodyAdmission::Unobserved)
                 && let RuntimeValueView::Opaque(opaque) = value

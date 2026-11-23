@@ -27,6 +27,18 @@ pub struct RuntimeBorrowedValue<'a> {
     pub(super) origin: ValueAdmissionOrigin,
 }
 
+pub(crate) type RetainedValueValidator =
+    Box<dyn for<'a> Fn(RuntimeBorrowedValue<'a>) -> Result<(), String> + Send + Sync>;
+
+impl<'a> RuntimeBorrowedValue<'a> {
+    pub(crate) const fn from_retained_view(
+        value: RuntimeValueView<'a>,
+        origin: ValueAdmissionOrigin,
+    ) -> Self {
+        Self { value, origin }
+    }
+}
+
 /// Logical tuple fields borrowed in their owning codec order.
 #[derive(Clone, Copy, Debug)]
 pub struct RuntimeBorrowedTuple<'a> {

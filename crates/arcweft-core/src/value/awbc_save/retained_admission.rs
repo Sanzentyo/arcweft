@@ -226,6 +226,13 @@ impl RuntimeRetainedValueAdmission {
         Self::new(Some(owner), limits)
     }
 
+    pub(crate) fn set_retained_validator(
+        &mut self,
+        validator: crate::value::RetainedValueValidator,
+    ) {
+        self.resources.set_retained_validator(validator);
+    }
+
     /// Keeps the admitted Source and its exact executable with the same bank.
     /// Digest-equivalent programs cannot provide this retained Source lease.
     pub(crate) fn for_task_source(

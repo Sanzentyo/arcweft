@@ -149,6 +149,15 @@ impl Engine {
         &mut self,
         snapshot: NativeEngineSaveSnapshot,
     ) -> Result<(), NativeEngineSaveError> {
+        *self = self.prepare_save_restore(snapshot, None)?;
+        Ok(())
+    }
+
+    pub(crate) fn prepare_save_restore(
+        &self,
+        snapshot: NativeEngineSaveSnapshot,
+        validator: Option<crate::value::RetainedValueValidator>,
+    ) -> Result<Self, NativeEngineSaveError> {
         if snapshot.executable != *self.plan.executable_semantic_digest().as_bytes()
             || snapshot.artifact != self.plan.artifact()
         {
@@ -166,6 +175,9 @@ impl Engine {
         let owner = RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
         let source = RuntimeTaskSourceProgram::native(Arc::clone(&self.plan));
         let mut admission = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+        if let Some(validator) = validator {
+            admission.set_retained_validator(validator);
+        }
         let need_producers = state
             .need_producers
             .bind_assertions(Some(&source), &mut admission)
@@ -212,11 +224,8 @@ impl Engine {
         image
             .admit_shared_rollback_state(&self.plan, limits, &mut admission)
             .map_err(NativeEngineSaveError::State)?;
-        let restored =
-            Self::from_admitted_rollback_image(image, &owner, NeedProducerRestorePolicy::Resume)
-                .map_err(NativeEngineSaveError::State)?;
-        *self = restored;
-        Ok(())
+        Self::from_admitted_rollback_image(image, &owner, NeedProducerRestorePolicy::Resume)
+            .map_err(NativeEngineSaveError::State)
     }
 
     pub(crate) fn selected_entry(&self) -> Option<&ActiveEntrySnapshotV1> {

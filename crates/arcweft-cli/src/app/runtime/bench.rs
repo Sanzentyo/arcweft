@@ -20,7 +20,7 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
     mut executor: RuntimeExecutorCore,
     source: Option<NativeRunSource<'_>>,
     bundle_assets: RuntimeBundleAssets<'_>,
-    config: RuntimeStepRunConfig,
+    config: RuntimeStepRunConfig<'_>,
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
     pure: &mut RuntimePureAccelerator,
