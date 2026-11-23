@@ -17,16 +17,13 @@ use crate::task::{NeedProducerFamily, TaskClass};
 
 impl RuntimeTaskPlanDefinition {
     fn is_original(&self) -> bool {
-        matches!(
-            self,
-            Self::OriginalSource | Self::OriginalControl(_) | Self::OriginalComplete(_)
-        )
+        matches!(self, Self::OriginalSource | Self::OriginalControl(_))
     }
 
     fn control(&self) -> Option<&RuntimeControlEffectContractSeedId> {
         match self {
             Self::Explicit(Some(seed)) => Some(&seed.control_effect),
-            Self::OriginalComplete(seed) => Some(&seed.control_effect),
+            Self::Resolved(seed) => Some(&seed.control_effect),
             Self::OriginalControl(control) => Some(control),
             Self::FunctionRoot(seed) => Some(&seed.control_effect),
             Self::Explicit(None) | Self::OriginalSource => None,
@@ -40,11 +37,11 @@ impl RuntimeTaskPlanDefinition {
         Ok(match self {
             Self::Explicit(Some(seed)) => {
                 let (producer_function, ..) = seed
-                    .producer_function
+                    .producer
                     .resolve(&builder.issuer)
                     .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
                 Some(RuntimeTaskPlan {
-                    producer_function,
+                    producer: crate::plan::RuntimeCodeOwner::Function(producer_function),
                     family: seed.family,
                     class: seed.class,
                     request_template: seed.request_template,
@@ -52,7 +49,7 @@ impl RuntimeTaskPlanDefinition {
                     binding: seed.binding,
                 })
             }
-            Self::OriginalComplete(seed) => Some(seed),
+            Self::Resolved(seed) => Some(seed),
             Self::Explicit(None)
             | Self::OriginalSource
             | Self::OriginalControl(_)
@@ -69,12 +66,12 @@ impl RuntimeTaskPlanDefinition {
         let Self::FunctionRoot(seed) = self else {
             return Ok(self);
         };
-        let source = builder.original_function_source(&seed.producer_function)?;
+        let source = builder.original_function_source(&seed.producer)?;
         let endpoint =
             OriginalRequestEndpoint::from_construction_root(builder, source, meter, limits)?;
         let request = builder.task_request_seed_for_endpoint(endpoint, meter, limits)?;
         Ok(Self::Explicit(Some(RuntimeTaskPlanSeed::new(
-            seed.producer_function,
+            seed.producer,
             seed.family,
             seed.class,
             request,
@@ -143,6 +140,44 @@ impl RuntimePlanBuilder {
                 .collect();
         }
         let mut claimed = std::collections::BTreeSet::new();
+        let mut pending = Vec::new();
+        let mut collect = |endpoint: OriginalRequestEndpoint<'_>, meter: &mut TaskSemanticMeter| {
+            let source = endpoint
+                .task_source()
+                .expect("visitor supplies task sources");
+            if !owner.contains(source.coordinate()) {
+                return Err(RuntimeBodySemanticError::ForeignTaskCoordinate);
+            }
+            let ordinal = source.coordinate().ordinal() as usize;
+            if !definitions[ordinal].is_original() {
+                return Ok(());
+            }
+            if !claimed.insert(ordinal) {
+                return Err(RuntimeBodySemanticError::AmbiguousOriginalRequestEndpoint {
+                    producer: endpoint.code_owner(),
+                });
+            }
+            let child = endpoint
+                .control_child_coordinate()
+                .map(|coordinate| {
+                    if !owner.contains(coordinate) {
+                        return Err(RuntimeBodySemanticError::ForeignTaskCoordinate);
+                    }
+                    let ordinal = coordinate.ordinal() as usize;
+                    definitions[ordinal].control().cloned().ok_or(
+                        RuntimeBodySemanticError::MissingRow {
+                            table: "task plans",
+                            ordinal,
+                        },
+                    )
+                })
+                .transpose()?;
+            pending.push((
+                ordinal,
+                source.original_definition(self, endpoint, child, meter, limits)?,
+            ));
+            Ok(())
+        };
         for index in 0..self.function_sites.len() {
             let defined = &self.function_sites[index];
             let Some(body) = defined.body.as_ref() else {
@@ -152,7 +187,6 @@ impl RuntimePlanBuilder {
                 std::num::NonZeroU32::new(meter.checked_ordinal(index + 1)?)
                     .ok_or(TaskSemanticEncodingError::ArithmeticOverflow)?,
             );
-            let mut pending: Vec<(usize, OriginalSourceTaskDefinition)> = Vec::new();
             OriginalRequestEndpoint::visit_construction_tasks(
                 self,
                 OriginalFunctionSource {
@@ -162,60 +196,37 @@ impl RuntimePlanBuilder {
                 },
                 meter,
                 limits,
-                &mut |endpoint, meter| {
-                    let source = endpoint
-                        .task_source()
-                        .expect("visitor supplies task sources");
-                    if !owner.contains(source.coordinate()) {
-                        return Err(RuntimeBodySemanticError::ForeignTaskCoordinate);
-                    }
-                    let ordinal = source.coordinate().ordinal() as usize;
-                    if !definitions[ordinal].is_original() {
-                        return Ok(());
-                    }
-                    if !claimed.insert(ordinal) {
-                        return Err(RuntimeBodySemanticError::AmbiguousOriginalRequestEndpoint {
-                            function,
-                        });
-                    }
-                    let child = endpoint
-                        .control_child_coordinate()
-                        .map(|coordinate| {
-                            if !owner.contains(coordinate) {
-                                return Err(RuntimeBodySemanticError::ForeignTaskCoordinate);
-                            }
-                            let ordinal = coordinate.ordinal() as usize;
-                            definitions[ordinal].control().cloned().ok_or(
-                                RuntimeBodySemanticError::MissingRow {
-                                    table: "task plans",
-                                    ordinal,
-                                },
-                            )
-                        })
-                        .transpose()?;
-                    pending.push((
-                        ordinal,
-                        source.original_definition(self, endpoint, child, meter, limits)?,
-                    ));
-                    Ok(())
-                },
+                &mut collect,
             )?;
-            for (ordinal, draft) in pending {
-                let control_effect = definitions[ordinal]
-                    .control()
-                    .expect("the original source reserved its control row")
-                    .clone();
-                self.define_control_effect_contract(&control_effect, draft.control_effect)?;
-                definitions[ordinal] =
-                    RuntimeTaskPlanDefinition::OriginalComplete(RuntimeTaskPlan {
-                        producer_function: draft.producer_function,
-                        family: draft.family,
-                        class: draft.class,
-                        request_template: draft.request_template,
-                        control_effect,
-                        binding: draft.binding,
-                    });
-            }
+        }
+        for (ordinal, line) in self.line_task_groups.iter().enumerate() {
+            let group = crate::runtime_id::RuntimeLineTaskGroupId::from_zero_based(ordinal)
+                .ok_or(TaskSemanticEncodingError::ArithmeticOverflow)?;
+            line.try_visit_code_roots(|body, ops| {
+                OriginalRequestEndpoint::visit_construction_line_tasks(
+                    self,
+                    crate::plan::RuntimeCodeOwner::LineTask { group, body },
+                    ops,
+                    meter,
+                    limits,
+                    &mut collect,
+                )
+            })?;
+        }
+        for (ordinal, draft) in pending {
+            let control_effect = definitions[ordinal]
+                .control()
+                .expect("original source reserved its control row")
+                .clone();
+            self.define_control_effect_contract(&control_effect, draft.control_effect)?;
+            definitions[ordinal] = RuntimeTaskPlanDefinition::Resolved(RuntimeTaskPlan {
+                producer: draft.producer,
+                family: draft.family,
+                class: draft.class,
+                request_template: draft.request_template,
+                control_effect,
+                binding: draft.binding,
+            });
         }
         definitions
             .into_iter()
@@ -226,7 +237,7 @@ impl RuntimePlanBuilder {
 
 type OriginalSourceTaskDefinition = RuntimeTaskPlan<
     RuntimeLineTaskGroupSeedId,
-    crate::runtime_id::RuntimeFunctionSiteId,
+    crate::plan::RuntimeCodeOwner,
     RuntimeTaskRequestTemplateSeed,
     RuntimeControlEffectContractSeed,
 >;
@@ -320,7 +331,7 @@ impl RuntimeBodyTaskSource<'_> {
             children: child.into_iter().collect(),
         };
         Ok(RuntimeTaskPlan {
-            producer_function: endpoint.function_id(),
+            producer: endpoint.code_owner(),
             family,
             class,
             request_template: request,

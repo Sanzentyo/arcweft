@@ -562,7 +562,7 @@ impl OriginalRequestEndpoint<'_> {
     ) -> Result<RuntimeRequestValueSource, RuntimeBodySemanticError> {
         meter.charge_work(1)?;
         let captured = self
-            .source_local_is_capture(local)
+            .source_local_is_capture(local, meter)
             .inspect_err(|_| meter.reject_owner())?;
         Ok(if captured {
             RuntimeRequestValueSource::Capture

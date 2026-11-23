@@ -44,7 +44,13 @@ fn compiler_program_body_borrows_the_original_operation_and_enclosing_function()
             ..
         },
         _,
-    ] = source.function().body().executable().unwrap().ops()
+    ] = source
+        .function()
+        .unwrap()
+        .body()
+        .executable()
+        .unwrap()
+        .ops()
     else {
         panic!("the enclosing fixture function owns that actual Thread")
     };

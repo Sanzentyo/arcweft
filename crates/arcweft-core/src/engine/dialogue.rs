@@ -4288,7 +4288,7 @@ mod tests {
         let target = RuntimeHostCallTargetSeed {
             producer: HostCallProducerDefinition {
                 contract: NeedProducerContractDigest::from_bytes([0x78; 32]),
-                plan: coordinate,
+                plan: coordinate.clone(),
                 site: NeedProducerSiteDigest::from_bytes([0x79; 32]),
             },
             public_id: "init.log".into(),
@@ -4300,31 +4300,6 @@ mod tests {
             mode: RuntimeHostCallMode::Suspend,
             deterministic: true,
         };
-        // The existing task-plan builder derives its original receipt from a
-        // function endpoint. Exercise the dialogue runtime with that sealed plan.
-        let function = builder
-            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
-                definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x7a; 32]),
-                role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
-                function_type: None,
-                inputs: Box::new([]),
-                result: unit,
-                body_kind: RuntimeFunctionSiteBodyKind::Executable,
-                effects: RuntimeEffectSet::empty(),
-            })
-            .unwrap();
-        builder
-            .define_function_site_seed(
-                &function,
-                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
-                    effects: RuntimeEffectSet::empty(),
-                    ops: Box::new([RuntimeFlowOpSeed::HostCall {
-                        binding: None,
-                        target: target.clone(),
-                    }]),
-                }),
-            )
-            .unwrap();
         let character = arcweft_character::id::CharacterId::try_new("character.akane").unwrap();
         let site = RuntimeLineHandleSiteId::from_zero_based(0);
         let group = builder
@@ -4366,7 +4341,34 @@ mod tests {
         builder
             .attach_line_task_group_seed(&content, &group)
             .unwrap();
-        let mut engine = Engine::new(builder.finish().expect("plan"));
+        let plan = builder
+            .finish()
+            .expect("the activation owns its original host task");
+        let source = plan.task_plan(&coordinate).unwrap();
+        assert_eq!(
+            source.definition().producer(),
+            crate::plan::RuntimeCodeOwner::LineTask {
+                group: RuntimeLineTaskGroupId::from_zero_based(0).unwrap(),
+                body: crate::plan::RuntimeLineCodeBody::Activation,
+            }
+        );
+        let limits = crate::plan::task_source::RuntimeTaskSourceArtifactLimits::default();
+        let artifact = plan.task_source_artifact(limits).unwrap();
+        let decoded = artifact
+            .admit(limits, None)
+            .expect("original activation producer survives Source replay");
+        let crate::plan::FlowOp::HostCall { target, .. } =
+            &decoded.line_task_groups()[0].activation_ops()[0]
+        else {
+            panic!("original dialogue HostCall must survive Source replay");
+        };
+        let restored_source = decoded.task_plan(&target.producer.plan).unwrap();
+        assert_eq!(
+            restored_source.definition().producer(),
+            source.definition().producer()
+        );
+        assert_eq!(restored_source.key(), source.key());
+        let mut engine = Engine::new(decoded);
         let id = activation_id();
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
         let mut frame = activation_frame(&engine, local);

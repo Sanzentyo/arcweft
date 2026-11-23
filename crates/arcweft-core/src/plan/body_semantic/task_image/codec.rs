@@ -5,17 +5,19 @@ use super::{
     ExpectedTaskPlanKey, RuntimeTaskPlan, RuntimeTaskSemanticBinding, UnsealedRuntimePlanImage,
 };
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
+use crate::line_task::ScopeExit;
 use crate::plan::body_semantic::request::codec::{
     RuntimeTaskRequestCodecError, RuntimeTaskRequestCodecLimits,
 };
+use crate::plan::construction::NormalizedTaskPlanSeed;
 use crate::plan::construction::source::program::{
     PreparedRuntimeProgramSource, RuntimeProgramSourceError, RuntimeProgramSourceLimits,
 };
 use crate::plan::{
-    RuntimeControlEffectContractId, RuntimePlan, RuntimeTaskPlanIndex, RuntimeTaskPlanSealLimits,
-    RuntimeTaskPlanSeed, RuntimeTaskRequestTemplate,
+    RuntimeCodeOwner, RuntimeControlEffectContractId, RuntimeLineCodeBody, RuntimePlan,
+    RuntimeTaskPlanIndex, RuntimeTaskPlanSealLimits, RuntimeTaskRequestTemplate,
 };
-use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLineTaskGroupId};
+use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId};
 use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
 use crate::task::{NeedProducerFamily, TaskClass};
 use std::num::NonZeroU32;
@@ -388,15 +390,6 @@ impl<'bytes, 'resources> PreparedRuntimeTaskSource<'bytes, 'resources> {
                         },
                     )
                 })?;
-                let function = original
-                    .functions
-                    .get(row.producer_function.get().get() as usize - 1)
-                    .cloned()
-                    .ok_or(RuntimeTaskSourceCodecError::Reference {
-                        kind: "function",
-                        actual: row.producer_function.get().get(),
-                        maximum: references.functions,
-                    })?;
                 let control = original.source.control(row.control_effect).cloned().ok_or(
                     RuntimeTaskSourceCodecError::Reference {
                         kind: "control",
@@ -404,11 +397,16 @@ impl<'bytes, 'resources> PreparedRuntimeTaskSource<'bytes, 'resources> {
                         maximum: references.controls,
                     },
                 )?;
-                original.source.builder.define_task_plan(
+                original.source.builder.define_resolved_task_plan(
                     &original.tasks[ordinal],
-                    RuntimeTaskPlanSeed::new(
-                        function, row.family, row.class, request, control, binding,
-                    ),
+                    crate::plan::RuntimeTaskPlan {
+                        producer: row.producer,
+                        family: row.family,
+                        class: row.class,
+                        request_template: request,
+                        control_effect: control,
+                        binding,
+                    },
                 )?;
             }
             Ok(rows.1)
@@ -484,7 +482,7 @@ fn row_storage(
     storage(
         total,
         count,
-        std::mem::size_of::<RuntimeTaskPlan>() + std::mem::size_of::<RuntimeTaskPlanSeed>(),
+        std::mem::size_of::<RuntimeTaskPlan>() + std::mem::size_of::<NormalizedTaskPlanSeed>(),
         maximum,
     )?;
     storage(
@@ -569,9 +567,7 @@ impl<'a> Writer<'a> {
             let key = source.key();
             row.family().validate_runtime_task_binding(row.binding())?;
             self.count(ordinal)?;
-            let function = row.producer_function().get().get();
-            reference("function", function, self.references.functions)?;
-            self.u32(function)?;
+            self.producer(row.producer())?;
             self.put(&[row.family().semantic_tag(), row.class().semantic_tag()])?;
             self.request(ordinal, row.request_template())?;
             let control = row
@@ -597,6 +593,37 @@ impl<'a> Writer<'a> {
             self.put(key.as_bytes())?;
         }
         Ok(())
+    }
+
+    fn producer(&mut self, producer: RuntimeCodeOwner) -> Result<(), RuntimeTaskSourceCodecError> {
+        match producer {
+            RuntimeCodeOwner::Function(function) => {
+                let ordinal = function.get().get();
+                reference("function", ordinal, self.references.functions)?;
+                self.u32(ordinal)
+            }
+            RuntimeCodeOwner::LineTask { group, body } => {
+                self.u32(0)?;
+                reference("line", group.get().get(), self.references.lines)?;
+                self.u32(group.get().get())?;
+                match body {
+                    RuntimeLineCodeBody::Activation => self.put(&[0]),
+                    RuntimeLineCodeBody::Action(node) => {
+                        self.put(&[1])?;
+                        self.count(node.index())
+                    }
+                    RuntimeLineCodeBody::Cancellation { rule } => {
+                        self.put(&[2])?;
+                        self.count(rule)
+                    }
+                    RuntimeLineCodeBody::Cleanup(exit) => self.put(&[match exit {
+                        ScopeExit::Completed => 3,
+                        ScopeExit::Cancelled => 4,
+                        ScopeExit::Failed => 5,
+                    }]),
+                }
+            }
+        }
     }
 
     fn request(
@@ -749,7 +776,7 @@ impl<'a> Reader<'a> {
                     actual,
                 });
             }
-            let function = reference("function", self.u32()?, self.references.functions)?;
+            let producer = self.producer()?;
             let family_tag = self.tag()?;
             let family = NeedProducerFamily::from_semantic_tag(family_tag).ok_or(
                 RuntimeTaskSourceCodecError::Tag {
@@ -791,7 +818,7 @@ impl<'a> Reader<'a> {
             let expected = ExpectedTaskPlanKey::new(self.take()?);
             if let (Some(rows), Some(keys)) = (&mut rows, &mut keys) {
                 rows.push(RuntimeTaskPlan {
-                    producer_function: RuntimeFunctionSiteId::from_accepted_ordinal(function),
+                    producer,
                     family,
                     class,
                     request_template: request
@@ -812,6 +839,39 @@ impl<'a> Reader<'a> {
         Ok(rows
             .zip(keys)
             .map(|(rows, keys)| (rows.into_boxed_slice(), keys.into_boxed_slice())))
+    }
+
+    fn producer(&mut self) -> Result<RuntimeCodeOwner, RuntimeTaskSourceCodecError> {
+        let ordinal = self.u32()?;
+        if ordinal != 0 {
+            let function = reference("function", ordinal, self.references.functions)?;
+            return Ok(RuntimeCodeOwner::Function(
+                RuntimeFunctionSiteId::from_accepted_ordinal(function),
+            ));
+        }
+        let group = reference("line", self.u32()?, self.references.lines)?;
+        let group = RuntimeLineTaskGroupId::from_zero_based((group.get() - 1) as usize)
+            .ok_or(RuntimeTaskSourceCodecError::Arithmetic)?;
+        let body = match self.tag()? {
+            0 => RuntimeLineCodeBody::Activation,
+            1 => RuntimeLineCodeBody::Action(
+                RuntimeLineTaskNodeId::from_zero_based(self.u32()? as usize)
+                    .ok_or(RuntimeTaskSourceCodecError::Arithmetic)?,
+            ),
+            2 => RuntimeLineCodeBody::Cancellation {
+                rule: self.u32()? as usize,
+            },
+            3 => RuntimeLineCodeBody::Cleanup(ScopeExit::Completed),
+            4 => RuntimeLineCodeBody::Cleanup(ScopeExit::Cancelled),
+            5 => RuntimeLineCodeBody::Cleanup(ScopeExit::Failed),
+            tag => {
+                return Err(RuntimeTaskSourceCodecError::Tag {
+                    kind: "line producer body",
+                    tag,
+                });
+            }
+        };
+        Ok(RuntimeCodeOwner::LineTask { group, body })
     }
 
     fn binding(&mut self) -> Result<RuntimeTaskSemanticBinding, RuntimeTaskSourceCodecError> {

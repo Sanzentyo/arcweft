@@ -456,7 +456,7 @@ fn source_bound_zero_argument_specs_require_original_invocation_binding() {
         .expect_err("an empty tuple cannot bypass the original function binding");
     let expected = AwbcRuntimeValueSnapshotError::FunctionInstantiation(
         crate::value::RuntimeFunctionApplyError::InvalidEffectInstantiation {
-            site: source.request_endpoint().function_id(),
+            site: source.request_endpoint().function_id().unwrap(),
         },
     );
     assert!(
@@ -485,7 +485,7 @@ fn source_bound_zero_argument_invocations_keep_distinct_effect_instance_keys() {
     let source = borrow_source(&plan);
     let function = plan
         .function_sites()
-        .get(source.request_endpoint().function_id())
+        .get(source.request_endpoint().function_id().unwrap())
         .unwrap();
     let context = plan
         .type_table()

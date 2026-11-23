@@ -280,11 +280,20 @@ impl RuntimeTaskSourceProgram {
             signature.result == Some(row.payload_type()),
             meter,
         )?;
-        let enclosing = original
-            .function_sites()
-            .get(source.request_endpoint().function_id())
-            .ok_or_else(|| mismatch(Field::TypeContext))?;
-        let context = match (enclosing.function_type(), kernel.type_context) {
+        let enclosing = source
+            .request_endpoint()
+            .function_id()
+            .map(|id| {
+                original
+                    .function_sites()
+                    .get(id)
+                    .ok_or_else(|| mismatch(Field::TypeContext))
+            })
+            .transpose()?;
+        let context = match (
+            enclosing.and_then(|function| function.function_type()),
+            kernel.type_context,
+        ) {
             (None, None) => None,
             (
                 Some(original),

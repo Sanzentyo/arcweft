@@ -2,6 +2,7 @@
 //! Input transport evidence stays distinct from language capture operations.
 
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
+use crate::plan::RuntimeCodeOwner;
 use crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner;
 use crate::plan::flow_ops::{RuntimeFlowLocationStep, RuntimeFlowOperationLocation};
 use crate::plan::{self, RuntimeFunctionSiteBody};
@@ -11,22 +12,22 @@ use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError, Task
 /// No byte constructor or decoder exists. Upper publication remains Cut 5.
 ///
 /// ```compile_fail
-/// use arcweft_core::plan::ProducerFunctionSemanticDigest;
-/// let _ = ProducerFunctionSemanticDigest::from_bytes([0; 32]);
+/// use arcweft_core::plan::TaskProducerSemanticDigest;
+/// let _ = TaskProducerSemanticDigest::from_bytes([0; 32]);
 /// ```
 /// ```compile_fail
 /// fn encode<T: serde::Serialize>() {}
-/// encode::<arcweft_core::plan::ProducerFunctionSemanticDigest>();
+/// encode::<arcweft_core::plan::TaskProducerSemanticDigest>();
 /// ```
 /// ```compile_fail
 /// fn decode<T: serde::de::DeserializeOwned>() {}
-/// decode::<arcweft_core::plan::ProducerFunctionSemanticDigest>();
+/// decode::<arcweft_core::plan::TaskProducerSemanticDigest>();
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ProducerFunctionSemanticDigest([u8; 32]);
+pub struct TaskProducerSemanticDigest([u8; 32]);
 
 pub(crate) struct ProducerFunctionSemantic<'a> {
-    digest: ProducerFunctionSemanticDigest,
+    digest: TaskProducerSemanticDigest,
     plan: &'a super::RuntimePlanInventory,
     function: &'a plan::RuntimeFunctionSite,
     function_id: crate::runtime_id::RuntimeFunctionSiteId,
@@ -36,7 +37,7 @@ pub(crate) struct ProducerFunctionSemantic<'a> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct ProducerEndpoint<'a> {
-    digest: ProducerFunctionSemanticDigest,
+    digest: TaskProducerSemanticDigest,
     request: OriginalRequestEndpoint<'a>,
 }
 
@@ -44,7 +45,7 @@ pub(crate) struct ProducerEndpoint<'a> {
 #[derive(Clone, Copy)]
 pub(crate) struct OriginalRequestEndpoint<'a> {
     owner: OriginalRequestOwner<'a>,
-    function_id: crate::runtime_id::RuntimeFunctionSiteId,
+    code_owner: RuntimeCodeOwner,
     source: ProducerEndpointSource<'a>,
     ordinal: u32,
     kind: EndpointKind,
@@ -71,7 +72,7 @@ enum ProducerEndpointSource<'a> {
 }
 
 impl ProducerEndpoint<'_> {
-    pub(crate) const fn producer_digest(&self) -> ProducerFunctionSemanticDigest {
+    pub(crate) const fn producer_digest(&self) -> TaskProducerSemanticDigest {
         self.digest
     }
 }
@@ -91,6 +92,15 @@ impl<'a> From<ProducerEndpoint<'a>> for OriginalRequestEndpoint<'a> {
 }
 
 impl<'a> OriginalRequestEndpoint<'a> {
+    pub(super) const fn with_producer_digest(
+        self,
+        digest: TaskProducerSemanticDigest,
+    ) -> ProducerEndpoint<'a> {
+        ProducerEndpoint {
+            digest,
+            request: self,
+        }
+    }
     pub(in crate::plan) fn from_construction_root(
         builder: &'a plan::RuntimePlanBuilder,
         source: OriginalFunctionSource<'a>,
@@ -100,7 +110,7 @@ impl<'a> OriginalRequestEndpoint<'a> {
         Self::preflight_function_source(&source, meter, limits)?;
         Ok(Self {
             owner: OriginalRequestOwner::Construction(builder),
-            function_id: source.function,
+            code_owner: RuntimeCodeOwner::Function(source.function),
             source: ProducerEndpointSource::FunctionRoot(source.inputs),
             ordinal: 0,
             kind: EndpointKind::FunctionRoot,
@@ -170,15 +180,54 @@ impl<'a> OriginalRequestEndpoint<'a> {
         let RuntimeFunctionSiteBody::Executable(body) = source.body else {
             return Ok(());
         };
+        Self::visit_operation_endpoints(
+            owner,
+            RuntimeCodeOwner::Function(source.function),
+            body.ops(),
+            meter,
+            visitor,
+        )
+    }
+
+    pub(in crate::plan) fn visit_construction_line_tasks(
+        builder: &'a plan::RuntimePlanBuilder,
+        code_owner: RuntimeCodeOwner,
+        ops: &'a [plan::FlowOp],
+        meter: &mut TaskSemanticMeter,
+        limits: plan::RuntimeTaskPlanSealLimits,
+        visitor: &mut impl FnMut(Self, &mut TaskSemanticMeter) -> Result<(), RuntimeBodySemanticError>,
+    ) -> Result<(), RuntimeBodySemanticError> {
+        RuntimeBodySemanticContext::operation_endpoint_count(ops, 0, limits.max_function_roles)?;
+        Self::visit_operation_endpoints(
+            OriginalRequestOwner::Construction(builder),
+            code_owner,
+            ops,
+            meter,
+            &mut |endpoint, meter| {
+                if endpoint.task_source().is_some() {
+                    visitor(endpoint, meter)?;
+                }
+                Ok(())
+            },
+        )
+    }
+
+    fn visit_operation_endpoints(
+        owner: OriginalRequestOwner<'a>,
+        code_owner: RuntimeCodeOwner,
+        ops: &'a [plan::FlowOp],
+        meter: &mut TaskSemanticMeter,
+        visitor: &mut impl FnMut(Self, &mut TaskSemanticMeter) -> Result<(), RuntimeBodySemanticError>,
+    ) -> Result<(), RuntimeBodySemanticError> {
         let mut ordinal = 0u32;
-        plan::flow_ops::try_visit_ops_events(body.ops(), &mut |event| {
+        plan::flow_ops::try_visit_ops_events(ops, &mut |event| {
             meter.charge_work(1)?;
             if let plan::flow_ops::RuntimeFlowTreeEvent::EnterOperation { op, .. } = event {
                 for kind in RuntimeBodySemanticContext::endpoint_kinds(op) {
                     meter.charge_work(1)?;
                     let endpoint = Self {
                         owner,
-                        function_id: source.function,
+                        code_owner,
                         source: ProducerEndpointSource::Operation(op),
                         ordinal,
                         kind: *kind,
@@ -330,7 +379,29 @@ impl<'a> OriginalRequestEndpoint<'a> {
     pub(super) fn source_local_is_capture(
         &self,
         local: crate::runtime_id::RuntimeLocalDeclarationId,
+        meter: &mut TaskSemanticMeter,
     ) -> Result<bool, RuntimeBodySemanticError> {
+        let RuntimeCodeOwner::Function(function) = self.code_owner else {
+            let RuntimeCodeOwner::LineTask { group, .. } = self.code_owner else {
+                unreachable!()
+            };
+            self.source_local_type(local)?;
+            let line = match self.owner {
+                OriginalRequestOwner::Inventory(plan) => plan.line_task_groups().get(group.index()),
+                OriginalRequestOwner::Construction(builder) => builder.original_line_group(group),
+            }
+            .ok_or(RuntimeBodySemanticError::MissingRow {
+                table: "line task groups",
+                ordinal: group.index(),
+            })?;
+            for input in line.initial_inputs() {
+                meter.charge_work(1)?;
+                if input.local() == local {
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        };
         match self.owner {
             OriginalRequestOwner::Inventory(plan) => plan
                 .local_declarations()
@@ -338,12 +409,12 @@ impl<'a> OriginalRequestEndpoint<'a> {
                 .map(|declaration| {
                     declaration
                         .placement()
-                        .function_capture_position(self.function_id)
+                        .function_capture_position(function)
                         .is_some()
                 })
                 .ok_or(RuntimeBodySemanticError::UnknownLocal { local }),
             OriginalRequestOwner::Construction(builder) => {
-                builder.source_local_is_capture(self.function_id, local)
+                builder.source_local_is_capture(function, local)
             }
         }
     }
@@ -410,8 +481,15 @@ impl<'a> OriginalRequestEndpoint<'a> {
             _ => None,
         }
     }
-    pub(crate) const fn function_id(&self) -> crate::runtime_id::RuntimeFunctionSiteId {
-        self.function_id
+    pub(crate) const fn code_owner(&self) -> RuntimeCodeOwner {
+        self.code_owner
+    }
+
+    pub(crate) const fn function_id(&self) -> Option<crate::runtime_id::RuntimeFunctionSiteId> {
+        match self.code_owner {
+            RuntimeCodeOwner::Function(function) => Some(function),
+            RuntimeCodeOwner::LineTask { .. } => None,
+        }
     }
 }
 
@@ -510,7 +588,7 @@ impl ProducerFunctionSemantic<'_> {
         encoder.finish().map_err(Into::into)
     }
 
-    pub(crate) const fn digest(&self) -> ProducerFunctionSemanticDigest {
+    pub(crate) const fn digest(&self) -> TaskProducerSemanticDigest {
         self.digest
     }
     pub(crate) fn request_endpoint(
@@ -523,7 +601,7 @@ impl ProducerFunctionSemantic<'_> {
                 digest: self.digest,
                 request: OriginalRequestEndpoint {
                     owner: OriginalRequestOwner::Inventory(self.plan),
-                    function_id: self.function_id,
+                    code_owner: RuntimeCodeOwner::Function(self.function_id),
                     source: ProducerEndpointSource::FunctionRoot(self.function.inputs()),
                     ordinal: 0,
                     kind: EndpointKind::FunctionRoot,
@@ -538,7 +616,7 @@ impl ProducerFunctionSemantic<'_> {
                 digest: self.digest,
                 request: OriginalRequestEndpoint {
                     owner: OriginalRequestOwner::Inventory(self.plan),
-                    function_id: self.function_id,
+                    code_owner: RuntimeCodeOwner::Function(self.function_id),
                     source: ProducerEndpointSource::Operation(operation),
                     ordinal,
                     kind: *kind,
@@ -546,7 +624,7 @@ impl ProducerFunctionSemantic<'_> {
             })
     }
 }
-impl ProducerFunctionSemanticDigest {
+impl TaskProducerSemanticDigest {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -599,7 +677,7 @@ impl<'a> OriginalRequestEndpoint<'a> {
                 {
                     if found.is_some() {
                         return Err(RuntimeBodySemanticError::AmbiguousOriginalRequestEndpoint {
-                            function,
+                            producer: RuntimeCodeOwner::Function(function),
                         });
                     }
                     found = Some(endpoint);
@@ -633,12 +711,48 @@ impl<'a> OriginalRequestEndpoint<'a> {
     }
 }
 
+impl super::executable_metadata::LineSemantic<'_> {
+    pub(super) fn producer_digest(
+        &self,
+        role: crate::plan::RuntimeLineCodeBody,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<TaskProducerSemanticDigest, RuntimeBodySemanticError> {
+        use crate::line_task::ScopeExit;
+        use crate::plan::RuntimeLineCodeBody;
+        let mut encoder = TaskSemanticEncoder::new(
+            b"arcweft.runtime-plan.producer-line-body-semantic.v1\0",
+            meter,
+        );
+        encoder.digest(self.digest().as_bytes());
+        match role {
+            RuntimeLineCodeBody::Activation => encoder.tag(0),
+            RuntimeLineCodeBody::Action(node) => {
+                encoder.tag(1);
+                encoder.count(node.index());
+            }
+            RuntimeLineCodeBody::Cancellation { rule } => {
+                encoder.tag(2);
+                encoder.count(rule);
+            }
+            RuntimeLineCodeBody::Cleanup(exit) => {
+                encoder.tag(3);
+                encoder.tag(match exit {
+                    ScopeExit::Completed => 0,
+                    ScopeExit::Cancelled => 1,
+                    ScopeExit::Failed => 2,
+                });
+            }
+        }
+        Ok(TaskProducerSemanticDigest(*encoder.finish()?.as_bytes()))
+    }
+}
+
 impl<'a> RuntimeBodySemanticContext<'a> {
-    /// Borrows the request grammar from its actual immutable function. Sealing
-    /// already proved F; source lookup does not hash or issue that proof again.
+    /// Borrows the request grammar from its actual immutable code body.
+    /// Source lookup does not hash or issue a producer proof.
     pub(in crate::plan) fn original_request_endpoint(
         &self,
-        function: crate::runtime_id::RuntimeFunctionSiteId,
+        code_owner: RuntimeCodeOwner,
         request: super::request::RuntimeTaskRequestSource,
         task_owner: &RuntimeTaskPlanCoordinateOwner,
         meter: &mut TaskSemanticMeter,
@@ -646,6 +760,42 @@ impl<'a> RuntimeBodySemanticContext<'a> {
     ) -> Result<Option<OriginalRequestEndpoint<'a>>, RuntimeBodySemanticError> {
         meter.charge_work(1)?;
         let result = (|| {
+            let owner = OriginalRequestOwner::Inventory(self.plan);
+            let RuntimeCodeOwner::Function(function) = code_owner else {
+                let super::request::RuntimeTaskRequestSource::Operation(ordinal) = request else {
+                    return Err(RuntimeBodySemanticError::InvalidRequestSource);
+                };
+                let Some(crate::plan::code::RuntimeCodeBodyRef::Operations(ops)) =
+                    self.plan.code_body(code_owner)
+                else {
+                    return Err(RuntimeBodySemanticError::InvalidRequestSource);
+                };
+                RuntimeBodySemanticContext::operation_endpoint_count(
+                    ops,
+                    0,
+                    limits.max_function_roles,
+                )?;
+                let mut found = None;
+                OriginalRequestEndpoint::visit_operation_endpoints(
+                    owner,
+                    code_owner,
+                    ops,
+                    meter,
+                    &mut |endpoint, _| {
+                        if endpoint
+                            .task_source()
+                            .is_some_and(|source| !task_owner.contains(source.coordinate()))
+                        {
+                            return Err(RuntimeBodySemanticError::ForeignTaskCoordinate);
+                        }
+                        if endpoint.ordinal == ordinal {
+                            found = Some(endpoint);
+                        }
+                        Ok(())
+                    },
+                )?;
+                return Ok(found);
+            };
             let site = self.plan.function_sites().get(function).ok_or(
                 RuntimeBodySemanticError::MissingRow {
                     table: "function sites",
@@ -657,13 +807,12 @@ impl<'a> RuntimeBodySemanticContext<'a> {
                 body: site.body(),
                 inputs: site.inputs(),
             };
-            let owner = OriginalRequestOwner::Inventory(self.plan);
             match request {
                 super::request::RuntimeTaskRequestSource::FunctionRoot => {
                     OriginalRequestEndpoint::preflight_function_source(&source, meter, limits)?;
                     Ok(Some(OriginalRequestEndpoint {
                         owner,
-                        function_id: function,
+                        code_owner,
                         source: ProducerEndpointSource::FunctionRoot(source.inputs),
                         ordinal: 0,
                         kind: EndpointKind::FunctionRoot,
@@ -743,7 +892,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         function: crate::runtime_id::RuntimeFunctionSiteId,
         task_owner: &RuntimeTaskPlanCoordinateOwner,
         limits: plan::RuntimeTaskPlanSealLimits,
-    ) -> Result<ProducerFunctionSemanticDigest, RuntimeBodySemanticError> {
+    ) -> Result<TaskProducerSemanticDigest, RuntimeBodySemanticError> {
         self.producer_function(meter, function, task_owner, limits)
             .map(|row| row.digest)
     }
@@ -843,7 +992,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             encoder.tag(kind.semantic_tag());
             encoder.digest(path.as_bytes());
         }
-        let digest = ProducerFunctionSemanticDigest(*encoder.finish()?.as_bytes());
+        let digest = TaskProducerSemanticDigest(*encoder.finish()?.as_bytes());
         Ok(ProducerFunctionSemantic {
             digest,
             plan: self.plan,
@@ -862,8 +1011,16 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         let RuntimeFunctionSiteBody::Executable(body) = body else {
             return Ok(0);
         };
+        Self::operation_endpoint_count(body.ops(), inputs, maximum)
+    }
+
+    pub(super) fn operation_endpoint_count(
+        ops: &[plan::FlowOp],
+        inputs: usize,
+        maximum: u32,
+    ) -> Result<usize, RuntimeBodySemanticError> {
         let mut count = 0usize;
-        plan::flow_ops::try_visit_ops_events(body.ops(), &mut |event| {
+        plan::flow_ops::try_visit_ops_events(ops, &mut |event| {
             if let plan::flow_ops::RuntimeFlowTreeEvent::EnterOperation { op, .. } = event {
                 count = count
                     .checked_add(Self::endpoint_kinds(op).len())

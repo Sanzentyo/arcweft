@@ -38,7 +38,7 @@ impl std::fmt::Debug for RuntimeTaskSourceReadContext {
 /// It cannot be decoded or constructed from an asserted key or copied body.
 pub struct RuntimeProgramTaskBodyRef<'program> {
     source: RuntimeTaskSourceRef<'program>,
-    function: &'program RuntimeFunctionSite,
+    function: Option<&'program RuntimeFunctionSite>,
     template: crate::plan::RuntimeProgramTaskTemplateRef<'program>,
 }
 
@@ -68,10 +68,11 @@ impl RuntimePlan {
                 },
             ));
         }
-        let function = self
-            .function_sites()
-            .get(endpoint.function_id())
-            .expect("an admitted original endpoint retains its actual function");
+        let function = endpoint.function_id().map(|id| {
+            self.function_sites()
+                .get(id)
+                .expect("the admitted endpoint retains its original function")
+        });
         Ok(RuntimeProgramTaskBodyRef {
             source,
             function,
@@ -88,7 +89,7 @@ impl RuntimeProgramTaskBodyRef<'_> {
 
     /// Actual enclosing declaration, including its lexical type contract.
     #[must_use]
-    pub const fn function(&self) -> &RuntimeFunctionSite {
+    pub const fn function(&self) -> Option<&RuntimeFunctionSite> {
         self.function
     }
 

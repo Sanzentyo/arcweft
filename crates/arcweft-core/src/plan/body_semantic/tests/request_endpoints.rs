@@ -381,7 +381,7 @@ fn source_projection_requires_one_exact_original_endpoint() {
     assert!(
         matches!(RuntimeBodySemanticContext::new(&plan).original_task_endpoint(
         &mut ambiguous, function, &coordinate, &owner, limits,
-    ), Err(RuntimeBodySemanticError::AmbiguousOriginalRequestEndpoint { function: rejected }) if rejected == function)
+    ), Err(RuntimeBodySemanticError::AmbiguousOriginalRequestEndpoint { producer: crate::plan::RuntimeCodeOwner::Function(rejected) }) if rejected == function)
     );
     assert_eq!(ambiguous.totals().1, 0);
     assert_eq!(

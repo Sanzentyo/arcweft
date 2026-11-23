@@ -21,7 +21,7 @@ pub(super) fn row(
         )
         .unwrap();
     RuntimeTaskPlan {
-        producer_function: function,
+        producer: crate::plan::RuntimeCodeOwner::Function(function),
         family: NeedProducerFamily::HostAdapterTask,
         class: TaskClass::Io,
         request_template: context

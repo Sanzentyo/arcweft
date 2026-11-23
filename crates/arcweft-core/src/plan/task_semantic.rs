@@ -3,7 +3,7 @@
 
 use super::body_semantic::task_image::RuntimeTaskPlan as SourceRuntimeTaskPlan;
 use super::{
-    ControlEffectContractDigest, ProducerFunctionSemanticDigest, RuntimeTaskPlanBuildCoordinate,
+    ControlEffectContractDigest, RuntimeTaskPlanBuildCoordinate, TaskProducerSemanticDigest,
     TaskRequestTemplateDigest,
 };
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError};
@@ -16,11 +16,11 @@ use std::cell::Cell;
 #[derive(Debug, PartialEq)]
 pub struct RuntimeTaskPlan<
     Line = RuntimeLineTaskPlanBinding,
-    Function = crate::runtime_id::RuntimeFunctionSiteId,
+    Producer = super::RuntimeCodeOwner,
     Request = super::RuntimeTaskRequestTemplate,
     Control = super::RuntimeControlEffectContractId,
 > {
-    pub(crate) producer_function: Function,
+    pub(crate) producer: Producer,
     pub(crate) family: NeedProducerFamily,
     pub(crate) class: TaskClass,
     pub(crate) request_template: Request,
@@ -56,7 +56,7 @@ impl RuntimeTaskPlanFunctionRootSeed {
         binding: RuntimeTaskSemanticBinding<super::RuntimeLineTaskGroupSeedId>,
     ) -> Self {
         Self {
-            producer_function,
+            producer: producer_function,
             family,
             class,
             request_template: (),
@@ -77,7 +77,7 @@ impl RuntimeTaskPlanSeed {
         binding: RuntimeTaskSemanticBinding<super::RuntimeLineTaskGroupSeedId>,
     ) -> Self {
         Self {
-            producer_function,
+            producer: producer_function,
             family,
             class,
             request_template,
@@ -89,8 +89,8 @@ impl RuntimeTaskPlanSeed {
 
 impl<Line> RuntimeTaskPlan<Line> {
     #[must_use]
-    pub const fn producer_function(&self) -> crate::runtime_id::RuntimeFunctionSiteId {
-        self.producer_function
+    pub const fn producer(&self) -> super::RuntimeCodeOwner {
+        self.producer
     }
     #[must_use]
     pub const fn family(&self) -> NeedProducerFamily {
@@ -409,7 +409,7 @@ pub struct RuntimeTaskPlanDigestBase<'a> {
     expected: Option<&'a crate::task::ExpectedTaskPlanKey>,
     plan: &'a SourceRuntimeTaskPlan,
     executable: RuntimeExecutableSemanticDigest,
-    producer_function: ProducerFunctionSemanticDigest,
+    producer: TaskProducerSemanticDigest,
     request_template: TaskRequestTemplateDigest,
     control_effect: ControlEffectContractDigest,
 }
@@ -448,8 +448,8 @@ impl<'a> RuntimeTaskPlanDigestBase<'a> {
         self.executable
     }
     #[must_use]
-    pub const fn producer_function_semantic_digest(&self) -> ProducerFunctionSemanticDigest {
-        self.producer_function
+    pub const fn producer_semantic_digest(&self) -> TaskProducerSemanticDigest {
+        self.producer
     }
     #[must_use]
     pub const fn family(&self) -> NeedProducerFamily {
@@ -613,7 +613,7 @@ impl ViewTaskPlanSealInvocation {
         plan: &'a SourceRuntimeTaskPlan,
         expected: Option<&'a crate::task::ExpectedTaskPlanKey>,
         executable: RuntimeExecutableSemanticDigest,
-        producer_function: ProducerFunctionSemanticDigest,
+        producer: TaskProducerSemanticDigest,
         request_template: TaskRequestTemplateDigest,
         control_effect: ControlEffectContractDigest,
     ) -> RuntimeTaskPlanDigestBase<'a> {
@@ -622,7 +622,7 @@ impl ViewTaskPlanSealInvocation {
             expected,
             plan,
             executable,
-            producer_function,
+            producer,
             request_template,
             control_effect,
         }

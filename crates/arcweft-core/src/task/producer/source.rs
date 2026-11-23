@@ -157,13 +157,21 @@ impl RuntimeTaskSourceRef<'_> {
         admission.admit_composite(
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
             |owner, resources| {
+                let Some(site) = self.request_endpoint().function_id() else {
+                    return if binding.is_none() {
+                        Ok(())
+                    } else {
+                        Err(AwbcRuntimeValueSnapshotError::Message {
+                            message: "line task source has no function instantiation".into(),
+                        })
+                    };
+                };
                 if let Some(binding) = binding {
                     resources.function_instantiation(
                         binding,
                         crate::entry::schema::value_budget::ResourceByteKind::Metadata,
                     )?;
                 }
-                let site = self.request_endpoint().function_id();
                 program
                     .original()
                     .validate_function_instantiation(site, binding, &resources.work())

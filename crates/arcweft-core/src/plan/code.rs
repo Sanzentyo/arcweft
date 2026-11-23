@@ -8,9 +8,9 @@ use crate::value::RuntimeExpr;
 use serde::{Deserialize, Serialize};
 
 /// An untrusted coordinate until resolved against its original inventory.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) enum RuntimeCodeOwner {
+pub enum RuntimeCodeOwner {
     Function(#[serde(with = "function_coordinate")] RuntimeFunctionSiteId),
     LineTask {
         group: RuntimeLineTaskGroupId,
@@ -18,9 +18,9 @@ pub(crate) enum RuntimeCodeOwner {
     },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) enum RuntimeLineCodeBody {
+pub enum RuntimeLineCodeBody {
     Activation,
     Action(RuntimeLineTaskNodeId),
     Cancellation { rule: usize },
@@ -90,23 +90,10 @@ impl RuntimePlanInventory {
                         .map(RuntimeCodeBodyRef::Operations),
                 };
             }
-            RuntimeCodeOwner::LineTask { group, body } => {
-                let group = self.line_task_groups().get(group.index())?;
-                match body {
-                    RuntimeLineCodeBody::Activation => group.activation_ops(),
-                    RuntimeLineCodeBody::Action(node) => match group.node(node)? {
-                        LineTaskNode::Action(operations) => operations,
-                        LineTaskNode::Sequence(_)
-                        | LineTaskNode::Start(_)
-                        | LineTaskNode::Parallel { .. }
-                        | LineTaskNode::Child { .. } => return None,
-                    },
-                    RuntimeLineCodeBody::Cancellation { rule } => {
-                        group.cancel_rules().get(rule)?.action()
-                    }
-                    RuntimeLineCodeBody::Cleanup(exit) => group.cleanup().actions(exit),
-                }
-            }
+            RuntimeCodeOwner::LineTask { group, body } => self
+                .line_task_groups()
+                .get(group.index())?
+                .code_body(body)?,
         };
         location
             .resolve(operations)
@@ -125,41 +112,62 @@ impl RuntimePlanInventory {
         for (ordinal, group) in self.line_task_groups().iter().enumerate() {
             let group_id = RuntimeLineTaskGroupId::from_zero_based(ordinal)
                 .expect("admitted line-task group ordinal");
-            let mut visit = |body| {
-                let owner = RuntimeCodeOwner::LineTask {
-                    group: group_id,
-                    body,
-                };
+            group.try_visit_code_roots(|body, ops| {
                 visitor(
-                    owner,
-                    self.code_body(owner)
-                        .expect("code owner belongs to this admitted inventory"),
+                    RuntimeCodeOwner::LineTask {
+                        group: group_id,
+                        body,
+                    },
+                    RuntimeCodeBodyRef::Operations(ops),
                 )
-            };
-            visit(RuntimeLineCodeBody::Activation)?;
-            for (ordinal, node) in group.nodes().iter().enumerate() {
-                match node {
-                    LineTaskNode::Action(_) => {
-                        let node = RuntimeLineTaskNodeId::from_zero_based(ordinal)
-                            .expect("admitted line-task node ordinal");
-                        visit(RuntimeLineCodeBody::Action(node))?;
-                    }
-                    LineTaskNode::Sequence(_)
-                    | LineTaskNode::Start(_)
-                    | LineTaskNode::Parallel { .. }
-                    | LineTaskNode::Child { .. } => {}
-                }
+            })?;
+        }
+        Ok(())
+    }
+}
+
+impl crate::line_task::LineTaskGroup {
+    pub(super) fn code_body(&self, body: RuntimeLineCodeBody) -> Option<&[FlowOp]> {
+        Some(match body {
+            RuntimeLineCodeBody::Activation => self.activation_ops(),
+            RuntimeLineCodeBody::Action(node) => {
+                let LineTaskNode::Action(ops) = self.node(node)? else {
+                    return None;
+                };
+                ops
             }
-            for rule in 0..group.cancel_rules().len() {
-                visit(RuntimeLineCodeBody::Cancellation { rule })?;
+            RuntimeLineCodeBody::Cancellation { rule } => self.cancel_rules().get(rule)?.action(),
+            RuntimeLineCodeBody::Cleanup(exit) => self.cleanup().actions(exit),
+        })
+    }
+
+    pub(super) fn try_visit_code_roots<'a, E>(
+        &'a self,
+        mut visit: impl FnMut(RuntimeLineCodeBody, &'a [FlowOp]) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visit(RuntimeLineCodeBody::Activation, self.activation_ops())?;
+        for (ordinal, node) in self.nodes().iter().enumerate() {
+            if let LineTaskNode::Action(ops) = node {
+                let node = RuntimeLineTaskNodeId::from_zero_based(ordinal)
+                    .expect("admitted line-task node ordinal");
+                visit(RuntimeLineCodeBody::Action(node), ops)?;
             }
-            for exit in [
-                ScopeExit::Completed,
-                ScopeExit::Cancelled,
-                ScopeExit::Failed,
-            ] {
-                visit(RuntimeLineCodeBody::Cleanup(exit))?;
-            }
+        }
+        for (rule, cancellation) in self.cancel_rules().iter().enumerate() {
+            visit(
+                RuntimeLineCodeBody::Cancellation { rule },
+                cancellation.action(),
+            )?;
+        }
+        for exit in [
+            ScopeExit::Completed,
+            ScopeExit::Cancelled,
+            ScopeExit::Failed,
+        ] {
+            visit(
+                RuntimeLineCodeBody::Cleanup(exit),
+                self.cleanup().actions(exit),
+            )?;
         }
         Ok(())
     }

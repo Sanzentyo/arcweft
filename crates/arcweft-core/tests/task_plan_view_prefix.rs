@@ -9,7 +9,7 @@ fn write_core_prefix(base: &RuntimeTaskPlanDigestBase<'_>) -> blake3::Hasher {
     hasher.update(TaskPlanSemanticDigest::DOMAIN);
     hasher.update(&[base.plan_owner_tag()]);
     hasher.update(base.executable_semantic_digest().as_bytes());
-    hasher.update(base.producer_function_semantic_digest().as_bytes());
+    hasher.update(base.producer_semantic_digest().as_bytes());
     hasher.update(&[
         base.family().semantic_tag(),
         base.task_class().semantic_tag(),

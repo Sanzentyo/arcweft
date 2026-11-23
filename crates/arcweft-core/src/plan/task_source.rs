@@ -116,7 +116,7 @@ impl RuntimePlan {
             let owner = &self.task_coordinates;
             let request = RuntimeBodySemanticContext::new(&self.inventory)
                 .original_request_endpoint(
-                    task.definition().producer_function(),
+                    task.definition().producer(),
                     task.definition().request_template().source(),
                     owner,
                     meter,

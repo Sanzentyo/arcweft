@@ -96,7 +96,7 @@ fn source_builder() -> (RuntimePlanBuilder, crate::plan::RuntimeTaskPlanSeed) {
 #[test]
 fn original_builder_seed_enters_the_same_image_and_consuming_seal() {
     let (mut builder, seed) = source_builder();
-    let function = seed.producer_function.id();
+    let function = seed.producer.id();
     let coordinate = builder.reserve_task_plan().unwrap();
     builder.define_task_plan(&coordinate, seed).unwrap();
     let candidate = builder
@@ -113,7 +113,10 @@ fn original_builder_seed_enters_the_same_image_and_consuming_seal() {
     let row = task_source.definition();
     let key = task_source.key();
     assert_eq!(row.family(), NeedProducerFamily::HostAdapterTask);
-    assert_eq!(row.producer_function(), function);
+    assert_eq!(
+        row.producer(),
+        crate::plan::RuntimeCodeOwner::Function(function)
+    );
     assert_eq!(
         row.request_template().source(),
         crate::plan::RuntimeTaskRequestSource::Operation(0)
@@ -124,14 +127,17 @@ fn original_builder_seed_enters_the_same_image_and_consuming_seal() {
 #[test]
 fn public_finish_owns_the_only_completed_table_and_executable_proof() {
     let (mut builder, seed) = source_builder();
-    let function = seed.producer_function.id();
+    let function = seed.producer.id();
     let coordinate = builder.push_task_plan(seed).unwrap();
     assert!(coordinate.sealed_plan().is_none());
     let plan = builder.finish().unwrap();
     let task_source = coordinate.sealed_plan().unwrap();
     let row = task_source.definition();
     let key = task_source.key();
-    assert_eq!(row.producer_function(), function);
+    assert_eq!(
+        row.producer(),
+        crate::plan::RuntimeCodeOwner::Function(function)
+    );
     assert_eq!(plan.task_plans().len(), 1);
     assert!(std::ptr::eq(row, plan.task_plans().by_digest(key).unwrap()));
     let (mut same_source, seed) = source_builder();
@@ -171,7 +177,7 @@ fn original_builder_projects_request_data_without_minting_f_q_or_task_keys() {
     let coordinate = builder.reserve_task_plan().unwrap();
     let projected = builder
         .task_request_template_for_source(
-            &seed.producer_function,
+            &seed.producer,
             &coordinate,
             RuntimeTaskPlanSealLimits::default(),
         )
@@ -201,7 +207,10 @@ fn source_owned_reservation_uses_the_actual_function_and_request() {
     let task_source = plan.task_plan(&coordinate).unwrap();
     let row = task_source.definition();
     let key = task_source.key();
-    assert_eq!(row.producer_function(), seed.producer_function.id());
+    assert_eq!(
+        row.producer(),
+        crate::plan::RuntimeCodeOwner::Function(seed.producer.id())
+    );
     assert_eq!(row.request_template(), &expected_request);
     assert_eq!(row.family(), NeedProducerFamily::HostAdapterTask);
     assert_eq!(
@@ -230,7 +239,7 @@ fn root_seed(
     seed: crate::plan::RuntimeTaskPlanSeed,
 ) -> crate::plan::RuntimeTaskPlanFunctionRootSeed {
     crate::plan::RuntimeTaskPlanFunctionRootSeed::new(
-        seed.producer_function,
+        seed.producer,
         seed.family,
         seed.class,
         seed.control_effect,
@@ -241,7 +250,7 @@ fn root_seed(
 #[test]
 fn function_root_seed_projects_q_inside_the_consuming_seal() {
     let (mut builder, seed) = source_builder();
-    let function = seed.producer_function.id();
+    let function = seed.producer.id();
     let coordinate = builder
         .push_task_plan_function_root(root_seed(seed))
         .unwrap();
@@ -250,7 +259,10 @@ fn function_root_seed_projects_q_inside_the_consuming_seal() {
     let task_source = plan.task_plan(&coordinate).unwrap();
     let row = task_source.definition();
     let key = task_source.key();
-    assert_eq!(row.producer_function(), function);
+    assert_eq!(
+        row.producer(),
+        crate::plan::RuntimeCodeOwner::Function(function)
+    );
     assert_eq!(
         row.request_template().source(),
         crate::plan::RuntimeTaskRequestSource::FunctionRoot
@@ -284,7 +296,7 @@ fn function_root_seed_projects_q_inside_the_consuming_seal() {
 fn function_root_seed_rejects_an_equal_content_foreign_function() {
     let (mut builder, mut seed) = source_builder();
     let (_foreign, foreign_seed) = source_builder();
-    seed.producer_function = foreign_seed.producer_function;
+    seed.producer = foreign_seed.producer;
     let coordinate = builder
         .push_task_plan_function_root(root_seed(seed))
         .unwrap();
@@ -317,12 +329,12 @@ fn original_builder_request_projection_rejects_foreign_function_and_coordinate_t
     let (mut foreign, foreign_seed) = source_builder();
     let foreign_coordinate = foreign.reserve_task_plan().unwrap();
     assert!(matches!(builder.task_request_template_for_source(
-        &foreign_seed.producer_function, &coordinate, RuntimeTaskPlanSealLimits::default(),
+        &foreign_seed.producer, &coordinate, RuntimeTaskPlanSealLimits::default(),
     ), Err(RuntimeTaskPlanSealError::Construction(source))
         if *source == crate::plan::RuntimePlanBuildError::ForeignFunctionSiteSeed));
     assert!(matches!(
         builder.task_request_template_for_source(
-            &seed.producer_function,
+            &seed.producer,
             &foreign_coordinate,
             RuntimeTaskPlanSealLimits::default(),
         ),
@@ -345,7 +357,7 @@ fn original_builder_request_projection_bounds_work_before_source_materialization
         ..Default::default()
     };
     assert!(matches!(
-        builder.task_request_template_for_source(&seed.producer_function, &coordinate, limits),
+        builder.task_request_template_for_source(&seed.producer, &coordinate, limits),
         Err(RuntimeTaskPlanSealError::Body(
             RuntimeBodySemanticError::Encoding(TaskSemanticEncodingError::SemanticWork)
         ))
@@ -462,7 +474,7 @@ fn builder_seed_checks_original_function_and_control_namespaces() {
         let (mut builder, mut seed) = source_builder();
         let (_, foreign) = source_builder();
         if foreign_function {
-            seed.producer_function = foreign.producer_function;
+            seed.producer = foreign.producer;
         } else {
             seed.control_effect = foreign.control_effect;
         }
@@ -684,7 +696,7 @@ impl ViewTaskPlanAuthority for CompletingViewAuthority {
         hasher.update(crate::task::TaskPlanSemanticDigest::DOMAIN);
         hasher.update(&[base.plan_owner_tag()]);
         hasher.update(base.executable_semantic_digest().as_bytes());
-        hasher.update(base.producer_function_semantic_digest().as_bytes());
+        hasher.update(base.producer_semantic_digest().as_bytes());
         hasher.update(&[
             base.family().semantic_tag(),
             base.task_class().semantic_tag(),
@@ -790,7 +802,9 @@ fn consuming_seal_moves_original_definitions_into_the_only_completed_table() {
         .next()
         .unwrap();
     let coordinate = candidate.coordinate_owner.resolve(0).unwrap();
-    let function = candidate.task_plans[0].producer_function;
+    let crate::plan::RuntimeCodeOwner::Function(function) = candidate.task_plans[0].producer else {
+        panic!("expected function producer")
+    };
     assert!(coordinate.sealed_plan().is_none());
     let function_address =
         std::ptr::from_ref(candidate.inventory.function_sites().get(function).unwrap());
@@ -810,7 +824,10 @@ fn consuming_seal_moves_original_definitions_into_the_only_completed_table() {
     let row = task_source.definition();
     let indexed = task_source.key();
     assert_eq!(indexed, key);
-    assert_eq!(row.producer_function, function);
+    assert_eq!(
+        row.producer,
+        crate::plan::RuntimeCodeOwner::Function(function)
+    );
     assert_eq!(row.family, NeedProducerFamily::HostAdapterTask);
     assert!(std::ptr::eq(row, sealed.task_plans.by_digest(key).unwrap()));
     let task_source = coordinate.sealed_plan().unwrap();
@@ -1058,7 +1075,9 @@ fn saved_producer_metadata_is_recovered_only_from_the_original_derivation_input(
 #[test]
 fn consuming_seal_completes_an_original_function_root_request_without_a_host_projection() {
     let mut candidate = image(None);
-    let function = candidate.task_plans[0].producer_function;
+    let crate::plan::RuntimeCodeOwner::Function(function) = candidate.task_plans[0].producer else {
+        panic!("expected function producer")
+    };
     let context = RuntimeBodySemanticContext::new(&candidate.inventory);
     let limits = RuntimeTaskPlanSealLimits::default();
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
@@ -1332,10 +1351,11 @@ fn task_base_commits_family_class_and_binding_but_excludes_expected_codec_keys()
 fn family_binding_rejection_precedes_missing_producer_resolution_and_poison_is_sticky() {
     let mut image = image(None);
     image.task_plans[0].binding = RuntimeTaskSemanticBinding::View;
-    image.task_plans[0].producer_function =
+    image.task_plans[0].producer = crate::plan::RuntimeCodeOwner::Function(
         crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
             std::num::NonZeroU32::new(99).unwrap(),
-        );
+        ),
+    );
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
     let result = image.prepare_semantics(RuntimeTaskPlanSealLimits::default(), &mut meter);
     assert!(matches!(

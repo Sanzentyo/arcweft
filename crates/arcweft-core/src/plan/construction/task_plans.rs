@@ -14,15 +14,15 @@ mod original_source;
 #[derive(Debug)]
 pub(super) enum RuntimeTaskPlanDefinition {
     Explicit(Option<RuntimeTaskPlanSeed>),
+    Resolved(NormalizedTaskPlanSeed),
     FunctionRoot(crate::plan::RuntimeTaskPlanFunctionRootSeed),
     OriginalSource,
     OriginalControl(super::RuntimeControlEffectContractSeedId),
-    OriginalComplete(NormalizedTaskPlanSeed),
 }
 
-pub(super) type NormalizedTaskPlanSeed = crate::plan::RuntimeTaskPlan<
+pub(in crate::plan) type NormalizedTaskPlanSeed = crate::plan::RuntimeTaskPlan<
     crate::plan::RuntimeLineTaskGroupSeedId,
-    crate::runtime_id::RuntimeFunctionSiteId,
+    crate::plan::RuntimeCodeOwner,
     crate::plan::RuntimeTaskRequestTemplateSeed,
     crate::plan::RuntimeControlEffectContractSeedId,
 >;
@@ -145,6 +145,13 @@ impl RuntimeTaskPlanConstructionContext {
 }
 
 impl RuntimePlanBuilder {
+    pub(in crate::plan) fn original_line_group(
+        &self,
+        group: crate::runtime_id::RuntimeLineTaskGroupId,
+    ) -> Option<&crate::line_task::LineTaskGroup> {
+        self.line_task_groups.get(group.index())
+    }
+
     /// Projects request definition data from this builder's actual defined
     /// function and source coordinate. It issues no F, Q, or task key.
     pub fn task_request_template_for_source(
@@ -313,6 +320,15 @@ impl RuntimePlanBuilder {
         self.task_plan_construction().define(coordinate, seed)
     }
 
+    pub(in crate::plan) fn define_resolved_task_plan(
+        &mut self,
+        coordinate: &crate::plan::RuntimeTaskPlanBuildCoordinate,
+        seed: NormalizedTaskPlanSeed,
+    ) -> Result<(), RuntimeTaskPlanSealError> {
+        self.task_plan_construction()
+            .define_definition(coordinate, RuntimeTaskPlanDefinition::Resolved(seed))
+    }
+
     pub fn push_task_plan(
         &mut self,
         seed: RuntimeTaskPlanSeed,
@@ -415,7 +431,6 @@ impl RuntimePlanBuilder {
             seed.family
                 .validate_runtime_task_binding(&seed.binding)
                 .map_err(|source| RuntimeTaskPlanSealError::TaskDefinition { ordinal, source })?;
-            let producer_function = seed.producer_function;
             let control_effect = seed.control_effect.resolve(&self)?;
             let binding = seed.binding.try_complete_line(|line| {
                 line.resolve(&self.issuer).ok_or_else(|| {
@@ -433,7 +448,7 @@ impl RuntimePlanBuilder {
                     })
             })?;
             rows.push(crate::plan::RuntimeTaskPlan {
-                producer_function,
+                producer: seed.producer,
                 family: seed.family,
                 class: seed.class,
                 request_template,

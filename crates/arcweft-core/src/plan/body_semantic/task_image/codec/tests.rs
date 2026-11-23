@@ -131,6 +131,83 @@ fn limits() -> RuntimeTaskSourceCodecLimits {
     }
 }
 
+#[test]
+fn task_source_producer_coordinates_use_the_canonical_version_one_layout() {
+    let references = References {
+        functions: 1,
+        types: 0,
+        controls: 0,
+        lines: 1,
+    };
+    let function = RuntimeCodeOwner::Function(RuntimeFunctionSiteId::from_accepted_ordinal(
+        NonZeroU32::MIN,
+    ));
+    let group = RuntimeLineTaskGroupId::from_zero_based(0).unwrap();
+    let line = |body| RuntimeCodeOwner::LineTask { group, body };
+    let action = RuntimeLineTaskNodeId::from_zero_based(2).unwrap();
+    let cases: [(RuntimeCodeOwner, &[u8]); 7] = [
+        (function, &[1, 0, 0, 0]),
+        (
+            line(RuntimeLineCodeBody::Activation),
+            &[0, 0, 0, 0, 1, 0, 0, 0, 0],
+        ),
+        (
+            line(RuntimeLineCodeBody::Action(action)),
+            &[0, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0, 0, 0],
+        ),
+        (
+            line(RuntimeLineCodeBody::Cancellation { rule: 2 }),
+            &[0, 0, 0, 0, 1, 0, 0, 0, 2, 2, 0, 0, 0],
+        ),
+        (
+            line(RuntimeLineCodeBody::Cleanup(ScopeExit::Completed)),
+            &[0, 0, 0, 0, 1, 0, 0, 0, 3],
+        ),
+        (
+            line(RuntimeLineCodeBody::Cleanup(ScopeExit::Cancelled)),
+            &[0, 0, 0, 0, 1, 0, 0, 0, 4],
+        ),
+        (
+            line(RuntimeLineCodeBody::Cleanup(ScopeExit::Failed)),
+            &[0, 0, 0, 0, 1, 0, 0, 0, 5],
+        ),
+    ];
+    for (owner, expected) in cases {
+        let mut wire = Vec::new();
+        Writer::new(Some(&mut wire), None, limits(), references)
+            .producer(owner)
+            .unwrap();
+        assert_eq!(wire, expected);
+        let mut reader = Reader::new(&wire, limits(), references, 0);
+        assert_eq!(reader.producer().unwrap(), owner);
+        assert_eq!(reader.offset, wire.len());
+        for end in 0..wire.len() {
+            assert!(
+                Reader::new(&wire[..end], limits(), references, 0)
+                    .producer()
+                    .is_err()
+            );
+        }
+    }
+    let invalid_role = [0, 0, 0, 0, 1, 0, 0, 0, 6];
+    assert!(matches!(
+        Reader::new(&invalid_role, limits(), references, 0).producer(),
+        Err(RuntimeTaskSourceCodecError::Tag {
+            kind: "line producer body",
+            tag: 6
+        })
+    ));
+    let unknown_line = [0, 0, 0, 0, 2, 0, 0, 0, 0];
+    assert!(matches!(
+        Reader::new(&unknown_line, limits(), references, 0).producer(),
+        Err(RuntimeTaskSourceCodecError::Reference {
+            kind: "line",
+            actual: 2,
+            maximum: 1
+        })
+    ));
+}
+
 fn candidate(rows: u32) -> UnsealedRuntimePlanImage {
     super::super::preparation::tests::image_with_rows(rows, None)
 }
@@ -465,7 +542,7 @@ fn task_source_codec_checks_aggregate_row_storage_before_materialization() {
     .unwrap();
     let required = program.footprint.storage
         + 2 * (size_of::<RuntimeTaskPlan>()
-            + size_of::<RuntimeTaskPlanSeed>()
+            + size_of::<NormalizedTaskPlanSeed>()
             + size_of::<ExpectedTaskPlanKey>());
     let exact = RuntimeTaskSourceCodecLimits {
         decoded_bytes: required,

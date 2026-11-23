@@ -114,9 +114,16 @@ impl AwbcFlowLowerer<'_, '_> {
         let signature = self
             .inventory
             .intern_signature(params, Some(result_type), effects);
-        let type_context = source.function().function_type().map(|ty| {
-            AwbcFunctionTypeContext::ProgramBody(admitted_plan_type(self.inventory, self.plan, ty))
-        });
+        let type_context = source
+            .function()
+            .and_then(|function| function.function_type())
+            .map(|ty| {
+                AwbcFunctionTypeContext::ProgramBody(admitted_plan_type(
+                    self.inventory,
+                    self.plan,
+                    ty,
+                ))
+            });
         let mut flags = AwbcFunctionFlags::empty()
             .with(AwbcFunctionFlag::Deterministic)
             .with(AwbcFunctionFlag::MayAllocate)

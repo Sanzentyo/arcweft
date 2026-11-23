@@ -18,6 +18,7 @@ mod seed;
 pub(super) mod source;
 pub(crate) mod task_coordinates;
 mod task_plans;
+pub(in crate::plan) use task_plans::NormalizedTaskPlanSeed;
 pub use task_plans::RuntimeTaskPlanConstructionContext;
 
 pub use callable_specialization::{

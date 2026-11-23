@@ -7,7 +7,7 @@ use super::{
 };
 use crate::line_task::semantic::LinePlanSemanticDigest;
 use crate::plan::body_semantic::executable_rows::RuntimeExecutableSemanticRows;
-use crate::plan::body_semantic::function::ProducerFunctionSemanticDigest;
+use crate::plan::body_semantic::function::TaskProducerSemanticDigest;
 use crate::plan::body_semantic::request::TaskRequestTemplateDigest;
 use crate::plan::body_semantic::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::plan::{
@@ -45,7 +45,7 @@ impl TaskBindingSemantic<'_> {
 /// parallel task inventory or supplying completed keys to executable bodies.
 struct TaskSemanticChildren<'a> {
     row: &'a RuntimeTaskPlan,
-    function: ProducerFunctionSemanticDigest,
+    producer: TaskProducerSemanticDigest,
     request: TaskRequestTemplateDigest,
     control: ControlEffectContractDigest,
     binding: TaskBindingSemantic<'a>,
@@ -53,7 +53,7 @@ struct TaskSemanticChildren<'a> {
 
 impl TaskSemanticChildren<'_> {
     fn write_base(&self, encoder: &mut TaskSemanticEncoder<'_>) {
-        encoder.digest(self.function.as_bytes());
+        encoder.digest(self.producer.as_bytes());
         encoder.tag(self.row.family.semantic_tag());
         encoder.tag(self.row.class.semantic_tag());
         encoder.digest(self.request.as_bytes());
@@ -128,7 +128,7 @@ impl CompletedRuntimeTaskPlanSemantics {
             .map(|(source, (digest, binding))| {
                 crate::plan::task_semantic::SealedRuntimeTaskPlanRow {
                     plan: crate::plan::RuntimeTaskPlan {
-                        producer_function: source.producer_function,
+                        producer: source.producer,
                         family: source.family,
                         class: source.class,
                         request_template: source.request_template,
@@ -198,7 +198,7 @@ impl PreparedRuntimePlanSemantic<'_, '_> {
                         children.row,
                         self.image.expected_key(ordinal),
                         self.rows.executable,
-                        children.function,
+                        children.producer,
                         children.request,
                         children.control,
                     )
@@ -367,15 +367,39 @@ impl UnsealedRuntimePlanImage {
             meter,
         )?;
         let mut tasks = Vec::with_capacity(self.task_plans.len());
-        for row in &self.task_plans {
+        for (ordinal, row) in self.task_plans.iter().enumerate() {
             meter.charge_work(1)?;
-            let function = executable.prepare_function(row.producer_function, meter)?;
-            let endpoint = function
-                .request_endpoint(row.request_template.source())
-                .ok_or(RuntimeBodySemanticError::InvalidRequestSource)?;
+            let request_source = row.request_template.source();
+            let endpoint = match row.producer {
+                crate::plan::RuntimeCodeOwner::Function(function) => executable
+                    .prepare_function(function, meter)?
+                    .request_endpoint(request_source),
+                crate::plan::RuntimeCodeOwner::LineTask { group, body } => {
+                    let digest = executable
+                        .prepare_line(group, meter)?
+                        .producer_digest(body, meter)?;
+                    context
+                        .original_request_endpoint(
+                            row.producer,
+                            request_source,
+                            &self.coordinate_owner,
+                            meter,
+                            limits,
+                        )?
+                        .map(|endpoint| endpoint.with_producer_digest(digest))
+                }
+            }
+            .ok_or(RuntimeBodySemanticError::InvalidRequestSource)?;
             let request =
                 context.request_template_digest(meter, endpoint, &row.request_template, limits)?;
-            let function = function.digest();
+            if matches!(row.producer, crate::plan::RuntimeCodeOwner::LineTask { .. })
+                && !endpoint
+                    .task_source()
+                    .is_some_and(|source| source.coordinate().ordinal() as usize == ordinal)
+            {
+                return Err(RuntimeBodySemanticError::InvalidRequestSource.into());
+            }
+            let producer = endpoint.producer_digest();
             let control = control.complete(row.control_effect, meter)?;
             let binding = match &row.binding {
                 RuntimeTaskSemanticBinding::Line { plan: group } => {
@@ -385,7 +409,7 @@ impl UnsealedRuntimePlanImage {
             };
             tasks.push(TaskSemanticChildren {
                 row,
-                function,
+                producer,
                 request,
                 control,
                 binding,

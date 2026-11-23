@@ -2,12 +2,13 @@ pub(crate) mod body_semantic;
 mod callable_specialization;
 mod callable_states;
 pub(crate) mod code;
+pub use code::{RuntimeCodeOwner, RuntimeLineCodeBody};
 mod construction;
 pub use body_semantic::{
-    ProducerFunctionSemanticDigest, RuntimeRequestArgument, RuntimeRequestArgumentRole,
-    RuntimeRequestField, RuntimeRequestFieldRole, RuntimeRequestPathStep,
-    RuntimeRequestValueSource, RuntimeTaskRequestSource, RuntimeTaskRequestTemplate,
-    RuntimeTaskRequestTemplateSeed, TaskRequestTemplateDigest,
+    RuntimeRequestArgument, RuntimeRequestArgumentRole, RuntimeRequestField,
+    RuntimeRequestFieldRole, RuntimeRequestPathStep, RuntimeRequestValueSource,
+    RuntimeTaskRequestSource, RuntimeTaskRequestTemplate, RuntimeTaskRequestTemplateSeed,
+    TaskProducerSemanticDigest, TaskRequestTemplateDigest,
 };
 pub use construction::task_coordinates::RuntimeTaskPlanBuildCoordinate;
 pub(crate) use construction::task_coordinates::RuntimeTaskPlanCoordinateOwner;

@@ -31,7 +31,7 @@ use crate::value::{
     RuntimeAssignment, RuntimeMutablePlace, RuntimePlaceDisplacement, RuntimePlaceInitialization,
     RuntimeRecordFieldId,
 };
-pub use function::ProducerFunctionSemanticDigest;
+pub use function::TaskProducerSemanticDigest;
 pub use request::{
     RuntimeRequestArgument, RuntimeRequestArgumentRole, RuntimeRequestField,
     RuntimeRequestFieldRole, RuntimeRequestPathStep, RuntimeRequestValueSource,
@@ -66,9 +66,9 @@ pub enum RuntimeBodySemanticError {
     MissingOriginalRequestEndpoint {
         function: crate::runtime_id::RuntimeFunctionSiteId,
     },
-    #[error("function {function} has multiple endpoints for the task coordinate")]
+    #[error("producer {producer:?} has multiple endpoints for the task coordinate")]
     AmbiguousOriginalRequestEndpoint {
-        function: crate::runtime_id::RuntimeFunctionSiteId,
+        producer: crate::plan::RuntimeCodeOwner,
     },
     #[error("request template roles {actual} exceed limit {maximum}")]
     RequestRoles { actual: usize, maximum: u32 },

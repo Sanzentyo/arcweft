@@ -49,9 +49,14 @@ preflight, genuine namespace construction and the common seal. That seal compare
 the recomputed E before completing or publishing Task rows, compares each Task
 assertion, and requires the actual upper View authority for View-bound rows.
 The completed plan retains that seal's original construction namespace. A Task
-assertion resolves only an already issued row and its actual function endpoint;
-it does not recover a namespace from request metadata. Executable data equality
-does not transfer a program's Source authority.
+assertion resolves an already issued row and its original producer endpoint.
+That endpoint belongs to a function or a specific activation, action,
+cancellation handler, or cleanup body in a line task group. The Source frame
+encodes function owners as nonzero ordinals. A zero discriminator introduces a
+line task group ordinal and its body role, with an ordinal for action and
+cancellation roles. The seal checks the endpoint in that exact body against the
+row's original task coordinate. Executable data equality does not transfer a
+program's Source authority.
 Execution and restore must bind their original Task rows and exact program lease
 through this admitted Source; copying an asserted digest is not admission.
 Original Task Source and execution value authority are distinct roles. Source

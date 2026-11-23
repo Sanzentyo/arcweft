@@ -95,7 +95,9 @@ impl UnsealedRuntimePlanImage {
             add(108 + binding)?; // inline E14 ordinal/kind/base/binding
             add(row.request_template.known_transcript_bytes()?)?;
             add(b"arcweft.task.plan-semantic.v1\0".len() as u64 + 132 + binding)?;
-            if functions.insert(row.producer_function) {
+            if let crate::plan::RuntimeCodeOwner::Function(function) = row.producer
+                && functions.insert(function)
+            {
                 add(b"arcweft.runtime-plan.producer-function-semantic.v1\0".len() as u64 + 109)?;
             }
         }

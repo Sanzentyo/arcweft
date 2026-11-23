@@ -924,6 +924,20 @@ fn awbc_cancellation_result_selection_uses_typed_terminal_and_fallthrough_keeps_
 
 #[test]
 fn line_activation_local_is_exported_only_to_post_reveal_work() {
+    check_line_activation_exports(false);
+}
+
+#[test]
+fn line_activation_host_call_lowers_with_its_original_task_key() {
+    check_line_activation_exports(true);
+}
+
+fn check_line_activation_exports(host_call: bool) {
+    use arcweft_core::plan::RuntimeHostCallTargetSeed;
+    use arcweft_core::task::{
+        HostCallProducerDefinition, NeedProducerContractDigest, NeedProducerSiteDigest,
+    };
+
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
         .admit_type_batch(
@@ -935,6 +949,43 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
         )
         .expect("line result and activation local admit");
     let local = admission.local_ids()[0].clone();
+    let pattern = RuntimePatternSeed::new(
+        type_id(1),
+        RuntimePatternSeedKind::Bind {
+            mutable: false,
+            local: local.clone(),
+        },
+    );
+    let coordinate = host_call.then(|| {
+        builder
+            .task_plan_construction()
+            .reserve_original_source()
+            .expect("original activation task coordinate")
+    });
+    let bind = match &coordinate {
+        Some(coordinate) => RuntimeFlowOpSeed::HostCall {
+            binding: Some(pattern),
+            target: RuntimeHostCallTargetSeed {
+                producer: HostCallProducerDefinition {
+                    contract: NeedProducerContractDigest::from_bytes([72; 32]),
+                    plan: coordinate.clone(),
+                    site: NeedProducerSiteDigest::from_bytes([73; 32]),
+                },
+                public_id: "test.line_export".into(),
+                capability: "test".into(),
+                operation: "line_export".into(),
+                contract: None,
+                args: Vec::new(),
+                result: type_id(1),
+                mode: RuntimeHostCallMode::Suspend,
+                deterministic: true,
+            },
+        },
+        None => RuntimeFlowOpSeed::Let {
+            pattern,
+            expr: string_expr("retained"),
+        },
+    };
     let content_template_seed = RuntimeDialogueContentTemplateManifestSeed {
         id: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
             .expect("template identity"),
@@ -969,16 +1020,7 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
                     [71; 32],
                 ),
             activation_ops: vec![
-                RuntimeFlowOpSeed::Let {
-                    pattern: RuntimePatternSeed::new(
-                        type_id(1),
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: local.clone(),
-                        },
-                    ),
-                    expr: string_expr("retained"),
-                },
+                bind,
                 RuntimeFlowOpSeed::CommitDialogueResult {
                     value: string_expr("normal"),
                 },
@@ -1039,6 +1081,31 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
         program.signatures[handler.signature.index()].params,
         [export.ty]
     );
+    if let Some(coordinate) = coordinate {
+        let source = plan.task_plan(&coordinate).expect("original task row");
+        let [descriptor] = program.host_calls.as_slice() else {
+            panic!("one activation host descriptor")
+        };
+        assert_eq!(descriptor.producer.plan, source.key());
+
+        use arcweft_core::awbc::fiber::{AwbcFiberRoot, FiberSuspensionReason};
+        let mut fiber = FiberState::for_function(
+            &program,
+            AwbcFiberRoot::Function(group.activation),
+            group.activation,
+            1,
+            1024,
+        )
+        .expect("activation fiber initializes");
+        let output = vm::step(&program, &mut fiber, VmStepOptions::default()).unwrap();
+        let suspension = fiber.suspension.as_ref().expect("activation suspends");
+        assert_eq!(output.exit, VmExit::Suspended(suspension.notice()));
+        assert!(matches!(
+            &suspension.reason,
+            FiberSuspensionReason::HostCall { call, args, destination }
+                if call.index() == 0 && args.is_empty() && destination.is_some()
+        ));
+    }
 }
 
 #[test]
