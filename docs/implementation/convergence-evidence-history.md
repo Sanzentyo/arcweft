@@ -22040,3 +22040,17 @@ Windows の Sema 対象実行は `test(source_expectations) | test(retained_prep
 Cargo の全機能・全ターゲットのグラフは Sema を含め22パッケージ。Compiler の `flow_wait`、`generic_continuation_snapshot`、`project_function_instances` と Runtime Plan の `awbc_product_parity` からジェネリック、コールバック、部分適用、共有 prefix、復元、名目型の26件を選び、全件成功、47件選択外、終了0。Native／AWBC で、attached default、再帰する共有 prefix、異なる後段型、元の callback と保存復元を確認した。
 
 Windows の Sema ライブラリ全体は `cargo nextest run --offline --locked -p arcweft-lang-sema --lib --no-fail-fast` で2,041件中2,033件成功、8件失敗、選択外0件、終了100。[基点の逆依存実行](#stack-independent-nominal-projection)の失敗 ID と比較し、上記2件が通過、新規失敗0件。全機能・全ターゲットの workspace check と Clippy は警告付きで終了0。書式検査と構造ゲートも終了0で、ブロッキング違反0件。検証後の `target` は188,378,308,896 bytes（約188.4 GB）。
+
+<a id="original-effect-premise-frames"></a>
+
+## 2026-11-23 — 元の効果述語の字句フレームを保持する
+
+基点 `991f5fdf62258e435d287154912ed6bbb9ca19f3`。開始時の追跡ファイルに差分はなく、既存の未追跡ディレクトリが一つあった。実装 `2c99124142ea9992e7539300308d7162692faeea` を `main` に通常 push し、公開 ref と変更4ファイルの blob を照合した。
+
+基点の Sema 回帰は、別々の字句フレームでそれぞれの効果スロット0に前提を置くと、元の宣言の登録が `OriginalProducer` で失敗した。束縛参照を述語が書かれた時点のフレームで検査し、インポートで後から広がる環境とは別にその座標を保持した。個別と結合の効果処理は同じ元宣言の投影を通る。追加回帰では、元のフレームがない場合はインポート先に同形のスロットがあっても拒否し、元のフレームがある場合は拡張環境の深さ1に投影して元の深さ0へ戻せることを確認した。
+
+途中の Sema 全件は2,042件中2,033件成功・9件失敗、次に2,034件成功・8件失敗。追加テストのスコープエラー分類を訂正した。従来の結合テストは登録から先へ進んだ後、量化が残る中間簡約の `truth_value` が `None` を返した。回帰では実際の結合結果の完了処理を呼び、独立した前提の下で偽の関係を `EffectUnsatisfiable` として拒否し、グラフの項数が拒否前後で一致することを確認した。
+
+最終の Windows Sema ライブラリ全体は `cargo nextest run --offline --locked -p arcweft-lang-sema --lib --no-fail-fast` で2,042件中2,035件成功、7件失敗、選択外0件、終了100。[直前の基点](#original-rigid-reference-inference)の失敗 ID から結合テスト1件が通過し、新規失敗0件。
+
+Cargo の全機能・全ターゲットの依存グラフは Sema を含め22パッケージ。前回と同じ4バイナリから対象を選ぶ nextest は Compiler 24件、Runtime Plan 2件の計26件すべて成功、47件選択外、終了0。共有 prefix、attached default、再帰する callback、Native／AWBC の保存と復元を含む。全機能・全ターゲットの workspace check と Clippy は警告付きで終了0。変更 Rust の書式検査と構造ゲートは終了0、ブロッキング違反0件。検証後の `target` は188,379,929,239 bytes（約188.4 GB）。
