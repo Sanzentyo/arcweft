@@ -21820,3 +21820,19 @@ Native の実行ファイバーとフレームを、元の Plan を含まない 
 最終 Core は2,412 PASS／0 SKIP。Cargo グラフで Core を含む52パッケージの逆依存を確認し、コンパイラの `evaluated_effects`、`scoped_defer`、`view_product` は288 PASS（2 slow）／0 SKIP。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-dialogue-suspension.raw.zip) は21項目、1,174,282 bytes、SHA256 `1274dd55c9b095fcbd219e3b195ae47627b5aa14d8edfbed523986171ba43624`。各項目の長さと SHA256 を照合した。検証後の `target` は145,759,715,623 bytes。
+
+<a id="line-task-producer-source"></a>
+
+## 2026-11-23 — 台詞の起動命令から元のタスク計画を確定する
+
+基点 `ba26d9d9217bca3a4a927bd62e0433b54268ecfc`。公開ソース `09415af363e7ae605311d7b7add44cc56e3fa86a`。通常の push 後に公開された `main` の ref と27変更 blob を照合した。
+
+[台詞の復元時点の残項目](#native-dialogue-suspension)のうち、台詞だけに直接 HostCall があるとタスク計画を確定できない問題を解消した。関数に加え、台詞の起動、アクション、キャンセル、cleanup の元の命令列を同じ所有者型で扱う。行の source 座標とその命令の座標を照合してからキーを発行する。v1 は従来の関数の ordinal を保ち、台詞の所有者を専用の識別値と body role で保持する。
+
+Native の回帰では関数にあった代用命令を外し、台詞だけの HostCall から確定した Source を再度読み込み、停止したホスト返答と俳優取得を JSON から復元して元の変数への束縛を確認した。v1 の座標検証は関数と6種類の台詞 role を対象とし、切断、不明 tag、範囲外の行を拒否した。初回 Core ビルドは型参照・可視性と移行漏れで終了101、次のビルドはテストの `FlowOp` 参照で終了101。修正後の途中確認は2,412件成功。最終のステージ済みツリーは Core 全機能 library 2,413件成功、スキップ0件。
+
+AWBC の回帰では生成した HostCall が元の計画キーを保持し、起動用 VM がホスト返答待ちで停止することを確認した。Runtime Plan は135件成功、フィクスチャ再生成1件をスキップ。公開 API の compile-fail doctest は3件成功。全ターゲット・全機能の workspace check と Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
+
+Core と推移的逆依存の52パッケージを Cargo で確認した。最初の `just test-affected` は非CLIの8,199件中5,870件で停止し、5,868件成功、Semaの2件失敗、18件スキップ。失敗後も続行する設定で非CLIの8,199件を再実行し、8,189件成功、Semaの10件失敗、18件スキップ。失敗10件は[返却コールバックの効果の検証](#returned-callback-effects)などの原本にあるテスト名と一致した。最初の2件は今回の作業前にビルドされたバイナリ2本でも同じエラーを再現した。CLI はライブラリ・バイナリ196件と6対象の統合テスト30件がすべて成功した。
+
+[検証原本](acceptance-evidence/task-line-task-producer.raw.zip) は33項目、1,629,342 bytes、SHA256 `01901c9bbc739416ee52d6862d9dbe589bebdd833ead43c599f3e675be597ccb`。各項目の長さと SHA256 を照合した。検証後の `target` は145,850,580,706 bytes。
