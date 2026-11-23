@@ -114,11 +114,11 @@ enum AssetContentAdmission {
 }
 
 impl AssetContentAdmission {
-    fn inspect_encoded<'a>(
+    fn inspect_encoded(
         self,
-        bytes: &'a [u8],
+        bytes: &[u8],
         inspect: impl FnOnce() -> EncodedAssetStatus,
-    ) -> Result<AssetContentState<'a>, BundleAssetValidationError> {
+    ) -> Result<AssetContentState<'_>, BundleAssetValidationError> {
         if matches!(self, Self::RetainedMissing) {
             return Err(BundleAssetValidationError::ResultReasonMismatch);
         }
