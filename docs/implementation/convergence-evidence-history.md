@@ -21848,3 +21848,17 @@ Native の台詞フレームは起点の命令位置を保持する。結果の�
 最初の Core ビルドは移行した呼び出し箇所とテストの参照で終了101。修正後の Core 全機能ライブラリは2,414件成功。Compiler の `evaluated_effects` と `scoped_defer` は174件成功し、通常時と取消時に選んだ関数の実行、およびスコープ終了時の処理を含む。両方の実行でスキップ0件。Cargo で Core を含む52パッケージを確認し、今回の実行は Native 台詞とスコープ制御を扱う対象へ絞った。Core 全ターゲット・全機能 Clippy は警告ありで終了0、書式と構造ゲートも終了0。構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-dialogue-origin.raw.zip) は12項目、487,938 bytes、SHA256 `582b00d94166ac9e529aabdabacef7b8e7f08b01e7c1355eb4b2d3d1f0e48f28`。各項目の長さと SHA256 を照合した。検証後の `target` は145,852,418,094 bytes。
+
+<a id="native-dialogue-store-wire"></a>
+
+## 2026-11-23 — Native 台詞台帳と行タスクの状態を復元する
+
+基点 `f569888f61432b29c67b0212c55b6f6c77ad0e88`。公開ソース `3fb2ccd06dbc2824b42d0f729750a4da49fceb7a`。`main` へ通常 push し、公開 ref と11変更 blob を照合した。
+
+Native の台詞台帳は同じフレーム型の inert 特殊化と、行タスク共通の保存用 reducer を使う。台詞フレームの Plan は保存せず、元 Plan に結び直す前に台帳、待機、結果型、行タスクを同じ資源枠で検査する。型座標は台詞結果の保存欄で扱う。失敗中のクローズは、最初に発行した診断の文面を保持する。
+
+Native の回帰では、ホスト返答待ちと俳優取得待ちの各時点で台詞台帳全体を JSON に変換し、Engine の既存の復元処理から再開した。発行記録が元の命令と一致し、結果を元の変数へ束縛することを確認した。結果確定後の reducer を読み戻し、改変したノード件数とゼロの型座標を拒否した。
+
+初回の Core ビルドは Plan 型座標を保存欄で扱うための型制約が不足して終了101。修正後は Core 全機能ライブラリ2,414件、Compiler の `evaluated_effects` と `scoped_defer` の174件、Runtime Driver の対象8件、Product AWBC セッション統合40件が成功した。Runtime Driver の対象実行では69件を選択外とした。Cargo で Core と逆依存を含む52パッケージを確認した。既存の Product AWBC 公開保存を統合テストで検証した。全ターゲット・全機能の workspace check、Core の Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-dialogue-wire.raw.zip) は18項目、579,801 bytes、SHA256 `fc173386abaa633add9575e7710a501763de6dbd1a092171b491affb9e45e303`。各項目の長さと SHA256 を照合した。検証後の `target` は146,308,744,315 bytes。
