@@ -29,6 +29,10 @@ fn host_row_rejects_thread_handle_even_with_the_same_ready_payload() {
 }
 
 pub(in crate::plan::task_source) fn executable(request: u8) -> AwbcProgram {
+    let asset_family = arcweft_id::ProjectEntityReferenceFamily::from_declaration_family(
+        selected_producers::tests::fixture_asset_family(request),
+    )
+    .unwrap();
     let original = selected_producers::tests::fixture(
         request,
         TaskPolicy::JoinSameKey,
@@ -91,6 +95,7 @@ pub(in crate::plan::task_source) fn executable(request: u8) -> AwbcProgram {
     };
     let args = target.arguments();
     let boolean = RuntimeCheckedType::Bool.semantic_identity_digest();
+    let asset_reference = crate::value::RuntimeEntityReferenceType::family_only(asset_family);
     let params = metadata
         .argument_types()
         .iter()
@@ -140,17 +145,9 @@ pub(in crate::plan::task_source) fn executable(request: u8) -> AwbcProgram {
         runtime_types: vec![
             AwbcRuntimeType::new(boolean, AwbcRuntimeTypeShape::Bool),
             AwbcRuntimeType::new(
-                RuntimeCheckedType::EntityReference(
-                    crate::value::RuntimeEntityReferenceType::family_only(
-                        arcweft_id::ProjectEntityReferenceFamily::Asset,
-                    ),
-                )
-                .semantic_identity_digest(),
-                AwbcRuntimeTypeShape::EntityRef(
-                    crate::value::RuntimeEntityReferenceType::family_only(
-                        arcweft_id::ProjectEntityReferenceFamily::Asset,
-                    ),
-                ),
+                RuntimeCheckedType::EntityReference(asset_reference.clone())
+                    .semantic_identity_digest(),
+                AwbcRuntimeTypeShape::EntityRef(asset_reference),
             ),
         ],
         effect_sets: vec![AwbcEffectSet::default()],

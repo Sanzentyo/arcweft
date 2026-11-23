@@ -107,6 +107,20 @@ pub(in crate::plan) fn fixture(
     fixture_with_contract(request, policy, restart, class, None)
 }
 
+pub(in crate::plan) fn fixture_asset_family(request: u8) -> arcweft_id::DeclarationIdentityFamily {
+    if request == 1 {
+        arcweft_id::DeclarationIdentityFamily::Voice
+    } else {
+        arcweft_id::DeclarationIdentityFamily::Asset
+    }
+}
+
+pub(in crate::plan) fn fixture_asset_reference(request: u8) -> RuntimeEntityReference {
+    let family = fixture_asset_family(request);
+    let public_id = arcweft_id::PublicId::try_new(format!("{}.source", family.prefix())).unwrap();
+    RuntimeEntityReference::try_project(family, public_id).unwrap()
+}
+
 pub(in crate::plan) fn fixture_with_contract(
     request: u8,
     policy: TaskPolicy,
@@ -116,14 +130,10 @@ pub(in crate::plan) fn fixture_with_contract(
 ) -> RuntimePlan {
     let contract = NeedProducerContractDigest::from_bytes([0x61; 32]);
     let role = |tag| RuntimeRequestRoleIdentity::from_accepted_identity([tag; 32]);
-    let declaration_family = if request == 1 {
-        arcweft_id::DeclarationIdentityFamily::Voice
-    } else {
-        arcweft_id::DeclarationIdentityFamily::Asset
-    };
-    let reference_family =
-        arcweft_id::ProjectEntityReferenceFamily::from_declaration_family(declaration_family)
-            .unwrap();
+    let reference_family = arcweft_id::ProjectEntityReferenceFamily::from_declaration_family(
+        fixture_asset_family(request),
+    )
+    .unwrap();
     let entity_type = entity(reference_family);
     let (projection, types, arguments) = match request {
         0 | 1 => (
@@ -141,17 +151,7 @@ pub(in crate::plan) fn fixture_with_contract(
                 "素材",
                 value(
                     entity_type,
-                    RuntimeValue::EntityRef(
-                        RuntimeEntityReference::try_project(
-                            declaration_family,
-                            arcweft_id::PublicId::try_new(format!(
-                                "{}.source",
-                                declaration_family.prefix()
-                            ))
-                            .unwrap(),
-                        )
-                        .unwrap(),
-                    ),
+                    RuntimeValue::EntityRef(fixture_asset_reference(request)),
                 ),
             )],
         ),

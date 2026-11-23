@@ -9,10 +9,10 @@ use crate::task::{
     NeedProducerRuntimeArgument, NeedProducerSpec, RuntimeProgramOwner,
     RuntimeTaskProducerSourceError,
 };
+use crate::value::RuntimeValue;
 use crate::value::{
     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue,
 };
-use crate::value::{RuntimeEntityReference, RuntimeValue};
 use std::cell::Cell;
 use std::sync::Arc;
 
@@ -50,13 +50,9 @@ fn arguments(request: u8) -> Vec<NeedProducerRuntimeArgument> {
     if request < 2 {
         vec![NeedProducerRuntimeArgument {
             name: Some("素材".into()),
-            value: RuntimeValue::EntityRef(
-                RuntimeEntityReference::try_project(
-                    arcweft_id::DeclarationIdentityFamily::Asset,
-                    arcweft_id::PublicId::try_new("asset.source").unwrap(),
-                )
-                .unwrap(),
-            ),
+            value: RuntimeValue::EntityRef(selected_producers::tests::fixture_asset_reference(
+                request,
+            )),
         }]
     } else {
         vec![
