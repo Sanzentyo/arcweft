@@ -5662,7 +5662,7 @@ impl Engine {
         }
     }
 
-    fn effective_fiber_status(&self) -> FlowFiberStatus {
+    pub(crate) fn effective_fiber_status(&self) -> FlowFiberStatus {
         if self.fiber.frame.scope_defer_exit_pending() {
             return FlowFiberStatus::Running;
         }

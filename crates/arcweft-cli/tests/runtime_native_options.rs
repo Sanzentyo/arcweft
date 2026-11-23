@@ -117,6 +117,24 @@ fn headless_native_session_preserves_restart_point_and_rejects_a_different_entry
     assert!(finished.starts_with(b"AWFS"));
     assert_ne!(finished, original);
 
+    let observed = run(&[
+        "--runner",
+        "headless",
+        path,
+        "--entry",
+        "entry.main",
+        "--json",
+        "--steps",
+        "0",
+        "--session-load",
+        finished_save,
+    ]);
+    assert!(observed.status.success(), "{observed:?}");
+    let observation: serde_json::Value = serde_json::from_slice(&observed.stdout).unwrap();
+    assert_eq!(observation["steps"], serde_json::json!([]));
+    assert_eq!(observation["final_status"], report["final_status"]);
+    assert_eq!(std::fs::read(&completed).unwrap(), finished);
+
     let mut corrupt = finished;
     *corrupt.last_mut().unwrap() ^= 1;
     std::fs::write(&completed, &corrupt).unwrap();

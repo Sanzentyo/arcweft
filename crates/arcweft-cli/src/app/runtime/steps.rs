@@ -153,7 +153,11 @@ fn try_run_runtime_steps_with_executor(
     let mut task_events = Vec::new();
     let mut host_call_results = Vec::new();
     let mut summaries = Vec::new();
-    let mut final_status = FlowFiberStatus::Running;
+    let mut final_status = if steps == 0 && session.load.is_some() {
+        executor.source_executor().fiber_status()
+    } else {
+        FlowFiberStatus::Running
+    };
     for _ in 0..steps {
         let step_index = usize::try_from(next_step_index)
             .map_err(|_| RuntimeStepRunError::LogicalEpochOverflow)?;

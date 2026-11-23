@@ -85,7 +85,8 @@ checks retained values against the installed bundle asset catalog during the
 executor's value admission pass. The host dispatch journal and executor are
 installed together after their checks succeed. The CLI writes the complete
 envelope to a temporary file in the destination directory before publishing
-it at the requested path.
+it at the requested path. Loading with `--steps 0` reports the restored fiber
+status without executing a step or polling the host.
 
 Runtime external producers retain the same accepted resource generation as
 their executable. Bundle admission binds the CharacterDialogue declaration,

@@ -365,7 +365,7 @@ impl AwbcProductStepExecutor {
         self.facade_fiber.frame.status = self.effective_status();
     }
 
-    pub(super) fn effective_status(&self) -> FlowFiberStatus {
+    pub(crate) fn effective_status(&self) -> FlowFiberStatus {
         match self.product_status() {
             AwbcProductExecutorStatus::Shared(status) => *status,
             AwbcProductExecutorStatus::WaitingMany(state) => {

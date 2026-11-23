@@ -6,7 +6,8 @@ use crate::awbc::product_step::{
 };
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
 use crate::engine::{
-    Engine, EngineStartError, FlowFiber, NativeEngineSaveError, NativeEngineSaveSnapshot,
+    Engine, EngineStartError, FlowFiber, FlowFiberStatus, NativeEngineSaveError,
+    NativeEngineSaveSnapshot,
 };
 use crate::entry::ActiveEntrySnapshotV1;
 use crate::plan::{EntryRuntimeId, RuntimeFlowInvocation, RuntimePlan};
@@ -580,6 +581,19 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
+    /// Reports the observable fiber status without advancing runtime work.
+    #[must_use]
+    pub fn fiber_status(&self) -> FlowFiberStatus {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(vm)
+            | ArcweftRuntimeExecutorInner::StructuredAot(AotExecutor { vm, .. }) => {
+                vm.engine.effective_fiber_status()
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.effective_status(),
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
+        }
+    }
+
     /// Admits a host-owned catalog call through this execution's sole journal.
     pub fn admit_host_call(
         &mut self,
@@ -658,8 +672,6 @@ impl ArcweftRuntimeExecutor {
     }
 
     /// Reports active producer Needs that must finish before a session save.
-    /// Native VM tiers expose the same typed blocker even though their current
-    /// executor snapshot tier is unsupported.
     #[must_use]
     pub fn quiescence_blocking_needs(&self) -> Vec<NeedId> {
         match &self.inner {
