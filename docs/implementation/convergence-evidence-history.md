@@ -22017,4 +22017,6 @@ Windows の Sema 対象 nextest は `test(nominal_schema) | test(rust_adt) | tes
 
 `cargo build --offline --locked -p arcweft-cli --bin arcw` は終了0。修正後の Windows 実 `arcw.exe`（SHA-256 `7eb31e361a87407a5669e129211b9bdee81bb7c589b798dc4dfe8c062bf426ec`）で、同じ `verify --mode test --json` の入力12件を再実行した。直接参照の20・32・48・60・63段は終了0、64・65・180段は `ActiveNominalDepth` の observed 65／maximum 64 で終了1。各辺に `Option` を挟む32・48・63段は `local-use type ownership exceeded its bounded traversal allowance`、64段は `TypeDepth` の observed 129／maximum 128 で終了1。全4件とも `type-check` の `sema.final_analysis` を JSON で返し、標準エラーは0 bytes。
 
+実 `arcw run` は、`State { cell: Option<Cell> }` に `DataFormat::Json` と `42i64` を持つ `Cell` を格納し、`match state.cell` の `.Some` で値を読み出す例を headless の Native `bytecode-vm` と `awbc-product` の両方で実行した。各3操作で `return 42` と終了0。Native は2操作で停止して4,198 bytes の AWFS を保存し、別プロセスの Native AOT でステップ2から再開して同じ値を返した。最初に `--entry main` で試した2回はセレクターの検査で終了2、成功時は `--entry entry.main` を指定した。
+
 Cargo の全機能・全ターゲットの依存グラフでは Sema と推移的逆依存の計22パッケージ。Windows の `cargo check --offline --locked --workspace --all-targets --all-features` は終了0。
