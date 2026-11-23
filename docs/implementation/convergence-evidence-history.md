@@ -22140,3 +22140,21 @@ Native の直接ファイル依頼と manifest のファイル依頼は、成功
 Runtime Host の初回は74件中73件成功、1件失敗、終了100。追加回帰が直接の `FileWriteBytes` を用意した際、テスト fixture に引数の投影がなく、アダプターの実行前に停止した。fixture 修正後、`cargo nextest run --offline --locked -p arcweft-runtime-host --lib --tests --no-fail-fast --no-tests fail --status-level fail` は5バイナリで74件すべて成功、選択外0件、終了0。実行 ID は `b4495c9d-1fcd-47d0-a390-eaa3142ff48b`。
 
 Cargo の全機能・全ターゲットの逆依存には Runtime Host 自身、CLI、LSP、Native Player、Verify LSP が含まれる。CLI の `check` バイナリから `rdeps(=arcweft-runtime-host) & (test(native_file_tasks) | test(traverse_parallel_file_tasks))` を選び、6件すべて成功、選択外492件、終了0。実行 ID は `eeadbd09-7194-4f6f-be2f-c879af44c366`。Runtime Host の全ターゲット Clippy は警告付きで終了0。構造ゲートは98パッケージでブロッキング違反0件。変更ファイルは4,008行から4,078行となり、うち1,940行は同じ Native アダプター境界のテスト。共用の書き込み関数はファイル I/O を所有する既存アダプターに置き、依存の追加は0件。変更 Rust の書式と差分の空白検査は終了0。検証後の `target` は197,831,853,053 bytes（約197.8 GB）。
+
+<a id="native-task-read-outcome-admission"></a>
+
+## 2026-11-24 — Native のファイル読み取りを結果の資源上限で制限する
+
+基点 `1913656550867ec1a6258549913bd0aca6283ccc`。開始時の追跡ファイルに差分はなく、既存の未追跡ディレクトリが一つあった。最終 Source `64a0112ecf9d5f537a05897e4fdd5cf0aeadd28d` を `main` へ通常 push し、公開 ref と変更4ファイルの blob を照合した。
+
+Native の直接タスクと manifest 経由の読み取りは、受理済みの結果契約が持つ制限から入力バッファの上限を求める。上限まで読み進めた場合は、別の1バイトで終端と超過を区別する。テキストは UTF-8 を検査し、Core は借用した入力と正準の `Result` 全体の型・資源を照合してから、所有バッファを成功値へ移す。バッファの上限は I/O が保持できる入力量を定め、`Result` のヘッダーや型検査の消費は Core が数える。通常のファイル I/O エラーは元の `FsError` 契約で処理し、読み取り上限の超過はタスクの資源拒否として返す。単独の結果契約も `Ok` と `Err` の公開前に同じ受理経路を通る。
+
+先行 Source では Core と Runtime Host の `--lib --tests` が19バイナリで2,548件すべて成功、選択外0件、終了0。実行 ID は `6fb45599-1805-4e2e-b697-ac6fef04ab99`。この実行のコンパイル開始後に、単独契約の公開口を共通の受理へ接続し、上限超過の診断を照合する回帰を追加した。最終 Source の全機能・全ターゲット workspace check は警告付きで終了0。構造ゲートは98パッケージを走査してブロッキング違反0件。Native の入出力と破棄される入力バッファは既存のファイルアダプターに置き、型と資源の受理は Sans-I/O の Core に集約する。Native の変更ファイルは4,078行から4,167行となり、うち1,998行はアダプター境界のテスト。Cargo 依存の追加は0件。
+
+最終 Source で `cargo nextest run --offline --locked -p arcweft-core -p arcweft-runtime-host --lib --tests --no-fail-fast --no-tests fail --status-level fail` を実行し、19バイナリで2,548件すべて成功、選択外0件、終了0。実行 ID は `e9022902-8e7d-4e6e-b5b2-faa7fa44fbbe`。実ファイルで1,048,576 bytes を受理し、1 byte 超過を拒否した。制御可能な入力で16,385 bytes の上限に対し、超過時に実際に消費した量が16,386 bytes であることを確認した。テキストとバイト列は公開された `Ok` のバッファアドレスを元の所有バッファと照合した。単独契約の公開口と束縛済み契約で、同じ資源上限超過が返ることも確認した。
+
+全機能・全ターゲットで解決した Core の逆依存グラフは53パッケージ。最終 Source の CLI `check` バイナリで `rdeps(=arcweft-runtime-host) & (test(native_file_tasks) | test(traverse_parallel_file_tasks))` を実行し、6件すべて成功、選択外492件、終了0。実行 ID は `0a3a0ca4-509c-4692-8f7a-d2b1dba5a38d`。同じ結果受理を使う Desktop Adapter と Agent Runner の `--lib` は2バイナリで75件すべて成功、選択外0件、終了0。実行 ID は `bb2c1fc5-9440-4896-9fb5-eb8e15eee5f9`。
+
+Desktop Adapter の `native_integration` は実 Native Backend の capability 応答を Host Registry で受理する1件が成功、選択外0件、終了0。実行 ID は `505ba784-0275-4d7e-bae8-45ae281f947b`。これらの実行はファイル読み取りと影響した結果受理を対象とする。全 producer の統合受入と Native／Web の画像比較は該当範囲の検証結果を使う。
+
+最終 Source の `cargo clippy --offline --locked --workspace --all-targets --all-features` は警告付きで終了0。変更 Rust の書式と差分の空白検査は終了0。検証後の `target` は202,841,093,482 bytes（約202.8 GB）。
