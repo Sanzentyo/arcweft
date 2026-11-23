@@ -18,8 +18,10 @@
     "channel": "ARW_PLAYWRIGHT_CHANNEL or chrome",
     "launch_flags": [
       "--enable-unsafe-webgpu",
+      "--enable-webgpu-developer-features",
       "--use-angle=d3d11 on Windows"
     ],
+    "wasm_profile": "release",
     "host_page": "web/seq06-13e1-inset-shadow-capture.html",
     "capture_script": "web/tests/seq06-13e1-inset-shadow-exact-capture.mjs"
   },

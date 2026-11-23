@@ -158,7 +158,7 @@ function closeServer(server) {
 }
 
 function launchArgs() {
-  const args = ["--enable-unsafe-webgpu"];
+  const args = ["--enable-unsafe-webgpu", "--enable-webgpu-developer-features"];
   if (process.platform === "win32") {
     args.push("--use-angle=d3d11");
   }
@@ -271,6 +271,7 @@ function browserFingerprint(browser, page, channel) {
 
 async function environmentJson(args, browser, result, candidatePath, referencePath) {
   const adapter = JSON.parse(result.adapterInfoJson);
+  const device = await chromiumDeviceForAdapter(browser, adapter.name);
   return {
     schema: "arcweft.seq06.13e1.inset_box_shadow.web_environment.v1",
     generated_unix_seconds: Math.floor(Date.now() / 1000),
@@ -297,11 +298,12 @@ async function environmentJson(args, browser, result, candidatePath, referencePa
         required_env: process.env[WEBGPU_ENV] ?? null,
         available: result.page.webgpuAvailable,
         adapter_label: adapter.name,
-        adapter_vendor: adapter.vendor,
-        adapter_device: adapter.device,
+        adapter_vendor: device?.vendorId ?? adapter.vendor,
+        adapter_device: device?.deviceId ?? adapter.device,
         adapter_device_type: adapter.device_type,
         backend: adapter.backend,
-        driver: adapter.driver,
+        driver: device?.driverVersion ?? adapter.driver,
+        driver_source: device ? "Chromium SystemInfo.getInfo" : null,
         driver_info: adapter.driver_info,
       },
       canvas: {
@@ -313,6 +315,7 @@ async function environmentJson(args, browser, result, candidatePath, referencePa
       },
       feature_flags: [
         "WebGPU enabled",
+        "WebGPU developer features enabled for adapter identification",
         "deterministic Arcweft WGPU texture copy/readback enabled",
         "DOM/CSS screenshot path disabled for this fixture",
       ],
@@ -348,6 +351,33 @@ async function environmentJson(args, browser, result, candidatePath, referencePa
       command_logs: "target/seq06.13e.1-inset-box-shadow-golden/web/command-logs/",
     },
   };
+}
+
+async function chromiumDeviceForAdapter(browser, label) {
+  if (!label) {
+    return null;
+  }
+  const session = await browser.newBrowserCDPSession();
+  try {
+    const { gpu } = await session.send("SystemInfo.getInfo");
+    const matches = gpu.devices.filter((device) => device.deviceString === label);
+    const device = matches[0];
+    // Chromium can report the same adapter in several inventories. Require a
+    // single hardware identity and driver across all entries with the label.
+    if (
+      device?.driverVersion &&
+      matches.every((match) =>
+        match.vendorId === device.vendorId &&
+        match.deviceId === device.deviceId &&
+        match.driverVersion === device.driverVersion
+      )
+    ) {
+      return device;
+    }
+    return null;
+  } finally {
+    await session.detach();
+  }
 }
 
 function npmVersion() {

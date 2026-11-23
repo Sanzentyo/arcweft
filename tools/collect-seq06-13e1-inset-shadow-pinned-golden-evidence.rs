@@ -534,12 +534,8 @@ fn compare_same_run(out_dir: &Path) -> Result<(), String> {
     const OBSERVE: &str = "seq06_13e1_inset_box_shadow.observe.json";
     let native = Target::Native.dir(out_dir);
     let web = Target::Web.dir(out_dir);
-    let read_observe = |path: &Path| -> Result<Value, String> {
-        let bytes = fs::read(path).map_err(|error| format!("read {}: {error}", path.display()))?;
-        serde_json::from_slice(&bytes).map_err(|error| format!("parse {}: {error}", path.display()))
-    };
-    let native_observe = read_observe(&native.join(OBSERVE))?;
-    let web_observe = read_observe(&web.join(OBSERVE))?;
+    let native_observe = read_json(&native.join(OBSERVE))?;
+    let web_observe = read_json(&web.join(OBSERVE))?;
     let artifact = native_observe["bundle_artifact"]
         .as_str()
         .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
@@ -549,7 +545,9 @@ fn compare_same_run(out_dir: &Path) -> Result<(), String> {
         || native_observe["stats"]["inset_shadows"].as_u64() != Some(2)
         || native_observe["stats"]["outer_shadows"].as_u64() != Some(1)
     {
-        return Err("native and Web captures differ in fixture identity or prepared scene".to_owned());
+        return Err(
+            "native and Web captures differ in fixture identity or prepared scene".to_owned(),
+        );
     }
     let native_png = native.join(PNG);
     let web_png = web.join(PNG);
@@ -580,7 +578,9 @@ fn compare_same_run(out_dir: &Path) -> Result<(), String> {
     let mse = metric_score(&metrics, "mse")?;
     let mae = metric_score(&metrics, "mae")?;
     if mse > MAX_MSE || mae > MAX_MAE {
-        return Err(format!("same-run native/Web PNG difference exceeds limits: mse={mse}, mae={mae}"));
+        return Err(format!(
+            "same-run native/Web PNG difference exceeds limits: mse={mse}, mae={mae}"
+        ));
     }
     println!("same-run native/Web PNG comparison passed: mse={mse}, mae={mae}");
     Ok(())
@@ -661,6 +661,8 @@ fn run_web_commands(root: &Path, out_dir: &Path, log_dir: &Path) -> Result<(), S
         .current_dir(root)
         .args([
             "build",
+            "--locked",
+            "--release",
             "-p",
             "arcweft-player-web",
             "--target",
@@ -670,7 +672,7 @@ fn run_web_commands(root: &Path, out_dir: &Path, log_dir: &Path) -> Result<(), S
         .map_err(|error| format!("build web wasm player: {error}"))?;
     write_command_log(
         &log_dir.join("web-wasm-cargo-build.log"),
-        "cargo build -p arcweft-player-web --target wasm32-unknown-unknown",
+        "cargo build --locked --release -p arcweft-player-web --target wasm32-unknown-unknown",
         &build_output,
     )?;
     if !build_output.status.success() {
@@ -689,12 +691,12 @@ fn run_web_commands(root: &Path, out_dir: &Path, log_dir: &Path) -> Result<(), S
             "--out-name",
             "arcweft_player_web",
         ])
-        .arg(root.join("target/wasm32-unknown-unknown/debug/arcweft_player_web.wasm"))
+        .arg(root.join("target/wasm32-unknown-unknown/release/arcweft_player_web.wasm"))
         .output()
         .map_err(|error| format!("run wasm-bindgen for web player: {error}"))?;
     write_command_log(
         &log_dir.join("web-wasm-bindgen.log"),
-        "wasm-bindgen --target web --out-dir web/pkg --out-name arcweft_player_web target/wasm32-unknown-unknown/debug/arcweft_player_web.wasm",
+        "wasm-bindgen --target web --out-dir web/pkg --out-name arcweft_player_web target/wasm32-unknown-unknown/release/arcweft_player_web.wasm",
         &bindgen_output,
     )?;
     if !bindgen_output.status.success() {
@@ -851,6 +853,26 @@ fn validate_existing_artifact_packet(
         ));
     }
 
+    if matches!(target, Target::Native) {
+        write_native_capture_fingerprint(root, &paths)?;
+    }
+    if env_present(REQUIRED_ENV)
+        && let Err(message) = validate_required_fingerprint(target, &paths)
+    {
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "environment_blocker",
+            &message,
+            &paths,
+            Some(candidate_dimensions),
+            None,
+            None,
+        )?;
+        return Err(message);
+    }
+
     if !reference.exists() {
         write_baseline_missing_metrics(root, target, &paths, candidate_dimensions)?;
         write_packet_review_decision(
@@ -961,6 +983,105 @@ fn validate_existing_artifact_packet(
             target.as_str()
         ))
     }
+}
+
+fn read_json(path: &Path) -> Result<Value, String> {
+    let bytes = fs::read(path).map_err(|error| format!("read {}: {error}", path.display()))?;
+    serde_json::from_slice(&bytes).map_err(|error| format!("parse {}: {error}", path.display()))
+}
+
+fn write_native_capture_fingerprint(root: &Path, paths: &PacketPaths<'_>) -> Result<(), String> {
+    let mut fingerprint = read_json(paths.environment)?;
+    let observe = read_json(paths.observe)?;
+    let adapter = &observe["adapter"];
+    let environment = &mut fingerprint["environment"];
+    environment["gpu"] = json!({
+        "backend": adapter["backend"],
+        "adapter_label": adapter["name"],
+        "adapter_vendor": adapter["vendor"],
+        "adapter_device": adapter["device"],
+        "driver": adapter["driver_info"],
+        "driver_vendor": adapter["driver"],
+    });
+    environment["fixture"]["source_hash"] =
+        json!(git_hash_object_path(root, &root.join(FIXTURE_SOURCE)));
+    for (name, png) in [
+        ("candidate", paths.candidate),
+        ("reference", paths.reference),
+    ] {
+        environment[name] = json!({
+            "path": display_path(png),
+            "exists": png.exists(),
+            "hash": sha256_file(png).ok(),
+        });
+    }
+    fingerprint["generated_unix_seconds"] = json!(unix_seconds());
+    fingerprint["status"] = json!("artifacts_complete");
+    fingerprint["classification_code"] = json!("ready_for_packet_validation");
+    fingerprint["message"] = json!("native capture supplied its adapter and PNG fingerprints");
+    fs::write(
+        paths.environment,
+        serde_json::to_string_pretty(&fingerprint).map_err(|error| error.to_string())? + "\n",
+    )
+    .map_err(|error| format!("write {}: {error}", paths.environment.display()))
+}
+
+fn validate_required_fingerprint(target: Target, paths: &PacketPaths<'_>) -> Result<(), String> {
+    let fingerprint = read_json(paths.environment)?;
+    let target_fields: &[&str] = match target {
+        Target::Native => &[
+            "/environment/gpu/adapter_label",
+            "/environment/gpu/backend",
+            "/environment/gpu/driver",
+        ],
+        Target::Web => &[
+            "/environment/browser/name",
+            "/environment/browser/version",
+            "/environment/runtime/version",
+            "/environment/webgpu/adapter_label",
+            "/environment/webgpu/backend",
+            "/environment/webgpu/driver",
+        ],
+    };
+    let missing = target_fields
+        .iter()
+        .copied()
+        .chain([
+            "/environment/imq/version",
+            "/environment/fixture/source_hash",
+        ])
+        .filter(|field| {
+            !fingerprint
+                .pointer(field)
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty())
+        })
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "{} fingerprint fields are missing: {}",
+            target.as_str(),
+            missing.join(", ")
+        ));
+    }
+    for (field, png) in [
+        ("/environment/candidate/hash", paths.candidate),
+        ("/environment/reference/hash", paths.reference),
+    ] {
+        if png == paths.reference && !png.exists() {
+            continue;
+        }
+        let actual =
+            sha256_file(png).map_err(|error| format!("hash {}: {error}", png.display()))?;
+        if fingerprint.pointer(field).and_then(Value::as_str) != Some(actual.as_str()) {
+            return Err(format!(
+                "{} fingerprint {field} does not match {}",
+                target.as_str(),
+                png.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_route_evidence(observe: &Path) -> Result<(), String> {

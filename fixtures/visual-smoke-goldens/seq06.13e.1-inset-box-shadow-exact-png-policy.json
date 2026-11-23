@@ -123,8 +123,11 @@
       "browser": "Playwright chromium with channel from ARW_PLAYWRIGHT_CHANNEL or chrome",
       "launch_flags": [
         "--enable-unsafe-webgpu",
+        "--enable-webgpu-developer-features",
         "--use-angle=d3d11 on Windows"
       ],
+      "wasm_profile": "release",
+      "adapter_fingerprint": "The Arcweft WebGPU adapter label is matched to Chromium's device inventory. A required run needs an unambiguous driver for that adapter.",
       "readback": "WebAssembly-exported renderer readback from an Arcweft-owned WebGPU rgba8unorm texture"
     },
     "required_fields": [
