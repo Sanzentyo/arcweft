@@ -22194,3 +22194,23 @@ CLI の `check` で既存 `just test-tier2` の CLI 側を構成する MCP stdio
 更新後は固定環境の変数3個を設定し、`cargo nextest run --offline --locked -p arcweft-cli --features native-capture --test check --run-ignored all --test-threads 1 --no-fail-fast --no-tests fail` を同じCLI Tier 2の28件と文字方向の回帰1件へ絞った。29成功、469選択外、122.669秒、終了0。実行 ID は `34d9a896-66eb-4638-95ab-b05652ea6009`。Tu／Tr は新しい撮影と基準のPNG SHA-256 が一致し、MSE／MAE／最大誤差0、SSIM 1。PNG 1枚の更新 `214b720e0ffc9522f3bf228bc461126271777622` を `main` に通常 push し、公開 ref と blob `29f318bd65185ba024830269125a30eed4c7a8c1` を照合した。
 
 HIR の既受入実行 R3127 から、現行 HIR を含む依存グラフの4パッケージとビルド設定で106の追跡パスが変化していた。現行基点 `a2b9dcd24ad0b4ea144bb0292f33bd731bc8c374` の622入力を固定し、同じ本番上限8件の再検証を開始した。実行 ID `2a8324ff-aed7-4ecb-bcc4-59f4eca0082c` の終端は未確認。
+
+<a id="inset-shadow-pinned-capture-fingerprint"></a>
+
+## 2026-11-24 — 影付き Panel の固定環境の再採取
+
+検証基点 `079c44f36b3dba5b5db99289036802a60dfbf71d`。ローカルと公開 `main` が一致し、追跡ファイルに開始時の差分はなかった。既存の未追跡ディレクトリが一つあった。固定収集の共有AWFBは39,360 bytes、SHA-256 `f586969f9b02184c293edddf8629357dde14e137eb686652f88bd9cc7a70223c`。両観測の artifact identity は `1f7c7f35c8cc650f6b86abdc072073eabe2ef2c49fe324fe61b85fbeab9c2fe2`。保持面2、paint node 2、外影1、内影2を観測した。
+
+実GPUのNativeとリリースWasmのChrome/WebGPUで320×180を採取した。全230,400 RGBAサンプルの直接比較でMSE・MAE・最大誤差0、色SSIM 1。候補PNGのSHA-256はNative `1b920b743ac0bb739450d8a9f4542d2c1356de864a2d8587a80b23d6438f8aba`、Web `a4be12324d4e5501e05d1e180a9634a28d9143bb1879623de896d532b9ce9b35`。旧基準に対するMSE／MAEはNative 0.181369687413732／0.317297561220268、Web 0.138949215449807／0.256160369812316で、既定の上限0.002／0.003を超えた。旧基準にはNativeで影だけ、Webで異なる塗りと配置が残っていた。
+
+旧Webキャプチャの環境記録にはGPU名とドライバーが空文字で入っていた。Chrome `157.0.8103.79` とPlaywright `1.61.0` の固定キャプチャで、ブラウザーの開発用WebGPUの情報を有効にし、実際のWasmアダプターの名前をChromiumのデバイス一覧と照合した。重複した同じデバイスの PCI vendor・device ID とドライバーが一致する場合に採用し、RTX 3080 Ti、4318／8712、`BrowserWebGpu`、ドライバー `32.0.16.1088` を記録した。計測を追加した前後で候補PNGのSHA-256は同じだった。Nativeの観測には RTX 3080 Ti、Vulkan、NVIDIA `610.88` があり、旧環境記録は起動時の情報だけだったため、実観測からNativeの記録も補った。必須実行では環境項目と候補・基準のPNGハッシュを照合する。固定起動上限のWeb smokeと同じプロファイルを使うため、収集ツールもlockfileを指定してリリースWasmを生成する。
+
+旧収集ツールの固定両環境実行は、直接比較に成功した。旧基準2件は差分超過で終了1、debug Wasm を使った補助 Web smoke も初回の台詞の次のテストで固定起動上限10秒を超過した。更新した収集ツールは各環境の必須フィンガープリント検査を通過し、Native compositor smoke 1件と release Wasm の補助 Web smoke 7件が成功した。旧基準を使った各環境の独立実行は `baseline_drift` で終了1。収集の修正 `26c2733f7f72814d2aca5aee1cad8bad8617bb31` を通常 push し、公開 ref と変更4ファイルの blob を照合した。
+
+Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFBと実測の全ピクセル一致を照合してから、各ターゲットの参照PNGとして採用した。旧PNGのSHA-256はNative `1106d553d834d9f9f90eddd0ef2655608c9646733e63141a9646b4bc1612b95c`、Web `73cb4066e5a26260bd01c4e0065dfc3de1f0f94d55269d1c5dccd6ec6ae43656`。原本は検証基点のGitで参照できる。
+
+固定環境の `just seq06-13e1-inset-shadow-pinned-golden` は終了0。Native compositor smoke 1件、Chrome smoke 7件、必須の成果物検査2件が成功した。最終のNative／Web直接比較でMSE／MAE／最大誤差0と色SSIM 1を確認し、両候補は新基準と同じSHA-256だった。リリースWasmのSHA-256は `bb94963f18b8fdd70210694c12581a2b6ae68315eaf86f7704291e787430e801`。基準とfixture資料の更新 `fe7b5f17e597b4095b2b767a8c4ac336981ae0f8` を通常 push し、公開 ref と変更4ファイルの blob を照合した。
+
+`just structure-audit-gate` はblocking 0、終了0。既存の収集ツールの所有範囲を確認した。基点の1,292行から1,413行（49,037 bytes）。外部コマンド、採取結果・環境・しきい値の検証、レビュー記録を同じツールが所有する。Chromium固有のGPU情報はブラウザー側で採取し、収集ツールで契約と照合する。Rustの書式、Nodeの構文、JSONの読み取り、差分の空白検査は成功した。検証後の `target` は216,900,608,858 bytes（約216.9 GB）。
+
+[更新前後の検証原本](acceptance-evidence/task-inset-shadow-pinned-regression.raw.zip)は40件、111,488 bytes、SHA-256 `869343b26c2ad59c2f2433d062fb71e1c06a26a7682ce61b68383000a272b778`。両ターゲットの候補・観測・環境・比較値、更新前の差分超過、その後の基準との照合、キャプチャーとsmokeのログを保持した。
