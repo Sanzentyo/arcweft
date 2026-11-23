@@ -43,8 +43,6 @@ pub enum BundleAssetResolverError {
     GenerationAlreadyBound { generation: GenerationId },
     #[error("bundle artifact identity differs from generation {generation:?} context")]
     ArtifactContextMismatch { generation: GenerationId },
-    #[error("asset id is not a canonical Asset identity")]
-    InvalidResourceId(#[source] RuntimeBundleAssetValueError),
     #[error("bundle catalog lookup failed: {0}")]
     BundleLookup(#[source] BundleCodecError),
     #[error(transparent)]
@@ -288,10 +286,8 @@ impl BundleAssetResolver {
         &self,
         kind: AssetLoadKind,
         context: RuntimeBundleAssetContext,
-        id: &str,
+        id: &RuntimeBundleAssetResourceId,
     ) -> Result<RuntimeValue, BundleAssetResolverError> {
-        let id = RuntimeBundleAssetResourceId::try_new(id)
-            .map_err(BundleAssetResolverError::InvalidResourceId)?;
         let catalog = self.catalog_for_context(context)?;
         let digest = match asset_content_state(
             catalog.artifact.bundle(),
@@ -303,19 +299,19 @@ impl BundleAssetResolver {
                 return domain_failure(
                     kind,
                     context,
-                    id,
+                    id.clone(),
                     RuntimeBundleAssetFailureReason::Missing,
                     None,
                 );
             }
             AssetContentState::Encoded { digest, status, .. } => {
                 if let Some(reason) = status.failure_reason() {
-                    return domain_failure(kind, context, id, reason, Some(digest));
+                    return domain_failure(kind, context, id.clone(), reason, Some(digest));
                 }
                 digest
             }
         };
-        let binding = RuntimeBundleAssetBinding::try_new(context, id, digest)?;
+        let binding = RuntimeBundleAssetBinding::try_new(context, id.clone(), digest)?;
         let handle = match kind {
             AssetLoadKind::Image => {
                 RuntimeImageHandleValue::from_binding(binding).into_runtime_value()?

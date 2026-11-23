@@ -21,9 +21,9 @@ fn unit() -> RuntimeSemanticTypeId {
 fn boolean() -> RuntimeSemanticTypeId {
     RuntimeCheckedType::Bool.semantic_identity_digest()
 }
-fn entity() -> RuntimeSemanticTypeId {
+fn entity(family: arcweft_id::ProjectEntityReferenceFamily) -> RuntimeSemanticTypeId {
     RuntimeCheckedType::EntityReference(crate::value::RuntimeEntityReferenceType::family_only(
-        arcweft_id::ProjectEntityReferenceFamily::Asset,
+        family,
     ))
     .semantic_identity_digest()
 }
@@ -116,6 +116,15 @@ pub(in crate::plan) fn fixture_with_contract(
 ) -> RuntimePlan {
     let contract = NeedProducerContractDigest::from_bytes([0x61; 32]);
     let role = |tag| RuntimeRequestRoleIdentity::from_accepted_identity([tag; 32]);
+    let declaration_family = if request == 1 {
+        arcweft_id::DeclarationIdentityFamily::Voice
+    } else {
+        arcweft_id::DeclarationIdentityFamily::Asset
+    };
+    let reference_family =
+        arcweft_id::ProjectEntityReferenceFamily::from_declaration_family(declaration_family)
+            .unwrap();
+    let entity_type = entity(reference_family);
     let (projection, types, arguments) = match request {
         0 | 1 => (
             NeedProducerRequestProjection::AssetLoad {
@@ -126,16 +135,20 @@ pub(in crate::plan) fn fixture_with_contract(
                 },
                 argument_name: "素材".into(),
             },
-            Box::new([entity()]) as Box<[_]>,
+            Box::new([entity_type]) as Box<[_]>,
             vec![RuntimeHostArgumentTemplate::named(
                 role(0x62),
                 "素材",
                 value(
-                    entity(),
+                    entity_type,
                     RuntimeValue::EntityRef(
                         RuntimeEntityReference::try_project(
-                            arcweft_id::DeclarationIdentityFamily::Asset,
-                            arcweft_id::PublicId::try_new("asset.source").unwrap(),
+                            declaration_family,
+                            arcweft_id::PublicId::try_new(format!(
+                                "{}.source",
+                                declaration_family.prefix()
+                            ))
+                            .unwrap(),
                         )
                         .unwrap(),
                     ),
@@ -194,11 +207,9 @@ pub(in crate::plan) fn fixture_with_contract(
                 RuntimePlanTypeSeed::new(unit(), RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(boolean(), RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(
-                    entity(),
+                    entity_type,
                     RuntimePlanTypeProjection::EntityReference(
-                        crate::value::RuntimeEntityReferenceType::family_only(
-                            arcweft_id::ProjectEntityReferenceFamily::Asset,
-                        ),
+                        crate::value::RuntimeEntityReferenceType::family_only(reference_family),
                     ),
                 ),
                 RuntimePlanTypeSeed::new(need(), RuntimePlanTypeProjection::Need(boolean())),

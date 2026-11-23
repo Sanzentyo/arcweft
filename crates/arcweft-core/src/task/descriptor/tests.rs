@@ -67,7 +67,7 @@ fn requests() -> [HostTaskRequest; 14] {
             env: vec![("e".into(), "v".into())],
         }),
         HostTaskRequest::AssetLoad(AssetRequest {
-            id: text(),
+            id: crate::value::RuntimeBundleAssetResourceId::try_new("asset.oversize").unwrap(),
             kind: AssetLoadKind::Image,
         }),
         HostTaskRequest::ShaderCompile(ShaderRequest {
@@ -108,7 +108,7 @@ fn asset_request_v1_serde_accepts_only_the_two_resource_kinds() {
     ] {
         let encoded = format!(r#"{{"AssetLoad":{{"id":"asset.opening","kind":"{name}"}}}}"#);
         let request = HostTaskRequest::<AwbcRuntimeValueSnapshot>::AssetLoad(AssetRequest {
-            id: "asset.opening".into(),
+            id: crate::value::RuntimeBundleAssetResourceId::try_new("asset.opening").unwrap(),
             kind,
         });
         let decoded = serde_json::from_str::<HostTaskRequest<AwbcRuntimeValueSnapshot>>(&encoded)
@@ -124,6 +124,10 @@ fn asset_request_v1_serde_accepts_only_the_two_resource_kinds() {
         error
             .to_string()
             .contains("expected asset request kind `image` or `voice`")
+    );
+    let unprojected = r#"{"AssetLoad":{"id":"voice.opening","kind":"voice"}}"#;
+    assert!(
+        serde_json::from_str::<HostTaskRequest<AwbcRuntimeValueSnapshot>>(unprojected).is_err()
     );
 }
 

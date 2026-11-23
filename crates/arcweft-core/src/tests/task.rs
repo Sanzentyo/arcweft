@@ -150,7 +150,7 @@ fn task_spec_uses_typed_request_and_debug_label() {
     let mut spec = crate::tests::task_spec(
         TaskOutcomeContract::new(RuntimeCheckedType::String),
         HostTaskRequest::AssetLoad(AssetRequest {
-            id: "asset.bg.room".to_owned(),
+            id: crate::value::RuntimeBundleAssetResourceId::try_new("asset.bg.room").unwrap(),
             kind: AssetLoadKind::Image,
         }),
     );
@@ -159,7 +159,7 @@ fn task_spec_uses_typed_request_and_debug_label() {
     assert_eq!(spec.debug_label, "asset.load image asset.bg.room");
     assert!(
         matches!(spec.request.as_host().expect("host request fixture"), HostTaskRequest::AssetLoad(AssetRequest { id, kind })
-        if id == "asset.bg.room" && *kind == AssetLoadKind::Image)
+        if id.as_str() == "asset.bg.room" && *kind == AssetLoadKind::Image)
     );
     let receipt = crate::tests::task_submission(spec);
     assert_eq!(

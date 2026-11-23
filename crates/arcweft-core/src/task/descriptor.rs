@@ -262,7 +262,7 @@ impl<P> HostTaskRequest<P> {
                     &[super::HostTaskRequestKind::AssetLoad.semantic_tag()],
                     next,
                 )?;
-                visitor.string(&r.id, next)?;
+                visitor.string(r.id.as_str(), next)?;
                 visitor.string(r.kind.as_str(), next)?;
             }
             Self::ShaderCompile(r) => {

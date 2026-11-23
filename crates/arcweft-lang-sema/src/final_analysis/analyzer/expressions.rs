@@ -5661,12 +5661,8 @@ impl Analyzer<'_, '_, '_> {
                 // domains. Select the domain from the admitted HIR reference
                 // before invoking a declaration resolver; no failed-lookup
                 // fallback or source spelling reader participates here.
-                if let Some(public_id) =
-                    reference.declaration_public_id(arcweft_id::DeclarationIdentityFamily::Asset)
-                {
-                    let asset = arcweft_id::AssetId::try_from(public_id)
-                        .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
-                    let ty = TypeKind::Ref(crate::types::EntityType::new(EntityKind::Asset, None));
+                if let Some(asset) = reference.catalog_resource_id() {
+                    let ty = crate::final_analysis::entity_value::catalog_asset_type(&asset);
                     if let AnalyzerExpressionExpectation::Complete(expected)
                     | AnalyzerExpressionExpectation::AnnotatedBinding(expected) = expectation
                     {

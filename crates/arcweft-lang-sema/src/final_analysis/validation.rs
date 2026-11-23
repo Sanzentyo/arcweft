@@ -2356,10 +2356,8 @@ fn validate_value(
             .then_some(())
             .ok_or(FinalSemanticAnalysisError::InvalidOwner),
         CheckedValueResolution::Entry(entry) => validate_entry_reference(modules, entry),
-        CheckedValueResolution::CatalogAsset(asset) => arcweft_id::DeclarationIdentityFamily::Asset
-            .validate_public_id(asset.as_public_id())
-            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily),
-        CheckedValueResolution::LineContext
+        CheckedValueResolution::CatalogAsset(_)
+        | CheckedValueResolution::LineContext
         | CheckedValueResolution::RegistryRead(_)
         | CheckedValueResolution::PresentationAddress(_)
         | CheckedValueResolution::Registered(_)

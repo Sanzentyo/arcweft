@@ -60,11 +60,18 @@ pub cue @cue.voice.alice.001 from "audio/voice/alice/001.ogg" {
 
 ## Voice resource loading
 
+Place recorded voice files under `audio/voice/` inside the authored asset root.
+For example, `audio/voice/alice/001.wav` defines `@voice.alice.001` and is
+packaged in the audio graph as `asset.voice.alice.001`. Path components use
+the same lowercase and hyphen normalization as other catalog assets. Paths
+that normalize to the same voice ID make packaging fail.
+
 `voice.load` loads a voice resource and has type
 `Need<Result<AudioHandle, VoiceError>>`. Its successful result is an
-`AudioHandle`, which identifies the loaded resource. A line's
-`line.voice_handle()` returns `VoiceHandle`, the separate scoped playback
-lease described in [line handles and returns](../01-language/dialogue-line-handles-and-returns.md).
+`AudioHandle`, which carries the bundled asset identity. A missing recording
+produces a `VoiceError`. `line.voice_handle()` returns the line-scoped
+`VoiceHandle` playback lease described in
+[line handles and returns](../01-language/dialogue-line-handles-and-returns.md).
 
 ```arcw
 let voice_audio = try await voice.load(@voice.alice.001) with:

@@ -3,6 +3,8 @@
 // canonical TaskSpec, Need/Task identity, restart policy, and publication state.
 use super::*;
 use crate::entry::RuntimeValueDigest;
+use crate::value::{RuntimeBundleAssetResourceId, RuntimeEntityReference};
+use arcweft_id::{AssetId, DeclarationIdentityFamily, PublicId, VoiceResourceId};
 use std::collections::BTreeSet;
 
 mod snapshot;
@@ -139,6 +141,17 @@ pub enum AssetLoadKind {
 }
 
 impl AssetLoadKind {
+    fn argument_id(self, reference: &RuntimeEntityReference) -> Option<&PublicId> {
+        let family = match self {
+            Self::Image => DeclarationIdentityFamily::Asset,
+            Self::Voice => DeclarationIdentityFamily::Voice,
+        };
+        let public_id = reference.project_public_id(family)?;
+        family
+            .accepts_public_id_text(public_id.as_str())
+            .then_some(public_id)
+    }
+
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -717,8 +730,18 @@ impl NeedProducerTaskPlan {
                 let RuntimeValue::EntityRef(reference) = &arguments[0].value else {
                     return Err(NeedProducerRequestError::ExpectedEntityReference);
                 };
+                let argument = kind
+                    .argument_id(reference)
+                    .ok_or(NeedProducerRequestError::InvalidCatalogResource)?;
+                let id = match kind {
+                    AssetLoadKind::Image => AssetId::try_from(argument.clone())
+                        .map_err(|_| NeedProducerRequestError::InvalidCatalogResource)?,
+                    AssetLoadKind::Voice => VoiceResourceId::try_from(argument.clone())
+                        .map_err(|_| NeedProducerRequestError::InvalidCatalogResource)?
+                        .bundle_asset_id(),
+                };
                 Ok(HostTaskRequest::AssetLoad(AssetRequest {
-                    id: reference.runtime_label(),
+                    id: RuntimeBundleAssetResourceId::from_asset_id(id),
                     kind: *kind,
                 }))
             }
@@ -787,7 +810,16 @@ impl NeedProducerTaskPlan {
                 else {
                     return Err(NeedProducerRequestError::ExpectedEntityReference);
                 };
-                Ok(saved.kind == *kind && saved.id == reference.runtime_label())
+                let argument = kind
+                    .argument_id(reference)
+                    .ok_or(NeedProducerRequestError::InvalidCatalogResource)?;
+                Ok(saved.kind == *kind
+                    && match kind {
+                        AssetLoadKind::Image => saved.id.as_str() == argument.as_str(),
+                        AssetLoadKind::Voice => {
+                            VoiceResourceId::matches_bundle_asset(argument, saved.id.asset_id())
+                        }
+                    })
             }
             (
                 NeedProducerRequestProjection::ExternCapability {
@@ -852,6 +884,8 @@ pub enum NeedProducerRequestError {
     ArgumentBindingMismatch,
     #[error("selected AssetLoad producer requires an EntityRef argument")]
     ExpectedEntityReference,
+    #[error("asset producer argument must match its selected catalog resource family")]
+    InvalidCatalogResource,
 }
 
 impl NeedProducerTaskPlan {

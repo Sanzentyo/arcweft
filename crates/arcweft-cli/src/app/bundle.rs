@@ -65,6 +65,8 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
+mod voice_catalog;
+
 #[derive(Args, Clone, Debug)]
 pub(in crate::app) struct BundleOptions {
     path: Option<PathBuf>,
@@ -331,7 +333,15 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan_with_adapter(
     } else {
         Vec::new()
     };
-    let image_assets = collect_bundle_image_assets(&virtual_files, &character_packages)?;
+    let package_roots = character_package_media_roots(&character_packages);
+    let project_media_files = || {
+        virtual_files.iter().filter(|file| {
+            file.space == BundleVirtualFileSpace::Asset
+                && !package_roots.iter().any(|root| file.path.starts_with(root))
+        })
+    };
+    let image_assets = collect_bundle_image_assets(project_media_files())?;
+    let voice_graph = voice_catalog::collect(project_media_files())?;
     let fx_definitions =
         FxDefinitions::try_new(compiled.fx_definitions.iter().cloned()).map_err(|error| {
             eprintln!("error: failed to build Fx definitions inventory: {error}");
@@ -362,6 +372,9 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan_with_adapter(
     .with_character_packages(character_packages)
     .with_image_assets(image_assets)
     .with_image_objects(image_objects);
+    if let Some(graph) = voice_graph {
+        bundle = bundle.with_audio_graph(graph);
+    }
     if let Some(topology) = selection.profile_topology() {
         bundle = bundle.with_resource_type_manifests(topology.resource_type_manifests().clone());
     }
@@ -1095,24 +1108,20 @@ fn collect_bundle_virtual_files(
         .map(|groups| groups.into_iter().flatten().collect())
 }
 
-fn collect_bundle_image_assets(
-    files: &[BundleVirtualFile],
-    character_packages: &[BundleCharacterPackage],
-) -> Result<Vec<BundleImageAsset>, ExitCode> {
+fn character_package_media_roots(character_packages: &[BundleCharacterPackage]) -> Vec<String> {
     let manifest_suffix = format!("/{CHARACTER_PACKAGE_MANIFEST_PATH}");
-    let character_roots = character_packages
+    character_packages
         .iter()
         .filter_map(|package| package.manifest.path.strip_suffix(&manifest_suffix))
         .map(|root| format!("{root}/"))
-        .collect::<Vec<_>>();
+        .collect()
+}
+
+fn collect_bundle_image_assets<'a>(
+    files: impl IntoIterator<Item = &'a BundleVirtualFile>,
+) -> Result<Vec<BundleImageAsset>, ExitCode> {
     let mut assets = files
-        .iter()
-        .filter(|file| {
-            file.space == BundleVirtualFileSpace::Asset
-                && !character_roots
-                    .iter()
-                    .any(|root| file.path.starts_with(root))
-        })
+        .into_iter()
         .map(bundle_image_asset_from_virtual_file)
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()

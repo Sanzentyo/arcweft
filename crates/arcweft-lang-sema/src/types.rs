@@ -373,6 +373,7 @@ impl EntityKind {
             DeclarationIdentityFamily::Layer => Some(Self::Layer),
             DeclarationIdentityFamily::Flow => Some(Self::Flow),
             DeclarationIdentityFamily::Style => Some(Self::Style),
+            DeclarationIdentityFamily::Voice => Some(Self::Voice),
             DeclarationIdentityFamily::Proof => None,
         }
     }

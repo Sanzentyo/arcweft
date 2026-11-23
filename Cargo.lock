@@ -595,6 +595,7 @@ dependencies = [
  "arcweft-agent-protocol",
  "arcweft-agent-repl",
  "arcweft-agent-runner",
+ "arcweft-audio-core",
  "arcweft-bundle",
  "arcweft-character",
  "arcweft-character-psd",

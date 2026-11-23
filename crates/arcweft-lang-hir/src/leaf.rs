@@ -379,6 +379,23 @@ impl HirIdRef {
         Some(id)
     }
 
+    /// Resolves a reference in the asset and recorded-voice catalogs.
+    pub fn catalog_resource_id(&self) -> Option<arcweft_id::CatalogResourceId> {
+        let prefix = match self {
+            Self::Absolute(reference) => reference.as_str().split_once('.')?.0,
+            Self::FamilyRelative(relative) => relative.family().as_str(),
+            Self::Relative(_) => return None,
+        };
+        let family = DeclarationIdentityFamily::from_prefix(prefix)?;
+        if !matches!(
+            family,
+            DeclarationIdentityFamily::Asset | DeclarationIdentityFamily::Voice
+        ) {
+            return None;
+        }
+        arcweft_id::CatalogResourceId::try_from(self.declaration_public_id(family)?).ok()
+    }
+
     pub fn declaration_public_id(&self, family: DeclarationIdentityFamily) -> Option<PublicId> {
         let canonical = match self {
             Self::Absolute(reference) => reference.as_str().to_owned(),

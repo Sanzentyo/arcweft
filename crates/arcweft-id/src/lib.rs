@@ -1,4 +1,5 @@
 pub mod canonical;
+mod catalog_resource;
 pub mod closed_enum;
 pub mod dialogue;
 mod effect;
@@ -15,6 +16,7 @@ use core::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
+pub use catalog_resource::{CatalogResourceId, VoiceResourceId};
 pub use effect::{EffectId, EffectIdError, EffectSemanticDigest};
 pub use lifetime_registry::{LifetimeRegistryKey, LifetimeScopeKind, NamedLifetimeScope};
 pub use locale::{LocaleSemanticDigest, LocaleTag, LocaleTagError};
@@ -70,10 +72,8 @@ pub struct AssetId(PublicId);
 
 /// Global declaration-identity family owned by Arcweft.
 ///
-/// `Asset` participates in retained reference validation even though packaged
-/// assets are discovered by the asset catalog rather than an authored
-/// top-level declaration. Callable declaration families share this authority
-/// instead of maintaining parser-local string tables.
+/// `Asset` and `Voice` participate in retained reference validation through
+/// their catalogs. Callable declaration families share this identity grammar.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]
@@ -89,6 +89,7 @@ pub enum DeclarationIdentityFamily {
     Flow = 8,
     Proof = 9,
     Style = 10,
+    Voice = 11,
 }
 
 /// One validated identifier component of a declaration or registry key.
@@ -234,6 +235,7 @@ impl DeclarationIdentityFamily {
             8 => Self::Flow,
             9 => Self::Proof,
             10 => Self::Style,
+            11 => Self::Voice,
             _ => return None,
         })
     }
@@ -251,6 +253,7 @@ impl DeclarationIdentityFamily {
             Self::Flow => "flow",
             Self::Proof => "proof",
             Self::Style => "style",
+            Self::Voice => "voice",
         }
     }
 
@@ -267,6 +270,7 @@ impl DeclarationIdentityFamily {
             "flow" => Some(Self::Flow),
             "proof" => Some(Self::Proof),
             "style" => Some(Self::Style),
+            "voice" => Some(Self::Voice),
             _ => None,
         }
     }
@@ -377,43 +381,12 @@ impl TryFrom<&AssetVirtualPath> for AssetId {
     type Error = AssetIdError;
 
     fn try_from(path: &AssetVirtualPath) -> Result<Self, Self::Error> {
-        let without_extension = path
-            .as_str()
-            .rsplit_once('.')
-            .map_or(path.as_str(), |(stem, _)| stem);
-        if without_extension.is_empty() {
-            return Err(AssetIdError::NoEffectiveComponents { path: path.clone() });
-        }
-
-        let components = without_extension
-            .split('/')
-            .map(|component| {
-                component
-                    .chars()
-                    .map(|character| {
-                        if character.is_ascii_alphanumeric() {
-                            Some(character.to_ascii_lowercase())
-                        } else if matches!(character, '_' | '-') {
-                            Some('_')
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Option<String>>()
-                    .filter(|normalized| !normalized.is_empty())
-                    .ok_or_else(|| AssetIdError::InvalidComponent {
-                        component: component.to_owned(),
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        if components.is_empty() {
-            return Err(AssetIdError::NoEffectiveComponents { path: path.clone() });
-        }
-        Ok(Self(PublicId::try_new(format!(
-            "asset.{}",
-            components.join(".")
-        ))?))
+        catalog_resource::derive_catalog_public_id(
+            path,
+            path.as_str(),
+            DeclarationIdentityFamily::Asset,
+        )
+        .map(Self)
     }
 }
 
@@ -745,6 +718,7 @@ mod tests {
             DeclarationIdentityFamily::Flow,
             DeclarationIdentityFamily::Proof,
             DeclarationIdentityFamily::Style,
+            DeclarationIdentityFamily::Voice,
         ];
         for family in families {
             for candidate in families {
@@ -829,6 +803,7 @@ mod tests {
             DeclarationIdentityFamily::Flow,
             DeclarationIdentityFamily::Proof,
             DeclarationIdentityFamily::Style,
+            DeclarationIdentityFamily::Voice,
         ] {
             assert_eq!(
                 DeclarationIdentityFamily::from_prefix(family.prefix()),
@@ -852,6 +827,7 @@ mod tests {
             (DeclarationIdentityFamily::Flow, 8),
             (DeclarationIdentityFamily::Proof, 9),
             (DeclarationIdentityFamily::Style, 10),
+            (DeclarationIdentityFamily::Voice, 11),
         ];
 
         for (family, tag) in cases {
@@ -861,7 +837,7 @@ mod tests {
                 Some(family)
             );
         }
-        assert_eq!(DeclarationIdentityFamily::from_semantic_tag(11), None);
+        assert_eq!(DeclarationIdentityFamily::from_semantic_tag(12), None);
         assert_eq!(DeclarationIdentityFamily::from_semantic_tag(u8::MAX), None);
     }
 
@@ -1132,6 +1108,7 @@ impl ProjectEntityReferenceFamily {
             Self::Layer => DeclarationIdentityFamily::Layer,
             Self::Flow => DeclarationIdentityFamily::Flow,
             Self::Style => DeclarationIdentityFamily::Style,
+            Self::Voice => DeclarationIdentityFamily::Voice,
             Self::Agent
             | Self::Entry
             | Self::Choice
@@ -1148,7 +1125,6 @@ impl ProjectEntityReferenceFamily {
             | Self::Scene
             | Self::Test
             | Self::Bench
-            | Self::Voice
             | Self::Se
             | Self::Bgm
             | Self::AudioBus
@@ -1173,6 +1149,7 @@ impl ProjectEntityReferenceFamily {
             DeclarationIdentityFamily::Layer => Self::Layer,
             DeclarationIdentityFamily::Flow => Self::Flow,
             DeclarationIdentityFamily::Style => Self::Style,
+            DeclarationIdentityFamily::Voice => Self::Voice,
             DeclarationIdentityFamily::Proof => return None,
         })
     }

@@ -151,10 +151,17 @@ fn plan_with_observed_producer_entry(
     let unit_type = arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let launch_type = type_id(7);
     let contract = NeedProducerContractDigest::from_bytes([0x63; 32]);
+    let declaration_family = match asset {
+        Some(arcweft_core::task::AssetLoadKind::Voice) => {
+            arcweft_id::DeclarationIdentityFamily::Voice
+        }
+        _ => arcweft_id::DeclarationIdentityFamily::Asset,
+    };
+    let reference_family =
+        arcweft_id::ProjectEntityReferenceFamily::from_declaration_family(declaration_family)
+            .unwrap();
     let entity_type = arcweft_core::pattern::RuntimeCheckedType::EntityReference(
-        arcweft_core::value::RuntimeEntityReferenceType::family_only(
-            arcweft_id::ProjectEntityReferenceFamily::Asset,
-        ),
+        arcweft_core::value::RuntimeEntityReferenceType::family_only(reference_family),
     )
     .semantic_identity_digest();
     let (request, argument_types, arguments) = match asset {
@@ -170,8 +177,12 @@ fn plan_with_observed_producer_entry(
                     entity_type,
                     RuntimeExprSeedKind::Value(RuntimeValue::EntityRef(
                         arcweft_core::value::RuntimeEntityReference::try_project(
-                            arcweft_id::DeclarationIdentityFamily::Asset,
-                            arcweft_id::PublicId::try_new("asset.positional").unwrap(),
+                            declaration_family,
+                            arcweft_id::PublicId::try_new(format!(
+                                "{}.positional",
+                                declaration_family.prefix()
+                            ))
+                            .unwrap(),
                         )
                         .unwrap(),
                     )),
@@ -210,7 +221,7 @@ fn plan_with_observed_producer_entry(
                     entity_type,
                     RuntimePlanTypeProjection::EntityReference(
                         arcweft_core::value::RuntimeEntityReferenceType::family_only(
-                            arcweft_id::ProjectEntityReferenceFamily::Asset,
+                            reference_family,
                         ),
                     ),
                 )],
@@ -808,7 +819,7 @@ fn native_positional_asset_need_uses_canonical_binding_and_original_key() {
         let spec = result.output.requests.tasks[0].spec();
         assert_eq!(spec.producer.plan(), expected);
         assert!(
-            matches!(spec.request.as_host(), Some(arcweft_core::task::HostTaskRequest::AssetLoad(request)) if request.kind == kind && request.id == "asset.positional")
+            matches!(spec.request.as_host(), Some(arcweft_core::task::HostTaskRequest::AssetLoad(request)) if request.kind == kind && request.id.as_str() == expected_asset_request_id(kind))
         );
     }
 }
@@ -839,7 +850,7 @@ fn decoded_awbc_positional_asset_need_uses_canonical_binding_and_original_key() 
         let spec = result.output.requests.tasks[0].spec();
         assert_eq!(spec.producer.plan(), expected);
         assert!(
-            matches!(spec.request.as_host(), Some(arcweft_core::task::HostTaskRequest::AssetLoad(request)) if request.kind == kind && request.id == "asset.positional")
+            matches!(spec.request.as_host(), Some(arcweft_core::task::HostTaskRequest::AssetLoad(request)) if request.kind == kind && request.id.as_str() == expected_asset_request_id(kind))
         );
     }
 }
@@ -853,6 +864,13 @@ fn selected_producer_key(plan: &RuntimePlan) -> arcweft_core::task::TaskPlanSema
     plan.task_plan(target.task_plan())
         .expect("the actual producer belongs to the completed program")
         .key()
+}
+
+fn expected_asset_request_id(kind: arcweft_core::task::AssetLoadKind) -> &'static str {
+    match kind {
+        arcweft_core::task::AssetLoadKind::Image => "asset.positional",
+        arcweft_core::task::AssetLoadKind::Voice => "asset.voice.positional",
+    }
 }
 
 #[test]
@@ -886,7 +904,7 @@ fn native_and_decoded_awbc_goto_use_the_target_function_instantiation() {
             let spec = result.output.requests.tasks[0].spec();
             assert_eq!(spec.producer.plan(), expected);
             assert!(
-                matches!(spec.request.as_host(), Some(arcweft_core::task::HostTaskRequest::AssetLoad(request)) if request.kind == kind && request.id == "asset.positional")
+                matches!(spec.request.as_host(), Some(arcweft_core::task::HostTaskRequest::AssetLoad(request)) if request.kind == kind && request.id.as_str() == expected_asset_request_id(kind))
             );
         }
     }

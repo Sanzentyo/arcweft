@@ -1033,7 +1033,7 @@ mod tests {
             policy: TaskPolicy::JoinSameKey,
             outcome,
             request: (HostTaskRequest::AssetLoad(AssetRequest {
-                id: id.into(),
+                id: arcweft_core::value::RuntimeBundleAssetResourceId::try_new(id).unwrap(),
                 kind,
             }))
             .into(),

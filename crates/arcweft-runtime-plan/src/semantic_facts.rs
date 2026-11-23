@@ -12310,6 +12310,7 @@ fn validate_project_item(
                 DeclarationIdentityFamily::Metric => HirItemFamily::Metric,
                 DeclarationIdentityFamily::Layer => HirItemFamily::Layer,
                 DeclarationIdentityFamily::Asset
+                | DeclarationIdentityFamily::Voice
                 | DeclarationIdentityFamily::Flow
                 | DeclarationIdentityFamily::Proof
                 | DeclarationIdentityFamily::Style => {

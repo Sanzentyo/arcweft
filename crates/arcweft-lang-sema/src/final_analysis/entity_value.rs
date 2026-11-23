@@ -7,7 +7,6 @@ use super::{
 };
 use crate::semantic_coordinate::CheckedExpressionOrigin;
 use arcweft_core::{plan::FlowRuntimeId, value::RuntimeEntityReference};
-use arcweft_id::DeclarationIdentityFamily;
 
 /// The existing checked resolution is retained as the sole payload authority.
 /// The private issuer binds it to the accepted source owner and canonical type;
@@ -47,9 +46,7 @@ impl FinalSemanticAnalysis {
             .source_value_type()
             .ok_or(CheckedEntityValueProjectionError::NotEntity { owner })?;
         let expected = match resolution {
-            CheckedValueResolution::CatalogAsset(_) => {
-                TypeKind::entity_ref(crate::types::EntityKind::Asset)
-            }
+            CheckedValueResolution::CatalogAsset(asset) => catalog_asset_type(asset),
             CheckedValueResolution::ProjectItem(item) => item.ty(),
             CheckedValueResolution::ImportedProjectEntity(entity) => entity.ty(),
             CheckedValueResolution::PresentationAddress(identity) => {
@@ -97,7 +94,7 @@ impl CheckedEntityValueProjection {
     pub fn runtime_reference(&self) -> RuntimeEntityReference {
         match &self.resolution {
             CheckedValueResolution::CatalogAsset(asset) => RuntimeEntityReference::Project {
-                family: DeclarationIdentityFamily::Asset,
+                family: asset.family(),
                 public_id: asset.as_public_id().clone(),
             },
             CheckedValueResolution::ProjectItem(item) => project_item_runtime_reference(item),
@@ -132,6 +129,15 @@ impl CheckedEntityValueProjection {
         )
         .map(Some)
     }
+}
+
+pub(super) fn catalog_asset_type(asset: &arcweft_id::CatalogResourceId) -> TypeKind {
+    use arcweft_id::CatalogResourceId;
+
+    TypeKind::entity_ref(match asset {
+        CatalogResourceId::Asset(_) => crate::types::EntityKind::Asset,
+        CatalogResourceId::Voice(_) => crate::types::EntityKind::Voice,
+    })
 }
 
 #[cfg(test)]

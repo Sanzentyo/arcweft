@@ -330,7 +330,7 @@ fn accepted_project_item_semantic_id(
     match owner {
         ProjectItemSemanticOwner::Entity(public_id) => {
             hasher.update(&[0]);
-            hasher.update(&[project_item_family_tag(family)]);
+            hasher.update(&[family.semantic_tag()]);
             hasher.update(value_type.as_bytes());
             hasher.update(
                 &u64::try_from(public_id.as_str().len())
@@ -341,28 +341,12 @@ fn accepted_project_item_semantic_id(
         }
         ProjectItemSemanticOwner::Flow(declaration) => {
             hasher.update(&[1]);
-            hasher.update(&[project_item_family_tag(family)]);
+            hasher.update(&[family.semantic_tag()]);
             hasher.update(value_type.as_bytes());
             hasher.update(declaration.as_bytes());
         }
     }
     AcceptedProjectItemSemanticId(hasher.finalize().into())
-}
-
-const fn project_item_family_tag(family: DeclarationIdentityFamily) -> u8 {
-    match family {
-        DeclarationIdentityFamily::Asset => 0,
-        DeclarationIdentityFamily::Character => 1,
-        DeclarationIdentityFamily::View => 2,
-        DeclarationIdentityFamily::Action => 3,
-        DeclarationIdentityFamily::Activity => 4,
-        DeclarationIdentityFamily::Signal => 5,
-        DeclarationIdentityFamily::Metric => 6,
-        DeclarationIdentityFamily::Layer => 7,
-        DeclarationIdentityFamily::Flow => 8,
-        DeclarationIdentityFamily::Proof => 9,
-        DeclarationIdentityFamily::Style => 10,
-    }
 }
 
 /// Exact source Entry selected by one typed `@entry.*` expression leaf.
@@ -578,7 +562,7 @@ pub enum CheckedValueResolution {
     PresentationAddress(arcweft_interaction_model::presentation::PresentationAddressIdentity),
     /// Catalog-owned resource identity. It is not a source declaration or a
     /// scalar String; bundle admission owns the final asset lookup.
-    CatalogAsset(arcweft_id::AssetId),
+    CatalogAsset(arcweft_id::CatalogResourceId),
     Entry(CheckedEntryReference),
     Registered(RegisteredSemanticValueId),
     Constant(HirLiteral),

@@ -1523,7 +1523,7 @@ pub struct ProcessRunRequest {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AssetRequest {
-    pub id: String,
+    pub id: crate::value::RuntimeBundleAssetResourceId,
     #[serde(
         serialize_with = "AssetLoadKind::serialize_request_name",
         deserialize_with = "AssetLoadKind::deserialize_request_name"
@@ -2076,7 +2076,11 @@ impl<P> HostTaskRequest<P> {
             }
             Self::ProcessRun(request) => format!("process.run {}", request.program),
             Self::AssetLoad(request) => {
-                format!("asset.load {} {}", request.kind.as_str(), request.id)
+                format!(
+                    "asset.load {} {}",
+                    request.kind.as_str(),
+                    request.id.as_str()
+                )
             }
             Self::ShaderCompile(request) => format!("shader.compile {}", request.id),
             Self::AudioDecode(request) => format!("audio.decode {}", request.id),

@@ -1837,12 +1837,18 @@ fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTask
             let kind = AssetLoadKind::from_request_name(operation)
                 .ok_or_else(|| format!("unsupported asset operation `{operation}`"))?;
             Ok(HostTaskRequest::AssetLoad(AssetRequest {
-                id: positional_string(call.args, 0)?,
+                id: crate::value::RuntimeBundleAssetResourceId::try_new(positional_string(
+                    call.args, 0,
+                )?)
+                .map_err(|error| error.to_string())?,
                 kind,
             }))
         }
         ("voice", "load") => Ok(HostTaskRequest::AssetLoad(AssetRequest {
-            id: positional_string(call.args, 0)?,
+            id: crate::value::RuntimeBundleAssetResourceId::try_new(positional_string(
+                call.args, 0,
+            )?)
+            .map_err(|error| error.to_string())?,
             kind: AssetLoadKind::Voice,
         })),
         ("shader", "compile") => Ok(HostTaskRequest::ShaderCompile(ShaderRequest {

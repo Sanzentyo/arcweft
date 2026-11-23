@@ -776,9 +776,9 @@ pub(super) fn value_resolution_type(
         CheckedValueResolution::PresentationAddress(identity) => {
             Some(TypeKind::presentation_address_reference(identity.kind()))
         }
-        CheckedValueResolution::CatalogAsset(_) => {
-            Some(TypeKind::entity_ref(crate::types::EntityKind::Asset))
-        }
+        CheckedValueResolution::CatalogAsset(asset) => Some(
+            crate::final_analysis::entity_value::catalog_asset_type(asset),
+        ),
         CheckedValueResolution::Entry(entry) => Some(entry.ty()),
         CheckedValueResolution::Constant(literal) => literal_type(literal, None).map(|(ty, _)| ty),
     }

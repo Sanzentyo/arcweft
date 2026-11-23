@@ -269,6 +269,85 @@ flow main() -> String effects { asset.read } {
     assert_eq!(resumed["final_status"], "done Return(\"assets_ready\")");
 }
 
+#[test]
+fn authored_voice_load_restarts_native_and_resolves_the_same_awfb_resource() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("voice-checkpoint.arcw");
+    let assets = directory.path().join("assets/audio/voice/alice");
+    std::fs::create_dir_all(&assets).unwrap();
+    let samples = mono_voice_wav();
+    std::fs::write(assets.join("001.wav"), &samples).unwrap();
+    std::fs::write(
+        &source,
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String effects { asset.read } {
+    let recording = @voice.alice.001
+    let loaded = await voice.load(recording)
+    let missing = await voice.load(@voice:.alice.missing)
+    return match (loaded, missing) {
+        (.Ok(_), .Err(_)) => "voice_ready"
+        _ => "voice_result_mismatch"
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let output_bundle = directory.path().join("voice.awfb");
+    let packaged = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bundle")
+        .arg(&source)
+        .arg("--output")
+        .arg(&output_bundle)
+        .output()
+        .unwrap();
+    assert!(packaged.status.success(), "{packaged:?}");
+    let bytes = std::fs::read(&output_bundle).unwrap();
+    let bundle = arcweft_bundle::ArcweftBundle::from_product_path_slice(&output_bundle, &bytes)
+        .expect("the published AWFB decodes");
+    assert_eq!(
+        bundle.audio_asset_bytes("asset.voice.alice.001").unwrap(),
+        Some(samples.as_slice())
+    );
+
+    let save = directory.path().join("voice.awfs");
+    let save = save.to_str().unwrap();
+    let stopped =
+        run_headless_asset_steps(&source, "bytecode-vm", "2", &["--session-save-out", save]);
+    assert_eq!(stopped["native_io"]["completed_tasks"], 1);
+    assert_eq!(stopped["native_io"]["scheduler"]["in_flight"], 1);
+    let pending = &stopped["steps"][1]["task_requests"];
+    assert_eq!(pending.as_array().unwrap().len(), 1);
+
+    let resumed = run_headless_asset_steps(&source, "aot", "8", &["--session-load", save]);
+    assert_eq!(resumed["steps"][0]["index"], 2);
+    assert_eq!(&resumed["steps"][0]["task_requests"], pending);
+    assert_eq!(resumed["native_io"]["completed_tasks"], 1);
+    assert_eq!(resumed["final_status"], "done Return(\"voice_ready\")");
+
+    let product = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run-bundle")
+        .arg(&output_bundle)
+        .args(["--entry", "entry.main", "--max-ops", "64", "--json"])
+        .output()
+        .unwrap();
+    assert!(product.status.success(), "{product:?}");
+    let report: serde_json::Value = serde_json::from_slice(&product.stdout).unwrap();
+    assert_eq!(report["native_io"]["completed_tasks"], 2);
+    assert_eq!(report["final_status"], resumed["final_status"]);
+}
+
+fn mono_voice_wav() -> Vec<u8> {
+    let mut bytes = b"RIFF\xc4\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00".to_vec();
+    bytes.extend_from_slice(&8_000_u32.to_le_bytes());
+    bytes.extend_from_slice(&16_000_u32.to_le_bytes());
+    bytes.extend_from_slice(b"\x02\x00\x10\x00data");
+    bytes.extend_from_slice(&160_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 160]);
+    bytes
+}
+
 fn run_headless_asset_steps(
     source: &Path,
     executor: &str,

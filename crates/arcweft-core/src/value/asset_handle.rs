@@ -11,7 +11,7 @@ use super::{
 };
 use crate::pattern::{RuntimeOpaqueTypeOwner, runtime_standard_opaque_type};
 use crate::task::GenerationId;
-use arcweft_id::{DeclarationIdentityFamily, PublicId};
+use arcweft_id::{AssetId, DeclarationIdentityFamily, PublicId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
@@ -39,7 +39,7 @@ pub struct RuntimeBundleAssetContext {
 
 /// Checked public identity of an image or voice resource in a bundle.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct RuntimeBundleAssetResourceId(PublicId);
+pub struct RuntimeBundleAssetResourceId(AssetId);
 
 /// Complete identity carried by a successful image or audio handle.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -213,7 +213,17 @@ impl RuntimeBundleAssetResourceId {
         Self::validate_text(&value)?;
         let id = PublicId::try_new_engine_owned(value.into_owned())
             .map_err(|_| RuntimeBundleAssetValueError::InvalidResourceId)?;
-        Ok(Self(id))
+        AssetId::try_from(id)
+            .map(Self)
+            .map_err(|_| RuntimeBundleAssetValueError::InvalidResourceId)
+    }
+
+    pub(crate) const fn from_asset_id(id: AssetId) -> Self {
+        Self(id)
+    }
+
+    pub(crate) const fn asset_id(&self) -> &AssetId {
+        &self.0
     }
 
     fn validate_text(value: &str) -> Result<(), RuntimeBundleAssetValueError> {
