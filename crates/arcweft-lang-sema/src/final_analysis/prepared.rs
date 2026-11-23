@@ -1812,6 +1812,20 @@ impl PreparedExpressionFact {
         }
     }
 
+    pub(crate) fn structural_call_disposition(
+        &self,
+    ) -> arcweft_lang_hir::project::HirSelectedCallExpressionDisposition {
+        use arcweft_lang_hir::project::HirSelectedCallExpressionDisposition;
+        match self.checked_resolution() {
+            Some(CheckedExpressionResolution::LifetimePromotion(request)) => {
+                HirSelectedCallExpressionDisposition::LifetimePromotion {
+                    receiver: request.receiver(),
+                }
+            }
+            _ => HirSelectedCallExpressionDisposition::Structural,
+        }
+    }
+
     /// Value creation remains latent in both the owner-bound and completed
     /// phases. Absence of a completed resolution never authorizes execution
     /// of the implicit callable's body.

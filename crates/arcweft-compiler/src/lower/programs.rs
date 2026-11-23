@@ -309,7 +309,7 @@ pub fn compile_deterministic_program(
     let verification =
         arcweft_verify::verify_project_for_runtime(hir, lease.project_symbols(), analysis)
             .map_err(|error| {
-                Box::new(RuntimeSemanticProjectionError::AssertionVerification(
+                Box::new(RuntimeSemanticProjectionError::RuntimeVerification(
                     Box::new(error),
                 ))
             })?;

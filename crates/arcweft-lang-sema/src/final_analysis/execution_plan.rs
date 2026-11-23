@@ -627,7 +627,9 @@ fn execution_plan_for_expression_with_roles(
                 CheckedStructuralExecutionReason::PostfixBracket,
             ))
         }
-        CheckedExpressionResolution::Structural | CheckedExpressionResolution::Scope(_) => {
+        CheckedExpressionResolution::Structural
+        | CheckedExpressionResolution::LifetimePromotion(_)
+        | CheckedExpressionResolution::Scope(_) => {
             Ok(super::CheckedExpressionExecutionPlan::structural(
                 value,
                 CheckedStructuralExecutionReason::Structural,

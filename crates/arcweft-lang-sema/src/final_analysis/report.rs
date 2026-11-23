@@ -968,6 +968,11 @@ impl FinalAnalysisExecutionProjection<'_> {
                     CheckedExpressionResolution::PostfixBracket(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::PostfixCandidate
                     }
+                    CheckedExpressionResolution::LifetimePromotion(_) => {
+                        return Err(FinalAnalysisExecutionProjectionError::WrongExpressionKind {
+                            owner,
+                        });
+                    }
                     CheckedExpressionResolution::RegistryAddress(_)
                     | CheckedExpressionResolution::CompileTimeEnum(_)
                     | CheckedExpressionResolution::Effect(_)

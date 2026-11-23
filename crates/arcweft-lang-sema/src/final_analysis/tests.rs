@@ -1226,8 +1226,53 @@ fn checked_unsafe_audit_reason_requires_an_authored_nonempty_literal() {
     }
 }
 
+const CHECKED_PROMOTION: &str = "checked lifetime promotion";
+
+fn checked_promotion(analysis: &FinalSemanticAnalysis) -> &super::CheckedLifetimePromotion {
+    let mut promotions =
+        analysis
+            .expressions()
+            .filter_map(|(_, expression)| match expression.resolution() {
+                CheckedExpressionResolution::LifetimePromotion(request) => {
+                    Some((request, expression))
+                }
+                _ => None,
+            });
+    let (request, expression) = promotions.next().expect("checked lifetime promotion");
+    assert!(
+        promotions.next().is_none(),
+        "expected exactly one promotion"
+    );
+    let receiver = analysis
+        .expression(request.receiver())
+        .expect("receiver fact");
+    assert_eq!(receiver.value_type(), expression.value_type());
+    request
+}
+
+fn assert_promotion_result(fixture: &Fixture, source: &str, code: &str, expected: &str) {
+    let analysis = analyze(fixture);
+    if code == CHECKED_PROMOTION {
+        let analysis = analysis.unwrap_or_else(|error| panic!("{source}: {error:?}"));
+        let request = checked_promotion(&analysis);
+        assert_eq!(
+            &source[request.source().range().as_range()],
+            expected,
+            "{source}"
+        );
+    } else {
+        let error = analysis.expect_err("invalid promotion must be rejected");
+        let diagnostic = error
+            .source_diagnostic()
+            .unwrap_or_else(|| panic!("{source}: {error:?}"));
+        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{source}");
+        let span = diagnostic.span().expect("original promotion source");
+        assert_eq!(&source[span.range().as_range()], expected, "{source}");
+    }
+}
+
 #[test]
-fn rejected_audited_promotion_retains_the_nearest_checked_audit() {
+fn checked_promotion_retains_the_nearest_audit() {
     let source = r#"
 flow main {
     unsafe lifetime @unsafe.outer reason = "outer reason" {
@@ -1240,17 +1285,15 @@ flow main {
 }
 "#;
     let fixture = fixture(source, None);
-    let error = analyze(&fixture).expect_err("audited promotion cannot yet transfer ownership");
-    let FinalSemanticAnalysisError::LifetimePromotionExecutionUnavailable { request, .. } = error
-    else {
-        panic!("expected the checked promotion rejection, got {error:?}");
-    };
+    let analysis = analyze(&fixture).expect("the audited promotion is valid source");
+    let request = checked_promotion(&analysis);
     assert_eq!(request.target, arcweft_id::LifetimeScopeKind::Flow);
-    assert_eq!(&source[request.receiver.range().as_range()], "42i64");
+    assert_eq!(&source[request.receiver_source.range().as_range()], "42i64");
     assert_eq!(&source[request.target_source.range().as_range()], "'flow");
     let super::CheckedLifetimePromotionAuthorization::Audit {
         id,
         declaration_source,
+        ..
     } = &request.authorization
     else {
         panic!("the audit supplies the authored authorization");
@@ -1323,12 +1366,12 @@ fn lifetime_promotion_resolves_the_reached_target_activation() {
     for (source, code, offending) in [
         (
             "flow main() { let _ = 42i64.promote('flow); }",
-            "sema.lifetime.promotion_execution",
+            CHECKED_PROMOTION,
             "42i64.promote('flow)",
         ),
         (
             "flow main() { if true { let _ = 42i64.promote('flow); } }",
-            "sema.lifetime.promotion_execution",
+            CHECKED_PROMOTION,
             "42i64.promote('flow)",
         ),
         (
@@ -1337,7 +1380,7 @@ fn lifetime_promotion_resolves_the_reached_target_activation() {
                     pending _ => { let _ = 42i64.promote('flow); }
                 }
             }",
-            "sema.lifetime.promotion_execution",
+            CHECKED_PROMOTION,
             "42i64.promote('flow)",
         ),
         (
@@ -1362,14 +1405,20 @@ fn lifetime_promotion_resolves_the_reached_target_activation() {
         ),
     ] {
         let fixture = fixture(source, None);
-        let error = analyze(&fixture).expect_err("promotion transfer is not implemented");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{source}: {error:?}"));
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{source}");
-        let span = diagnostic.span().expect("original promotion source");
-        assert_eq!(&source[span.range().as_range()], offending, "{source}");
+        assert_promotion_result(&fixture, source, code, offending);
     }
+}
+
+#[test]
+fn lifetime_promotion_preserves_the_receiver_type_in_a_generic_argument() {
+    let source = "fn pass<T>(value: T) -> T { value }\nflow main() -> String { return pass(\"owned\".promote('flow)); }";
+    let fixture = fixture(source, None);
+    assert_promotion_result(
+        &fixture,
+        source,
+        CHECKED_PROMOTION,
+        "\"owned\".promote('flow)",
+    );
 }
 
 #[test]
@@ -1385,16 +1434,7 @@ fn lifetime_promotion_reaches_the_attached_line_activation() {
         "}\n",
     );
     let fixture = character_nominal_fixture(source);
-    let error = analyze(&fixture).expect_err("the reached line still requires a transfer");
-    let diagnostic = error
-        .source_diagnostic()
-        .unwrap_or_else(|| panic!("{error:?}"));
-    assert_eq!(
-        diagnostic.code().unwrap().as_str(),
-        "sema.lifetime.promotion_execution"
-    );
-    let span = diagnostic.span().expect("original promotion source");
-    assert_eq!(&source[span.range().as_range()], "value.promote('line)");
+    assert_promotion_result(&fixture, source, CHECKED_PROMOTION, "value.promote('line)");
 }
 
 #[test]
@@ -1419,6 +1459,7 @@ fn lifetime_promotion_cannot_treat_a_borrow_as_an_owned_receiver() {
 
 #[test]
 fn safe_lifetime_promotion_checks_borrows_in_stored_receiver_types() {
+    const BORROWED_NOMINAL_ARGUMENT: &str = "unsupported nominal argument";
     for (declarations, ty, proof, code) in [
         ("", "Option<&i64>", "", "sema.lifetime.promotion_receiver"),
         (
@@ -1463,37 +1504,41 @@ fn safe_lifetime_promotion_checks_borrows_in_stored_receiver_types() {
             "enum Growing<T> { Next(Vec<Growing<Option<T>>>), End }",
             "Growing<&i64>",
             "",
-            "sema.lifetime.promotion_execution",
+            BORROWED_NOMINAL_ARGUMENT,
         ),
         (
             "struct Phantom<T> { value: i64 }",
             "Phantom<&i64>",
             "",
-            "sema.lifetime.promotion_execution",
+            BORROWED_NOMINAL_ARGUMENT,
         ),
         (
             "struct Summary<T> { value: T }",
             "Summary<i64>",
             "",
-            "sema.lifetime.promotion_execution",
+            CHECKED_PROMOTION,
         ),
-        ("", "Need<&i64>", "", "sema.lifetime.promotion_execution"),
+        ("", "Need<&i64>", "", CHECKED_PROMOTION),
     ] {
         let call = format!("value.promote('flow{proof})");
         let source = format!("{declarations}\nflow main(value: {ty}) {{ let _ = {call}; }}");
         let fixture = fixture(&source, None);
-        let error = analyze(&fixture).expect_err("promotion must be rejected");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{source}: {error:?}"));
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{source}");
-        let span = diagnostic.span().expect("original promotion source");
+        if code == BORROWED_NOMINAL_ARGUMENT {
+            let error = analyze(&fixture).expect_err("runtime schema rejects the nominal argument");
+            assert!(
+                matches!(error, FinalSemanticAnalysisError::NominalSchemaProjection(
+                super::NominalSchemaProjectionError::UnsupportedLeaf { ref path, ref ty }
+            ) if path.steps().is_empty() && matches!(ty.as_ref(), TypeKind::BorrowRef { .. })),
+                "{source}: {error:?}"
+            );
+            continue;
+        }
         let offending = if code == "sema.lifetime.promotion_receiver" {
             "value"
         } else {
             &call
         };
-        assert_eq!(&source[span.range().as_range()], offending, "{source}");
+        assert_promotion_result(&fixture, &source, code, offending);
     }
 }
 
@@ -1543,11 +1588,7 @@ fn safe_lifetime_promotion_follows_callable_storage_in_aggregates() {
                 "sema.lifetime.promotion_receiver",
                 "packed",
             ),
-            (
-                "value",
-                "sema.lifetime.promotion_execution",
-                "packed.promote('flow)",
-            ),
+            ("value", CHECKED_PROMOTION, "packed.promote('flow)"),
         ] {
             let source = format!(
                 "{declarations}\nflow main(loan: &i64) {{
@@ -1557,20 +1598,7 @@ fn safe_lifetime_promotion_follows_callable_storage_in_aggregates() {
                 }}"
             );
             let fixture = fixture(&source, None);
-            let error = analyze(&fixture).expect_err("promotion has no executable transfer");
-            let diagnostic = error
-                .source_diagnostic()
-                .unwrap_or_else(|| panic!("{source}: {error:?}"));
-            assert_eq!(
-                diagnostic.code().unwrap().as_str(),
-                code,
-                "{source}: {error:?}"
-            );
-            assert_eq!(
-                &source[diagnostic.span().unwrap().range().as_range()],
-                span,
-                "{source}"
-            );
+            assert_promotion_result(&fixture, &source, code, span);
         }
     }
 }
@@ -1597,15 +1625,10 @@ fn safe_lifetime_promotion_ignores_callable_arguments_absent_from_storage() {
             }}"
         );
         let fixture = fixture(&source, None);
-        let error = analyze(&fixture).expect_err("promotion has no executable transfer");
-        let diagnostic = error.source_diagnostic().unwrap();
-        assert_eq!(
-            diagnostic.code().unwrap().as_str(),
-            "sema.lifetime.promotion_execution",
-            "{source}: {error:?}"
-        );
-        assert_eq!(
-            &source[diagnostic.span().unwrap().range().as_range()],
+        assert_promotion_result(
+            &fixture,
+            &source,
+            CHECKED_PROMOTION,
             "packed.promote('flow)",
         );
     }
@@ -1919,14 +1942,15 @@ fn safe_lifetime_promotion_follows_selected_positional_formal_bindings() {
             format!("fn take((_, [first, _]): ({callback}, {array})) -> {callback} {{ first }}"),
             String::new(),
             "(owned, [borrowed, owned])",
-            "(borrowed, [owned, borrowed])",
+            "(borrowed, [owned, other_borrowed])",
         ),
     ] {
         for (argument, borrowed) in [(selected, true), (discarded, false)] {
             let source = format!(
                 "{declaration}
-                flow main(loan: &i64) {{
+                flow main(loan: &i64, other_loan: &i64) {{
                     let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+                    let other_borrowed = |n: i64| -> i64 {{ let _ = other_loan; n }};
                     let owned = |n: i64| -> i64 {{ n }};
                     {local}
                     let packed = take({argument});
@@ -2241,57 +2265,58 @@ fn safe_lifetime_promotion_observes_only_the_selected_callable_carrier_payload()
 
 fn assert_promotion_capture_diagnostic(source: &str, receiver: &str, borrowed: bool) {
     let fixture = fixture(source, None);
-    let error = analyze(&fixture).expect_err("promotion has no executable transfer");
-    let diagnostic = error
-        .source_diagnostic()
-        .unwrap_or_else(|| panic!("{source}: {error:?}"));
     let (code, span) = if borrowed {
         ("sema.lifetime.promotion_receiver", receiver.to_owned())
     } else {
-        (
-            "sema.lifetime.promotion_execution",
-            format!("{receiver}.promote('flow)"),
-        )
+        (CHECKED_PROMOTION, format!("{receiver}.promote('flow)"))
     };
-    assert_eq!(
-        diagnostic.code().unwrap().as_str(),
-        code,
-        "{source}: {error:?}"
-    );
-    assert_eq!(
-        &source[diagnostic.span().unwrap().range().as_range()],
-        span,
-        "{source}"
-    );
+    assert_promotion_result(&fixture, source, code, &span);
 }
 
 #[test]
 fn safe_lifetime_promotion_propagates_only_changed_nominal_storage() {
     use std::fmt::Write as _;
 
-    let mut declarations = String::new();
-    for index in 0..180 {
-        writeln!(
-            declarations,
-            "struct Cell{index} {{ next: Cell{} }}",
-            index + 1
-        )
-        .unwrap();
-    }
-    for (leaf, code) in [
-        ("i64", "sema.lifetime.promotion_execution"),
-        ("&i64", "sema.lifetime.promotion_receiver"),
+    let max_nominals =
+        super::RuntimeNominalGraphProjectionLimits::PRODUCTION.max_active_nominal_depth;
+    for (depth, leaf, code) in [
+        (max_nominals - 1, "i64", CHECKED_PROMOTION),
+        (180, "i64", "nominal projection limit"),
+        (180, "&i64", "sema.lifetime.promotion_receiver"),
     ] {
+        let mut declarations = String::new();
+        for index in 0..depth {
+            writeln!(
+                declarations,
+                "struct Cell{index} {{ next: Cell{} }}",
+                index + 1
+            )
+            .unwrap();
+        }
         let source = format!(
-            "{declarations}struct Cell180 {{ value: {leaf} }}\n
+            "{declarations}struct Cell{depth} {{ value: {leaf} }}\n
             flow main(value: Cell0) {{ let _ = value.promote('flow); }}"
         );
         let fixture = fixture(&source, None);
-        let error = analyze(&fixture).expect_err("promotion must be rejected");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{leaf}: {error:?}"));
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{leaf}");
+        if code == "nominal projection limit" {
+            let error = analyze(&fixture).expect_err("nominal depth exceeds the schema limit");
+            assert!(
+                matches!(error, FinalSemanticAnalysisError::NominalSchemaProjection(
+                super::NominalSchemaProjectionError::SourceGraph(ref error)
+            ) if matches!(error.as_ref(), super::RuntimeNominalGraphProjectionError::Limit {
+                kind: super::RuntimeNominalGraphProjectionLimitKind::ActiveNominalDepth,
+                observed, maximum,
+            } if *observed == max_nominals + 1 && *maximum == max_nominals)),
+                "{error:?}"
+            );
+            continue;
+        }
+        let span = if code == CHECKED_PROMOTION {
+            "value.promote('flow)"
+        } else {
+            "value"
+        };
+        assert_promotion_result(&fixture, &source, code, span);
     }
 }
 
@@ -2419,10 +2444,6 @@ fn safe_lifetime_promotion_checks_the_function_value_captures() {
             .project
             .analysis_view()
             .unwrap_or_else(|error| panic!("{case}: {error:?}"));
-        let error = analyze(&fixture).expect_err("promotion must be rejected");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{case}: {error:?}"));
         let (code, offending) = if borrowed {
             let checked_receiver = if case == "direct" {
                 borrow
@@ -2431,11 +2452,9 @@ fn safe_lifetime_promotion_checks_the_function_value_captures() {
             };
             ("sema.lifetime.promotion_receiver", checked_receiver)
         } else {
-            ("sema.lifetime.promotion_execution", call.as_str())
+            (CHECKED_PROMOTION, call.as_str())
         };
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{case}");
-        let span = diagnostic.span().expect("original promotion source");
-        assert_eq!(&source[span.range().as_range()], offending, "{case}");
+        assert_promotion_result(&fixture, &source, code, offending);
     }
 }
 
@@ -2453,7 +2472,7 @@ fn safe_lifetime_promotion_checks_returned_function_storage() {
         format!("flow main({params}) {{\nlet callback = {value}\nlet _ = {promotion}\n}}")
     };
     let ordinary_caller = caller("loan: &i64", "factory(loan)");
-    for (case, source, retains_borrow) in [
+    for (_case, source, retains_borrow) in [
         (
             "normal result",
             format!("{signature} {{ {borrowed} }}\n{ordinary_caller}"),
@@ -2556,18 +2575,12 @@ fn safe_lifetime_promotion_checks_returned_function_storage() {
             false,
         ),
     ] {
-        let error = analyze(&fixture(&source, None)).expect_err("promotion must be rejected");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{case}: {error:?}"));
         let (code, offending) = if retains_borrow {
             ("sema.lifetime.promotion_receiver", "callback")
         } else {
-            ("sema.lifetime.promotion_execution", promotion)
+            (CHECKED_PROMOTION, promotion)
         };
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{case}");
-        let span = diagnostic.span().expect("original promotion source");
-        assert_eq!(&source[span.range().as_range()], offending, "{case}");
+        assert_promotion_result(&fixture(&source, None), &source, code, offending);
     }
 }
 
@@ -2586,7 +2599,7 @@ fn safe_lifetime_promotion_follows_selected_function_arguments() {
     let named =
         format!("fn forward(discarded: {callable}, input: {callable}) -> ({callable}) {{ input }}");
     let capture = "|_unit: Unit| -> i64 { let _ = input; 7i64 }";
-    for (case, definition, prefix, result, retains_borrow) in [
+    for (_case, definition, prefix, result, retains_borrow) in [
         ("typed", typed, "", "forward(borrowed)", true),
         (
             "extension receiver",
@@ -2680,18 +2693,12 @@ fn safe_lifetime_promotion_follows_selected_function_arguments() {
                  let _ = {promotion}
              }}"
         );
-        let error = analyze(&fixture(&source, None)).expect_err("promotion must be rejected");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{case}: {error:?}"));
         let (code, offending) = if retains_borrow {
             ("sema.lifetime.promotion_receiver", "callback")
         } else {
-            ("sema.lifetime.promotion_execution", promotion)
+            (CHECKED_PROMOTION, promotion)
         };
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{case}");
-        let span = diagnostic.span().expect("original promotion source");
-        assert_eq!(&source[span.range().as_range()], offending, "{case}");
+        assert_promotion_result(&fixture(&source, None), &source, code, offending);
     }
 }
 
@@ -2753,18 +2760,12 @@ fn safe_lifetime_promotion_converges_recursive_capture_dependencies() {
             .project
             .analysis_view()
             .unwrap_or_else(|error| panic!("{application}: {error:?}"));
-        let error = analyze(&fixture).expect_err("promotion must be rejected");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{application}: {error:?}"));
         let (code, offending) = if retains_borrow {
             ("sema.lifetime.promotion_receiver", "callback")
         } else {
-            ("sema.lifetime.promotion_execution", call)
+            (CHECKED_PROMOTION, call)
         };
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{application}");
-        let span = diagnostic.span().expect("original promotion source");
-        assert_eq!(&source[span.range().as_range()], offending, "{application}");
+        assert_promotion_result(&fixture, &source, code, offending);
     }
 }
 
@@ -2915,18 +2916,12 @@ fn safe_lifetime_promotion_follows_dynamic_callable_results() {
             .project
             .analysis_view()
             .unwrap_or_else(|error| panic!("{case}: {error:?}"));
-        let error = analyze(&fixture).expect_err("promotion must be rejected");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{case}: {error:?}"));
         let (code, offending) = if retains_borrow {
             ("sema.lifetime.promotion_receiver", "callback")
         } else {
-            ("sema.lifetime.promotion_execution", promote)
+            (CHECKED_PROMOTION, promote)
         };
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{case}");
-        let span = diagnostic.span().expect("original promotion source");
-        assert_eq!(&source[span.range().as_range()], offending, "{case}");
+        assert_promotion_result(&fixture, &source, code, offending);
     }
 }
 
@@ -3004,28 +2999,12 @@ fn safe_lifetime_promotion_applies_specialized_declaration_storage() {
             .project
             .analysis_view()
             .unwrap_or_else(|error| panic!("{setup} {invocation}: {error:?}"));
-        let error = analyze(&fixture).expect_err("promotion must be rejected");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{setup} {invocation}: {error:?}"));
         let (code, span) = if borrowed {
             ("sema.lifetime.promotion_receiver", "callback")
         } else {
-            (
-                "sema.lifetime.promotion_execution",
-                "callback.promote('flow)",
-            )
+            (CHECKED_PROMOTION, "callback.promote('flow)")
         };
-        assert_eq!(
-            diagnostic.code().unwrap().as_str(),
-            code,
-            "{setup} {invocation}"
-        );
-        assert_eq!(
-            &source[diagnostic.span().unwrap().range().as_range()],
-            span,
-            "{setup} {invocation}"
-        );
+        assert_promotion_result(&fixture, &source, code, span);
     }
 }
 
@@ -3033,7 +3012,7 @@ fn safe_lifetime_promotion_applies_specialized_declaration_storage() {
 fn safe_lifetime_promotion_checks_retained_continuation_inputs() {
     for (parameter, code) in [
         ("&i64", "sema.lifetime.promotion_receiver"),
-        ("i64", "sema.lifetime.promotion_execution"),
+        ("i64", CHECKED_PROMOTION),
     ] {
         let source = format!(
             "fn carry(loan: {parameter})(middle: i64)(last: i64) -> i64 {{
@@ -3047,11 +3026,12 @@ fn safe_lifetime_promotion_checks_retained_continuation_inputs() {
             }}"
         );
         let fixture = fixture(&source, None);
-        let error = analyze(&fixture).expect_err("promotion must be rejected");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{parameter}: {error:?}"));
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{parameter}");
+        let span = if code == CHECKED_PROMOTION {
+            "callback.promote('flow)"
+        } else {
+            "callback"
+        };
+        assert_promotion_result(&fixture, &source, code, span);
     }
 }
 
@@ -3163,8 +3143,8 @@ fn safe_lifetime_promotion_follows_invoked_returned_prefixes() {
         ),
     ] {
         let source = format!(
-            "{definition}\nflow main(loan: &i64) {{
-            let borrowed = |_unit: Unit| -> i64 {{ let _ = loan; 1i64 }}
+            "{definition}\nflow main(loan: &i64, captured_loan: &i64) {{
+            let borrowed = |_unit: Unit| -> i64 {{ let _ = captured_loan; 1i64 }}
             let owned = |_unit: Unit| -> i64 {{ 2i64 }}
             let callback = {invocation}
             let _ = callback.promote('flow)
@@ -3175,24 +3155,12 @@ fn safe_lifetime_promotion_follows_invoked_returned_prefixes() {
             .project
             .analysis_view()
             .unwrap_or_else(|error| panic!("{invocation}: {error:?}"));
-        let error = analyze(&fixture).expect_err("promotion must be rejected");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{invocation}: {error:?}"));
         let (code, span) = if borrowed {
             ("sema.lifetime.promotion_receiver", "callback")
         } else {
-            (
-                "sema.lifetime.promotion_execution",
-                "callback.promote('flow)",
-            )
+            (CHECKED_PROMOTION, "callback.promote('flow)")
         };
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{invocation}");
-        assert_eq!(
-            &source[diagnostic.span().unwrap().range().as_range()],
-            span,
-            "{invocation}"
-        );
+        assert_promotion_result(&fixture, &source, code, span);
     }
 }
 
@@ -3201,7 +3169,7 @@ fn lifetime_promotion_audit_stops_at_independent_execution() {
     for (body, code, offending) in [
         (
             "if true { let _ = value.promote_unchecked('flow); }",
-            "sema.lifetime.promotion_execution",
+            CHECKED_PROMOTION,
             "value.promote_unchecked('flow)",
         ),
         (
@@ -3227,13 +3195,7 @@ fn lifetime_promotion_audit_stops_at_independent_execution() {
             }} }}"
         );
         let fixture = fixture(&source, None);
-        let error = analyze(&fixture).expect_err("promotion transfer is not implemented");
-        let diagnostic = error
-            .source_diagnostic()
-            .unwrap_or_else(|| panic!("{source}: {error:?}"));
-        assert_eq!(diagnostic.code().unwrap().as_str(), code, "{source}");
-        let span = diagnostic.span().expect("original promotion source");
-        assert_eq!(&source[span.range().as_range()], offending, "{source}");
+        assert_promotion_result(&fixture, &source, code, offending);
     }
 }
 

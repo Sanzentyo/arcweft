@@ -465,9 +465,8 @@ impl Analyzer<'_, '_, '_> {
         query: CompletionQuery<'_>,
     ) -> Result<HirSelectedCallExpressionDisposition, AnalyzerExpressionError> {
         let site = crate::callable::CheckedCallSite::HirCall(owner);
-        let checked_site = self
-            .completion_expression_fact(owner, query)?
-            .checked_call_site(owner);
+        let fact = self.completion_expression_fact(owner, query)?;
+        let checked_site = fact.checked_call_site(owner);
         let graph = self
             .facts
             .prepared_calls()
@@ -503,7 +502,7 @@ impl Analyzer<'_, '_, '_> {
         // Only an exact checked structural resolution grants ordinary Call
         // traversal. Missing or stale callable state remains fatal.
         if checked_site.is_none() {
-            return Ok(HirSelectedCallExpressionDisposition::Structural);
+            return Ok(fact.structural_call_disposition());
         }
         Err(AnalyzerExpressionError::fatal(
             FinalSemanticAnalysisError::CallSeal(crate::final_analysis::FinalCallSealFailure::new(

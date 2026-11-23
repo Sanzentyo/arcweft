@@ -2,7 +2,7 @@
 
 use arcweft_lang_hir::{
     expr::{
-        HirCallInvocation, HirExprKind, HirLifetimePromotionAuthorization,
+        HirCallInvocation, HirExprKind, HirLifetimePromotion, HirLifetimePromotionAuthorization,
         HirLifetimePromotionError,
     },
     identity::ExprId,
@@ -21,46 +21,104 @@ mod receiver;
 use self::receiver::{ReceiverBorrowQuery, TypeStorage};
 use super::{
     Analyzer, FinalSemanticAnalysisError,
-    expression_error::AnalyzerExpressionContext,
+    expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError},
     statements::{expression_span, source_span},
 };
-use crate::{
-    callable::PreparedCallCalleeConstraintInputs,
-    final_analysis::model::{
+use crate::final_analysis::{
+    CheckedExpressionResolution, CheckedTypeSelection,
+    model::{
         CheckedLifetimePromotion, CheckedLifetimePromotionAuthorization, LifetimeLexicalActivation,
     },
+    prepared::PreparedResolvedExpression,
 };
 
 impl Analyzer<'_, '_, '_> {
-    pub(super) fn validate_lifetime_promotion_source(
+    pub(super) fn check_lifetime_promotion_expression(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         owner: ExprId,
         call: &HirCallInvocation,
-        callee: &PreparedCallCalleeConstraintInputs,
-    ) -> Result<(), FinalSemanticAnalysisError> {
-        let promotion = match call.lifetime_promotion(module) {
-            Ok(Some(promotion)) => promotion,
-            Ok(None) => return Ok(()),
-            Err(error) => {
-                let operand = match error {
-                    HirLifetimePromotionError::UnresolvedOperand { .. } => {
-                        return Err(FinalSemanticAnalysisError::InvalidOwner);
-                    }
-                    HirLifetimePromotionError::InvalidArguments => owner,
-                    HirLifetimePromotionError::InvalidTarget { operand }
-                    | HirLifetimePromotionError::InvalidProof { operand } => operand,
-                };
-                return Err(
-                    FinalSemanticAnalysisError::InvalidLifetimePromotionOperands {
-                        source_span: expression_span(module, operand)?,
-                        error,
-                    },
-                );
-            }
+    ) -> Result<Option<PreparedResolvedExpression>, AnalyzerExpressionError> {
+        let promotion = call.lifetime_promotion(module).map_err(|error| {
+            AnalyzerExpressionError::fatal(promotion_operand_error(module, owner, error))
+        })?;
+        let Some(promotion) = promotion else {
+            return Ok(None);
         };
-        let authorization = match promotion.authorization() {
+        let authorization = self
+            .resolve_promotion_authorization(module, owner, &promotion)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let target_source = expression_span(module, promotion.target_source())
+            .map_err(AnalyzerExpressionError::fatal)?;
+        if LifetimeLexicalActivation::for_expression(&self.topology, owner, promotion.target())
+            .map_err(AnalyzerExpressionError::fatal)?
+            .is_none()
+        {
+            return Err(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::LifetimePromotionTargetUnavailable {
+                    scope: promotion.target().clone(),
+                    source_span: target_source,
+                },
+            ));
+        }
+        let receiver = promotion.receiver();
+        let receiver_source =
+            expression_span(module, receiver).map_err(AnalyzerExpressionError::fatal)?;
+        let value = self.evaluate_expression(context, receiver, None)?;
+        let ty = value.source_value_type().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::LifetimePromotionReceiverRequired {
+                    source_span: receiver_source.clone(),
+                },
+            )
+        })?;
+        if matches!(
+            promotion.authorization(),
+            HirLifetimePromotionAuthorization::Safe { .. }
+        ) {
+            let mut borrow = ReceiverBorrowQuery::new(self.symbols, self.control, &receiver_source);
+            let borrowed = match borrow
+                .storage(ty, &self.types, None)
+                .map_err(AnalyzerExpressionError::fatal)?
+            {
+                TypeStorage::Borrowed => true,
+                TypeStorage::Callable => self
+                    .value_has_borrowed_captures(context, receiver, &mut borrow)
+                    .map_err(AnalyzerExpressionError::fatal)?,
+                TypeStorage::Ordinary => false,
+            };
+            if borrowed {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::LifetimePromotionBorrowedReceiver {
+                        source_span: receiver_source,
+                    },
+                ));
+            }
+        }
+        let request = CheckedLifetimePromotion {
+            source: expression_span(module, owner).map_err(AnalyzerExpressionError::fatal)?,
+            receiver,
+            receiver_source,
+            target: promotion.target().clone(),
+            target_source,
+            authorization,
+        };
+        Ok(Some(PreparedResolvedExpression::value(
+            ty.clone(),
+            CheckedTypeSelection::Inferred,
+            value.effects().clone(),
+            CheckedExpressionResolution::LifetimePromotion(Box::new(request)),
+        )))
+    }
+
+    fn resolve_promotion_authorization(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        promotion: &HirLifetimePromotion,
+    ) -> Result<CheckedLifetimePromotionAuthorization, FinalSemanticAnalysisError> {
+        Ok(match promotion.authorization() {
             HirLifetimePromotionAuthorization::Safe { proof: None } => {
                 CheckedLifetimePromotionAuthorization::WithoutProof
             }
@@ -101,61 +159,28 @@ impl Analyzer<'_, '_, '_> {
                 };
                 authorization
             }
-        };
-        let target_source = expression_span(module, promotion.target_source())?;
-        if LifetimeLexicalActivation::for_expression(&self.topology, owner, promotion.target())?
-            .is_none()
-        {
-            return Err(
-                FinalSemanticAnalysisError::LifetimePromotionTargetUnavailable {
-                    scope: promotion.target().clone(),
-                    source_span: target_source,
-                },
-            );
+        })
+    }
+}
+
+fn promotion_operand_error(
+    module: &HirModule,
+    owner: ExprId,
+    error: HirLifetimePromotionError,
+) -> FinalSemanticAnalysisError {
+    let operand = match error {
+        HirLifetimePromotionError::UnresolvedOperand { .. } => {
+            return FinalSemanticAnalysisError::InvalidOwner;
         }
-        let PreparedCallCalleeConstraintInputs::ValueReceiver(receiver) = callee else {
-            return Err(
-                FinalSemanticAnalysisError::LifetimePromotionReceiverRequired {
-                    source_span: expression_span(module, promotion.receiver())?,
-                },
-            );
-        };
-        let source = receiver.source();
-        if source != promotion.receiver() {
-            return Err(FinalSemanticAnalysisError::InvalidOwner);
+        HirLifetimePromotionError::InvalidArguments => owner,
+        HirLifetimePromotionError::InvalidTarget { operand }
+        | HirLifetimePromotionError::InvalidProof { operand } => operand,
+    };
+    match expression_span(module, operand) {
+        Ok(source_span) => {
+            FinalSemanticAnalysisError::InvalidLifetimePromotionOperands { source_span, error }
         }
-        let receiver_source = expression_span(module, source)?;
-        if matches!(
-            promotion.authorization(),
-            HirLifetimePromotionAuthorization::Safe { .. }
-        ) {
-            let mut borrow = ReceiverBorrowQuery::new(self.symbols, self.control, &receiver_source);
-            let borrowed = match borrow.storage(receiver.original(), &self.types, None)? {
-                TypeStorage::Borrowed => true,
-                TypeStorage::Callable => {
-                    self.value_has_borrowed_captures(context, source, &mut borrow)?
-                }
-                TypeStorage::Ordinary => false,
-            };
-            if borrowed {
-                return Err(
-                    FinalSemanticAnalysisError::LifetimePromotionBorrowedReceiver {
-                        source_span: receiver_source,
-                    },
-                );
-            }
-        }
-        Err(
-            FinalSemanticAnalysisError::LifetimePromotionExecutionUnavailable {
-                source_span: expression_span(module, owner)?,
-                request: Box::new(CheckedLifetimePromotion {
-                    receiver: receiver_source,
-                    target: promotion.target().clone(),
-                    target_source,
-                    authorization,
-                }),
-            },
-        )
+        Err(error) => error,
     }
 }
 
@@ -192,6 +217,7 @@ fn enclosing_unsafe_audit(
                         return Err(FinalSemanticAnalysisError::RecoveredOwner);
                     };
                     return Ok(Some(CheckedLifetimePromotionAuthorization::Audit {
+                        owner,
                         id: id.clone(),
                         declaration_source: source_span(
                             module,

@@ -502,7 +502,7 @@ impl Analyzer<'_, '_, '_> {
                 |owner| {
                     let fact = self.facts.expressions().get(&owner)?;
                     let Some(site) = fact.checked_call_site(owner) else {
-                        return Some(HirSelectedCallExpressionDisposition::Structural);
+                        return Some(fact.structural_call_disposition());
                     };
                     graph
                         .project_site_payload(

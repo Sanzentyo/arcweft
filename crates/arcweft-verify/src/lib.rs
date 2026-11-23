@@ -29,7 +29,8 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_sema::final_analysis::{
     CheckedAssertionDisposition, CheckedExpressionResolution, CheckedItemRole,
-    CheckedStatementPayload, CheckedUnsafeAudit, FinalSemanticAnalysis, FinalSemanticAnalysisError,
+    CheckedLifetimePromotion, CheckedLifetimePromotionAuthorization, CheckedStatementPayload,
+    CheckedUnsafeAudit, FinalSemanticAnalysis, FinalSemanticAnalysisError,
 };
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_source::{
@@ -256,7 +257,7 @@ pub struct ProofObligation {
     /// Session-only proof identity. Serialized labels never replace it.
     #[serde(skip)]
     pub proof_artifact: Option<ProofArtifactId>,
-    /// Session-only statement identity for assertion and unsafe-audit rows.
+    /// Session-only assertion or audit statement that owns this obligation.
     #[serde(skip)]
     pub statement: Option<StmtId>,
 }
@@ -597,6 +598,8 @@ pub enum VerificationInputError {
     DuplicateDependencyOwner { owner: ItemId },
     #[error("checked call {expression:?} refers to an unregistered proof dependency")]
     UnregisteredProofDependency { expression: ExprId },
+    #[error("lifetime promotion {owner:?} does not match its checked authorization")]
+    PromotionAuthorizationMismatch { owner: ExprId },
     #[error("proof dependency inventory exceeds its verification work limit of {limit}")]
     ProofDependencyWorkLimit { limit: usize },
     #[error("typed HIR source role for {owner:?} has no present source site")]
@@ -649,13 +652,24 @@ impl RuntimeProjectVerification<'_> {
     }
 }
 
+/// Executable admission can fail after the source generation has been checked.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeVerificationError {
+    #[error(transparent)]
+    Input(#[from] VerificationInputError),
+    #[error("lifetime promotion has no executable ownership transfer")]
+    PromotionExecutionUnavailable {
+        request: Box<CheckedLifetimePromotion>,
+    },
+}
+
 /// Checks compile-time assertions using a bounded finite proof over the same
 /// propositional queries used by the tooling solver adapters.
 pub fn verify_project_for_runtime<'a>(
     project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     semantics: &'a FinalSemanticAnalysis,
-) -> Result<RuntimeProjectVerification<'a>, VerificationInputError> {
+) -> Result<RuntimeProjectVerification<'a>, RuntimeVerificationError> {
     let report = verify_checked_project(
         project,
         symbols,
@@ -663,6 +677,18 @@ pub fn verify_project_for_runtime<'a>(
         VerificationPolicy::default(),
         AssertionProofMode::CheckFinite,
     )?;
+    if let Some(request) =
+        semantics
+            .expressions()
+            .find_map(|(_, expression)| match expression.resolution() {
+                CheckedExpressionResolution::LifetimePromotion(request) => Some(request),
+                _ => None,
+            })
+    {
+        return Err(RuntimeVerificationError::PromotionExecutionUnavailable {
+            request: request.clone(),
+        });
+    }
     let mut statements = BTreeMap::new();
     for obligation in &report.obligations {
         if obligation.kind == ProofObligationKind::AssertionProof
@@ -763,6 +789,92 @@ impl ProjectVerifier<'_, '_> {
                 .map_err(|_| VerificationInputError::MissingStatementFact { owner })?;
             self.collect_statement(module, owner, statement.kind())?;
         }
+        for (owner, expression) in self.semantics.expressions() {
+            if let CheckedExpressionResolution::LifetimePromotion(request) = expression.resolution()
+            {
+                self.collect_promotion(owner, request)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn collect_promotion(
+        &mut self,
+        owner: ExprId,
+        request: &CheckedLifetimePromotion,
+    ) -> Result<(), VerificationInputError> {
+        self.validate_expression(request.receiver())?;
+        let (subject, proof_artifact, discharge, statement) = match request.authorization() {
+            CheckedLifetimePromotionAuthorization::WithoutProof => {
+                (None, None, ProofDischarge::Missing, None)
+            }
+            CheckedLifetimePromotionAuthorization::Proof { declaration, .. } => {
+                let CallableDeclarationKey::Existing(declaration) = declaration else {
+                    return Err(VerificationInputError::PromotionAuthorizationMismatch { owner });
+                };
+                let artifact = self
+                    .symbols
+                    .proof_artifact(self.project.project_view(), declaration)?;
+                (
+                    Some(declaration.qualified_name()),
+                    Some(artifact),
+                    ProofDischarge::Missing,
+                    None,
+                )
+            }
+            CheckedLifetimePromotionAuthorization::Audit {
+                owner: audit_owner,
+                id,
+                ..
+            } => {
+                let Some(CheckedStatementPayload::UnsafeAudit(audit)) = self
+                    .semantics
+                    .statement(*audit_owner)
+                    .map(|statement| statement.payload())
+                else {
+                    return Err(VerificationInputError::PromotionAuthorizationMismatch { owner });
+                };
+                if audit.id() != id {
+                    return Err(VerificationInputError::PromotionAuthorizationMismatch { owner });
+                }
+                let id = id.as_public_id().as_str();
+                let discharge = if audit.reason().is_some() && audit.has_safety_doc() {
+                    ProofDischarge::AuditedUnsafe { id: id.to_owned() }
+                } else {
+                    ProofDischarge::Missing
+                };
+                (Some(id.to_owned()), None, discharge, Some(*audit_owner))
+            }
+        };
+        let source = SourceSpan::from_exact(request.source());
+        let obligation = ProofObligation {
+            id: format!(
+                "lifetime_promotion.{}.{}",
+                source.source.id().as_str(),
+                source.start
+            ),
+            kind: ProofObligationKind::LifetimePromotion,
+            message: format!(
+                "lifetime promotion to '{}' requires a lifetime proof or complete audit",
+                request.target().as_str()
+            ),
+            subject,
+            source: Some(source),
+            insertion_target: self
+                .insertion
+                .proof_target_for_kind(owner.module(), ProofObligationKind::LifetimePromotion),
+            discharge,
+            smt: None,
+            proof_artifact,
+            statement,
+        };
+        if obligation.discharge.is_missing() {
+            self.report.diagnostics.push(missing_obligation_diagnostic(
+                &obligation,
+                self.report.policy.mode,
+            ));
+        }
+        self.report.obligations.push(obligation);
         Ok(())
     }
 
@@ -1359,17 +1471,13 @@ impl VerificationReport {
         backend: BackendKind,
         result: Result<SmtCheck, SmtError>,
     ) {
-        let Some(item) = self
+        let Some(index) = self
             .obligations
-            .iter_mut()
-            .find(|item| item.id == obligation && item.smt.is_some())
+            .iter()
+            .position(|item| item.id == obligation && item.smt.is_some())
         else {
             return;
         };
-        let required = matches!(
-            self.policy.mode,
-            VerificationMode::Test | VerificationMode::Release
-        ) && item.discharge.is_missing();
         let (outcome, model, raw_output, error) = match result {
             Ok(check) => (Some(check.outcome), check.model, check.raw_output, None),
             Err(error) => (
@@ -1379,21 +1487,65 @@ impl VerificationReport {
                 Some(error.message().to_owned()),
             ),
         };
-        let check = SolverCheck {
-            obligation: obligation.to_owned(),
-            backend,
-            outcome,
-            model,
-            raw_output,
-            error,
-            required,
+        self.push_solver_check(
+            index,
+            SolverCheck {
+                obligation: obligation.to_owned(),
+                backend,
+                outcome,
+                model,
+                raw_output,
+                error,
+                required: self.requires_solver_discharge(&self.obligations[index]),
+            },
+        );
+    }
+
+    /// Records the front end's failure to construct a lifetime query for the
+    /// requested backend. No solver runs and no model or raw output exists.
+    pub fn record_unavailable_solver_input(&mut self, index: usize, backend: BackendKind) {
+        let Some(item) = self.obligations.get(index) else {
+            return;
         };
+        if backend == BackendKind::Emit
+            || item.kind != ProofObligationKind::LifetimePromotion
+            || item.statement.is_some()
+            || !item.discharge.is_missing()
+            || item.smt.is_some()
+        {
+            return;
+        }
+        self.push_solver_check(
+            index,
+            SolverCheck {
+                obligation: item.id.clone(),
+                backend,
+                outcome: Some(SmtOutcome::Unknown),
+                model: BTreeMap::new(),
+                raw_output: None,
+                error: Some("the checked lifetime relation has no SMT encoding".to_owned()),
+                required: self.requires_solver_discharge(item),
+            },
+        );
+    }
+
+    fn requires_solver_discharge(&self, item: &ProofObligation) -> bool {
+        matches!(
+            self.policy.mode,
+            VerificationMode::Test | VerificationMode::Release
+        ) && item.discharge.is_missing()
+    }
+
+    fn push_solver_check(&mut self, index: usize, check: SolverCheck) {
+        let item = &mut self.obligations[index];
         if check.proves_claim() && item.discharge.is_missing() {
             let pending = match item.kind {
                 ProofObligationKind::AssertionProof => unresolved_prove_diagnostic(item),
                 _ => missing_obligation_diagnostic(item, self.policy.mode),
             };
-            item.discharge = ProofDischarge::Solver { backend };
+            item.discharge = ProofDischarge::Solver {
+                backend: check.backend,
+            };
             self.diagnostics.retain(|diagnostic| *diagnostic != pending);
         }
         if check.is_failure() {
@@ -1402,8 +1554,8 @@ impl VerificationReport {
                 severity: Severity::Error,
                 message: check.failure_message(),
                 source: item.source.clone(),
-                obligation: Some(obligation.to_owned()),
-                related_ids: vec![obligation.to_owned()],
+                obligation: Some(check.obligation.clone()),
+                related_ids: vec![check.obligation.clone()],
                 actions: vec![ToolAction::show_obligation()],
             });
         }

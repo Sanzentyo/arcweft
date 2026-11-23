@@ -214,7 +214,7 @@ impl CheckedSelectedExpressionGraph {
                         expressions
                             .get(&owner)
                             .filter(|expression| expression.checked_call_site(owner).is_none())
-                            .map(|_| HirSelectedCallExpressionDisposition::Structural)
+                            .map(super::PreparedExpressionFact::structural_call_disposition)
                     })
             },
         )?;
@@ -229,7 +229,8 @@ impl CheckedSelectedExpressionGraph {
                 | HirSelectedCallExpressionDisposition::Unselected(inventory) => {
                     Some((owner, inventory))
                 }
-                HirSelectedCallExpressionDisposition::Structural => None,
+                HirSelectedCallExpressionDisposition::Structural
+                | HirSelectedCallExpressionDisposition::LifetimePromotion { .. } => None,
             })
             .collect();
         Ok(selected)
@@ -256,7 +257,7 @@ impl CheckedSelectedExpressionGraph {
                 expressions
                     .get(&owner)
                     .filter(|expression| expression.checked_call_site(owner).is_none())
-                    .map(|_| HirSelectedCallExpressionDisposition::Structural)
+                    .map(super::PreparedExpressionFact::structural_call_disposition)
             },
         )
     }

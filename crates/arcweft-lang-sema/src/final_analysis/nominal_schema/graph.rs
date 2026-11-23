@@ -463,7 +463,13 @@ impl<'a> NominalGraphProjection<'a> {
         if let Some((budget, control)) = &mut self.project_budget {
             budget.enter_node(*control)?;
         }
-        let result = self.schema_inner(ty, depth);
+        let result = self.budget.type_node(depth).and_then(|()| match ty {
+            // A nominal reference does not need the structural schema frame.
+            // Keeping that frame out of recursive declaration paths leaves
+            // room for the configured active-nominal limit on small stacks.
+            TypeKind::ProjectNominal(nominal) => self.project_nominal(ty, nominal, depth),
+            _ => self.schema_inner(ty, depth),
+        });
         if let Some((budget, _)) = &mut self.project_budget {
             budget.leave_node();
         }
@@ -471,7 +477,6 @@ impl<'a> NominalGraphProjection<'a> {
     }
 
     fn schema_inner(&mut self, ty: &TypeKind, depth: u64) -> Result<Schema, Error> {
-        self.budget.type_node(depth)?;
         if matches!(
             ty,
             TypeKind::DataError
@@ -599,7 +604,6 @@ impl<'a> NominalGraphProjection<'a> {
                 }
             }
             TypeKind::AcceptedNominal(nominal) => self.nominal(ty, nominal, depth)?,
-            TypeKind::ProjectNominal(nominal) => self.project_nominal(ty, nominal, depth)?,
             TypeKind::GenericParam(parameter) => {
                 return Err(crate::types::TypeInstantiationError::UnboundType {
                     parameter: parameter.clone(),

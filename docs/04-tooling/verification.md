@@ -65,8 +65,15 @@ The final project semantic pass owns checked facts and admits one exact HIR
 generation. `arcweft-verify` consumes that generation, its symbol authority and
 sealed `FinalSemanticAnalysis`. CLI, LSP and Agent tooling borrow those facts;
 they do not rerun analysis or manufacture an executable plan after rejection.
-The accepted verifier report can carry `proof_body`, `assertion_proof`, and
-`unsafe_lifetime_audit` obligations for an admitted project.
+The accepted verifier report can carry `proof_body`, `assertion_proof`,
+`lifetime_promotion`, and `unsafe_lifetime_audit` obligations for an admitted
+project. A checked promotion retains the receiver's type and the reached
+activation. An authored proof reference links its registered declaration. A
+complete enclosing audit supplies `audited_unsafe` discharge. A safe promotion
+still needs a proof of the lifetime relation. If a requested solver backend has
+no SMT query for that relation, the report records `unknown` with the encoding
+error and no backend output. The obligation remains pending and test and release
+verification fail.
 
 Effects are checked as semantic facts, not as ordinary value expressions.
 Flow/function effects clauses bound the inferred effects of their bodies:
@@ -88,21 +95,17 @@ require `state.write(flow)`, written in source as `state.write('flow)`. Omitted
 bound; explicit members impose the corresponding checked upper bound. Target
 capability availability is checked separately and cannot widen that bound.
 
-When project compilation rejects analysis, `arcw verify --json` publishes the
-compiler-owned rejection and returns a non-success exit code. This version1
+When semantic analysis fails, `arcw verify --json` publishes the compiler-owned
+rejection and returns a non-success exit code. This version 1
 report has `status: "denied"`, its original compilation `stage`, and canonical
 diagnostic rows. Typed effect rejections carry
-`rejected_obligation_kind: "effect_capability"`. A lifetime promotion that
-passes the static operand and applicable receiver checks but lacks an
-executable ownership transfer carries `rejected_obligation_kind:
-"lifetime_promotion"`. Its diagnostic includes the receiver and reached
-scope selector, with labels for a resolved proof or enclosing audit when
-present. Other rejections omit the optional classification. Codes, severity, messages, source revision-bound
-spans, primary/secondary labels, notes, suggestions and commands come from the
-original diagnostic authority. A rejected seal has no accepted obligations,
-solver checks, executable runtime plan or generated proof artifacts. Solver
-execution and `--emit-obligations`/`--emit-smt` begin only after compilation
-succeeds. The accepted verifier JSON grammar remains the shared verifier report.
+`rejected_obligation_kind: "effect_capability"`. Codes, severity, messages,
+source revision-bound spans, primary/secondary labels, notes, suggestions and
+commands come from the original diagnostic authority. Solver execution and
+`--emit-obligations` and `--emit-smt` require an accepted semantic generation.
+The runtime compiler separately checks executable admission. A checked promotion
+without an executable transfer fails at `runtime-plan-lower` and labels the
+receiver, reached scope selector, and any referenced proof or enclosing audit.
 
 The report draws proof references and unsafe audit metadata from checked inputs.
 The language contract defines proof admission and the checker's ownership and

@@ -47,9 +47,6 @@ impl<'a> ProjectCompileFailureReport<'a> {
                 | FinalSemanticAnalysisError::TargetCapabilityUnavailable { .. }
                 | FinalSemanticAnalysisError::TargetHostCallUnavailable { .. },
             ) => Some(arcweft_verify::ProofObligationKind::EffectCapability),
-            Some(FinalSemanticAnalysisError::LifetimePromotionExecutionUnavailable { .. }) => {
-                Some(arcweft_verify::ProofObligationKind::LifetimePromotion)
-            }
             Some(_) | None => None,
         };
         Self {

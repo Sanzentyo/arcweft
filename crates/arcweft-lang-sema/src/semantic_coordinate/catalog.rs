@@ -1064,7 +1064,8 @@ fn checked_path_from_owner_path(
     }
     let mut hops = owner_path.hops().iter();
     let mut steps = Vec::with_capacity(path.len());
-    for step in path {
+    let mut source_steps = path.iter().peekable();
+    while let Some(step) = source_steps.next() {
         steps.push(match step {
             HirSemanticPathStep::DeclarationBody(role) => {
                 CheckedSemanticPathStep::DeclarationBody(*role)
@@ -1093,9 +1094,37 @@ fn checked_path_from_owner_path(
                 if hop.role() != raw_role {
                     return Err(SemanticCoordinateIndexError::ExpressionRoleMismatch);
                 }
-                let role = edges
-                    .checked_expression_child_role(hop.parent(), hop.child())
-                    .ok_or(SemanticCoordinateIndexError::MissingChildEdges)?;
+                let role = if let Some(role) =
+                    edges.checked_expression_child_role(hop.parent(), hop.child())
+                {
+                    role
+                } else {
+                    // A static receiver operation can keep the value behind
+                    // the member selector as its directly checked Callee edge.
+                    use arcweft_lang_hir::expr::HirExpressionChildRole;
+                    if *raw_role != HirExpressionChildRole::Callee
+                        || !matches!(
+                            source_steps.peek(),
+                            Some(HirSemanticPathStep::Expression(
+                                HirExpressionChildRole::Target
+                            ))
+                        )
+                    {
+                        return Err(SemanticCoordinateIndexError::MissingChildEdges);
+                    }
+                    let target = hops
+                        .next()
+                        .ok_or(SemanticCoordinateIndexError::MissingChildEdges)?;
+                    if target.parent() != hop.child()
+                        || target.role() != &HirExpressionChildRole::Target
+                        || edges.checked_expression_child_role(hop.parent(), target.child())
+                            != Some(CheckedExpressionChildRole::Callee)
+                    {
+                        return Err(SemanticCoordinateIndexError::MissingChildEdges);
+                    }
+                    source_steps.next();
+                    CheckedExpressionChildRole::Callee
+                };
                 CheckedSemanticPathStep::Expression(role)
             }
             HirSemanticPathStep::MatchPattern { arm } => {

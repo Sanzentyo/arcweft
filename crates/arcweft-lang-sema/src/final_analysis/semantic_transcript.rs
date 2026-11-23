@@ -2605,6 +2605,30 @@ fn write_resolution_payload(
         CheckedExpressionResolution::Structural
         | CheckedExpressionResolution::Literal(_)
         | CheckedExpressionResolution::Call => {}
+        CheckedExpressionResolution::LifetimePromotion(request) => {
+            write_bytes(
+                hasher,
+                &coordinates
+                    .expression(request.receiver())?
+                    .canonical_bytes()?,
+            )?;
+            write_bytes(hasher, request.target().as_str().as_bytes())?;
+            use super::CheckedLifetimePromotionAuthorization;
+            match request.authorization() {
+                CheckedLifetimePromotionAuthorization::WithoutProof => {
+                    transcript_update!(hasher, &[0])
+                }
+                CheckedLifetimePromotionAuthorization::Proof { declaration, .. } => {
+                    transcript_update!(hasher, &[1]);
+                    transcript_update!(hasher, declaration.semantic_digest().as_bytes());
+                }
+                CheckedLifetimePromotionAuthorization::Audit { owner, id, .. } => {
+                    transcript_update!(hasher, &[2]);
+                    write_bytes(hasher, &coordinates.statement(*owner)?.canonical_bytes()?)?;
+                    write_bytes(hasher, id.as_public_id().as_str().as_bytes())?;
+                }
+            }
+        }
         CheckedExpressionResolution::Scope(scope) => {
             write_scope_identity(hasher, scope, owner_coordinate)?;
         }

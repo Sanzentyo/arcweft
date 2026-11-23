@@ -622,12 +622,26 @@ fn compile_analyzed_project(
         final_analysis.as_ref(),
     )
     .map_err(|error| {
-        linked_error(
-            ProjectCompileStage::RuntimePlanLower,
-            [
+        let diagnostic = match &error {
+            arcweft_verify::RuntimeVerificationError::Input(_) => {
                 Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                    .with_code("verify.project.input"),
-            ],
+                    .with_code("verify.project.input")
+            }
+            arcweft_verify::RuntimeVerificationError::PromotionExecutionUnavailable { request } => {
+                request.annotate_diagnostic(
+                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                        .with_code("verify.promotion.execution_unavailable")
+                        .with_label(arcweft_source::DiagnosticLabel::primary(
+                            request.source().clone(),
+                            None,
+                        )),
+                )
+            }
+        };
+        linked_error_with_compilation_sources(
+            ProjectCompileStage::RuntimePlanLower,
+            context,
+            [diagnostic],
         )
     })?;
     let verification_errors = verification

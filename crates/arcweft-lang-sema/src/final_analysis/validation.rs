@@ -194,6 +194,7 @@ pub(super) fn accepted_type_owners(
                         matches!(
                             expression.resolution(),
                             CheckedExpressionResolution::Effect(_)
+                                | CheckedExpressionResolution::LifetimePromotion(_)
                         )
                     })
                 {
@@ -995,6 +996,7 @@ fn expression_resolution_matches(
             CheckedExpressionResolution::CharacterDialogueFactory(_)
             | CheckedExpressionResolution::CharacterDialogueReconfigure(_)
             | CheckedExpressionResolution::Call
+            | CheckedExpressionResolution::LifetimePromotion(_)
             | CheckedExpressionResolution::ViewFxApplication(_)
             | CheckedExpressionResolution::ViewCall(_)
             | CheckedExpressionResolution::StyleValue(_),
@@ -1222,6 +1224,22 @@ fn validate_expression_resolution(
     coordinates: &SemanticCoordinateIndex<'_, '_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     match resolution {
+        CheckedExpressionResolution::LifetimePromotion(request) => {
+            let module = resolve_module(modules, owner.module())?;
+            let expression = module.resolve_expr(owner).map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            let HirExprKind::Call(call) = expression.kind() else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            let authored = call.lifetime_promotion(module)
+                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            (authored.receiver() == request.receiver()
+                && authored.target() == request.target()
+                && super::model::LifetimeLexicalActivation::for_expression(topology, owner, request.target())?.is_some()
+                && expressions.get(&request.receiver()).and_then(CheckedExpression::value_type) == Some(ty))
+                .then_some(())
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+        }
         CheckedExpressionResolution::StyleOperand(operand) => {
             if ty != &TypeKind::CompileTimeStyle(operand.style_type()) {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);

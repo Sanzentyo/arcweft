@@ -97,31 +97,31 @@ impl NominalGraphProjection<'_> {
             .collect::<BTreeMap<_, _>>();
         let arguments = self.sequence(nominal.arguments(), depth + 1)?;
         let body = match declaration.body() {
-            ProjectNominalBody::Struct { fields } => RuntimeNominalSchemaBody::Record {
-                shape: RuntimeNominalRecordShape::Record,
-                fields: fields
-                    .iter()
-                    .enumerate()
-                    .map(|(ordinal, field)| {
-                        let ty = self.project_declaration_type(field.ty(), &substitutions)?;
-                        Ok(RuntimeNominalSchemaField::new(
-                            RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
-                                .expect("fields were bounded"),
-                            Some(field.name().as_str().to_owned()),
-                            self.schema(&ty, depth + 1).map_err(|error| match error {
-                                Error::Project(error) => Error::Project(error.within_step(
-                                    super::super::NominalSchemaPathStep::Field {
-                                        ordinal:
-                                            u32::try_from(ordinal).expect("fields were bounded"),
-                                        name: field.name().clone(),
-                                    },
-                                )),
-                                other => other,
-                            })?,
-                        ))
-                    })
-                    .collect::<Result<_, Error>>()?,
-            },
+            ProjectNominalBody::Struct { fields } => {
+                let mut projected = Vec::with_capacity(fields.len());
+                for (ordinal, field) in fields.iter().enumerate() {
+                    let ty = self.project_declaration_type(field.ty(), &substitutions)?;
+                    let schema = self.schema(&ty, depth + 1).map_err(|error| match error {
+                        Error::Project(error) => Error::Project(error.within_step(
+                            super::super::NominalSchemaPathStep::Field {
+                                ordinal: u32::try_from(ordinal).expect("fields were bounded"),
+                                name: field.name().clone(),
+                            },
+                        )),
+                        other => other,
+                    })?;
+                    projected.push(RuntimeNominalSchemaField::new(
+                        RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
+                            .expect("fields were bounded"),
+                        Some(field.name().as_str().to_owned()),
+                        schema,
+                    ));
+                }
+                RuntimeNominalSchemaBody::Record {
+                    shape: RuntimeNominalRecordShape::Record,
+                    fields: projected.into_boxed_slice(),
+                }
+            }
             ProjectNominalBody::Enum { variants } => RuntimeNominalSchemaBody::Variant {
                 cases: {
                     let accepted =

@@ -2078,6 +2078,7 @@ impl<'a, 'project, 'catalog, 'control>
                 ))
             })?;
             if let arcweft_lang_hir::expr::HirExprKind::Call(call) = expression.kind()
+                && matches!(call.lifetime_promotion(module), Ok(None))
                 && self
                     .analyzer
                     .implicit_callable_selection(

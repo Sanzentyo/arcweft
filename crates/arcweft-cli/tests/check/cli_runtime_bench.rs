@@ -321,31 +321,24 @@ flow bad {
 }
 
 #[test]
-fn verify_json_retains_the_checked_promotion_when_execution_is_unavailable() {
+fn check_json_rejects_runtime_promotion_with_original_source_labels() {
     let source = "proof keep() = ()\nflow verify { let summary = \"owned\".promote('flow, proof = @proof.keep) }\n";
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("promotion.arcw");
-    let obligations = directory.path().join("obligations.json");
-    let smt = directory.path().join("smt");
     std::fs::write(&path, source).unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .args(["verify", "--mode", "test", "--backend", "oxiz", "--json"])
+        .args(["check", "--json"])
         .arg(&path)
-        .arg("--emit-obligations")
-        .arg(&obligations)
-        .arg("--emit-smt")
-        .arg(&smt)
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["version"], 1);
     assert_eq!(json["status"], "denied");
-    assert_eq!(json["stage"], "type-check");
-    assert_eq!(json["rejected_obligation_kind"], "lifetime_promotion");
+    assert_eq!(json["stage"], "runtime-plan-lower");
     let diagnostic = &json["diagnostics"][0]["diagnostic"];
-    assert_eq!(diagnostic["code"], "sema.lifetime.promotion_execution");
+    assert_eq!(diagnostic["code"], "verify.promotion.execution_unavailable");
     let labels = diagnostic["labels"].as_array().unwrap();
     let highlighted = labels
         .iter()
@@ -369,19 +362,60 @@ fn verify_json_retains_the_checked_promotion_when_execution_is_unavailable() {
     assert!(labels[4]["message"].as_str().unwrap().contains("keep"));
     assert!(json.get("obligations").is_none());
     assert!(json.get("solver_checks").is_none());
-    assert!(!obligations.exists());
-    assert!(!smt.exists());
+}
+
+#[test]
+fn verify_json_requires_complete_metadata_for_the_selected_promotion_audit() {
+    for (safety_doc, expected) in [
+        (
+            "/// SAFETY: the input is owned and carries no scoped resources.",
+            "audited_unsafe",
+        ),
+        ("", "missing"),
+    ] {
+        let source = format!(
+            "flow verify {{
+                unsafe lifetime @unsafe.keep reason = \"explicit lifetime audit\" {{
+                    {safety_doc}
+                    let _ = 42i64.promote_unchecked('flow);
+                }}
+            }}\n"
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("promotion.arcw");
+        std::fs::write(&path, source).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .args(["verify", "--mode", "test", "--backend", "oxiz", "--json"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let obligation = report["obligations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|obligation| obligation["kind"] == "lifetime_promotion")
+            .expect("checked lifetime promotion obligation");
+        assert_eq!(
+            output.status.success(),
+            expected == "audited_unsafe",
+            "{report}"
+        );
+        assert_eq!(obligation["discharge"]["kind"], expected, "{report}");
+        assert_eq!(obligation["subject"], "unsafe.keep");
+        assert!(report["solver_checks"].as_array().unwrap().is_empty());
+    }
 }
 
 #[test]
 fn verify_json_reports_missing_promotion_proof() {
     let path = temp_arcw(
         "verify-missing-proof",
-        r"
+        r#"
 flow verify {
-    let summary = promote('flow)
+    let summary = "owned".promote('flow)
 }
-",
+"#,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -397,10 +431,19 @@ flow verify {
         !output.status.success(),
         "missing promotion proof should fail test-mode verification"
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let [obligation] = report["obligations"].as_array().unwrap().as_slice() else {
+        panic!("expected one verifier obligation: {report}");
+    };
+    assert_eq!(obligation["kind"], "lifetime_promotion");
+    assert_eq!(obligation["discharge"]["kind"], "missing");
     assert!(
-        stdout.contains("lifetime_promotion"),
-        "JSON report should include the promotion obligation: {stdout}"
+        report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| diagnostic["obligation"] == obligation["id"]
+                && diagnostic["severity"] == "error")
     );
 }
 
@@ -408,11 +451,11 @@ flow verify {
 fn verify_json_records_required_solver_checks() {
     let path = temp_arcw(
         "verify-solver-check",
-        r"
+        r#"
 flow verify {
-    let summary = promote('flow)
+    let summary = "owned".promote('flow)
 }
-",
+"#,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -430,14 +473,23 @@ flow verify {
         !output.status.success(),
         "required unknown solver check should fail test-mode verification"
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"solver_checks\"")
-            && stdout.contains("\"backend\": \"oxiz\"")
-            && stdout.contains("\"outcome\": \"unknown\"")
-            && stdout.contains("\"required\": true"),
-        "JSON report should include the required solver check: {stdout}"
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let [check] = report["solver_checks"].as_array().unwrap().as_slice() else {
+        panic!("expected one required solver check: {report}");
+    };
+    let obligation = &report["obligations"][0];
+    assert_eq!(obligation["kind"], "lifetime_promotion");
+    assert_eq!(obligation["discharge"]["kind"], "missing");
+    assert!(obligation["smt"].is_null());
+    assert_eq!(check["obligation"], obligation["id"]);
+    assert_eq!(check["backend"], "oxiz");
+    assert_eq!(check["outcome"], "unknown");
+    assert_eq!(check["required"], true);
+    assert_eq!(
+        check["error"],
+        "the checked lifetime relation has no SMT encoding"
     );
+    assert!(check.get("raw_output").is_none());
 }
 
 #[test]

@@ -275,7 +275,7 @@ pub enum RuntimeRecordExecutableOwner {
 #[derive(Debug, Error)]
 pub enum RuntimeSemanticProjectionError {
     #[error(transparent)]
-    AssertionVerification(Box<arcweft_verify::VerificationInputError>),
+    RuntimeVerification(Box<arcweft_verify::RuntimeVerificationError>),
     #[error("accepted entity pattern {owner:?} has no sealed runtime projection: {source}")]
     EntityPattern {
         owner: PatternId,
@@ -506,7 +506,7 @@ pub fn project_runtime_semantic_facts(
     instantiation_control: &ProjectInstantiationControl,
 ) -> Result<(RuntimePlanSemanticFacts, Arc<[FxDefinition]>), RuntimeSemanticProjectionError> {
     let verification = arcweft_verify::verify_project_for_runtime(project, symbols, analysis)
-        .map_err(|error| RuntimeSemanticProjectionError::AssertionVerification(Box::new(error)))?;
+        .map_err(|error| RuntimeSemanticProjectionError::RuntimeVerification(Box::new(error)))?;
     let fx_catalog = crate::fx_catalog::CompiledFxCatalog::lower(analysis).map_err(|error| {
         RuntimeSemanticProjectionError::Type {
             reason: error.to_string(),
@@ -1614,6 +1614,15 @@ fn project_runtime_semantic_fact_inventories(
                         }
                     }
                 }
+            }
+            CheckedExpressionResolution::LifetimePromotion(request) => {
+                return Err(RuntimeSemanticProjectionError::RuntimeVerification(
+                    Box::new(
+                        arcweft_verify::RuntimeVerificationError::PromotionExecutionUnavailable {
+                            request: request.clone(),
+                        },
+                    ),
+                ));
             }
             CheckedExpressionResolution::ImplicitParameter { .. }
             | CheckedExpressionResolution::PipeLeft(_)

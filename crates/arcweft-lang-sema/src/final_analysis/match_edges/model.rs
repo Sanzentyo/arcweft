@@ -37,16 +37,17 @@ const EXPRESSION_RESOLUTION_TAG_REGISTRY_ADDRESS: u16 = 0x0223;
 const EXPRESSION_RESOLUTION_TAG_THREAD: u16 = 0x0224;
 const EXPRESSION_RESOLUTION_TAG_VIEW_PART_NAME: u16 = 0x0225;
 const EXPRESSION_RESOLUTION_TAG_STYLE_OPERAND: u16 = 0x0226;
-const EXPRESSION_RESOLUTION_TAG_END: u16 = EXPRESSION_RESOLUTION_TAG_STYLE_OPERAND;
+const EXPRESSION_RESOLUTION_TAG_LIFETIME_PROMOTION: u16 = 0x0227;
+const EXPRESSION_RESOLUTION_TAG_END: u16 = EXPRESSION_RESOLUTION_TAG_LIFETIME_PROMOTION;
 // This count is the number of live constructors, not the width of the
 // numeric range.  0x0211 and 0x0213 are retained tombstones for removed
 // constructors and must never be reused.
-const EXPRESSION_RESOLUTION_TAG_COUNT: u16 = 37;
-const EXPRESSION_RESOLUTION_LIVE_TAGS: [u16; 37] = [
+const EXPRESSION_RESOLUTION_TAG_COUNT: u16 = 38;
+const EXPRESSION_RESOLUTION_LIVE_TAGS: [u16; 38] = [
     0x0200, 0x0201, 0x0202, 0x0203, 0x0204, 0x0205, 0x0206, 0x0207, 0x0208, 0x0209, 0x020A, 0x020B,
     0x020C, 0x020D, 0x020E, 0x020F, 0x0210, 0x0212, 0x0214, 0x0215, 0x0216, 0x0217, 0x0218, 0x0219,
     0x021A, 0x021B, 0x021C, 0x021D, 0x021E, 0x021F, 0x0220, 0x0221, 0x0222, 0x0223, 0x0224, 0x0225,
-    0x0226,
+    0x0226, 0x0227,
 ];
 const VALUE_RESOLUTION_TAG_BASE: u16 = 0x0300;
 const VALUE_RESOLUTION_TAG_END: u16 = 0x030c;
@@ -55,7 +56,7 @@ const PATTERN_RESOLUTION_TAG_BASE: u16 = 0x0600;
 const PATTERN_RESOLUTION_TAG_END: u16 = 0x0607;
 const PATTERN_RESOLUTION_TAG_COUNT: u16 = 8;
 const _: () = {
-    assert!(EXPRESSION_RESOLUTION_TAG_END == 0x0226);
+    assert!(EXPRESSION_RESOLUTION_TAG_END == 0x0227);
     assert!(EXPRESSION_RESOLUTION_LIVE_TAGS.len() == EXPRESSION_RESOLUTION_TAG_COUNT as usize);
     assert!(
         PATTERN_RESOLUTION_TAG_END
@@ -404,6 +405,7 @@ impl CheckedExpressionResolution {
             Self::StageLook(_) => EXPRESSION_RESOLUTION_TAG_BASE + 6,
             Self::Effect(_) => EXPRESSION_RESOLUTION_TAG_BASE + 7,
             Self::Call => EXPRESSION_RESOLUTION_TAG_BASE + 8,
+            Self::LifetimePromotion(_) => EXPRESSION_RESOLUTION_TAG_LIFETIME_PROMOTION,
             Self::Await(_) => EXPRESSION_RESOLUTION_TAG_BASE + 9,
             Self::Thread(_) => EXPRESSION_RESOLUTION_TAG_THREAD,
             Self::Choice(_) => EXPRESSION_RESOLUTION_TAG_BASE + 10,
@@ -530,7 +532,7 @@ mod tests {
         assert_eq!(expression[34], 0x0224);
         assert_eq!(expression[35], 0x0225);
         assert_eq!(expression[36], 0x0226);
-        assert_eq!(EXPRESSION_RESOLUTION_TAG_END, 0x0226);
+        assert_eq!(EXPRESSION_RESOLUTION_TAG_END, 0x0227);
 
         let value = (VALUE_RESOLUTION_TAG_BASE..=VALUE_RESOLUTION_TAG_END).collect::<Vec<_>>();
         assert_eq!(value.len(), usize::from(VALUE_RESOLUTION_TAG_COUNT));

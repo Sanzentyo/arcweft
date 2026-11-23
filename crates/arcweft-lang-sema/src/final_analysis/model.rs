@@ -1007,6 +1007,8 @@ pub enum CheckedExpressionResolution {
     /// Canonical effect identity selected from an authored effect-clause path.
     Effect(crate::effects::EffectId),
     Call,
+    /// A receiver operation with static scope and authorization operands.
+    LifetimePromotion(Box<CheckedLifetimePromotion>),
     /// Exact outcome and continuation contract owned by one Await expression.
     Await(CheckedAwait),
     /// Exact child body and execution mode owned by one Thread expression.
@@ -1132,6 +1134,7 @@ impl CheckedExpressionResolution {
             | Self::CompileTimeEnum(_)
             | Self::StageLook(_)
             | Self::Effect(_)
+            | Self::LifetimePromotion(_)
             | Self::Await(_)
             | Self::Thread(_)
             | Self::Choice(_)
@@ -1203,6 +1206,7 @@ impl CheckedExpressionResolution {
             | Self::StageLook(_)
             | Self::Effect(_)
             | Self::Call
+            | Self::LifetimePromotion(_)
             | Self::Await(_)
             | Self::Closure(_)
             | Self::ImplicitParameter(_)

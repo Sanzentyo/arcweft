@@ -11,9 +11,8 @@ use thiserror::Error;
 use super::analyzer::{CallAnalysisFailure, CallFrameInvariant};
 use super::{
     AssertionContext, AssertionMode, CharacterDialogueFieldCoordinate,
-    CheckedCaptureAuthorityViolation, CheckedLifetimePromotion,
-    CheckedTryOperandAuthorityViolation, EffectSet, ExprId, ItemId, LocalId, PatternId,
-    SealedFxEdgePlanError, StmtId, TypeId, TypeKind,
+    CheckedCaptureAuthorityViolation, CheckedTryOperandAuthorityViolation, EffectSet, ExprId,
+    ItemId, LocalId, PatternId, SealedFxEdgePlanError, StmtId, TypeId, TypeKind,
 };
 use crate::callable::{
     CallConstraintInvariant, CheckedCallSite, CheckedCallableId, CheckedCallableJoinError,
@@ -618,11 +617,6 @@ pub enum FinalSemanticAnalysisError {
     LifetimePromotionBorrowedReceiver { source_span: SourceSpan },
     #[error("lifetime promotion receiver ownership analysis exceeded its type work limit")]
     LifetimePromotionReceiverLimit { source_span: SourceSpan },
-    #[error("lifetime promotion has no executable ownership transfer")]
-    LifetimePromotionExecutionUnavailable {
-        source_span: SourceSpan,
-        request: Box<CheckedLifetimePromotion>,
-    },
     #[error("call fact is not a clean selected call")]
     UnacceptedCall,
     #[error("call result/effects disagree with the expression fact")]
@@ -993,9 +987,6 @@ impl FinalSemanticAnalysisError {
             Self::LifetimePromotionReceiverRequired { .. }
             | Self::LifetimePromotionBorrowedReceiver { .. } => "sema.lifetime.promotion_receiver",
             Self::LifetimePromotionReceiverLimit { .. } => "sema.lifetime.promotion_receiver_limit",
-            Self::LifetimePromotionExecutionUnavailable { .. } => {
-                "sema.lifetime.promotion_execution"
-            }
             Self::RecursiveCallableContract { .. } => "sema.callable.recursive_contract",
             Self::BreakValueRequiresLoop { .. } => "sema.break.value_target",
             Self::StatementOperandTypeMismatch { .. } => "sema.statement.operand_type",
@@ -1095,16 +1086,6 @@ impl FinalSemanticAnalysisError {
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
                     .with_code(self.diagnostic_code())
                     .with_label(DiagnosticLabel::primary(source_span.clone(), None)),
-            ),
-            Self::LifetimePromotionExecutionUnavailable {
-                source_span,
-                request,
-            } => Some(
-                request.annotate_rejection(
-                    Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
-                        .with_code(self.diagnostic_code())
-                        .with_label(DiagnosticLabel::primary(source_span.clone(), None)),
-                ),
             ),
             Self::UnknownValueMember { member_source, .. } => Some(
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())

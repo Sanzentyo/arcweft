@@ -143,6 +143,7 @@ impl HirSelectedCallArgument {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirSelectedCallExpressionDisposition {
     Structural,
+    LifetimePromotion { receiver: ExprId },
     Callable(HirSelectedCallExpressionInventory),
     NonCallable(HirSelectedCallExpressionInventory),
     Unselected(HirSelectedCallExpressionInventory),
@@ -1361,6 +1362,35 @@ fn selected_semantic_expression_edges(
         )?;
         let (call, admitted) = match disposition {
             HirSelectedCallExpressionDisposition::Structural => (None, true),
+            HirSelectedCallExpressionDisposition::LifetimePromotion { receiver } => {
+                let callee = invocation.callee().value_expression().ok_or(
+                    HirSelectedExpressionInventoryError::InvalidSelectedCallCallee {
+                        expression: owner,
+                        callee: receiver,
+                    },
+                )?;
+                let owns_receiver = callee == receiver
+                    || topology.expression_edges(callee).iter().any(|edge| {
+                        matches!(edge, HirExpressionEvaluationEdge::Expression {
+                        role: HirExpressionChildRole::Target,
+                        child,
+                        ownership: HirExpressionChildOwnership::Owning,
+                    } if *child == receiver)
+                    });
+                if !owns_receiver {
+                    return Err(
+                        HirSelectedExpressionInventoryError::InvalidSelectedCallCallee {
+                            expression: owner,
+                            callee: receiver,
+                        },
+                    );
+                }
+                return Ok(Box::new([HirExpressionEvaluationEdge::Expression {
+                    role: HirExpressionChildRole::Callee,
+                    ownership: HirExpressionChildOwnership::Owning,
+                    child: receiver,
+                }]));
+            }
             HirSelectedCallExpressionDisposition::Callable(call)
             | HirSelectedCallExpressionDisposition::NonCallable(call) => (Some(call), true),
             HirSelectedCallExpressionDisposition::Unselected(call) => (Some(call), false),

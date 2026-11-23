@@ -463,6 +463,7 @@ fn solve_report(report: &mut VerificationReport, backend: BackendKind, z3_comman
     for index in 0..report.obligations.len() {
         let obligation = &report.obligations[index];
         let Some(problem) = &obligation.smt else {
+            report.record_unavailable_solver_input(index, backend);
             continue;
         };
         let outcome = match backend {

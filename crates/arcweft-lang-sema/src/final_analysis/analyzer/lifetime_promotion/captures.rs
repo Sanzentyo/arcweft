@@ -234,6 +234,23 @@ impl Analyzer<'_, '_, '_> {
         receiver: &mut ReceiverBorrowQuery<'_>,
     ) -> Result<BorrowDependencies, FinalSemanticAnalysisError> {
         let mut next = Vec::new();
+        if let PreparedFunctionValueOriginProducer::IndependentExpression { producer } =
+            evidence.producer()
+            && let Some(crate::final_analysis::CheckedExpressionResolution::LifetimePromotion(
+                request,
+            )) = self
+                .storage_expression_fact(*producer, frame)
+                .and_then(PreparedExpressionFact::checked_resolution)
+        {
+            return query.work.demand(
+                ValueOrigin {
+                    expression: request.receiver(),
+                    ..origin
+                },
+                origin,
+                receiver,
+            );
+        }
         if let PreparedFunctionValueOriginProducer::Call(site) = evidence.producer() {
             let call = Invocation {
                 site: *site,

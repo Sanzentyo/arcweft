@@ -2118,6 +2118,15 @@ impl Analyzer<'_, '_, '_> {
         {
             return Ok(callable);
         }
+        if let Some(field) = self.prepare_project_field_path_receiver(
+            context.work(),
+            module,
+            owner,
+            expression.scope(),
+            path,
+        )? {
+            return Ok(field);
+        }
         let (ty, variant_owner, ordinal, selection) = if let (
             Some(expected),
             HirPathRoot::ImplicitCrate,
@@ -4436,6 +4445,11 @@ impl Analyzer<'_, '_, '_> {
                 self.check_view_container_body(context, module, owner, expression, application)
             }
             HirExprKind::Call(call) => {
+                if let Some(promotion) =
+                    self.check_lifetime_promotion_expression(context, module, owner, call)?
+                {
+                    return Ok(Some(promotion));
+                }
                 if let Some(checked) =
                     self.check_view_call_expression(context, module, owner, expression, call)?
                 {
