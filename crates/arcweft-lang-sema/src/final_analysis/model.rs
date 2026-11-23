@@ -975,6 +975,10 @@ impl CheckedContentApplication {
     }
 }
 
+#[path = "model/lifetime_promotion.rs"]
+mod lifetime_promotion;
+pub use lifetime_promotion::{CheckedLifetimePromotion, CheckedLifetimePromotionAuthorization};
+
 #[path = "model/style.rs"]
 mod style;
 pub use style::{

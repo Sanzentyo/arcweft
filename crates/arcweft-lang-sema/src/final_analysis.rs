@@ -230,6 +230,7 @@ pub use model::{
     CheckedViewElementArgument, CheckedViewElementCall, PostfixBracketResolution,
     RegisteredSemanticValueId,
 };
+pub use model::{CheckedLifetimePromotion, CheckedLifetimePromotionAuthorization};
 pub(crate) use nominal_schema::RuntimeNominalProjectionSeal;
 pub use nominal_schema::{
     NominalProjectionLimitKind, NominalSchemaPath, NominalSchemaPathStep,

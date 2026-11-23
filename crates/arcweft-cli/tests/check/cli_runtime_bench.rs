@@ -321,6 +321,59 @@ flow bad {
 }
 
 #[test]
+fn verify_json_retains_the_checked_promotion_when_execution_is_unavailable() {
+    let source = "proof keep() = ()\nflow verify { let summary = \"owned\".promote('flow, proof = @proof.keep) }\n";
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("promotion.arcw");
+    let obligations = directory.path().join("obligations.json");
+    let smt = directory.path().join("smt");
+    std::fs::write(&path, source).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .args(["verify", "--mode", "test", "--backend", "oxiz", "--json"])
+        .arg(&path)
+        .arg("--emit-obligations")
+        .arg(&obligations)
+        .arg("--emit-smt")
+        .arg(&smt)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["status"], "denied");
+    assert_eq!(json["stage"], "type-check");
+    assert_eq!(json["rejected_obligation_kind"], "lifetime_promotion");
+    let diagnostic = &json["diagnostics"][0]["diagnostic"];
+    assert_eq!(diagnostic["code"], "sema.lifetime.promotion_execution");
+    let labels = diagnostic["labels"].as_array().unwrap();
+    let highlighted = labels
+        .iter()
+        .map(|label| {
+            let start = usize::try_from(label["span"]["start"].as_u64().unwrap()).unwrap();
+            let end = usize::try_from(label["span"]["end"].as_u64().unwrap()).unwrap();
+            &source[start..end]
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        highlighted,
+        [
+            "\"owned\".promote('flow, proof = @proof.keep)",
+            "\"owned\"",
+            "'flow",
+            "@proof.keep",
+            "proof keep() = ()",
+        ]
+    );
+    assert_eq!(labels[2]["message"], "reached 'flow' activation");
+    assert!(labels[4]["message"].as_str().unwrap().contains("keep"));
+    assert!(json.get("obligations").is_none());
+    assert!(json.get("solver_checks").is_none());
+    assert!(!obligations.exists());
+    assert!(!smt.exists());
+}
+
+#[test]
 fn verify_json_reports_missing_promotion_proof() {
     let path = temp_arcw(
         "verify-missing-proof",

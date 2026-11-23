@@ -11,8 +11,9 @@ use thiserror::Error;
 use super::analyzer::{CallAnalysisFailure, CallFrameInvariant};
 use super::{
     AssertionContext, AssertionMode, CharacterDialogueFieldCoordinate,
-    CheckedCaptureAuthorityViolation, CheckedTryOperandAuthorityViolation, EffectSet, ExprId,
-    ItemId, LocalId, PatternId, SealedFxEdgePlanError, StmtId, TypeId, TypeKind,
+    CheckedCaptureAuthorityViolation, CheckedLifetimePromotion,
+    CheckedTryOperandAuthorityViolation, EffectSet, ExprId, ItemId, LocalId, PatternId,
+    SealedFxEdgePlanError, StmtId, TypeId, TypeKind,
 };
 use crate::callable::{
     CallConstraintInvariant, CheckedCallSite, CheckedCallableId, CheckedCallableJoinError,
@@ -618,7 +619,10 @@ pub enum FinalSemanticAnalysisError {
     #[error("lifetime promotion receiver ownership analysis exceeded its type work limit")]
     LifetimePromotionReceiverLimit { source_span: SourceSpan },
     #[error("lifetime promotion has no executable ownership transfer")]
-    LifetimePromotionExecutionUnavailable { source_span: SourceSpan },
+    LifetimePromotionExecutionUnavailable {
+        source_span: SourceSpan,
+        request: Box<CheckedLifetimePromotion>,
+    },
     #[error("call fact is not a clean selected call")]
     UnacceptedCall,
     #[error("call result/effects disagree with the expression fact")]
@@ -1087,11 +1091,20 @@ impl FinalSemanticAnalysisError {
             | Self::LifetimePromotionTargetUnavailable { source_span, .. }
             | Self::LifetimePromotionReceiverRequired { source_span }
             | Self::LifetimePromotionBorrowedReceiver { source_span }
-            | Self::LifetimePromotionReceiverLimit { source_span }
-            | Self::LifetimePromotionExecutionUnavailable { source_span } => Some(
+            | Self::LifetimePromotionReceiverLimit { source_span } => Some(
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
                     .with_code(self.diagnostic_code())
                     .with_label(DiagnosticLabel::primary(source_span.clone(), None)),
+            ),
+            Self::LifetimePromotionExecutionUnavailable {
+                source_span,
+                request,
+            } => Some(
+                request.annotate_rejection(
+                    Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
+                        .with_code(self.diagnostic_code())
+                        .with_label(DiagnosticLabel::primary(source_span.clone(), None)),
+                ),
             ),
             Self::UnknownValueMember { member_source, .. } => Some(
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())

@@ -92,8 +92,12 @@ When project compilation rejects analysis, `arcw verify --json` publishes the
 compiler-owned rejection and returns a non-success exit code. This version1
 report has `status: "denied"`, its original compilation `stage`, and canonical
 diagnostic rows. Typed effect rejections carry
-`rejected_obligation_kind: "effect_capability"`; other rejections omit that
-optional classification. Codes, severity, messages, source revision-bound
+`rejected_obligation_kind: "effect_capability"`. A lifetime promotion that
+passes the static operand and applicable receiver checks but lacks an
+executable ownership transfer carries `rejected_obligation_kind:
+"lifetime_promotion"`. Its diagnostic includes the receiver and reached
+scope selector, with labels for a resolved proof or enclosing audit when
+present. Other rejections omit the optional classification. Codes, severity, messages, source revision-bound
 spans, primary/secondary labels, notes, suggestions and commands come from the
 original diagnostic authority. A rejected seal has no accepted obligations,
 solver checks, executable runtime plan or generated proof artifacts. Solver

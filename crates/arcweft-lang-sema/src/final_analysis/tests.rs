@@ -1227,6 +1227,40 @@ fn checked_unsafe_audit_reason_requires_an_authored_nonempty_literal() {
 }
 
 #[test]
+fn rejected_audited_promotion_retains_the_nearest_checked_audit() {
+    let source = r#"
+flow main {
+    unsafe lifetime @unsafe.outer reason = "outer reason" {
+        /// SAFETY: outer audit
+        unsafe lifetime @unsafe.inner reason = "inner reason" {
+            /// SAFETY: inner audit
+            let _ = 42i64.promote_unchecked('flow)
+        }
+    }
+}
+"#;
+    let fixture = fixture(source, None);
+    let error = analyze(&fixture).expect_err("audited promotion cannot yet transfer ownership");
+    let FinalSemanticAnalysisError::LifetimePromotionExecutionUnavailable { request, .. } = error
+    else {
+        panic!("expected the checked promotion rejection, got {error:?}");
+    };
+    assert_eq!(request.target, arcweft_id::LifetimeScopeKind::Flow);
+    assert_eq!(&source[request.receiver.range().as_range()], "42i64");
+    assert_eq!(&source[request.target_source.range().as_range()], "'flow");
+    let super::CheckedLifetimePromotionAuthorization::Audit {
+        id,
+        declaration_source,
+    } = &request.authorization
+    else {
+        panic!("the audit supplies the authored authorization");
+    };
+    assert_eq!(id.as_public_id().as_str(), "unsafe.inner");
+    let declaration = &source[declaration_source.range().as_range()];
+    assert!(declaration.starts_with("unsafe lifetime @unsafe.inner"));
+}
+
+#[test]
 fn lifetime_promotion_source_rejects_invalid_static_authority() {
     for (call, code, offending) in [
         (

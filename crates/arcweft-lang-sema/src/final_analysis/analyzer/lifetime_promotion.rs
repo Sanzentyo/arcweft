@@ -8,7 +8,8 @@ use arcweft_lang_hir::{
     identity::ExprId,
     module::HirModule,
     scope::{HirScopeKind, HirScopeOwner},
-    stmt::HirStmtKind,
+    source_index::{HirSourceQuery, HirStmtSourceRole},
+    stmt::{HirStmtKind, HirUnsafeAuditIdentity},
     symbol::{CallableDeclarationOwner, ResolvedProjectSymbol},
 };
 
@@ -19,11 +20,15 @@ mod receiver;
 
 use self::receiver::{ReceiverBorrowQuery, TypeStorage};
 use super::{
-    Analyzer, FinalSemanticAnalysisError, expression_error::AnalyzerExpressionContext,
-    statements::expression_span,
+    Analyzer, FinalSemanticAnalysisError,
+    expression_error::AnalyzerExpressionContext,
+    statements::{expression_span, source_span},
 };
 use crate::{
-    callable::PreparedCallCalleeConstraintInputs, final_analysis::model::LifetimeLexicalActivation,
+    callable::PreparedCallCalleeConstraintInputs,
+    final_analysis::model::{
+        CheckedLifetimePromotion, CheckedLifetimePromotionAuthorization, LifetimeLexicalActivation,
+    },
 };
 
 impl Analyzer<'_, '_, '_> {
@@ -55,8 +60,10 @@ impl Analyzer<'_, '_, '_> {
                 );
             }
         };
-        match promotion.authorization() {
-            HirLifetimePromotionAuthorization::Safe { proof: None } => {}
+        let authorization = match promotion.authorization() {
+            HirLifetimePromotionAuthorization::Safe { proof: None } => {
+                CheckedLifetimePromotionAuthorization::WithoutProof
+            }
             HirLifetimePromotionAuthorization::Safe {
                 proof: Some((proof, reference)),
             } => {
@@ -70,28 +77,39 @@ impl Analyzer<'_, '_, '_> {
                             error: Box::new(error),
                         },
                     )?;
-                if !matches!(target, ResolvedProjectSymbol::Callable(symbol) if symbol.owner() == CallableDeclarationOwner::Proof)
-                {
+                let ResolvedProjectSymbol::Callable(symbol) = target else {
+                    return Err(FinalSemanticAnalysisError::LifetimePromotionProofFamily {
+                        source_span,
+                    });
+                };
+                if symbol.owner() != CallableDeclarationOwner::Proof {
                     return Err(FinalSemanticAnalysisError::LifetimePromotionProofFamily {
                         source_span,
                     });
                 }
+                CheckedLifetimePromotionAuthorization::Proof {
+                    declaration: symbol.declaration().clone(),
+                    reference: source_span,
+                    declaration_source: symbol.declaration_span().clone(),
+                }
             }
             HirLifetimePromotionAuthorization::Audited => {
-                if !is_in_unsafe_audit(module, owner)? {
+                let Some(authorization) = enclosing_unsafe_audit(module, owner)? else {
                     return Err(FinalSemanticAnalysisError::LifetimePromotionAuditRequired {
                         source_span: expression_span(module, owner)?,
                     });
-                }
+                };
+                authorization
             }
-        }
+        };
+        let target_source = expression_span(module, promotion.target_source())?;
         if LifetimeLexicalActivation::for_expression(&self.topology, owner, promotion.target())?
             .is_none()
         {
             return Err(
                 FinalSemanticAnalysisError::LifetimePromotionTargetUnavailable {
                     scope: promotion.target().clone(),
-                    source_span: expression_span(module, promotion.target_source())?,
+                    source_span: target_source,
                 },
             );
         }
@@ -106,12 +124,12 @@ impl Analyzer<'_, '_, '_> {
         if source != promotion.receiver() {
             return Err(FinalSemanticAnalysisError::InvalidOwner);
         }
+        let receiver_source = expression_span(module, source)?;
         if matches!(
             promotion.authorization(),
             HirLifetimePromotionAuthorization::Safe { .. }
         ) {
-            let source_span = expression_span(module, source)?;
-            let mut borrow = ReceiverBorrowQuery::new(self.symbols, self.control, &source_span);
+            let mut borrow = ReceiverBorrowQuery::new(self.symbols, self.control, &receiver_source);
             let borrowed = match borrow.storage(receiver.original(), &self.types, None)? {
                 TypeStorage::Borrowed => true,
                 TypeStorage::Callable => {
@@ -121,22 +139,30 @@ impl Analyzer<'_, '_, '_> {
             };
             if borrowed {
                 return Err(
-                    FinalSemanticAnalysisError::LifetimePromotionBorrowedReceiver { source_span },
+                    FinalSemanticAnalysisError::LifetimePromotionBorrowedReceiver {
+                        source_span: receiver_source,
+                    },
                 );
             }
         }
         Err(
             FinalSemanticAnalysisError::LifetimePromotionExecutionUnavailable {
                 source_span: expression_span(module, owner)?,
+                request: Box::new(CheckedLifetimePromotion {
+                    receiver: receiver_source,
+                    target: promotion.target().clone(),
+                    target_source,
+                    authorization,
+                }),
             },
         )
     }
 }
 
-fn is_in_unsafe_audit(
+fn enclosing_unsafe_audit(
     module: &HirModule,
     expression: ExprId,
-) -> Result<bool, FinalSemanticAnalysisError> {
+) -> Result<Option<CheckedLifetimePromotionAuthorization>, FinalSemanticAnalysisError> {
     let expression = module
         .resolve_expr(expression)
         .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
@@ -161,13 +187,25 @@ fn is_in_unsafe_audit(
                 let statement = module
                     .resolve_stmt(owner)
                     .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                if matches!(statement.kind(), HirStmtKind::UnsafeLifetime { .. }) {
-                    return Ok(true);
+                if let HirStmtKind::UnsafeLifetime { audit, .. } = statement.kind() {
+                    let HirUnsafeAuditIdentity::Accepted(id) = audit.identity() else {
+                        return Err(FinalSemanticAnalysisError::RecoveredOwner);
+                    };
+                    return Ok(Some(CheckedLifetimePromotionAuthorization::Audit {
+                        id: id.clone(),
+                        declaration_source: source_span(
+                            module,
+                            HirSourceQuery::Stmt {
+                                owner,
+                                role: HirStmtSourceRole::Whole,
+                            },
+                        )?,
+                    }));
                 }
             }
             HirScopeOwner::Module(_) | HirScopeOwner::Item(_) => {}
         }
         current = scope.parent();
     }
-    Ok(false)
+    Ok(None)
 }
