@@ -22246,3 +22246,17 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 検証対象 `d7a659cc3b9b6353cddfa77392c9d75deeda3eda`。開始時はローカルと公開 `main` が一致し、追跡ファイルに差分はなかった。既存の未追跡ディレクトリが一つあった。
 
 `cargo nextest run --offline --locked -p arcweft-cli --features native-capture --test check --no-fail-fast --no-tests fail --status-level slow --final-status-level fail --failure-output final` は1バイナリで475成功（slow 39）、23選択外、726.381秒、終了0。実行 ID `d7ad83da-2a2e-4599-9c8b-5c04426e1fbf`。過去の逆依存実行で失敗した Scroll の capture／release filtering、寿命昇格の二つの監査診断、および JLREQ の geometry／raw crop の実行対象が通過した。過去の失敗と実行条件は原本に保持する。今回の結果は CLI の `check` バイナリの通常選択範囲を示す。[旧 Scroll と昇格診断の原本](acceptance-evidence/task-unvoiced-line-lease-reverse.raw.zip)・[旧 JLREQ 診断](acceptance-evidence/task-final-r3177-program-capture-reverse-runtime.failure-recon.json)。
+
+<a id="webgpu-startup-overlap"></a>
+
+## 2026-11-24 — WebGPU デモの固定上限内での起動と画像比較
+
+基点 `cf930b295f83befc7eeed75f2d25f9171f734f52`。ローカルと公開 `main` は一致していた。追跡ファイルには別途検証中の Rust／言語資料の差分があり、既存の未追跡ディレクトリが一つあった。ここで比較した Native と Wasm の実行コードはその変更より前の `d7a659cc3b9b6353cddfa77392c9d75deeda3eda` で生成した。
+
+起動計測では3回とも Wasm 初期化の直後に AWFB とフォントの取得を開始し、35,157,520 bytes の AWFB の取得に1,031〜1,587 msを要した。navigation から `ready` までは10,684／4,090／4,650 msだった。Wasm とその他の起動資源の取得を並行にした初回の通常 smoke は、デバッグ名を含むリリースWasmで `[p]` の起動上限10秒を超え、終了1だった。
+
+リリースWasmから `wasm-bindgen --remove-name-section` で15,587,988 bytesのデバッグ名セクションを除くと、62,588,615 bytesから47,000,627 bytesになった。デバッグ名を除いた全セクションとヘッダーを順にハッシュ化した結果は処理前後で一致し、処理後の全体SHA-256は `fd1e10be6a0e6e185e0905d25aea10f944beccef86184358234923d556cfc993`。AWFB の SHA-256 は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4`。
+
+同じAWFBで既存の smoke を実行し、固定の `openBooted` 10秒を変えずにChrome 8件が成功して終了0。最初の再検証で取得したNativeの5枚と、この実行のWebの5枚を160 msで照合した。既定の比較器と `imq 0.1.0` の両方が成功し、全RGBAでMSE／MAE／最大誤差0、色SSIM 1。4組は3,686,400サンプル、縮小の1組は2,073,600サンプル。今回の検証はレシピ各段の分割実行で、`just webgpu-parity` の一括コマンドの結果とは区別する。
+
+変更 `b1a9838ec4894fd3936412d3252338df7313d851` を通常 push し、公開 ref と変更3ファイルの blob を照合した。Node の構文検査と差分の空白検査は終了0。
