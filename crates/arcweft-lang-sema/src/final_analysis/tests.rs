@@ -1227,6 +1227,7 @@ fn checked_unsafe_audit_reason_requires_an_authored_nonempty_literal() {
 }
 
 const CHECKED_PROMOTION: &str = "checked lifetime promotion";
+const BORROWED_NOMINAL_ARGUMENT: &str = "unsupported nominal argument";
 
 fn checked_promotion(analysis: &FinalSemanticAnalysis) -> &super::CheckedLifetimePromotion {
     let mut promotions =
@@ -1259,6 +1260,14 @@ fn assert_promotion_result(fixture: &Fixture, source: &str, code: &str, expected
             &source[request.source().range().as_range()],
             expected,
             "{source}"
+        );
+    } else if code == BORROWED_NOMINAL_ARGUMENT {
+        let error = analysis.expect_err("runtime schema rejects the nominal argument");
+        assert!(
+            matches!(error, FinalSemanticAnalysisError::NominalSchemaProjection(
+                super::NominalSchemaProjectionError::UnsupportedLeaf { ref path, ref ty }
+            ) if path.steps().is_empty() && matches!(ty.as_ref(), TypeKind::BorrowRef { .. })),
+            "{source}: {error:?}"
         );
     } else {
         let error = analysis.expect_err("invalid promotion must be rejected");
@@ -1459,7 +1468,6 @@ fn lifetime_promotion_cannot_treat_a_borrow_as_an_owned_receiver() {
 
 #[test]
 fn safe_lifetime_promotion_checks_borrows_in_stored_receiver_types() {
-    const BORROWED_NOMINAL_ARGUMENT: &str = "unsupported nominal argument";
     for (declarations, ty, proof, code) in [
         ("", "Option<&i64>", "", "sema.lifetime.promotion_receiver"),
         (
@@ -1523,16 +1531,6 @@ fn safe_lifetime_promotion_checks_borrows_in_stored_receiver_types() {
         let call = format!("value.promote('flow{proof})");
         let source = format!("{declarations}\nflow main(value: {ty}) {{ let _ = {call}; }}");
         let fixture = fixture(&source, None);
-        if code == BORROWED_NOMINAL_ARGUMENT {
-            let error = analyze(&fixture).expect_err("runtime schema rejects the nominal argument");
-            assert!(
-                matches!(error, FinalSemanticAnalysisError::NominalSchemaProjection(
-                super::NominalSchemaProjectionError::UnsupportedLeaf { ref path, ref ty }
-            ) if path.steps().is_empty() && matches!(ty.as_ref(), TypeKind::BorrowRef { .. })),
-                "{source}: {error:?}"
-            );
-            continue;
-        }
         let offending = if code == "sema.lifetime.promotion_receiver" {
             "value"
         } else {
@@ -1637,59 +1635,65 @@ fn safe_lifetime_promotion_ignores_callable_arguments_absent_from_storage() {
 #[test]
 fn safe_lifetime_promotion_checks_only_the_selected_record_field() {
     let pair = "struct Pair<T, U> { borrowed: T, owned: U }";
-    for (declarations, build, selected, borrowed) in [
+    for (declarations, build, selected, code) in [
         (
             pair,
             "let pair = Pair { borrowed, owned }",
             "pair.borrowed",
-            true,
+            "sema.lifetime.promotion_receiver",
         ),
         (
             pair,
             "let pair = Pair { borrowed, owned }",
             "pair.owned",
-            false,
+            CHECKED_PROMOTION,
         ),
         (
             pair,
             "let pair = Pair { borrowed: loan, owned }",
             "pair.owned",
-            false,
+            BORROWED_NOMINAL_ARGUMENT,
         ),
         (
             "struct Pair<T, U> { borrowed: T, owned: U }\nstruct Outer<T> { nested: T }",
             "let pair = Pair { borrowed, owned }; let outer = Outer { nested: pair }; let alias = outer",
             "alias.nested.borrowed",
-            true,
+            "sema.lifetime.promotion_receiver",
         ),
         (
             "struct Pair<T, U> { borrowed: T, owned: U }\nfn identity<T>(value: T) -> T { value }",
             "let pair = Pair { borrowed, owned }",
             "identity(pair).borrowed",
-            true,
+            "sema.lifetime.promotion_receiver",
         ),
         (
             "struct Pair<T, U> { borrowed: T, owned: U }\nfn choose_field<T, U>(pair: Pair<T, U>) -> U { pair.owned }",
             "let pair = Pair { borrowed, owned }",
             "choose_field(pair)",
-            false,
+            CHECKED_PROMOTION,
         ),
         (
             "struct Pair<T, U> { borrowed: T, owned: U }\nfn choose_field<T, U>(pair: Pair<T, U>) -> T { pair.borrowed }",
             "let pair = Pair { borrowed, owned }",
             "choose_field(pair)",
-            true,
+            "sema.lifetime.promotion_receiver",
         ),
     ] {
         let source = format!(
-            "{declarations}\nflow main(loan: &i64) {{
-                let borrowed = |n: i64| -> i64 {{ let _ = loan; n }};
+            "{declarations}\nflow main(loan: &i64, captured_loan: &i64) {{
+                let borrowed = |n: i64| -> i64 {{ let _ = captured_loan; n }};
                 let owned = |n: i64| -> i64 {{ n }};
                 {build};
                 let _ = {selected}.promote('flow);
             }}"
         );
-        assert_promotion_capture_diagnostic(&source, selected, borrowed);
+        let call = format!("{selected}.promote('flow)");
+        let span = if code == "sema.lifetime.promotion_receiver" {
+            selected
+        } else {
+            &call
+        };
+        assert_promotion_result(&fixture(&source, None), &source, code, span);
     }
 }
 
