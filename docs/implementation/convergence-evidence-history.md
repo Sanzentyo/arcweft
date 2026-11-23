@@ -22386,3 +22386,14 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 - 同じPNGを `asset.image` の逐次呼び出しで読む対照はAWBC ProductとNative headless VMの両方で終了0、素材完了各2件、結果 `catalog_ready`。入力SHA-256は `036ada38d02f31c2f71adff7f1d7fb735e5b20d4bafec4793509d07b9debc214`、AWFBは `626a705e63ce95cd84f3b1f751c471d8369fe149cf7741543a16b2c199564d90`。
 
 直接呼び出しは `CallableValidator::NeedProducer` から元Sourceの `StartNeedProducer` へ接続済み。関数値は `ExternalDefinition::prepare` が `Ordinary` のみを通し、関数値適用は直接producerに限る証明を要求していた。`callable_effect_graph` は直接Need構築を `ExpressionCompatible` に分類するため、closureと名前付き関数でもpure helperへ流れる。後続の修復では、終端のNeed構築を実行フレームが必要な操作として分類し、既存の関数フレームでも受理済み宣言から同じ型付きNeed計画を発行する。関数値を呼ぶ側とproducer実行側で元Source・引数をそれぞれの境界で検査し、直接呼び出し、束縛、lambda、保存復元を両実行系で検証する。
+
+<a id="retained-prefix-nested-argument"></a>
+
+### 別の呼び出しの引数内で段階適用した関数値の再利用
+
+2026-11-24、追跡ファイルに未コミット差分のない `4ba8cf5797dfff54b598028a53abfab4cd5b0c5d` で、Source `f9921fd5d8ef0275bd05b54b53dba85f8ac61c41` のWindows全機能CLI（SHA-256 `2cc82365523f43da3fba187fca4b7137af7f8bdd6a8742b8adac578bd33bb40c`）を使った。`fn choose<A, B>(first: A)(second: B) -> B { second }` の `prefix = choose(7i64)` を保持し、同じ `prefix` を後段の異なる型に適用した。
+
+- `let text = keep(prefix("text"))` に続けて `let integer = prefix(42i64)` を評価する純粋なFlowは `sema.final_analysis` の `semantic fact references a foreign or missing HIR owner` で終了1、AWFB未生成。対象SHA-256は `f3698a9350e62feb967bc3653a3f62b7322898dd7cc55f18f69c9eddf30e5b01`。`prefix` の最初の戻り値を独立した `let` へ分ける対照と、後続の再利用を除く対照はAWBCで `true` を返した。対照のAWFB SHA-256はそれぞれ `904fb785ad60357ff65cf0de52dab3b3c6aba43a134e59dacb952ae2503b17de` と `9aec6b771fd122b9a95ab27887da0f1c81274ca36b7fc9ceffe254d86738156d`。両段とも型を固定した段階適用でも同じ失敗を再現した（入力SHA-256 `e1f457e1096b5a190ddd5a2855432c55b27e8caa61f770fc90cf4342865f9db1`）。
+- `prefix` を `String`、`Ref<Voice>`、`i64` の後段に適用する実WAV入力でも、`voice.load(prefix(@voice.alice.first))` の後に `prefix` を再利用すると同じ診断で終了1（入力SHA-256 `c99def62bb3c4edd6ae9e7fa3a39982553852103a34445147f0b0c27d6ae6bba`）。`await` を除いた場合と `asset.image` を使う場合も同じ診断だった。`prefix` の戻り値を個別の `let` へ分けた同じ型と制御の入力では、AWBCが素材2件を完了し、Native VMは1件完了・1件待機で保存できた。別プロセスのAOTはステップ2から同じ待機要求1件を再開し、保持した共有prefixの `i64` 適用を含め両実行系で `voice_prefix_restored` を返した。対照の入力／AWFB／AWFS SHA-256は `a27635269d789378870855c60dc8fa81c77b5a149bbcef9cf6ebe8492b5d4137`／`122ae0c05851567d283687d4887edfc49eabe7eb56258d12a23396ea5c8e3d60`／`965c91724f0d86e431e3c7bc279ab89b148ac8d0e9126cfad894aff200f2dd18`。
+
+同じCLIをデバッガーで追い、純粋な最小入力は `Analyzer::stage_function_value_origin` から `PreparedFunctionValueOriginNeed::resume` を通り、`PreparedFunctionValueOriginQuery::advance_with_fact` が推論済み局所参照型と元initializerのfact型を比較する分岐で `Invalid` を返すことを確認した。
