@@ -22128,3 +22128,15 @@ Cargo の全機能・全ターゲットの逆依存グラフは Core を含む53
 構造ゲートは98パッケージを走査し、ブロッキング違反0件、終了0。ブラウザ側の `host.rs` は1,134行から1,240行になり、うち902行はブラウザタスクの同じ境界を検査するテスト。VFS、許可判定、完了イベントの公開は引き続き Web Player 内の同期ブローカーが所有し、Core は借用した値の受理と正準の成功値を所有する。Runtime Driver は既存の世代保持を通じて実行プログラムを保持する。Cargo 依存の追加は0件。変更した Rust の書式と差分の空白検査も終了0。
 
 同じ Source で `cargo check --offline --locked --workspace --all-targets --all-features` と同範囲の Clippy は警告付きで終了0。検証後の `target` は197,789,491,094 bytes（約197.8 GB）。検証範囲は既存の Web ブローカーと AWBC セッション、および実際に選択した逆依存のテスト。全 adapter の動作および Native／Web の画像比較は別途検証する。
+
+<a id="native-task-write-outcome-admission"></a>
+
+## 2026-11-24 — Native のファイルと CLI 出力を型検査後に書き込む
+
+基点 `6c10150639344a1161ad953587fd76f33756d1a7`。開始時の追跡ファイルに差分はなく、既存の未追跡ディレクトリが一つあった。実装 `8191734a7c7e91d1ead5d587db6bb4374dfd503a` を `main` に通常 push し、公開 ref と変更1ファイルの blob を照合した。
+
+Native の直接ファイル依頼と manifest のファイル依頼は、成功の `Result::Ok(Unit)` を照合してから同じ関数で書き込む。CLI の標準出力と標準エラー出力は `Unit` を照合してから書き込む。ファイル読み取りは所有する読み取り値を `Result::Ok` へ移し、従来の複製を取り除いた。回帰では型不一致を拒否し、既存テキストを維持し、新規バイト出力用ディレクトリを作らず、CLI の出力先を空のまま保つことを確認した。型が合う CLI 出力も確認した。
+
+Runtime Host の初回は74件中73件成功、1件失敗、終了100。追加回帰が直接の `FileWriteBytes` を用意した際、テスト fixture に引数の投影がなく、アダプターの実行前に停止した。fixture 修正後、`cargo nextest run --offline --locked -p arcweft-runtime-host --lib --tests --no-fail-fast --no-tests fail --status-level fail` は5バイナリで74件すべて成功、選択外0件、終了0。実行 ID は `b4495c9d-1fcd-47d0-a390-eaa3142ff48b`。
+
+Cargo の全機能・全ターゲットの逆依存には Runtime Host 自身、CLI、LSP、Native Player、Verify LSP が含まれる。CLI の `check` バイナリから `rdeps(=arcweft-runtime-host) & (test(native_file_tasks) | test(traverse_parallel_file_tasks))` を選び、6件すべて成功、選択外492件、終了0。実行 ID は `eeadbd09-7194-4f6f-be2f-c879af44c366`。Runtime Host の全ターゲット Clippy は警告付きで終了0。構造ゲートは98パッケージでブロッキング違反0件。変更ファイルは4,008行から4,078行となり、うち1,940行は同じ Native アダプター境界のテスト。共用の書き込み関数はファイル I/O を所有する既存アダプターに置き、依存の追加は0件。変更 Rust の書式と差分の空白検査は終了0。検証後の `target` は197,831,853,053 bytes（約197.8 GB）。
