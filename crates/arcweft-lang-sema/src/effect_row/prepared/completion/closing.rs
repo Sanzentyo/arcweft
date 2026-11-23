@@ -2,6 +2,7 @@
 
 use super::binding::ScopedCompletionBinding;
 use super::*;
+use crate::effect_row::prepared::closure::{ClosureDefinitions, FunctionInventory};
 use crate::effect_row::prepared::read::SnapshotSource;
 
 #[cfg(test)]
@@ -105,7 +106,11 @@ impl BoundScopedEffectCompletion {
                 control,
             )?
         {
-            return definitions.solve_with_actual_inputs(inputs, control);
+            return ClosureDefinitions::Owned(definitions).solve_with_actual_inputs(
+                inputs,
+                FunctionInventory::Frozen(&original.program),
+                control,
+            );
         }
         self.attached_definitions(receiving, query_rows, query_predicates, control)?
             .solve_with_actual_inputs(inputs, control)

@@ -240,8 +240,15 @@ pub(super) fn compile_with_imports<C: DecisionControl>(
     inventory: FunctionInventory<'_>,
     work: &mut Work<'_, C>,
 ) -> Result<CompiledComponent, PreparedEffectFailure<C::Error>> {
-    let program = EffectResidualProgram::with_inventory(graph, inventory, work)?;
-    let fixed = fixed.admit_finiteness(graph, &program, work)?;
+    let compiled;
+    let program = match inventory {
+        FunctionInventory::Frozen(program) => program,
+        _ => {
+            compiled = EffectResidualProgram::with_inventory(graph, inventory, work)?;
+            &compiled
+        }
+    };
+    let fixed = fixed.admit_finiteness(graph, program, work)?;
     let LoweredImports {
         layout,
         fixed,
@@ -250,7 +257,7 @@ pub(super) fn compile_with_imports<C: DecisionControl>(
     let inherited = clauses::inherited_from(&cache, graph, &layout, &fixed, work)?;
     CompiledComponent::compile(
         graph,
-        &program,
+        program,
         fixed,
         layout,
         CompiledObligations {

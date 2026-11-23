@@ -4,6 +4,7 @@ use std::borrow::Cow;
 
 use arcweft_core::effect_row::{DecisionLowerEnvelope, EffectDecision, EffectMembershipView};
 
+use super::completion::residual::EffectResidualProgram;
 use super::*;
 use crate::effects::EffectId;
 
@@ -30,13 +31,16 @@ mod reachable;
 #[derive(Clone, Copy)]
 pub(in crate::effect_row::prepared) enum FunctionInventory<'a> {
     All,
+    /// The final definitions contain the same functions, choices and ordered
+    /// obligations as this checked original program.
+    Frozen(&'a EffectResidualProgram),
     Selected(&'a BTreeMap<u64, Arc<Function>>),
 }
 
 impl FunctionInventory<'_> {
     pub(in crate::effect_row::prepared) fn contains(self, id: u64) -> bool {
         match self {
-            Self::All => true,
+            Self::All | Self::Frozen(_) => true,
             Self::Selected(functions) => functions.contains_key(&id),
         }
     }
@@ -780,7 +784,7 @@ impl PreparedEffectDefinitions {
 
 /// Live preparation keeps its indexes. A detached snapshot can transfer them
 /// intact into the closure while its original terms remain immutable.
-enum ClosureDefinitions<'a> {
+pub(super) enum ClosureDefinitions<'a> {
     Borrowed(&'a PreparedEffectDefinitions),
     Owned(PreparedEffectDefinitions),
 }

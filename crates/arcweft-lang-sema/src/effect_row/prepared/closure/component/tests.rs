@@ -71,12 +71,15 @@ fn owned_snapshot_closes_without_recopying_the_definitions() {
     let mut measured = budget();
     let borrowed_work = measured.0;
     let borrowed = ClosureDefinitions::Borrowed(&snapshot)
-        .solve_with_actual_inputs(&inputs, &mut measured)
+        .solve_with_actual_inputs(&inputs, FunctionInventory::All, &mut measured)
         .unwrap();
     let available = borrowed_work - measured.0 - 1;
     assert!(matches!(
-        ClosureDefinitions::Borrowed(&snapshot)
-            .solve_with_actual_inputs(&inputs, &mut Budget(available)),
+        ClosureDefinitions::Borrowed(&snapshot).solve_with_actual_inputs(
+            &inputs,
+            FunctionInventory::All,
+            &mut Budget(available)
+        ),
         Err(PreparedEffectFailure::Control(Exhausted))
     ));
     let owned = snapshot

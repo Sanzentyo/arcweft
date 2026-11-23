@@ -12,6 +12,15 @@ pub(super) struct ScopedObligation {
     pub(super) predicate: PreparedEffectPredicate,
 }
 
+impl ScopedObligation {
+    /// Canonical constants contain no rows, choices or graph dependencies to lower.
+    pub(super) fn constant_truth(&self) -> Option<bool> {
+        let domain = self.domain.constant_truth()?;
+        let predicate = self.predicate.constant_truth()?;
+        Some(!domain || predicate)
+    }
+}
+
 /// One immutable original constraint and its complete universal Γ. It grants
 /// no mutation or completion authority. Clones keep the same original fact.
 #[derive(Clone, Debug)]

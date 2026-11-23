@@ -194,6 +194,9 @@ impl PrincipalEffectClosure {
         let mut replays = BTreeMap::new();
         for (id, obligation) in self.graph.obligations.iter().enumerate() {
             work.charge(DecisionWork::Visit)?;
+            if obligation.constant_truth() == Some(true) {
+                continue;
+            }
             // Only choices leave a proof's local valuation. With identical
             // ordered parameters, terms can share a local numbering while
             // each obligation is proved separately in its original order.

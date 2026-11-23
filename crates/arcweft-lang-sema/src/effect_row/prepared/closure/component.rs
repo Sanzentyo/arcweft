@@ -622,6 +622,8 @@ pub(super) fn compile_relation<C: DecisionControl>(
                 ResidualClauseSource::Obligation { id, obligation } => {
                     let value = if let Some(inherited) = obligations.inherited.get(id) {
                         Arc::clone(inherited)
+                    } else if let Some(truth) = obligation.constant_truth() {
+                        work.share_decision(Decision::constant(truth))?
                     } else {
                         relation_scope(&mut scopes, graph, classes, fixed, clause.scope(), work)?
                             .require_obligation(obligation, work)?
@@ -824,7 +826,11 @@ impl PreparedEffectDefinitions {
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         let inputs = self.read().actual_inputs(bindings, control)?;
-        ClosureDefinitions::Borrowed(self).solve_with_actual_inputs(&inputs, control)
+        ClosureDefinitions::Borrowed(self).solve_with_actual_inputs(
+            &inputs,
+            FunctionInventory::All,
+            control,
+        )
     }
 
     /// Close one dependency component using the shared invocation's actuals.
@@ -834,14 +840,19 @@ impl PreparedEffectDefinitions {
         inputs: &PreparedEffectActualInputs<'_>,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
-        ClosureDefinitions::Owned(self).solve_with_actual_inputs(inputs, control)
+        ClosureDefinitions::Owned(self).solve_with_actual_inputs(
+            inputs,
+            FunctionInventory::All,
+            control,
+        )
     }
 }
 
 impl ClosureDefinitions<'_> {
-    fn solve_with_actual_inputs<C: DecisionControl>(
+    pub(in crate::effect_row::prepared) fn solve_with_actual_inputs<C: DecisionControl>(
         self,
         inputs: &PreparedEffectActualInputs<'_>,
+        inventory: FunctionInventory<'_>,
         control: &mut C,
     ) -> Result<PrincipalEffectClosure, PreparedEffectFailure<C::Error>> {
         let definitions = self.definitions();
@@ -861,7 +872,7 @@ impl ClosureDefinitions<'_> {
                 );
             }
         }
-        self.solve_inventory(fixed, FunctionInventory::All, control)
+        self.solve_inventory(fixed, inventory, control)
     }
 }
 

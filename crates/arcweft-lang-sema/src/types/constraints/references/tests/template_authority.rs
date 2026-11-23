@@ -210,7 +210,7 @@ fn assert_opened_type(
                     Ok(())
                 })
                 .unwrap();
-            assert_eq!(introductions, [reference.clone()]);
+            assert_eq!(introductions, std::slice::from_ref(reference));
             *effects = PreparedEffectRow::Canonical(expected_row.clone());
         }
         for reference in expected_predicate.variables() {
@@ -228,7 +228,7 @@ fn assert_opened_type(
                     Ok(())
                 })
                 .unwrap();
-            assert_eq!(introductions, [reference.clone()]);
+            assert_eq!(introductions, std::slice::from_ref(reference));
             *predicate = PreparedEffectPredicate::Canonical(expected_predicate.clone());
         }
     }
