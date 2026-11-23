@@ -22296,3 +22296,7 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 先行52パッケージの構築では、`TypeKind::entity_ref` が正準型を返すため `TypeKind<E>` の生成で `E0308` が残った。`b88529f849ecaa2b3cf310326e6571d1dbf57cf9` で `EntityType<E>` の既存コンストラクタを使うよう修正した。音声カタログの単独構築では、`AudioAsset` を作るクロージャのエラー型推論で `E0282` が出た。`4cf55a351233a928586d15a56f54ba93384bce3c` の戻り値型を指定してから、同じ `voice_catalog.rs` を実リンクした確認は終了0。WAV／OggをID順に登録し、対象外ファイルを除き、`Intro-01.wav` と `intro_01.ogg` の正規化後衝突を拒否した。`arcweft-id` の実ライブラリでも `voice.alice.opening_01` と `asset.voice.alice.opening_01` の変換および別IDの拒否を確認した。
 
 対照AWFBで `arcw run-bundle` は `done return voice_control`、タスク0件、終了0。公開の headless Native とパッケージ実行の表示形式に合わせ、`a91b9ec378072990304f13b1f60bfbd2c5bf20ed` で回帰の戻り値を照合する。Chromeの対照実行は初回に起動待ちの10秒を超え、診断を加えた再実行は同じ条件で終了0。同一 AWFB の SHA-256 は `74fc3f5d0a6f33cd6935f87327188955bcdfac1f9c894b87ff73a685073039a9`、既存リリースWasmは `fd1e10be6a0e6e185e0905d25aea10f944beccef86184358234923d556cfc993`。修正後の実WAV回帰と全体ゲートは引き続き検証する。
+
+同じ `voice_catalog.rs` をリンクし、対照プログラムの AWFB に実PCM WAVと収集済み音声グラフを載せて往復した。32,208 bytesの AWFB を2回生成して完全一致を確認し、再読込後に `asset.voice.alice.001` から元の204 bytesを取得した。欠落したIDは空の検索結果を返した。`arcw inspect` は `AudioGraph` 425 bytesと `AssetCatalog` 652 bytesをどちらも schema 1 と報告した。AWFB の SHA-256 は `05ca9068f9a55d98a8ebfcea56e64c69bb85ddf26ad5d745c41c72e9af2410c0`。この往復はバンドルのコードと実素材の照合を確認する。
+
+先行の Windows 52 パッケージの `nextest --all-features` は `E0308` でテスト構築に失敗し、終了101だった。修正後に `cargo tree --offline --locked --workspace --all-features --target x86_64-pc-windows-msvc --invert arcweft-id` で重複を除いた結果、所有クレートを含む逆依存範囲は70パッケージだった。
