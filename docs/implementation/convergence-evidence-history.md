@@ -22292,3 +22292,7 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 前候補の実行中にこの変更のファイルが読み込まれた。workspace Clippy は `bundle_runner.rs` の `String` と `RuntimeBundleAssetResourceId` の不一致で終了101。一括 `just webgpu-parity` は Wasm の `host.rs` における同じ不一致で終了1。両実行は変更前後の型を混在させたため、公開ソースの受入証拠には使えない。既に成功した公開版の分割比較は [WebGPU 起動の実測](#webgpu-startup-overlap) に保持する。
 
 音声候補の初回 `cargo check --offline --locked -p arcweft-cli -p arcweft-player-web -p arcweft-runtime-plan --tests` は Sema の準備中の効果型が正準効果型として固定され、`E0308` 2件で終了101。現在の候補 `2581c1d1d4a8d719931f5cd8befd5d6f54fd2c5f` は同じカタログ型投影を呼出元の効果領域に対して型付けする。修正後の check と対象nextest、52パッケージのWindows逆依存は終端確認前。Cargoの `arcweft-id` 逆依存は全ターゲット71パッケージ。候補ソースはローカル `main` にあり、実行の受入と公開を継続する。
+
+先行52パッケージの構築では、`TypeKind::entity_ref` が正準型を返すため `TypeKind<E>` の生成で `E0308` が残った。`b88529f849ecaa2b3cf310326e6571d1dbf57cf9` で `EntityType<E>` の既存コンストラクタを使うよう修正した。音声カタログの単独構築では、`AudioAsset` を作るクロージャのエラー型推論で `E0282` が出た。`4cf55a351233a928586d15a56f54ba93384bce3c` の戻り値型を指定してから、同じ `voice_catalog.rs` を実リンクした確認は終了0。WAV／OggをID順に登録し、対象外ファイルを除き、`Intro-01.wav` と `intro_01.ogg` の正規化後衝突を拒否した。`arcweft-id` の実ライブラリでも `voice.alice.opening_01` と `asset.voice.alice.opening_01` の変換および別IDの拒否を確認した。
+
+対照AWFBで `arcw run-bundle` は `done return voice_control`、タスク0件、終了0。公開の headless Native とパッケージ実行の表示形式に合わせ、`a91b9ec378072990304f13b1f60bfbd2c5bf20ed` で回帰の戻り値を照合する。Chromeの対照実行は初回に起動待ちの10秒を超え、診断を加えた再実行は同じ条件で終了0。同一 AWFB の SHA-256 は `74fc3f5d0a6f33cd6935f87327188955bcdfac1f9c894b87ff73a685073039a9`、既存リリースWasmは `fd1e10be6a0e6e185e0905d25aea10f944beccef86184358234923d556cfc993`。修正後の実WAV回帰と全体ゲートは引き続き検証する。
