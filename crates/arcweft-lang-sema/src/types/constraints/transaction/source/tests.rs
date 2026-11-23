@@ -129,19 +129,7 @@ mod retained_preparation {
             None,
         )
         .unwrap();
-        let named = graph
-            .declare(vec![], EffectPredicate::unconstrained(), &mut context)
-            .unwrap();
         let body = EffectRow::closed(EffectSet::from_labels(["probe.once"]).unwrap());
-        graph
-            .prepare_body(
-                &named,
-                PreparedEffectRow::Canonical(body.clone()),
-                vec![],
-                &mut context,
-            )
-            .unwrap();
-        let row = graph.application(&named, vec![], &mut context).unwrap();
         let arrow = |effects| {
             TypeKind::function_with_contract(
                 GenericBinder::EMPTY,
@@ -166,20 +154,40 @@ mod retained_preparation {
             .next_probe(&mut context, &mut graph)
             .unwrap()
             .unwrap();
+        let mut callback = graph.checkpoint(&mut context).unwrap();
+        let named = graph
+            .declare(vec![], EffectPredicate::unconstrained(), &mut context)
+            .unwrap();
+        graph
+            .prepare_body(
+                &named,
+                PreparedEffectRow::Canonical(body.clone()),
+                vec![],
+                &mut context,
+            )
+            .unwrap();
+        let row = graph.application(&named, vec![], &mut context).unwrap();
         let actual = Arc::new(ObservedValue {
             original: ticket.original_context().unwrap().clone(),
             receipt: ticket.receipt(),
             ty: arrow(row.clone()),
         });
         let observed = ticket
-            .observe(SourceProbeResult::unchecked_value(Arc::clone(&actual), ()))
+            .observe_prepared(
+                SourceProbeResult::unchecked_value(Arc::clone(&actual), ()),
+                &mut graph,
+                &mut context,
+            )
             .unwrap();
+        let relation = graph.extract_delta(&mut callback, &mut context).unwrap();
+        let reads = graph.read_scope([&relation], &mut context).unwrap();
+        assert!(graph.read().retain_row(&row, &mut context).is_err());
         let contribution = observed.close_preparation(Facts {
             value: 1,
             drops: Arc::new(AtomicUsize::new(0)),
-            relation: None,
-            reads: None,
-            query: None,
+            relation: Some(relation),
+            reads: Some(reads),
+            query: Some(actual.ty.clone()),
         });
         transaction
             .submit_probe(

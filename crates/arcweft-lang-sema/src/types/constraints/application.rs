@@ -830,25 +830,29 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
             // Free references keep their declaration identity across captures.
             // Inference variables resolve through their exact application or
             // an imported owner lease retained by this path.
-            GenericTypeReference::Free(_) => {
-                (self
-                    .captures
-                    .contains(&super::ConstraintGenericParameterId::Type(
-                        reference.clone(),
-                    ))
-                    || self.applications().any(|application| {
-                        application.parameters().eligibility(reference)
-                            == Some(TypeConstraintParameterEligibility::Rigid)
-                    })
-                    || self.imported.iter().any(|owner| {
-                        owner.contains(&super::ConstraintGenericParameterId::Type(
-                            reference.clone(),
-                        ))
-                    }))
-                .then_some(TypeConstraintParameterEligibility::Rigid)
-            }
+            GenericTypeReference::Free(_) => self
+                .admits_rigid_reference(&reference.clone().into(), |parameters| {
+                    parameters.eligibility(reference)
+                        == Some(TypeConstraintParameterEligibility::Rigid)
+                })
+                .then_some(TypeConstraintParameterEligibility::Rigid),
             GenericTypeReference::Bound(_) => None,
         }
+    }
+
+    /// A path retains both the selected applications and their original
+    /// declarations. An imported owner still grants only its leased keys.
+    fn admits_rigid_reference(
+        &self,
+        parameter: &super::ConstraintGenericParameterId,
+        is_rigid_parameter: impl Fn(&TypeConstraintParameterScope) -> bool,
+    ) -> bool {
+        self.captures.contains(parameter)
+            || self.applications().any(|application| {
+                is_rigid_parameter(application.parameters())
+                    || application.original_context().declares_parameter(parameter)
+            })
+            || self.imported.iter().any(|owner| owner.contains(parameter))
     }
 
     fn imported_parameter_binding(
@@ -1206,23 +1210,12 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                         }
                     })
                 }),
-            GenericConstReference::Free(_) => {
-                (self
-                    .captures
-                    .contains(&super::ConstraintGenericParameterId::Const(
-                        reference.clone(),
-                    ))
-                    || self.applications().any(|application| {
-                        application.parameters().const_eligibility(reference)
-                            == Some(TypeConstraintConstEligibility::Rigid)
-                    })
-                    || self.imported.iter().any(|owner| {
-                        owner.contains(&super::ConstraintGenericParameterId::Const(
-                            reference.clone(),
-                        ))
-                    }))
-                .then_some(TypeConstraintConstEligibility::Rigid)
-            }
+            GenericConstReference::Free(_) => self
+                .admits_rigid_reference(&reference.clone().into(), |parameters| {
+                    parameters.const_eligibility(reference)
+                        == Some(TypeConstraintConstEligibility::Rigid)
+                })
+                .then_some(TypeConstraintConstEligibility::Rigid),
             GenericConstReference::Bound(_) => None,
         }
     }
@@ -1247,23 +1240,12 @@ impl<D: ConstraintDomain> ConstraintApplicationInventory<D> {
                         }
                     })
                 }),
-            GenericEffectReference::Free(_) => {
-                (self
-                    .captures
-                    .contains(&super::ConstraintGenericParameterId::Effect(
-                        reference.clone(),
-                    ))
-                    || self.applications().any(|application| {
-                        application.parameters().effect_eligibility(reference)
-                            == Some(EffectConstraintEligibility::Rigid)
-                    })
-                    || self.imported.iter().any(|owner| {
-                        owner.contains(&super::ConstraintGenericParameterId::Effect(
-                            reference.clone(),
-                        ))
-                    }))
-                .then_some(EffectConstraintEligibility::Rigid)
-            }
+            GenericEffectReference::Free(_) => self
+                .admits_rigid_reference(&reference.clone().into(), |parameters| {
+                    parameters.effect_eligibility(reference)
+                        == Some(EffectConstraintEligibility::Rigid)
+                })
+                .then_some(EffectConstraintEligibility::Rigid),
             GenericEffectReference::Bound(_) => None,
         }
     }

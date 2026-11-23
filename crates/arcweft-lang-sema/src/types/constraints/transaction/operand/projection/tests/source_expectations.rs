@@ -8,33 +8,38 @@ use crate::types::constraints::{
 #[test]
 fn a_fixed_source_expectation_keeps_the_callers_rigid_reference_in_the_equation() {
     use crate::types::{
-        DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId,
+        DetachedGenericOwnerId, GenericConstParameterId, GenericConstReference,
+        GenericParameterOwnerId, GenericTypeParameterId,
         constraints::{
             OriginalRigidScope, PreparedSourceAlternative, PreparedSourceConstraint,
             SourceProbeResult, TypeConstraintParameterScope,
-            transaction::{ProbeSubmission, TypeConstraintTransaction},
+            transaction::{
+                ProbeSubmission, TypeConstraintTransaction, tests::ApplicationSourceDomain,
+            },
         },
     };
 
     let cancellation = AtomicBool::new(false);
-    let mut context = context(&cancellation);
-    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
-    let caller: GenericTypeReference = GenericTypeParameterId::new(
-        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(91_087)),
-        0,
+    let (mut context, _) = ConstraintTestSetup::<_, ApplicationSourceDomain>::new(
+        TypeConstraintLimits::new(4096, 2048, 128, 128),
+        &cancellation,
     )
-    .into();
+    .into_parts();
+    let mut graph = crate::effect_row::prepared::PreparedEffectGraph::default();
+    let caller = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(91_087));
+    let item: GenericTypeReference = GenericTypeParameterId::new(caller.clone(), 0).into();
+    let length: GenericConstReference = GenericConstParameterId::new(caller, 0).into();
     let original = context
         .fixture_original_context_with_rigid(OriginalRigidScope {
-            types: std::slice::from_ref(&caller),
-            consts: &[],
+            types: std::slice::from_ref(&item),
+            consts: std::slice::from_ref(&length),
             effects: &[],
             imported: None,
         })
         .unwrap();
     let application = context
         .application_scope(
-            (),
+            0,
             TypeConstraintParameterScope::empty(),
             original.clone(),
             &mut graph,
@@ -47,12 +52,15 @@ fn a_fixed_source_expectation_keeps_the_callers_rigid_reference_in_the_equation(
     let mut transaction =
         TypeConstraintTransaction::from_path(&mut context, &mut graph, application, path, None)
             .unwrap();
-    let actual = Arc::new(TypeKind::Vec(Box::new(TypeKind::GenericParam(caller))));
+    let actual = Arc::new(TypeKind::Array {
+        item: Box::new(TypeKind::GenericParam(item)),
+        len: ArrayLength::Generic(length),
+    });
     let source = PreparedSourceConstraint::checked(
-        (),
+        0,
         PreparedConstraintSourceProjection::Scalar,
         [],
-        PreparedSourceAlternative::from_original((), (), Arc::clone(&actual)),
+        PreparedSourceAlternative::from_original(0, (), Arc::clone(&actual)),
     )
     .unwrap();
     transaction
@@ -69,8 +77,8 @@ fn a_fixed_source_expectation_keeps_the_callers_rigid_reference_in_the_equation(
     let observation = ticket
         .observe(SourceProbeResult::checked(
             actual.as_ref().clone(),
-            (),
-            (),
+            0,
+            0,
             (),
         ))
         .unwrap()
@@ -96,6 +104,7 @@ fn a_fixed_source_expectation_keeps_the_callers_rigid_reference_in_the_equation(
     );
     assert_eq!(expected.value(), actual.as_ref());
     assert!(path.bindings.is_empty());
+    assert!(path.const_bindings.is_empty());
 }
 
 #[test]
