@@ -22195,6 +22195,8 @@ CLI の `check` で既存 `just test-tier2` の CLI 側を構成する MCP stdio
 
 HIR の既受入実行 R3127 から、現行 HIR を含む依存グラフの4パッケージとビルド設定で106の追跡パスが変化していた。現行基点 `a2b9dcd24ad0b4ea144bb0292f33bd731bc8c374` の622入力を固定し、同じ本番上限8件の再検証を開始した。実行 ID `2a8324ff-aed7-4ecb-bcc4-59f4eca0082c` の終端は未確認。
 
+同じ実行の7件目は、attached Flow の本番上限65,536件と超過65,537件で原子性を検証し、7,704.800秒で PASS。続けて8件目の attached Thread 式が開始した。固定622入力の SHA-256 は `0b09b6db20c2a34063b8e79814af9ed19c5a9ac953f98a101d0eba214e1068dd`。
+
 <a id="inset-shadow-pinned-capture-fingerprint"></a>
 
 ## 2026-11-24 — 影付き Panel の固定環境の再採取
@@ -22304,3 +22306,7 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 `2ef0935e7049499e0b9fe0d86d41b874ccf70c3e` の `just structure-audit-gate` はブロッキング違反0件、`cargo fmt --all --check` は終了0。画像カタログの既存3テストで旧引数が残っていたため、`bb638edf586974e82b661ac4cbd8d042443aca4a` で収集関数の現行シグネチャに合わせた。WebPの種別・寸法、無効な名前、正規化後の衝突を確認するアサーションは維持した。修正ファイルの `rustfmt --edition 2024 --check` は終了0だった。
 
 `cargo check --offline --locked -p arcweft-cli -p arcweft-player-web -p arcweft-runtime-plan --tests` は終了0（29分42秒、先行ビルドのロック待ちを含む）。`2581c1d1d4a8d719931f5cd8befd5d6f54fd2c5f` で待ち行列に入り、コンパイル開始前に本番ソースを `4cf55a351233a928586d15a56f54ba93384bce3c` に更新した。CLIのテスト構築より前に `bb638edf586974e82b661ac4cbd8d042443aca4a` の呼び出し修正が入った。続く `nextest` は同じ本番・テスト入力で構築を開始した。
+
+`ca43c6f7385a860017f08b7da43d209f1b2b979d` の `cargo build --offline --locked --release -p arcweft-player-web --target wasm32-unknown-unknown` と `wasm-bindgen --target web --remove-name-section` は終了0。配信Wasmは46,914,736 bytes、SHA-256 `f4f49ea723aea7bd246da308892fb011a2af0e26264de1b278c43c30d4605b98`。このWasmで実PCMを格納した対照AWFB（SHA-256 `05ca9068f9a55d98a8ebfcea56e64c69bb85ddf26ad5d745c41c72e9af2410c0`）をChromeで実行し、既定の起動上限10秒内、診断0件、終了0を確認した。同じWasmと既存デモAWFB（SHA-256 `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4`）の `npm --prefix web test` は7件すべて PASS、終了0。この対照では `voice.load` の要求を発行していない。
+
+対象nextestが生成した `arcweft-id` のテストバイナリを直接実行し、音声IDの正規化・投影と既存familyの順序を含む54件すべて PASS、終了0。バイナリの SHA-256 は `643c4b3e95362976e0c28436b24990ac68b1c23207354d773b4221ea5d4ab825`。`c8b0d72ff3507be44babd07881836f7ce227a724` では音声章に `Ref<Voice>` の入力、形式選択、正規化、読込結果の契約を記し、エラー処理章の重複記載を同じ契約への参照に置き換えた。
