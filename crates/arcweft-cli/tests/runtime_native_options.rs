@@ -335,7 +335,7 @@ flow main() -> String effects { asset.read } {
     assert!(product.status.success(), "{product:?}");
     let report: serde_json::Value = serde_json::from_slice(&product.stdout).unwrap();
     assert_eq!(report["native_io"]["completed_tasks"], 2);
-    assert_eq!(report["final_status"], resumed["final_status"]);
+    assert_eq!(report["final_status"], "done return voice_ready");
 }
 
 fn mono_voice_wav() -> Vec<u8> {
