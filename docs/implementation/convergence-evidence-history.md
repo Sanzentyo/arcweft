@@ -22320,3 +22320,5 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 `Result<i64, String>` を二つ持つ音声なしの最小入力で、`(.Ok(_), .Err(_))` と残りを覆うワイルドカードの AWFB 構築が同じ診断で終了1。`(.Ok(_), .Ok(_))` の対照と単一 `Result` の対照は終了0だった。網羅性の witness 探索がコンストラクタを展開して残りの列へ進むとき、前の兄弟列を再帰の祖先として残していた。`a5cf7422fa000c60dd441c23efab14a86a24c2fe` は実際のコンストラクタの祖先を列ごとに保持し、同型の兄弟列の回帰を追加した。既受入の Generic Match 監査と、この再現で特定した境界の検証を履歴に記録する。
 
 修正後のSema、CLIと実行計画の検証を開始した。`cargo tree --offline --locked -p arcweft-player-web --target wasm32-unknown-unknown --edges normal,build` で解決したWeb製品の239パッケージにSemaは含まれない。Semaの修正を反映したCLIで AWFB を再生成し、配信Wasmのハッシュを固定してブラウザーで読み込む。
+
+修正前の対象nextestは `runtime_native_options` の実WAV回帰に加え、Core の元Source付きproducer検査2件で失敗した。Core を個別再現すると、Native は音声producerに画像familyの値を渡して `PlanValue` が拒否し、decoded AWBC は元Sourceが `Voice`、テスト実行型が `Asset` のため引数0のidentity照合で拒否した。どちらも終了101。`1f99ab5e77fe4b63d521726c2fe5b120f6f81a95` で元Source、Nativeの値、AWBCの型が同じfixture familyを使うよう揃えた。元キー、型、copy予算の検査を保ち、再検証にこの2件を含める。
