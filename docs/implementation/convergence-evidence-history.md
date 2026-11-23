@@ -21962,3 +21962,23 @@ Cargo の逆依存は Runtime Host、CLI、Native Player、LSP、Verify LSP の5
 追加プローブでは、上限6の分岐は全8呼び出しをVMで完了し、上限224の反復は全32呼び出しをJITで完了した。混合反復は上限126でVM 1件、128で0件。いずれも対応する入力の総操作数と batch 件数は一致した。`a5c509fe899d8f856a29df3c9067d2e9f999fbde` を `main` に公開し、変更した2ファイルの blob を照合した。最終入力の CLI `check` の対象48件成功、448件選択外。前回の失敗IDだけを再実行した結果は5件成功、上記昇格証明の2件失敗、489件選択外、終了100。`cargo clippy --locked -p arcweft-cli --test check --all-features` は警告付きで終了0。変更 Rust の書式と構造ゲートも終了0、ブロッキング違反0件。
 
 検証後の `target` は169,718,155,712 bytes（約169.7 GB）。
+
+<a id="checked-promotion-rejection"></a>
+
+## 2026-11-23 — 昇格拒否に受け手・移管先・証明・監査の位置を保持する
+
+基点 `3e7b573742819c7569a0b450f1d2be063633c7ce`。開始時の追跡ファイルに変更はなく、既存の未追跡ディレクトリが一つあった。実装 `8d137b0ce9e9c388e0dee48a27d325e6506cd919` を `main` へ通常 push し、公開 ref と変更9ファイルの blob を照合した。
+
+基点の実 `arcw verify --mode test --backend oxiz --json` では、明示した証明付きの `"owned".promote('flow, proof = @proof.keep)` と入れ子の監査内の `42i64.promote_unchecked('flow)` は、型検査の `sema.lifetime.promotion_execution` で終了1、各診断に主ラベル1件、拒否分類なしだった。変更後は両方とも同じ終了コード・段階・診断コードで `rejected_obligation_kind` が `lifetime_promotion`。前者は主ラベルと受け手・移管先・元の証明参照・解決した `proof keep() = ()` の計5件。後者は主ラベルと受け手・移管先・最も内側の `unsafe.inner` 宣言の計4件。両入力で solver は0件、証明義務・SMT ファイルは作成されなかった。
+
+証明を書かない `"owned".promote('flow)` は `emit`／`oxiz` とも終了1、`lifetime_promotion`、主ラベルと受け手・移管先の計3件、solver 0件。実 CLI の対照3入力は存在しない証明を `sema.lifetime.promotion_proof`、監査外の unchecked 呼出しを `sema.lifetime.promotion_audit`、到達しない Line を `sema.lifetime.promotion_target` で拒否した。どれも型検査で終了1となり、拒否分類は出力されなかった。
+
+Windows の Sema ライブラリ全件と CLI `check` の対象4件は2,033件成功、10件失敗、689件選択外で終了100。Sema の最内側監査と CLI の証明付き拒否、効果検証の既存3件は成功した。Sema の10件を変更前の `arcweft_lang_sema-6a04f49210604983.exe`（SHA-256 `8faf50ddd9774abb11d22bb1a274774bd4536e9978dde7589a47054104f0af7a`）と変更後のバイナリで実行し、両方で同じ10件が失敗、panic 位置も一致した。デバッグ出力の一部に実行時の発行 ID の違いがあった。
+
+既存の `verify_json_reports_missing_promotion_proof` と `verify_json_records_required_solver_checks` は0件成功、2件失敗、495件選択外で終了100。両方とも受け手を持たない元の入力が `sema.call.unknown_target` で型検査を停止した。現行の受け手記法は上記の実測で移管の実行診断まで到達した。実行時の所有権移管と証明義務の接続が未達のため、元の受入条件を維持した。[前回の `emit`／`oxiz` 比較](#cli-scalar-jit-budget-recheck)。
+
+Cargo の全ターゲット・全機能の依存グラフで Sema と推移的逆依存の計22パッケージを特定した。Windows の `cargo check --locked --workspace --all-targets --all-features`、変更 Rust の書式、差分検査、構造ゲートは終了0。構造ゲートのブロッキング違反は0件。
+
+Verifier ライブラリ10件、Verify LSP ライブラリ14件、LSP の診断30件の計54件が成功し、191件選択外、終了0。Windows の `cargo clippy --locked --workspace --all-targets --all-features` は警告付きで終了0。昇格の型検査関数に `too_many_lines`（116／100）の警告が出た。
+
+検証後の `target` は173,605,409,418 bytes（約173.6 GB）。
