@@ -22024,3 +22024,19 @@ Cargo の全機能・全ターゲットの依存グラフでは Sema と推移�
 Windows の逆依存 nextest は `--workspace --lib --tests --no-fail-fast` に `rdeps(=arcweft-lang-sema) & (package(=arcweft-lang-sema) | test(nominal) | test(rust_adt) | test(data_codec) | test(retention) | test(snapshot) | test(restore) | test(record_projection))` を指定した。該当する11パッケージの2,197件を実行し、2,187件成功（うち slow 3件）、10件失敗、2,913件選択外、終了100。[直前の実行](#checked-promotion-obligations)と Sema の型・効果制約の失敗 ID 10件が一致し、新規失敗 ID は0件。Compiler の成功68件には DataFormat の元の列挙型所有者、Rust ADT の再帰と実行時型引数、再帰型を捕捉したハンドラーの Native／AWBC 実行、復元後に元の上限拒否を再現する View が含まれる。
 
 同範囲の workspace Clippy は警告付きで終了0。`visit_type` の `too_many_lines`（191／100）、既存のエラー型を返す関数の `result_large_err` などを出力した。検証後の `target` は188,036,089,893 bytes（約188.0 GB）。
+
+<a id="original-rigid-reference-inference"></a>
+
+## 2026-11-23 — 呼出し推論が元宣言の固定参照を保持する
+
+基点 `98e416c74150d3fa7d00277af85aa75971fc5010`。開始時の追跡ファイルに差分はなく、既存の未追跡ディレクトリが一つあった。実装 `a6deeeb521e2e8e834bfae6950a77dda97aaaff9` を `main` に通常 push し、公開 ref と変更3ファイルの blob を照合した。
+
+基点では固定型の正当な参照を渡しても、候補側に項目がないと `next_probe` が `TypeParameterOutOfScope` を返した。型・配列長・効果の固定参照の判定を、選択した適用が保持する元宣言とインポートの許可済みキーに揃えた。回帰では元宣言だけにある型と配列長を同じ配列型で指定し、元宣言の識別子を保持したまま照合して、型・配列長のいずれにも推論束縛を追加しないことを確認した。
+
+先行試行では照合の段階まで進んだ後に、検査済みの証拠を受理しないテスト用ドメインが `InvalidEvidence` を返した。テストは検査済みの証拠を受理する既存ドメインに移した。元の効果行を保存する別の回帰は、現行の観測で必要な登録を経ず `Outcome`、途中修正後は `StaleReference` を返した。現行の手順で callback の効果を読み取りスコープへ保持してから一時編集を取り除き、完了側が元の関数型を同じ効果 `probe.once` に正準化できることを確認した。
+
+Windows の Sema 対象実行は `test(source_expectations) | test(retained_preparation) | test(rigid) | test(source_value_scope)` で39件中35件成功、既知の4件失敗、2,002件選択外、終了100。修復した2件と、別の所有者の固定参照やインポートしていない参照を拒否する境界が通過した。
+
+Cargo の全機能・全ターゲットのグラフは Sema を含め22パッケージ。Compiler の `flow_wait`、`generic_continuation_snapshot`、`project_function_instances` と Runtime Plan の `awbc_product_parity` からジェネリック、コールバック、部分適用、共有 prefix、復元、名目型の26件を選び、全件成功、47件選択外、終了0。Native／AWBC で、attached default、再帰する共有 prefix、異なる後段型、元の callback と保存復元を確認した。
+
+Windows の Sema ライブラリ全体は `cargo nextest run --offline --locked -p arcweft-lang-sema --lib --no-fail-fast` で2,041件中2,033件成功、8件失敗、選択外0件、終了100。[基点の逆依存実行](#stack-independent-nominal-projection)の失敗 ID と比較し、上記2件が通過、新規失敗0件。全機能・全ターゲットの workspace check と Clippy は警告付きで終了0。書式検査と構造ゲートも終了0で、ブロッキング違反0件。検証後の `target` は188,378,308,896 bytes（約188.4 GB）。
