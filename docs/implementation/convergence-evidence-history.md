@@ -22180,3 +22180,17 @@ Compiler 回帰は同じ入力を使い、型・宣言・捕捉を確認した p
 リリースWasmの比較では、起動上限10秒でChromeの8件が成功し、論理tick 10（160 ms）のNative／Web画像5組が既定のしきい値を通過した。通常のフォーカス、ホバー、押下、高DPIは1280×720、縮小は960×540。高DPIの論理寸法は640×360。各組で `imq 0.1.0` の全RGBAチャネルの直接比較を実行した。MSE、MAE、最大誤差は全組で0、色のSSIMは1。RGBAサンプル数は1280×720の各組で3,686,400、縮小で2,073,600。製品の比較器でも全組でPSNRは無限大、変化画素率は0だった。
 
 `wasm-bindgen` 後のWasmはdebugで201,274,351 bytes、releaseで62,589,176 bytes。releaseのSHA-256は `bb94963f18b8fdd70210694c12581a2b6ae68315eaf86f7704291e787430e801`。レシピと手順の変更 `9a975e0d1b202f78763aa493acf9725c4d428501` を `main` へ通常 push し、公開 ref と変更2ファイルの blob を照合した。公開コミットでも `just webgpu-parity` を再実行し、Chrome 8件、画像比較5組とも成功し、終了0だった。検証後の `target` は215,494,922,879 bytes（約215.5 GB）。
+
+<a id="cli-tier2-native-capture-golden"></a>
+
+## 2026-11-24 — CLI Tier 2 の Native キャプチャと縦書き基準画像
+
+検証基点 `a2b9dcd24ad0b4ea144bb0292f33bd731bc8c374`。ローカルと公開 `main` は一致し、開始時に追跡ファイルの差分はなかった。既存の未追跡ディレクトリが一つあった。Windows x86-64 `10.0.26300.9974`、`imq 0.1.0`、Native RichText observer、MS Mincho、1280×720、scale 1。OS の MS Mincho フォントの SHA-256 は `ceb8d745001f56b61ce768d84172d35bdf68e498423c9320dcb22e7c900944c2`、実行したデバッグ CLI の SHA-256 は `cb01083e84a23361ea376566fcd2c7ab2839d9aa5c88322b2eb5d9be596979b3`。
+
+CLI の `check` で既存 `just test-tier2` の CLI 側を構成する MCP stdio、Agent observe、補助キャプチャ、golden、visual smoke を選択した。初回は27成功、1失敗、470選択外、終了100。実行 ID は `28ae7805-dcb9-4297-a8aa-daf522a12477`。失敗は `vertical_tutr_golden` で、MSE 0.002701886754、MAE 0.004869117643 が既定の上限0.002、0.003を超えた。golden、visual smoke、orientation を `ARW_EXACT_NATIVE_GOLDEN_REQUIRED=1`、`ARW_EXACT_NATIVE_GOLDEN_PINNED=1`、`ARW_EXACT_NATIVE_GOLDEN_BACKEND=native_rich_text_observer` で再実行しても同じ値だった。実行 ID `778d1739-1f81-4b7a-a314-6f8b2a863db5` は7成功、1失敗、490選択外、終了100。ほかの画像基準3件と orientation 回帰は成功した。
+
+観測では、話者名と本文の色が標準 Dialogue View の `rgba(174,226,142,255)` と `rgba(248,246,234,255)`、文字サイズが両方25 px、行高が34 pxだった。いずれも製品の標準 Style を定義した `7361c21e74888bf864699dfae1e67fc6d105b36b` の値と一致する。MS Mincho を指定した本文は右から左へ5列描画し、句点の upright alternate、長音と括弧の rotated alternate、英字 `ABC` の sideways、`123` と `2026` の縦中横を観測した。旧画像では話者名と本文が同色で、サイズと折返しにも差があった。個別の Native キャプチャで再現した候補の SHA-256 が一致し、診断は0件だったため、現行の標準 Style と組版を通る Tu／Tr の基準PNGだけを同じ `.arcw` から再生成した。旧画像の SHA-256 は `d9ad2a6f25c86c2de6b5996e172628628dc94cb136bbbe616995fa6608cc2622`、新画像は `8047de067e7dff1a0b9b6e2e1f051514aa1f433596b6cb3c35f8b92f61e24a73`。旧画像は検証基点の Git blob `4af2b88d8c65306de88995448d1badc5eb21fb44` で参照できる。比較の閾値、入力 Source、viewport、step・op 予算は元の条件で検証した。
+
+更新後は固定環境の変数3個を設定し、`cargo nextest run --offline --locked -p arcweft-cli --features native-capture --test check --run-ignored all --test-threads 1 --no-fail-fast --no-tests fail` を同じCLI Tier 2の28件と文字方向の回帰1件へ絞った。29成功、469選択外、122.669秒、終了0。実行 ID は `34d9a896-66eb-4638-95ab-b05652ea6009`。Tu／Tr は新しい撮影と基準のPNG SHA-256 が一致し、MSE／MAE／最大誤差0、SSIM 1。PNG 1枚の更新 `214b720e0ffc9522f3bf228bc461126271777622` を `main` に通常 push し、公開 ref と blob `29f318bd65185ba024830269125a30eed4c7a8c1` を照合した。
+
+HIR の既受入実行 R3127 から、現行 HIR を含む依存グラフの4パッケージとビルド設定で106の追跡パスが変化していた。現行基点 `a2b9dcd24ad0b4ea144bb0292f33bd731bc8c374` の622入力を固定し、同じ本番上限8件の再検証を開始した。実行 ID `2a8324ff-aed7-4ecb-bcc4-59f4eca0082c` の終端は未確認。
