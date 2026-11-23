@@ -21806,3 +21806,17 @@ Native の実行ファイバーとフレームを、元の Plan を含まない 
 起点命令の照合を加える前の Core は2,411 PASS。その追加後は Product AWBC の観測用ファイバーが参照する型の可視性で E0603 が出たため、観測側の入口を維持して修正した。最終 Core は2,412 PASS／0 SKIP。Core を含む52パッケージの Cargo 逆依存を確認し、コンパイラの `callable_execution`、`flow_wait`、`scoped_defer`、`generic_continuation_snapshot` は466 PASS（1 slow）／0 SKIP。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-fiber-wire.raw.zip) は19項目、1,098,409 bytes、SHA256 `33737240d5b0dd06409eca9315b1970acbea3752d9fa5b46a50fb0c07c44ef32`。各項目の長さと SHA256 を照合した。検証後の `target` は145,755,081,742 bytes。
+
+<a id="native-dialogue-suspension"></a>
+
+## 2026-11-23 — Native 台詞のホスト返答と表示コマンド待機を復元する
+
+基点 `7fb41d42c15bdf49a39b5471abaec666bdeea996`。公開ソース `b8ecd2d15ef6d50e152205adce0c7c6b39e94e88`。`main` への通常の push 後に公開 ref と5変更 blob を照合した。検証時に追跡ファイルの差分なし。
+
+台詞内の直接 HostCall は台詞の確定を検査した後に発行台帳へ登録し、通常の HostCall と同じ命令・連番・タスク相関を保持する。表示コマンド待機は元の起動命令と発行記録を照合し、元の結果パターンを借りる。確定済みタスク計画を使った Native 台詞で HostCall と俳優取得の停止状態を JSON で往復し、実際の Engine から保存・復元して元の変数への束縛を確認した。範囲外のホスト連番、未発行の表示コマンド、保存欄に付加した結果パターンを拒否した。
+
+初回は検査メソッド名の移行漏れで E0599。台詞の起動命令だけに直接 HostCall を定義した次の試行は `TaskPlanSeal(IncompleteDefinition { ordinal: 0 })` を再現した。元のタスク計画を確定する処理が関数本体の命令を走査するため、復元テストでは関数側で確定済みの計画を使った。次の試行では表示コマンド確定前に保存を試みて既存の境界で拒否され、改変テストを確定後へ移した。台詞の起動命令から直接 HostCall のタスク計画を確定する経路と、Native セッション全体の公開保存は残項目。
+
+最終 Core は2,412 PASS／0 SKIP。Cargo グラフで Core を含む52パッケージの逆依存を確認し、コンパイラの `evaluated_effects`、`scoped_defer`、`view_product` は288 PASS（2 slow）／0 SKIP。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-dialogue-suspension.raw.zip) は21項目、1,174,282 bytes、SHA256 `1274dd55c9b095fcbd219e3b195ae47627b5aa14d8edfbed523986171ba43624`。各項目の長さと SHA256 を照合した。検証後の `target` は145,759,715,623 bytes。
