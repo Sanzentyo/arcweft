@@ -904,8 +904,8 @@ mod tests {
         let adapter =
             BundleAssetAdapter::try_new(context, artifact).expect("generation asset catalog");
 
-        let (image_task, image_bound) = asset_task(AssetLoadKind::Image, "asset.bg.room");
-        let image_result = submit_asset(&adapter, &image_task, &image_bound, context);
+        let image_task = asset_task(AssetLoadKind::Image, "asset.bg.room");
+        let image_result = submit_asset(&adapter, &image_task, context);
         let (case, Some(image_value)) = image_result
             .clone()
             .try_into_builtin_variant_case()
@@ -937,8 +937,8 @@ mod tests {
             .validate_image_result(&image_result)
             .expect("saved image result validates against exact catalog");
 
-        let (voice_task, voice_bound) = asset_task(AssetLoadKind::Voice, "asset.voice.opening");
-        let voice_result = submit_asset(&adapter, &voice_task, &voice_bound, context);
+        let voice_task = asset_task(AssetLoadKind::Voice, "asset.voice.opening");
+        let voice_result = submit_asset(&adapter, &voice_task, context);
         let (case, Some(voice_value)) = voice_result
             .clone()
             .try_into_builtin_variant_case()
@@ -970,8 +970,8 @@ mod tests {
             .validate_voice_result(&voice_result)
             .expect("saved voice result validates against exact catalog");
 
-        let (missing_task, missing_bound) = asset_task(AssetLoadKind::Image, "asset.bg.missing");
-        let missing_result = submit_asset(&adapter, &missing_task, &missing_bound, context);
+        let missing_task = asset_task(AssetLoadKind::Image, "asset.bg.missing");
+        let missing_result = submit_asset(&adapter, &missing_task, context);
         let (case, Some(error_value)) = missing_result
             .clone()
             .try_into_builtin_variant_case()
@@ -1002,10 +1002,8 @@ mod tests {
         adapter
             .bind_generation(bad_context, bad_artifact)
             .expect("second generation catalog is retained");
-        let (bad_voice_task, bad_voice_bound) =
-            asset_task(AssetLoadKind::Voice, "asset.voice.opening");
-        let bad_voice_result =
-            submit_asset(&adapter, &bad_voice_task, &bad_voice_bound, bad_context);
+        let bad_voice_task = asset_task(AssetLoadKind::Voice, "asset.voice.opening");
+        let bad_voice_result = submit_asset(&adapter, &bad_voice_task, bad_context);
         let (case, Some(error_value)) = bad_voice_result
             .clone()
             .try_into_builtin_variant_case()
@@ -1056,7 +1054,7 @@ mod tests {
         );
     }
 
-    fn asset_task(kind: AssetLoadKind, id: &str) -> (TaskSpec, BoundTaskSpec) {
+    fn asset_task(kind: AssetLoadKind, id: &str) -> BoundTaskSpec {
         let (ok, error) = match kind {
             AssetLoadKind::Image => (
                 standard_opaque_checked_type(&["ImageHandle"]),
@@ -1109,14 +1107,13 @@ mod tests {
             debug_label: id.into(),
         };
         let mut journal = TaskAdmissionJournal::default();
-        let handle = journal.ensure_task(task.clone()).unwrap();
-        let bound = BoundTaskSpec::bind(
+        let handle = journal.ensure_task(task).unwrap();
+        BoundTaskSpec::bind(
             journal.submission(handle).unwrap(),
             None,
             RuntimeSchemaLimits::engine_default(),
         )
-        .unwrap();
-        (task, bound)
+        .unwrap()
     }
 
     fn standard_opaque_checked_type(path: &[&str]) -> RuntimeCheckedType {
@@ -1129,27 +1126,29 @@ mod tests {
 
     fn submit_asset(
         adapter: &BundleAssetAdapter,
-        task: &TaskSpec,
         bound: &BoundTaskSpec,
         context: RuntimeBundleAssetContext,
     ) -> RuntimeValue {
-        let HostTaskSubmission::Completed(outcome) = HostAdapter::submit(
-            adapter,
-            bound,
-            HostTaskSubmissionContext::new(
-                arcweft_core::task::TaskDispatchIdentity::new(
-                    bound.handle().correlation,
-                    arcweft_core::task::LogicalEpoch(1),
-                    arcweft_core::task::TaskSequence(1),
-                ),
-                TaskPublicationRevision::FIRST,
-            )
-            .with_bundle_asset_context(context),
+        let submission = HostTaskSubmissionContext::new(
+            arcweft_core::task::TaskDispatchIdentity::new(
+                bound.handle().correlation,
+                arcweft_core::task::LogicalEpoch(1),
+                arcweft_core::task::TaskSequence(1),
+            ),
+            TaskPublicationRevision::FIRST,
         )
-        .expect("asset adapter handles task") else {
-            panic!("bundle asset result is synchronous")
-        };
-        let HostTaskCompletion::Ready(value) = outcome.completion else {
+        .with_bundle_asset_context(context);
+        assert!(matches!(
+            adapter.submit(bound, submission.clone()),
+            Some(HostTaskSubmission::Pending)
+        ));
+        let [completion]: [_; 1] = adapter.drain_completions().try_into().unwrap();
+        assert_eq!(&completion.dispatch, submission.attempt());
+        assert_eq!(
+            completion.publication_revision,
+            TaskPublicationRevision::FIRST
+        );
+        let HostTaskCompletion::Ready(value) = completion.outcome.completion else {
             panic!("typed missing/decode outcomes are Result values")
         };
         value.value().clone()

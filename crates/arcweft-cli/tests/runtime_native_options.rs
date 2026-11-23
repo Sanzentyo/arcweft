@@ -129,27 +129,10 @@ fn headless_native_session_preserves_restart_point_and_rejects_a_different_entry
 #[test]
 fn headless_native_session_requires_the_original_asset_before_dispatch() {
     let directory = tempfile::tempdir().unwrap();
-    let source = directory.path().join("asset-checkpoint.arcw");
+    let (source, image) = asset_checkpoint_source(directory.path());
     let saved = directory.path().join("before-asset.awfs");
-    let assets = directory.path().join("assets/bg");
-    std::fs::create_dir_all(&assets).unwrap();
-    let image = assets.join("room.png");
     let original_image = single_pixel_png([255, 0, 0, 255]);
     std::fs::write(&image, &original_image).unwrap();
-    std::fs::write(
-        &source,
-        r#"
-entry cli @entry.main { goto @flow.main }
-flow main() -> String effects { asset.read } {
-    let background = @asset:.bg.room
-    return match (await asset.image(background)) {
-        .Ok(_) => "asset_ready"
-        .Err(_) => "asset_error"
-    }
-}
-"#,
-    )
-    .unwrap();
     let save = saved.to_str().unwrap();
     let capture = run_headless_entry(
         &source,
@@ -194,6 +177,99 @@ flow main() -> String effects { asset.read } {
     assert_eq!(report["steps"][0]["index"], 1);
     assert_eq!(report["final_status"], "done Return(\"asset_ready\")");
     assert_eq!(report["native_io"]["completed_tasks"], 1);
+}
+
+#[test]
+fn headless_native_session_reissues_an_in_flight_asset_across_processes() {
+    let directory = tempfile::tempdir().unwrap();
+    let (source, image) = asset_checkpoint_source(directory.path());
+    std::fs::write(&image, single_pixel_png([255, 0, 0, 255])).unwrap();
+    let first_save = directory.path().join("first.awfs");
+    let next_save = directory.path().join("next.awfs");
+    let first_path = first_save.to_str().unwrap();
+    let next_path = next_save.to_str().unwrap();
+
+    let first = run_headless_asset_steps(
+        &source,
+        "bytecode-vm",
+        "1",
+        &["--session-save-out", first_path],
+    );
+    let original_requests = first["steps"][0]["task_requests"].as_array().unwrap();
+    assert_eq!(original_requests.len(), 1);
+    assert_eq!(first["steps"][0]["index"], 0);
+    assert_eq!(first["native_io"]["scheduler"]["in_flight"], 1);
+    assert_eq!(first["native_io"]["completed_tasks"], 0);
+
+    let resumed = run_headless_asset_steps(
+        &source,
+        "aot",
+        "1",
+        &[
+            "--session-load",
+            first_path,
+            "--session-save-out",
+            next_path,
+        ],
+    );
+    assert_eq!(resumed["steps"][0]["index"], 1);
+    assert_eq!(
+        resumed["steps"][0]["task_requests"],
+        first["steps"][0]["task_requests"]
+    );
+    assert_eq!(resumed["native_io"]["scheduler"]["in_flight"], 1);
+    assert_eq!(resumed["native_io"]["completed_tasks"], 0);
+
+    let completed = run_headless_asset_steps(&source, "aot", "8", &["--session-load", next_path]);
+    assert_eq!(completed["steps"][0]["index"], 2);
+    assert_eq!(completed["final_status"], "done Return(\"asset_ready\")");
+    assert_eq!(completed["native_io"]["scheduler"]["dispatched"], 1);
+    assert_eq!(completed["native_io"]["scheduler"]["in_flight"], 0);
+    assert_eq!(completed["native_io"]["completed_tasks"], 1);
+}
+
+fn run_headless_asset_steps(
+    source: &Path,
+    executor: &str,
+    steps: &str,
+    options: &[&str],
+) -> serde_json::Value {
+    let mut arguments = vec![
+        "--executor",
+        executor,
+        "--json",
+        "--steps",
+        steps,
+        "--mode",
+        "drain",
+        "--max-ops",
+        "64",
+    ];
+    arguments.extend_from_slice(options);
+    let output = run_headless_entry(source, "entry.main", &arguments);
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn asset_checkpoint_source(directory: &Path) -> (PathBuf, PathBuf) {
+    let source = directory.join("asset-checkpoint.arcw");
+    let assets = directory.join("assets/bg");
+    std::fs::create_dir_all(&assets).unwrap();
+    std::fs::write(
+        &source,
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String effects { asset.read } {
+    let background = @asset:.bg.room
+    return match (await asset.image(background)) {
+        .Ok(_) => "asset_ready"
+        .Err(_) => "asset_error"
+    }
+}
+"#,
+    )
+    .unwrap();
+    (source, assets.join("room.png"))
 }
 
 fn single_pixel_png(pixel: [u8; 4]) -> Vec<u8> {

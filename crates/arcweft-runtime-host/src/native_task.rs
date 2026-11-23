@@ -1011,7 +1011,8 @@ impl NativeTaskBridge {
 
         if completions.parallel {
             self.stats.parallel_batches += 1;
-            self.stats.parallel_tasks += completions.items.len();
+            // Pending submissions also ran on the worker pool.
+            self.stats.parallel_tasks += host_tasks.len();
             self.stats.parallel_io_tasks += host_tasks
                 .iter()
                 .filter(|task| task.spec().request.as_host().is_some_and(is_io_task))
@@ -1024,11 +1025,10 @@ impl NativeTaskBridge {
                     })
                 })
                 .count();
-            self.stats.parallel_workers = self.stats.parallel_workers.max(
-                rayon::current_num_threads()
-                    .min(completions.items.len())
-                    .max(1),
-            );
+            self.stats.parallel_workers = self
+                .stats
+                .parallel_workers
+                .max(rayon::current_num_threads().min(host_tasks.len()).max(1));
         }
 
         let started = Instant::now();

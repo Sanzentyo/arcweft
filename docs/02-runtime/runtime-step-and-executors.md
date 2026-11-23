@@ -81,11 +81,14 @@ For a foreground Source run, `arcw run --runner headless` accepts
 `aot` executor. The v1 AWFS payload stores the Native executor, the host
 dispatch journal, the next logical step index, and the generation's complete
 bundle asset context. Saving requires the driver to have delivered buffered
-task events and direct host-call results. Load checks the original bundle
-artifact before restoring either owner. It checks retained values against the
-installed bundle asset catalog during the executor's value admission pass.
-The host dispatch journal and executor are
-installed together after their checks succeed. The CLI writes the complete
+task events and direct host-call results. The bundle asset adapter retains
+its result with the live dispatch until the next host drain. A checkpoint at
+that boundary retains the Restartable dispatch. A new process re-ensures it
+against the original asset context before publishing the result. Load checks
+the original bundle artifact before restoring either owner. It checks retained
+values against the installed bundle asset catalog during the executor's value
+admission pass. The host dispatch journal and executor are installed together
+after their checks succeed. The CLI writes the complete
 envelope to a temporary file in the destination directory before publishing
 it at the requested path. Loading with `--steps 0` reports the restored fiber
 status without executing a step or polling the host.

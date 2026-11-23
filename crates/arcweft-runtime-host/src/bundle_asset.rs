@@ -6,13 +6,14 @@ use arcweft_bundle_assets::{
     BundleAssetResolver, BundleAssetResolverError, BundleAssetValidationError,
 };
 use arcweft_core::task::{
-    BoundTaskOutcome, BoundTaskSpec, GenerationId, HostTaskRequest, TaskSpec,
+    BoundTaskOutcome, BoundTaskSpec, GenerationId, HostTaskRequest, TaskId, TaskSpec,
 };
 use arcweft_core::value::{RuntimeBundleAssetContext, RuntimeValue};
 use arcweft_host_adapter::{
-    HostAdapter, HostTaskCompletion, HostTaskMetrics, HostTaskOutcome, HostTaskSubmission,
-    HostTaskSubmissionContext,
+    HostAdapter, HostAdapterCompletion, HostTaskCompletion, HostTaskMetrics, HostTaskOutcome,
+    HostTaskSubmission, HostTaskSubmissionContext,
 };
+use std::sync::{Arc, Mutex, MutexGuard};
 use thiserror::Error;
 
 /// Standard `asset.image` and `asset.voice` Need producer host adapter.
@@ -20,6 +21,7 @@ use thiserror::Error;
 pub struct BundleAssetAdapter {
     manifest: AdapterManifest,
     resolver: BundleAssetResolver,
+    completions: Arc<Mutex<Vec<HostAdapterCompletion>>>,
 }
 
 /// Failure to create or update the portable resolver owned by this adapter.
@@ -36,6 +38,7 @@ impl BundleAssetAdapter {
         Self {
             manifest: standard::bundle_asset_manifest(),
             resolver: BundleAssetResolver::new(),
+            completions: Arc::default(),
         }
     }
 
@@ -47,6 +50,7 @@ impl BundleAssetAdapter {
         Ok(Self {
             manifest: standard::bundle_asset_manifest(),
             resolver: BundleAssetResolver::try_new(context, artifact)?,
+            completions: Arc::default(),
         })
     }
 
@@ -92,11 +96,11 @@ impl BundleAssetAdapter {
         self.resolver.validate_voice_result(value)
     }
 
-    fn submit_asset(
+    fn resolve_asset(
         &self,
         task: &TaskSpec,
         outcome: &BoundTaskOutcome,
-        submission: HostTaskSubmissionContext,
+        submission: &HostTaskSubmissionContext,
     ) -> Option<HostTaskOutcome> {
         let HostTaskRequest::AssetLoad(request) = task.request.as_host()? else {
             return None;
@@ -128,6 +132,12 @@ impl BundleAssetAdapter {
             metrics: HostTaskMetrics::default(),
         })
     }
+
+    fn completions(&self) -> MutexGuard<'_, Vec<HostAdapterCompletion>> {
+        self.completions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 impl Default for BundleAssetAdapter {
@@ -146,8 +156,27 @@ impl HostAdapter for BundleAssetAdapter {
         task: &BoundTaskSpec,
         context: HostTaskSubmissionContext,
     ) -> Option<HostTaskSubmission> {
-        self.submit_asset(task.spec(), task.outcome(), context)
-            .map(HostTaskSubmission::Completed)
+        let outcome = self.resolve_asset(task.spec(), task.outcome(), &context)?;
+        // Keep the accepted attempt live until the host drains its result at
+        // step ingress. A checkpoint can retain the dispatch at that boundary.
+        self.completions().push(HostAdapterCompletion {
+            dispatch: context.attempt().clone(),
+            publication_revision: context.next_publication_revision(),
+            outcome,
+        });
+        Some(HostTaskSubmission::Pending)
+    }
+
+    fn drain_completions(&self) -> Vec<HostAdapterCompletion> {
+        std::mem::take(&mut *self.completions())
+    }
+
+    fn cancel(&self, task_id: &TaskId) -> bool {
+        let mut completions = self.completions();
+        let before = completions.len();
+        completions
+            .retain(|completion| &completion.dispatch.identity().correlation.task_id != task_id);
+        completions.len() != before
     }
 
     fn can_complete_in_parallel(&self, request: &HostTaskRequest) -> bool {
