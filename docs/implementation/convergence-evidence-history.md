@@ -22054,3 +22054,21 @@ Windows の Sema ライブラリ全体は `cargo nextest run --offline --locked 
 最終の Windows Sema ライブラリ全体は `cargo nextest run --offline --locked -p arcweft-lang-sema --lib --no-fail-fast` で2,042件中2,035件成功、7件失敗、選択外0件、終了100。[直前の基点](#original-rigid-reference-inference)の失敗 ID から結合テスト1件が通過し、新規失敗0件。
 
 Cargo の全機能・全ターゲットの依存グラフは Sema を含め22パッケージ。前回と同じ4バイナリから対象を選ぶ nextest は Compiler 24件、Runtime Plan 2件の計26件すべて成功、47件選択外、終了0。共有 prefix、attached default、再帰する callback、Native／AWBC の保存と復元を含む。全機能・全ターゲットの workspace check と Clippy は警告付きで終了0。変更 Rust の書式検査と構造ゲートは終了0、ブロッキング違反0件。検証後の `target` は188,379,929,239 bytes（約188.4 GB）。
+
+<a id="effect-opening-ownership"></a>
+
+## 2026-11-23 — 開いた効果の所有者と子の呼出しの完了を検証する
+
+基点 `24e75b4e044973280ce10663cf70a9b412ea0955`。開始時の追跡ファイルに差分はなく、既存の未追跡ディレクトリが一つあった。テスト訂正 `fcd90498097474475178dd66e65eeaba49cbc06b` を `main` へ通常 push し、公開 ref と変更2ファイルの blob を照合した。
+
+型と配列長では具体化できない候補が構造照合で消える。効果行では構造照合後の候補に条件付きの関係が残るため、そこで空を期待していた回帰を完了処理まで通した。親の固定効果は `EffectUnsatisfiable`、後段が所有する効果は `UnresolvedFuture` で拒否された。テンプレートを開く二つの回帰では、効果行・効果述語が実際のグラフ上で元の適用の導入箇所を参照することを検査した。別の適用から固定参照・推論参照を借りる経路には、従来の型付きスコープ拒否を適用した。
+
+Windows の `cargo nextest run --offline --locked -p arcweft-lang-sema --lib --no-fail-fast` の先行実行は2,042件中2,038件成功、4件失敗、選択外0件、終了100。基点の失敗 ID と比較し、上記3件が成功に移行した。新規失敗は0件。選択済み子の捕捉を後段に運ぶ fixture の元効果入力を最初の適用に与えた次の試行も同数で、親の完了を通過し、後段の完了で `EffectUnsatisfiable` を返した。
+
+親と後段を同じ元宣言コンテキストから開き、固定効果をどちらの推論変数にも正規の入力として供給した。子を選んだ親の完了、後段への復元、保持した型・配列長・効果の読み取り専用インポート、後段の再完了を通し、同じ型・配列長・効果が戻ることを確認した。テスト訂正 `b430130ca52ee5b6e4caf280dfdfc18404b824ff` を `main` に通常 push し、公開 ref と変更ファイルの blob を照合した。最終の同じ Sema 全件実行は2,042件中2,039件成功、3件失敗、選択外0件、終了100。基点の失敗 ID のうち4件が成功に移行し、新規失敗は0件。
+
+- `closed_instantiation_enforces_retained_effect_predicate_and_work_limits` は fixture 準備中に `EffectUnsatisfiable` を返し、実引数の検査に到達しなかった。元宣言の前提と、実引数へ適用する効果ガードの所有境界を確認する必要がある。
+- `parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_rows` は `WorkLimit { requested: 1, consumed: 64, limit: 64 }` を返した。LLDB で `compile_relation` の効果コンパイルが到達点であることを確認した。
+- `rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned` は `NodeLimit { actual: 65, limit: 64 }` を返した。LLDB で `unchanged_relation` 内の `snapshot` における到達項収集が到達点であることを確認した。両回帰の上限値を保持した。
+
+変更範囲は Sema のテスト。Cargo の全機能・全ターゲットの依存グラフは Sema を含め22パッケージで、逆依存の先行実測はそのソース SHA で保持した。`cargo clippy --offline --locked -p arcweft-lang-sema --all-targets` は警告付きで終了0。追加した比較式2か所に `cloned_ref_to_slice_refs` が出た。変更 Rust の書式と差分の空白チェックは終了0。検証後の `target` は188,382,149,467 bytes（約188.4 GB）。
