@@ -21746,3 +21746,15 @@ inert control stack と lexical exit を JSON で往復し、元コード位置�
 初回の Core ビルドは、新しい AOT fixture で `RuntimeLineEffectSeed::Static` が欠けて型不一致になり、終了101。fixture を修正し、Core は2,408 PASS／0 SKIP。Cargo グラフで Core を含む52パッケージを確認し、RuntimePlan library は134 PASS／1 SKIP、コンパイラは `scoped_defer`、`flow_wait`、`generic_continuation_snapshot`、`evaluated_effects` の219 PASS／0 SKIP。RuntimePlan の1件は既存の fixture 再生成テストの `ignore` 指定。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-scope-frame.raw.zip) は19項目、1,045,299 bytes、SHA256 `64caf234cbfb454dcee89859435346e47276a6625072911b3960fdb6dc22f2f3`。各項目の長さと SHA256 を照合した。検証後の `target` は141,744,644,441 bytes。
+
+<a id="native-env-wire"></a>
+
+## 2026-11-23 — Native のローカル環境と表示スコープを復元する
+
+基点 `f2fa14d04b500c6f44153f286315f92b2a4106d5`。公開ソース `b3d412cfd27390880f584d0195370933a8d7e02d`。`main` への通常の push 後に公開 ref と22変更 blob を照合した。検証時に追跡ファイルの差分なし。
+
+`RuntimeEnv` の inert 特殊化に同じスコープと型付き格納欄を持たせた。スコープと格納欄の件数はデコード中に制限し、元 Plan と共有資源枠で呼び出しの型情報と保持値を検査する。表示スコープは既存の inert grant を使い、元の台帳、実行、フレームの bank、スコープ位置を照合してから元の Plan に結び直す。実行中の二つのスコープで表示権限を JSON 往復し、交換拒否、内側のリソースの一回解放、外側のローカル値保持を確認した。破棄記録は元のトークンとポリシーを保持し、重複した行を拒否する。早期 return、goto、defer 実行中にもローカル環境を JSON で往復した。Native セッション全体の公開保存は残項目。
+
+最初の Core ビルドは generic storage の Serde 型制約、バンク座標を保持するクロージャ、移行したテストの引数で終了101。再ビルドで残っていたテスト1箇所の引数不足を修正した。両方の失敗ログを保存した。最終 Core は2,410 PASS／0 SKIP。Cargo グラフで Core を含む52パッケージを確認し、コンパイラの `callable_execution`、`scoped_defer`、`evaluated_effects` は563 PASS／0 SKIP、Product AWBC の表示権限・保存・ロールバックは対象3 PASS／37選択外。`RuntimeEnv` の compile-fail doctest 2 PASS。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-env-wire.raw.zip) は23項目、1,066,114 bytes、SHA256 `a96299566b1cbe30e79a9fbdff18338848e98860fb4d221bc8889fc5f0f8d671`。各項目の長さと SHA256 を照合した。検証後の `target` は144,843,973,685 bytes。
