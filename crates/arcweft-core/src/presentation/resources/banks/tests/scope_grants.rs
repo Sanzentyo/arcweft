@@ -28,8 +28,13 @@ fn one_physical_scope_admits_restores_and_retires_both_issuing_banks_once() {
     );
     assert_eq!(tokens[0].issuance(), tokens[1].issuance());
     assert_ne!(tokens[0], tokens[1]);
-    env.validate_presentation_context(&program, execution(), fiber())
-        .unwrap();
+    env.validate_presentation_context(
+        &program,
+        execution(),
+        fiber(),
+        RuntimePresentationBankId::Root,
+    )
+    .unwrap();
     let mut admission = RuntimeRetainedValueAdmission::for_program(
         program.clone(),
         RuntimeSchemaLimits::engine_default(),
@@ -37,7 +42,8 @@ fn one_physical_scope_admits_restores_and_retires_both_issuing_banks_once() {
     banks
         .admit_retained(&program, artifact, &mut admission)
         .unwrap();
-    env.admit_retained(&mut admission).unwrap();
+    env.admit_retained(RuntimePresentationBankId::Root, &mut admission)
+        .unwrap();
     admission.finish_presentation_custody().unwrap();
     let wire = binding.snapshot_admitted(&program).unwrap();
     let decoded: RuntimePresentationScopeSnapshot =
@@ -52,7 +58,11 @@ fn one_physical_scope_admits_restores_and_retires_both_issuing_banks_once() {
             &program,
             execution(),
             fiber(),
-            PresentationScopeTarget::native(&mut restored_binding),
+            PresentationScopeTarget::native(
+                &mut restored_binding,
+                RuntimePresentationBankId::Root,
+                0,
+            ),
         )
         .unwrap();
     assert!(restored_binding.is_none());
@@ -69,7 +79,11 @@ fn one_physical_scope_admits_restores_and_retires_both_issuing_banks_once() {
             &program,
             execution(),
             fiber(),
-            PresentationScopeTarget::native(&mut restored_binding),
+            PresentationScopeTarget::native(
+                &mut restored_binding,
+                RuntimePresentationBankId::Root,
+                0,
+            ),
         )
         .unwrap();
     assert_eq!(banks.retirements().len(), 2);
@@ -111,7 +125,9 @@ fn scope_capacity_refusal_preflights_every_bank_and_keeps_both_grants_for_retry(
             &program,
             execution(),
             fiber(),
-            prior.presentation_scope_target().unwrap(),
+            prior
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     let mut env = RuntimeEnv::default();
@@ -139,7 +155,8 @@ fn scope_capacity_refusal_preflights_every_bank_and_keeps_both_grants_for_retry(
                 &program,
                 execution(),
                 fiber(),
-                env.presentation_scope_target().unwrap()
+                env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap()
             ),
             Err(RuntimePresentationError::RetirementCapacity)
         );
@@ -158,7 +175,8 @@ fn scope_capacity_refusal_preflights_every_bank_and_keeps_both_grants_for_retry(
             &program,
             execution(),
             fiber(),
-            env.presentation_scope_target().unwrap(),
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert!(env.presentation_scope_binding().is_none());

@@ -23,6 +23,7 @@ fn roundtrip_lexical_state(
             &frame.lexical_exit,
             &frame.root_cleanups,
             &frame.pending_ops,
+            &frame.env,
         ))
         .unwrap();
         (
@@ -30,6 +31,7 @@ fn roundtrip_lexical_state(
             frame.lexical_exit,
             frame.root_cleanups,
             frame.pending_ops,
+            frame.env,
         ) = serde_json::from_slice(&encoded).unwrap();
     }
     image

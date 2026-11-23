@@ -35,9 +35,9 @@ impl ActionWaitingStatus {
 }
 
 impl NativeActionReceiveState {
-    pub(super) fn admit_frame<V: crate::value::RuntimeStoredValue>(
+    pub(super) fn admit_frame<V: crate::value::RuntimeStoredValue, G>(
         source: &NativeSourceOperation,
-        env: &crate::value::RuntimeEnv<V>,
+        env: &crate::value::RuntimeEnv<V, G>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<crate::pattern::RuntimeSemanticTypeId, crate::value::AwbcRuntimeValueSnapshotError>
     {

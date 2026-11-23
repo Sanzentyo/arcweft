@@ -126,7 +126,11 @@ fn native_rollback_requires_the_scope_ledger_until_cleanup_retires_its_grant() {
         crate::entry::RuntimeSchemaLimits::engine_default(),
     );
     assert!(matches!(
-        engine.fiber.frame.env.admit_retained(&mut admission),
+        engine
+            .fiber
+            .frame
+            .env
+            .admit_retained(engine.fiber.frame.presentation_bank, &mut admission),
         Err(crate::value::AwbcRuntimeValueSnapshotError::PresentationScopeCustodyRequired { .. })
     ));
     assert!(engine.inert_rollback_image().is_err());

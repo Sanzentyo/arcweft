@@ -12,13 +12,14 @@ pub(crate) struct PresentationScopeOwner {
     pub(super) scope: RuntimeScopeInstanceId,
 }
 
-/// A native grant remains private with its original lexical storage. Public
-/// AWBC scope images additionally bind the original dynamic frame and its
-/// verified lexical declaration, so exchanging two headers cannot move custody.
+/// The grant records its position in its owning execution's lexical storage.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", deny_unknown_fields, rename_all = "snake_case")]
 pub(crate) enum PresentationScopeAnchor {
-    Native,
+    Native {
+        bank: RuntimePresentationBankId,
+        slot: usize,
+    },
     Awbc {
         frame: crate::runtime_id::RuntimeFrameInstanceId,
         scope: Option<crate::awbc::schema::AwbcScopeId>,
@@ -26,6 +27,22 @@ pub(crate) enum PresentationScopeAnchor {
 }
 
 pub(crate) trait PresentationScopeStorage {
+    fn admit_native_scope(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        bank: RuntimePresentationBankId,
+        slot: usize,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>;
+
+    fn matches_native_context(
+        &self,
+        program: &RuntimeProgramOwner,
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        bank: RuntimePresentationBankId,
+        slot: usize,
+    ) -> bool;
+
     fn admit_awbc_scope(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -157,6 +174,28 @@ impl RuntimePresentationScopeSnapshot {
 }
 
 impl PresentationScopeStorage for RuntimePresentationScopeBinding {
+    fn admit_native_scope(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        bank: RuntimePresentationBankId,
+        slot: usize,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        self.admit_retained(admission)?;
+        admit_native_anchor(&self.grants, bank, slot).map_err(Into::into)
+    }
+
+    fn matches_native_context(
+        &self,
+        program: &RuntimeProgramOwner,
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        bank: RuntimePresentationBankId,
+        slot: usize,
+    ) -> bool {
+        self.program.same_program(program)
+            && matches_native_grants(&self.grants, execution, fiber, bank, slot)
+    }
+
     fn admit_awbc_scope(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -174,6 +213,27 @@ impl PresentationScopeStorage for RuntimePresentationScopeBinding {
 }
 
 impl PresentationScopeStorage for RuntimePresentationScopeSnapshot {
+    fn admit_native_scope(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        bank: RuntimePresentationBankId,
+        slot: usize,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        self.admit_retained(admission)?;
+        admit_native_anchor(&self.grants, bank, slot).map_err(Into::into)
+    }
+
+    fn matches_native_context(
+        &self,
+        _program: &RuntimeProgramOwner,
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        bank: RuntimePresentationBankId,
+        slot: usize,
+    ) -> bool {
+        matches_native_grants(&self.grants, execution, fiber, bank, slot)
+    }
+
     fn admit_awbc_scope(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -205,10 +265,14 @@ pub(crate) struct PresentationScopeRef<'scope> {
 }
 
 impl<'scope> PresentationScopeRef<'scope> {
-    pub(crate) fn native(binding: Option<&'scope RuntimePresentationScopeBinding>) -> Self {
+    pub(crate) fn native(
+        binding: Option<&'scope RuntimePresentationScopeBinding>,
+        bank: RuntimePresentationBankId,
+        slot: usize,
+    ) -> Self {
         Self {
             binding,
-            anchor: PresentationScopeAnchor::Native,
+            anchor: PresentationScopeAnchor::Native { bank, slot },
         }
     }
 
@@ -247,10 +311,12 @@ impl<'scope> PresentationScopeTarget<'scope> {
     }
     pub(crate) const fn native(
         binding: &'scope mut Option<RuntimePresentationScopeBinding>,
+        bank: RuntimePresentationBankId,
+        slot: usize,
     ) -> Self {
         Self {
             binding,
-            anchor: PresentationScopeAnchor::Native,
+            anchor: PresentationScopeAnchor::Native { bank, slot },
         }
     }
 
@@ -312,20 +378,6 @@ impl RuntimePresentationScopeBinding {
 }
 
 impl RuntimePresentationScopeBinding {
-    pub(crate) fn matches_context(
-        &self,
-        program: &RuntimeProgramOwner,
-        execution: ExecutionInstanceId,
-        fiber: RuntimePersistentFiberId,
-    ) -> bool {
-        self.program.same_program(program)
-            && !self.grants.is_empty()
-            && self.grants.values().all(|grant| {
-                grant.owner.execution == execution
-                    && grant.owner.fiber == fiber
-                    && grant.anchor == PresentationScopeAnchor::Native
-            })
-    }
     pub(crate) fn scope_keys(
         &self,
     ) -> impl Iterator<
@@ -339,6 +391,34 @@ impl RuntimePresentationScopeBinding {
             .values()
             .map(|grant| (grant.owner.execution, grant.owner.fiber, grant.owner.scope))
     }
+}
+
+fn matches_native_grants(
+    grants: &BTreeMap<RuntimePresentationBankId, PresentationScopeGrant>,
+    execution: ExecutionInstanceId,
+    fiber: RuntimePersistentFiberId,
+    bank: RuntimePresentationBankId,
+    slot: usize,
+) -> bool {
+    admit_native_anchor(grants, bank, slot).is_ok()
+        && grants
+            .values()
+            .all(|grant| grant.owner.execution == execution && grant.owner.fiber == fiber)
+}
+
+fn admit_native_anchor(
+    grants: &BTreeMap<RuntimePresentationBankId, PresentationScopeGrant>,
+    bank: RuntimePresentationBankId,
+    slot: usize,
+) -> Result<(), RuntimePresentationError> {
+    if grants.is_empty()
+        || grants
+            .values()
+            .any(|grant| grant.anchor != (PresentationScopeAnchor::Native { bank, slot }))
+    {
+        return Err(RuntimePresentationError::Owner);
+    }
+    Ok(())
 }
 
 fn admit_grants(

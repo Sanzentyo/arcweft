@@ -34,12 +34,16 @@ fn exit(
         vec![PresentationScopeExit {
             execution: execution(),
             fiber: fiber(),
-            scope: source.presentation_scope_target().unwrap(),
+            scope: source
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         }],
         destination.map(|env| PresentationScopeExit {
             execution: execution(),
             fiber: fiber(),
-            scope: env.presentation_scope_target().unwrap(),
+            scope: env
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         }),
         escaping,
         &[],
@@ -128,14 +132,18 @@ fn escaping_values_keep_original_banks_and_join_the_actual_receiving_scope() {
     banks
         .admit_retained(&program, artifact, &mut admission)
         .unwrap();
-    receiver.admit_retained(&mut admission).unwrap();
+    receiver
+        .admit_retained(RuntimePresentationBankId::Root, &mut admission)
+        .unwrap();
     admission.finish_presentation_custody().unwrap();
     banks
         .retire_bound_scope(
             &program,
             execution(),
             fiber(),
-            receiver.presentation_scope_target().unwrap(),
+            receiver
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert_eq!(
@@ -166,7 +174,9 @@ fn escape_is_excluded_from_retirement_capacity_and_full_scope_grant_is_replaced_
             &program,
             execution(),
             fiber(),
-            prior.presentation_scope_target().unwrap(),
+            prior
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     let mut source = RuntimeEnv::default();
@@ -214,7 +224,9 @@ fn complete_capacity_refusal_preserves_both_contours_and_retries_under_the_same_
             &program,
             execution(),
             fiber(),
-            prior.presentation_scope_target().unwrap(),
+            prior
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     let mut source = RuntimeEnv::default();
@@ -421,7 +433,9 @@ fn receipt_from_an_independent_scope_moves_to_the_actual_receiver_before_issuer_
             &program,
             execution(),
             fiber(),
-            issuer.presentation_scope_target().unwrap(),
+            issuer
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert_eq!(
@@ -442,7 +456,9 @@ fn receipt_from_an_independent_scope_moves_to_the_actual_receiver_before_issuer_
             &program,
             execution(),
             fiber(),
-            receiver.presentation_scope_target().unwrap(),
+            receiver
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert_eq!(banks.retirements()[1].token, escaped);
@@ -481,7 +497,9 @@ fn terminal_receipt_detaches_from_an_independent_issuer_before_that_scope_ends()
             &program,
             execution(),
             fiber(),
-            issuer.presentation_scope_target().unwrap(),
+            issuer
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert!(banks.retirements().is_empty());
@@ -526,12 +544,16 @@ fn one_receipt_keeps_its_original_bank_and_discards_both_scoped_and_external_val
             vec![PresentationScopeExit {
                 execution: execution(),
                 fiber: fiber(),
-                scope: source.presentation_scope_target().unwrap(),
+                scope: source
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             }],
             Some(PresentationScopeExit {
                 execution: execution(),
                 fiber: fiber(),
-                scope: receiver.presentation_scope_target().unwrap(),
+                scope: receiver
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             }),
             std::slice::from_ref(&kept),
             &[dropped.clone(), scoped.clone()],
@@ -557,7 +579,9 @@ fn one_receipt_keeps_its_original_bank_and_discards_both_scoped_and_external_val
             &program,
             execution(),
             fiber(),
-            issuer.presentation_scope_target().unwrap(),
+            issuer
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert_eq!(banks.retirements().len(), 2);
@@ -566,7 +590,9 @@ fn one_receipt_keeps_its_original_bank_and_discards_both_scoped_and_external_val
             &program,
             execution(),
             fiber(),
-            receiver.presentation_scope_target().unwrap(),
+            receiver
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert_eq!(
@@ -597,7 +623,9 @@ fn receipt_capacity_includes_unwind_and_external_discard_before_any_input_moves(
             &program,
             execution(),
             fiber(),
-            prior.presentation_scope_target().unwrap(),
+            prior
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     let mut source = RuntimeEnv::default();
@@ -620,12 +648,20 @@ fn receipt_capacity_includes_unwind_and_external_discard_before_any_input_moves(
                 vec![PresentationScopeExit {
                     execution: execution(),
                     fiber: fiber(),
-                    scope: source.presentation_scope_target().unwrap(),
+                    scope: source
+                        .presentation_scope_target(
+                            crate::runtime_id::RuntimePresentationBankId::Root
+                        )
+                        .unwrap(),
                 }],
                 Some(PresentationScopeExit {
                     execution: execution(),
                     fiber: fiber(),
-                    scope: receiver.presentation_scope_target().unwrap(),
+                    scope: receiver
+                        .presentation_scope_target(
+                            crate::runtime_id::RuntimePresentationBankId::Root
+                        )
+                        .unwrap(),
                 }),
                 std::slice::from_ref(&kept),
                 &[dropped.clone(), scoped.clone()]
@@ -650,12 +686,16 @@ fn receipt_capacity_includes_unwind_and_external_discard_before_any_input_moves(
             vec![PresentationScopeExit {
                 execution: execution(),
                 fiber: fiber(),
-                scope: source.presentation_scope_target().unwrap(),
+                scope: source
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             }],
             Some(PresentationScopeExit {
                 execution: execution(),
                 fiber: fiber(),
-                scope: receiver.presentation_scope_target().unwrap(),
+                scope: receiver
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             }),
             std::slice::from_ref(&kept),
             &[dropped.clone(), scoped.clone()],
@@ -709,12 +749,20 @@ fn invalid_or_overlapping_discard_cannot_follow_an_earlier_escape_move() {
                     vec![PresentationScopeExit {
                         execution: execution(),
                         fiber: fiber(),
-                        scope: source.presentation_scope_target().unwrap(),
+                        scope: source
+                            .presentation_scope_target(
+                                crate::runtime_id::RuntimePresentationBankId::Root
+                            )
+                            .unwrap(),
                     }],
                     Some(PresentationScopeExit {
                         execution: execution(),
                         fiber: fiber(),
-                        scope: receiver.presentation_scope_target().unwrap(),
+                        scope: receiver
+                            .presentation_scope_target(
+                                crate::runtime_id::RuntimePresentationBankId::Root
+                            )
+                            .unwrap(),
                     }),
                     std::slice::from_ref(&kept),
                     &discarded
@@ -750,12 +798,16 @@ fn partial_unwind_moves_only_exiting_owners_without_a_spare_scope_grant() {
             vec![PresentationScopeExit {
                 execution: execution(),
                 fiber: fiber(),
-                scope: unrelated.presentation_scope_target().unwrap(),
+                scope: unrelated
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             }],
             Some(PresentationScopeExit {
                 execution: execution(),
                 fiber: fiber(),
-                scope: receiver.presentation_scope_target().unwrap(),
+                scope: receiver
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             }),
             std::slice::from_ref(&kept),
         )
@@ -769,12 +821,16 @@ fn partial_unwind_moves_only_exiting_owners_without_a_spare_scope_grant() {
             vec![PresentationScopeExit {
                 execution: execution(),
                 fiber: fiber(),
-                scope: source.presentation_scope_target().unwrap(),
+                scope: source
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             }],
             Some(PresentationScopeExit {
                 execution: execution(),
                 fiber: fiber(),
-                scope: receiver.presentation_scope_target().unwrap(),
+                scope: receiver
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             }),
             std::slice::from_ref(&kept),
         )

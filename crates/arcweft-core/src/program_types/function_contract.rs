@@ -462,6 +462,26 @@ pub struct RuntimeFunctionEffectInstantiation {
     effects: std::sync::Arc<[crate::effect_row::EffectSet]>,
 }
 
+pub(crate) mod effect_instantiation_lease {
+    use super::RuntimeFunctionEffectInstantiation;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::sync::Arc;
+
+    pub(crate) fn serialize<S: Serializer>(
+        value: &Option<Arc<RuntimeFunctionEffectInstantiation>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value.as_deref().serialize(serializer)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Arc<RuntimeFunctionEffectInstantiation>>, D::Error> {
+        Option::<RuntimeFunctionEffectInstantiation>::deserialize(deserializer)
+            .map(|value| value.map(Arc::new))
+    }
+}
+
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EffectInstantiationWire {

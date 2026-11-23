@@ -54,9 +54,9 @@ pub(super) trait SuspendedValues {
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>;
 
-    fn admit_frame_context<V: crate::value::RuntimeStoredValue>(
+    fn admit_frame_context<V: crate::value::RuntimeStoredValue, G>(
         &self,
-        _env: &crate::value::RuntimeEnv<V>,
+        _env: &crate::value::RuntimeEnv<V, G>,
         _admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
@@ -352,18 +352,18 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
     }
 }
 
-impl<N, P, Q, FV, FP, O, C, A, AS, MS, D>
+impl<N, P, Q, FV, FP, O, C, A, AS, MS, G, D>
     Engine<
         N,
         P,
         crate::root::RootRuntime<Q>,
-        NativeFlowExecutionFrame<FV, FP, O, C, A, FlowFiberStatus<AS, MS>>,
+        NativeFlowExecutionFrame<FV, FP, O, C, A, FlowFiberStatus<AS, MS>, G>,
         D,
     >
 {
     pub(super) fn admit_root_execution(
         &self,
-        suspended: Option<&NativeFlowExecutionFrame<FV, FP, O, C, A, FlowFiberStatus<AS, MS>>>,
+        suspended: Option<&NativeFlowExecutionFrame<FV, FP, O, C, A, FlowFiberStatus<AS, MS>, G>>,
     ) -> Result<(), String>
     where
         C: ScopeControl<O>,
@@ -420,7 +420,7 @@ impl<N, P, Q, FV, FP, O, C, A, AS, MS, D>
     }
 }
 
-impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
+impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
     pub(super) fn admit_root_phase<Q>(
         &self,
         root: Option<&crate::root::RootRuntime<Q>>,
@@ -515,6 +515,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         C: ScopeControl<O>,
         A: SuspendedValues,
         S: SuspendedValues + NativeInvocationStatus,
+        G: crate::presentation::resources::PresentationScopeStorage,
     {
         let invalid =
             |message: String| crate::value::AwbcRuntimeValueSnapshotError::Message { message };
@@ -540,7 +541,7 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         }
         self.status
             .admit_suspended_values(admission, self.env.function_instantiation())?;
-        self.env.admit_retained(admission)?;
+        self.env.admit_retained(self.presentation_bank, admission)?;
         self.status.admit_frame_context(&self.env, admission)?;
         O::admit_queue(
             &self.pending_ops,
@@ -1044,13 +1045,13 @@ impl ScopeControl<NativePendingWork> for FlowControlStackEntry {
     }
 }
 
-impl<N, P, R, FV, FP, O, C, A, S, D>
-    Engine<N, P, R, NativeFlowExecutionFrame<FV, FP, O, C, A, S>, D>
+impl<N, P, R, FV, FP, O, C, A, S, G, D>
+    Engine<N, P, R, NativeFlowExecutionFrame<FV, FP, O, C, A, S, G>, D>
 {
     pub(super) fn validate_scheduled_scope_state(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
-        suspended: Option<&NativeFlowExecutionFrame<FV, FP, O, C, A, S>>,
+        suspended: Option<&NativeFlowExecutionFrame<FV, FP, O, C, A, S, G>>,
     ) -> Result<(), String>
     where
         O: ScopeOperation,
@@ -1374,8 +1375,8 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
     }
 }
 
-impl<N, P, R, V, FP, O, C, A, S, D>
-    Engine<N, P, R, NativeFlowExecutionFrame<V, FP, O, C, A, S>, D>
+impl<N, P, R, V, FP, O, C, A, S, G, D>
+    Engine<N, P, R, NativeFlowExecutionFrame<V, FP, O, C, A, S, G>, D>
 {
     fn validate_lexical_defer_contour<'a>(
         &self,
@@ -1652,6 +1653,7 @@ impl Engine {
                 &frame.program,
                 fiber.execution,
                 fiber.persistent_id,
+                frame.presentation_bank,
             )?;
         }
         self.expected_deferred_children(|activation| {
@@ -1729,6 +1731,7 @@ impl NativeEngineRollbackImage {
                     &fiber.frame.program,
                     fiber.execution,
                     fiber.persistent_id,
+                    fiber.frame.presentation_bank,
                 )
                 .map_err(|error| error.to_string())?;
             if let FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Native(state)) =

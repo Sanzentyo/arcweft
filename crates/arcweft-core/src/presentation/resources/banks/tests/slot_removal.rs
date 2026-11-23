@@ -105,8 +105,17 @@ fn slot_removal_preview_counts_the_future_option_once_with_all_other_banks() {
                 assert_eq!(admission.status(), Err(error));
             } else {
                 result.unwrap();
-                root.admit_retained(&mut admission).unwrap();
-                child.admit_retained(&mut admission).unwrap();
+                root.admit_retained(
+                    crate::runtime_id::RuntimePresentationBankId::Root,
+                    &mut admission,
+                )
+                .unwrap();
+                child
+                    .admit_retained(
+                        crate::runtime_id::RuntimePresentationBankId::Root,
+                        &mut admission,
+                    )
+                    .unwrap();
                 admission.finish_presentation_custody().unwrap();
                 assert!(
                     admission.validate(&RuntimeValue::Bool(false)).is_err(),

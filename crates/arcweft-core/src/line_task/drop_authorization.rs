@@ -8,10 +8,60 @@ use crate::{effect::RuntimeDropPolicy, runtime_id::RuntimeLineHandleToken, value
 /// A boundary policy is issued by an explicit drop/scope exit. Assignment
 /// instead authorizes only the exact graph returned by its place replacement.
 /// Neither form is live-value storage or a declaration membership index.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RuntimeHandleDropAuthorization {
     boundary: Option<RuntimeDropPolicy>,
+    #[serde(with = "displaced_rows")]
     displaced: BTreeMap<RuntimeLineHandleToken, RuntimeDropPolicy>,
+}
+
+mod displaced_rows {
+    use super::*;
+    use serde::de::{Error, SeqAccess, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    pub(super) fn serialize<S: Serializer>(
+        rows: &BTreeMap<RuntimeLineHandleToken, RuntimeDropPolicy>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(rows)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeDropPolicy>, D::Error> {
+        struct Rows;
+        impl<'de> Visitor<'de> for Rows {
+            type Value = BTreeMap<RuntimeLineHandleToken, RuntimeDropPolicy>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter
+                    .write_str("a sorted sequence of unique displaced handle tokens and policies")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut input: A) -> Result<Self::Value, A::Error> {
+                let mut rows = BTreeMap::new();
+                let limit = crate::entry::RuntimeSchemaLimits::engine_default();
+                while let Some((token, policy)) = input.next_element::<(_, _)>()? {
+                    if !limit.permits_sequence_items(rows.len() + 1) {
+                        return Err(A::Error::custom("displaced handle count exceeds its limit"));
+                    }
+                    if rows
+                        .last_key_value()
+                        .is_some_and(|(last, _)| last >= &token)
+                    {
+                        return Err(A::Error::custom(
+                            "displaced handle tokens must be sorted and unique",
+                        ));
+                    }
+                    rows.insert(token, policy);
+                }
+                Ok(rows)
+            }
+        }
+        deserializer.deserialize_seq(Rows)
+    }
 }
 
 impl RuntimeHandleDropAuthorization {
@@ -20,8 +70,9 @@ impl RuntimeHandleDropAuthorization {
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         admission.validate_metadata_collection(self.displaced.len())?;
-        for token in self.displaced.keys() {
-            admission.validate_metadata(token)?;
+        admission.validate_metadata(&self.boundary)?;
+        for row in &self.displaced {
+            admission.validate_metadata(&row)?;
         }
         Ok(())
     }
@@ -121,5 +172,44 @@ impl RuntimeHandleDropAuthorization {
                 .map(|(token, policy)| (token.clone(), *policy))
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime_id::{
+        DialogueActivationId, RuntimeDialogueContentPlanId, RuntimeLineHandleSiteId,
+        RuntimePersistentFiberId,
+    };
+    use std::num::NonZeroU32;
+
+    #[test]
+    fn displaced_handle_rows_retain_exact_policies_and_reject_repeated_tokens() {
+        let activation = DialogueActivationId::new(
+            crate::effect::RuntimeArtifactFingerprint::try_from_bytes([7; 32]).unwrap(),
+            RuntimePersistentFiberId::from_allocated(11),
+            RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::new(3).unwrap()),
+            17,
+        );
+        let token = RuntimeLineHandleToken::new(
+            activation,
+            RuntimeLineHandleSiteId::from_zero_based(3),
+            23,
+        );
+        let mut authorization =
+            RuntimeHandleDropAuthorization::at_boundary(Some(RuntimeDropPolicy::Release));
+        authorization
+            .authorize_tokens_with_policy([token.clone()], RuntimeDropPolicy::Cancel)
+            .unwrap();
+        let mut wire = serde_json::to_value(&authorization).unwrap();
+        let decoded: RuntimeHandleDropAuthorization = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(decoded, authorization);
+        assert_eq!(decoded.policy_for(&token), Some(RuntimeDropPolicy::Cancel));
+
+        let rows = wire["displaced"].as_array_mut().unwrap();
+        rows.push(rows[0].clone());
+        let error = serde_json::from_value::<RuntimeHandleDropAuthorization>(wire).unwrap_err();
+        assert!(error.to_string().contains("sorted and unique"));
     }
 }

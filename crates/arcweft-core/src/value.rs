@@ -2715,23 +2715,44 @@ impl RuntimeBinaryOp {
 /// use arcweft_core::value::RuntimeEnv;
 /// fn copy(env: &RuntimeEnv) { let _: RuntimeEnv = env.clone(); }
 /// ```
-#[derive(Debug)]
-pub struct RuntimeEnv<V = RuntimeValue> {
-    scopes: Vec<RuntimeScope<V>>,
-    spare_scopes: Vec<RuntimeScope<V>>,
+/// ```compile_fail
+/// use arcweft_core::value::RuntimeEnv;
+/// let _: RuntimeEnv = serde_json::from_str("{}").unwrap();
+/// ```
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: InertRuntimeValueStorage, RuntimePlaceStorage<V>: Serialize, G: Serialize",
+        deserialize = "V: InertRuntimeValueStorage, RuntimePlaceStorage<V>: Deserialize<'de>, G: Deserialize<'de>"
+    )
+)]
+pub struct RuntimeEnv<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+    #[serde(deserialize_with = "env::decode_lexical_rows")]
+    scopes: Vec<RuntimeScope<V, G>>,
+    #[serde(skip)]
+    spare_scopes: Vec<RuntimeScope<V, G>>,
     assignment_discards: crate::line_task::RuntimeHandleDropAuthorization,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct RuntimeScope<T = RuntimeValue> {
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "T: InertRuntimeValueStorage, RuntimePlaceStorage<T>: Serialize, G: Serialize",
+        deserialize = "T: InertRuntimeValueStorage, RuntimePlaceStorage<T>: Deserialize<'de>, G: Deserialize<'de>"
+    )
+)]
+struct RuntimeScope<T = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
     identity: RuntimeScopeIdentity,
-    presentation_scope: Option<crate::presentation::resources::RuntimePresentationScopeBinding>,
+    presentation_scope: Option<G>,
     flow_registry: Option<crate::effect::RuntimeScopeRegistry>,
     function_context: RuntimeScopeFunctionContext,
+    #[serde(deserialize_with = "env::decode_lexical_rows")]
     slots: Vec<RuntimeLocalSlot<T>>,
 }
 
-impl<T> Default for RuntimeScope<T> {
+impl<T, G> Default for RuntimeScope<T, G> {
     fn default() -> Self {
         Self {
             identity: RuntimeScopeIdentity::default(),
@@ -2745,13 +2766,16 @@ impl<T> Default for RuntimeScope<T> {
 
 /// Lexical inheritance or the authenticated execution context of a function.
 /// Suspended operations retain this same context independently of later calls.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) enum RuntimeScopeFunctionContext {
     #[default]
     Lexical,
     Function {
+        #[serde(with = "crate::plan::code::function_coordinate")]
         site: crate::runtime_id::RuntimeFunctionSiteId,
         input_order: std::sync::Arc<RuntimeInputOrder>,
+        #[serde(with = "crate::program_types::effect_instantiation_lease")]
         instantiation:
             Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     },

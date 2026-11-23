@@ -445,6 +445,9 @@ deferred child の対応は、子 fiber と対話 ledger から借用で検査�
 main／child frame の環境・観測値・stream・選択済み結果は、同じ親の資源枠で検査して
 から、それらの値を変換する。function frame の callee context は環境の順序と照合し、
 formatter の保持値はその位置の caller context と元 operand ABI で検査する。
+Native の inert 環境はスコープ順、ローカルの完全・部分 storage、元の入力順、効果の
+型情報、レジストリと破棄記録を保持する。保存した表示スコープの grant は発行元の台帳と、
+それを保持するフレームの bank・スコープ位置を照合した後で元の Plan に結び直す。
 Native の関数フレームは退避キューと、戻り方に対応する元の呼び出し命令の位置を
 保持する。Flow のキューと台詞の activation cursor からの呼び出しは同じ方式で
 元の命令から結果パターンを借りる。attached default から次の関数へ進む間も同じ

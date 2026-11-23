@@ -24,6 +24,7 @@ mod action;
 mod construction;
 pub(crate) use construction::ProgramVariantCase;
 mod function_contract;
+pub(crate) use function_contract::effect_instantiation_lease;
 pub use function_contract::{
     RuntimeFunctionEffectInstantiation, RuntimeFunctionEffectInstantiationError,
     RuntimeParameterValueAdmissionError,

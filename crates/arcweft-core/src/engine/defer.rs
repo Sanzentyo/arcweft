@@ -112,10 +112,10 @@ pub(super) enum NativeLexicalExitAction<V> {
     Goto {
         source: NativeGotoOrigin,
         transfer: crate::plan::RuntimeFlowTransfer<V>,
-        #[serde(with = "super::function_frame_instantiation")]
+        #[serde(with = "crate::program_types::effect_instantiation_lease")]
         source_instantiation:
             Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
-        #[serde(with = "super::function_frame_instantiation")]
+        #[serde(with = "crate::program_types::effect_instantiation_lease")]
         type_instantiation:
             Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     },

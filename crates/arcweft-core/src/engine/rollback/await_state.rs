@@ -221,9 +221,9 @@ where
     V: crate::value::RuntimeStoredValue,
     P: crate::value::RuntimeStoredValue,
 {
-    fn admit_frame_context<W: crate::value::RuntimeStoredValue>(
+    fn admit_frame_context<W: crate::value::RuntimeStoredValue, G>(
         &self,
-        env: &crate::value::RuntimeEnv<W>,
+        env: &crate::value::RuntimeEnv<W, G>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
@@ -367,9 +367,9 @@ where
     M: SuspendedValues,
     P: SuspendedValues,
 {
-    fn admit_frame_context<V: crate::value::RuntimeStoredValue>(
+    fn admit_frame_context<V: crate::value::RuntimeStoredValue, G>(
         &self,
-        env: &crate::value::RuntimeEnv<V>,
+        env: &crate::value::RuntimeEnv<V, G>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         if let Self::WaitingMany(WaitingManyStatus::Program(state)) = self {

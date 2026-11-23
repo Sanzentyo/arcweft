@@ -231,6 +231,7 @@ impl Engine {
             &self.fiber.frame.program,
             self.fiber.execution,
             self.fiber.persistent_id,
+            self.fiber.frame.presentation_bank,
         )?;
         if self.presentation.is_none()
             && self
@@ -597,11 +598,11 @@ impl Engine {
             .ok_or(RuntimePresentationError::MissingLedger)?;
         let execution = self.fiber.execution;
         let fiber = self.fiber.persistent_id;
-        let (exiting, destination) = self
-            .fiber
-            .frame
-            .env
-            .presentation_scope_exit_targets(scopes, detached)?;
+        let (exiting, destination) = self.fiber.frame.env.presentation_scope_exit_targets(
+            self.fiber.frame.presentation_bank,
+            scopes,
+            detached,
+        )?;
         banks.transition_scope_contour(
             &self.fiber.frame.program,
             exiting
@@ -634,7 +635,8 @@ impl Engine {
         if self.presentation.is_none() && escaping.is_empty() {
             return Ok(());
         }
-        let destination = receiving.presentation_scope_target()?;
+        let bank = self.fiber.frame.presentation_bank;
+        let destination = receiving.presentation_scope_target(bank)?;
         self.presentation
             .as_ref()
             .ok_or(RuntimePresentationError::MissingLedger)?
@@ -643,7 +645,7 @@ impl Engine {
                 self.fiber
                     .frame
                     .env
-                    .presentation_scope_refs()
+                    .presentation_scope_refs(bank)
                     .rev()
                     .map(|scope| PresentationScopeExit {
                         execution: self.fiber.execution,
@@ -672,11 +674,11 @@ impl Engine {
             return Ok(());
         }
         let count = self.fiber.frame.env.scope_depth();
-        let (targets, _) = self
-            .fiber
-            .frame
-            .env
-            .presentation_scope_exit_targets(count, true)?;
+        let (targets, _) = self.fiber.frame.env.presentation_scope_exit_targets(
+            self.fiber.frame.presentation_bank,
+            count,
+            true,
+        )?;
         self.presentation
             .as_mut()
             .ok_or(RuntimePresentationError::MissingLedger)?
@@ -693,7 +695,8 @@ impl Engine {
                 Some(PresentationScopeExit {
                     execution: self.fiber.execution,
                     fiber: self.fiber.persistent_id,
-                    scope: receiving.presentation_scope_target()?,
+                    scope: receiving
+                        .presentation_scope_target(self.fiber.frame.presentation_bank)?,
                 }),
                 escaping,
                 &[],
@@ -722,7 +725,10 @@ impl Engine {
                 &self.fiber.frame.program,
                 self.fiber.execution,
                 self.fiber.persistent_id,
-                self.fiber.frame.env.presentation_scope_target()?,
+                self.fiber
+                    .frame
+                    .env
+                    .presentation_scope_target(self.fiber.frame.presentation_bank)?,
             )?;
         }
         Ok(())

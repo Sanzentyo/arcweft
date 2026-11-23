@@ -80,7 +80,8 @@ impl Fixture {
                 &self.program,
                 ExecutionInstanceId::from_allocated(NonZeroU64::MIN),
                 RuntimePersistentFiberId::from_allocated(1),
-                env.presentation_scope_target().unwrap(),
+                env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             )
             .unwrap();
         let token = self
@@ -248,7 +249,8 @@ fn resource_frame_rejects_a_nonresource_stored_body() {
             &fixture.program,
             ExecutionInstanceId::from_allocated(NonZeroU64::MIN),
             RuntimePersistentFiberId::from_allocated(1),
-            env.presentation_scope_target().unwrap(),
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     fixture
@@ -296,7 +298,11 @@ fn admitted_restore_preserves_projected_identity_body_and_visibility() {
         .banks
         .admit_retained(&fixture.program, fixture.artifact, &mut admission)
         .unwrap();
-    env.admit_retained(&mut admission).unwrap();
+    env.admit_retained(
+        crate::runtime_id::RuntimePresentationBankId::Root,
+        &mut admission,
+    )
+    .unwrap();
     admission.finish_presentation_custody().unwrap();
     let snapshot = fixture
         .banks
@@ -316,7 +322,11 @@ fn admitted_restore_preserves_projected_identity_body_and_visibility() {
     retained
         .admit_retained(&fixture.program, fixture.artifact, &mut admission)
         .unwrap();
-    env.admit_retained(&mut admission).unwrap();
+    env.admit_retained(
+        crate::runtime_id::RuntimePresentationBankId::Root,
+        &mut admission,
+    )
+    .unwrap();
     admission.finish_presentation_custody().unwrap();
     let context = crate::value::RuntimeValueRestoreContext::new(
         &fixture.program,

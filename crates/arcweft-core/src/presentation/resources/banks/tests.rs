@@ -46,7 +46,11 @@ fn replaced_body_retirement_keeps_original_token_while_its_handle_remains_live()
     banks
         .admit_retained(&program, artifact, &mut admission)
         .unwrap();
-    env.admit_retained(&mut admission).unwrap();
+    env.admit_retained(
+        crate::runtime_id::RuntimePresentationBankId::Root,
+        &mut admission,
+    )
+    .unwrap();
     admission.finish_presentation_custody().unwrap();
     let image = banks.snapshot_admitted().unwrap();
     let mut restored = image.clone().into_admitted_live(&program).unwrap();
@@ -202,7 +206,8 @@ fn bind<V>(
             program,
             execution(),
             fiber(),
-            env.presentation_scope_target().unwrap(),
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap()
 }
@@ -232,13 +237,19 @@ fn scope_batch_rejects_a_later_wrong_anchor_without_retiring_the_first_scope() {
             .unwrap();
     }
     let before = banks.snapshot_admitted().unwrap();
-    let root_binding = root.presentation_scope_target().unwrap().binding().cloned();
-    let child_binding = child
-        .presentation_scope_target()
+    let root_binding = root
+        .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
         .unwrap()
         .binding()
         .cloned();
-    let mut wrong = child.presentation_scope_target().unwrap();
+    let child_binding = child
+        .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+        .unwrap()
+        .binding()
+        .cloned();
+    let mut wrong = child
+        .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+        .unwrap();
     wrong.anchor = PresentationScopeAnchor::Awbc {
         frame: crate::runtime_id::RuntimeFrameInstanceId::from_allocated(NonZeroU64::MIN),
         scope: None,
@@ -248,17 +259,26 @@ fn scope_batch_rejects_a_later_wrong_anchor_without_retiring_the_first_scope() {
             &program,
             execution(),
             fiber(),
-            vec![root.presentation_scope_target().unwrap(), wrong],
+            vec![
+                root.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
+                wrong
+            ],
         ),
         Err(RuntimePresentationError::Owner)
     );
     assert_eq!(banks.snapshot_admitted().unwrap(), before);
     assert_eq!(
-        root.presentation_scope_target().unwrap().binding(),
+        root.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+            .unwrap()
+            .binding(),
         root_binding.as_ref()
     );
     assert_eq!(
-        child.presentation_scope_target().unwrap().binding(),
+        child
+            .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+            .unwrap()
+            .binding(),
         child_binding.as_ref()
     );
     banks
@@ -267,8 +287,11 @@ fn scope_batch_rejects_a_later_wrong_anchor_without_retiring_the_first_scope() {
             execution(),
             fiber(),
             vec![
-                child.presentation_scope_target().unwrap(),
-                root.presentation_scope_target().unwrap(),
+                child
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
+                root.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             ],
         )
         .unwrap();
@@ -281,14 +304,14 @@ fn scope_batch_rejects_a_later_wrong_anchor_without_retiring_the_first_scope() {
         [dialogue, RuntimePresentationBankId::Root]
     );
     assert!(
-        root.presentation_scope_target()
+        root.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
             .unwrap()
             .binding()
             .is_none()
     );
     assert!(
         child
-            .presentation_scope_target()
+            .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
             .unwrap()
             .binding()
             .is_none()
@@ -319,7 +342,9 @@ fn whole_scope_batch_capacity_precedes_any_body_move_and_retry_keeps_unwind_orde
             &program,
             execution(),
             fiber(),
-            prior.presentation_scope_target().unwrap(),
+            prior
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     let mut outer = RuntimeEnv::default();
@@ -344,12 +369,12 @@ fn whole_scope_batch_capacity_precedes_any_body_move_and_retry_keeps_unwind_orde
     let before = banks.snapshot_admitted().unwrap();
     let grants = [
         outer
-            .presentation_scope_target()
+            .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
             .unwrap()
             .binding()
             .cloned(),
         inner
-            .presentation_scope_target()
+            .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
             .unwrap()
             .binding()
             .cloned(),
@@ -360,19 +385,29 @@ fn whole_scope_batch_capacity_precedes_any_body_move_and_retry_keeps_unwind_orde
             execution(),
             fiber(),
             vec![
-                inner.presentation_scope_target().unwrap(),
-                outer.presentation_scope_target().unwrap(),
+                inner
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
+                outer
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             ]
         ),
         Err(RuntimePresentationError::RetirementCapacity)
     );
     assert_eq!(banks.snapshot_admitted().unwrap(), before);
     assert_eq!(
-        outer.presentation_scope_target().unwrap().binding(),
+        outer
+            .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+            .unwrap()
+            .binding(),
         grants[0].as_ref()
     );
     assert_eq!(
-        inner.presentation_scope_target().unwrap().binding(),
+        inner
+            .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+            .unwrap()
+            .binding(),
         grants[1].as_ref()
     );
     banks.retirements.clear();
@@ -382,8 +417,12 @@ fn whole_scope_batch_capacity_precedes_any_body_move_and_retry_keeps_unwind_orde
             execution(),
             fiber(),
             vec![
-                inner.presentation_scope_target().unwrap(),
-                outer.presentation_scope_target().unwrap(),
+                inner
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
+                outer
+                    .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap(),
             ],
         )
         .unwrap();
@@ -397,14 +436,14 @@ fn whole_scope_batch_capacity_precedes_any_body_move_and_retry_keeps_unwind_orde
     );
     assert!(
         outer
-            .presentation_scope_target()
+            .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
             .unwrap()
             .binding()
             .is_none()
     );
     assert!(
         inner
-            .presentation_scope_target()
+            .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
             .unwrap()
             .binding()
             .is_none()
@@ -452,8 +491,18 @@ fn bank_headers_merge_before_bodies_and_same_fiber_grants_round_trip_without_col
     banks
         .admit_retained(&program, artifact, &mut admission)
         .unwrap();
-    root_env.admit_retained(&mut admission).unwrap();
-    dialogue_env.admit_retained(&mut admission).unwrap();
+    root_env
+        .admit_retained(
+            crate::runtime_id::RuntimePresentationBankId::Root,
+            &mut admission,
+        )
+        .unwrap();
+    dialogue_env
+        .admit_retained(
+            crate::runtime_id::RuntimePresentationBankId::Root,
+            &mut admission,
+        )
+        .unwrap();
     admission.finish_presentation_custody().unwrap();
     let image = banks.snapshot_admitted().unwrap();
     let mut restored = image.clone().into_admitted_live(&program).unwrap();
@@ -463,7 +512,9 @@ fn bank_headers_merge_before_bodies_and_same_fiber_grants_round_trip_without_col
             &program,
             execution(),
             fiber(),
-            root_env.presentation_scope_target().unwrap(),
+            root_env
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert!(
@@ -476,7 +527,9 @@ fn bank_headers_merge_before_bodies_and_same_fiber_grants_round_trip_without_col
             &program,
             execution(),
             fiber(),
-            dialogue_env.presentation_scope_target().unwrap(),
+            dialogue_env
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert_eq!(restored.retirements.len(), 2);
@@ -636,7 +689,11 @@ fn inert_bank_rows_reject_duplicates_before_the_second_body_and_cannot_supply_po
     banks
         .admit_retained(&program, artifact, &mut admission)
         .unwrap();
-    env.admit_retained(&mut admission).unwrap();
+    env.admit_retained(
+        crate::runtime_id::RuntimePresentationBankId::Root,
+        &mut admission,
+    )
+    .unwrap();
     admission.finish_presentation_custody().unwrap();
     let image = banks.snapshot_admitted().unwrap();
     let wire = image.inert_state_admitted();
@@ -681,7 +738,11 @@ fn inert_bank_rows_reject_duplicates_before_the_second_body_and_cannot_supply_po
     restored
         .admit_retained(&program, artifact, &mut admission)
         .unwrap();
-    env.admit_retained(&mut admission).unwrap();
+    env.admit_retained(
+        crate::runtime_id::RuntimePresentationBankId::Root,
+        &mut admission,
+    )
+    .unwrap();
     admission.finish_presentation_custody().unwrap();
     let mut visited = Vec::new();
     restored

@@ -37,7 +37,7 @@ fn new_scope<V>(
             execution(),
             RuntimePersistentFiberId::from_allocated(fiber),
             crate::value::RuntimeEnv::default()
-                .presentation_scope_target()
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
                 .unwrap(),
         )
         .unwrap()
@@ -469,7 +469,8 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
             &program,
             execution(),
             fiber,
-            env.presentation_scope_target().unwrap(),
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     ledger.state.next_scope = RuntimeIdCursor::Exhausted;
@@ -479,7 +480,8 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
                 &program,
                 execution(),
                 fiber,
-                env.presentation_scope_target().unwrap()
+                env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap()
             )
             .unwrap(),
         owner
@@ -490,7 +492,8 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
             &program,
             execution(),
             fiber,
-            env.presentation_scope_target().unwrap()
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap()
         ),
         Err(RuntimePresentationError::Identity(_))
     ));
@@ -504,7 +507,8 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
                 &program,
                 execution(),
                 fiber,
-                env.presentation_scope_target().unwrap()
+                env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap()
             )
             .unwrap(),
         owner
@@ -514,7 +518,8 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
             &program,
             execution(),
             fiber,
-            env.presentation_scope_target().unwrap(),
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert!(env.presentation_scope_binding().is_none());
@@ -523,7 +528,8 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
             &program,
             execution(),
             fiber,
-            env.presentation_scope_target().unwrap()
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap()
         ),
         Err(RuntimePresentationError::Identity(_))
     ));
@@ -540,7 +546,8 @@ fn foreign_context_cannot_adopt_a_reached_scope_grant() {
             &program,
             execution(),
             fiber,
-            env.presentation_scope_target().unwrap(),
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     assert_eq!(
@@ -548,7 +555,8 @@ fn foreign_context_cannot_adopt_a_reached_scope_grant() {
             &new_program(),
             execution(),
             fiber,
-            env.presentation_scope_target().unwrap()
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap()
         ),
         Err(RuntimePresentationError::Program)
     );
@@ -557,7 +565,8 @@ fn foreign_context_cannot_adopt_a_reached_scope_grant() {
             &program,
             execution(),
             RuntimePersistentFiberId::from_allocated(4),
-            env.presentation_scope_target().unwrap()
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap()
         ),
         Err(RuntimePresentationError::Owner)
     );
@@ -567,7 +576,8 @@ fn foreign_context_cannot_adopt_a_reached_scope_grant() {
             &program,
             execution,
             fiber,
-            env.presentation_scope_target().unwrap()
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap()
         ),
         Err(RuntimePresentationError::Owner)
     );
@@ -590,7 +600,8 @@ fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
             &program,
             execution(),
             fiber,
-            env.presentation_scope_target().unwrap(),
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     let before = ledger.state.next_scope;
@@ -600,7 +611,8 @@ fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
             &program,
             execution(),
             fiber,
-            env.presentation_scope_target().unwrap()
+            env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap()
         ),
         Err(RuntimePresentationError::ScopeCapacity)
     );
@@ -614,7 +626,8 @@ fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
                 &program,
                 execution(),
                 fiber,
-                env.presentation_scope_target().unwrap()
+                env.presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                    .unwrap()
             )
             .unwrap(),
         owner
@@ -632,7 +645,9 @@ fn one_program_slot_replaces_across_real_execution_owners() {
             &program,
             execution(),
             RuntimePersistentFiberId::from_allocated(1),
-            first_env.presentation_scope_target().unwrap(),
+            first_env
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     let second_execution = ExecutionInstanceId::from_allocated(NonZeroU64::new(2).unwrap());
@@ -641,7 +656,9 @@ fn one_program_slot_replaces_across_real_execution_owners() {
             &program,
             second_execution,
             RuntimePersistentFiberId::from_allocated(2),
-            second_env.presentation_scope_target().unwrap(),
+            second_env
+                .presentation_scope_target(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
         )
         .unwrap();
     let (old, _) = ledger

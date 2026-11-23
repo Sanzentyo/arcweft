@@ -4,7 +4,9 @@ use super::{
     RuntimeEnv, RuntimeEvalError, RuntimeLocalBinding, RuntimeLocalRead, RuntimeLocalReadMode,
     RuntimeLocalSlot, RuntimeMutablePlace, RuntimeScope, RuntimeValue, runtime_value_label,
 };
+use crate::presentation::resources::PresentationScopeStorage;
 use crate::runtime_id::RuntimeLocalDeclarationId;
+use crate::runtime_id::RuntimePresentationBankId;
 use crate::scope::RuntimeScopeIdentity;
 use crate::task::RuntimeProgramOwner;
 
@@ -113,7 +115,40 @@ impl super::RuntimeScopeFunctionContext {
 /// Non-runnable rollback image of one native lexical environment. Values are
 /// encoded under the exact immutable program lease; spare allocation scopes
 /// are omitted because they contain no bindings and carry no semantics.
-pub(crate) type RuntimeEnvRollbackImage = RuntimeEnv<super::AwbcRuntimeValueSnapshot>;
+pub(crate) type RuntimeEnvRollbackImage = RuntimeEnv<
+    super::AwbcRuntimeValueSnapshot,
+    crate::presentation::RuntimePresentationScopeSnapshot,
+>;
+
+pub(super) fn decode_lexical_rows<'de, T: serde::Deserialize<'de>, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<Vec<T>, D::Error> {
+    use serde::de::{Error, IgnoredAny, SeqAccess, Visitor};
+    struct Rows<T>(std::marker::PhantomData<T>);
+    impl<'de, T: serde::Deserialize<'de>> Visitor<'de> for Rows<T> {
+        type Value = Vec<T>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a bounded lexical scope or local slot sequence")
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut input: A) -> Result<Self::Value, A::Error> {
+            let mut rows = Vec::new();
+            let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+            while limits.permits_sequence_items(rows.len() + 1) {
+                let Some(row) = input.next_element()? else {
+                    return Ok(rows);
+                };
+                rows.push(row);
+            }
+            if input.next_element::<IgnoredAny>()?.is_some() {
+                return Err(A::Error::custom("lexical row count exceeds its limit"));
+            }
+            Ok(rows)
+        }
+    }
+    decoder.deserialize_seq(Rows(std::marker::PhantomData))
+}
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct RuntimePlaceWriteError {
@@ -147,7 +182,7 @@ impl Clone for RuntimeEnvRollbackImage {
     }
 }
 
-impl<V: PartialEq> PartialEq for RuntimeEnv<V> {
+impl<V: PartialEq, G: PartialEq> PartialEq for RuntimeEnv<V, G> {
     fn eq(&self, other: &Self) -> bool {
         self.scopes == other.scopes && self.assignment_discards == other.assignment_discards
     }
@@ -251,10 +286,13 @@ impl RuntimeEnv {
         &self,
         owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeEnvRollbackImage, String> {
-        self.admit_retained(&mut super::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        ))
+        self.admit_retained(
+            RuntimePresentationBankId::Root,
+            &mut super::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
         .map_err(|error| error.to_string())?;
         self.snapshot_admitted(owner)
     }
@@ -272,7 +310,12 @@ impl RuntimeEnv {
                 .map(|scope| {
                     Ok(RuntimeScope {
                         identity: scope.identity.clone(),
-                        presentation_scope: scope.presentation_scope.clone(),
+                        presentation_scope: scope
+                            .presentation_scope
+                            .as_ref()
+                            .map(|grant| grant.snapshot_admitted(owner))
+                            .transpose()
+                            .map_err(|error| error.to_string())?,
                         flow_registry: scope.flow_registry.clone(),
                         function_context: scope.function_context.clone(),
                         slots: scope
@@ -298,10 +341,13 @@ impl RuntimeEnv {
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
         image
-            .admit_retained(&mut super::RuntimeRetainedValueAdmission::for_program(
-                owner.clone(),
-                crate::entry::RuntimeSchemaLimits::engine_default(),
-            ))
+            .admit_retained(
+                RuntimePresentationBankId::Root,
+                &mut super::RuntimeRetainedValueAdmission::for_program(
+                    owner.clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
             .map_err(|error| error.to_string())?;
         image.into_admitted_live(owner)
     }
@@ -320,7 +366,9 @@ impl RuntimeEnvRollbackImage {
                 .map(|scope| {
                     Ok(RuntimeScope {
                         identity: scope.identity,
-                        presentation_scope: scope.presentation_scope,
+                        presentation_scope: scope
+                            .presentation_scope
+                            .map(|grant| grant.into_admitted_live(owner)),
                         flow_registry: scope.flow_registry,
                         function_context: scope.function_context,
                         slots: scope
@@ -342,7 +390,7 @@ impl RuntimeEnvRollbackImage {
     }
 }
 
-impl<V> RuntimeEnv<V> {
+impl<V, G> RuntimeEnv<V, G> {
     pub(crate) fn scope_depth(&self) -> usize {
         self.scopes.len()
     }
@@ -364,15 +412,23 @@ impl<V> RuntimeEnv<V> {
         program: &RuntimeProgramOwner,
         execution: crate::runtime_id::ExecutionInstanceId,
         fiber: crate::runtime_id::RuntimePersistentFiberId,
-    ) -> Result<(), crate::presentation::RuntimePresentationError> {
-        if self
-            .presentation_scope_bindings()
-            .any(|binding| !binding.matches_context(program, execution, fiber))
-        {
+        bank: RuntimePresentationBankId,
+    ) -> Result<(), crate::presentation::RuntimePresentationError>
+    where
+        G: PresentationScopeStorage,
+    {
+        if self.scopes.iter().enumerate().any(|(slot, scope)| {
+            scope.presentation_scope.as_ref().is_some_and(|binding| {
+                !binding.matches_native_context(program, execution, fiber, bank, slot)
+            })
+        }) {
             return Err(crate::presentation::RuntimePresentationError::Owner);
         }
         Ok(())
     }
+}
+
+impl RuntimeEnv {
     pub(crate) fn presentation_scope_bindings(
         &self,
     ) -> impl Iterator<Item = &crate::presentation::resources::RuntimePresentationScopeBinding>
@@ -384,11 +440,14 @@ impl<V> RuntimeEnv<V> {
 
     pub(crate) fn presentation_scope_refs(
         &self,
+        bank: RuntimePresentationBankId,
     ) -> impl DoubleEndedIterator<Item = crate::presentation::resources::PresentationScopeRef<'_>>
     {
-        self.scopes.iter().map(|scope| {
+        self.scopes.iter().enumerate().map(move |(slot, scope)| {
             crate::presentation::resources::PresentationScopeRef::native(
                 scope.presentation_scope.as_ref(),
+                bank,
+                slot,
             )
         })
     }
@@ -403,17 +462,20 @@ impl<V> RuntimeEnv<V> {
 
     pub(crate) fn presentation_scope_target(
         &mut self,
+        bank: RuntimePresentationBankId,
     ) -> Result<
         crate::presentation::resources::PresentationScopeTarget<'_>,
         crate::presentation::RuntimePresentationError,
     > {
-        let scope = self
+        let (scope, enclosing) = self
             .scopes
-            .last_mut()
+            .split_last_mut()
             .ok_or(crate::presentation::RuntimePresentationError::MissingScope)?;
         Ok(
             crate::presentation::resources::PresentationScopeTarget::native(
                 &mut scope.presentation_scope,
+                bank,
+                enclosing.len(),
             ),
         )
     }
@@ -422,6 +484,7 @@ impl<V> RuntimeEnv<V> {
     /// The count comes from the interpreter's owning control frames.
     pub(crate) fn presentation_scope_exit_targets(
         &mut self,
+        bank: RuntimePresentationBankId,
         count: usize,
         detached: bool,
     ) -> Result<
@@ -441,20 +504,33 @@ impl<V> RuntimeEnv<V> {
         let destination = if detached {
             None
         } else {
-            remaining
-                .last_mut()
-                .map(|scope| PresentationScopeTarget::native(&mut scope.presentation_scope))
+            remaining.split_last_mut().map(|(scope, enclosing)| {
+                PresentationScopeTarget::native(
+                    &mut scope.presentation_scope,
+                    bank,
+                    enclosing.len(),
+                )
+            })
         };
         Ok((
             exiting
                 .iter_mut()
+                .enumerate()
                 .rev()
-                .map(|scope| PresentationScopeTarget::native(&mut scope.presentation_scope))
+                .map(|(offset, scope)| {
+                    PresentationScopeTarget::native(
+                        &mut scope.presentation_scope,
+                        bank,
+                        start + offset,
+                    )
+                })
                 .collect(),
             destination,
         ))
     }
+}
 
+impl<V, G> RuntimeEnv<V, G> {
     pub(crate) fn source_function_context(&self) -> super::RuntimeScopeFunctionContext {
         self.scopes
             .iter()
@@ -517,21 +593,38 @@ impl<V> RuntimeEnv<V> {
 
     pub(crate) fn admit_retained(
         &self,
+        bank: RuntimePresentationBankId,
         admission: &mut super::RuntimeRetainedValueAdmission,
     ) -> Result<(), super::AwbcRuntimeValueSnapshotError>
     where
         V: super::RuntimeStoredValue,
+        G: PresentationScopeStorage,
     {
         admission.validate_metadata_collection(self.scopes.len())?;
+        if self.scopes.is_empty() {
+            let error = super::AwbcRuntimeValueSnapshotError::Message {
+                message: "native environment has no root scope".into(),
+            };
+            admission.retain_failure(error.clone());
+            return Err(error);
+        }
         self.assignment_discards.admit_retained(admission)?;
-        for scope in &self.scopes {
+        for (slot, scope) in self.scopes.iter().enumerate() {
             admission.validate_metadata(&scope.identity)?;
             if let Some(registry) = &scope.flow_registry {
                 registry
                     .admit_retained(crate::effect::RuntimeRegistryOwner::NativeFlow, admission)?;
             }
             if let Some(binding) = &scope.presentation_scope {
-                binding.admit_retained(admission)?;
+                binding.admit_native_scope(admission, bank, slot)?;
+            }
+            if let super::RuntimeScopeFunctionContext::Function {
+                site,
+                instantiation,
+                input_order,
+            } = &scope.function_context
+            {
+                admission.validate_metadata(&(site.get(), instantiation, input_order))?;
             }
             admission.validate_metadata_collection(scope.slots.len())?;
         }
@@ -544,7 +637,7 @@ impl<V> RuntimeEnv<V> {
     }
 
     fn validate_scope_places<'value, T>(
-        scopes: &'value [RuntimeScope<T>],
+        scopes: &'value [RuntimeScope<T, G>],
         owner: &RuntimeProgramOwner,
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
         view: impl Fn(&'value T) -> super::RuntimeValueView<'value>,
@@ -1395,8 +1488,12 @@ mod tests {
                 ..RuntimeSchemaLimits::engine_default()
             },
         );
-        envs[0].admit_retained(&mut live).unwrap();
-        let failure = envs[1].admit_retained(&mut live).unwrap_err();
+        envs[0]
+            .admit_retained(RuntimePresentationBankId::Root, &mut live)
+            .unwrap();
+        let failure = envs[1]
+            .admit_retained(RuntimePresentationBankId::Root, &mut live)
+            .unwrap_err();
         assert_eq!(
             failure,
             AwbcRuntimeValueSnapshotError::ProgramType(Box::new(
@@ -1405,7 +1502,12 @@ mod tests {
                 ))
             ))
         );
-        assert_eq!(envs[0].admit_retained(&mut live).unwrap_err(), failure);
+        assert_eq!(
+            envs[0]
+                .admit_retained(RuntimePresentationBankId::Root, &mut live)
+                .unwrap_err(),
+            failure
+        );
         let mut inert = RuntimeRetainedValueAdmission::for_program(
             owner.clone(),
             RuntimeSchemaLimits {
@@ -1413,9 +1515,21 @@ mod tests {
                 ..RuntimeSchemaLimits::engine_default()
             },
         );
-        images[0].admit_retained(&mut inert).unwrap();
-        assert_eq!(images[1].admit_retained(&mut inert).unwrap_err(), failure);
-        assert_eq!(images[0].admit_retained(&mut inert).unwrap_err(), failure);
+        images[0]
+            .admit_retained(RuntimePresentationBankId::Root, &mut inert)
+            .unwrap();
+        assert_eq!(
+            images[1]
+                .admit_retained(RuntimePresentationBankId::Root, &mut inert)
+                .unwrap_err(),
+            failure
+        );
+        assert_eq!(
+            images[0]
+                .admit_retained(RuntimePresentationBankId::Root, &mut inert)
+                .unwrap_err(),
+            failure
+        );
         assert_eq!(
             envs.iter()
                 .map(|env| env.inert_rollback_image(&owner).unwrap())
@@ -1431,11 +1545,17 @@ mod tests {
                 },
             );
             if limit == 0 {
-                assert_eq!(envs[0].admit_retained(&mut admission).unwrap_err(), failure);
+                assert_eq!(
+                    envs[0]
+                        .admit_retained(RuntimePresentationBankId::Root, &mut admission)
+                        .unwrap_err(),
+                    failure
+                );
                 continue;
             }
             for env in &envs {
-                env.admit_retained(&mut admission).unwrap();
+                env.admit_retained(RuntimePresentationBankId::Root, &mut admission)
+                    .unwrap();
             }
             assert_eq!(
                 envs.iter()
@@ -1451,7 +1571,9 @@ mod tests {
                 },
             );
             for image in &images {
-                image.admit_retained(&mut admission).unwrap();
+                image
+                    .admit_retained(RuntimePresentationBankId::Root, &mut admission)
+                    .unwrap();
             }
             for (image, env) in images.iter().cloned().zip(&envs) {
                 assert_eq!(&image.into_admitted_live(&owner).unwrap(), env);
@@ -1465,10 +1587,16 @@ mod tests {
             owner,
             RuntimeSchemaLimits::engine_default(),
         );
-        images[0].admit_retained(&mut admission).unwrap();
-        let failure = invalid.admit_retained(&mut admission).unwrap_err();
+        images[0]
+            .admit_retained(RuntimePresentationBankId::Root, &mut admission)
+            .unwrap();
+        let failure = invalid
+            .admit_retained(RuntimePresentationBankId::Root, &mut admission)
+            .unwrap_err();
         assert_eq!(
-            images[0].admit_retained(&mut admission).unwrap_err(),
+            images[0]
+                .admit_retained(RuntimePresentationBankId::Root, &mut admission)
+                .unwrap_err(),
             failure
         );
         assert_eq!(invalid, before);
@@ -1641,7 +1769,10 @@ mod tests {
         env.pop_scope();
         assert_eq!(env.function_instantiation(), Some(binding.as_ref()));
         let image = env.inert_rollback_image(&owner).unwrap();
-        let restored = RuntimeEnv::from_rollback_image(image.clone(), &owner).unwrap();
+        let wire = serde_json::to_vec(&image).unwrap();
+        let decoded: RuntimeEnvRollbackImage = serde_json::from_slice(&wire).unwrap();
+        assert_eq!(decoded, image);
+        let restored = RuntimeEnv::from_rollback_image(decoded, &owner).unwrap();
         assert_eq!(restored.function_instantiation(), Some(binding.as_ref()));
         assert_eq!(restored.get(declaration), Some(&value));
         let mut invalid_callable = image.clone();

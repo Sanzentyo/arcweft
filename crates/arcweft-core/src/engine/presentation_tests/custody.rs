@@ -112,6 +112,50 @@ impl Fixture {
 }
 
 #[test]
+fn native_presentation_grants_restore_at_their_original_lexical_slots() {
+    let mut fixture = Fixture::new();
+    let outer = fixture.register();
+    fixture.bind(0, &outer);
+    fixture
+        .engine
+        .push_scope_frame(crate::scope::RuntimeScopeIdentity::Anonymous);
+    let inner = fixture.register();
+    fixture.bind(1, &inner);
+
+    let owner = fixture.engine.fiber.frame.program.clone();
+    let mut image = fixture.engine.inert_rollback_image().unwrap();
+    let wire = serde_json::to_vec(&image.fiber.frame.env).unwrap();
+    image.fiber.frame.env = serde_json::from_slice(&wire).unwrap();
+    let mut forged = image.clone();
+    let mut invalid: serde_json::Value = serde_json::from_slice(&wire).unwrap();
+    let scopes = invalid["scopes"].as_array_mut().unwrap();
+    let outer_grant = scopes[0]["presentation_scope"].take();
+    let inner_grant = scopes[1]["presentation_scope"].take();
+    assert!(!outer_grant.is_null() && !inner_grant.is_null());
+    scopes[0]["presentation_scope"] = inner_grant;
+    scopes[1]["presentation_scope"] = outer_grant;
+    forged.fiber.frame.env = serde_json::from_value(invalid).unwrap();
+    assert_eq!(
+        Engine::from_rollback_image(forged, &owner).unwrap_err(),
+        crate::presentation::RuntimePresentationError::Owner.to_string(),
+    );
+
+    let mut restored = Engine::from_rollback_image(image.clone(), &owner).unwrap();
+    assert_eq!(restored.inert_rollback_image().unwrap(), image);
+    restored
+        .exit_emitted_scope(
+            &mut RuntimeStepOutput::default(),
+            &mut crate::pure::VmRuntimePureCallBackend::default(),
+        )
+        .unwrap();
+    let banks = restored.presentation.as_ref().unwrap();
+    let retired = banks.retirements();
+    assert_eq!(retired.len(), 1);
+    assert_eq!(retired[0].token, inner);
+    assert!(restored.fiber.frame.env.get(fixture.locals[0]).is_some());
+}
+
+#[test]
 fn native_pending_return_reparents_only_the_escaping_presentation_lease() {
     let mut fixture = Fixture::new();
     let outer = fixture.register();

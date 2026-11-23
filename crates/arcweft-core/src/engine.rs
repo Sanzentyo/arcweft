@@ -337,7 +337,9 @@ impl FlowFiber {
             &self.frame.program,
             self.execution,
             self.persistent_id,
-            self.frame.env.presentation_scope_target()?,
+            self.frame
+                .env
+                .presentation_scope_target(self.frame.presentation_bank)?,
         )
     }
 
@@ -352,7 +354,9 @@ impl FlowFiber {
             &self.frame.program,
             self.execution,
             self.persistent_id,
-            self.frame.env.presentation_scope_target()?,
+            self.frame
+                .env
+                .presentation_scope_target(self.frame.presentation_bank)?,
         )
     }
 }
@@ -363,11 +367,11 @@ pub(crate) enum FlowFiberLaunch {
     Program(crate::task::ProgramTaskLaunch),
 }
 
-fn validate_program_task_launches<V, P, O, C, A, S>(
-    active: &FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>,
-    suspended: Option<&NativeFlowExecutionFrame<V, P, O, C, A, S>>,
-    children: &VecDeque<FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>>,
-    parked_main: Option<&FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>>,
+fn validate_program_task_launches<V, P, O, C, A, S, G>(
+    active: &FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S, G>>,
+    suspended: Option<&NativeFlowExecutionFrame<V, P, O, C, A, S, G>>,
+    children: &VecDeque<FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S, G>>>,
+    parked_main: Option<&FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S, G>>>,
     mut accepted_program: impl FnMut(&crate::task::ProgramTaskLaunch) -> bool,
 ) -> Result<(), String> {
     let mut tasks = BTreeSet::new();
@@ -411,6 +415,7 @@ pub struct NativeFlowExecutionFrame<
     C = FlowControlStackEntry,
     A = AwaitState,
     S = FlowFiberStatus,
+    G = crate::presentation::RuntimePresentationScopeBinding,
 > {
     /// Immutable code and type authority retained by this execution frame.
     pub(crate) program: crate::task::RuntimeProgramOwner,
@@ -421,7 +426,7 @@ pub struct NativeFlowExecutionFrame<
     pub(crate) control_stack: Vec<C>,
     pub await_observer: Option<Box<A>>,
     pub root_cleanups: Vec<FlowScopeCleanup>,
-    pub env: RuntimeEnv<V>,
+    pub env: RuntimeEnv<V, G>,
     pub observations: RuntimeObservationState<P>,
     pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState<P>>,
     /// The terminal value remains with the exact fiber that returned it.
@@ -455,6 +460,7 @@ type NativeFlowExecutionFrameRollbackImage = NativeFlowExecutionFrame<
     FlowControlStackEntryRollbackImage,
     AwaitStateRollbackImage,
     FlowFiberStatusRollbackImage,
+    crate::presentation::RuntimePresentationScopeSnapshot,
 >;
 
 impl Clone for NativeFlowExecutionFrameRollbackImage {
@@ -534,7 +540,7 @@ impl FlowFiber {
     }
 }
 
-impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
+impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
     /// Borrows the exact original executable retained by this frame.
     pub const fn program_owner(&self) -> &crate::task::RuntimeProgramOwner {
         &self.program
@@ -1306,31 +1312,11 @@ pub(crate) struct FunctionCallFrame<
 > {
     #[serde(with = "crate::plan::code::function_coordinate")]
     site: crate::runtime_id::RuntimeFunctionSiteId,
-    #[serde(with = "function_frame_instantiation")]
+    #[serde(with = "crate::program_types::effect_instantiation_lease")]
     type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     function_scope: bool,
     caller_pending_ops: VecDeque<O>,
     continuation: FunctionReturnContinuation<P>,
-}
-
-mod function_frame_instantiation {
-    use crate::program_types::RuntimeFunctionEffectInstantiation;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::sync::Arc;
-
-    pub(super) fn serialize<S: Serializer>(
-        value: &Option<Arc<RuntimeFunctionEffectInstantiation>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        value.as_deref().serialize(serializer)
-    }
-
-    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Option<Arc<RuntimeFunctionEffectInstantiation>>, D::Error> {
-        Option::<RuntimeFunctionEffectInstantiation>::deserialize(deserializer)
-            .map(|value| value.map(Arc::new))
-    }
 }
 
 type FunctionCallFrameRollbackImage =
