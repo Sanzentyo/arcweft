@@ -22314,3 +22314,9 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 同じ対象nextestの新しい実行ファイルで Core 4件と RuntimePlan 2件を直接実行し、全6件が PASS。Core は全要求familyの共通seal再生、別タスク所有の拒否、version 1 の素材要求JSON、素材IDのtranscriptを確認した。RuntimePlan は画像・音声それぞれで Native と decoded AWBC の要求IDと元のproducer keyを照合した。バイナリの SHA-256 は Core `5a84d8eb95a5e239c75507ad0ecbc0aba9f040ec1cd41d74e728dabff7a06d7c`、RuntimePlan `62890db6ceee9841621187dc4045db003214928e2e69497ede962921360297d3`。
 
 既存デモと今回のリリースWasmで固定時刻の画像比較を2回試みた。1回目は WebGPU canvas 確認の起動、2回目は最初の `[p]` の起動が10秒上限を超え、いずれも終了1で比較には到達しなかった。タイムアウト時は `ready=null`、初回ランタイム観測なし、fatalメッセージは空だった。その後の診断2回では起動が成立し、46,914,736 bytesのWasm応答に6,773／7,554 ms、応答完了から初回観測まで1,489／1,433 msを計測した。通常smokeの成功と、それぞれの実行の起動結果を履歴に保持する。
+
+新しいCLIで実WAVの統合回帰を直接実行すると、`(.Ok(_), .Err(_))` のタプル Match を含む AWFB の構築が `compiler.runtime_semantic_projection` の `Match has no exact coverage domain` で終了1。回帰は0成功／1失敗、終了101。CLIの SHA-256 は `49a4f4623aaa8e0bf533482273b2777789e6250fbc6444da14f040a1833e362b`。同じ実行ファイルの既存画像回帰は、保持した結果と未完了の要求を復元して成功した。
+
+`Result<i64, String>` を二つ持つ音声なしの最小入力で、`(.Ok(_), .Err(_))` と残りを覆うワイルドカードの AWFB 構築が同じ診断で終了1。`(.Ok(_), .Ok(_))` の対照と単一 `Result` の対照は終了0だった。網羅性の witness 探索がコンストラクタを展開して残りの列へ進むとき、前の兄弟列を再帰の祖先として残していた。`a5cf7422fa000c60dd441c23efab14a86a24c2fe` は実際のコンストラクタの祖先を列ごとに保持し、同型の兄弟列の回帰を追加した。既受入の Generic Match 監査と、この再現で特定した境界の検証を履歴に記録する。
+
+修正後のSema、CLIと実行計画の検証を開始した。`cargo tree --offline --locked -p arcweft-player-web --target wasm32-unknown-unknown --edges normal,build` で解決したWeb製品の239パッケージにSemaは含まれない。Semaの修正を反映したCLIで AWFB を再生成し、配信Wasmのハッシュを固定してブラウザーで読み込む。
