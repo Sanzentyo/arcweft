@@ -22341,8 +22341,16 @@ CLI SHA-256 `49a4f4623aaa8e0bf533482273b2777789e6250fbc6444da14f040a1833e362b` �
 
 単独指定の `compact-focus-first-choice` と `hidpi-focus-first-choice` も、既存 smoke が各8件終了0だった。Native基準との比較はそれぞれ2,073,600／3,686,400 RGBAサンプルの全値が一致し、MSE／MAE／最大誤差／変化画素率0、SSIM 1。規定の比較器も両件終了0。縮小のNative／Web PNGは `cfe84d08c61a0a63e2c045192ea515e3e1c4b197cadba18e0ed8cff5fb109b60`／`f8a3655a66c0ca4d5e94bcf639d3a72eb623c8b1ee62482b8228e8b8a7b98d06`。高DPIのNative／Web PNGのハッシュは上記の `focus-first-choice` と一致した。
 
+別プロセスで単独再試行した `press-first-choice` は固定の起動上限10秒で smoke 8件終了0、比較器終了0。Nativeとの3,686,400 RGBAサンプルの全値が一致し、MSE／MAE／最大誤差／変化画素率0、SSIM 1。Native PNG の SHA-256 は `010ad88e836301910922115de070dfcafaf21c8b58184246e1bf65a88f1ac4f1`、Web PNG は `914d0933c3f099c50fa1054fedc76523e1b7b95112b1ff262073407dec319c65`。各条件の採取と照合は同じWasm／AWFB、既存Native基準、既定のフレーム時刻としきい値で行った。5件の個別比較と、先行の一括実行で発生したChromeの起動失敗を記録する。
+
+<a id="voice-match-product-recheck"></a>
+
+### タプル Match と音声ロードの製品再検証
+
 `f9921fd5d8ef0275bd05b54b53dba85f8ac61c41` の修正後CLI SHA-256 `2c0ff1fb892c6cf182844a64eb55e85af93f6ab89bd4bdd2c75bb417f2cb33c6` で、混合 `Result` の最小入力を AWFB にして実行し、`done return separate_columns` を確認した。AWFB SHA-256 は `6fa5f161830c39c7b5e5acd1feec8537413cefb041757d81fec93ae3cc482bfd`。同じ入力からワイルドカードを除くと `Match is non-exhaustive` 診断で終了1、AWFBの生成0件だった。
 
 修正後CLIで、タプル Match を含む元の実WAV入力をバンドルし、AWBC実行が音声要求2件を完了して `voice_ready` を返すことを検証した。Native VMからAOTへ別プロセスで復元すると、既完了1件を保持し、ステップ2から元のタスクID・キーを持つ `asset.voice.alice.missing` 1件だけが完了して `voice_ready` に到達した。AWFBの SHA-256 は `48c7c6d71d963f7648cafa807b9701ae5d9c6bdd8766e10f8912f80dfd853e85`、AWFSは `17ddf67d2830b41b5b44e9af6ac885714c83b461694ff9c565bccaaef5cc47a4`。
 
 同じ修正後の AWFB を固定のリリースWasmで Chrome WebGPU に読み込み、既定10秒の起動上限内で起動し、`done return voice_ready` で終了0。ステップ0〜2の要求数 `[1, 1, 0]`、2件の task ID、sequence 1 の配信順が Native の AWBC 実行と完全に一致した。配信IDは `73504261f757194a0a2dd67d92898528518d30a09b66e87df4e693569730b411` と `0d6bdd8064df572dd81a1964c1a2b5801be8fcc9a192ff1881d33c053e64dcfa`。ブラウザーの異常は0件。Wasm SHA-256 は `f4f49ea723aea7bd246da308892fb011a2af0e26264de1b278c43c30d4605b98`。
+
+修正後の `nextest` 実行ID `63fa20fb-343d-4381-85a0-be60d265dd7d` は137 PASS／5,804 skip、終了0。選択に含まれるのは、実WAVのCLI回帰、修正したNative／AWBCのfixture 2件、兄弟列の新回帰、再帰の到達・有限witness・基底なしの回帰、semantic transcript、Native／AWBCの素材キーの検査。同じ `.arcw` と実WAVを独立に2回バンドルし、両AWFBのSHA-256は上記 `48c7c6d71d963f7648cafa807b9701ae5d9c6bdd8766e10f8912f80dfd853e85` と一致した。
