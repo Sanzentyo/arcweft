@@ -22214,3 +22214,21 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 `just structure-audit-gate` はblocking 0、終了0。既存の収集ツールの所有範囲を確認した。基点の1,292行から1,413行（49,037 bytes）。外部コマンド、採取結果・環境・しきい値の検証、レビュー記録を同じツールが所有する。Chromium固有のGPU情報はブラウザー側で採取し、収集ツールで契約と照合する。Rustの書式、Nodeの構文、JSONの読み取り、差分の空白検査は成功した。検証後の `target` は216,900,608,858 bytes（約216.9 GB）。
 
 [更新前後の検証原本](acceptance-evidence/task-inset-shadow-pinned-regression.raw.zip)は40件、111,488 bytes、SHA-256 `869343b26c2ad59c2f2433d062fb71e1c06a26a7682ce61b68383000a272b778`。両ターゲットの候補・観測・環境・比較値、更新前の差分超過、その後の基準との照合、キャプチャーとsmokeのログを保持した。
+
+<a id="borrowed-retained-asset-admission"></a>
+
+## 2026-11-24 — 保存復元時の画像・音声を元のカタログで借用検査
+
+検証基点 `7e17f3a00589be8d862a1835a256e60136ec7e97`。ローカルと公開 `main` は一致し、開始時に追跡ファイルの差分はなかった。既存の未追跡ディレクトリが一つあった。
+
+保持値の検証は、以前は利用側向けの `resolve_image_handle`／`resolve_voice_handle` を通り、確認後に素材のエンコード済みバイト列を `Arc<[u8]>` へコピーし、そのまま破棄した。Result の確認でも payload を取り出すために RuntimeValue を複製した。壊れた素材と別素材のダイジェストを組み合わせると、ダイジェスト照合よりデコードが先に動いた。
+
+元 generation と artifact identity のカタログから借りたバイト列を使い、保持ダイジェストまたは欠落の証拠をデコード前に照合する。保持 Result は Core の借用 variant と opaque role を使い、単独保持値と同じ検証に入る。証拠が一致する素材ではデコードとメタデータ検査を実行し、素材バイト列が要求されたときにのみ所有バッファを作る。Native と Web が使う共通 resolver の修正で、保存形式は version 1。別素材のダイジェストを持つ壊れた音声は `ContentDigestMismatch`、正しいダイジェストを持つ壊れた音声の成功ハンドルは `ResultReasonMismatch` として拒否する。
+
+`cargo nextest run --offline --locked -p arcweft-bundle-assets -p arcweft-runtime-host -p arcweft-player-web --lib --no-fail-fast --no-tests fail --status-level fail` は3バイナリで89成功、選択外0、終了0。実行 ID `20f115ed-a688-4818-9ce7-b0949dcd26b7`。元バッファと同じスライスを返し、不一致や偽の欠落に対してデコーダーを呼び出さないことを resolver owner の回帰で確認した。Runtime Host の新規回帰は、実カタログの壊れた音声を用い、単独のハンドルでも Result に入ったハンドルでも保持ダイジェストを先に確認した。
+
+`cargo nextest run --offline --locked -p arcweft-cli -p arcweft-runtime-driver --test runtime_native_options --test awbc_product_session --no-fail-fast --no-tests fail --status-level fail` は2バイナリで49成功、選択外0、終了0。実行 ID `5fa7c023-37bc-4634-a218-f4ab61660bad`。同じ実PNGを2回要求するCLI回帰は、Bytecode VM の2ステップで1件を完了して1件を実行中のまま v1 AWFS を保存した。別プロセスの AOT はステップ2から待機中の要求だけを同じ task request として再発行し、完了1件で `done Return("assets_ready")` を返した。既存の Product AWBC セッションも同時に実行した。全機能・全ターゲットの Cargo 逆依存は Bundle Assets 自身を含む7パッケージ。コード・契約更新 `4f0cc69650bee368ebb7a837d89d2a9df04916c2` を通常 push し、公開 ref と変更4ファイルの blob を照合した。
+
+`4f0cc69650bee368ebb7a837d89d2a9df04916c2` のコードで `cargo check --offline --locked --workspace --all-targets --all-features` と同条件の Clippy は警告付きでそれぞれ終了0。追加した関数の明示 lifetime に対する Clippy の指摘を受け、借用元が一つなので型の寿命指定を省略形に揃えた。
+
+最終コードでは、7逆依存パッケージ（Bundle Assets、Runtime Host、Native Player、Web Player、CLI、LSP、Verify LSP）と Runtime Driver を指定し、`cargo nextest run --offline --locked` で `--lib --test runtime_native_options --test awbc_product_session` を実行した。10バイナリで691成功（slow 1）、選択外0、終了0。実行 ID `8bde6c19-2f1c-4e05-b27e-0d5c5cefd271`。全機能・全ターゲットの workspace Clippy は警告付きで終了0。変更 Rust の `rustfmt --check` と差分の空白検査も成功した。最終コード `05bc731b86b5525b4e19561e7c43d28791b967bc` を通常 push し、公開 ref と変更1ファイルの blob を照合した。検証後の `target` は219,108,523,458 bytes（約219.1 GB）。
