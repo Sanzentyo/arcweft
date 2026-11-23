@@ -22358,3 +22358,7 @@ CLI SHA-256 `49a4f4623aaa8e0bf533482273b2777789e6250fbc6444da14f040a1833e362b` �
 同じSourceの `cargo check --workspace --all-targets --all-features --offline --locked` は終了0。Native／Webホストのビルド済みテストを両方実行し、素材の正常値とdecode失敗、復元時の音声digest不一致、Webのdispatch context不一致、欠落と不正な素材の結果を含む5件がPASS。実行ファイルの SHA-256 は `arcweft-runtime-host` が `7e193c210a4e5e6007003415de3fa6b8e3cdf799811c6fe9408b49679833bb46`、`arcweft-player-web` が `856f05669388eb1c99415ffc5aaab113ba06b635a57cd1da31c28281d0e902cc`。
 
 元のGeneric Match受入監査のSema側139件を、旧Style Lengthテストに対する記録済みの後継名で照合した。対象nextestでは123件がPASSし、残り16件は同じ現行Semaテスト実行ファイルで個別に実行して全件PASS。Sema実行ファイルの SHA-256 は `47727f8a6df20b87ef6fb82e207063ff99b2aa3245309650920967427a20be3a`。監査の残りは公開クエリ5件とNative／AWBC継続・保存7件。
+
+同じSourceの `cargo clippy --workspace --all-targets --all-features --offline --locked` は終了0。`cargo check` の実行時間は5分51秒、Clippyは7分47秒だった。現行ビルドの各ライブラリを直接実行し、`arcweft-id` 54件、Core 2,418件、Sema 2,044件が全件PASSした。`arcweft-id` の実行ファイルの SHA-256 は `c3812a61beea27c9024c4b7200f33770ffeb2587cf63fa7b565f5afd84e0d8e6`、Coreは `ca024038b6dbf7f62fa892fb32b8a157a130182acc418f0ff2deea2f64018563`、Semaは上記と同じだった。
+
+現行CLIで `bundle --manifest-path web/arcw.toml --profile main` を独立に実行し、35,157,520 bytesのAWFBを再生成した。SHA-256は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4` で、Chromeの5フレームを取得したAWFBと一致した。この再生成物から160 msのNativeフレーム5件を再採取し、同じWeb画像を照合する。
