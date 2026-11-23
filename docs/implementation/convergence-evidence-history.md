@@ -22072,3 +22072,25 @@ Windows の `cargo nextest run --offline --locked -p arcweft-lang-sema --lib --n
 - `rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned` は `NodeLimit { actual: 65, limit: 64 }` を返した。LLDB で `unchanged_relation` 内の `snapshot` における到達項収集が到達点であることを確認した。両回帰の上限値を保持した。
 
 変更範囲は Sema のテスト。Cargo の全機能・全ターゲットの依存グラフは Sema を含め22パッケージで、逆依存の先行実測はそのソース SHA で保持した。`cargo clippy --offline --locked -p arcweft-lang-sema --all-targets` は警告付きで終了0。追加した比較式2か所に `cloned_ref_to_slice_refs` が出た。変更 Rust の書式と差分の空白チェックは終了0。検証後の `target` は188,382,149,467 bytes（約188.4 GB）。
+
+<a id="effect-closure-budget"></a>
+
+## 2026-11-24 — 効果関係の再構築と完了前の検査順を見直す
+
+基点 `403d681829dd33056c37bc57fb08d8154738f9f7`。開始時の追跡ファイルに差分はなく、既存の未追跡ディレクトリが一つあった。効果の完了処理 `2aa8d74d3c2bf42acaa32c2976566c2c9599e754` を `main` に通常 push し、公開 ref と変更8ファイルの blob を照合した。
+
+元の関数、選択肢、制約が同じ順序で維持され、ラベル集合も一致すると確認できたとき、最終処理で元のコンパイル済みプログラムを再利用する。実際の入力行の受理とそのラベルの処理は引き続き行う。定数だけの前提と結論は含意を直接評価する。スコープ付きの元制約と発行された参照は保持し、グラフ項を含む制約は従来の計算と照合を通る。
+
+初回はテスト用の呼出し2か所が新しい引数を渡さず、コンパイルが終了101。両呼出しを移行後、Windows の Sema ライブラリ全体は2,042件中2,039件成功、3件失敗、選択外0件、終了100。失敗 ID は基点と同じ。未束縛型の回帰を LLDB で再観測すると、前回止まった `compile_relation` を越え、`confirm_scoped_constraint` 内で元の証拠を照合する際に上限へ達した。固定型と選択肢の回帰は引き続き `unchanged_relation` 内の到達項収集で `NodeLimit` を返した。
+
+`cargo check --offline --locked --workspace --all-targets --all-features` は警告付きで終了0。全機能・全ターゲットの Cargo 逆依存グラフは Sema を含む22パッケージ。Compiler の `flow_wait`、`generic_continuation_snapshot`、`project_function_instances` と Runtime Plan の `awbc_product_parity` から `rdeps(=arcweft-lang-sema) & (test(generic) | test(callback) | test(effect) | test(partial) | test(prefix) | test(restore) | test(nominal))` を選び、27件すべて成功、46件選択外、終了0。Native／AWBC の共有 prefix、再帰 callback、attached default、保存復元を含む。
+
+続く `28199c51de175a8a36c580981f1019b1aca0ae5a` では、単独と結合の候補で必須の型・定数の束縛を効果関係の完了前に検査し、解の封印時の検査も維持した。従来の64 work上限のまま、未束縛の宣言参照を `IncompleteInstantiation` で特定した。`main` へ通常 push し、公開 ref と変更6ファイルの blob を照合した。
+
+効果ガードの回帰は、固定効果に根拠のない仮定を置いていた。後段に残る効果変数を本来の残余 binder で開き、`fs.read` 以下という述語を実際の残余解から得た。実引数を省略するとその slot の `UnboundEffect`、`fs.write` では `UnsatisfiedEffectConstraint` を返す。空の行と `fs.read` では受理して元宣言の効果行を得た。成功時に通る各投影ノードの直前で打ち切り、同じ入力で得た結果が維持されることを照合した。
+
+最終の Sema ライブラリ全体は2,042件中2,041件成功、1件失敗、選択外0件、終了100。上記2件が成功に移行し、新規失敗は0件。残る `rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned` は `NodeLimit { actual: 65, limit: 64 }` を返した。上限値を保持した。構造ゲートは終了0、ブロッキング違反0件。
+
+最終ソースの `cargo check --offline --locked --workspace --all-targets --all-features` と同範囲の Clippy は警告付きで終了0。今回の変更箇所には単一パターンの `match` とテストの空検査に関する Clippy の提案が残る。変更 Rust の書式検査は終了0。
+
+最終ソースでも同じ4バイナリとフィルターで逆依存を実行し、Compiler 25件と Runtime Plan 2件の計27件すべて成功、46件選択外、終了0。先行実行との選択 ID 差分は0件。検証後の `target` は188,382,072,806 bytes（約188.4 GB）。
