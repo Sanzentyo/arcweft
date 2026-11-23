@@ -2599,6 +2599,25 @@ impl NeedProducerRegistry {
             .expect("accepted receipt belongs to this journal"))
     }
 
+    /// Resolves a receipt at issue time. Journal-only AwaitMany template
+    /// requests are issued by the current executable. Producer launches own
+    /// their original Source across replacement.
+    pub(crate) fn program_owner_at_dispatch(
+        &self,
+        task: &TaskSubmission,
+        issuing_program: impl FnOnce() -> RuntimeProgramOwner,
+    ) -> Option<RuntimeProgramOwner> {
+        let handle = task.handle();
+        let spec = self.task_journal.accepted_spec(handle)?;
+        if !spec.same_join_contract(task.spec()) {
+            return None;
+        }
+        Some(match self.launch_for_correlation(&handle.correlation) {
+            Some(launch) => launch.source().program_owner(),
+            None => issuing_program(),
+        })
+    }
+
     /// Moves one actual local body outcome into the common task state. A
     /// retirement proof carries no second copy of the returned value.
     pub(crate) fn complete_program_task(

@@ -597,16 +597,19 @@ fn redraw(
                 ..BundleStepInput::default()
             },
         );
-        state.broker.cancel_scopes(step.cancel_scopes.clone());
-        let program_owner = state.session.program_owner();
+        let mut report = WebObservationReport::from_step(&step, 0);
         state
             .broker
-            .queue_dispatches(step.requested_tasks.clone(), &program_owner);
-        let queued = state
+            .cancel_scopes(std::mem::take(&mut step.cancel_scopes));
+        state
+            .broker
+            .queue_dispatches(std::mem::take(&mut step.requested_tasks), |dispatch| {
+                state.session.product_program_owner_for_dispatch(dispatch)
+            });
+        report.queued_task_events = state
             .broker
             .queue_program_completions(&mut step.program_task_completions)
             .map_err(|error| WebPlayerError::Session(error.to_string()))?;
-        let report = WebObservationReport::from_step(&step, queued);
         let json = serde_json::to_string(&report)
             .map_err(|error| WebPlayerError::Report(error.to_string()))?;
         emit_event("arcweft-runtime-observation", json);

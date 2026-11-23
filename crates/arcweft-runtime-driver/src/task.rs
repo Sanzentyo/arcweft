@@ -62,12 +62,7 @@ impl RuntimeTaskRecord {
         Self {
             dispatch: dispatch.identity(),
             status: RuntimeTaskStatus::Pending,
-            cursor: dispatch
-                .last_publication_revision
-                .map(|revision| TaskPublicationCursor {
-                    logical_epoch: dispatch.logical_epoch,
-                    sequence: TaskSequence(revision.get()),
-                }),
+            cursor: dispatch.publication_cursor(),
             cancel_scope: dispatch.task.spec().cancel_scope.clone(),
             execution: dispatch.task.spec().request.kind(),
         }
@@ -120,6 +115,18 @@ pub struct RuntimeTaskRegistry {
 }
 
 impl RuntimeTaskRegistry {
+    pub(crate) fn owns_active_dispatch(&self, dispatch: &HostTaskDispatch) -> bool {
+        self.records
+            .get(&dispatch.task.task_id())
+            .is_some_and(|record| {
+                record.status.is_active()
+                    && record.dispatch == dispatch.identity()
+                    && record.cursor == dispatch.publication_cursor()
+                    && record.cancel_scope == dispatch.task.spec().cancel_scope
+                    && record.execution == dispatch.task.spec().request.kind()
+            })
+    }
+
     pub(crate) fn has_active_program_tasks(&self) -> bool {
         self.records.values().any(|record| {
             record.execution == arcweft_core::task::TaskExecutionKind::Program
@@ -429,6 +436,13 @@ impl HostTaskDispatch {
     #[must_use]
     pub fn dispatch_start(&self) -> TaskDispatchStart {
         TaskDispatchStart::new(self.identity(), self.last_publication_revision)
+    }
+    fn publication_cursor(&self) -> Option<TaskPublicationCursor> {
+        self.last_publication_revision
+            .map(|revision| TaskPublicationCursor {
+                logical_epoch: self.logical_epoch,
+                sequence: TaskSequence(revision.get()),
+            })
     }
     #[must_use]
     pub const fn bundle_asset_context(&self) -> Option<RuntimeBundleAssetContext> {

@@ -1705,6 +1705,17 @@ fn restartable_need_session_save_reensures_the_exact_dispatch_once() {
         );
     };
     let dispatch = dispatch.clone();
+    let owner = original
+        .product_program_owner_for_dispatch(&dispatch)
+        .expect("accepted dispatch retains its original executable lease");
+    assert!(owner.same_program(&original.program_owner()));
+    let mut foreign = dispatch.clone();
+    foreign.sequence = arcweft_core::task::TaskSequence(dispatch.sequence.0 + 1);
+    assert!(
+        original
+            .product_program_owner_for_dispatch(&foreign)
+            .is_none()
+    );
     let asset_context = dispatch
         .bundle_asset_context()
         .expect("AssetLoad dispatch has a complete artifact context");
@@ -1800,6 +1811,15 @@ fn restartable_need_session_save_reensures_the_exact_dispatch_once() {
     };
     assert_eq!(resumed_dispatch.identity(), dispatch.identity());
     assert_eq!(resumed_dispatch.task, dispatch.task);
+    let owner = resumed
+        .product_program_owner_for_dispatch(resumed_dispatch)
+        .expect("re-ensured dispatch retains its restored executable lease");
+    assert!(owner.same_program(&resumed.program_owner()));
+    assert!(
+        resumed
+            .product_program_owner_for_dispatch(&dispatch)
+            .is_none()
+    );
     assert_eq!(
         resumed_dispatch
             .dispatch_start()
@@ -1822,12 +1842,52 @@ fn restartable_need_session_save_reensures_the_exact_dispatch_once() {
     );
     assert!(
         resumed
+            .product_program_owner_for_dispatch(resumed_dispatch)
+            .is_none()
+    );
+    assert!(
+        resumed
             .snapshot_session()
             .expect("terminal Need remains saveable")
             .runtime
             .restartable_tasks
             .is_empty()
     );
+}
+
+#[test]
+fn accepted_need_keeps_its_original_executable_after_content_replacement() {
+    let bytes = restartable_need_awfb_bytes();
+    let mut session = product_session_from_bytes(&bytes);
+    let first = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let [dispatch] = first.requested_tasks.as_slice() else {
+        panic!("one accepted Need dispatch");
+    };
+    let original = session.program_owner();
+    let candidate = ArcweftBundle::from_awfb_slice_with_resource_types(
+        &bytes,
+        &BundleSessionOptions::default().engine_resource_types,
+    )
+    .expect("independently decoded equivalent executable");
+    let report = session
+        .hot_swap_bundle(&candidate)
+        .expect("content replacement");
+    assert_eq!(
+        report.compatibility,
+        arcweft_runtime_driver::swap::SwapCompatibility::ContentOnly
+    );
+    assert_ne!(
+        report.generation,
+        dispatch.task.handle().correlation.generation
+    );
+    assert!(!session.program_owner().same_program(&original));
+    let retained = session
+        .product_program_owner_for_dispatch(dispatch)
+        .expect("active task retains a lease");
+    assert!(retained.same_program(&original));
 }
 
 fn exported_session_json(session: &BundleSession) -> serde_json::Value {

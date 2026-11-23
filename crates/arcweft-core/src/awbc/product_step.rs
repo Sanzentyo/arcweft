@@ -1772,6 +1772,14 @@ impl AwbcProductStepExecutor {
         self.need_producer_generation_for_task(task)
     }
 
+    pub(crate) fn program_owner_at_task_dispatch(
+        &self,
+        task: &crate::task::TaskSubmission,
+    ) -> Option<RuntimeProgramOwner> {
+        self.need_producers
+            .program_owner_at_dispatch(task, || RuntimeProgramOwner::Awbc(self.program_arc()))
+    }
+
     pub(super) fn awbc_type_id_for_semantic_identity(
         &self,
         identity: crate::pattern::RuntimeSemanticTypeId,

@@ -671,6 +671,20 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
+    /// Selects the original Source or issuing executable at the Product
+    /// dispatch boundary. Callers retain the lease with the outstanding work.
+    pub fn product_program_owner_at_task_dispatch(
+        &self,
+        task: &crate::task::TaskSubmission,
+    ) -> Option<crate::task::RuntimeProgramOwner> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.program_owner_at_task_dispatch(task)
+            }
+            _ => None,
+        }
+    }
+
     /// Reports active producer Needs that must finish before a session save.
     #[must_use]
     pub fn quiescence_blocking_needs(&self) -> Vec<NeedId> {

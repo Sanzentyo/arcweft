@@ -69,7 +69,8 @@ use arcweft_core::step::{
 };
 use arcweft_core::task::GenerationId;
 use arcweft_core::task::{
-    CancelScopeId, LogicalEpoch, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId, TaskSequence,
+    CancelScopeId, LogicalEpoch, RuntimeNeedState, RuntimeProgramOwner, TaskEvent, TaskEventKind,
+    TaskId, TaskOutcomeContract, TaskSequence, TaskSubmission,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeFormatContext, RuntimePayload, RuntimeValue};
 use arcweft_id::LocaleTag;
@@ -319,10 +320,35 @@ pub struct BundleSession {
     /// after the foreground fiber has completed.
     presentation_generation: Arc<ProgramGeneration>,
     runtime_generation_pin: Option<Arc<ProgramGeneration>>,
-    task_generation_pins: BTreeMap<TaskSequence, Arc<ProgramGeneration>>,
+    task_generation_pins: BTreeMap<TaskSequence, TaskRuntimePin>,
     pending_restartable_reensure: BTreeMap<TaskId, HostTaskDispatch>,
     tasks: RuntimeTaskRegistry,
     next_generation_id: u64,
+}
+
+#[derive(Debug)]
+struct TaskRuntimePin {
+    generation: Arc<ProgramGeneration>,
+    program: Option<RuntimeProgramOwner>,
+}
+
+impl TaskRuntimePin {
+    fn at_dispatch(
+        generation: Arc<ProgramGeneration>,
+        executor: &ArcweftRuntimeExecutor,
+        task: &TaskSubmission,
+    ) -> Option<Self> {
+        let program = match task.spec().outcome {
+            TaskOutcomeContract::Standalone { .. } => None,
+            TaskOutcomeContract::Program { .. } => {
+                Some(executor.product_program_owner_at_task_dispatch(task)?)
+            }
+        };
+        Some(Self {
+            generation,
+            program,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1459,17 +1485,19 @@ impl BundleSession {
                         .expect("producer task generation must have a retained runtime image")
                         .generation(),
                 );
-                (task, Some(generation))
+                let pin = TaskRuntimePin::at_dispatch(generation, &self.executor, &task)
+                    .expect("fresh accepted task retains its issuing executable");
+                (task, Some(pin))
             })
             .collect::<Vec<_>>();
         let mut new_offset = 0_u64;
         let dispatches = tasks
             .into_iter()
-            .map(|(task, generation)| {
+            .map(|(task, pin)| {
                 if let Some(saved) = self.pending_restartable_reensure.remove(&task.task_id()) {
                     return saved;
                 }
-                let generation = generation.expect("fresh task has a generation pin");
+                let pin = pin.expect("fresh task has a generation pin");
                 let sequence = TaskSequence(first_sequence + new_offset);
                 new_offset += 1;
                 let bundle_asset_context = matches!(
@@ -1478,9 +1506,8 @@ impl BundleSession {
                         arcweft_core::task::HostTaskRequest::AssetLoad(_)
                     )
                 )
-                .then(|| generation.bundle_asset_context());
-                self.task_generation_pins
-                    .insert(sequence, generation.clone());
+                .then(|| pin.generation.bundle_asset_context());
+                self.task_generation_pins.insert(sequence, pin);
                 let dispatch = HostTaskDispatch {
                     logical_epoch: LogicalEpoch(clock.tick().0),
                     sequence,
@@ -1557,7 +1584,7 @@ impl BundleSession {
             if self
                 .task_generation_pins
                 .get(&dispatch_sequence)
-                .is_some_and(|pinned| pinned.id == generation)
+                .is_some_and(|pin| pin.generation.id == generation)
             {
                 self.task_generation_pins.remove(&dispatch_sequence);
             }

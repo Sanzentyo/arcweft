@@ -9,6 +9,8 @@ use super::{
     RuntimeTaskCancelTarget, RuntimeTaskListOptions, RuntimeTaskOwner, RuntimeTaskRecord,
     SystemPaletteSet, TaskSequence, ViewStyleProgram,
 };
+use crate::task::HostTaskDispatch;
+use arcweft_core::task::RuntimeProgramOwner;
 
 impl BundleSession {
     /// Final resource registry reconstructed for the active bundle.
@@ -58,7 +60,22 @@ impl BundleSession {
     pub fn task_generation(&self, sequence: TaskSequence) -> Option<GenerationId> {
         self.task_generation_pins
             .get(&sequence)
-            .map(|generation| generation.id)
+            .map(|pin| pin.generation.id)
+    }
+
+    /// Returns the executable lease held by an outstanding product dispatch,
+    /// including work originating in a retired generation after replacement.
+    pub fn product_program_owner_for_dispatch(
+        &self,
+        dispatch: &HostTaskDispatch,
+    ) -> Option<RuntimeProgramOwner> {
+        let pin = self.task_generation_pins.get(&dispatch.sequence)?;
+        if pin.generation.id != dispatch.task.handle().correlation.generation
+            || !self.tasks.owns_active_dispatch(dispatch)
+        {
+            return None;
+        }
+        pin.program.clone()
     }
 
     pub fn runtime_tasks(&self, options: RuntimeTaskListOptions) -> Vec<RuntimeTaskRecord> {

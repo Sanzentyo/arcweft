@@ -5,11 +5,14 @@ use thiserror::Error;
 use crate::{
     awbc::schema::AwbcProgram,
     entry::RuntimeSchemaLimits,
-    pattern::{RuntimeCheckedType, RuntimeSemanticTypeId},
+    pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeSemanticTypeId},
     plan::RuntimePlan,
     program_types::{RuntimeProgramTypeError, RuntimeProgramTypes},
     task::{TaskOutcomeContract, TaskSpec, TaskSubmission},
-    value::{RuntimePayload, RuntimeValue},
+    value::{
+        RuntimePayload, RuntimeScalarView, RuntimeSequenceView, RuntimeValue, RuntimeValueView,
+        RuntimeVariantView, runtime_sequence_dense_bytes,
+    },
 };
 
 /// Exact executable selected to validate a program-owned task outcome.
@@ -174,22 +177,7 @@ impl BoundTaskSpec {
         owner: Option<RuntimeProgramOwner>,
         limits: RuntimeSchemaLimits,
     ) -> Result<Self, TaskOutcomeBindingError> {
-        let spec = submission.spec();
-        if let super::TaskRequest::Program(source) = &spec.request
-            && owner
-                .as_ref()
-                .is_none_or(|owner| !owner.same_program(&source.program_owner()))
-        {
-            return Err(TaskOutcomeBindingError::ProgramSourceOwnerMismatch);
-        }
-        let outcome = match owner {
-            Some(owner) => {
-                spec.outcome
-                    .bind_program_in_invocation(owner, spec.producer.binding(), limits)?
-            }
-            None if spec.producer.binding().is_none() => spec.outcome.bind_standalone()?,
-            None => return Err(TaskOutcomeBindingError::StandaloneInvocationBinding),
-        };
+        let outcome = BoundTaskOutcome::bind_submission(&submission, owner, limits)?;
         Ok(Self {
             submission,
             outcome,
@@ -387,6 +375,30 @@ impl TaskOutcomeContract {
 }
 
 impl BoundTaskOutcome {
+    /// Binds an accepted receipt's original outcome and invocation without cloning its request.
+    pub fn bind_submission(
+        submission: &TaskSubmission,
+        owner: Option<RuntimeProgramOwner>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, TaskOutcomeBindingError> {
+        let spec = submission.spec();
+        if let super::TaskRequest::Program(source) = &spec.request
+            && owner
+                .as_ref()
+                .is_none_or(|owner| !owner.same_program(&source.program_owner()))
+        {
+            return Err(TaskOutcomeBindingError::ProgramSourceOwnerMismatch);
+        }
+        match owner {
+            Some(owner) => {
+                spec.outcome
+                    .bind_program_in_invocation(owner, spec.producer.binding(), limits)
+            }
+            None if spec.producer.binding().is_none() => spec.outcome.bind_standalone(),
+            None => Err(TaskOutcomeBindingError::StandaloneInvocationBinding),
+        }
+    }
+
     /// Resolves the original outcome while a retained candidate is borrowed.
     /// Its value graph must already belong to this resource allowance.
     pub(crate) fn validate_admitted_value_view(
@@ -472,14 +484,72 @@ impl BoundTaskOutcome {
 
     /// Checks the borrowed value without duplicating an affine payload.
     pub fn validate_value(&self, value: &RuntimeValue) -> Result<(), TaskOutcomeValueError> {
+        self.validate_live_view(value.view())
+    }
+
+    fn validate_live_view(&self, value: RuntimeValueView<'_>) -> Result<(), TaskOutcomeValueError> {
         let (owner, limits) = match &self.ty {
             BoundTaskOutcomeType::Standalone(_) => (None, RuntimeSchemaLimits::engine_default()),
             BoundTaskOutcomeType::Program { owner, limits, .. } => (Some(owner), *limits),
         };
         let mut resources =
             crate::entry::schema::value_encoding::ValueResourceAdmission::live(limits);
-        resources.validate_view(value.view(), 0, None)?;
-        self.validate_admitted_value_view(value.view(), owner, &mut resources)
+        resources.validate_view(value, 0, None)?;
+        self.validate_admitted_value_view(value, owner, &mut resources)
+    }
+
+    /// Publishes a successful host response using the outcome's declared carrier.
+    /// A Result contract uses its canonical Ok case.
+    pub fn try_success(
+        &self,
+        value: RuntimeValue,
+    ) -> Result<RuntimePayload, TaskOutcomeValueError> {
+        let result = self.validate_success(value.view())?;
+        Ok(Self::success_payload(value, result))
+    }
+
+    /// Checks the response's complete type and resource budget before copying text.
+    pub fn try_success_text(&self, text: &str) -> Result<RuntimePayload, TaskOutcomeValueError> {
+        let result =
+            self.validate_success(RuntimeValueView::Scalar(RuntimeScalarView::String(text)))?;
+        Ok(Self::success_payload(
+            RuntimeValue::String(text.to_owned()),
+            result,
+        ))
+    }
+
+    /// Checks the response's complete type and resource budget before copying bytes.
+    pub fn try_success_bytes(&self, bytes: &[u8]) -> Result<RuntimePayload, TaskOutcomeValueError> {
+        let result = self.validate_success(RuntimeValueView::Sequence(
+            RuntimeSequenceView::Bytes(bytes),
+        ))?;
+        Ok(Self::success_payload(
+            runtime_sequence_dense_bytes(bytes.to_vec()),
+            result,
+        ))
+    }
+
+    fn validate_success(&self, value: RuntimeValueView<'_>) -> Result<bool, TaskOutcomeValueError> {
+        let result = self.is_result_type()?;
+        if result {
+            RuntimeVariantView::with_live_builtin_payload(
+                RuntimeBuiltinVariantCaseIdentity::ResultOk,
+                value,
+                |value| self.validate_live_view(value),
+            )?;
+        } else {
+            self.validate_live_view(value)?;
+        }
+        Ok(result)
+    }
+
+    fn success_payload(value: RuntimeValue, result: bool) -> RuntimePayload {
+        if result {
+            RuntimeValue::result_ok(value)
+        } else {
+            value
+        }
+        .into()
     }
 
     /// Checks a recorded result against its original outcome contract before

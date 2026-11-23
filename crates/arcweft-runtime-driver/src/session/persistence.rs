@@ -12,9 +12,10 @@ use super::{
     BundleSessionRuntimeSnapshot, BundleSessionSaveError, BundleSessionSavePayload,
     BundleSessionSnapshot, BundleViewRuntime, DialogueContentCatalog, RuntimeExecutor,
     RuntimeTaskListOptions, RuntimeTaskRegistry, SessionRuntime, StartedForegroundEntry,
-    ViewProjectionInput, ViewVirtualizationRuntime, digest_label, project_view_resources,
-    reconciled_root_handles_for_restore, validate_presentation_runtime_status,
-    validate_presentation_snapshot, validate_virtual_list_scroll_owner,
+    TaskRuntimePin, ViewProjectionInput, ViewVirtualizationRuntime, digest_label,
+    project_view_resources, reconciled_root_handles_for_restore,
+    validate_presentation_runtime_status, validate_presentation_snapshot,
+    validate_virtual_list_scroll_owner,
 };
 
 struct SessionRestoreValueValidator<'a> {
@@ -665,7 +666,11 @@ impl BundleSession {
                     )
                 )
                 .then(|| image.generation().bundle_asset_context());
-                restored_task_pins.insert(row.sequence, generation);
+                let pin = TaskRuntimePin::at_dispatch(generation, &restored_executor, &task)
+                    .ok_or_else(|| BundleSessionSaveError::TaskDispatch {
+                        message: "restored Need dispatch lacks its original executable".to_owned(),
+                    })?;
+                restored_task_pins.insert(row.sequence, pin);
                 restored_reensure.insert(
                     row.correlation.task_id,
                     super::HostTaskDispatch {
@@ -869,7 +874,7 @@ impl BundleSession {
                 && rows.iter().all(|row| {
                     self.task_generation_pins
                         .get(&row.sequence)
-                        .is_some_and(|pin| pin.id == row.correlation.generation)
+                        .is_some_and(|pin| pin.generation.id == row.correlation.generation)
                 })
         });
         if !pins_match {

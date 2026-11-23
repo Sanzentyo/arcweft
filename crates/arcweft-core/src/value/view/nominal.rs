@@ -4,10 +4,10 @@ use super::super::{
     RuntimeNominalRecordValue, RuntimeVariantValue,
     awbc_save::{AwbcRuntimeNominalRecordSnapshot, AwbcRuntimeValueSnapshot},
 };
-use super::{RuntimeTupleView, RuntimeValueView};
+use super::{RuntimeTupleView, RuntimeValueSource, RuntimeValueView};
 use crate::{
-    entry::{RuntimeNominalTypeId, TypeLayoutHash},
-    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
+    entry::{RuntimeNominalTypeId, TypeLayoutHash, schema::value_encoding::ValueAdmissionOrigin},
+    pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeSemanticTypeId, RuntimeVariantIdentity},
     program_types::RuntimeFunctionEffectInstantiation,
 };
 
@@ -73,6 +73,32 @@ pub(crate) struct RuntimeVariantView<'a> {
 }
 
 impl<'a> RuntimeVariantView<'a> {
+    /// Projects a canonical one-field builtin case over a prospective live payload.
+    pub(crate) fn with_live_builtin_payload<R>(
+        case: RuntimeBuiltinVariantCaseIdentity,
+        payload: RuntimeValueView<'_>,
+        visit: impl FnOnce(RuntimeValueView<'_>) -> R,
+    ) -> R {
+        let fields = [payload];
+        let tuple = RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields));
+        let owner = RuntimeVariantIdentity::Builtin(case.owner());
+        let (ordinal, schema) = case
+            .owner()
+            .resolve_case(case)
+            .expect("builtin variant case");
+        debug_assert_eq!(schema.payload_arity(), Some(1));
+        let payload = RuntimeValueSource::Borrowed {
+            value: &tuple,
+            origin: ValueAdmissionOrigin::Live,
+        };
+        visit(RuntimeValueView::Variant(RuntimeVariantView::borrowed(
+            &owner,
+            ordinal,
+            schema.name(),
+            Some(payload),
+        )))
+    }
+
     /// Borrowed construction preview. Payload provenance is retained and no
     /// owning carrier or Copy capability is issued by this projection.
     pub(crate) const fn borrowed(

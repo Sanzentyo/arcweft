@@ -9,8 +9,7 @@ use crate::entry::schema::value_encoding::ValueCollectionKind;
 use crate::pattern::{RuntimeBuiltinVariantCaseIdentity as Case, RuntimeVariantIdentity};
 use crate::program_types::RuntimeFanoutOutputKind;
 use crate::value::{
-    LiveRuntimeValueView, RuntimeSequenceView, RuntimeStoredValue, RuntimeTupleView,
-    RuntimeValueSource, RuntimeVariantView,
+    LiveRuntimeValueView, RuntimeSequenceView, RuntimeStoredValue, RuntimeVariantView,
 };
 
 /// Exclusive custody keeps every original slot intact until all output and
@@ -231,25 +230,9 @@ fn with_result_view<R>(
     payload: RuntimeValueView<'_>,
     visit: impl FnOnce(LiveRuntimeValueView<'_>) -> R,
 ) -> R {
-    let fields = [payload];
-    let tuple = RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields));
-    let owner = RuntimeVariantIdentity::Builtin(case.owner());
-    let (ordinal, schema) = case
-        .owner()
-        .resolve_case(case)
-        .expect("builtin Result case");
-    let payload = RuntimeValueSource::Borrowed {
-        value: &tuple,
-        origin: ValueAdmissionOrigin::Live,
-    };
-    visit(LiveRuntimeValueView::construction(
-        RuntimeValueView::Variant(RuntimeVariantView::borrowed(
-            &owner,
-            ordinal,
-            schema.name(),
-            Some(payload),
-        )),
-    ))
+    RuntimeVariantView::with_live_builtin_payload(case, payload, |value| {
+        visit(LiveRuntimeValueView::construction(value))
+    })
 }
 
 fn invalid(message: &str) -> AwbcRuntimeValueSnapshotError {

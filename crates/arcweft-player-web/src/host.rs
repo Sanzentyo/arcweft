@@ -2,12 +2,11 @@ use arcweft_bundle::{BundleArtifact, BundleVirtualFileRef, BundleVirtualFileSpac
 use arcweft_bundle_assets::BundleAssetResolver;
 use arcweft_core::entry::RuntimeSchemaLimits;
 use arcweft_core::task::{
-    BoundTaskSpec, CancelScopeId, HostTaskRequest, ProgramTaskPublicationBatch,
+    BoundTaskOutcome, CancelScopeId, HostTaskRequest, ProgramTaskPublicationBatch,
     RuntimeProgramOwner, RuntimeTaskPublication, SystemInfoKind, TaskEvent, TaskEventKind,
+    TaskOutcomeContract,
 };
-use arcweft_core::value::{
-    RuntimeBundleAssetContext, RuntimePayload, RuntimeValue, runtime_sequence_dense_bytes,
-};
+use arcweft_core::value::{RuntimeBundleAssetContext, RuntimeValue};
 use arcweft_runtime_driver::task::HostTaskDispatch;
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -24,10 +23,7 @@ pub struct BrowserTaskBroker {
     asset_resolver: BundleAssetResolver,
     cancelled_scopes: BTreeSet<CancelScopeId>,
     queued_task_events: Vec<TaskEvent>,
-    program_dispatches: BTreeMap<
-        arcweft_core::task::TaskId,
-        (HostTaskDispatch, arcweft_core::task::BoundTaskOutcome),
-    >,
+    program_dispatches: BTreeMap<arcweft_core::task::TaskId, HostTaskDispatch>,
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
@@ -36,6 +32,8 @@ pub enum BrowserHostTaskError {
     TaskCompletion(#[from] arcweft_core::task::TaskCompletionError),
     #[error(transparent)]
     TaskOutcome(#[from] arcweft_core::task::TaskOutcomeValueError),
+    #[error(transparent)]
+    TaskOutcomeBinding(#[from] arcweft_core::task::TaskOutcomeBindingError),
     #[error("host call `{0}` is not declared by the active bundle manifests")]
     UndeclaredHostCall(String),
     #[error("browser MVP does not implement host call `{0}`")]
@@ -93,25 +91,31 @@ impl BrowserTaskBroker {
     pub fn queue_dispatches(
         &mut self,
         dispatches: Vec<HostTaskDispatch>,
-        program_owner: &RuntimeProgramOwner,
+        mut program_for_dispatch: impl FnMut(&HostTaskDispatch) -> Option<RuntimeProgramOwner>,
     ) -> usize {
         let events = dispatches
             .into_iter()
             .filter_map(|dispatch| {
+                let mut bind_outcome = || {
+                    let owner = match &dispatch.task.spec().outcome {
+                        TaskOutcomeContract::Standalone { .. } => None,
+                        TaskOutcomeContract::Program { .. } => program_for_dispatch(&dispatch),
+                    };
+                    BoundTaskOutcome::bind_submission(
+                        &dispatch.task,
+                        owner,
+                        RuntimeSchemaLimits::engine_default(),
+                    )
+                };
                 if matches!(
                     &dispatch.task.spec().request,
                     arcweft_core::task::TaskRequest::Program(_)
                 ) {
                     let task_id = dispatch.task.task_id();
-                    let bound = match BoundTaskSpec::bind(
-                        dispatch.task.clone(),
-                        Some(program_owner.clone()),
-                        RuntimeSchemaLimits::engine_default(),
-                    ) {
-                        Ok(bound) => bound,
-                        Err(error) => return Some(dispatch.failed(error.to_string())),
-                    };
-                    if let Some((pending, _)) = self.program_dispatches.get(&task_id) {
+                    if let Err(error) = bind_outcome() {
+                        return Some(dispatch.failed(error.to_string()));
+                    }
+                    if let Some(pending) = self.program_dispatches.get(&task_id) {
                         if pending.identity() == dispatch.identity()
                             && pending.last_publication_revision
                                 == dispatch.last_publication_revision
@@ -124,8 +128,7 @@ impl BrowserTaskBroker {
                                 .failed("program task dispatch conflicts with its active owner"),
                         );
                     }
-                    self.program_dispatches
-                        .insert(task_id, (dispatch, bound.outcome().clone()));
+                    self.program_dispatches.insert(task_id, dispatch);
                     return None;
                 }
                 if self
@@ -134,8 +137,9 @@ impl BrowserTaskBroker {
                 {
                     return Some(dispatch.cancelled());
                 }
-                let kind = self
-                    .resolve(&dispatch, program_owner)
+                let kind = bind_outcome()
+                    .map_err(BrowserHostTaskError::from)
+                    .and_then(|bound| self.resolve(&dispatch, &bound))
                     .unwrap_or_else(|error| {
                         TaskEventKind::InfrastructureFailure(
                             arcweft_core::task::RuntimeTaskFailure::new(
@@ -160,7 +164,7 @@ impl BrowserTaskBroker {
     ) -> Result<usize, BrowserHostTaskError> {
         let batch = ProgramTaskPublicationBatch::bind(completions, |completion| {
             let task_id = completion.handle().correlation.task_id;
-            let (dispatch, _) = self
+            let dispatch = self
                 .program_dispatches
                 .get(&task_id)
                 .ok_or(arcweft_core::task::TaskCompletionError::UnknownTask { task_id })?;
@@ -201,7 +205,7 @@ impl BrowserTaskBroker {
     fn resolve(
         &mut self,
         dispatch: &HostTaskDispatch,
-        program_owner: &RuntimeProgramOwner,
+        outcome: &BoundTaskOutcome,
     ) -> Result<TaskEventKind, BrowserHostTaskError> {
         let Some(request) = dispatch.task.spec().request.as_host() else {
             return Err(arcweft_core::task::TaskCompletionError::DispatchMismatch {
@@ -214,13 +218,19 @@ impl BrowserTaskBroker {
             return Err(BrowserHostTaskError::UndeclaredHostCall(call));
         }
         match request {
-            HostTaskRequest::FileReadText(request) => self.read_text(&request.path),
-            HostTaskRequest::FileReadBytes(request) => self.read_bytes(&request.path),
+            HostTaskRequest::FileReadText(request) => {
+                let text = std::str::from_utf8(self.read_file(&request.path)?)
+                    .map_err(|_| BrowserHostTaskError::InvalidUtf8(request.path.clone()))?;
+                Ok(TaskEventKind::Ready(outcome.try_success_text(text)?))
+            }
+            HostTaskRequest::FileReadBytes(request) => Ok(TaskEventKind::Ready(
+                outcome.try_success_bytes(self.read_file(&request.path)?)?,
+            )),
             HostTaskRequest::FileWriteText(request) => {
-                self.write_bytes(&request.path, request.text.as_bytes())
+                self.write_bytes(&request.path, request.text.as_bytes(), outcome)
             }
             HostTaskRequest::FileWriteBytes(request) => {
-                self.write_bytes(&request.path, &request.bytes)
+                self.write_bytes(&request.path, &request.bytes, outcome)
             }
             HostTaskRequest::AssetLoad(request) => {
                 let context = dispatch.bundle_asset_context().ok_or_else(|| {
@@ -243,16 +253,7 @@ impl BrowserTaskBroker {
                     }
                 }
                 .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
-                let bound = dispatch
-                    .task
-                    .spec()
-                    .outcome
-                    .bind_program(program_owner.clone(), RuntimeSchemaLimits::engine_default())
-                    .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
-                let payload = bound
-                    .try_payload(value)
-                    .map_err(|error| BrowserHostTaskError::AssetResolver(error.to_string()))?;
-                Ok(TaskEventKind::Ready(payload))
+                Ok(TaskEventKind::Ready(outcome.try_payload(value)?))
             }
             HostTaskRequest::SystemInfo(request) => {
                 let value = match request.kind {
@@ -260,26 +261,14 @@ impl BrowserTaskBroker {
                     | SystemInfoKind::ThreadCount
                     | SystemInfoKind::AvailableParallelism => 1_u64,
                 };
-                Ok(TaskEventKind::Ready(RuntimePayload::new(
-                    RuntimeValue::usize(value),
-                )))
+                Ok(TaskEventKind::Ready(
+                    outcome.try_success(RuntimeValue::usize(value))?,
+                ))
             }
             request => Err(BrowserHostTaskError::UnsupportedHostCall(
                 request.host_call_id(),
             )),
         }
-    }
-
-    fn read_text(&self, path: &str) -> Result<TaskEventKind, BrowserHostTaskError> {
-        let text = std::str::from_utf8(self.read_file(path)?)
-            .map_err(|_| BrowserHostTaskError::InvalidUtf8(path.to_owned()))?;
-        Ok(TaskEventKind::Ready(RuntimePayload::from(text.to_owned())))
-    }
-
-    fn read_bytes(&self, path: &str) -> Result<TaskEventKind, BrowserHostTaskError> {
-        Ok(TaskEventKind::Ready(RuntimePayload::new(
-            runtime_sequence_dense_bytes(self.read_file(path)?.to_vec()),
-        )))
     }
 
     fn read_file(&self, path: &str) -> Result<&[u8], BrowserHostTaskError> {
@@ -302,16 +291,16 @@ impl BrowserTaskBroker {
         &mut self,
         path: &str,
         bytes: &[u8],
+        outcome: &BoundTaskOutcome,
     ) -> Result<TaskEventKind, BrowserHostTaskError> {
         match validate_virtual_path(path)?.0 {
             BundleVirtualFileSpace::Asset => Err(BrowserHostTaskError::ReadOnlyAsset),
             BundleVirtualFileSpace::Save
             | BundleVirtualFileSpace::Temp
             | BundleVirtualFileSpace::Export => {
+                let payload = outcome.try_success(RuntimeValue::Unit)?;
                 self.written_files.insert(path.to_owned(), bytes.to_vec());
-                Ok(TaskEventKind::Ready(RuntimePayload::new(
-                    RuntimeValue::Unit,
-                )))
+                Ok(TaskEventKind::Ready(payload))
             }
         }
     }
@@ -465,8 +454,14 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(broker.queue_dispatches(vec![dispatch.clone()], &owner), 0);
-        assert_eq!(broker.queue_dispatches(vec![dispatch.clone()], &owner), 0);
+        assert_eq!(
+            broker.queue_dispatches(vec![dispatch.clone()], |_| Some(owner.clone())),
+            0
+        );
+        assert_eq!(
+            broker.queue_dispatches(vec![dispatch.clone()], |_| Some(owner.clone())),
+            0
+        );
         assert_eq!(broker.program_dispatches.len(), 1);
         let mut rejected = vec![foreign_report];
         let expected = rejected.clone();
@@ -483,7 +478,7 @@ mod tests {
         assert_eq!(duplicate, expected);
         assert_eq!(broker.program_dispatches.len(), 1);
         assert_eq!(
-            broker.program_dispatches[&report.handle().correlation.task_id].0,
+            broker.program_dispatches[&report.handle().correlation.task_id],
             dispatch
         );
         assert!(broker.queued_task_events.is_empty());
@@ -524,7 +519,7 @@ mod tests {
             .iter()
             .map(|dispatch| dispatch.task.handle().correlation)
             .collect::<Vec<_>>();
-        broker.queue_dispatches(dispatches, &owner);
+        broker.queue_dispatches(dispatches, |_| Some(owner.clone()));
         let events = broker.drain_queued_task_events();
         let event_for = |position: usize| {
             events
@@ -588,7 +583,7 @@ mod tests {
             .iter()
             .map(|dispatch| dispatch.task.handle().correlation)
             .collect::<Vec<_>>();
-        broker.queue_dispatches(dispatches, &owner);
+        broker.queue_dispatches(dispatches, |_| Some(owner.clone()));
         let events = broker.drain_queued_task_events();
         let event_for = |position: usize| {
             events
@@ -672,7 +667,7 @@ mod tests {
                 "asset.image.good",
                 image_result,
             )],
-            &owner,
+            |_| Some(owner.clone()),
         );
 
         assert!(matches!(
@@ -1102,18 +1097,129 @@ mod tests {
         ));
         let context = test_asset_context(artifact.artifact_identity(), 0);
         let mut broker = BrowserTaskBroker::from_bundle(artifact.clone(), context).unwrap();
+        let unit = TaskOutcomeContract::new(arcweft_core::pattern::RuntimeCheckedType::Unit)
+            .bind_standalone()
+            .unwrap();
         assert_eq!(broker.read_file("asset:base.txt").unwrap(), b"asset");
         assert_eq!(broker.read_file("save:progress.txt").unwrap(), b"original");
         assert!(matches!(
-            broker.write_bytes("asset:base.txt", b"modified"),
+            broker.write_bytes("asset:base.txt", b"modified", &unit),
             Err(BrowserHostTaskError::ReadOnlyAsset)
         ));
         broker
-            .write_bytes("save:progress.txt", b"modified")
+            .write_bytes("save:progress.txt", b"modified", &unit)
             .unwrap();
         assert_eq!(broker.read_file("save:progress.txt").unwrap(), b"modified");
         let fresh = BrowserTaskBroker::from_bundle(artifact, context).unwrap();
         assert_eq!(fresh.read_file("save:progress.txt").unwrap(), b"original");
+    }
+
+    #[test]
+    fn browser_virtual_write_requires_a_valid_outcome_before_mutating() {
+        use arcweft_core::pattern::RuntimeCheckedType;
+        use arcweft_core::task::{FileReadBytesRequest, FileWriteTextRequest};
+
+        let path = "save:progress.txt";
+        let mut bundle = empty_asset_test_bundle().with_virtual_files([BundleVirtualFile {
+            space: BundleVirtualFileSpace::Save,
+            path: "progress.txt".to_owned(),
+            bytes: b"original".to_vec(),
+        }]);
+        bundle.manifest.required_host_calls = vec!["fs.read_bytes".into(), "fs.write_text".into()];
+        let artifact = BundleArtifact::from_logical(Arc::new(bundle)).unwrap();
+        let context = test_asset_context(artifact.artifact_identity(), 0);
+        let mut broker = BrowserTaskBroker::from_bundle(artifact, context).unwrap();
+        let write = HostTaskRequest::FileWriteText(FileWriteTextRequest {
+            path: path.into(),
+            text: "changed".into(),
+        });
+        let wrong_outcome = virtual_file_dispatch(0, write.clone(), RuntimeCheckedType::String);
+        broker.queue_dispatches(vec![wrong_outcome], |_| None);
+        assert!(matches!(
+            broker.drain_queued_task_events()[0].kind,
+            TaskEventKind::InfrastructureFailure(_)
+        ));
+        assert_eq!(broker.read_file(path).unwrap(), b"original");
+
+        let write_outcome = RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Unit),
+            error: Box::new(RuntimeCheckedType::String),
+        };
+        broker.queue_dispatches(vec![virtual_file_dispatch(1, write, write_outcome)], |_| {
+            None
+        });
+        let events = broker.drain_queued_task_events();
+        assert_eq!(
+            ready_result_payload(&events[0].kind, RuntimeBuiltinVariantCaseIdentity::ResultOk)
+                .unwrap(),
+            &RuntimeValue::Unit
+        );
+
+        let read = HostTaskRequest::FileReadBytes(FileReadBytesRequest { path: path.into() });
+        let read_outcome = RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Bytes),
+            error: Box::new(RuntimeCheckedType::String),
+        };
+        broker.queue_dispatches(vec![virtual_file_dispatch(2, read, read_outcome)], |_| None);
+        let events = broker.drain_queued_task_events();
+        assert_eq!(
+            ready_result_payload(&events[0].kind, RuntimeBuiltinVariantCaseIdentity::ResultOk)
+                .unwrap(),
+            &arcweft_core::value::runtime_sequence_dense_bytes(b"changed".to_vec())
+        );
+    }
+
+    fn virtual_file_dispatch(
+        sequence: u64,
+        request: HostTaskRequest,
+        payload: arcweft_core::pattern::RuntimeCheckedType,
+    ) -> HostTaskDispatch {
+        use arcweft_core::task::{
+            LogicalEpoch, NeedProducerContractDigest, NeedProducerFamily, NeedProducerInstance,
+            NeedProducerSiteDigest, NeedProducerSpec, RuntimeTypeSemanticDigest,
+            TaskAdmissionJournal, TaskDispatchIdentity, TaskDispatchStart, TaskHandleType,
+            TaskPlanSemanticDigest, TaskSequence,
+        };
+        let outcome = TaskOutcomeContract::new(payload);
+        let producer = NeedProducerSpec::new(
+            NeedProducerFamily::HostAdapterTask,
+            NeedProducerContractDigest::from_bytes([1; 32]),
+            TaskPlanSemanticDigest::from_bytes([2; 32]),
+            NeedProducerSiteDigest::from_bytes([3; 32]),
+            TaskHandleType::Need {
+                payload: RuntimeTypeSemanticDigest::from_bytes(
+                    *outcome.payload_semantic_identity().as_bytes(),
+                ),
+            },
+            RuntimeValue::usize(sequence).try_digest(1024).unwrap(),
+        );
+        let mut journal = TaskAdmissionJournal::default();
+        let handle = journal
+            .ensure_task(TaskSpec {
+                generation: GenerationId::new(0),
+                producer: NeedProducerInstance::try_from(&producer).unwrap(),
+                class: TaskClass::Background,
+                priority: TaskPriority(0),
+                cancel_scope: CancelScopeId("virtual-file-tests".into()),
+                policy: TaskPolicy::AlwaysStart,
+                outcome,
+                debug_label: request.host_call_id(),
+                request: request.into(),
+            })
+            .unwrap();
+        HostTaskDispatch::try_new(
+            TaskDispatchStart::new(
+                TaskDispatchIdentity::new(
+                    handle.correlation,
+                    LogicalEpoch(0),
+                    TaskSequence(sequence),
+                ),
+                None,
+            ),
+            journal.submission(handle).unwrap(),
+            None,
+        )
+        .unwrap()
     }
 
     #[test]

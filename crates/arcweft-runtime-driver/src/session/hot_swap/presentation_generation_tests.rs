@@ -93,9 +93,13 @@ fn local_task_cancellation_reaches_runtime_and_releases_its_generation_pin() {
         task: admitted_test_task("task.cancelled"),
     };
     session.tasks.register_dispatch(&dispatch);
-    session
-        .task_generation_pins
-        .insert(sequence, session.swap.pin_active_generation());
+    session.task_generation_pins.insert(
+        sequence,
+        super::super::TaskRuntimePin {
+            generation: session.swap.pin_active_generation(),
+            program: None,
+        },
+    );
     session.cancel_runtime_tasks(&crate::task::RuntimeTaskCancelTarget::All);
 
     let prepared = session.prepare_step_input(
