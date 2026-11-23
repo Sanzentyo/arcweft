@@ -21734,3 +21734,15 @@ Core の全機能 library は2,406 PASS／0 SKIP。Cargo の実グラフで Core
 修正後の Core 全機能 library は2,407 PASS／0 SKIP。JSON 復元から1操作ずつ同じ出力と終了状態まで進み、呼び出し以外の有効な命令への差し替えと効果の型情報の欠落を拒否した。Cargo の実グラフで Core を含む52パッケージを確認し、動作検証には Core と関連するコンパイラの6統合スイートを選んだ。コンパイラは611 PASS／0 SKIP。先の4件が全件通過し、named 引数の評価順、attached default からの待機復帰、台詞の捕捉値と1操作予算も確認した。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。Native セッション全体の公開保存は残項目。
 
 [検証原本](acceptance-evidence/task-native-call-frame.raw.zip) は24項目、1,147,907 bytes、SHA256 `8a9182bbba5ca83b99367f93f786dd586f0cde06146031117b8b2ea2fefabead`。各項目の長さと SHA256 を照合した。検証後の `target` は141,700,583,006 bytes。
+
+<a id="native-scope-frame-codec"></a>
+
+## 2026-11-23 — Native のスコープ制御と進行中の defer を復元する
+
+基点 `4478eb0099786d60ce0cebd3a937b8242a2eb31b`。公開ソース `812c60b9d7ca3e2973809cda7c5ee5284fc2e265`。`main` への通常の push 後に公開 ref と11変更 blob を照合した。検証時に追跡ファイルの差分なし。
+
+inert control stack と lexical exit を JSON で往復し、元コード位置、継続キューの close、実行中の defer の子 fiber を借用検証する。cleanup の保持状態を元の登録命令の位置へ移し、Native と Structured AOT がその命令からキーと効果を取得する。1操作ずつ進めた実行を Native と Structured AOT で照合し、実行途中からの復元、未取消の効果の一回発行、登録以外の元命令への差し替え拒否を確認した。実際の defer の子の実行中、早期 return、goto でも状態を JSON で復元し、効果の順序と終了状態を確認した。Native セッション全体の公開保存は残項目。
+
+初回の Core ビルドは、新しい AOT fixture で `RuntimeLineEffectSeed::Static` が欠けて型不一致になり、終了101。fixture を修正し、Core は2,408 PASS／0 SKIP。Cargo グラフで Core を含む52パッケージを確認し、RuntimePlan library は134 PASS／1 SKIP、コンパイラは `scoped_defer`、`flow_wait`、`generic_continuation_snapshot`、`evaluated_effects` の219 PASS／0 SKIP。RuntimePlan の1件は既存の fixture 再生成テストの `ignore` 指定。ワークスペース全ターゲット・全機能の check／Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
+
+[検証原本](acceptance-evidence/task-native-scope-frame.raw.zip) は19項目、1,045,299 bytes、SHA256 `64caf234cbfb454dcee89859435346e47276a6625072911b3960fdb6dc22f2f3`。各項目の長さと SHA256 を照合した。検証後の `target` は141,744,644,441 bytes。

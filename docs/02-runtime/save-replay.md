@@ -455,11 +455,11 @@ Native の関数フレームは退避キューと、戻り方に対応する元�
 Native の pending work を保存するときは、元コードの body path と操作範囲、または
 実行中の継続とその保持値を記録する。body path の親の件数をデコード中に制限し、
 復元時は元 Plan の実コードと範囲、スコープ、継続の対応を照合する。
-Native の inert control stack は scope の開始元、対応する close、分岐 guard、
-ループと呼び出しの位置を保持する。進行中の lexical exit は戻り値や遷移先と、
-実行中の defer を保持する。復元は元の宣言と close、defer の frontier と子 fiber
-の対応を照合する。scope cleanup は元の登録命令の位置を保持し、取消キーと実行する
-効果は Native と Structured AOT の両方で同じ Plan の命令から得る。
+Native の inert control stack は scope の開始元、match guard、ループと呼び出しの
+位置を保持する。対応する close は継続キューに残る。進行中の lexical exit は戻り値や
+遷移先を保持し、scope は実行中の defer を保持する。復元は scope と close、defer の
+frontier と子 fiber の対応を照合する。scope cleanup は元の登録命令の位置を保持し、
+取消キーと実行する効果は Native と Structured AOT の両方で同じ Plan の命令から得る。
 借り出した対話 activation も、元の transaction から親と同じ累積資源枠に入れる。
 実行状態、入力、表示値、callback、待機中の操作、defer の捕捉値を live／inert
 共通の借用検査に通し、セッション全体の検査後に保存または復元する。
