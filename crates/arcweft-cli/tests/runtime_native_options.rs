@@ -88,6 +88,7 @@ fn headless_native_session_preserves_restart_point_and_rejects_a_different_entry
     assert!(String::from_utf8_lossy(&wrong_entry.stderr).contains("original invocation or entry"));
     assert_eq!(std::fs::read(&saved).unwrap(), original);
 
+    std::fs::write(&completed, b"previous checkpoint").unwrap();
     let resumed = run(&[
         "--runner",
         "headless",
@@ -112,9 +113,11 @@ fn headless_native_session_preserves_restart_point_and_rejects_a_different_entry
     let report: serde_json::Value = serde_json::from_slice(&resumed.stdout).unwrap();
     assert_eq!(report["steps"][0]["index"], 1);
     assert_eq!(report["final_status"], "done Return(\"7\")");
-    assert_ne!(std::fs::read(&completed).unwrap(), original);
+    let finished = std::fs::read(&completed).unwrap();
+    assert!(finished.starts_with(b"AWFS"));
+    assert_ne!(finished, original);
 
-    let mut corrupt = std::fs::read(&completed).unwrap();
+    let mut corrupt = finished;
     *corrupt.last_mut().unwrap() ^= 1;
     std::fs::write(&completed, &corrupt).unwrap();
     let corrupted = run(&[

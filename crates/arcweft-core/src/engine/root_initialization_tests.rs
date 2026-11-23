@@ -162,6 +162,29 @@ fn native_save_resumes_stateful_entry_and_rejects_a_redirected_frame_atomically(
             .contains("external retained-value validation refused")
     );
     assert_eq!(restored.snapshot_for_save().unwrap(), ready);
+
+    let mut destination = crate::executor::ArcweftRuntimeExecutor::from_runtime_plan(
+        Arc::clone(&plan),
+        crate::executor::ArcweftExecutionTier::RuntimePlanVm,
+    )
+    .unwrap();
+    destination
+        .start_structured_entry(&plan.entries()[0].id)
+        .unwrap();
+    let before = destination.snapshot().unwrap();
+    let refused = destination
+        .restore_native_session(
+            ready.clone(),
+            |_| Ok(()),
+            |_| Err("host dispatch journal refused before publication".into()),
+        )
+        .unwrap_err();
+    assert!(
+        refused
+            .to_string()
+            .contains("host dispatch journal refused before publication")
+    );
+    assert_eq!(destination.snapshot().unwrap(), before);
     let mut forged = serde_json::to_value(&snapshot).unwrap();
     forged["state"]["fiber"]["parent"] = serde_json::json!(1);
     assert!(matches!(
