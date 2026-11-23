@@ -22334,3 +22334,15 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 固定フレームの比較をさらに実行した。計測なしの再試行は canvas 確認の起動で10秒を超え、終了1。起動だけを切り分けた3回は同一Wasm／AWFBで、通常クロックの1回が待機開始後1,075 ms、テストと同じ固定クロックの2回が1,113／2,053 msで完了した。既存 smoke の挙動を保って計測を加えた実行では、`focus-first-choice` の採取後、次の起動が終了1。失敗したページは Wasm の初期化が4,711 msで終わり、`requestAdapter()` を5,764 msで開始し、10,161 msの観測時も応答がなかった。固定クロックには初回1ステップが残り、プレイヤーの ready は未通知だった。
 
 採取済みの `focus-first-choice` を同一AWFBの既存Native基準と比較した。1280×720の3,686,400 RGBAサンプルは全値一致し、MSE／MAE／最大誤差／変化画素率0、SSIM 1だった。既定のしきい値を使う比較器も終了0。Native PNG の SHA-256 は `f367348e5d2bff8c82d6f6bf4e8499534d5fb44f727a80ab1132f8f32a125e0c`、Web PNG は `0497b37eab80baddf41dd5a423c3283d982eb87637519f476c8cf2d4ae2ceaba`。残りの採取を既存テストの個別チェックポイント指定で続ける。
+
+単独指定の `hover-second-choice` は既存の Chrome smoke 8件と採取のしきい値を通過し、同じ Native 基準との3,686,400 RGBAサンプルで MSE／MAE／最大誤差／変化画素率0、SSIM 1。Native PNG の SHA-256 は `99f4cdfd8f11dc7a0b10e650952841629cb66a342b5399a574bd79fdf35260ee`、Web PNG は `49cc29d3bc1b743b4b54075d3633a74d65b231af53892d9812ce5cc957af42d2`。同じ設定の最初の `press-first-choice` 実行は、冒頭の `[p]` の起動が固定上限10秒を超えて終了1だった。
+
+CLI SHA-256 `49a4f4623aaa8e0bf533482273b2777789e6250fbc6444da14f040a1833e362b` で、`voice.load` へ `Ref<Asset>`、`asset.image` へ `Ref<Voice>` を渡した2件を実行した。両件とも `sema.final_analysis` の型診断で終了1、AWFBの生成0件。型検査を取得するための負例であり、実WAVの停止・復元と配信の証拠は上記の記録を参照する。
+
+単独指定の `compact-focus-first-choice` と `hidpi-focus-first-choice` も、既存 smoke が各8件終了0だった。Native基準との比較はそれぞれ2,073,600／3,686,400 RGBAサンプルの全値が一致し、MSE／MAE／最大誤差／変化画素率0、SSIM 1。規定の比較器も両件終了0。縮小のNative／Web PNGは `cfe84d08c61a0a63e2c045192ea515e3e1c4b197cadba18e0ed8cff5fb109b60`／`f8a3655a66c0ca4d5e94bcf639d3a72eb623c8b1ee62482b8228e8b8a7b98d06`。高DPIのNative／Web PNGのハッシュは上記の `focus-first-choice` と一致した。
+
+`f9921fd5d8ef0275bd05b54b53dba85f8ac61c41` の修正後CLI SHA-256 `2c0ff1fb892c6cf182844a64eb55e85af93f6ab89bd4bdd2c75bb417f2cb33c6` で、混合 `Result` の最小入力を AWFB にして実行し、`done return separate_columns` を確認した。AWFB SHA-256 は `6fa5f161830c39c7b5e5acd1feec8537413cefb041757d81fec93ae3cc482bfd`。同じ入力からワイルドカードを除くと `Match is non-exhaustive` 診断で終了1、AWFBの生成0件だった。
+
+修正後CLIで、タプル Match を含む元の実WAV入力をバンドルし、AWBC実行が音声要求2件を完了して `voice_ready` を返すことを検証した。Native VMからAOTへ別プロセスで復元すると、既完了1件を保持し、ステップ2から元のタスクID・キーを持つ `asset.voice.alice.missing` 1件だけが完了して `voice_ready` に到達した。AWFBの SHA-256 は `48c7c6d71d963f7648cafa807b9701ae5d9c6bdd8766e10f8912f80dfd853e85`、AWFSは `17ddf67d2830b41b5b44e9af6ac885714c83b461694ff9c565bccaaef5cc47a4`。
+
+同じ修正後の AWFB を固定のリリースWasmで Chrome WebGPU に読み込み、既定10秒の起動上限内で起動し、`done return voice_ready` で終了0。ステップ0〜2の要求数 `[1, 1, 0]`、2件の task ID、sequence 1 の配信順が Native の AWBC 実行と完全に一致した。配信IDは `73504261f757194a0a2dd67d92898528518d30a09b66e87df4e693569730b411` と `0d6bdd8064df572dd81a1964c1a2b5801be8fcc9a192ff1881d33c053e64dcfa`。ブラウザーの異常は0件。Wasm SHA-256 は `f4f49ea723aea7bd246da308892fb011a2af0e26264de1b278c43c30d4605b98`。
