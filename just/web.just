@@ -2,7 +2,7 @@
 webgpu-parity:
     @cargo run -p arcweft-cli -- bundle --manifest-path web/arcw.toml --profile main --output web/demo.awfb
     @cargo build --release -p arcweft-player-web --target wasm32-unknown-unknown
-    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\release\arcweft_player_web.wasm
+    @wasm-bindgen --target web --remove-name-section --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\release\arcweft_player_web.wasm
     @foreach ($checkpoint in @("focus-first-choice", "hover-second-choice", "press-first-choice", "compact-focus-first-choice", "hidpi-focus-first-choice")) { cargo +nightly -Zscript tools\capture-webgpu-native-frame.rs --output "target\webgpu-parity\native-$checkpoint.png" --checkpoint $checkpoint --visual-time-millis 160 --target-format rgba8unorm; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
     @$checkpoints = @("focus-first-choice", "hover-second-choice", "press-first-choice", "compact-focus-first-choice", "hidpi-focus-first-choice"); $env:ARW_WEB_PARITY_DIR = (Resolve-Path target\webgpu-parity).Path; $env:ARW_WEB_PARITY_CHECKPOINTS = ($checkpoints -join ","); npm.cmd --prefix web test; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     @foreach ($checkpoint in @("focus-first-choice", "hover-second-choice")) { cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native "target\webgpu-parity\native-$checkpoint.png" --web "target\webgpu-parity\web-$checkpoint.png" --report "target\webgpu-parity\parity-$checkpoint.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }

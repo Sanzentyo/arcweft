@@ -104,13 +104,13 @@ export async function startArcweftWebPlayer(options = {}) {
       throw new Error("WebGPU is unsupported: navigator.gpu is unavailable");
     }
     const wasmUrls = resolveWasmUrls(options, params);
-    const wasm = await loadArcweftWasm(wasmUrls.moduleUrl, wasmUrls.binaryUrl);
     const bundleUrl = withAssetCachebust(
       options.bundleUrl || params.get("bundle") || "./demo.awfb",
       assetCachebustParam(params),
     );
     const fontUrls = resolveFontUrls(options, params);
-    const [bundleBytes, fontByteArrays] = await Promise.all([
+    const [wasm, bundleBytes, fontByteArrays] = await Promise.all([
+      loadArcweftWasm(wasmUrls.moduleUrl, wasmUrls.binaryUrl),
       fetchBytes(bundleUrl, "Arcweft bundle"),
       Promise.all(
         fontUrls.map((fontUrl, index) => fetchBytes(fontUrl, `Arcweft font ${index + 1}`)),
