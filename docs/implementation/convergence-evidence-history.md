@@ -21862,3 +21862,17 @@ Native の回帰では、ホスト返答待ちと俳優取得待ちの各時点�
 初回の Core ビルドは Plan 型座標を保存欄で扱うための型制約が不足して終了101。修正後は Core 全機能ライブラリ2,414件、Compiler の `evaluated_effects` と `scoped_defer` の174件、Runtime Driver の対象8件、Product AWBC セッション統合40件が成功した。Runtime Driver の対象実行では69件を選択外とした。Cargo で Core と逆依存を含む52パッケージを確認した。既存の Product AWBC 公開保存を統合テストで検証した。全ターゲット・全機能の workspace check、Core の Clippy、書式、構造ゲートは終了0。Clippy 警告あり、構造のブロッキング違反は0件。
 
 [検証原本](acceptance-evidence/task-native-dialogue-wire.raw.zip) は18項目、579,801 bytes、SHA256 `fc173386abaa633add9575e7710a501763de6dbd1a092171b491affb9e45e303`。各項目の長さと SHA256 を照合した。検証後の `target` は146,308,744,315 bytes。
+
+<a id="native-engine-save"></a>
+
+## 2026-11-23 — Native Engine の JSON 保存と再開
+
+基点 `db1b11ee2dde38c3f2bf0542f554a47aaebb3f95`。開始時の追跡ファイルに変更はなく、既存の未追跡ディレクトリが一つあった。実装 `53758e3446af3b230604901de3dc8abd1400a728` を `main` に push し、公開 ref と照合した。
+
+Engine のフレームと台帳の保存には既存の inert 状態を用いる。復元は Plan の実行 digest、artifact、generation、stateful Entry を照合し、元 Source に Need の発行記録を結び直す。実行フレーム、台詞、表示権限は同じ資源枠で検査し、候補が適合した時点で復元先を置き換える。再開時は既存の Need 再開方針を適用する。ステップごとに設定するタスク発行枠と実行計測、最適化キャッシュは復元時に初期化する。
+
+初期化途中の Root を同じ内容の別 Plan インスタンスに復元し、元の Entry で初期化を完了した。親座標を改変したフレームを拒否した後、復元先の状態が保たれることを確認した。Program fanout は実行中の子を含めて各ステップで JSON から再開し、元の順序で完了結果を得た。所有権を持つローカル値と Ready 通知を同時に保存・復元し、同じ通知キーを重ねた JSON を拒否した。
+
+初回の Core 確認は型パラメーターを変える構造体更新で失敗し、型を移す処理を明示して修正した。続くビルドは Entry kind の所有権で終了101となり、値の clone で修正した。初回の全機能テストは2,415件成功・1件失敗・スキップ0件。失敗した fanout のテストは内部の Program 完了に伴う外部通知を要求していた。外部通知の検査を実際に通知を受け取る回帰へ移し、fanout は実行中の子と完了結果を検査した。
+
+最終の Core 全機能ライブラリは2,416件成功・失敗0件・スキップ0件。全ターゲット・全機能の workspace check、Core 全ターゲット・全機能の Clippy、変更ファイルの書式、構造ゲートは終了0。Clippy には警告があり、新しい保存エラーの型サイズも指摘された。構造のブロッキング違反は0件。Cargo の全ターゲット逆依存グラフは Core を含む53パッケージで、実行テストは Core を対象とした。公開 executor と Runtime Driver からの Native 保存は今回の検証範囲外。検証後の `target` は146,315,627,484 bytes（約146.3 GB）。
