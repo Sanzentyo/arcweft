@@ -252,7 +252,10 @@ impl<P, S: super::TaskExecutionSource> TaskSpec<P, TaskPlanSemanticDigest, S> {
                 (TaskRequest::Program(left), TaskRequest::Program(right)) if left == right)
     }
 
-    fn same_execution_contract<Q>(&self, other: &TaskSpec<Q, TaskPlanSemanticDigest, S>) -> bool {
+    fn same_execution_contract<Q, T>(
+        &self,
+        other: &TaskSpec<Q, TaskPlanSemanticDigest, T>,
+    ) -> bool {
         self.generation == other.generation
             && self.producer == other.producer
             && self.class == other.class
@@ -268,6 +271,22 @@ impl<P, S: super::TaskExecutionSource> TaskSpec<P, TaskPlanSemanticDigest, S> {
         ordinal: TaskLaunchOrdinal,
     ) -> Result<TaskCorrelation, TaskIdentityError> {
         TaskCorrelation::try_for(self.generation, &self.producer, self.policy, ordinal)
+    }
+}
+
+impl super::TaskSpecSaveSnapshot {
+    pub(crate) fn matches_source_bound_receipt(
+        &self,
+        accepted: &TaskSpec<crate::value::AwbcRuntimeValueSnapshot>,
+    ) -> bool {
+        self.same_execution_contract(accepted)
+            && match (&self.request, &accepted.request) {
+                (TaskRequest::Host(saved), TaskRequest::Host(original)) => saved == original,
+                (TaskRequest::Program(saved), TaskRequest::Program(original)) => {
+                    *saved == original.assertion()
+                }
+                _ => false,
+            }
     }
 }
 

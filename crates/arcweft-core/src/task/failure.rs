@@ -78,7 +78,11 @@ impl std::fmt::Display for RuntimeTaskFailure {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "P: crate::value::InertRuntimeValueStorage"
+)]
 pub enum RuntimeNeedOutcome<P = super::RuntimePayload> {
     Value(P),
     InfrastructureFailure(RuntimeTaskFailure),

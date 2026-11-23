@@ -1683,6 +1683,39 @@ impl Engine {
 }
 
 impl NativeEngineRollbackImage {
+    fn validate_wait_receipt(
+        &self,
+        receipts: &crate::task::RetainedTaskReceiptIndex<
+            '_,
+            crate::value::AwbcRuntimeValueSnapshot,
+        >,
+        handle: &crate::task::RuntimeNeedHandleSaveSnapshot,
+        observed: Option<crate::task::TaskPublicationCursor>,
+    ) -> Result<(), String> {
+        let correlation = handle.correlation();
+        if handle.requires_producer_custody()
+            && !receipts
+                .task_spec(correlation)
+                .is_some_and(|accepted| handle.spec().matches_source_bound_receipt(accepted))
+        {
+            return Err("native wait handle differs from its accepted task receipt".into());
+        }
+        if observed.is_some_and(|observed| {
+            !self
+                .need_publication_frontiers
+                .get(&correlation)
+                .is_some_and(|frontier| {
+                    matches!(
+                        frontier.compare_same_source(observed),
+                        Some(std::cmp::Ordering::Equal | std::cmp::Ordering::Greater)
+                    )
+                })
+        }) {
+            return Err("native wait observer exceeds its retained publication frontier".into());
+        }
+        Ok(())
+    }
+
     pub(super) fn admit_rollback_values(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
@@ -1705,8 +1738,9 @@ impl NativeEngineRollbackImage {
             .map_err(|error| error.to_string())?;
         self.admit_metadata(&mut admission)
             .map_err(|error| error.to_string())?;
-        self.need_producers
-            .admit_retained(&mut admission)
+        let receipts = self
+            .need_producers
+            .admit_retained_with_receipts(&mut admission)
             .map_err(|error| error.to_string())?;
         self.actions
             .admit_retained(&mut admission)
@@ -1734,30 +1768,39 @@ impl NativeEngineRollbackImage {
                     fiber.frame.presentation_bank,
                 )
                 .map_err(|error| error.to_string())?;
-            if let FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Native(state)) =
-                &fiber.frame.status
-            {
-                for flight in &state.in_flight {
-                    if let Some(observed) = flight.observed_through {
-                        let correlation =
-                            crate::value::RuntimeNeedView::from(&flight.handle).correlation();
-                        if !self
-                            .need_publication_frontiers
-                            .get(&correlation)
-                            .is_some_and(|frontier| {
-                                matches!(
-                                    frontier.compare_same_source(observed),
-                                    Some(std::cmp::Ordering::Equal | std::cmp::Ordering::Greater)
-                                )
-                            })
-                        {
-                            return Err(
-                                "native fanout observer exceeds its retained publication frontier"
-                                    .into(),
-                            );
-                        }
+            if let Some(wait) = &fiber.frame.await_observer {
+                self.validate_wait_receipt(&receipts, &wait.handle, wait.observed_through)?;
+            }
+            match &fiber.frame.status {
+                FlowFiberStatus::NeedWaiting(wait) => {
+                    self.validate_wait_receipt(&receipts, &wait.handle, wait.observed_through)?;
+                }
+                FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Native(state)) => {
+                    self.validate_wait_receipt(&receipts, &state.base, None)?;
+                    for flight in &state.in_flight {
+                        self.validate_wait_receipt(
+                            &receipts,
+                            &flight.handle,
+                            flight.observed_through,
+                        )?;
                     }
                 }
+                FlowFiberStatus::WaitingMany(super::WaitingManyStatus::Program(state)) => {
+                    if !matches!(&fiber.launch, super::FlowFiberLaunch::Program(launch)
+                        if launch.handle().correlation == state.base.correlation())
+                    {
+                        return Err("Program fanout base differs from its owning launch".into());
+                    }
+                    self.validate_wait_receipt(&receipts, &state.base, None)?;
+                    for flight in &state.in_flight {
+                        self.validate_wait_receipt(
+                            &receipts,
+                            &flight.handle,
+                            flight.observed_through,
+                        )?;
+                    }
+                }
+                _ => {}
             }
         }
         let expected_deferred_children = self.expected_deferred_children(|activation| {

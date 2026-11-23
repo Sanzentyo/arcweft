@@ -1918,7 +1918,14 @@ pub enum FlowStatusLabelStyle {
 
 /// Suspended `await ... with` state, including the original function context
 /// retained while a Pending observer enters another function.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "H: serde::Serialize, P: serde::Serialize",
+        deserialize = "H: serde::Deserialize<'de>, P: serde::Deserialize<'de>"
+    )
+)]
 pub struct AwaitState<H = crate::task::RuntimeNeedHandle, P = RuntimeNeedPublication> {
     pub(crate) source_context: crate::value::RuntimeScopeFunctionContext,
     pub source: AwaitSource,
@@ -2018,16 +2025,38 @@ pub enum AwaitItemType {
 
 /// The source of an Await status. Native execution retains its original opcode;
 /// an AWBC observation exposes its own checked type without inventing Plan code.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub enum AwaitSource {
     Native(NativeAwaitSource),
     Awbc(AwbcTypeId),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeAwaitSource {
     operation: code_cursor::NativeSourceOperation,
+    #[serde(with = "await_item_coordinate")]
     item_type: RuntimePlanTypeId,
+}
+
+mod await_item_coordinate {
+    use crate::runtime_id::RuntimePlanTypeId;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::num::NonZeroU32;
+
+    pub(super) fn serialize<S: Serializer>(
+        value: &RuntimePlanTypeId,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value.get().serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<RuntimePlanTypeId, D::Error> {
+        NonZeroU32::deserialize(deserializer).map(RuntimePlanTypeId::from_accepted_ordinal)
+    }
 }
 
 impl<H, P> AwaitState<H, P> {
@@ -2199,14 +2228,16 @@ pub struct AwaitManyInFlight<H = crate::task::RuntimeNeedHandle> {
 /// Shared status projection for both native and Product AwaitMany execution.
 /// Native retains its complete continuation; Product reports a display-only
 /// summary while its verified AWBC fiber remains the continuation authority.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub enum WaitingManyStatus<S = AwaitManyState, P = ProgramFanoutState> {
     Native(Box<S>),
     Program(Box<P>),
     Observed(AwaitManyProgress),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwaitManyProgress {
     pub task: TaskId,
     pub completed: usize,

@@ -296,10 +296,15 @@ pub struct RuntimeNeedState {
 /// use arcweft_core::task::RuntimeNeedPublication;
 /// fn copy(value: &RuntimeNeedPublication) { let _: RuntimeNeedPublication = value.clone(); }
 /// ```
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "P: crate::value::InertRuntimeValueStorage"
+)]
 pub enum RuntimeNeedPublication<P = RuntimePayload> {
     State {
         correlation: TaskCorrelation,
+        #[serde(with = "publication::NeedStateWire")]
         state: Need<RuntimeNeedOutcome<P>>,
         cursor: TaskPublicationCursor,
     },

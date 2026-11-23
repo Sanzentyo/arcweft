@@ -14,7 +14,14 @@ mod tests;
 
 /// Native continuation state owns unstarted items and completed results.
 /// Worker code and capture declarations remain in the original executable.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "H: serde::Serialize, V: crate::value::InertRuntimeValueStorage, P: crate::value::InertRuntimeValueStorage",
+        deserialize = "H: serde::Deserialize<'de>, V: crate::value::InertRuntimeValueStorage, P: crate::value::InertRuntimeValueStorage"
+    )
+)]
 pub struct ProgramFanoutState<
     H = crate::task::RuntimeNeedHandle,
     V = RuntimeValue,

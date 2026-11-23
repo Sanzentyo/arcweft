@@ -1,6 +1,18 @@
 //! The closed owning publications accepted by the Sans-I/O scheduler.
 
 use super::{BoundTaskOutcome, BoundTaskSpec, ProgramTaskPublication, TaskEvent, TaskEventKind};
+use arcweft_need::{Need, Progress};
+
+// Keep the publication reader on inert payloads. Need's live transition type
+// remains shared by schedulers that have no persistence entry point.
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(remote = "Need")]
+pub(super) enum NeedStateWire<T> {
+    NotStarted,
+    Pending(Progress),
+    Ready(T),
+    Cancelled,
+}
 
 /// Consumer position within one accepted Need correlation. Program value
 /// custody advances independently of the adapter's retirement acknowledgement.

@@ -1649,6 +1649,22 @@ pub struct NeedProducerRegistryRestore<
     pub launch_frontiers: Vec<NeedProducerLaunchFrontier>,
 }
 
+/// Borrowed lookup for an admitted restore journal. The rows remain owned by
+/// the registry image while waiters and launch state inspect their receipts.
+pub(crate) struct RetainedTaskReceiptIndex<'a, P, S = crate::plan::RuntimeTaskSource> {
+    by_task: BTreeMap<TaskId, &'a TaskSubmission<P, TaskPlanSemanticDigest, S>>,
+}
+
+impl<P, S: super::TaskExecutionSource> RetainedTaskReceiptIndex<'_, P, S> {
+    pub(crate) fn task_spec(
+        &self,
+        correlation: TaskCorrelation,
+    ) -> Option<&TaskSpec<P, TaskPlanSemanticDigest, S>> {
+        let row = self.by_task.get(&correlation.task_id)?;
+        (row.handle().correlation == correlation).then_some(row.spec())
+    }
+}
+
 impl<V, P, S> Default for NeedProducerRegistryRestore<V, P, S> {
     fn default() -> Self {
         Self {
@@ -1716,6 +1732,27 @@ impl<V, P, S: super::TaskExecutionSource + PartialEq> NeedProducerRegistryRestor
         V: crate::value::RuntimeStoredValue,
         P: crate::value::RuntimeStoredValue + PartialEq,
     {
+        self.admit_retained_with_receipts(admission).map(|_| ())
+    }
+
+    fn task_receipts(&self) -> RetainedTaskReceiptIndex<'_, P, S> {
+        RetainedTaskReceiptIndex {
+            by_task: self
+                .task_admissions
+                .iter()
+                .map(|row| (row.task_id(), row))
+                .collect(),
+        }
+    }
+
+    pub(crate) fn admit_retained_with_receipts(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<RetainedTaskReceiptIndex<'_, P, S>, crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        V: crate::value::RuntimeStoredValue,
+        P: crate::value::RuntimeStoredValue + PartialEq,
+    {
         admission.validate_metadata_collection(self.task_admissions.len())?;
         admission.validate_metadata_collection(self.launches.len())?;
         let sources = self
@@ -1742,8 +1779,9 @@ impl<V, P, S: super::TaskExecutionSource + PartialEq> NeedProducerRegistryRestor
                 }
             }
         }
+        let receipts = self.task_receipts();
         for launch in &self.launches {
-            let spec = self.task_spec(launch.correlation).ok_or_else(|| {
+            let spec = receipts.task_spec(launch.correlation).ok_or_else(|| {
                 crate::value::AwbcRuntimeValueSnapshotError::Message {
                     message: "restored task state has no exact accepted journal row".into(),
                 }
@@ -1768,14 +1806,14 @@ impl<V, P, S: super::TaskExecutionSource + PartialEq> NeedProducerRegistryRestor
                 frontier.next_ordinal,
             ))?;
         }
-        if let Err(error) = NeedProducerRegistry::validate_restore_journal(self) {
+        if let Err(error) = NeedProducerRegistry::validate_restore_journal(self, &receipts) {
             let error = crate::value::AwbcRuntimeValueSnapshotError::Message {
                 message: error.to_string(),
             };
             admission.retain_failure(error.clone());
             return Err(error);
         }
-        Ok(())
+        Ok(receipts)
     }
 
     pub(crate) fn task_spec(
@@ -2930,7 +2968,7 @@ impl NeedProducerRegistry {
         {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         }
-        Self::validate_restore_journal(&restore)?;
+        Self::validate_restore_journal(&restore, &restore.task_receipts())?;
         restore.validate_restore_policy(policy)?;
         let mut candidate = Self::default();
         for row in restore.task_admissions {
@@ -2974,32 +3012,25 @@ impl NeedProducerRegistry {
         S: super::TaskExecutionSource + PartialEq,
     >(
         restore: &NeedProducerRegistryRestore<V, P, S>,
+        receipts: &RetainedTaskReceiptIndex<'_, P, S>,
     ) -> Result<(), NeedProducerAdmissionError> {
         let mut launches = BTreeMap::new();
         let mut joined = BTreeSet::new();
         let mut invocations = BTreeMap::new();
         let mut next_launch_ordinal =
             super::TaskAdmissionJournal::validate_submission_journal(&restore.task_admissions)?;
-        let task_admissions = restore
-            .task_admissions
-            .iter()
-            .map(|row| (row.task_id(), row))
-            .collect::<BTreeMap<_, _>>();
         let mut next_invocation_sequence = BTreeMap::new();
         for launch in &restore.launches {
-            let row = task_admissions
-                .get(&launch.correlation.task_id)
+            let spec = receipts
+                .task_spec(launch.correlation)
                 .ok_or(NeedProducerAdmissionError::InvalidRestoredLaunch)?;
-            if row.handle().correlation != launch.correlation {
-                return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
-            }
-            let checked = validate_restore_launch(launch, row.spec())?;
+            let checked = validate_restore_launch(launch, spec)?;
             if launches.insert(checked.key, launch).is_some() {
                 return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
             }
             if let NeedProducerLaunchOriginRestore::Need { invocation, .. } = &launch.origin {
                 if invocations.insert(*invocation, checked.key).is_some()
-                    || (row.spec().policy == TaskPolicy::JoinSameKey
+                    || (spec.policy == TaskPolicy::JoinSameKey
                         && !joined.insert((invocation.generation, checked.instance_key)))
                 {
                     return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);

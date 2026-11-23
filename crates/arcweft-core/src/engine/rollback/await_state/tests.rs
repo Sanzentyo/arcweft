@@ -9,6 +9,27 @@ use crate::task::{
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload, RuntimeValue};
 use arcweft_need::Need;
 
+impl crate::engine::Engine {
+    pub(crate) fn roundtrip_await_for_test(&self) -> (Self, bool) {
+        let owner = RuntimeProgramOwner::Plan(self.program_plan());
+        let mut image = self.inert_rollback_image().unwrap();
+        let frame = &mut image.fiber.frame;
+        let (state, observing) = match &mut frame.status {
+            FlowFiberStatus::NeedWaiting(state) => (state, false),
+            _ => (
+                frame
+                    .await_observer
+                    .as_mut()
+                    .expect("the Pending observer retains its parked wait"),
+                true,
+            ),
+        };
+        let wire = serde_json::to_vec(state.as_ref()).unwrap();
+        *state = Box::new(serde_json::from_slice(&wire).unwrap());
+        (Self::from_rollback_image(image, &owner).unwrap(), observing)
+    }
+}
+
 fn waiting() -> (
     RuntimeProgramOwner,
     AwaitState,
@@ -108,7 +129,10 @@ fn native_waits_share_live_inert_and_parent_node_limits() {
 fn native_waits_reject_wrong_types_correlations_and_cursor_frontiers_before_projection() {
     let (owner, live, wrong_type) = waiting();
     let inert = live.inert_rollback_image(&owner).unwrap();
-    for case in 0..6 {
+    let wire = serde_json::to_vec(&inert).unwrap();
+    let decoded: AwaitStateRollbackImage = serde_json::from_slice(&wire).unwrap();
+    assert_eq!(decoded, inert);
+    for case in 0..7 {
         let mut corrupt: AwaitStateRollbackImage = inert.clone();
         match case {
             0 => {
@@ -146,6 +170,7 @@ fn native_waits_reject_wrong_types_correlations_and_cursor_frontiers_before_proj
                     input_order: crate::value::RuntimeInputOrder::canonical(0).into(),
                 };
             }
+            6 => corrupt.observed_through = None,
             _ => unreachable!(),
         }
         let before = corrupt.clone();

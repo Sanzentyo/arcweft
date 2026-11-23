@@ -293,11 +293,17 @@ fn native_program_fanout_runs_original_workers_and_restores_every_owned_frontier
                     }
                     if restore {
                         let owner = RuntimeProgramOwner::Plan(Arc::clone(&engine.plan));
-                        engine = Engine::from_rollback_image(
-                            engine.inert_rollback_image().unwrap(),
-                            &owner,
-                        )
-                        .unwrap();
+                        let mut image = engine.inert_rollback_image().unwrap();
+                        for fiber in std::iter::once(&mut image.fiber)
+                            .chain(image.parked_main.iter_mut())
+                            .chain(&mut image.child_fibers)
+                        {
+                            if let FlowFiberStatus::WaitingMany(state) = &mut fiber.frame.status {
+                                let wire = serde_json::to_vec(state).unwrap();
+                                *state = serde_json::from_slice(&wire).unwrap();
+                            }
+                        }
+                        engine = Engine::from_rollback_image(image, &owner).unwrap();
                     }
                     if matches!(engine.fiber.frame.status, FlowFiberStatus::Done(_)) {
                         finished = true;

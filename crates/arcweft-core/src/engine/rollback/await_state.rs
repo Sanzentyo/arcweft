@@ -39,6 +39,17 @@ where
     for<'a> RuntimeNeedView<'a>: From<&'a H>,
     P: crate::value::RuntimeStoredValue,
 {
+    fn admit_frame_context<V: crate::value::RuntimeStoredValue, G>(
+        &self,
+        env: &crate::value::RuntimeEnv<V, G>,
+        _admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        if &self.source_context != env.source_function_context_ref() {
+            return Err(invalid("native Await source differs from its owning frame"));
+        }
+        Ok(())
+    }
+
     fn admit_suspended_values(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
@@ -52,6 +63,13 @@ where
             return Err(invalid("native Await requires its original Plan operation"));
         };
         source.operation.admit_retained(admission)?;
+        if let crate::plan::code::RuntimeCodeOwner::Function(site) = source.operation.owner()
+            && !matches!(&self.source_context, crate::value::RuntimeScopeFunctionContext::Function { site: retained, .. } if *retained == site)
+        {
+            return Err(invalid(
+                "native Await source differs from its invocation context",
+            ));
+        }
         let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner().cloned()
         else {
             return Err(invalid(
@@ -100,12 +118,14 @@ where
             publication.admit_for_await(handle, admission)?;
             previous = Some(cursor);
         }
-        if let (Some(queued), Some(observed)) = (previous, self.observed_through)
-            && !matches!(
-                queued.compare_same_source(observed),
-                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
-            )
-        {
+        if previous.is_some_and(|queued| {
+            !self.observed_through.is_some_and(|observed| {
+                matches!(
+                    queued.compare_same_source(observed),
+                    Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+                )
+            })
+        }) {
             return Err(invalid("native Await queue exceeds its observed cursor"));
         }
         Ok(())
@@ -287,6 +307,11 @@ where
         env: &crate::value::RuntimeEnv<W, G>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        if &self.context != env.source_function_context_ref() {
+            return Err(invalid(
+                "Program fanout source differs from its owning frame",
+            ));
+        }
         let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner() else {
             return Err(invalid("Program fanout has no original Plan frame"));
         };
@@ -367,7 +392,8 @@ where
         };
         let base = RuntimeNeedView::from(&self.base);
         base.admit_retained(admission)?;
-        if base.outcome() != &template.producer.outcome()
+        if !base.requires_producer_custody()
+            || base.outcome() != &template.producer.outcome()
             || plan.task_plan(&template.producer.plan).map(|row| row.key())
                 != Some(base.producer().plan())
         {
@@ -391,6 +417,8 @@ where
             handle.admit_retained(admission)?;
             if !correlations.insert(handle.correlation())
                 || handle.correlation().generation != base.correlation().generation
+                || !handle.requires_producer_custody()
+                || flight.observed_through.is_some()
                 || handle.outcome() != &fanout.worker.producer.outcome()
                 || plan
                     .task_plan(&fanout.worker.producer.plan)
@@ -434,6 +462,7 @@ where
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         match self {
+            Self::NeedWaiting(state) => state.admit_frame_context(env, admission)?,
             Self::WaitingMany(WaitingManyStatus::Program(state)) => {
                 state.admit_frame_context(env, admission)?
             }

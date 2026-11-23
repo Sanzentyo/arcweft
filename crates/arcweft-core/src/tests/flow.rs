@@ -2317,6 +2317,9 @@ fn await_progress_runs_only_the_first_matching_observer() {
     )
     .expect("Await observer flow exists");
     let _started = step(&mut engine);
+    let (restored, observing) = engine.roundtrip_await_for_test();
+    assert!(!observing);
+    engine = restored;
 
     let result = engine.step(
         RuntimeStepInput {
@@ -2344,6 +2347,8 @@ fn await_progress_runs_only_the_first_matching_observer() {
             .count(),
         1
     );
+    let (mut engine, observing) = engine.roundtrip_await_for_test();
+    assert!(observing);
     let output = drain(&mut engine);
     assert_eq!(
         output.flow_events,
