@@ -3,7 +3,7 @@ use arcweft_compiler::source::compile_source;
 use arcweft_core::awbc::fiber::{AwbcFiberStateSnapshot, FiberTerminalValue};
 use arcweft_core::awbc::schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcSignedIntKind};
 use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
-use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus};
+use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus, NativeEngineSaveError};
 use arcweft_core::plan::{
     FlowEvent, RuntimeCallableParameterCoordinate, RuntimeCallablePosition,
     RuntimeCallableRetainedRole, RuntimePlanTypeProjection,
@@ -391,7 +391,7 @@ flow main() -> i64 {
 }
 
 #[test]
-fn native_generic_continuation_keeps_its_scheme_origin_position_and_prefix() {
+fn native_generic_continuation_cold_restore_keeps_its_scheme_and_execution() {
     let compiled = compile_source(SOURCE).expect("generic continuation source compiles");
     let [flow] = compiled.plan.flows() else {
         panic!("fixture has one flow");
@@ -406,18 +406,7 @@ fn native_generic_continuation_keeps_its_scheme_origin_position_and_prefix() {
 
     let mut observed_prefix = false;
     for _ in 0..1024 {
-        let prefix = engine
-            .fiber()
-            .frame
-            .env
-            .bindings_snapshot()
-            .into_iter()
-            .flat_map(|binding| binding.into_values())
-            .find_map(|value| match value {
-                RuntimeValue::Callable(value) if is_i64_prefix(&value) => Some(value),
-                _ => None,
-            });
-        if let Some(prefix) = prefix {
+        if let Some(prefix) = native_i64_prefix(&engine) {
             assert_plan_prefix_scheme(&compiled.plan, &prefix);
             observed_prefix = true;
             break;
@@ -437,20 +426,67 @@ fn native_generic_continuation_keeps_its_scheme_origin_position_and_prefix() {
         "native execution exposes the saved generic prefix"
     );
 
+    let checkpoint = engine
+        .snapshot_for_save()
+        .expect("live prefix can be saved");
+    let wire = serde_json::to_vec(&checkpoint).expect("Native save encodes to JSON");
+    let cold = compile_source(SOURCE).expect("the original source recompiles independently");
+    let [cold_flow] = cold.plan.flows() else {
+        panic!("cold fixture has one flow");
+    };
+    let mut restored =
+        Engine::for_flow(cold.plan.clone(), &cold_flow.id).expect("cold continuation flow starts");
+    assert!(!std::sync::Arc::ptr_eq(
+        &engine.program_plan(),
+        &restored.program_plan()
+    ));
+    restored
+        .restore_save_snapshot(serde_json::from_slice(&wire).expect("Native save decodes"))
+        .expect("cold engine admits the saved prefix against its own original Plan");
+    assert_eq!(restored.snapshot_for_save().unwrap(), checkpoint);
+    let restored_prefix =
+        native_i64_prefix(&restored).expect("cold frame retains the checked prefix");
+    assert_plan_prefix_scheme(&cold.plan, &restored_prefix);
+
+    let changed = compile_source(&SOURCE.replacen("prefix(42i64)", "prefix(43i64)", 1)).unwrap();
+    let [changed_flow] = changed.plan.flows() else {
+        panic!("changed fixture has one flow");
+    };
+    let mut changed_engine = Engine::for_flow(changed.plan.clone(), &changed_flow.id).unwrap();
+    let before = changed_engine.snapshot_for_save().unwrap();
+    assert!(matches!(
+        changed_engine.restore_save_snapshot(serde_json::from_slice(&wire).unwrap()),
+        Err(NativeEngineSaveError::Program)
+    ));
+    assert_eq!(changed_engine.snapshot_for_save().unwrap(), before);
+
     for _ in 0..2048 {
         if matches!(&engine.fiber().frame.status, FlowFiberStatus::Done(_)) {
             break;
         }
         let result = engine.step(RuntimeStepInput::default(), options);
+        let resumed = restored.step(RuntimeStepInput::default(), options);
         assert!(
             result.output.diagnostics.is_empty(),
             "{:?}",
             result.output.diagnostics
         );
+        assert!(
+            resumed.output.diagnostics.is_empty(),
+            "{:?}",
+            resumed.output.diagnostics
+        );
+        assert_eq!(resumed.stats.executed_ops, result.stats.executed_ops);
+        assert_eq!(resumed.output.flow_events, result.output.flow_events);
+        assert_eq!(resumed.fiber_status, result.fiber_status);
     }
     assert_eq!(
         engine.fiber().frame.status,
         FlowFiberStatus::Done(FlowExit::Return("true".to_owned()))
+    );
+    assert_eq!(
+        restored.snapshot_for_save().unwrap(),
+        engine.snapshot_for_save().unwrap()
     );
 }
 
@@ -703,6 +739,20 @@ fn find_awbc_prefix<'a>(
 
 fn is_i64_prefix(callable: &RuntimeCallableValue) -> bool {
     callable.retained() == [RuntimeValue::i64(7)]
+}
+
+fn native_i64_prefix(engine: &Engine) -> Option<RuntimeCallableValue> {
+    engine
+        .fiber()
+        .frame
+        .env
+        .bindings_snapshot()
+        .into_iter()
+        .flat_map(|binding| binding.into_values())
+        .find_map(|value| match value {
+            RuntimeValue::Callable(value) if is_i64_prefix(&value) => Some(value),
+            _ => None,
+        })
 }
 
 fn assert_plan_prefix_scheme(
