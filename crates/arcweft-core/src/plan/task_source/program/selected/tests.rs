@@ -6,7 +6,7 @@ use crate::plan::construction::source::selected_producers;
 use crate::plan::task_source::{RuntimeTaskSource, RuntimeTaskSourceArtifactLimits};
 use crate::plan::{FlowOp, RuntimeTaskPlanIndex};
 use crate::task::*;
-use crate::value::{RuntimeRetainedValueAdmission, RuntimeStoredValue};
+use crate::value::{RuntimeEntityReferenceType, RuntimeRetainedValueAdmission, RuntimeStoredValue};
 use std::cell::Cell;
 use std::sync::Arc;
 
@@ -95,7 +95,6 @@ pub(in crate::plan::task_source) fn executable(request: u8) -> AwbcProgram {
     };
     let args = target.arguments();
     let boolean = RuntimeCheckedType::Bool.semantic_identity_digest();
-    let asset_reference = crate::value::RuntimeEntityReferenceType::family_only(asset_family);
     let params = metadata
         .argument_types()
         .iter()
@@ -145,9 +144,13 @@ pub(in crate::plan::task_source) fn executable(request: u8) -> AwbcProgram {
         runtime_types: vec![
             AwbcRuntimeType::new(boolean, AwbcRuntimeTypeShape::Bool),
             AwbcRuntimeType::new(
-                RuntimeCheckedType::EntityReference(asset_reference.clone())
-                    .semantic_identity_digest(),
-                AwbcRuntimeTypeShape::EntityRef(asset_reference),
+                RuntimeCheckedType::EntityReference(RuntimeEntityReferenceType::family_only(
+                    asset_family,
+                ))
+                .semantic_identity_digest(),
+                AwbcRuntimeTypeShape::EntityRef(RuntimeEntityReferenceType::family_only(
+                    asset_family,
+                )),
             ),
         ],
         effect_sets: vec![AwbcEffectSet::default()],
