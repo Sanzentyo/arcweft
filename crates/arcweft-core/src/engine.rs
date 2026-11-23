@@ -531,7 +531,7 @@ impl NativeFlowExecutionFrameRollbackImage<()> {
     }
 }
 
-impl Clone for NativeFlowExecutionFrameRollbackImage {
+impl<Program: Clone> Clone for NativeFlowExecutionFrameRollbackImage<Program> {
     fn clone(&self) -> Self {
         Self {
             program: self.program.clone(),
@@ -715,6 +715,14 @@ impl NativeFlowExecutionFrame {
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<NativeFlowExecutionFrameRollbackImage, String> {
+        self.snapshot_detached_with_admitted_values(owner)
+            .map(|frame| frame.bind_program(owner.clone()))
+    }
+
+    fn snapshot_detached_with_admitted_values(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<NativeFlowExecutionFrameRollbackImage<()>, String> {
         self.ensure_program_owner(owner)?;
         Ok(NativeFlowExecutionFrameRollbackImage {
             program: (),
@@ -774,8 +782,7 @@ impl NativeFlowExecutionFrame {
                 .map(|exit| exit.snapshot(owner))
                 .transpose()?,
             status: self.status.snapshot_with_admitted_values(owner)?,
-        }
-        .bind_program(owner.clone()))
+        })
     }
 
     #[cfg(test)]

@@ -4,11 +4,11 @@ use crate::effect::RuntimeDropPolicy;
 use crate::engine::DialogueRuntimePhase;
 pub(crate) use crate::engine::defer::NativeLexicalDeferScope as DialogueActivationScope;
 use crate::line_task::{
-    LineRuntimeError, LineTaskLiveState, LineTaskReducerView, RuntimeDialogueAbandonedCommitProof,
-    RuntimeDialogueActivationRegistry, RuntimeDialogueActivationState,
-    RuntimeDialogueActivationTransaction, RuntimeDialogueCommitProof, RuntimeDialogueCommitReceipt,
-    RuntimeDialoguePublishedCommitProof, RuntimeHandleDropReceipt, RuntimeLineHandleLedger,
-    ScopeExit,
+    LineRuntimeError, LineTaskLiveSnapshot, LineTaskLiveState, LineTaskReducerView,
+    RuntimeDialogueAbandonedCommitProof, RuntimeDialogueActivationRegistry,
+    RuntimeDialogueActivationState, RuntimeDialogueActivationTransaction,
+    RuntimeDialogueCommitProof, RuntimeDialogueCommitReceipt, RuntimeDialoguePublishedCommitProof,
+    RuntimeHandleDropReceipt, RuntimeLineHandleLedger, ScopeExit,
 };
 use crate::pattern::RuntimePattern;
 use crate::runtime_id::{
@@ -61,12 +61,20 @@ impl DialogueIngressError {
 }
 
 /// Suspended dialogue line awaiting explicit host progression.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage, O: crate::value::InertRuntimeValueStorage, C: crate::value::InertRuntimeValueStorage, E: serde::Serialize, R: serde::Serialize",
+        deserialize = "V: crate::value::InertRuntimeValueStorage, O: crate::value::InertRuntimeValueStorage, C: crate::value::InertRuntimeValueStorage, E: serde::Deserialize<'de>, R: serde::Deserialize<'de>"
+    )
+)]
 pub(crate) struct DialogueActivationFrame<
     V = RuntimeValue,
     O = crate::value::RuntimeOpaqueValue,
     C = crate::value::RuntimeCallableValue,
     E = super::super::NativeFlowExecutionFrame,
+    R = LineTaskLiveState,
 > {
     pub(in crate::engine) parent: super::super::FlowFiberId,
     pub(in crate::engine) line: crate::plan::RuntimeLineId,
@@ -78,7 +86,7 @@ pub(crate) struct DialogueActivationFrame<
     /// The same execution frame used by ordinary fibers. The parent continuation
     /// and this frame never own each other's bindings or invocation stack.
     pub(in crate::engine) execution: E,
-    pub(in crate::engine) line_task: DialogueLineTaskState,
+    pub(in crate::engine) line_task: DialogueLineTaskState<R>,
     /// Logical time accumulated while this line has been active.
     pub(in crate::engine) elapsed: crate::time::LogicalDuration,
     pub(in crate::engine) phase: DialogueRuntimePhase,
@@ -101,7 +109,7 @@ pub(crate) struct DialogueActivationFrame<
         Option<super::scope::PendingActivationScopeResult<V>>,
     pub(in crate::engine) pending_line_operation: Option<PendingLineOperation<V>>,
     pub(in crate::engine) pending_host_call: Option<NativeHostCallContinuation>,
-    pub(in crate::engine) failure: Option<super::DialogueExecutionError>,
+    pub(in crate::engine) failure: Option<String>,
 }
 
 /// The reached Dialogue operation owns the result binder for the life of the
@@ -165,12 +173,13 @@ type NativeDialogueActivationFrameRollbackImage = DialogueActivationFrame<
     crate::value::AwbcRuntimeValueSnapshot,
     crate::value::AwbcRuntimeValueSnapshot,
     crate::value::AwbcRuntimeValueSnapshot,
-    super::super::NativeFlowExecutionFrameRollbackImage,
+    super::super::NativeFlowExecutionFrameRollbackImage<()>,
+    LineTaskLiveSnapshot,
 >;
 type NativeEngineDialogueFrameRollbackImage =
     EngineDialogueActivationFrame<NativeDialogueActivationFrameRollbackImage>;
 
-impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
+impl<V, O, C, E, R> DialogueActivationFrame<V, O, C, E, R> {
     pub(in crate::engine) fn result_target<'a>(
         &'a self,
         plan: &'a crate::plan::RuntimePlan,
@@ -286,8 +295,24 @@ impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
         activation: &DialogueActivationId,
         line: &RuntimeDialogueActivationState<RuntimePlanTypeId, L>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
-    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError>
+    where
+        R: LineTaskReducerView + serde::Serialize,
+    {
         self.admit_pending_line_command(activation, line, admission)?;
+        use crate::line_task::RuntimeDialogueResultState;
+        if let RuntimeDialogueResultState::Committed { ty, .. }
+        | RuntimeDialogueResultState::Selected { ty, .. }
+        | RuntimeDialogueResultState::Publishing { ty, .. } = line.result()
+        {
+            let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
+            else {
+                return Err(LineRuntimeError::InvalidRestoredResultState.into());
+            };
+            if self.result_target(plan)?.ty() != *ty {
+                return Err(LineRuntimeError::InvalidRestoredResultState.into());
+            }
+        }
         let DialogueLineTaskState::Live(reducer) = &self.line_task else {
             return Ok(());
         };
@@ -323,7 +348,8 @@ impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
             .line_task_groups()
             .get(self.task_group.index())
             .ok_or_else(|| invalid("native reducer group is absent from its original program"))?;
-        reducer.admit_retained(group, admission)?;
+        admission.validate_metadata(reducer)?;
+        crate::line_task::admit_reducer_for_plan(group, reducer)?;
         line.restore_admit_reducer(activation, group, reducer)?;
         Ok(())
     }
@@ -394,7 +420,8 @@ impl Clone for NativePendingLineOperationRollbackImage {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DialogueActivationStoreRollbackImage {
     registry: crate::line_task::RuntimeDialogueRegistrySaveSnapshot<
         NativeEngineDialogueFrameRollbackImage,
@@ -455,7 +482,7 @@ impl DialogueActivationStoreRollbackImage {
             super::super::FlowFiberId,
         ) -> Option<crate::runtime_id::ExecutionInstanceId>,
         mut admit_waits: impl FnMut(
-            &super::super::NativeFlowExecutionFrameRollbackImage,
+            &super::super::NativeFlowExecutionFrameRollbackImage<()>,
             Option<&NativeHostCallContinuation>,
         ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
@@ -463,6 +490,10 @@ impl DialogueActivationStoreRollbackImage {
         use crate::task::RuntimeProgramOwner;
         use crate::value::RuntimeHandleKind;
 
+        let owner = admission.program_owner().cloned();
+        let Some(RuntimeProgramOwner::Plan(plan)) = &owner else {
+            return Err(LineRuntimeError::InvalidRestoredResultState.into());
+        };
         self.registry.admit_retained(
             admission,
             expected_deferred_children,
@@ -472,9 +503,6 @@ impl DialogueActivationStoreRollbackImage {
                     command: pending, ..
                 }) = &frame.pending_line_operation
                 else {
-                    return false;
-                };
-                let RuntimeProgramOwner::Plan(plan) = &frame.execution.program else {
                     return false;
                 };
                 let Some(FlowOp::LineOperation {
@@ -505,10 +533,6 @@ impl DialogueActivationStoreRollbackImage {
                         })
             },
             |_, active, value, retired| {
-                let crate::task::RuntimeProgramOwner::Plan(plan) = &active.frame.execution.program
-                else {
-                    return Err(LineRuntimeError::InvalidRestoredResultState);
-                };
                 let result = active.frame.result_target(plan)?;
                 for token in retired {
                     let destinations = crate::pattern::runtime_pattern_handle_destinations_view(
@@ -542,7 +566,7 @@ impl DialogueActivationStoreRollbackImage {
                     admission,
                     active.frame.execution.env.function_instantiation(),
                     |frame, admission| {
-                        frame.admit_owned_values(admission, None)?;
+                        frame.admit_detached_dialogue_values(admission)?;
                         admit_waits(frame, active.frame.pending_host_call.as_ref())
                     },
                 )
@@ -720,8 +744,12 @@ impl DialogueActivationFrame {
                 .iter()
                 .map(|binding| NativeDialogueBindingRollbackImage::from_live(binding, owner))
                 .collect::<Result<_, String>>()?,
-            execution: execution.snapshot_with_admitted_values(owner)?,
-            line_task: self.line_task.clone(),
+            execution: execution.snapshot_detached_with_admitted_values(owner)?,
+            line_task: match &self.line_task {
+                DialogueLineTaskState::NotStarted => DialogueLineTaskState::NotStarted,
+                DialogueLineTaskState::Live(state) => DialogueLineTaskState::Live(state.snapshot()),
+                DialogueLineTaskState::Closed(exit) => DialogueLineTaskState::Closed(*exit),
+            },
             elapsed: self.elapsed,
             phase: self.phase,
             origin: self.origin.clone(),
@@ -805,10 +833,16 @@ impl DialogueActivationFrame {
                 .collect::<Result<Vec<_>, String>>()?
                 .into_boxed_slice(),
             execution: super::super::NativeFlowExecutionFrame::from_image_with_admitted_values(
-                image.execution,
+                image.execution.bind_program(owner.clone()),
                 owner,
             )?,
-            line_task: image.line_task,
+            line_task: match image.line_task {
+                DialogueLineTaskState::NotStarted => DialogueLineTaskState::NotStarted,
+                DialogueLineTaskState::Live(state) => {
+                    DialogueLineTaskState::Live(LineTaskLiveState::from_admitted_snapshot(state))
+                }
+                DialogueLineTaskState::Closed(exit) => DialogueLineTaskState::Closed(exit),
+            },
             elapsed: image.elapsed,
             phase: image.phase,
             origin: image.origin,
@@ -893,7 +927,8 @@ impl DialogueActivationFrame {
 
 /// Durable step ingress owned by one activation until its executor phase can
 /// consume each channel exactly once.
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 struct DialogueStepInbox {
     content_events: Vec<RuntimeDialogueContentEventKind>,
     input_actions: Vec<crate::step::RuntimeDialogueInputActionEvent>,
@@ -906,7 +941,7 @@ impl DialogueStepInbox {
         &self,
         activation: &DialogueActivationId,
         phase: DialogueRuntimePhase,
-        line_task: &DialogueLineTaskState,
+        line_task: &DialogueLineTaskState<impl LineTaskReducerView>,
     ) -> Result<(), LineRuntimeError> {
         if self.input_actions.is_empty() {
             return Ok(());
@@ -933,10 +968,11 @@ impl DialogueStepInbox {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum DialogueLineTaskState {
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) enum DialogueLineTaskState<R = LineTaskLiveState> {
     NotStarted,
-    Live(LineTaskLiveState),
+    Live(R),
     Closed(ScopeExit),
 }
 
@@ -1507,7 +1543,8 @@ impl DialogueActivationStore {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 struct EngineDialogueActivationFrame<F = DialogueActivationFrame> {
     frame: F,
     inbox: DialogueStepInbox,
@@ -1535,7 +1572,7 @@ pub(crate) enum DialogueCommitDisposition {
         >,
     },
     Failed {
-        error: super::DialogueExecutionError,
+        message: String,
     },
 }
 
@@ -2195,7 +2232,7 @@ impl DialogueActivationStore {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::pattern::RuntimePatternKind;
     use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId};
@@ -2226,14 +2263,14 @@ mod tests {
         ))
     }
 
-    #[test]
-    fn dialogue_origin_roundtrips_only_the_reached_operation() {
-        use crate::engine::NativeCodeCursor;
+    pub(in crate::engine::dialogue) fn declare_original_dialogue(
+        builder: &mut crate::plan::RuntimePlanBuilder,
+        content: crate::plan::RuntimeDialogueContentPlanSeedId,
+    ) -> crate::plan::RuntimeFunctionDefinitionIdentity {
         use crate::pattern::RuntimeOpaqueTypeAdmission;
         use crate::plan::*;
         use crate::value::{RuntimeCharacterDialogueProducerId, RuntimeValue};
 
-        let (mut builder, content) = crate::plan::body_semantic::content_root_builder_fixture();
         let result_type = RuntimeSemanticTypeId::from_bytes([1; 32]);
         let target_type = RuntimeSemanticTypeId::from_bytes([0x79; 32]);
         let producer = RuntimeCharacterDialogueProducerId::get();
@@ -2288,6 +2325,16 @@ mod tests {
                 }),
             )
             .unwrap();
+        definition
+    }
+
+    #[test]
+    fn dialogue_origin_roundtrips_only_the_reached_operation() {
+        use crate::engine::NativeCodeCursor;
+        use crate::plan::*;
+
+        let (mut builder, content) = crate::plan::body_semantic::content_root_builder_fixture();
+        let definition = declare_original_dialogue(&mut builder, content);
         let plan = builder.finish().unwrap();
         let (function_id, function) = plan
             .function_sites()
@@ -2925,9 +2972,10 @@ mod tests {
         let failure = super::super::DialogueExecutionError::Line(
             LineRuntimeError::InvalidActivationOperation,
         );
-        mismatch.frame_mut().failure = Some(failure.clone());
+        let message = failure.to_string();
+        mismatch.frame_mut().failure = Some(message.clone());
         mismatch
-            .stage_disposition(DialogueCommitDisposition::Failed { error: failure })
+            .stage_disposition(DialogueCommitDisposition::Failed { message })
             .expect("stage failure");
         let proof = store
             .inspect_terminal_transaction(&mismatch)

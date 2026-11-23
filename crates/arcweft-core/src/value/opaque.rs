@@ -811,7 +811,11 @@ pub enum RuntimeDialogueContentBinding {
 /// Runtime callback captured by one content-local effect site.
 ///
 /// The callback leases a program-owned callable state and its retained values.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "C: crate::value::InertRuntimeValueStorage"
+)]
 pub struct RuntimeDialogueContentEffectBinding<C = RuntimeCallableValue> {
     site: crate::runtime_id::RuntimeDialogueEffectSiteId,
     callback: C,

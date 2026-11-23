@@ -6,7 +6,7 @@ use crate::value::{
     RuntimeValueView,
 };
 
-impl<V, O, C, E> DialogueActivationFrame<V, O, C, E>
+impl<V, O, C, E, R> DialogueActivationFrame<V, O, C, E, R>
 where
     V: RuntimeStoredValue,
     O: RuntimeStoredValue,
@@ -31,6 +31,15 @@ where
             self.activation_pc,
             self.exiting_for_result,
         ))?;
+        if let Some(message) = &self.failure {
+            admission.validate_metadata_string(message)?;
+            if self.phase != crate::engine::DialogueRuntimePhase::Closing {
+                return Err(invalid_shape(
+                    "dialogue failure has no closing phase",
+                    admission,
+                ));
+            }
+        }
         match &self.origin {
             DialogueOrigin::Operation(source) => {
                 source.admit_retained(admission)?;
@@ -182,7 +191,7 @@ where
     }
 }
 
-impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
+impl<V, O, C, E, R> DialogueActivationFrame<V, O, C, E, R> {
     pub(super) fn admit_pending_line_command<L>(
         &self,
         activation: &crate::runtime_id::DialogueActivationId,

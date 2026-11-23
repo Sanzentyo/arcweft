@@ -495,6 +495,42 @@ impl<N, P, Q, FV, FP, O, C, A, AS, MS, HS, CS, G, D>
 }
 
 impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
+    pub(super) fn admit_owned_values(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        task: Option<(TaskCorrelation, &TaskSpec<P>)>,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        V: crate::value::RuntimeStoredValue,
+        P: crate::value::RuntimeStoredValue,
+        O: NativeStoredWork,
+        C: ScopeControl<O>,
+        A: SuspendedValues,
+        S: SuspendedValues + NativeInvocationStatus,
+        G: crate::presentation::resources::PresentationScopeStorage,
+    {
+        let owner_check = match admission.program_owner() {
+            Some(owner) => self.ensure_program_owner(owner),
+            None => Err("execution frame requires its original executable".into()),
+        };
+        self.admit_owned_values_with_owner_check(admission, task, owner_check)
+    }
+}
+
+impl super::NativeFlowExecutionFrameRollbackImage<()> {
+    pub(super) fn admit_detached_dialogue_values(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        let owner_check = match admission.program_owner() {
+            Some(crate::task::RuntimeProgramOwner::Plan(_)) => Ok(()),
+            _ => Err("dialogue execution frame requires its enclosing original Plan".into()),
+        };
+        self.admit_owned_values_with_owner_check(admission, None, owner_check)
+    }
+}
+
+impl<V, P, O, C, A, S, G, Program> NativeFlowExecutionFrame<V, P, O, C, A, S, G, Program> {
     pub(super) fn admit_root_phase<Q>(
         &self,
         root: Option<&crate::root::RootRuntime<Q>>,
@@ -578,10 +614,11 @@ impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
             .last()
     }
 
-    pub(super) fn admit_owned_values(
+    fn admit_owned_values_with_owner_check(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
         task: Option<(TaskCorrelation, &TaskSpec<P>)>,
+        owner_check: Result<(), String>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
         V: crate::value::RuntimeStoredValue,
@@ -595,10 +632,6 @@ impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
         let invalid =
             |message: String| crate::value::AwbcRuntimeValueSnapshotError::Message { message };
         admission.status()?;
-        let owner_check = match admission.program_owner() {
-            Some(owner) => self.ensure_program_owner(owner),
-            None => Err("execution frame requires its original executable".into()),
-        };
         if let Err(message) = owner_check {
             let error = invalid(message);
             admission.retain_failure(error.clone());
@@ -741,7 +774,8 @@ impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
             }
             _ => {}
         }
-        let crate::task::RuntimeProgramOwner::Plan(plan) = &self.program else {
+        let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner().cloned()
+        else {
             return Err(invalid(
                 "native invocation result has no original Plan".into(),
             ));
@@ -755,7 +789,7 @@ impl<V, P, O, C, A, S, G> NativeFlowExecutionFrame<V, P, O, C, A, S, G> {
             }
             NativeInvocationRoot::Function(site) => {
                 admission.validate_metadata(&site.get())?;
-                let function = crate::pure::RuntimePureFunctionRef::resolve(plan, *site)
+                let function = crate::pure::RuntimePureFunctionRef::resolve(&plan, *site)
                     .map_err(|error| invalid(error.to_string()))?;
                 plan.type_table()
                     .get(function.result_type())
@@ -1857,13 +1891,14 @@ impl NativeEngineRollbackImage {
         let mut host_sequences = BTreeSet::new();
         let mut host_correlations = BTreeSet::new();
         let mut program_launches = BTreeSet::new();
-        let mut validate_waits = |frame: &super::NativeFlowExecutionFrameRollbackImage,
+        let mut validate_waits = |status: &super::FlowFiberStatusRollbackImage,
+                                  await_observer: Option<&super::AwaitStateRollbackImage>,
                                   launch: Option<crate::task::TaskCorrelation>,
                                   dialogue_host_call: Option<
             &super::host_call::NativeHostCallContinuation,
         >|
          -> Result<(), String> {
-            let frame_host_call = match &frame.status {
+            let frame_host_call = match status {
                 FlowFiberStatus::HostCall(state) => Some(state),
                 _ => None,
             };
@@ -1880,10 +1915,10 @@ impl NativeEngineRollbackImage {
                     );
                 }
             }
-            if let Some(wait) = &frame.await_observer {
+            if let Some(wait) = await_observer {
                 self.validate_wait_receipt(&receipts, &wait.handle, wait.observed_through)?;
             }
-            match &frame.status {
+            match status {
                 FlowFiberStatus::NeedWaiting(wait) => {
                     self.validate_wait_receipt(&receipts, &wait.handle, wait.observed_through)?;
                 }
@@ -1938,7 +1973,12 @@ impl NativeEngineRollbackImage {
                     fiber.frame.presentation_bank,
                 )
                 .map_err(|error| error.to_string())?;
-            validate_waits(&fiber.frame, task.map(|(correlation, _)| correlation), None)?;
+            validate_waits(
+                &fiber.frame.status,
+                fiber.frame.await_observer.as_deref(),
+                task.map(|(correlation, _)| correlation),
+                None,
+            )?;
         }
         if program_launches.len() != receipts.executing_program_count() {
             return Err(
@@ -1964,7 +2004,13 @@ impl NativeEngineRollbackImage {
                         .map(|fiber| fiber.execution)
                 },
                 |frame, dialogue_host_call| {
-                    validate_waits(frame, None, dialogue_host_call).map_err(|message| {
+                    validate_waits(
+                        &frame.status,
+                        frame.await_observer.as_deref(),
+                        None,
+                        dialogue_host_call,
+                    )
+                    .map_err(|message| {
                         crate::value::AwbcRuntimeValueSnapshotError::Message { message }
                     })
                 },

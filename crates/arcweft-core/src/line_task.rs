@@ -967,7 +967,7 @@ impl<A, S, R, E, I> LineTaskReducerState<A, S, R, E, I> {
     where
         Self: LineTaskReducerView,
     {
-        validate_snapshot(plan, self)
+        admit_reducer_for_plan(plan, self)
     }
 
     pub(crate) fn admit_retained<P: LineTaskPlanView>(
@@ -1300,7 +1300,7 @@ impl LineTaskLiveState {
         plan: &P,
         snapshot: LineTaskLiveSnapshot,
     ) -> Result<Self, LineTaskSnapshotError> {
-        validate_snapshot(plan, &snapshot)?;
+        admit_reducer_for_plan(plan, &snapshot)?;
         Ok(Self::from_admitted_snapshot(snapshot))
     }
 
@@ -1595,7 +1595,7 @@ fn mark_result_source<P: LineTaskPlanView>(
     source
 }
 
-fn validate_snapshot<P: LineTaskPlanView>(
+pub(crate) fn admit_reducer_for_plan<P: LineTaskPlanView>(
     plan: &P,
     snapshot: &impl LineTaskReducerView,
 ) -> Result<(), LineTaskSnapshotError> {

@@ -324,8 +324,8 @@ impl Engine {
                 self.fiber.frame.env.bind_all(bindings);
                 self.fiber.frame.status = super::FlowFiberStatus::Running;
             }
-            DialogueCommitDisposition::Failed { error } => {
-                self.fiber.frame.status = super::FlowFiberStatus::Failed(error.to_string());
+            DialogueCommitDisposition::Failed { message } => {
+                self.fiber.frame.status = super::FlowFiberStatus::Failed(message);
             }
         }
     }
@@ -540,10 +540,11 @@ impl Engine {
     ) {
         let state = transaction.frame_mut();
         if state.failure.is_none() {
+            let message = error.to_string();
             output
                 .diagnostics
-                .push(RuntimeDiagnostic::new(error.to_string()));
-            state.failure = Some(error);
+                .push(RuntimeDiagnostic::new(message.clone()));
+            state.failure = Some(message);
         }
         state.phase = DialogueRuntimePhase::Closing;
         self.request_line_task_cancellation(transaction.activation());
@@ -773,12 +774,12 @@ impl Engine {
             && !self.has_joined_dialogue_work(&activation_id)
             && !pending_received_release;
         if terminal {
-            let Some(error) = state.failure.clone() else {
+            let Some(message) = state.failure.clone() else {
                 self.fail_eval(LineRuntimeError::InvalidResultTransition, output);
                 return;
             };
             if let Err(error) =
-                transaction.stage_disposition(DialogueCommitDisposition::Failed { error })
+                transaction.stage_disposition(DialogueCommitDisposition::Failed { message })
             {
                 self.fail_eval(error, output);
                 return;
@@ -4344,6 +4345,7 @@ mod tests {
         builder
             .attach_line_task_group_seed(&content, &group)
             .unwrap();
+        let definition = super::store::tests::declare_original_dialogue(&mut builder, content);
         let plan = builder
             .finish()
             .expect("the activation owns its original host task");
@@ -4375,6 +4377,28 @@ mod tests {
         let id = activation_id();
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
         let mut frame = activation_frame(&engine, local);
+        let original_plan = engine.program_plan();
+        let (function, _) = original_plan
+            .function_sites()
+            .iter_with_ids()
+            .find(|(_, site)| site.definition() == definition)
+            .unwrap();
+        let cursor = crate::engine::NativeCodeCursor::root(
+            &original_plan,
+            crate::plan::RuntimeCodeOwner::Function(function),
+        )
+        .unwrap();
+        frame.origin = super::DialogueOrigin::Operation(
+            cursor
+                .source_operation_at_offset(&original_plan, 0)
+                .unwrap(),
+        );
+        frame.line = original_plan
+            .dialogue_content()
+            .get(id.content())
+            .unwrap()
+            .line()
+            .clone();
         frame.target = None;
         frame.execution.env = Default::default();
         let owner = RuntimeProgramOwner::Plan(engine.program_plan());
@@ -4412,7 +4436,9 @@ mod tests {
         engine
             .commit_dialogue_activation_transaction(transaction, &mut RuntimeStepOutput::default())
             .unwrap();
-        let image = engine.inert_rollback_image().unwrap();
+        let mut image = engine.inert_rollback_image().unwrap();
+        let wire = serde_json::to_vec(&image.dialogue_activations).unwrap();
+        image.dialogue_activations = serde_json::from_slice(&wire).unwrap();
         let mut forged = image.clone();
         forged.next_host_call_sequence = 0;
         let error = Engine::from_rollback_image(forged, &owner).unwrap_err();
@@ -4488,7 +4514,9 @@ mod tests {
             command: command.clone(),
             actor: actor.clone(),
         });
-        let image = engine.inert_rollback_image().unwrap();
+        let mut image = engine.inert_rollback_image().unwrap();
+        let wire = serde_json::to_vec(&image.dialogue_activations).unwrap();
+        image.dialogue_activations = serde_json::from_slice(&wire).unwrap();
         let mut altered = engine.dialogue_activations.begin_transaction(&id).unwrap();
         altered.frame_mut().pending_line_operation = Some(forged.into_live(&owner).unwrap());
         engine
@@ -4501,7 +4529,7 @@ mod tests {
         );
         let mut engine = Engine::from_rollback_image(image, &owner).unwrap();
         let transaction = engine.dialogue_activations.begin_transaction(&id).unwrap();
-        let (transaction, step) = engine.resume_dialogue_activation(
+        let (mut transaction, step) = engine.resume_dialogue_activation(
             transaction,
             &[outcome],
             &mut RuntimeStepInput::default(),
@@ -4522,6 +4550,51 @@ mod tests {
                 .env
                 .bindings()
                 .any(|(_, value)| super::token_from_value(value).as_ref() == Ok(actor))
+        );
+
+        let group = &original_plan.line_task_groups()[0];
+        transaction
+            .line_mut()
+            .commit_result(group.result_type(), RuntimeValue::Unit)
+            .unwrap();
+        transaction.frame_mut().line_task =
+            super::DialogueLineTaskState::Live(super::LineTaskLiveState::new(group, id));
+        transaction.frame_mut().phase = super::DialogueRuntimePhase::Ready;
+        engine
+            .commit_dialogue_activation_transaction(transaction, &mut RuntimeStepOutput::default())
+            .unwrap();
+        let mut image = engine.inert_rollback_image().unwrap();
+        let saved = serde_json::to_value(&image.dialogue_activations).unwrap();
+        let mut bad_type = saved.clone();
+        let ty =
+            &mut bad_type["registry"]["entries"][0]["Active"]["line"]["result"]["Committed"]["ty"];
+        assert_eq!(*ty, serde_json::json!(group.result_type().get()));
+        *ty = serde_json::json!(0);
+        assert!(
+            serde_json::from_value::<super::DialogueActivationStoreRollbackImage>(bad_type)
+                .is_err()
+        );
+        let mut tampered = saved.clone();
+        let states = &mut tampered["registry"]["entries"][0]["Active"]["frame"]["frame"]["line_task"]
+            ["Live"]["activation_lane"]["node_states"];
+        assert_eq!(states.as_array().unwrap().len(), group.nodes().len());
+        *states = serde_json::json!([]);
+        let mut forged = image.clone();
+        forged.dialogue_activations = serde_json::from_value(tampered).unwrap();
+        let error = Engine::from_rollback_image(forged, &owner).unwrap_err();
+        assert!(error.contains("node states"), "{error}");
+
+        image.dialogue_activations = serde_json::from_value(saved.clone()).unwrap();
+        let restored = Engine::from_rollback_image(image, &owner).unwrap();
+        assert_eq!(
+            serde_json::to_value(
+                restored
+                    .inert_rollback_image()
+                    .unwrap()
+                    .dialogue_activations
+            )
+            .unwrap(),
+            saved
         );
     }
 

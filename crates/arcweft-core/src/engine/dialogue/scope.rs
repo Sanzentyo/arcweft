@@ -19,7 +19,11 @@ use crate::value::{
 
 /// The original activation operation remains parked until this scope drains.
 /// Its value is neither bound to the outer environment nor discarded early.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: crate::value::InertRuntimeValueStorage"
+)]
 pub(in crate::engine) struct PendingActivationScopeResult<V = RuntimeValue> {
     pub(super) operation: usize,
     pub(super) scope_depth: usize,

@@ -264,7 +264,13 @@ struct ReceivedResultIssuerStage<'a> {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "F: Serialize, T: super::handle::RuntimeDialogueTypeCoordinate",
+        deserialize = "F: Deserialize<'de>, T: super::handle::RuntimeDialogueTypeCoordinate"
+    )
+)]
 pub(crate) struct RuntimeDialogueRegistrySaveSnapshot<F, T> {
     entries: Vec<RuntimeDialogueRegistrySaveEntry<F, T>>,
 }
@@ -348,7 +354,13 @@ impl<F, T> RuntimeDialogueRegistrySaveSnapshot<F, T> {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "F: Serialize, T: super::handle::RuntimeDialogueTypeCoordinate",
+        deserialize = "F: Deserialize<'de>, T: super::handle::RuntimeDialogueTypeCoordinate"
+    )
+)]
 enum RuntimeDialogueRegistrySaveEntry<F, T> {
     Active {
         activation: DialogueActivationId,

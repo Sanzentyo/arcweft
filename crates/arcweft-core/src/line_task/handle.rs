@@ -45,6 +45,11 @@ pub const MAX_LINE_COMMAND_HISTORY: usize = 1_024;
 /// Actual backend coordinates admit fixed metadata without adding a wire
 /// codec to a construction-only plan identity.
 pub(crate) trait RuntimeDialogueTypeCoordinate {
+    type Wire: Serialize + serde::de::DeserializeOwned;
+
+    fn wire_coordinate(&self) -> Self::Wire;
+    fn from_wire_coordinate(coordinate: Self::Wire) -> Self;
+
     fn admit_type_metadata(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -60,6 +65,16 @@ pub(crate) trait RuntimeDialogueTypeCoordinate {
 }
 
 impl RuntimeDialogueTypeCoordinate for crate::runtime_id::RuntimePlanTypeId {
+    type Wire = std::num::NonZeroU32;
+
+    fn wire_coordinate(&self) -> Self::Wire {
+        self.get()
+    }
+
+    fn from_wire_coordinate(coordinate: Self::Wire) -> Self {
+        Self::from_accepted_ordinal(coordinate)
+    }
+
     fn admit_type_metadata(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -91,6 +106,16 @@ impl RuntimeDialogueTypeCoordinate for crate::runtime_id::RuntimePlanTypeId {
 }
 
 impl RuntimeDialogueTypeCoordinate for crate::awbc::schema::AwbcTypeId {
+    type Wire = Self;
+
+    fn wire_coordinate(&self) -> Self::Wire {
+        *self
+    }
+
+    fn from_wire_coordinate(coordinate: Self::Wire) -> Self {
+        coordinate
+    }
+
     fn admit_type_metadata(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -120,6 +145,24 @@ impl RuntimeDialogueTypeCoordinate for crate::awbc::schema::AwbcTypeId {
             )
             .map_err(crate::program_types::RuntimeProgramTypeError::from)?;
         Ok(crate::program_types::RuntimeProgramValueType::Awbc { program, ty: *self })
+    }
+}
+
+mod result_type_coordinate {
+    use super::RuntimeDialogueTypeCoordinate;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub(super) fn serialize<T: RuntimeDialogueTypeCoordinate, S: Serializer>(
+        value: &T,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value.wire_coordinate().serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, T: RuntimeDialogueTypeCoordinate, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<T, D::Error> {
+        T::Wire::deserialize(deserializer).map(T::from_wire_coordinate)
     }
 }
 
@@ -557,8 +600,8 @@ pub struct RuntimeLineHandleLedger {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "T: Serialize, V: crate::value::InertRuntimeValueStorage, RuntimeScheduledLineTask<V>: Serialize",
-        deserialize = "T: Deserialize<'de>, V: crate::value::InertRuntimeValueStorage, RuntimeScheduledLineTask<V>: Deserialize<'de>"
+        serialize = "T: RuntimeDialogueTypeCoordinate, V: crate::value::InertRuntimeValueStorage, RuntimeScheduledLineTask<V>: Serialize",
+        deserialize = "T: RuntimeDialogueTypeCoordinate, V: crate::value::InertRuntimeValueStorage, RuntimeScheduledLineTask<V>: Deserialize<'de>"
     )
 )]
 pub struct RuntimeDialogueActivationState<T, V = RuntimeValue> {
@@ -871,22 +914,25 @@ impl RuntimeDialogueCommitReceipt {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "T: Serialize, V: crate::value::InertRuntimeValueStorage",
-        deserialize = "T: Deserialize<'de>, V: crate::value::InertRuntimeValueStorage"
+        serialize = "T: RuntimeDialogueTypeCoordinate, V: crate::value::InertRuntimeValueStorage",
+        deserialize = "T: RuntimeDialogueTypeCoordinate, V: crate::value::InertRuntimeValueStorage"
     )
 )]
 pub enum RuntimeDialogueResultState<T, V = RuntimeValue> {
     Uncommitted,
     Committed {
+        #[serde(with = "result_type_coordinate")]
         ty: T,
         value: V,
     },
     Selected {
+        #[serde(with = "result_type_coordinate")]
         ty: T,
         value: V,
         source: LineTaskWorkTag,
     },
     Publishing {
+        #[serde(with = "result_type_coordinate")]
         ty: T,
         value: V,
     },
