@@ -12,7 +12,7 @@ use arcweft_core::{
         ArcweftExecutionTier, ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot,
         ArcweftRuntimeExecutorSnapshotError, RuntimeExecutor,
     },
-    plan::{EntryRuntimeId, FlowRuntimeId, RuntimePlan},
+    plan::{EntryRuntimeId, RuntimePlan},
     step::{
         RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
         RuntimeStepResult, RuntimeStepStopReason,
@@ -199,11 +199,18 @@ fn native_executor_save_resumes_the_original_launch_in_either_native_tier() {
         runtime.start_structured_entry(entry).unwrap();
         runtime
     };
-    let invoke = |flow| {
+    let invoke = |label| {
+        let flow = plan
+            .flows()
+            .iter()
+            .find(|flow| flow.id.public_label().as_str() == label)
+            .unwrap()
+            .id
+            .clone();
         let invocation = plan
             .as_ref()
             .clone()
-            .seal_flow_invocation(FlowRuntimeId::canonical(flow).unwrap(), [])
+            .seal_flow_invocation(flow, [])
             .unwrap();
         ArcweftRuntimeExecutor::from_runtime_flow_invocation(
             invocation,
@@ -261,8 +268,8 @@ fn native_executor_save_resumes_the_original_launch_in_either_native_tier() {
         FlowFiberStatus::Done(FlowExit::Return("42".into()))
     );
 
-    let first = invoke("main");
-    let other = invoke("other");
+    let first = invoke("flow.main");
+    let other = invoke("flow.other");
     let other_before = other.snapshot().unwrap();
     let (other, error) = other
         .restore_snapshot(first.snapshot().unwrap())
