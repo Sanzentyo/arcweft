@@ -22330,3 +22330,7 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 同じ診断用AWFBを Chrome WebGPU で実行した初回は、正常な配信2件も空であると仮定した観測側のアサーションが終了1だった。再実行では Native の AWBC 実行とステップ0〜2の要求数・配信診断を完全一致で照合し、それぞれ異なるタスクIDの sequence 1 を2件、既定の起動上限10秒、`done return voice_ready`、ブラウザーエラー0件で終了0とした。検証した Wasm の SHA-256 は `f4f49ea723aea7bd246da308892fb011a2af0e26264de1b278c43c30d4605b98`。
 
 修正前の全対象nextestは実行ID `37e4ee58-36d5-4dc4-93b0-5273fa2002ba`、5,928 PASS（slow 5）／3 FAIL／9 skip、終了100。失敗は上記の音声回帰1件とCore 2件だった。Core fixtureの最初の再構築では `RuntimeEntityReferenceType<RuntimeSemanticTypeId>` と `RuntimeEntityReferenceType<AwbcTypeId>` を同じ変数で扱って `E0308` を受けた。`f9921fd5d8ef0275bd05b54b53dba85f8ac61c41` では同じ素材familyから、意味の型参照と実行の型参照をそれぞれ構築する。
+
+固定フレームの比較をさらに実行した。計測なしの再試行は canvas 確認の起動で10秒を超え、終了1。起動だけを切り分けた3回は同一Wasm／AWFBで、通常クロックの1回が待機開始後1,075 ms、テストと同じ固定クロックの2回が1,113／2,053 msで完了した。既存 smoke の挙動を保って計測を加えた実行では、`focus-first-choice` の採取後、次の起動が終了1。失敗したページは Wasm の初期化が4,711 msで終わり、`requestAdapter()` を5,764 msで開始し、10,161 msの観測時も応答がなかった。固定クロックには初回1ステップが残り、プレイヤーの ready は未通知だった。
+
+採取済みの `focus-first-choice` を同一AWFBの既存Native基準と比較した。1280×720の3,686,400 RGBAサンプルは全値一致し、MSE／MAE／最大誤差／変化画素率0、SSIM 1だった。既定のしきい値を使う比較器も終了0。Native PNG の SHA-256 は `f367348e5d2bff8c82d6f6bf4e8499534d5fb44f727a80ab1132f8f32a125e0c`、Web PNG は `0497b37eab80baddf41dd5a423c3283d982eb87637519f476c8cf2d4ae2ceaba`。残りの採取を既存テストの個別チェックポイント指定で続ける。
