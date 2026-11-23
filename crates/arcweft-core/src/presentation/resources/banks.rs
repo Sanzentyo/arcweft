@@ -17,7 +17,7 @@ use crate::value::{
         deserialize = "L: Deserialize<'de>, V: Deserialize<'de>"
     )
 )]
-pub(crate) struct PresentationBanks<V, L = PresentationLedger<V>> {
+pub struct PresentationBanks<V, L = PresentationLedger<V>> {
     #[serde(with = "super::bank_rows")]
     ledgers: BTreeMap<RuntimePresentationBankId, L>,
     pub(super) retirements: Vec<PresentationRetirement<V>>,

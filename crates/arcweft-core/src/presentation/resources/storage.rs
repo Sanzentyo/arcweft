@@ -57,7 +57,7 @@ where
         deserialize = "V: crate::value::InertRuntimeValueStorage"
     )
 )]
-pub(crate) struct PresentationBody<V> {
+pub struct PresentationBody<V> {
     pub expected: RuntimeSemanticTypeId,
     pub binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     pub value: V,

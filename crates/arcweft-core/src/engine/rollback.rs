@@ -12,6 +12,7 @@ use super::{
     NativeEngineRollbackImage, NativeFlowExecutionFrame, NativeFormatAttemptFrame,
     NativeInvocationRoot, NativeProgramTaskOrigin, NativeProgramTaskRole, eval,
 };
+use crate::plan::RuntimePlan;
 use crate::runtime_id::DialogueActivationId;
 use crate::task::{TaskCorrelation, TaskPublicationCursor, TaskRequest, TaskSpec};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -1864,30 +1865,41 @@ impl NativeEngineRollbackImage {
         }
         let mut admission =
             crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
-        self.dialogue_activations.admit_inline_order(
-            self.fiber.persistent_id,
-            limits,
-            &mut admission,
-        )?;
-        self.admit_presentation_state(&mut admission)
-            .map_err(|error| error.to_string())?;
-        self.admit_metadata(&mut admission)
-            .map_err(|error| error.to_string())?;
-        let receipts = self
-            .need_producers
-            .admit_retained_with_receipts(&mut admission)
-            .map_err(|error| error.to_string())?;
         self.actions
             .admit_retained(&mut admission)
-            .map_err(|error| error.to_string())?;
-        self.admit_publications(&mut admission)
             .map_err(|error| error.to_string())?;
         if let Some(root) = &self.root {
             root.admit_retained(&mut admission)
                 .map_err(|error| error.to_string())?;
         }
+        self.admit_shared_rollback_state(expected, limits, &mut admission)
+    }
+
+    // The owning Root and Action adapters admit their own values before this
+    // pass. All banks and receipts share their admission and custody ledger.
+    pub(super) fn admit_shared_rollback_state(
+        &self,
+        expected: &RuntimePlan,
+        limits: crate::entry::RuntimeSchemaLimits,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), String> {
+        self.dialogue_activations.admit_inline_order(
+            self.fiber.persistent_id,
+            limits,
+            admission,
+        )?;
+        self.admit_presentation_state(admission)
+            .map_err(|error| error.to_string())?;
+        self.admit_metadata(admission)
+            .map_err(|error| error.to_string())?;
+        let receipts = self
+            .need_producers
+            .admit_retained_with_receipts(admission)
+            .map_err(|error| error.to_string())?;
+        self.admit_publications(admission)
+            .map_err(|error| error.to_string())?;
         self.admit_root_execution(None)?;
-        self.validate_scheduled_scope_state(&mut admission, None)?;
+        self.validate_scheduled_scope_state(admission, None)?;
         let mut host_sequences = BTreeSet::new();
         let mut host_correlations = BTreeSet::new();
         let mut program_launches = BTreeSet::new();
@@ -1956,12 +1968,12 @@ impl NativeEngineRollbackImage {
                     expected,
                     |correlation| receipts.executing_program(correlation),
                     &mut program_launches,
-                    &mut admission,
+                    admission,
                 )
                 .map_err(|error| error.to_string())?;
             fiber
                 .frame
-                .admit_owned_values(&mut admission, task)
+                .admit_owned_values(admission, task)
                 .map_err(|error| error.to_string())?;
             fiber
                 .frame
@@ -1996,7 +2008,7 @@ impl NativeEngineRollbackImage {
         )?;
         self.dialogue_activations
             .admit_values(
-                &mut admission,
+                admission,
                 &expected_deferred_children,
                 |parent| {
                     self.session_fibers()

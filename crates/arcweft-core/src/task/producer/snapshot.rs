@@ -124,6 +124,18 @@ impl RuntimeNeedProducerRegistrySaveSnapshot {
         source_program: Option<&RuntimeTaskSourceProgram>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<NeedProducerRegistryImage, AwbcRuntimeValueSnapshotError> {
+        let bound = self.bind_assertions(source_program, admission)?;
+        bound.admit_retained(admission)?;
+        Ok(bound)
+    }
+
+    /// Rebinds source assertions before the enclosing session admits the
+    /// journal together with its waiters, publications, and executing fibers.
+    pub(crate) fn bind_assertions(
+        self,
+        source_program: Option<&RuntimeTaskSourceProgram>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<NeedProducerRegistryImage, AwbcRuntimeValueSnapshotError> {
         // Bound every row inventory before allocating the bound journal or
         // starting any Source lookup. The bound pass inspects each row's data.
         for count in [
@@ -225,7 +237,7 @@ impl RuntimeNeedProducerRegistrySaveSnapshot {
                 task_terminal: launch.task_terminal,
             });
         }
-        let bound = NeedProducerRegistryImage {
+        Ok(NeedProducerRegistryImage {
             task_admissions,
             launches,
             invocations: self
@@ -235,9 +247,7 @@ impl RuntimeNeedProducerRegistrySaveSnapshot {
                 .collect(),
             invocation_frontiers: self.invocation_frontiers,
             launch_frontiers: self.launch_frontiers,
-        };
-        bound.admit_retained(admission)?;
-        Ok(bound)
+        })
     }
 
     pub(crate) fn visit_saved_value_roots<E>(

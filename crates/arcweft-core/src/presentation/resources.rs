@@ -101,7 +101,7 @@ impl PresentationLedgerLimits {
 /// Live resources have no Clone or wire reader. Rollback must admit the owning
 /// executable and every retained body before projecting inert storage.
 #[derive(Debug, PartialEq)]
-pub(crate) struct PresentationLedger<V> {
+pub struct PresentationLedger<V> {
     program: RuntimeProgramOwner,
     bank: RuntimePresentationBankId,
     /// Trusted execution policy; decoded state cannot choose its own limits.

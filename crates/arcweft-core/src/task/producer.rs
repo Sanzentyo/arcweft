@@ -2245,19 +2245,20 @@ impl NeedProducerRegistry {
                 ),
             )
             .map_err(|error| error.to_string())?;
-        Self::from_admitted_rollback_image(image, owner)
+        Self::from_admitted_image(image, owner, NeedProducerRestorePolicy::Rollback)
     }
 
-    pub(crate) fn from_admitted_rollback_image(
+    pub(crate) fn from_admitted_image(
         image: NeedProducerRegistryImage,
         owner: &RuntimeProgramOwner,
+        policy: NeedProducerRestorePolicy,
     ) -> Result<Self, String> {
         let restore = image
             .into_admitted_live(owner)
             .map_err(|error| error.to_string())?;
         let mut registry = Self::default();
         registry
-            .restore_admitted_registry_with_policy(restore, NeedProducerRestorePolicy::Rollback)
+            .restore_admitted_registry_with_policy(restore, policy)
             .map_err(|error| error.to_string())?;
         Ok(registry)
     }

@@ -24,7 +24,7 @@ struct ActionMessage<P> {
 /// remain in the selected program; this is not a second channel catalog.
 /// Global insertion order also preserves FIFO order within each channel.
 #[derive(Debug, PartialEq)]
-pub(crate) struct RuntimeActionMailbox<P = RuntimePayload> {
+pub struct RuntimeActionMailbox<P = RuntimePayload> {
     messages: VecDeque<ActionMessage<P>>,
 }
 

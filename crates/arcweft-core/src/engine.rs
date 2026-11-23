@@ -70,6 +70,8 @@ mod presentation_tests;
 mod registry;
 mod rollback;
 mod root;
+mod save;
+pub use save::{NativeEngineSaveError, NativeEngineSaveSnapshot};
 #[cfg(test)]
 mod root_initialization_tests;
 pub(crate) use eval::evaluate_runtime_call;
@@ -123,30 +125,45 @@ pub(crate) enum NativeInvocationRoot {
 /// use arcweft_core::engine::Engine;
 /// fn write(engine: &Engine) { let _ = serde_json::to_vec(engine); }
 /// ```
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "N: serde::Serialize, P: crate::value::InertRuntimeValueStorage, R: serde::Serialize, F: serde::Serialize, D: serde::Serialize, Actions: serde::Serialize, Presentation: serde::Serialize",
+        deserialize = "N: serde::Deserialize<'de>, P: crate::value::InertRuntimeValueStorage, R: serde::Deserialize<'de>, F: serde::Deserialize<'de>, D: serde::Deserialize<'de>, Actions: serde::Deserialize<'de>, Presentation: serde::Deserialize<'de>, Program: Default"
+    )
+)]
 pub struct Engine<
     N = NeedProducerRegistry,
     P = RuntimePayload,
     R = RootRuntime,
     F = NativeFlowExecutionFrame,
     D = dialogue::DialogueActivationStore,
+    Actions = crate::action::RuntimeActionMailbox<P>,
+    Presentation = crate::presentation::resources::PresentationBanks<
+        crate::presentation::resources::PresentationBody<P>,
+    >,
+    Program = Arc<RuntimePlan>,
 > {
+    #[serde(skip)]
     evaluation_stats: crate::pure::PureFunctionStats,
-    plan: Arc<RuntimePlan>,
+    #[serde(skip)]
+    plan: Program,
     format_context: crate::value::RuntimeFormatContext,
     generation: GenerationId,
     need_producers: N,
-    actions: crate::action::RuntimeActionMailbox<P>,
-    presentation: Option<
-        crate::presentation::resources::PresentationBanks<
-            crate::presentation::resources::PresentationBody<P>,
-        >,
-    >,
+    actions: Actions,
+    presentation: Option<Presentation>,
+    #[serde(skip)]
     task_request_quota_remaining: usize,
+    #[serde(skip)]
     scalar_step_charge: Option<NativeScalarStepCharge>,
+    #[serde(with = "save::ordered_rows")]
     need_publications: BTreeMap<crate::task::TaskCorrelation, VecDeque<RuntimeNeedPublication<P>>>,
+    #[serde(with = "save::ordered_rows")]
     latest_need_publications:
         BTreeMap<crate::task::TaskCorrelation, crate::task::RuntimeNeedPublicationRollbackImage>,
+    #[serde(with = "save::ordered_rows")]
     need_publication_frontiers: BTreeMap<crate::task::TaskCorrelation, TaskPublicationCursor>,
     main_started: bool,
     root: Option<R>,
@@ -158,6 +175,7 @@ pub struct Engine<
     next_fiber_id: u64,
     next_scheduled_scope_sequence: u64,
     flow_defer_frontier: crate::scope::RuntimeDeferRegistrationFrontier,
+    #[serde(with = "save::ordered_rows")]
     dialogue_occurrences: BTreeMap<
         (
             RuntimePersistentFiberId,
@@ -169,8 +187,11 @@ pub struct Engine<
     dialogue_effect_callback_activations:
         BTreeSet<crate::runtime_id::RuntimeDialogueEffectCallbackActivationId>,
     run_child_next: bool,
+    #[serde(skip)]
     pure_i64_batch_inputs: Vec<i64>,
+    #[serde(skip)]
     pure_i64_batch_outputs: Vec<i64>,
+    #[serde(skip)]
     pure_helper_i64_call_shapes: Vec<bool>,
     audio_epoch: u64,
     next_audio_sequence: u64,
@@ -369,6 +390,11 @@ impl FlowFiber {
 }
 
 impl<F> FlowFiber<F> {
+    fn map_frame<T>(self, map: impl FnOnce(F) -> T) -> FlowFiber<T> {
+        self.try_map_frame(|frame| Ok::<_, std::convert::Infallible>(map(frame)))
+            .unwrap_or_else(|never| match never {})
+    }
+
     fn try_map_frame<T, E>(self, map: impl FnOnce(F) -> Result<T, E>) -> Result<FlowFiber<T>, E> {
         let Self {
             frame,
@@ -496,8 +522,14 @@ impl NativeFlowExecutionFrameRollbackImage<()> {
         self,
         program: crate::task::RuntimeProgramOwner,
     ) -> NativeFlowExecutionFrameRollbackImage {
+        self.with_program(program)
+    }
+}
+
+impl<Program> NativeFlowExecutionFrameRollbackImage<Program> {
+    fn with_program<T>(self, program: T) -> NativeFlowExecutionFrameRollbackImage<T> {
         let Self {
-            program: (),
+            program: _,
             presentation_bank,
             line_cursor,
             pending_ops,
@@ -2623,6 +2655,18 @@ impl Engine {
             .dialogue_activations
             .validate_parent_allocations(image.next_fiber_id)?;
         image.admit_rollback_values(owner, crate::entry::RuntimeSchemaLimits::engine_default())?;
+        Self::from_admitted_rollback_image(
+            image,
+            owner,
+            crate::task::NeedProducerRestorePolicy::Rollback,
+        )
+    }
+
+    fn from_admitted_rollback_image(
+        image: NativeEngineRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+        policy: crate::task::NeedProducerRestorePolicy,
+    ) -> Result<Self, String> {
         let (dialogue_activations, inline_order) =
             dialogue::DialogueActivationStore::from_admitted_rollback_image(
                 image.dialogue_activations,
@@ -2633,9 +2677,10 @@ impl Engine {
             plan: image.plan,
             format_context: image.format_context,
             generation: image.generation,
-            need_producers: NeedProducerRegistry::from_admitted_rollback_image(
+            need_producers: NeedProducerRegistry::from_admitted_image(
                 image.need_producers,
                 owner,
+                policy,
             )?,
             actions: image
                 .actions
@@ -6381,6 +6426,7 @@ mod rollback_tests {
         let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
         let image = engine.inert_rollback_image().expect("complete inert image");
         assert_publication_rollback_correspondence(&mut engine, &image, &owner, ready_correlation);
+        let wire = serde_json::to_vec(&engine.snapshot_for_save().unwrap()).unwrap();
         drop(engine);
         let restored = Engine::from_rollback_image(image, &owner).expect("exact owner restore");
         assert_eq!(
@@ -6398,6 +6444,28 @@ mod rollback_tests {
                 crate::task::TaskOutcomeContract::program(unit)))
         ));
         assert_eq!(restored.latest_need_publications.len(), 1);
+
+        let plan = restored.program_plan();
+        drop(restored);
+        let mut cold = Engine::new_with_generation(plan, GenerationId::new(0));
+        cold.restore_save_snapshot(serde_json::from_slice(&wire).unwrap())
+            .unwrap();
+        assert_eq!(
+            serde_json::to_vec(&cold.snapshot_for_save().unwrap()).unwrap(),
+            wire
+        );
+
+        let mut forged: serde_json::Value = serde_json::from_slice(&wire).unwrap();
+        let rows = forged["state"]["need_publication_frontiers"]
+            .as_array_mut()
+            .unwrap();
+        rows.insert(0, rows[0].clone());
+        assert!(
+            serde_json::from_value::<NativeEngineSaveSnapshot>(forged)
+                .unwrap_err()
+                .to_string()
+                .contains("saved map rows duplicate")
+        );
     }
 
     #[test]

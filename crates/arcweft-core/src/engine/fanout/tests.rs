@@ -236,6 +236,49 @@ fn native_program_fanout_drain_reaches_quiescence_without_empty_host_turns() {
 }
 
 #[test]
+fn native_program_fanout_cold_json_resumes_executing_receipts() {
+    let input = [true, false, true];
+    let mut engine = fixture(&input, 2);
+    let mut saw_child = false;
+    let mut result = None;
+    for _ in 0..160 {
+        let turn = engine.step(Default::default(), Default::default());
+        assert!(turn.output.diagnostics.is_empty(), "{turn:?}");
+        assert!(turn.output.requests.tasks.is_empty());
+        for event in turn.output.flow_events {
+            if let crate::plan::FlowEvent::AwaitReady {
+                value: Some(value), ..
+            } = event
+                && let RuntimeValue::Seq(values) = value.into_value()
+            {
+                result = Some(values.into_values());
+            }
+        }
+        saw_child |= engine
+            .session_fibers()
+            .any(|fiber| matches!(fiber.launch, crate::engine::FlowFiberLaunch::Program { .. }));
+        let wire = serde_json::to_vec(&engine.snapshot_for_save().unwrap()).unwrap();
+        let mut cold = fixture(&input, 2);
+        cold.restore_save_snapshot(serde_json::from_slice(&wire).unwrap())
+            .unwrap();
+        assert_eq!(
+            serde_json::to_vec(&cold.snapshot_for_save().unwrap()).unwrap(),
+            wire
+        );
+        engine = cold;
+        if matches!(engine.fiber.frame.status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+    }
+    assert!(saw_child);
+    assert_eq!(result.unwrap(), input.map(RuntimeValue::Bool));
+    assert!(matches!(
+        engine.fiber.frame.status,
+        FlowFiberStatus::Done(_)
+    ));
+}
+
+#[test]
 fn native_program_fanout_runs_original_workers_and_restores_every_owned_frontier() {
     for count in [0, 1, 3, 17] {
         let input: Vec<_> = (0..count).map(|index| index % 3 == 0).collect();

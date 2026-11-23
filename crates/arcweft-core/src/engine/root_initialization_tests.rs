@@ -133,6 +133,37 @@ fn native_pending_initializer_cold_rollback_keeps_its_authenticated_frame() {
 }
 
 #[test]
+fn native_save_resumes_stateful_entry_and_rejects_a_redirected_frame_atomically() {
+    let (plan, engine) = fixture();
+    let snapshot = engine.snapshot_for_save().unwrap();
+    let wire = serde_json::to_vec(&snapshot).unwrap();
+    drop(engine);
+
+    let (_, mut restored) = fixture();
+    assert!(!Arc::ptr_eq(&plan, &restored.program_plan()));
+    restored
+        .restore_save_snapshot(serde_json::from_slice(&wire).unwrap())
+        .unwrap();
+    assert_eq!(snapshot, restored.snapshot_for_save().unwrap());
+    let outcome = finish_initializer(&mut restored);
+    assert_eq!(outcome.entry, plan.entries()[0].id);
+    let ready = restored.snapshot_for_save().unwrap();
+    let mut forged = serde_json::to_value(&snapshot).unwrap();
+    forged["state"]["fiber"]["parent"] = serde_json::json!(1);
+    assert!(matches!(
+        restored.restore_save_snapshot(serde_json::from_value(forged).unwrap()),
+        Err(NativeEngineSaveError::State(_)),
+    ));
+    assert_eq!(restored.snapshot_for_save().unwrap(), ready);
+
+    let mut unselected = Engine::new_with_generation(plan, GenerationId::new(0));
+    assert!(matches!(
+        unselected.restore_save_snapshot(snapshot),
+        Err(NativeEngineSaveError::Entry),
+    ));
+}
+
+#[test]
 fn native_restore_rejects_ready_root_with_pending_initializer_frame() {
     let (plan, engine) = fixture();
     let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan));
