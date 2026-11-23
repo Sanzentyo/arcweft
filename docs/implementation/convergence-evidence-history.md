@@ -22361,4 +22361,8 @@ CLI SHA-256 `49a4f4623aaa8e0bf533482273b2777789e6250fbc6444da14f040a1833e362b` �
 
 同じSourceの `cargo clippy --workspace --all-targets --all-features --offline --locked` は終了0。`cargo check` の実行時間は5分51秒、Clippyは7分47秒だった。現行ビルドの各ライブラリを直接実行し、`arcweft-id` 54件、Core 2,418件、Sema 2,044件が全件PASSした。`arcweft-id` の実行ファイルの SHA-256 は `c3812a61beea27c9024c4b7200f33770ffeb2587cf63fa7b565f5afd84e0d8e6`、Coreは `ca024038b6dbf7f62fa892fb32b8a157a130182acc418f0ff2deea2f64018563`、Semaは上記と同じだった。
 
+2026-11-24、追跡ファイルに未コミット差分のない `855d0ebae575bf47dafe188c2ceaaf194bf528c2` で `cargo fmt --all --check` と `just structure-audit-gate` がともに終了0。構造監査は98パッケージを対象に、blocking violation 0件だった。`f9921fd5d8ef0275bd05b54b53dba85f8ac61c41` からこの入力までの変更は実装記録2ファイルに限られる。
+
+Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推移的逆依存の70パッケージに、この公開差分で変更した9クレートがすべて含まれることを照合した。
+
 現行CLIで `bundle --manifest-path web/arcw.toml --profile main` を独立に実行し、35,157,520 bytesのAWFBを再生成した。SHA-256は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4` で、Chromeの5フレームを取得したAWFBと一致した。この再生成物から160 msのNativeフレーム5件を再採取し、同じWeb画像を照合する。
