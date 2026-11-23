@@ -21928,3 +21928,23 @@ Runtime Host のライブラリは60件成功・スキップ0件。実 CLI の `
 修復前のプローブで出力した AWFS を修復後の別プロセスの AOT でも照会し、終了0、ステップ0件、`done Return("7")` を確認した。入力 AWFS の SHA-256 `511a1944cf4fa7520f0e3f5e2494d135872e95a3278d7c4ceaf192f825d3be04` は照会前後で一致した。Windows の `cargo check --locked --workspace --all-targets --all-features` は終了0。
 
 Core、Runtime Host、CLI の全ターゲット・全機能の Clippy は終了0。追加した CLI 回帰で `too_many_lines` が出たため、同じ起動引数を共有する形に `8043322c865337b9daeb3361bc2a3605c4abf7c8` で整理した。最終入力で Core と CLI の2,420件が再び成功・選択内スキップ0件。Clippy は再び終了0で、CLI 回帰の警告は解消し、他箇所の警告は残った。書式と構造ゲートも終了0・構造のブロッキング違反0件。検証後の `target` は156,450,352,868 bytes（約156.5 GB）。
+
+<a id="headless-native-asset-resume"></a>
+
+## 2026-11-23 — headless Native のバンドル照合とアセット待機の再開
+
+基点 `e2072ab0b7d43ca33686d3e059c8bf9043e06cd9` の実 `arcw` では `@asset:.bg.room` を束縛したステップ0の保存後、同じパス・寸法の PNG の画素だけ変えても別プロセスの AOT は `done Return("asset_ready")` を返した。元の PNG の SHA-256 は `4ba8d4fd5ab42544fee574f22d50e84412502433cc95952fd1df9a5293588ddbea`、差し替え後は `7d5f2463dad635b446d93d41cdbc02ed0174f6f5713e938f72a2fb676de0eeac`。また `--steps 1 --mode drain --max-ops 64` で `asset.image` の要求を出した直後は、未配送の TaskEvent 1件を報告して保存を拒否した。
+
+`981e35faff88c4bf0f82df004950630365827dcf` で v1 AWFS に既存の `RuntimeBundleAssetContext` を必須とし、executor とホスト台帳を復元する前に generation と完全なバンドル識別子を照合した。この CLI 保存を含む Git release tag は確認されず、修正前の必須フィールドがない AWFS は読み込めない。実 CLI は差し替えを拒否して既存の保存ファイルを保持し、元の PNG に戻した後の AOT はステップ1から1件の実アセット要求を完了した。Runtime Host ライブラリ60件と CLI 6件の計66件が成功・選択外195件。実装を `main` へ公開し、5ファイルの blob を照合した。
+
+`ba42519d3ba0529e50c75837941427d76d743b0e` では標準バンドルアダプターが元の attempt と通知位置で解決結果を保持し、次の host drain で引き渡す。これにより実行側がまだ結果を受け取っていないアセットの dispatch を既存の Restartable 台帳に保存できる。復元側は同じ入力と識別子でアセットを再解決する。並列計数は解決を実行した worker 上の受理件数を数える。
+
+実 `arcw` の別プロセス3回で、VM のステップ0と AOT のステップ1で同じ PNG 要求1件、in-flight 1件、完了0件を確認した。再保存した AWFS を読み込む AOT はステップ2から実行し、dispatch 1件、完了1件、in-flight 0件、`done Return("asset_ready")` に到達した。画像と音声結果の adapter 回帰では、元の attempt・通知 revision と型付き結果を drain で受け取った。対象 nextest は Runtime Host ライブラリ60件と bundle runner 7件、CLI ライブラリ1件と Native host contract 8件・実 CLI options 6件の計82件成功、選択外195件。Windows の workspace check は全ターゲット・全機能で終了0、構造ゲートのブロッキング違反は0件。`ba42519d3ba0529e50c75837941427d76d743b0e` を `main` に公開し、5ファイルの blob を照合した。
+
+元の再現で出力した AWFS の読み込みを修正後の `arcw` で試し、`missing field asset_context`、終了1、入力の SHA-256 一致を確認した。
+
+Cargo の逆依存は Runtime Host、CLI、Native Player、LSP、Verify LSP の5パッケージ。Windows の `--lib --tests --no-fail-fast` は1,084件中1,077件成功（42 slow）、7件失敗、23件スキップ、nextest 終了100。失敗は CLI の `bench_json_measures_branching_for_loop_pure_jit_characteristics`、`bench_json_measures_checked_in_branching_iter_pure_jit_fixture`、`bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture`、`scalar_live_budget_owner_tests::successful_fallthrough_scopes_charge_generated_exit_operations`、`scalar_live_budget_owner_tests::successful_scoped_branch_completion_charges_generated_scopes_and_discards_return_suffixes`、`verify_json_records_required_solver_checks`、`verify_json_reports_missing_promotion_proof`。Native Player の `windowed_ingress_runtime` 2件と `windowed_live_patch_smoke` 8件はすべて成功した。
+
+全ターゲット・全機能の workspace Clippy は警告付きで終了0。逆依存実行で失敗した7件を、対象 Rust 7ファイルを基点 `e2072ab0b7d43ca33686d3e059c8bf9043e06cd9` の内容に合わせて同じ5パッケージ・Windows・既定 feature で選び直した。基点でも7件すべて失敗、選択外489件、終了100。失敗ID、全7件の panic 位置、JIT bench 3件の実測・期待値（2／4、31／32、40／39）が前後で一致した。比較後にソースを公開済み `ba42519d3ba0529e50c75837941427d76d743b0e` と照合した。
+
+公開済みソースへ戻した後に対象 nextest を再実行し、82件成功・選択外195件・終了0。変更 Rust 7ファイルの書式も終了0。検証後の `target` は168,101,981,621 bytes（約168.1 GB）。
