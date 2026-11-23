@@ -22284,3 +22284,11 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 最小の Flow と `assets/audio/voice/alice/001.wav` を置いたプロジェクトを `arcw bundle <source> --output <bundle> --json` で構築した。WAVは8 kHz、モノラルPCM 16 bit、80フレーム。終了0で仮想ファイル1件を収録した。`arcw inspect <bundle> --json` も終了0で、version 1 `AssetCatalog` は存在し、`AudioGraph` セクションは出力されなかった。CLI、WAV、AWFB の SHA-256 は順に `bde1233df3ae77ba43e0033aa13eef5c7643ace4b09f5f2675e99f17e33ba1f3`、`c2cad459c846d39738398058a31d73109d5884ca977cb835780de92502d5b5e8`、`0ea79aa31023082c0f5822c7a475c49f39a441ed8729239062b36a17e0fef7d0`。
 
 旧 `docs/schemas/audio-manifest.md` の `AudioManifest`、`CueDef`、`BgmDef` はスキーマ案だったため削除した。AWFB が実際に保持する `AudioGraph` と version 1 の codec を音声章から参照する。BGM と TTS の用例は音声章にあるため、旧 `docs/examples/audio.md` の独立した例を削除した。削除した両資料は基点の Git で参照できる。
+
+### 音声参照の実装と検証の引き継ぎ
+
+公開基点 `bf17bf4f1c5977364526a72de474179c83ed02d9` から、`Ref<Voice>` と `asset.voice.…` の投影を `arcweft-id` に置いた。CLI の `AudioGraph` と Core の Need は同じ投影を使う。保存側の物理 Asset ID と version 1 の要求JSONを維持し、保存復元では元の音声参照と物理IDを借用して照合する。候補コミット `de6b8c59a00ee10a34ac3666e35fe2da7fa5cb05` に実WAVのAWFB収録、Native VM→AOTの別プロセス復元、`run-bundle` の回帰を含めた。構造ゲートはブロッキング0件、終了0。
+
+前候補の実行中にこの変更のファイルが読み込まれた。workspace Clippy は `bundle_runner.rs` の `String` と `RuntimeBundleAssetResourceId` の不一致で終了101。一括 `just webgpu-parity` は Wasm の `host.rs` における同じ不一致で終了1。両実行は変更前後の型を混在させたため、公開ソースの受入証拠には使えない。既に成功した公開版の分割比較は [WebGPU 起動の実測](#webgpu-startup-overlap) に保持する。
+
+音声候補の初回 `cargo check --offline --locked -p arcweft-cli -p arcweft-player-web -p arcweft-runtime-plan --tests` は Sema の準備中の効果型が正準効果型として固定され、`E0308` 2件で終了101。現在の候補 `2581c1d1d4a8d719931f5cd8befd5d6f54fd2c5f` は同じカタログ型投影を呼出元の効果領域に対して型付けする。修正後の check と対象nextest、52パッケージのWindows逆依存は終端確認前。Cargoの `arcweft-id` 逆依存は全ターゲット71パッケージ。候補ソースはローカル `main` にあり、実行の受入と公開を継続する。
