@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 mod defaults;
 pub(super) mod limits;
 mod project;
+mod storage;
 mod variants;
+mod walk;
 use crate::{env::nominal::AcceptedNominalId, types::TypeInstantiationError};
 use arcweft_core::entry::RuntimeNominalSchemaGraphError;
 pub(crate) use limits::RuntimeNominalGraphProjectionWork;
@@ -46,6 +48,8 @@ use crate::{
     },
 };
 use limits::ProjectionBudget;
+use storage::ProjectionStorage;
+use walk::{Assembly, Body, Definition, Task, Walk};
 
 /// Absence is Unseen. Back-edges to Visiting retain only the exact identity;
 /// a definition is appended once, after all its children have completed.
@@ -130,7 +134,7 @@ impl<'a> NominalGraphProjection<'a> {
             self.semantic_identity(argument)?;
         }
         let ty = TypeKind::AcceptedNominal(nominal.clone());
-        let root = match self.schema(&ty, 1)? {
+        let root = match self.schema(&ty)? {
             Schema::NominalRef(root) => root,
             _ => {
                 return Err(Error::UnsupportedType {
@@ -164,7 +168,7 @@ impl<'a> NominalGraphProjection<'a> {
     ) -> Result<RuntimeNominalSchemaGraph, Error> {
         self.project_budget = Some((budget, control));
         self.scope = checked.scope().clone();
-        self.schema(&checked.ty(), 1)?;
+        self.schema(&checked.ty())?;
         Ok(RuntimeNominalSchemaGraph::try_new(
             self.definitions,
             RuntimeSchemaLimits::engine_default(),
@@ -175,7 +179,7 @@ impl<'a> NominalGraphProjection<'a> {
         mut self,
         ty: &TypeKind,
     ) -> Result<RuntimeNominalSchemaGraph, Error> {
-        if !matches!(self.schema(ty, 1)?, Schema::NominalRef(_)) {
+        if !matches!(self.schema(ty)?, Schema::NominalRef(_)) {
             return Err(Error::UnsupportedType {
                 semantic_type: self.semantic_identity(ty)?,
             });
@@ -214,19 +218,21 @@ impl<'a> NominalGraphProjection<'a> {
             })
     }
 
-    fn nominal(
+    fn nominal<'walk>(
         &mut self,
+        walk: &mut Walk<'walk>,
         ty: &TypeKind,
-        nominal: &AcceptedNominalType,
+        nominal: &'walk AcceptedNominalType,
         depth: u64,
-    ) -> Result<Schema, Error> {
+    ) -> Result<(), Error> {
         self.budget.edge()?;
         let semantic = self.semantic_identity(ty)?;
         let record = self.record(nominal)?;
         if let Some(carrier) = record.runtime_carrier() {
             if carrier.value_class() != RuntimeOpaqueValueClass::Plain {
                 if self.project_budget.is_some() {
-                    return Ok(Schema::ExecutableRef(semantic.into()));
+                    walk.emit(Schema::ExecutableRef(semantic.into()));
+                    return Ok(());
                 }
                 return Err(Error::NonRetainableOpaque {
                     declaration: Box::new(record.id().clone()),
@@ -238,10 +244,12 @@ impl<'a> NominalGraphProjection<'a> {
                 carrier.value_class(),
                 carrier.persistence(),
             );
-            return Ok(Schema::ExactOpaque {
+            walk.push(Task::BuildSchema(Assembly::ExactOpaque {
                 owner,
-                arguments: self.sequence(nominal.arguments(), depth + 1)?,
-            });
+                arguments: nominal.arguments().len(),
+            }));
+            walk.push(Task::Types(nominal.arguments(), depth + 1));
+            return Ok(());
         }
         if !matches!(record.semantics(), AcceptedNominalSemantics::RustAdt) {
             return Err(Error::NotRustAdt {
@@ -251,7 +259,8 @@ impl<'a> NominalGraphProjection<'a> {
         if let Some(VisitState::Visiting(identity) | VisitState::Complete(identity)) =
             self.states.get(&semantic)
         {
-            return Ok(Schema::NominalRef(identity.clone()));
+            walk.emit(Schema::NominalRef(identity.clone()));
+            return Ok(());
         }
         self.budget.definition(self.active_depth + 1)?;
         let environment = self.environment.ok_or(Error::StaleGeneration)?;
@@ -295,6 +304,7 @@ impl<'a> NominalGraphProjection<'a> {
                     }
                 }
             })?;
+        let (slot, instantiated) = walk.storage.rust_metadata.insert(instantiated);
         let identity = RuntimeNominalSchemaIdentity::new(
             RuntimeNominalTypeId::from_checked_digest(*semantic.as_bytes()),
             semantic.into(),
@@ -302,28 +312,18 @@ impl<'a> NominalGraphProjection<'a> {
         self.states
             .insert(semantic, VisitState::Visiting(identity.clone()));
         self.active_depth += 1;
-        let arguments = self.sequence(nominal.arguments(), depth + 1)?;
-        let body = self.body(instantiated.kind(), depth + 1)?;
-        let codec = self.rust_default_codec(&instantiated, &body)?;
-        let mut definition = RuntimeNominalSchemaDefinition::new(
-            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+        let definition = Definition {
+            semantic,
+            declaration: arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
                 *nominal.declaration().semantic_digest().as_bytes(),
             ),
-            identity.clone(),
-            arguments,
-            body,
-        );
-        if let Some(codec) = codec {
-            definition = definition.with_data_codec(codec);
-        }
-        self.definitions.push(definition);
-        self.active_depth -= 1;
-        if self.active_depth == 0 {
-            self.root_rust_metadata = Some(instantiated);
-        }
-        self.states
-            .insert(semantic, VisitState::Complete(identity.clone()));
-        Ok(Schema::NominalRef(identity))
+            identity,
+            arguments: nominal.arguments().len(),
+            rust: Some((slot, instantiated)),
+        };
+        walk.push(Task::RustBody(definition, depth + 1));
+        walk.push(Task::Types(nominal.arguments(), depth + 1));
+        Ok(())
     }
 
     fn preflight_shape(&mut self, kind: &AcceptedRustTypeMetadataKind) -> Result<(), Error> {
@@ -358,125 +358,105 @@ impl<'a> NominalGraphProjection<'a> {
         }
     }
 
-    fn body(
-        &mut self,
-        kind: &AcceptedRustTypeMetadataKind,
+    fn schedule_rust_body<'walk>(
+        walk: &mut Walk<'walk>,
+        definition: Definition<'walk>,
         depth: u64,
-    ) -> Result<RuntimeNominalSchemaBody, Error> {
+    ) {
         use RuntimeNominalRecordShape as Shape;
-        Ok(match kind {
-            AcceptedRustTypeMetadataKind::Struct { shape } => {
-                let (shape, fields) = match shape {
-                    AcceptedRustStructShape::Unit => (Shape::Unit, Box::new([]) as Box<[_]>),
-                    AcceptedRustStructShape::Tuple(fields) => (
-                        Shape::Tuple,
-                        self.fields(fields.iter().map(|ty| (None, ty)), depth)?,
-                    ),
-                    AcceptedRustStructShape::Record(fields) => (
-                        Shape::Record,
-                        self.fields(
-                            fields.iter().map(|field| (Some(field.name()), field.ty())),
-                            depth,
-                        )?,
-                    ),
-                };
-                RuntimeNominalSchemaBody::Record { shape, fields }
+        let (_, metadata) = definition
+            .rust
+            .expect("Rust body has instantiated metadata");
+        match metadata.kind() {
+            AcceptedRustTypeMetadataKind::Struct {
+                shape: AcceptedRustStructShape::Unit,
+            } => {
+                walk.push(Task::FinishDefinition(
+                    definition,
+                    Body::Record(Shape::Unit, 0),
+                ));
             }
-            AcceptedRustTypeMetadataKind::Newtype { inner } => RuntimeNominalSchemaBody::Record {
-                shape: Shape::Newtype,
-                fields: self.fields(std::iter::once((None, inner)), depth)?,
-            },
-            AcceptedRustTypeMetadataKind::Enum { variants } => RuntimeNominalSchemaBody::Variant {
-                cases: variants
-                    .iter()
-                    .enumerate()
-                    .map(|(ordinal, variant)| {
-                        let payload = match variant.payload() {
-                            EnumVariantPayload::Unit => None,
-                            EnumVariantPayload::Tuple(fields) => {
-                                self.budget.type_node(depth)?;
-                                Some(Schema::Tuple(self.sequence(fields, depth + 1)?))
+            AcceptedRustTypeMetadataKind::Struct {
+                shape: AcceptedRustStructShape::Tuple(fields),
+            } => {
+                walk.push(Task::FinishDefinition(
+                    definition,
+                    Body::Record(Shape::Tuple, fields.len()),
+                ));
+                for (ordinal, field) in fields.iter().enumerate().rev() {
+                    walk.push_field(ordinal, None, field, depth);
+                }
+            }
+            AcceptedRustTypeMetadataKind::Struct {
+                shape: AcceptedRustStructShape::Record(fields),
+            } => {
+                walk.push(Task::FinishDefinition(
+                    definition,
+                    Body::Record(Shape::Record, fields.len()),
+                ));
+                for (ordinal, field) in fields.iter().enumerate().rev() {
+                    walk.push_field(ordinal, Some(field.name()), field.ty(), depth);
+                }
+            }
+            AcceptedRustTypeMetadataKind::Newtype { inner } => {
+                walk.push(Task::FinishDefinition(
+                    definition,
+                    Body::Record(Shape::Newtype, 1),
+                ));
+                walk.push_field(0, None, inner, depth);
+            }
+            AcceptedRustTypeMetadataKind::Enum { variants } => {
+                walk.push(Task::FinishDefinition(
+                    definition,
+                    Body::Variant(variants.len()),
+                ));
+                for (ordinal, variant) in variants.iter().enumerate().rev() {
+                    walk.push(Task::Case {
+                        ordinal: u32::try_from(ordinal).expect("cases were bounded"),
+                        name: variant.name(),
+                        has_payload: !matches!(variant.payload(), EnumVariantPayload::Unit),
+                    });
+                    match variant.payload() {
+                        EnumVariantPayload::Unit => {}
+                        EnumVariantPayload::Tuple(fields) => {
+                            walk.push(Task::BuildSchema(Assembly::Tuple(fields.len())));
+                            walk.push(Task::Types(fields, depth + 1));
+                            walk.push(Task::CountPayload(depth));
+                        }
+                        EnumVariantPayload::Record(fields) => {
+                            walk.push(Task::BuildSchema(Assembly::RecordValue(fields.len())));
+                            for (ordinal, field) in fields.iter().enumerate().rev() {
+                                walk.push_value_field(ordinal, field.name(), field.ty(), depth + 1);
                             }
-                            EnumVariantPayload::Record(fields) => {
-                                self.budget.type_node(depth)?;
-                                Some(Schema::RecordValue {
-                                    fields: self.record_fields(
-                                        fields.iter().map(|field| (field.name(), field.ty())),
-                                        depth + 1,
-                                    )?,
-                                })
-                            }
-                        };
-                        Ok(RuntimeNominalSchemaCase::new(
-                            u32::try_from(ordinal).expect("cases were bounded"),
-                            variant.name().to_owned(),
-                            payload,
-                        ))
-                    })
-                    .collect::<Result<_, Error>>()?,
-            },
-        })
-    }
-
-    fn fields<'t>(
-        &mut self,
-        fields: impl Iterator<Item = (Option<&'t str>, &'t TypeKind)>,
-        depth: u64,
-    ) -> Result<Box<[RuntimeNominalSchemaField]>, Error> {
-        fields
-            .enumerate()
-            .map(|(ordinal, (name, ty))| {
-                Ok(RuntimeNominalSchemaField::new(
-                    RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
-                        .expect("fields were bounded"),
-                    name.map(str::to_owned),
-                    self.schema(ty, depth)?,
-                ))
-            })
-            .collect()
-    }
-
-    fn record_fields<'t>(
-        &mut self,
-        fields: impl Iterator<Item = (&'t str, &'t TypeKind)>,
-        depth: u64,
-    ) -> Result<Box<[RuntimeSchemaValueField]>, Error> {
-        fields
-            .enumerate()
-            .map(|(ordinal, (name, ty))| {
-                self.budget.name(name)?;
-                Ok(RuntimeSchemaValueField::new(
-                    RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
-                        .expect("fields were bounded"),
-                    name.to_owned(),
-                    self.schema(ty, depth)?,
-                ))
-            })
-            .collect()
-    }
-
-    fn sequence(&mut self, types: &[TypeKind], depth: u64) -> Result<Box<[Schema]>, Error> {
-        types.iter().map(|ty| self.schema(ty, depth)).collect()
-    }
-
-    fn schema(&mut self, ty: &TypeKind, depth: u64) -> Result<Schema, Error> {
-        if let Some((budget, control)) = &mut self.project_budget {
-            budget.enter_node(*control)?;
+                            walk.push(Task::CountPayload(depth));
+                        }
+                    }
+                }
+            }
         }
-        let result = self.budget.type_node(depth).and_then(|()| match ty {
-            // A nominal reference does not need the structural schema frame.
-            // Keeping that frame out of recursive declaration paths leaves
-            // room for the configured active-nominal limit on small stacks.
-            TypeKind::ProjectNominal(nominal) => self.project_nominal(ty, nominal, depth),
-            _ => self.schema_inner(ty, depth),
-        });
-        if let Some((budget, _)) = &mut self.project_budget {
-            budget.leave_node();
-        }
-        result
     }
 
-    fn schema_inner(&mut self, ty: &TypeKind, depth: u64) -> Result<Schema, Error> {
+    fn schema(&mut self, ty: &TypeKind) -> Result<Schema, Error> {
+        let mut storage = ProjectionStorage::new();
+        let (root, root_rust_slot) = Walk::run(&storage, self, ty)?;
+        if let Some(slot) = root_rust_slot {
+            self.root_rust_metadata = Some(storage.rust_metadata.take(slot));
+        }
+        Ok(root)
+    }
+
+    fn visit_type<'walk>(
+        &mut self,
+        walk: &mut Walk<'walk>,
+        ty: &'walk TypeKind,
+        depth: u64,
+    ) -> Result<(), Error>
+    where
+        'a: 'walk,
+    {
+        if let TypeKind::ProjectNominal(nominal) = ty {
+            return self.project_nominal(walk, ty, nominal, depth);
+        }
         if matches!(
             ty,
             TypeKind::DataError
@@ -489,7 +469,7 @@ impl<'a> NominalGraphProjection<'a> {
                 .semantic_shapes
                 .and_then(|shapes| shapes.environment_record(semantic))
             {
-                return self.accepted_environment_record(ty, record, depth);
+                return self.accepted_environment_record(walk, ty, record, depth);
             }
         }
         if matches!(
@@ -509,10 +489,10 @@ impl<'a> NominalGraphProjection<'a> {
                 .semantic_shapes
                 .and_then(|shapes| shapes.closed_variant(semantic))
             {
-                return self.closed_variant(owner, depth);
+                return self.closed_variant(walk, owner, depth);
             }
         }
-        Ok(match ty {
+        let schema = match ty {
             TypeKind::Unit => Schema::Unit,
             TypeKind::Never => Schema::Never,
             TypeKind::Bool => Schema::Bool,
@@ -551,31 +531,50 @@ impl<'a> NominalGraphProjection<'a> {
             ),
             TypeKind::AgentValue => Schema::AgentValue,
             TypeKind::Vec(item) | TypeKind::Seq(item) | TypeKind::Slice(item) => {
-                Schema::Seq(Box::new(self.schema(item, depth + 1)?))
+                walk.push(Task::BuildSchema(Assembly::Seq));
+                walk.push(Task::Type(item, depth + 1));
+                return Ok(());
             }
-            TypeKind::Map { kind, key, value } => Schema::Map {
-                kind: match kind {
+            TypeKind::Map { kind, key, value } => {
+                let kind = match kind {
                     crate::types::MapKind::Ordered => RuntimeMapKind::Ordered,
                     crate::types::MapKind::Sorted => RuntimeMapKind::Sorted,
                     crate::types::MapKind::BTree => RuntimeMapKind::BTree,
-                },
-                key: Box::new(self.schema(key, depth + 1)?),
-                value: Box::new(self.schema(value, depth + 1)?),
-            },
+                };
+                walk.push(Task::BuildSchema(Assembly::Map(kind)));
+                walk.push(Task::Type(value, depth + 1));
+                walk.push(Task::Type(key, depth + 1));
+                return Ok(());
+            }
             TypeKind::Array {
                 item,
                 len: ArrayLength::Const(length),
-            } => Schema::Array {
-                item: Box::new(self.schema(item, depth + 1)?),
-                length: u64::try_from(*length)
-                    .map_err(|_| crate::types::TypeInstantiationError::EncodingLengthOverflow)?,
-            },
-            TypeKind::Option(item) => Schema::option(self.schema(item, depth + 1)?),
-            TypeKind::Result { ok, error } => {
-                Schema::result(self.schema(ok, depth + 1)?, self.schema(error, depth + 1)?)
+            } => {
+                walk.push(Task::BuildSchema(Assembly::Array(*length)));
+                walk.push(Task::Type(item, depth + 1));
+                return Ok(());
             }
-            TypeKind::Tuple(items) => Schema::Tuple(self.sequence(items, depth + 1)?),
-            TypeKind::Choice(items) => Schema::Choice(self.sequence(items, depth + 1)?),
+            TypeKind::Option(item) => {
+                walk.push(Task::BuildSchema(Assembly::Option));
+                walk.push(Task::Type(item, depth + 1));
+                return Ok(());
+            }
+            TypeKind::Result { ok, error } => {
+                walk.push(Task::BuildSchema(Assembly::Result));
+                walk.push(Task::Type(error, depth + 1));
+                walk.push(Task::Type(ok, depth + 1));
+                return Ok(());
+            }
+            TypeKind::Tuple(items) => {
+                walk.push(Task::BuildSchema(Assembly::Tuple(items.len())));
+                walk.push(Task::Types(items, depth + 1));
+                return Ok(());
+            }
+            TypeKind::Choice(items) => {
+                walk.push(Task::BuildSchema(Assembly::Choice(items.len())));
+                walk.push(Task::Types(items, depth + 1));
+                return Ok(());
+            }
             TypeKind::Function { .. } => Schema::ExecutableRef(self.semantic_identity(ty)?.into()),
             TypeKind::Need(_) if self.project_budget.is_some() => {
                 Schema::ExecutableRef(self.semantic_identity(ty)?.into())
@@ -603,29 +602,34 @@ impl<'a> NominalGraphProjection<'a> {
                     });
                 }
             }
-            TypeKind::AcceptedNominal(nominal) => self.nominal(ty, nominal, depth)?,
+            TypeKind::AcceptedNominal(nominal) => return self.nominal(walk, ty, nominal, depth),
             TypeKind::GenericParam(parameter) => {
                 return Err(crate::types::TypeInstantiationError::UnboundType {
                     parameter: parameter.clone(),
                 }
                 .into());
             }
-            TypeKind::VariantPayload(payload) => match payload.shape() {
-                VariantPayloadTypeShape::Tuple(items) => {
-                    Schema::Tuple(self.sequence(items, depth + 1)?)
-                }
-                VariantPayloadTypeShape::Record(fields) => {
-                    self.budget.members(fields.len())?;
-                    Schema::RecordValue {
-                        fields: self.record_fields(
-                            fields
-                                .iter()
-                                .map(|field| (field.diagnostic_name(), field.ty())),
-                            depth + 1,
-                        )?,
+            TypeKind::VariantPayload(payload) => {
+                match payload.shape() {
+                    VariantPayloadTypeShape::Tuple(items) => {
+                        walk.push(Task::BuildSchema(Assembly::Tuple(items.len())));
+                        walk.push(Task::Types(items, depth + 1));
+                    }
+                    VariantPayloadTypeShape::Record(fields) => {
+                        self.budget.members(fields.len())?;
+                        walk.push(Task::BuildSchema(Assembly::RecordValue(fields.len())));
+                        for (ordinal, field) in fields.iter().enumerate().rev() {
+                            walk.push_value_field(
+                                ordinal,
+                                field.diagnostic_name(),
+                                field.ty(),
+                                depth + 1,
+                            );
+                        }
                     }
                 }
-            },
+                return Ok(());
+            }
             _ => {
                 if self.project_budget.is_some() {
                     return Err(super::NominalSchemaProjectionError::UnsupportedLeaf {
@@ -638,15 +642,18 @@ impl<'a> NominalGraphProjection<'a> {
                     semantic_type: self.semantic_identity(ty)?,
                 });
             }
-        })
+        };
+        walk.emit(schema);
+        Ok(())
     }
 
-    fn accepted_environment_record(
+    fn accepted_environment_record<'walk>(
         &mut self,
+        walk: &mut Walk<'walk>,
         ty: &TypeKind,
-        record: &AcceptedEnvironmentRecordSemantics,
+        record: &'walk AcceptedEnvironmentRecordSemantics,
         depth: u64,
-    ) -> Result<Schema, Error> {
+    ) -> Result<(), Error> {
         self.budget.edge()?;
         let semantic = self.semantic_identity(ty)?;
         if record.ty() != ty
@@ -668,7 +675,8 @@ impl<'a> NominalGraphProjection<'a> {
         if let Some(VisitState::Visiting(identity) | VisitState::Complete(identity)) =
             self.states.get(&semantic)
         {
-            return Ok(Schema::NominalRef(identity.clone()));
+            walk.emit(Schema::NominalRef(identity.clone()));
+            return Ok(());
         }
         self.budget.definition(self.active_depth + 1)?;
         self.budget.members(record.fields().len())?;
@@ -679,35 +687,24 @@ impl<'a> NominalGraphProjection<'a> {
         self.states
             .insert(semantic, VisitState::Visiting(identity.clone()));
         self.active_depth += 1;
-        let fields = record
-            .fields()
-            .iter()
-            .enumerate()
-            .map(|(ordinal, field)| {
-                self.budget.name(field.diagnostic_name())?;
-                Ok(RuntimeNominalSchemaField::new(
-                    RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
-                        .expect("environment record fields were bounded"),
-                    Some(field.diagnostic_name().to_owned()),
-                    self.schema(field.ty(), depth + 1)?,
-                ))
-            })
-            .collect::<Result<Box<[_]>, Error>>()?;
-        self.definitions.push(RuntimeNominalSchemaDefinition::new(
-            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
-                *(identity.clone()).semantic_identity().as_bytes(),
-            ),
-            identity.clone(),
-            vec![],
-            RuntimeNominalSchemaBody::Record {
-                shape: RuntimeNominalRecordShape::Record,
-                fields,
+        walk.push(Task::FinishDefinition(
+            Definition {
+                semantic,
+                identity,
+                declaration: arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *semantic.as_bytes(),
+                ),
+                arguments: 0,
+                rust: None,
             },
+            Body::Record(RuntimeNominalRecordShape::Record, record.fields().len()),
         ));
-        self.active_depth -= 1;
-        self.states
-            .insert(semantic, VisitState::Complete(identity.clone()));
-        Ok(Schema::NominalRef(identity))
+        for (ordinal, field) in record.fields().iter().enumerate().rev() {
+            let name = field.diagnostic_name();
+            walk.push_field(ordinal, Some(name), field.ty(), depth + 1);
+            walk.push(Task::Name(name));
+        }
+        Ok(())
     }
 }
 

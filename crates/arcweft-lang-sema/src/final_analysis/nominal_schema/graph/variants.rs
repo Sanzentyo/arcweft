@@ -1,18 +1,22 @@
-//! Closed source variants use the same graph and payload projection as ADTs.
+//! Closed source variants use the same walk and payload projection as ADTs.
 
-use super::{Error, NominalGraphProjection, Schema, VisitState};
-use crate::final_analysis::{CheckedVariantOwner, CheckedVariantOwnerKind};
 use arcweft_core::entry::{
-    RuntimeNominalSchemaBody, RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition,
-    RuntimeNominalSchemaIdentity, RuntimeNominalTypeId,
+    RuntimeNominalDeclarationId, RuntimeNominalSchemaIdentity, RuntimeNominalTypeId,
 };
 
+use super::{
+    Error, NominalGraphProjection, Schema, VisitState,
+    walk::{Body, Definition, Task, Walk},
+};
+use crate::final_analysis::{CheckedVariantCase, CheckedVariantOwner, CheckedVariantOwnerKind};
+
 impl NominalGraphProjection<'_> {
-    pub(super) fn closed_variant(
+    pub(super) fn closed_variant<'walk>(
         &mut self,
-        owner: &CheckedVariantOwner,
+        walk: &mut Walk<'walk>,
+        owner: &'walk CheckedVariantOwner,
         depth: u64,
-    ) -> Result<Schema, Error> {
+    ) -> Result<(), Error> {
         let semantic = owner.semantic_type();
         let nominal = match owner.kind() {
             CheckedVariantOwnerKind::CharacterNominal { .. } => {
@@ -31,7 +35,8 @@ impl NominalGraphProjection<'_> {
         if let Some(VisitState::Visiting(identity) | VisitState::Complete(identity)) =
             self.states.get(&semantic)
         {
-            return Ok(Schema::NominalRef(identity.clone()));
+            walk.emit(Schema::NominalRef(identity.clone()));
+            return Ok(());
         }
         self.budget.definition(self.active_depth + 1)?;
         self.budget.members(owner.cases().len())?;
@@ -39,39 +44,55 @@ impl NominalGraphProjection<'_> {
         self.states
             .insert(semantic, VisitState::Visiting(identity.clone()));
         self.active_depth += 1;
-        let cases = owner
-            .cases()
-            .iter()
-            .map(|case| {
-                let invalid = || Error::InvalidVariantPayload {
-                    semantic_type: semantic,
-                    ordinal: case.ordinal(),
-                };
-                let name = case.diagnostic_name().ok_or_else(invalid)?;
-                self.budget.name(name)?;
-                let payload = owner
-                    .case_payload_type(case.ordinal())
-                    .ok_or_else(invalid)?
-                    .map(|ty| self.schema(&ty, depth + 1))
-                    .transpose()?;
-                Ok(RuntimeNominalSchemaCase::new(
-                    case.ordinal(),
-                    name.to_owned(),
-                    payload,
-                ))
-            })
-            .collect::<Result<_, Error>>()?;
-        self.definitions.push(RuntimeNominalSchemaDefinition::new(
-            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
-                *(identity.clone()).semantic_identity().as_bytes(),
-            ),
-            identity.clone(),
-            vec![],
-            RuntimeNominalSchemaBody::Variant { cases },
+        walk.push(Task::FinishDefinition(
+            Definition {
+                semantic,
+                identity,
+                declaration: RuntimeNominalDeclarationId::from_bytes(*semantic.as_bytes()),
+                arguments: 0,
+                rust: None,
+            },
+            Body::Variant(owner.cases().len()),
         ));
-        self.active_depth -= 1;
-        self.states
-            .insert(semantic, VisitState::Complete(identity.clone()));
-        Ok(Schema::NominalRef(identity))
+        for case in owner.cases().iter().rev() {
+            walk.push(Task::ClosedCase(ClosedCase {
+                owner,
+                case,
+                depth: depth + 1,
+            }));
+        }
+        Ok(())
+    }
+}
+
+pub(super) struct ClosedCase<'walk> {
+    owner: &'walk CheckedVariantOwner,
+    case: &'walk CheckedVariantCase,
+    depth: u64,
+}
+
+impl<'walk> ClosedCase<'walk> {
+    pub(super) fn visit<'source: 'walk>(
+        self,
+        projection: &mut NominalGraphProjection<'source>,
+        walk: &mut Walk<'walk>,
+    ) -> Result<(), Error> {
+        let ordinal = self.case.ordinal();
+        let invalid = || Error::InvalidVariantPayload {
+            semantic_type: self.owner.semantic_type(),
+            ordinal,
+        };
+        let name = self.case.diagnostic_name().ok_or_else(invalid)?;
+        projection.budget.name(name)?;
+        let payload = self.owner.case_payload_type(ordinal).ok_or_else(invalid)?;
+        walk.push(Task::Case {
+            ordinal,
+            name,
+            has_payload: payload.is_some(),
+        });
+        if let Some(ty) = payload {
+            walk.visit_instantiated(projection, ty, self.depth, None)?;
+        }
+        Ok(())
     }
 }

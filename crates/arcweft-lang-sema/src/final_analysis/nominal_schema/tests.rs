@@ -1,12 +1,17 @@
 //! Focused construction tests for the C2.2a nominal projection context.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    fmt::Write,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use arcweft_core::entry::{RuntimeNominalSchemaBody, RuntimeTypeSchema};
 
 use super::{
     NominalProjectionLimitKind, NominalProjectionRequest, NominalSchemaProjectionError,
-    ProjectionBudget, RuntimeNominalProjectionContext, RuntimeNominalProjectionRequestInventory,
+    ProjectionBudget, RuntimeNominalGraphProjectionError, RuntimeNominalGraphProjectionLimitKind,
+    RuntimeNominalGraphProjectionLimits, RuntimeNominalProjectionContext,
+    RuntimeNominalProjectionRequestInventory,
 };
 use crate::{
     final_analysis::{
@@ -17,7 +22,7 @@ use crate::{
         NominalAggregationLimitKind, NominalAggregationLimits, NominalResolutionLimitKind,
         NominalResolutionLimits,
     },
-    types::{SemanticTypeDigest, TypeKind},
+    types::{ProjectNominalType, SemanticTypeDigest, TypeKind},
 };
 
 fn projection_fixture() -> Fixture {
@@ -44,6 +49,58 @@ fn projection_fixture() -> Fixture {
         ),
         None,
     )
+}
+
+#[test]
+fn wrapped_nominal_chain_projects_at_the_limit_and_rejects_one_over() {
+    for definitions in [64, 65] {
+        let mut source = String::new();
+        for index in 0..definitions - 1 {
+            writeln!(
+                source,
+                "struct Cell{index} {{ next: Option<Cell{}> }}",
+                index + 1
+            )
+            .unwrap();
+        }
+        writeln!(source, "struct Cell{} {{ value: i64 }}", definitions - 1).unwrap();
+        let fixture = fixture(&source, None);
+        let report = analyze(&fixture).expect("nominal declarations pass semantic analysis");
+        let root = fixture
+            .symbols
+            .nominal_symbols()
+            .find(|declaration| declaration.id().name().as_str() == "Cell0")
+            .expect("Cell0 declaration");
+        let ty = TypeKind::ProjectNominal(ProjectNominalType::new(root.id().clone(), vec![]));
+
+        let outcome = std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .stack_size(1024 * 1024)
+                .spawn_scoped(scope, || {
+                    report.project_runtime_nominal_graph(
+                        &fixture.registered,
+                        &ty,
+                        RuntimeNominalGraphProjectionLimits::PRODUCTION,
+                    )
+                })
+                .expect("projection worker")
+                .join()
+                .expect("projection finishes within the worker stack")
+        });
+        if definitions == 64 {
+            let graph = outcome.expect("64 definitions fit exactly within the type depth limit");
+            assert_eq!(graph.definitions().len(), definitions);
+        } else {
+            assert_eq!(
+                outcome,
+                Err(RuntimeNominalGraphProjectionError::Limit {
+                    kind: RuntimeNominalGraphProjectionLimitKind::TypeDepth,
+                    observed: 129,
+                    maximum: 128,
+                })
+            );
+        }
+    }
 }
 
 #[test]
