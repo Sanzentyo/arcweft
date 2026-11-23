@@ -22004,3 +22004,13 @@ Cargo の全ターゲット・全機能の依存グラフでは HIR と推移的
 最終 nextest は3,040件中3,030件成功（うち slow 2件）、既知の Sema 型・効果制約10件失敗、685件選択外、終了100。前回の同じ10失敗 ID と照合した。成功の内訳は HIR 973、Sema 2,030、Verifier 10、CLI `check` の対象17。従来失敗していた `verify_json_reports_missing_promotion_proof` と `verify_json_records_required_solver_checks` は、現行の受け手記法と証明義務の型・必須判定を検査して通過した。`match` 式の分類コーパス、選択フィールド、深い名目型の境界も通過した。HIR の名目型形状の上限ちょうど／上限超過は400.572秒で成功。
 
 ビルド完了後の `target` は174,227,882,554 bytes（約174.2 GB）。
+
+<a id="stack-independent-nominal-projection"></a>
+
+## 2026-11-23 — コンテナを介した名目参照のスキーマ深さ
+
+基点 `2c0e1c85a686b37bfc1b97d9a476a7c49e3cc37c` の Windows 実 CLI で、各辺に `Option` を挟む63段の入力を `arcw verify --mode test --json` に渡すと、終了コード `0xc00000fd`（`-1073741571`）、JSON 出力0 bytes、標準エラーにスタック超過が出た。[前回の直接参照との比較](#checked-promotion-obligations)に初回の実測を保持した。
+
+実装 `a48772fadedcf35251c323545760634f374e8a6b` で、コンテナ・名目参照・定義の組立てを宣言順の明示的な作業スタックへ移した。名目型の再訪は同じ型識別子を参照する。型ノード数、型の深さ、名目定義数とその深さ、フィールドと列挙ケース、元の診断経路の各制約を従来の箇所で適用する。実装を `main` に通常 push し、公開 ref と変更6ファイルの blob を照合した。
+
+Windows の Sema 対象 nextest は `test(nominal_schema) | test(rust_adt) | test(safe_lifetime_promotion)` で43件成功、2,022件選択外、終了0。新しい回帰では、1 MiB の作業スレッド上で `Option` を挟む名目定義64個のグラフを構築し、65個の入力を `TypeDepth` の observed 129／maximum 128 で拒否した。Sema の default check、全体の書式検査、差分検査、構造ゲートが終了0。構造ゲートのブロッキング違反は0件。
