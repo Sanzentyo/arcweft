@@ -6,7 +6,7 @@ use crate::{
     effect_row::EffectPredicate,
     types::{
         GenericConstReference, GenericDeclarationBinder, GenericEffectReference, GenericScope,
-        GenericScopeError, GenericTypeReference,
+        GenericScopeError, GenericTypeReference, TypeProjectionError,
     },
 };
 
@@ -57,6 +57,9 @@ struct OriginalProducer {
     source: Arc<dyn OriginalProducerSource>,
     formals: GenericDeclarationBinder,
     gamma: Arc<ConstraintLexicalScope>,
+    /// Bound references in the source predicate use its authored frames.
+    /// Keep those frames separately when imported frames extend Gamma.
+    domain_scope: Option<Arc<ConstraintLexicalScope>>,
 }
 
 /// Shared unchanged across a root's branches, suspension and original value
@@ -69,7 +72,8 @@ impl PartialEq for OriginalProducerContext {
         Arc::ptr_eq(&self.0, &other.0)
             || (self.0.source.same_source(other.0.source.as_ref())
                 && self.0.formals == other.0.formals
-                && self.0.gamma == other.0.gamma)
+                && self.0.gamma == other.0.gamma
+                && self.0.domain_scope == other.0.domain_scope)
     }
 }
 
@@ -135,10 +139,24 @@ impl OriginalProducerContext {
             )
             .unwrap(),
             gamma: Arc::new(gamma),
+            domain_scope: None,
         }))
     }
+
+    #[cfg(test)]
     pub(crate) fn domain(&self) -> Cow<'_, EffectPredicate> {
         self.0.source.domain()
+    }
+
+    pub(super) fn project_domain<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        target: &ConstraintLexicalScope,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<EffectPredicate, TypeProjectionError<TypeConstraintError>> {
+        let domain = self.0.source.domain();
+        crate::types::projection_control::visit_effect_predicate(context, &domain, 1)?;
+        let source = self.0.domain_scope.as_deref().unwrap_or(self.gamma());
+        target.transport_predicate(source, &domain, context)
     }
 
     pub(crate) fn declaration_formals(&self) -> &GenericDeclarationBinder {
@@ -228,18 +246,30 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_,
         {
             return Err(TypeConstraintInvariant::OriginalProducer.into());
         }
+        let mut has_bound_domain = false;
         for variable in source.domain().variables() {
             self.enter_node()?;
-            if rigid.effects.binary_search(variable).is_err() {
-                return Err(TypeConstraintError::Invariant(
-                    TypeConstraintInvariant::OriginalProducer,
-                ));
+            match variable {
+                GenericEffectReference::Bound(bound) => {
+                    self.lexical_frames()
+                        .shape()
+                        .bound_effect(bound.depth(), bound.slot())?;
+                    has_bound_domain = true;
+                }
+                GenericEffectReference::Free(_)
+                    if rigid.effects.binary_search(variable).is_ok() => {}
+                _ => return Err(TypeConstraintInvariant::OriginalProducer.into()),
             }
         }
         let mut gamma = self.capture_lexical_scope()?;
         if let Some(imported) = rigid.imported {
             imported.merge_original_gamma(&mut gamma, self)?;
         }
+        let domain_scope = if has_bound_domain && &gamma != self.lexical_frames() {
+            Some(Arc::new(self.capture_lexical_scope()?))
+        } else {
+            None
+        };
         let formals = source.declaration_formals()?;
         if formals
             .type_parameters()
@@ -263,6 +293,7 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> TypeConstraintContext<'_,
             source: retained_source,
             formals,
             gamma: Arc::new(gamma),
+            domain_scope,
         })))
     }
 }
@@ -351,6 +382,7 @@ mod tests {
     struct FixtureSource {
         projections: Arc<AtomicUsize>,
         domain: EffectPredicate,
+        imported: Option<ImportedGenericParameterScopeLease>,
     }
 
     impl OriginalProducerSource for FixtureSource {
@@ -368,7 +400,7 @@ mod tests {
                 types: &[],
                 consts: &[],
                 effects: &[],
-                imported: None,
+                imported: self.imported.as_ref(),
             }
         }
         fn declaration_formals(&self) -> Result<GenericDeclarationBinder, GenericScopeError> {
@@ -391,6 +423,7 @@ mod tests {
         let source = Arc::new(FixtureSource {
             projections: Arc::clone(&projections),
             domain: EffectPredicate::unconstrained(),
+            imported: None,
         });
         let cancellation = AtomicBool::new(false);
         let mut exhausted = TypeConstraintContext::<_, NoConstraintClient>::with_accounting(
@@ -410,6 +443,87 @@ mod tests {
         let context = allowed.original_producer_context(&source).unwrap();
         assert_eq!(projections.load(Ordering::Relaxed), 1);
         assert!(context.domain().is_unconstrained());
+    }
+
+    #[test]
+    fn source_domain_uses_the_authored_effect_frame_when_imports_extend_gamma() {
+        use super::super::{TypeConstraintParameterEligibility, TypeConstraintParameterScope};
+        use crate::{
+            effect_row::{EffectFormula, prepared::PreparedEffectGraph},
+            types::{
+                DetachedGenericOwnerId, GenericBinder, GenericParameterOwnerId,
+                GenericTypeParameterId,
+            },
+        };
+
+        let cancellation = AtomicBool::new(false);
+        let mut context = TypeConstraintContext::<_, NoConstraintClient>::with_accounting(
+            LocalConstraintAccounting::new(
+                TypeConstraintLimits::new(4096, 4096, 128, 128),
+                &cancellation,
+            ),
+        );
+        let mut graph = PreparedEffectGraph::default();
+        let binder = GenericBinder::new(0, 0, 1);
+        let key = GenericTypeParameterId::new(
+            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(9013)),
+            0,
+        );
+        let parameters = TypeConstraintParameterScope::new([(
+            key.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        )])
+        .unwrap();
+        let reference = parameters.type_reference(&key.into()).unwrap();
+        let imported = context
+            .with_binder(binder, |context| {
+                let owner = context.fixture_application_scope((), parameters, &mut graph)?;
+                let path = context.start_path(owner, &mut graph)?;
+                path.applications
+                    .import_parameters(&[reference.into()], context)
+            })
+            .unwrap();
+
+        let authored_scope = GenericScope::default().with_binder(binder);
+        let authored = authored_scope.bound_effect(0, 0).unwrap();
+        let domain = EffectFormula::variable(authored.clone(), &mut context)
+            .unwrap()
+            .subset(&EffectFormula::empty(), &mut context)
+            .unwrap();
+        let source = Arc::new(FixtureSource {
+            projections: Arc::new(AtomicUsize::new(0)),
+            domain,
+            imported: Some(imported),
+        });
+        assert!(matches!(
+            context.original_producer_context(&source),
+            Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::GenericScope(_)
+            ))
+        ));
+        assert_eq!(source.projections.load(Ordering::Relaxed), 0);
+
+        context
+            .with_binder(binder, |context| {
+                let authored_frames = context.capture_lexical_scope()?;
+                let original = context.original_producer_context(&source)?;
+                let source_coordinate = original.scope().bound_effect(1, 0)?;
+                assert_eq!(
+                    original
+                        .project_domain(original.gamma(), context)
+                        .unwrap()
+                        .variables()
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    [source_coordinate]
+                );
+                assert_eq!(
+                    original.project_domain(&authored_frames, context).unwrap(),
+                    source.domain,
+                );
+                Ok(())
+            })
+            .unwrap();
     }
 
     #[test]

@@ -150,18 +150,10 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
         graph: &mut PreparedEffectGraph,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<PreparedBranchEffectConstraints, TypeConstraintError> {
-        let domain = self.lineage.original.domain();
-        crate::types::projection_control::visit_effect_predicate(context, &domain, 1).map_err(
-            |error| match error {
-                crate::types::TypeProjectionError::Control(error) => error,
-                crate::types::TypeProjectionError::Instantiation(error) => {
-                    TypeConstraintInvariant::Instantiation(error).into()
-                }
-            },
-        )?;
         let domain = self
-            .scope
-            .transport_predicate(self.lineage.original.gamma(), &domain, context)
+            .lineage
+            .original
+            .project_domain(&self.scope, context)
             .map_err(|error| match error {
                 crate::types::TypeProjectionError::Control(error) => error,
                 crate::types::TypeProjectionError::Instantiation(error) => {

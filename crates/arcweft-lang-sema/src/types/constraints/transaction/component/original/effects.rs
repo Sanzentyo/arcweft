@@ -37,12 +37,11 @@ impl<D: ConstraintDomain, P> OpenConstraintComponent<D, P> {
                     context.enter_node()?;
                     sources.push(header);
                 }
-                let domain = path.lineage.original.domain();
-                crate::types::projection_control::visit_effect_predicate(context, &domain, 1)
-                    .map_err(projection_failure)?;
                 context.enter_node()?;
-                let domain = scope
-                    .transport_predicate(path.lineage.original.gamma(), &domain, context)
+                let domain = path
+                    .lineage
+                    .original
+                    .project_domain(scope, context)
                     .map_err(projection_failure)?;
                 domains.push(PreparedEffectPredicate::Canonical(domain));
             }

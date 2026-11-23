@@ -420,19 +420,43 @@ fn independent_bound_premises_remain_independent_in_the_joint_domain() {
         .ambient
         .restore_predicate(&impossible, &mut graph, &mut context)
         .unwrap();
-    let (frozen, _) = component
+    let (frozen, joint) = component
         .freeze_original_effects(&branch, &members, &original, &mut graph, &mut context)
         .unwrap();
-    // The two premises are jointly satisfiable. A false R must fail; equal
-    // depth/slot spelling must not conflate the frames and make D vacuous.
+    let prepared = PreparedConstraintEffects::new(frozen, joint, &mut context)
+        .unwrap()
+        .bind(&mut graph, &mut context)
+        .unwrap();
+    let sources = members
+        .iter()
+        .map(|member| {
+            component
+                .original_path(*member)
+                .unwrap()
+                .lineage
+                .original
+                .clone()
+        })
+        .collect::<Arc<[_]>>();
+    let inputs = graph.read().actual_inputs(&[], &mut context).unwrap();
+    // The two premises are jointly satisfiable. Closing a false relation
+    // must reject, even when the reduced representation retains quantifiers.
+    let retained = graph.retained_terms();
+    let failure = ConstraintClosedEffects::for_branch(
+        &branch,
+        sources,
+        &prepared,
+        &inputs,
+        &mut graph,
+        &mut context,
+    )
+    .err()
+    .expect("the joint domain has a counterexample to the false relation");
     assert_eq!(
-        frozen
-            .reduce(&mut context)
-            .unwrap()
-            .satisfiable()
-            .truth_value(),
-        Some(false)
+        failure,
+        TypeConstraintError::Rejected(TypeConstraintRejection::EffectUnsatisfiable),
     );
+    assert_eq!(graph.retained_terms(), retained);
 }
 
 #[test]
