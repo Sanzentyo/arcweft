@@ -60,6 +60,14 @@ backend execution outside `arcweft-core` while making it available to ordinary
 flow calls; the backend boundary is defined in
 [`pure.rs`](../../crates/arcweft-core/src/pure.rs).
 
+The executor facade captures and restores both Native and Product AWBC state.
+RuntimePlan VM and Structured AOT share the Native save representation. A
+Native restore checks the original Plan, generation, and launch. The launch
+remains fixed through Flow transfers and distinguishes an explicit Flow
+invocation from a selected Entry, including Entries that target the same Flow.
+The portable AWFB session captures the Product AWBC specialization of this
+boundary. Restore publishes the candidate only after admission succeeds.
+
 Runtime external producers retain the same accepted resource generation as
 their executable. Bundle admission binds the CharacterDialogue declaration,
 validated Character catalog, accepted View definitions and actual Style digest

@@ -670,7 +670,7 @@ fn assert_awbc_return_after_public_cold_restore(
                 None
             }
         }));
-        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = runtime.snapshot().unwrap();
+        let snapshot = runtime.snapshot_product_for_save().unwrap();
         let saved = AwbcProductExecutorSaveSnapshot::from_live(
             &snapshot,
             runtime.admitted_product_awbc_program().unwrap(),

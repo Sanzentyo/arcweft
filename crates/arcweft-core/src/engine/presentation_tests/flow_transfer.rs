@@ -160,7 +160,7 @@ fn fixture(full_retirement_queue: bool) -> Fixture {
     );
     engine.fiber.frame.pending_ops = engine.prepare_function_root_work(source).unwrap();
     engine.fiber.frame.status = FlowFiberStatus::Running;
-    engine.main_started = true;
+    engine.main_launch = crate::engine::NativeMainLaunch::Standalone;
     if full_retirement_queue {
         engine.presentation = Some(crate::presentation::resources::PresentationBanks::new(
             engine.fiber.frame.program.clone(),

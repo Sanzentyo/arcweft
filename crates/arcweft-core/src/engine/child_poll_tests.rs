@@ -145,7 +145,7 @@ fn joined_return_keeps_its_position_across_steps_and_restore_without_poll_charge
     use crate::step::RuntimeStepOptions;
 
     let mut engine = Engine::new(child_plan());
-    engine.main_started = true;
+    engine.main_launch = crate::engine::NativeMainLaunch::Standalone;
     let position = task_position(&engine, "child.joined");
     engine
         .fiber
@@ -210,7 +210,7 @@ fn joined_original_function_return_expression_and_fallthrough_do_not_advance() {
     use crate::plan::code::{RuntimeCodeBodyRef, RuntimeCodeOwner};
 
     let mut engine = Engine::new(child_plan());
-    engine.main_started = true;
+    engine.main_launch = crate::engine::NativeMainLaunch::Standalone;
     let (child, next) = engine
         .prepare_child_fiber(task_work(&engine, "child.one"), &[])
         .unwrap();

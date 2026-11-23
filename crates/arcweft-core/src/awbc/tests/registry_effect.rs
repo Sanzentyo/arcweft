@@ -294,8 +294,7 @@ fn decoded_registry_read_requires_a_reached_row_and_preserves_optional_absence()
             assert!(step.stats.executed_ops <= 1);
             match &step.fiber_status {
                 FlowFiberStatus::Done(_) => {
-                    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) =
-                        executor.snapshot().unwrap();
+                    let snapshot = executor.snapshot_product_for_save().unwrap();
                     let expected = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
                         expected
                             .as_ref()
@@ -322,8 +321,7 @@ fn decoded_registry_read_requires_a_reached_row_and_preserves_optional_absence()
                     assert!(step.output.diagnostics.is_empty(), "{step:?}");
                 }
             }
-            let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) =
-                executor.snapshot().unwrap();
+            let snapshot = executor.snapshot_product_for_save().unwrap();
             let saved = AwbcProductExecutorSaveSnapshot::from_live(
                 &snapshot,
                 executor.admitted_product_awbc_program().unwrap(),

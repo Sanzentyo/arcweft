@@ -143,7 +143,7 @@ fn execute_with_functions(
             "{:?}",
             result.output.diagnostics
         );
-        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved) = executor.snapshot().unwrap();
+        let saved = executor.snapshot_product_for_save().unwrap();
         let saved = arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
             &saved,
             executor.admitted_product_awbc_program().unwrap(),

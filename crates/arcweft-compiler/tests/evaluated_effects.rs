@@ -2441,11 +2441,9 @@ fn assert_line_result_in_native_and_decoded_awbc(
                         .as_mut()
                         .expect("AWBC executor is present for one step");
                     let result = current.step_with_pure_backend(input, options, &mut awbc_backend);
-                    let snapshot = current
-                        .snapshot()
+                    let saved = current
+                        .snapshot_product_for_save()
                         .expect("AWBC cancellation step snapshots");
-                    let arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved) =
-                        snapshot;
                     let saved = arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
                         &saved, current.admitted_product_awbc_program().unwrap()).expect("project the cancellation boundary to its save grammar");
                     let bytes = serde_json::to_vec(&saved).expect("encode cancellation save DTO");
@@ -2660,7 +2658,7 @@ entry cli @entry.main { goto @flow.main }
         let awbc_logs = run("awbc", &mut |input, options| {
             let mut current = awbc.take().unwrap();
             let result = current.step_with_pure_backend(input, options, &mut awbc_backend);
-            let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = current.snapshot().unwrap();
+            let snapshot = current.snapshot_product_for_save().unwrap();
             let saved = AwbcProductExecutorSaveSnapshot::from_live(
                 &snapshot,
                 current.admitted_product_awbc_program().unwrap(),
@@ -2857,7 +2855,7 @@ entry cli @entry.main { goto @flow.main }
             let mut current = executor.take().unwrap();
             let step = current.step_with_pure_backend(input, options, &mut backend);
             assert!(step.stats.executed_ops <= 1);
-            let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = current.snapshot().unwrap();
+            let snapshot = current.snapshot_product_for_save().unwrap();
             let save = AwbcProductExecutorSaveSnapshot::from_live(
                 &snapshot,
                 current.admitted_product_awbc_program().unwrap(),
@@ -4309,7 +4307,7 @@ fn roundtrip_nested_awbc_checking(
         executor::ArcweftRuntimeExecutorSnapshot,
     };
 
-    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = executor.snapshot().unwrap();
+    let snapshot = executor.snapshot_product_for_save().unwrap();
     let saved = AwbcProductExecutorSaveSnapshot::from_live(
         &snapshot,
         executor.admitted_product_awbc_program().unwrap(),

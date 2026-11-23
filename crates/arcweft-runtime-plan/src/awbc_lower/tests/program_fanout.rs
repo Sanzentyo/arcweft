@@ -455,11 +455,7 @@ fn original_program_fanout_executes_owned_workers_and_roundtrips_every_public_sa
                                 ready += 1;
                             }
                         }
-                        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) =
-                            executor.snapshot().unwrap()
-                        else {
-                            unreachable!()
-                        };
+                        let snapshot = executor.snapshot_product_for_save().unwrap();
                         for child in &snapshot.child_fibers {
                             if let Some(suspension) = &child.fiber.suspension {
                                 if let FiberSuspensionReason::ProgramFanout(state) =
@@ -574,11 +570,7 @@ fn original_program_fanout_propagates_worker_cancellation_through_public_save() 
                         .iter()
                         .any(|event| matches!(event, FlowEvent::AwaitReady { .. }))
                 );
-                let ArcweftRuntimeExecutorSnapshot::AwbcProduct(mut snapshot) =
-                    executor.snapshot().unwrap()
-                else {
-                    unreachable!()
-                };
+                let mut snapshot = executor.snapshot_product_for_save().unwrap();
                 if !cancelled {
                     let controller = snapshot.child_fibers.iter().find_map(|child| {
                         matches!(

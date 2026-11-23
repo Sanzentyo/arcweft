@@ -110,6 +110,17 @@ pub(crate) enum NativeInvocationRoot {
     Task(TaskCorrelation),
 }
 
+/// The original main launch remains fixed across Flow transfers and returns.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+enum NativeMainLaunch {
+    Dormant,
+    Standalone,
+    Flow(FlowRuntimeId),
+    Entry(crate::entry::ActiveEntrySnapshotV1),
+    Invocation(NativeInvocationRoot),
+}
+
 /// Native execution ownership shared by live state and inert rollback storage.
 /// Storage parameters do not grant live Clone or a wire reader.
 ///
@@ -165,7 +176,7 @@ pub struct Engine<
         BTreeMap<crate::task::TaskCorrelation, crate::task::RuntimeNeedPublicationRollbackImage>,
     #[serde(with = "save::ordered_rows")]
     need_publication_frontiers: BTreeMap<crate::task::TaskCorrelation, TaskPublicationCursor>,
-    main_started: bool,
+    main_launch: NativeMainLaunch,
     root: Option<R>,
     fiber: FlowFiber<F>,
     /// The actual main owner remains in the session while a selected child
@@ -230,11 +241,22 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
     }
 }
 
-impl Clone for NativeEngineRollbackImage {
+impl<N: Clone, R: Clone, F: Clone, Actions: Clone, Presentation: Clone, Program: Clone> Clone
+    for Engine<
+        N,
+        crate::value::AwbcRuntimeValueSnapshot,
+        R,
+        F,
+        dialogue::DialogueActivationStoreRollbackImage,
+        Actions,
+        Presentation,
+        Program,
+    >
+{
     fn clone(&self) -> Self {
         Self {
             evaluation_stats: self.evaluation_stats.clone(),
-            plan: Arc::clone(&self.plan),
+            plan: self.plan.clone(),
             format_context: self.format_context.clone(),
             generation: self.generation,
             need_producers: self.need_producers.clone(),
@@ -245,7 +267,7 @@ impl Clone for NativeEngineRollbackImage {
             need_publications: self.need_publications.clone(),
             latest_need_publications: self.latest_need_publications.clone(),
             need_publication_frontiers: self.need_publication_frontiers.clone(),
-            main_started: self.main_started,
+            main_launch: self.main_launch.clone(),
             root: self.root.clone(),
             fiber: self.fiber.clone(),
             parked_main: self.parked_main.clone(),
@@ -336,7 +358,7 @@ pub(super) struct NativePreparedDialogueEffectCallback {
 }
 
 /// Executor identity and its current owned execution frame.
-#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FlowFiber<F = NativeFlowExecutionFrame> {
     pub frame: F,
@@ -490,20 +512,6 @@ pub struct NativeFlowExecutionFrame<
 }
 
 type FlowFiberRollbackImage = FlowFiber<NativeFlowExecutionFrameRollbackImage>;
-
-impl Clone for FlowFiberRollbackImage {
-    fn clone(&self) -> Self {
-        Self {
-            frame: self.frame.clone(),
-            id: self.id,
-            parent: self.parent,
-            launch: self.launch.clone(),
-            persistent_id: self.persistent_id,
-            execution: self.execution,
-            owner: self.owner.clone(),
-        }
-    }
-}
 
 type NativeFlowExecutionFrameRollbackImage<Program = crate::task::RuntimeProgramOwner> =
     NativeFlowExecutionFrame<
@@ -2611,7 +2619,7 @@ impl Engine {
                 .collect::<Result<_, String>>()?,
             latest_need_publications: self.latest_need_publications.clone(),
             need_publication_frontiers: self.need_publication_frontiers.clone(),
-            main_started: self.main_started,
+            main_launch: self.main_launch.clone(),
             root: self
                 .root
                 .as_ref()
@@ -2713,7 +2721,7 @@ impl Engine {
                 .collect::<Result<_, String>>()?,
             latest_need_publications: image.latest_need_publications,
             need_publication_frontiers: image.need_publication_frontiers,
-            main_started: image.main_started,
+            main_launch: image.main_launch,
             root: image
                 .root
                 .map(|root| RootRuntime::from_admitted_rollback_image(root, owner))
@@ -2852,7 +2860,11 @@ impl Engine {
     }
 
     fn new_with_shared_plan(plan: Arc<RuntimePlan>, generation: GenerationId) -> Self {
-        let main_started = plan.flows.is_empty();
+        let main_launch = if plan.flows.is_empty() {
+            NativeMainLaunch::Standalone
+        } else {
+            NativeMainLaunch::Dormant
+        };
         let status = if plan.is_empty() {
             FlowFiberStatus::Done(FlowExit::Done)
         } else {
@@ -2882,7 +2894,7 @@ impl Engine {
             need_publications: BTreeMap::new(),
             latest_need_publications: BTreeMap::new(),
             need_publication_frontiers: BTreeMap::new(),
-            main_started,
+            main_launch,
             root: None,
             fiber: FlowFiber {
                 frame: crate::engine::NativeFlowExecutionFrame {
@@ -3084,7 +3096,7 @@ impl Engine {
         flow: &FlowRuntimeId,
         bindings: Box<[RuntimeFlowParameterBinding]>,
     ) -> Result<(), EngineStartError> {
-        if self.main_started {
+        if self.main_launch != NativeMainLaunch::Dormant {
             return Err(EngineStartError::AlreadyStarted);
         }
         self.flow_index(flow)
@@ -3123,24 +3135,33 @@ impl Engine {
         );
         self.fiber.frame.pending_ops = pending_ops;
         self.fiber.frame.status = FlowFiberStatus::Running;
-        self.main_started = true;
+        self.main_launch = NativeMainLaunch::Flow(flow.clone());
         Ok(())
     }
 
     /// Selects the single flow named by an exact entry identity.
     pub fn start_entry(&mut self, entry: &EntryRuntimeId) -> Result<(), EngineStartError> {
-        if self.main_started {
+        if self.main_launch != NativeMainLaunch::Dormant {
             return Err(EngineStartError::AlreadyStarted);
         }
-        let target = self
+        let entry_spec = self
             .plan
             .entries
             .iter()
             .find(|candidate| candidate.id == *entry)
-            .map(|candidate| candidate.target.clone())
             .ok_or_else(|| EngineStartError::MissingEntry {
                 entry: entry.canonical_label(),
             })?;
+        let launch = NativeMainLaunch::Entry(crate::entry::ActiveEntrySnapshotV1 {
+            id: entry.clone(),
+            kind: entry_spec.kind.clone(),
+            binding: entry_spec.binding,
+        });
+        let stateful = matches!(
+            entry_spec.roles,
+            crate::entry::RuntimeEntryRoles::Stateful(_)
+        );
+        let target = entry_spec.target.clone();
         let flow = match target {
             RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => flow,
             RuntimeEntryTarget::Routes(_) => {
@@ -3149,14 +3170,7 @@ impl Engine {
                 });
             }
         };
-        if matches!(
-            self.plan
-                .entries
-                .iter()
-                .find(|candidate| candidate.id == *entry)
-                .map(|candidate| &candidate.roles),
-            Some(crate::entry::RuntimeEntryRoles::Stateful(_))
-        ) {
+        if stateful {
             let contract =
                 RootStartupContract::from_runtime_plan(&self.plan, entry).map_err(|error| {
                     EngineStartError::InvalidRootStartup {
@@ -3228,11 +3242,13 @@ impl Engine {
                 message: error.to_string(),
             })?;
             self.fiber.frame.status = FlowFiberStatus::Running;
-            self.main_started = true;
+            self.main_launch = launch;
             self.root = Some(root);
             return Ok(());
         }
-        self.start_flow(&flow)
+        self.start_flow(&flow)?;
+        self.main_launch = launch;
+        Ok(())
     }
 
     #[must_use]
@@ -3933,7 +3949,7 @@ impl Engine {
     }
 
     fn main_fiber_can_attempt_runtime_op(&self) -> bool {
-        self.main_started
+        self.main_launch != NativeMainLaunch::Dormant
             && (self.fiber.frame.scope_defer_exit_pending()
                 || !matches!(
                     self.fiber.frame.status,

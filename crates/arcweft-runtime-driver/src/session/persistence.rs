@@ -226,19 +226,14 @@ impl BundleSession {
             &self.executor.fiber().frame.status,
         )?;
         let active = self.active_generation();
-        self.executor.product_awbc_program().ok_or_else(|| {
-            BundleSessionSaveError::UnsupportedExecutorTier {
-                tier: self.executor.tier().as_str().to_owned(),
-            }
-        })?;
-        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(state) = self.executor.snapshot()?;
+        let state = self.executor.snapshot_product_for_save()?;
         let executor = BundleSessionExecutorSnapshot {
             generation: active.id,
             state,
         };
         let active_entry = self
             .executor
-            .product_active_entry_snapshot_identity()
+            .active_entry_snapshot_identity()
             .map_err(|error| BundleSessionSaveError::Root {
                 message: error.to_string(),
             })?

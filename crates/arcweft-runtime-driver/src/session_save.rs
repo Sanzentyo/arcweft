@@ -509,7 +509,8 @@ impl From<ArcweftRuntimeExecutorSnapshotError> for BundleSessionSaveError {
             ArcweftRuntimeExecutorSnapshotError::NeedsQuiescence { needs } => {
                 Self::NeedsQuiescence { needs }
             }
-            ArcweftRuntimeExecutorSnapshotError::ProductAwbc { message } => Self::Fiber { message },
+            ArcweftRuntimeExecutorSnapshotError::ProductAwbc { message }
+            | ArcweftRuntimeExecutorSnapshotError::Native { message } => Self::Fiber { message },
             ArcweftRuntimeExecutorSnapshotError::Root { message } => Self::Root { message },
         }
     }

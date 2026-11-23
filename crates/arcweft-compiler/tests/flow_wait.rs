@@ -8,8 +8,11 @@ use arcweft_core::{
     },
     effect::RuntimeArtifactFingerprint,
     engine::{Engine, FlowExit, FlowFiberStatus},
-    executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor},
-    plan::RuntimePlan,
+    executor::{
+        ArcweftExecutionTier, ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot,
+        ArcweftRuntimeExecutorSnapshotError, RuntimeExecutor,
+    },
+    plan::{EntryRuntimeId, FlowRuntimeId, RuntimePlan},
     step::{
         RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
         RuntimeStepResult, RuntimeStepStopReason,
@@ -176,6 +179,102 @@ fn native_child_wait_progresses_while_its_parent_has_a_longer_wait() {
     finish(&mut engine);
 }
 
+#[test]
+fn native_executor_save_resumes_the_original_launch_in_either_native_tier() {
+    let plan = Arc::new(
+        compile_source(
+            "flow main() -> i64 { wait(0.1s); return 42i64 }
+             flow other() -> i64 { wait(0.1s); return 7i64 }
+             entry cli @entry.main { goto @flow.main }
+             entry cli @entry.alias { goto @flow.main }",
+        )
+        .unwrap()
+        .plan,
+    );
+    let main = EntryRuntimeId::canonical("main").unwrap();
+    let alias = EntryRuntimeId::canonical("alias").unwrap();
+    let start_entry = |tier, entry: &EntryRuntimeId| {
+        let mut runtime =
+            ArcweftRuntimeExecutor::from_runtime_plan(Arc::clone(&plan), tier).unwrap();
+        runtime.start_structured_entry(entry).unwrap();
+        runtime
+    };
+    let invoke = |flow| {
+        let invocation = plan
+            .as_ref()
+            .clone()
+            .seal_flow_invocation(FlowRuntimeId::canonical(flow).unwrap(), [])
+            .unwrap();
+        ArcweftRuntimeExecutor::from_runtime_flow_invocation(
+            invocation,
+            ArcweftExecutionTier::RuntimePlanVm,
+        )
+        .unwrap()
+    };
+    let step_native = |runtime: &mut ArcweftRuntimeExecutor, nanos| {
+        let result = runtime.step(
+            RuntimeStepInput {
+                dt: LogicalDuration::from_nanos(nanos),
+                ..Default::default()
+            },
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::Drain,
+                budget: RuntimeStepBudget { max_ops: 64 },
+                ..Default::default()
+            },
+        );
+        assert!(result.output.diagnostics.is_empty(), "{result:?}");
+        assert!(result.stats.executed_ops <= 64);
+    };
+    let mut runtime = start_entry(ArcweftExecutionTier::RuntimePlanVm, &main);
+    step_native(&mut runtime, 0);
+    step_native(&mut runtime, 99_999_999);
+    let expected_entry = runtime.active_entry_snapshot_identity().unwrap().unwrap();
+    let ArcweftRuntimeExecutorSnapshot::Native(snapshot) = runtime.snapshot().unwrap() else {
+        panic!("Native executor produces a Native snapshot");
+    };
+    let bytes = serde_json::to_vec(snapshot.as_ref()).unwrap();
+    drop(runtime);
+    let load = || ArcweftRuntimeExecutorSnapshot::Native(serde_json::from_slice(&bytes).unwrap());
+    let alias_executor = start_entry(ArcweftExecutionTier::StructuredAot, &alias);
+    let alias_before = alias_executor.snapshot().unwrap();
+    let (alias_executor, error) = alias_executor
+        .restore_snapshot(load())
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        error,
+        ArcweftRuntimeExecutorSnapshotError::Native { .. }
+    ));
+    assert_eq!(alias_executor.snapshot().unwrap(), alias_before);
+
+    let mut restored = start_entry(ArcweftExecutionTier::StructuredAot, &main)
+        .restore_entry_snapshot(load(), &expected_entry)
+        .unwrap();
+    let FlowFiberStatus::DurationWaiting(wait) = &restored.fiber().frame.status else {
+        panic!("restored executor is still suspended");
+    };
+    assert_eq!(wait.remaining().as_nanos(), 1);
+    step_native(&mut restored, 1);
+    assert_eq!(
+        restored.fiber().frame.status,
+        FlowFiberStatus::Done(FlowExit::Return("42".into()))
+    );
+
+    let first = invoke("main");
+    let other = invoke("other");
+    let other_before = other.snapshot().unwrap();
+    let (other, error) = other
+        .restore_snapshot(first.snapshot().unwrap())
+        .unwrap_err()
+        .into_parts();
+    assert!(matches!(
+        error,
+        ArcweftRuntimeExecutorSnapshotError::Native { .. }
+    ));
+    assert_eq!(other.snapshot().unwrap(), other_before);
+}
+
 fn product(body: &str, selected: bool) -> ArcweftRuntimeExecutor {
     let source = format!("{body}\nentry cli @entry.main {{ goto @flow.main }}\n");
     let compiled = compile_source(&source).unwrap_or_else(|error| panic!("{source}: {error:?}"));
@@ -213,7 +312,7 @@ fn product(body: &str, selected: bool) -> ArcweftRuntimeExecutor {
 }
 
 fn saved(runtime: &ArcweftRuntimeExecutor) -> AwbcProductExecutorSaveSnapshot {
-    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = runtime.snapshot().unwrap();
+    let snapshot = runtime.snapshot_product_for_save().unwrap();
     let saved = AwbcProductExecutorSaveSnapshot::from_live(
         &snapshot,
         runtime.admitted_product_awbc_program().unwrap(),

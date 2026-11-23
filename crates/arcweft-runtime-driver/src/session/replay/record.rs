@@ -473,7 +473,7 @@ impl RootReplayRecorderV1 {
         }
         let active = session
             .executor
-            .product_active_entry_snapshot_identity()
+            .active_entry_snapshot_identity()
             .map_err(|error| RootReplayRecordingError::RuntimeInspection {
                 message: error.to_string(),
             })?

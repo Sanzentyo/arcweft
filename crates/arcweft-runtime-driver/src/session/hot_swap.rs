@@ -55,7 +55,7 @@ impl BundleSession {
         )?);
         let active_entry = self
             .executor
-            .product_active_entry_snapshot_identity()
+            .active_entry_snapshot_identity()
             .map_err(|error| BundleHotSwapError::ActiveEntry {
                 message: error.to_string(),
             })?

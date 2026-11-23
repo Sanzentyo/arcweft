@@ -5,7 +5,9 @@ use crate::awbc::product_step::{
     AwbcProductStepExecutor,
 };
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
-use crate::engine::{Engine, EngineStartError, FlowFiber};
+use crate::engine::{
+    Engine, EngineStartError, FlowFiber, NativeEngineSaveError, NativeEngineSaveSnapshot,
+};
 use crate::entry::ActiveEntrySnapshotV1;
 use crate::plan::{EntryRuntimeId, RuntimeFlowInvocation, RuntimePlan};
 use crate::pure::RuntimeCallBackend;
@@ -81,6 +83,8 @@ impl ArcweftExecutionTier {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ArcweftRuntimeExecutorSnapshot {
+    /// RuntimePlan VM and Structured AOT share the same retained execution state.
+    Native(Box<NativeEngineSaveSnapshot>),
     AwbcProduct(AwbcProductExecutorSnapshot),
 }
 
@@ -99,18 +103,20 @@ impl ArcweftRuntimeExecutorOwnedRestoreError {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ArcweftRuntimeExecutorSnapshotError {
-    #[error("runtime executor tier `{tier}` does not support session save/load snapshots")]
+    #[error("runtime executor tier `{tier}` cannot use Product AWBC snapshots")]
     UnsupportedTier { tier: &'static str },
     #[error("executor snapshot tier `{snapshot}` cannot be restored into `{actual}`")]
     TierMismatch {
         snapshot: &'static str,
         actual: &'static str,
     },
-    #[error("Product save requires quiescence for Need identities {needs:?}")]
+    #[error("executor save requires quiescence for Need identities {needs:?}")]
     NeedsQuiescence { needs: Vec<NeedId> },
+    #[error("Native snapshot error: {message}")]
+    Native { message: String },
     #[error("product AWBC snapshot error: {message}")]
     ProductAwbc { message: String },
-    #[error("product AWBC root snapshot error: {message}")]
+    #[error("executor root snapshot error: {message}")]
     Root { message: String },
 }
 
@@ -119,6 +125,20 @@ impl From<AwbcProductStepBuildError> for ArcweftRuntimeExecutorSnapshotError {
         match error {
             AwbcProductStepBuildError::RootSnapshot { message } => Self::Root { message },
             error => Self::ProductAwbc {
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
+impl From<NativeEngineSaveError> for ArcweftRuntimeExecutorSnapshotError {
+    fn from(error: NativeEngineSaveError) -> Self {
+        match error {
+            NativeEngineSaveError::NeedsQuiescence { needs } => Self::NeedsQuiescence { needs },
+            NativeEngineSaveError::Root(error) => Self::Root {
+                message: error.to_string(),
+            },
+            error => Self::Native {
                 message: error.to_string(),
             },
         }
@@ -919,25 +939,34 @@ impl ArcweftRuntimeExecutor {
         &self,
     ) -> Result<ArcweftRuntimeExecutorSnapshot, ArcweftRuntimeExecutorSnapshotError> {
         match &self.inner {
-            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
-                match executor.snapshot_for_save() {
-                    Ok(snapshot) => Ok(ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot)),
-                    Err(AwbcProductSaveError::NeedsQuiescence { needs }) => {
-                        Err(ArcweftRuntimeExecutorSnapshotError::NeedsQuiescence { needs })
-                    }
-                    Err(AwbcProductSaveError::InvalidSnapshot { message }) => {
-                        Err(ArcweftRuntimeExecutorSnapshotError::ProductAwbc { message })
-                    }
-                }
-            }
-            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_)
-            | ArcweftRuntimeExecutorInner::Vacant => {
-                Err(ArcweftRuntimeExecutorSnapshotError::UnsupportedTier {
-                    tier: self.tier().as_str(),
-                })
-            }
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(vm)
+            | ArcweftRuntimeExecutorInner::StructuredAot(AotExecutor { vm, .. }) => Ok(
+                ArcweftRuntimeExecutorSnapshot::Native(Box::new(vm.engine.snapshot_for_save()?)),
+            ),
+            ArcweftRuntimeExecutorInner::AwbcProduct(_) => self
+                .snapshot_product_for_save()
+                .map(ArcweftRuntimeExecutorSnapshot::AwbcProduct),
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
+    }
+
+    /// Captures a Product snapshot for owners launched directly from AWFB.
+    pub fn snapshot_product_for_save(
+        &self,
+    ) -> Result<AwbcProductExecutorSnapshot, ArcweftRuntimeExecutorSnapshotError> {
+        let ArcweftRuntimeExecutorInner::AwbcProduct(executor) = &self.inner else {
+            return Err(ArcweftRuntimeExecutorSnapshotError::UnsupportedTier {
+                tier: self.tier().as_str(),
+            });
+        };
+        executor.snapshot_for_save().map_err(|error| match error {
+            AwbcProductSaveError::NeedsQuiescence { needs } => {
+                ArcweftRuntimeExecutorSnapshotError::NeedsQuiescence { needs }
+            }
+            AwbcProductSaveError::InvalidSnapshot { message } => {
+                ArcweftRuntimeExecutorSnapshotError::ProductAwbc { message }
+            }
+        })
     }
 
     /// Binds an inert save to the exact admitted Product program and Source leases.
@@ -983,16 +1012,25 @@ impl ArcweftRuntimeExecutor {
     }
 
     fn restore_snapshot_with_policy(
-        self,
+        mut self,
         snapshot: ArcweftRuntimeExecutorSnapshot,
         policy: crate::task::NeedProducerRestorePolicy,
         target: AwbcProductSnapshotRestoreTarget<'_>,
     ) -> Result<Self, ArcweftRuntimeExecutorOwnedRestoreError> {
-        match (self.inner, snapshot) {
-            (
-                ArcweftRuntimeExecutorInner::AwbcProduct(executor),
-                ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot),
-            ) => match executor
+        let snapshot = match snapshot {
+            ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) => snapshot,
+            ArcweftRuntimeExecutorSnapshot::Native(snapshot) => {
+                return match self.restore_native_snapshot(*snapshot, target) {
+                    Ok(()) => Ok(self),
+                    Err(reason) => Err(ArcweftRuntimeExecutorOwnedRestoreError {
+                        reason,
+                        owner: self,
+                    }),
+                };
+            }
+        };
+        match self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => match executor
                 .vm
                 .restore_snapshot_transaction(snapshot, policy, target)
             {
@@ -1006,7 +1044,7 @@ impl ArcweftRuntimeExecutor {
                     reason: error.into(),
                 }),
             },
-            (inner, ArcweftRuntimeExecutorSnapshot::AwbcProduct(_)) => {
+            inner => {
                 let owner = Self::from_inner(inner);
                 Err(ArcweftRuntimeExecutorOwnedRestoreError {
                     reason: ArcweftRuntimeExecutorSnapshotError::TierMismatch {
@@ -1017,6 +1055,33 @@ impl ArcweftRuntimeExecutor {
                 })
             }
         }
+    }
+
+    fn restore_native_snapshot(
+        &mut self,
+        snapshot: NativeEngineSaveSnapshot,
+        target: AwbcProductSnapshotRestoreTarget<'_>,
+    ) -> Result<(), ArcweftRuntimeExecutorSnapshotError> {
+        let vm = match &mut self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(vm)
+            | ArcweftRuntimeExecutorInner::StructuredAot(AotExecutor { vm, .. }) => vm,
+            _ => {
+                return Err(ArcweftRuntimeExecutorSnapshotError::TierMismatch {
+                    snapshot: "native_plan",
+                    actual: self.tier().as_str(),
+                });
+            }
+        };
+        if let AwbcProductSnapshotRestoreTarget::Entry(entry) = target
+            && vm.engine.selected_entry() != Some(entry)
+        {
+            return Err(ArcweftRuntimeExecutorSnapshotError::Root {
+                message: "restore target differs from the selected Native entry".into(),
+            });
+        }
+        vm.engine
+            .restore_save_snapshot(snapshot)
+            .map_err(Into::into)
     }
 
     /// Confirms the exact committed root-command prefix after the driver has
@@ -1061,16 +1126,18 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
-    pub fn product_active_entry_snapshot_identity(
+    pub fn active_entry_snapshot_identity(
         &self,
     ) -> Result<Option<ActiveEntrySnapshotV1>, RootRuntimeError> {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
                 executor.vm.active_entry_snapshot_identity().map(Some)
             }
-            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_)
-            | ArcweftRuntimeExecutorInner::Vacant => Ok(None),
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(vm)
+            | ArcweftRuntimeExecutorInner::StructuredAot(AotExecutor { vm, .. }) => {
+                Ok(vm.engine.selected_entry().cloned())
+            }
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
         }
     }
 

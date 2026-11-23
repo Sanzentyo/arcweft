@@ -138,6 +138,8 @@ impl Engine {
             Arc::clone(function.plan()),
             crate::task::GenerationId::new(0),
         );
+        engine.main_launch =
+            super::NativeMainLaunch::Invocation(NativeInvocationRoot::Function(site));
         engine.activate_function_prepared(
             FunctionReturnContinuation::Function { site },
             site,
@@ -281,6 +283,8 @@ impl Engine {
             }
         };
         let mut engine = Self::new_with_shared_plan(plan, crate::task::GenerationId::new(0));
+        engine.main_launch =
+            super::NativeMainLaunch::Invocation(NativeInvocationRoot::Program(program));
         engine.activate_program_prepared(program, site, inputs.into_owned());
         Ok(engine)
     }
@@ -321,7 +325,6 @@ impl Engine {
                 RuntimeFunctionInputSource::Parameter { .. } => parameters.push(value),
             }
         }
-        self.main_started = true;
         self.fiber.frame.status = FlowFiberStatus::Running;
         let plan_owner = Arc::clone(&self.plan);
         let declaration = plan_owner

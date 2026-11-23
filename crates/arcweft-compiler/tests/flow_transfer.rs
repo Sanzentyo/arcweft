@@ -166,8 +166,7 @@ fn explicit_flow_inputs_reach_the_decoded_awbc_receiving_root() {
             );
             assert!(result.output.diagnostics.is_empty(), "{:?}", result.output);
             assert!(result.stats.executed_ops <= 1);
-            let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) =
-                executor.snapshot().unwrap();
+            let snapshot = executor.snapshot_product_for_save().unwrap();
             let saved = AwbcProductExecutorSaveSnapshot::from_live(
                 &snapshot,
                 executor.admitted_product_awbc_program().unwrap(),

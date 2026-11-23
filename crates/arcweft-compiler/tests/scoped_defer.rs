@@ -112,7 +112,7 @@ fn saved_awbc_input_steps(
     move |input, options| {
         let mut current = executor.take().unwrap();
         let result = current.step_with_pure_backend(input, options, &mut backend);
-        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = current.snapshot().unwrap();
+        let snapshot = current.snapshot_product_for_save().unwrap();
         let saved = AwbcProductExecutorSaveSnapshot::from_live(
             &snapshot,
             current.admitted_product_awbc_program().unwrap(),
@@ -360,7 +360,7 @@ fn saved_defer_rejects_stale_frontier_and_unpaired_callback_owner() {
     let mut backend = VmRuntimePureCallBackend::default();
     for _ in 0..160 {
         executor.step_with_pure_backend(Default::default(), Default::default(), &mut backend);
-        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = executor.snapshot().unwrap();
+        let snapshot = executor.snapshot_product_for_save().unwrap();
         let saved = AwbcProductExecutorSaveSnapshot::from_live(
             &snapshot,
             executor.admitted_product_awbc_program().unwrap(),
@@ -388,7 +388,7 @@ fn saved_defer_rejects_stale_frontier_and_unpaired_callback_owner() {
         let mut forged = original.clone();
         forged["child_fibers"][index]["owner"] = serde_json::json!("Independent");
         executor = reject_save(executor, forged);
-        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = executor.snapshot().unwrap();
+        let snapshot = executor.snapshot_product_for_save().unwrap();
         let saved = AwbcProductExecutorSaveSnapshot::from_live(
             &snapshot,
             executor.admitted_product_awbc_program().unwrap(),

@@ -91,8 +91,7 @@ fn defaulted_external_value_keeps_omitted_formals_in_compiler_projection() {
             &mut |input, options| {
                 let mut executor = awbc.take().unwrap();
                 let result = executor.step_with_pure_backend(input, options, &mut awbc_backend);
-                let ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved) =
-                    executor.snapshot().unwrap();
+                let saved = executor.snapshot_product_for_save().unwrap();
                 let saved =
                     arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
                         &saved,

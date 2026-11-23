@@ -2169,7 +2169,9 @@ fn inert_save_binding_defers_frame_admission_to_owned_restore() {
     let before = executor
         .snapshot()
         .expect("the original executor snapshots");
-    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(image) = &before;
+    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(image) = &before else {
+        panic!("expected Product AWBC execution");
+    };
     let mut saved = AwbcProductExecutorSaveSnapshot::from_live(
         image,
         executor.admitted_product_awbc_program().unwrap(),

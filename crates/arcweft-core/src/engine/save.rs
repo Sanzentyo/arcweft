@@ -3,13 +3,15 @@
 
 use super::{
     Engine, FlowFiber, NativeEngineRollbackImage, NativeFlowExecutionFrameRollbackImage,
-    dialogue::DialogueActivationStoreRollbackImage, pure_helper_i64_call_shapes,
+    NativeMainLaunch, dialogue::DialogueActivationStoreRollbackImage, pure_helper_i64_call_shapes,
 };
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::entry::{ActiveEntrySnapshotV1, RuntimeNominalDeclarationId, RuntimeSchemaLimits};
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::task_source::RuntimeTaskSourceProgram;
-use crate::presentation::resources::{PresentationBanksSaveSnapshot, PresentationLedgerLimits};
+use crate::presentation::resources::{
+    PresentationBanks, PresentationBanksSaveSnapshot, PresentationLedgerLimits,
+};
 use crate::root::{RootStateSaveSnapshotError, RootStateSaveSnapshotV1};
 use crate::task::{
     NeedId, NeedProducerRestorePolicy, RuntimeNeedProducerRegistrySaveSnapshot, RuntimeProgramOwner,
@@ -36,12 +38,11 @@ type NativeEngineSaveState = Engine<
 
 /// Untrusted, serializable Native Engine state. A matching Engine must admit
 /// its execution and ownership coordinates before it can be resumed.
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeEngineSaveSnapshot {
     executable: [u8; 32],
     artifact: Option<RuntimeArtifactFingerprint>,
-    root_entry: Option<ActiveEntrySnapshotV1>,
     state: NativeEngineSaveState,
 }
 
@@ -51,12 +52,12 @@ pub enum NativeEngineSaveError {
     Program,
     #[error("Native save belongs to a different runtime generation")]
     Generation,
-    #[error("Native save differs from the destination's startup state or stateful entry")]
+    #[error("Native save belongs to a different original invocation or entry")]
     Entry,
     #[error("Native save requires quiescence for Needs {needs:?}")]
     NeedsQuiescence { needs: Vec<NeedId> },
     #[error(transparent)]
-    Root(#[from] RootStateSaveSnapshotError),
+    Root(#[from] Box<RootStateSaveSnapshotError>),
     #[error("invalid Native save state: {0}")]
     State(String),
 }
@@ -75,7 +76,7 @@ macro_rules! transfer_engine_save_state {
             need_publications: $source.need_publications,
             latest_need_publications: $source.latest_need_publications,
             need_publication_frontiers: $source.need_publication_frontiers,
-            main_started: $source.main_started,
+            main_launch: $source.main_launch,
             next_fiber_id: $source.next_fiber_id,
             next_scheduled_scope_sequence: $source.next_scheduled_scope_sequence,
             flow_defer_frontier: $source.flow_defer_frontier,
@@ -104,7 +105,13 @@ impl Engine {
                 "an operation is still being dispatched".into(),
             ));
         }
-        let root_entry = self.save_root_entry()?;
+        if let Some(root) = &self.root
+            && self.selected_entry().is_none_or(|entry| {
+                entry.id != root.active().entry || entry.binding != root.active().binding
+            })
+        {
+            return Err(NativeEngineSaveError::Entry);
+        }
         let image = self
             .inert_rollback_image()
             .map_err(NativeEngineSaveError::State)?;
@@ -118,11 +125,11 @@ impl Engine {
                 &image.need_producers,
             ),
             actions: image.actions.snapshot_rows_admitted(),
-            presentation: image.presentation.as_ref().map(|banks| banks.inert_state_admitted()),
+            presentation: image.presentation.as_ref().map(PresentationBanks::inert_state_admitted),
             root: image
                 .root
                 .as_ref()
-                .map(RootStateSaveSnapshotV1::from_runtime_image)
+                .map(|root| RootStateSaveSnapshotV1::from_runtime_image(root).map_err(Box::new))
                 .transpose()?,
             fiber: detach(image.fiber),
             parked_main: image.parked_main.map(detach),
@@ -132,14 +139,12 @@ impl Engine {
         Ok(NativeEngineSaveSnapshot {
             executable: *self.plan.executable_semantic_digest().as_bytes(),
             artifact: self.plan.artifact(),
-            root_entry,
             state,
         })
     }
 
-    /// Resumes a saved session for the same Plan and generation. Select the
-    /// stateful entry before restoring its state. Admission failure leaves
-    /// the destination intact.
+    /// Resumes a saved session for the same Plan, generation and original
+    /// launch. Admission failure leaves the destination intact.
     pub fn restore_save_snapshot(
         &mut self,
         snapshot: NativeEngineSaveSnapshot,
@@ -153,10 +158,7 @@ impl Engine {
         if state.generation != self.generation {
             return Err(NativeEngineSaveError::Generation);
         }
-        if snapshot.root_entry != self.save_root_entry()?
-            || snapshot.root_entry.is_some() != state.root.is_some()
-            || self.main_started != state.main_started
-        {
+        if self.main_launch != state.main_launch || self.root.is_some() != state.root.is_some() {
             return Err(NativeEngineSaveError::Entry);
         }
 
@@ -174,11 +176,15 @@ impl Engine {
         if !needs.is_empty() {
             return Err(NativeEngineSaveError::NeedsQuiescence { needs });
         }
-        let root = state
-            .root
-            .zip(snapshot.root_entry)
-            .map(|(root, entry)| root.into_runtime_image(&entry, &mut admission))
-            .transpose()?;
+        let root = if let Some(root) = state.root {
+            let entry = self.selected_entry().ok_or(NativeEngineSaveError::Entry)?;
+            Some(
+                root.into_runtime_image(entry, &mut admission)
+                    .map_err(Box::new)?,
+            )
+        } else {
+            None
+        };
         let actions = crate::action::RuntimeActionMailbox::from_rows(state.actions, &mut admission)
             .map_err(|error| NativeEngineSaveError::State(error.to_string()))?;
         let presentation = state.presentation.map(|banks| {
@@ -213,23 +219,11 @@ impl Engine {
         Ok(())
     }
 
-    fn save_root_entry(&self) -> Result<Option<ActiveEntrySnapshotV1>, NativeEngineSaveError> {
-        self.root
-            .as_ref()
-            .map(|root| {
-                let active = root.active();
-                self.plan
-                    .entries()
-                    .iter()
-                    .find(|entry| entry.id == active.entry && entry.binding == active.binding)
-                    .map(|entry| ActiveEntrySnapshotV1 {
-                        id: entry.id.clone(),
-                        kind: entry.kind.clone(),
-                        binding: entry.binding,
-                    })
-                    .ok_or(NativeEngineSaveError::Entry)
-            })
-            .transpose()
+    pub(crate) fn selected_entry(&self) -> Option<&ActiveEntrySnapshotV1> {
+        match &self.main_launch {
+            NativeMainLaunch::Entry(entry) => Some(entry),
+            _ => None,
+        }
     }
 }
 

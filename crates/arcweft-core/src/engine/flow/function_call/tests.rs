@@ -326,7 +326,7 @@ fn completed_handle_program_with_prefix(
         value,
     ));
     engine.fiber.frame.status = crate::engine::FlowFiberStatus::Done(crate::engine::FlowExit::Done);
-    engine.main_started = true;
+    engine.main_launch = crate::engine::NativeMainLaunch::Standalone;
     engine.need_producers = crate::tests::program_custody::pending_program_need(
         engine.generation,
         engine.fiber.persistent_id,
@@ -378,7 +378,7 @@ fn program_continuation_accepts_detached_prefix_and_retains_native_need_result_c
         RuntimeValue::NeedHandle(need.clone()),
     ));
     engine.fiber.frame.status = crate::engine::FlowFiberStatus::Done(crate::engine::FlowExit::Done);
-    engine.main_started = true;
+    engine.main_launch = crate::engine::NativeMainLaunch::Standalone;
     let mut engine = engine
         .continue_program(id, vec![RuntimeProgramInput::PreviousResult])
         .unwrap();

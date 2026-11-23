@@ -118,7 +118,7 @@ fn returns(source: &str, expected: &str) {
 }
 
 fn restore_product(executor: ArcweftRuntimeExecutor) -> ArcweftRuntimeExecutor {
-    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = executor.snapshot().unwrap();
+    let snapshot = executor.snapshot_product_for_save().unwrap();
     let saved = AwbcProductExecutorSaveSnapshot::from_live(
         &snapshot,
         executor.admitted_product_awbc_program().unwrap(),
@@ -202,8 +202,7 @@ entry cli @entry.main { goto @flow.main }
             assert!(step.output.diagnostics.is_empty(), "{backend:?}: {step:?}");
             let terminal = matches!(executor.fiber().frame.status, FlowFiberStatus::Done(_));
             if !matches!(backend, Backend::Native) {
-                let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) =
-                    executor.snapshot().unwrap();
+                let snapshot = executor.snapshot_product_for_save().unwrap();
                 let saved = AwbcProductExecutorSaveSnapshot::from_live(
                     &snapshot,
                     executor.admitted_product_awbc_program().unwrap(),
@@ -553,7 +552,7 @@ fn forged_program_child_save_rejects_without_losing_the_original_handle_or_resul
                 assert!(result.output.requests.tasks.is_empty());
             }
             let started = started.expect("the actual accepted Program handle was published");
-            let ArcweftRuntimeExecutorSnapshot::AwbcProduct(before) = runtime.snapshot().unwrap();
+            let before = runtime.snapshot_product_for_save().unwrap();
             assert_eq!(before.child_fibers.len(), 1);
             for case in 0..3 {
                 let mut saved = AwbcProductExecutorSaveSnapshot::from_live(
@@ -596,8 +595,7 @@ fn forged_program_child_save_rejects_without_losing_the_original_handle_or_resul
                     ),
                     "case={case}: {reason}"
                 );
-                let ArcweftRuntimeExecutorSnapshot::AwbcProduct(after) =
-                    runtime.snapshot().unwrap();
+                let after = runtime.snapshot_product_for_save().unwrap();
                 assert_eq!(after, before, "case={case}, backend={backend:?}");
             }
             thread_bool_result_from(runtime, backend, returned, vec![started]);

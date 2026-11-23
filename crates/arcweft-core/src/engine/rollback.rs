@@ -1305,7 +1305,7 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
         admission.validate_metadata(&(
             self.generation,
             self.task_request_quota_remaining,
-            self.main_started,
+            &self.main_launch,
             self.next_fiber_id,
             self.next_scheduled_scope_sequence,
             self.flow_defer_frontier,
