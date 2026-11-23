@@ -22257,6 +22257,20 @@ Native とWebの候補はそれぞれ実キャプチャを再現し、同じAWFB
 
 リリースWasmから `wasm-bindgen --remove-name-section` で15,587,988 bytesのデバッグ名セクションを除くと、62,588,615 bytesから47,000,627 bytesになった。デバッグ名を除いた全セクションとヘッダーを順にハッシュ化した結果は処理前後で一致し、処理後の全体SHA-256は `fd1e10be6a0e6e185e0905d25aea10f944beccef86184358234923d556cfc993`。AWFB の SHA-256 は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4`。
 
-同じAWFBで既存の smoke を実行し、固定の `openBooted` 10秒を変えずにChrome 8件が成功して終了0。最初の再検証で取得したNativeの5枚と、この実行のWebの5枚を160 msで照合した。既定の比較器と `imq 0.1.0` の両方が成功し、全RGBAでMSE／MAE／最大誤差0、色SSIM 1。4組は3,686,400サンプル、縮小の1組は2,073,600サンプル。今回の検証はレシピ各段の分割実行で、`just webgpu-parity` の一括コマンドの結果とは区別する。
+同じAWFBで既存の smoke を実行し、固定の `openBooted` 10秒を変えずにChrome 8件が成功して終了0。最初の再検証で取得したNativeの5枚と、この実行のWebの5枚を160 msで照合した。既定の比較器と `imq 0.1.0` の両方が成功し、全RGBAでMSE／MAE／最大誤差0、色SSIM 1。4組は3,686,400サンプル、縮小の1組は2,073,600サンプル。この比較では `just webgpu-parity` の各段を分けて実行した。
 
 変更 `b1a9838ec4894fd3936412d3252338df7313d851` を通常 push し、公開 ref と変更3ファイルの blob を照合した。Node の構文検査と差分の空白検査は終了0。
+
+<a id="typed-host-asset-kind"></a>
+
+## 2026-11-24 — 素材の要求種別を producer から両ホストで共有
+
+検証開始の公開 `main` は `d7a659cc3b9b6353cddfa77392c9d75deeda3eda`。追跡ファイルは一致し、既存の未追跡ディレクトリが一つあった。最終 Source `30c5f586ef3071c8c3a296b2d93468a7483f37e3` は通常 push 後に公開 ref と12ファイルの blob を照合した。
+
+選択済みの producer から共通 resolver まで `AssetLoadKind` を保持する。Native と Web は同じ型付き公開口を呼び、個別の文字列分岐を廃止した。version 1 の要求JSONと descriptor は `image`／`voice` の表記を維持する。未知の kind は保存要求を生成する前に拒否する。生のホスト template も画像・音声の有効な operation から種別を構築する。ソース仕様の参照例は `asset.image` に訂正した。
+
+`cargo nextest run --offline --locked -p arcweft-core -p arcweft-bundle-assets -p arcweft-runtime-host -p arcweft-player-web -p arcweft-runtime-plan -p arcweft-runtime-driver -p arcweft-cli --lib --test awbc_product_parity --test awbc_product_session --test runtime_native_options --no-fail-fast --no-tests fail --status-level fail --final-status-level fail --failure-output final` は10バイナリで2,979件すべて成功（slow 2）、1選択外、293.546秒、終了0。実行 ID `99147e4c-01f5-4e27-9fb4-bde0eb7d54f0`。version 1 JSONの両種別の完全一致、未知種別の拒否、全14 variant の共有 descriptor、Native／decoded AWBC の元producer key、両ホストの実カタログとセッションを含む。
+
+`cargo check --offline --locked --workspace --all-targets --all-features` と変更Rustの書式・差分空白検査は終了0。Cargoの全機能で解決した Core の逆依存は全ターゲット53パッケージ、Windowsは52パッケージ。全workspace Clippy、構造ゲート、このRust変更での一括WebGPU比較、全Windows逆依存の終端は未確認。
+
+`.arcw` の最小 Flow で `let _result = await voice.load(@voice.alice.opening.001)` を `arcw check --json` すると、`sema.final_analysis` の `semantic value resolution failed` で終了1。同じ形で `asset.image(@asset:.bg.room)` は終了0。`voice.load(@asset:.voice.opening)` は `has no admissible final type` で終了1だった。CLI SHA-256 は `a20cda58b619e651a377569743ffca9a4deaa1fed22d296e10bbd8327ea68fe8`。ソースの `Ref<Voice>` とバンドルの音声資源を結び付ける条件が残る。
