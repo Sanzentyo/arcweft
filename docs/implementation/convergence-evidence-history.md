@@ -22020,3 +22020,7 @@ Windows の Sema 対象 nextest は `test(nominal_schema) | test(rust_adt) | tes
 実 `arcw run` は、`State { cell: Option<Cell> }` に `DataFormat::Json` と `42i64` を持つ `Cell` を格納し、`match state.cell` の `.Some` で値を読み出す例を headless の Native `bytecode-vm` と `awbc-product` の両方で実行した。各3操作で `return 42` と終了0。Native は2操作で停止して4,198 bytes の AWFS を保存し、別プロセスの Native AOT でステップ2から再開して同じ値を返した。最初に `--entry main` で試した2回はセレクターの検査で終了2、成功時は `--entry entry.main` を指定した。
 
 Cargo の全機能・全ターゲットの依存グラフでは Sema と推移的逆依存の計22パッケージ。Windows の `cargo check --offline --locked --workspace --all-targets --all-features` は終了0。
+
+Windows の逆依存 nextest は `--workspace --lib --tests --no-fail-fast` に `rdeps(=arcweft-lang-sema) & (package(=arcweft-lang-sema) | test(nominal) | test(rust_adt) | test(data_codec) | test(retention) | test(snapshot) | test(restore) | test(record_projection))` を指定した。該当する11パッケージの2,197件を実行し、2,187件成功（うち slow 3件）、10件失敗、2,913件選択外、終了100。[直前の実行](#checked-promotion-obligations)と Sema の型・効果制約の失敗 ID 10件が一致し、新規失敗 ID は0件。Compiler の成功68件には DataFormat の元の列挙型所有者、Rust ADT の再帰と実行時型引数、再帰型を捕捉したハンドラーの Native／AWBC 実行、復元後に元の上限拒否を再現する View が含まれる。
+
+同範囲の workspace Clippy は警告付きで終了0。`visit_type` の `too_many_lines`（191／100）、既存のエラー型を返す関数の `result_large_err` などを出力した。検証後の `target` は188,036,089,893 bytes（約188.0 GB）。
