@@ -136,10 +136,11 @@ pub(super) fn catalog_asset_type<E: crate::types::TypeEffectDomain>(
 ) -> TypeKind<E> {
     use arcweft_id::CatalogResourceId;
 
-    TypeKind::entity_ref(match asset {
+    let kind = match asset {
         CatalogResourceId::Asset(_) => crate::types::EntityKind::Asset,
         CatalogResourceId::Voice(_) => crate::types::EntityKind::Voice,
-    })
+    };
+    TypeKind::Ref(crate::types::EntityType::new(kind, None))
 }
 
 #[cfg(test)]
