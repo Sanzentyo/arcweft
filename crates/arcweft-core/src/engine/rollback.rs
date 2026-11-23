@@ -1858,26 +1858,32 @@ impl NativeEngineRollbackImage {
         let mut host_correlations = BTreeSet::new();
         let mut program_launches = BTreeSet::new();
         let mut validate_waits = |frame: &super::NativeFlowExecutionFrameRollbackImage,
-                                  launch: Option<crate::task::TaskCorrelation>|
+                                  launch: Option<crate::task::TaskCorrelation>,
+                                  dialogue_host_call: Option<
+            &super::host_call::NativeHostCallContinuation,
+        >|
          -> Result<(), String> {
+            let frame_host_call = match &frame.status {
+                FlowFiberStatus::HostCall(state) => Some(state),
+                _ => None,
+            };
+            for state in frame_host_call.into_iter().chain(dialogue_host_call) {
+                if state.sequence >= self.next_host_call_sequence
+                    || !host_sequences.insert(state.sequence)
+                    || !host_correlations.insert(state.correlation)
+                    || !receipts
+                        .task_spec(state.correlation)
+                        .is_some_and(|spec| state.matches_receipt(expected, spec))
+                {
+                    return Err(
+                        "Native HostCall differs from its issued task receipt or sequence".into(),
+                    );
+                }
+            }
             if let Some(wait) = &frame.await_observer {
                 self.validate_wait_receipt(&receipts, &wait.handle, wait.observed_through)?;
             }
             match &frame.status {
-                FlowFiberStatus::HostCall(state) => {
-                    if state.sequence >= self.next_host_call_sequence
-                        || !host_sequences.insert(state.sequence)
-                        || !host_correlations.insert(state.correlation)
-                        || !receipts
-                            .task_spec(state.correlation)
-                            .is_some_and(|spec| state.matches_receipt(expected, spec))
-                    {
-                        return Err(
-                            "Native HostCall differs from its issued task receipt or sequence"
-                                .into(),
-                        );
-                    }
-                }
                 FlowFiberStatus::NeedWaiting(wait) => {
                     self.validate_wait_receipt(&receipts, &wait.handle, wait.observed_through)?;
                 }
@@ -1932,7 +1938,7 @@ impl NativeEngineRollbackImage {
                     fiber.frame.presentation_bank,
                 )
                 .map_err(|error| error.to_string())?;
-            validate_waits(&fiber.frame, task.map(|(correlation, _)| correlation))?;
+            validate_waits(&fiber.frame, task.map(|(correlation, _)| correlation), None)?;
         }
         if program_launches.len() != receipts.executing_program_count() {
             return Err(
@@ -1957,8 +1963,8 @@ impl NativeEngineRollbackImage {
                         .find(|fiber| fiber.id == parent)
                         .map(|fiber| fiber.execution)
                 },
-                |frame| {
-                    validate_waits(frame, None).map_err(|message| {
+                |frame, dialogue_host_call| {
+                    validate_waits(frame, None, dialogue_host_call).map_err(|message| {
                         crate::value::AwbcRuntimeValueSnapshotError::Message { message }
                     })
                 },

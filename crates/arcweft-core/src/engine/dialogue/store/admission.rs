@@ -96,56 +96,132 @@ where
                 .inspect_err(|error| admission.retain_failure(error.clone()))?;
         }
         if let Some(pending) = &self.pending_line_operation {
-            pending.admit_roots(admission)?;
+            let Some(crate::task::RuntimeProgramOwner::Plan(plan)) =
+                admission.program_owner().cloned()
+            else {
+                return Err(invalid_shape(
+                    "dialogue command has no original Plan",
+                    admission,
+                ));
+            };
+            let (pattern, _) = pending
+                .declaration(self.activation_operation(&plan))
+                .ok_or_else(|| {
+                    invalid_shape(
+                        "dialogue command has no original activation operation",
+                        admission,
+                    )
+                })?;
+            let expected = pattern
+                .map(|pattern| {
+                    plan.type_table()
+                        .get(pattern.ty())
+                        .map(|ty| ty.semantic_identity())
+                        .ok_or_else(|| {
+                            invalid_shape("dialogue command has no original result type", admission)
+                        })
+                })
+                .transpose()?;
+            pending.admit_roots(expected, binding, admission)?;
         }
         if let Some(pending) = &self.pending_host_call {
-            admission.validate_metadata(&(
-                &pending.id,
-                pending.result.get().get(),
-                pending
-                    .binding
-                    .as_ref()
-                    .map(|pattern| pattern.ty().get().get()),
-            ))?;
+            let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
+            else {
+                return Err(invalid_shape(
+                    "dialogue host call has no original Plan",
+                    admission,
+                ));
+            };
+            if self.pending_line_operation.is_some()
+                || self.exiting_for_result
+                || !matches!(
+                    self.phase,
+                    crate::engine::DialogueRuntimePhase::Activating
+                        | crate::engine::DialogueRuntimePhase::Closing
+                )
+                || self.activation_source(plan).as_ref() != Some(&pending.operation)
+            {
+                return Err(invalid_shape(
+                    "dialogue host call differs from its activation operation",
+                    admission,
+                ));
+            }
+            pending.admit_retained(admission)?;
         }
         Ok(())
+    }
+}
+
+impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
+    pub(super) fn admit_pending_line_command<L>(
+        &self,
+        activation: &crate::runtime_id::DialogueActivationId,
+        line: &crate::line_task::RuntimeDialogueActivationState<
+            crate::runtime_id::RuntimePlanTypeId,
+            L,
+        >,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let Some(pending) = &self.pending_line_operation else {
+            return Ok(());
+        };
+        let command = pending.command();
+        let matches =
+            if let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner() {
+                pending
+                    .declaration(self.activation_operation(plan))
+                    .is_some_and(|(_, operation)| {
+                        command.activation() == activation
+                            && line
+                                .issued_command(command)
+                                .is_some_and(|issued| pending.matches_issued(operation, issued))
+                    })
+            } else {
+                false
+            };
+        if matches {
+            Ok(())
+        } else {
+            Err(invalid_shape(
+                "dialogue pending command differs from its issued activation command",
+                admission,
+            ))
+        }
     }
 }
 
 impl<V: RuntimeStoredValue> PendingLineOperation<V> {
     fn admit_roots(
         &self,
+        expected: Option<crate::pattern::RuntimeSemanticTypeId>,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata(self.command())?;
         match self {
-            Self::AcquireActor {
-                command,
-                binding,
-                value,
-                token,
+            Self::AcquireActor { value, token, .. } | Self::ActorLook { value, token, .. } => {
+                admission.validate_metadata(token)?;
+                match expected {
+                    Some(ty) => admission.validate_owned_typed_borrowed_in_invocation(
+                        value.borrowed_value(),
+                        ty,
+                        binding,
+                    )?,
+                    None => admission.validate_borrowed(value.borrowed_value())?,
+                }
+                let matches = matches!(value.borrowed_view(), RuntimeValueView::Opaque(_))
+                    && value.borrowed_view().line_handle_projection().is_ok_and(
+                        |handles| matches!(handles.as_slice(), [handle] if handle.token() == token),
+                    );
+                if !matches {
+                    return Err(invalid_shape(
+                        "dialogue command value differs from its retained handle",
+                        admission,
+                    ));
+                }
+                Ok(())
             }
-            | Self::ActorLook {
-                command,
-                binding,
-                value,
-                token,
-            } => {
-                admission.validate_metadata(&(
-                    command,
-                    binding.as_ref().map(|pattern| pattern.ty().get().get()),
-                    token,
-                ))?;
-                admission.validate_borrowed(value.borrowed_value())
-            }
-            Self::StartVoice {
-                command,
-                binding,
-                site,
-            } => admission.validate_metadata(&(
-                command,
-                binding.as_ref().map(|pattern| pattern.ty().get().get()),
-                site.index(),
-            )),
+            Self::StartVoice { .. } => Ok(()),
         }
     }
 }

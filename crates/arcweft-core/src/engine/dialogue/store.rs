@@ -1,3 +1,4 @@
+use super::super::host_call::NativeHostCallContinuation;
 #[cfg(test)]
 use crate::effect::RuntimeDropPolicy;
 use crate::engine::DialogueRuntimePhase;
@@ -99,7 +100,7 @@ pub(crate) struct DialogueActivationFrame<
     pub(in crate::engine) pending_scope_result:
         Option<super::scope::PendingActivationScopeResult<V>>,
     pub(in crate::engine) pending_line_operation: Option<PendingLineOperation<V>>,
-    pub(in crate::engine) pending_host_call: Option<PendingActivationHostCall>,
+    pub(in crate::engine) pending_host_call: Option<NativeHostCallContinuation>,
     pub(in crate::engine) failure: Option<super::DialogueExecutionError>,
 }
 
@@ -121,6 +122,31 @@ type NativeEngineDialogueFrameRollbackImage =
     EngineDialogueActivationFrame<NativeDialogueActivationFrameRollbackImage>;
 
 impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
+    pub(in crate::engine) fn activation_operation<'a>(
+        &self,
+        plan: &'a crate::plan::RuntimePlan,
+    ) -> Option<&'a crate::plan::FlowOp> {
+        plan.line_task_groups()
+            .get(self.task_group.index())?
+            .activation_ops()
+            .get(self.activation_pc)
+    }
+
+    pub(in crate::engine) fn activation_source(
+        &self,
+        plan: &crate::plan::RuntimePlan,
+    ) -> Option<super::super::NativeSourceOperation> {
+        use crate::plan::code::{RuntimeCodeOwner, RuntimeLineCodeBody};
+        super::super::NativeCodeCursor::root(
+            plan,
+            RuntimeCodeOwner::LineTask {
+                group: self.task_group,
+                body: RuntimeLineCodeBody::Activation,
+            },
+        )?
+        .source_operation_at_offset(plan, self.activation_pc)
+    }
+
     pub(in crate::engine) fn scope_result_handle_slots(
         &self,
         execution: crate::runtime_id::ExecutionInstanceId,
@@ -199,12 +225,13 @@ impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
         Ok(())
     }
 
-    fn admit_reducer<L>(
+    fn admit_line_state<L>(
         &self,
         activation: &DialogueActivationId,
         line: &RuntimeDialogueActivationState<RuntimePlanTypeId, L>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+        self.admit_pending_line_command(activation, line, admission)?;
         let DialogueLineTaskState::Live(reducer) = &self.line_task else {
             return Ok(());
         };
@@ -288,34 +315,24 @@ impl Clone for NativePendingLineOperationRollbackImage {
         match self {
             Self::AcquireActor {
                 command,
-                binding,
                 value,
                 token,
             } => Self::AcquireActor {
                 command: command.clone(),
-                binding: binding.clone(),
                 value: value.clone(),
                 token: token.clone(),
             },
             Self::ActorLook {
                 command,
-                binding,
                 value,
                 token,
             } => Self::ActorLook {
                 command: command.clone(),
-                binding: binding.clone(),
                 value: value.clone(),
                 token: token.clone(),
             },
-            Self::StartVoice {
-                command,
-                binding,
-                site,
-            } => Self::StartVoice {
+            Self::StartVoice { command } => Self::StartVoice {
                 command: command.clone(),
-                binding: binding.clone(),
-                site: *site,
             },
         }
     }
@@ -383,6 +400,7 @@ impl DialogueActivationStoreRollbackImage {
         ) -> Option<crate::runtime_id::ExecutionInstanceId>,
         mut admit_waits: impl FnMut(
             &super::super::NativeFlowExecutionFrameRollbackImage,
+            Option<&NativeHostCallContinuation>,
         ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
         use crate::plan::{FlowOp, RuntimeLineOperation};
@@ -406,10 +424,7 @@ impl DialogueActivationStoreRollbackImage {
                 let Some(FlowOp::LineOperation {
                     operation: RuntimeLineOperation::ActorLook { actor, .. },
                     ..
-                }) = plan
-                    .line_task_groups()
-                    .get(frame.task_group.index())
-                    .and_then(|group| group.activation_ops().get(frame.activation_pc))
+                }) = frame.activation_operation(plan)
                 else {
                     return false;
                 };
@@ -457,7 +472,7 @@ impl DialogueActivationStoreRollbackImage {
                 &active.frame.line_task,
             )?;
             active.frame.admit_scoped_defer_registrations(line)?;
-            active.frame.admit_reducer(activation, line, admission)
+            active.frame.admit_line_state(activation, line, admission)
         })?;
         self.registry.try_visit_active(|_, active, _| {
             active
@@ -467,7 +482,7 @@ impl DialogueActivationStoreRollbackImage {
                     active.frame.execution.env.function_instantiation(),
                     |frame, admission| {
                         frame.admit_owned_values(admission, None)?;
-                        admit_waits(frame)
+                        admit_waits(frame, active.frame.pending_host_call.as_ref())
                     },
                 )
                 .map_err(Into::into)
@@ -563,81 +578,59 @@ impl NativeDialogueBindingRollbackImage {
 }
 
 impl NativePendingLineOperationRollbackImage {
-    fn from_live(
+    pub(in crate::engine) fn from_live(
         pending: &PendingLineOperation,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         Ok(match pending {
             PendingLineOperation::AcquireActor {
                 command,
-                binding,
                 value,
                 token,
             } => Self::AcquireActor {
                 command: command.clone(),
-                binding: binding.clone(),
                 value: inert_dialogue_value(value, owner)?,
                 token: token.clone(),
             },
             PendingLineOperation::ActorLook {
                 command,
-                binding,
                 value,
                 token,
             } => Self::ActorLook {
                 command: command.clone(),
-                binding: binding.clone(),
                 value: inert_dialogue_value(value, owner)?,
                 token: token.clone(),
             },
-            PendingLineOperation::StartVoice {
-                command,
-                binding,
-                site,
-            } => Self::StartVoice {
+            PendingLineOperation::StartVoice { command } => Self::StartVoice {
                 command: command.clone(),
-                binding: binding.clone(),
-                site: *site,
             },
         })
     }
 
-    fn into_live(
+    pub(in crate::engine) fn into_live(
         self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<PendingLineOperation, String> {
         Ok(match self {
             Self::AcquireActor {
                 command,
-                binding,
                 value,
                 token,
             } => PendingLineOperation::AcquireActor {
                 command,
-                binding,
                 value: live_dialogue_value(value, owner)?,
                 token,
             },
             Self::ActorLook {
                 command,
-                binding,
                 value,
                 token,
             } => PendingLineOperation::ActorLook {
                 command,
-                binding,
                 value: live_dialogue_value(value, owner)?,
                 token,
             },
-            Self::StartVoice {
-                command,
-                binding,
-                site,
-            } => PendingLineOperation::StartVoice {
-                command,
-                binding,
-                site,
-            },
+            Self::StartVoice { command } => PendingLineOperation::StartVoice { command },
         })
     }
 }
@@ -837,13 +830,6 @@ impl DialogueActivationFrame {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PendingActivationHostCall {
-    pub(in crate::engine) id: crate::step::RuntimeHostCallId,
-    pub(in crate::engine) result: RuntimePlanTypeId,
-    pub(in crate::engine) binding: Option<RuntimePattern>,
-}
-
 /// Durable step ingress owned by one activation until its executor phase can
 /// consume each channel exactly once.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
@@ -903,25 +889,115 @@ impl DialogueLineTaskState {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound = "V: crate::value::InertRuntimeValueStorage"
+)]
 pub(crate) enum PendingLineOperation<V = RuntimeValue> {
     AcquireActor {
         command: crate::presentation::RuntimeLineCommandId,
-        binding: Option<RuntimePattern>,
         value: V,
         token: crate::runtime_id::RuntimeLineHandleToken,
     },
     ActorLook {
         command: crate::presentation::RuntimeLineCommandId,
-        binding: Option<RuntimePattern>,
         value: V,
         token: crate::runtime_id::RuntimeLineHandleToken,
     },
     StartVoice {
         command: crate::presentation::RuntimeLineCommandId,
-        binding: Option<RuntimePattern>,
-        site: crate::runtime_id::RuntimeLineHandleSiteId,
     },
+}
+
+impl<V> PendingLineOperation<V> {
+    pub(in crate::engine) fn declaration<'a>(
+        &self,
+        operation: Option<&'a crate::plan::FlowOp>,
+    ) -> Option<(
+        Option<&'a RuntimePattern>,
+        &'a crate::plan::RuntimeLineOperation,
+    )> {
+        use crate::plan::{FlowOp, RuntimeLineOperation};
+        let FlowOp::LineOperation { binding, operation } = operation? else {
+            return None;
+        };
+        match (self, operation) {
+            (Self::AcquireActor { .. }, RuntimeLineOperation::AcquireActor { .. })
+            | (Self::ActorLook { .. }, RuntimeLineOperation::ActorLook { .. })
+            | (Self::StartVoice { .. }, RuntimeLineOperation::VoiceHandle { .. }) => {
+                Some((binding.as_ref(), operation))
+            }
+            _ => None,
+        }
+    }
+
+    pub(in crate::engine) const fn command(&self) -> &crate::presentation::RuntimeLineCommandId {
+        match self {
+            Self::AcquireActor { command, .. }
+            | Self::ActorLook { command, .. }
+            | Self::StartVoice { command } => command,
+        }
+    }
+
+    pub(in crate::engine) fn matches_issued(
+        &self,
+        operation: &crate::plan::RuntimeLineOperation,
+        issued: &crate::presentation::RuntimeLineHostCommand,
+    ) -> bool {
+        use crate::plan::RuntimeLineOperation;
+        use crate::presentation::{
+            RuntimeLineHostCommand as Host, RuntimeStageCommand as Stage,
+            RuntimeVoiceCommand as Voice,
+        };
+        if self.command() != issued.command() {
+            return false;
+        }
+        match (self, operation, issued) {
+            (
+                Self::AcquireActor { token, .. },
+                RuntimeLineOperation::AcquireActor {
+                    site,
+                    character,
+                    scope,
+                },
+                Host::Stage(Stage::AcquireActor {
+                    actor,
+                    character: actual,
+                    scope: actual_scope,
+                    ..
+                }),
+            ) => {
+                token == actor
+                    && token.activation() == issued.command().activation()
+                    && token.site() == *site
+                    && character == actual
+                    && scope == actual_scope
+            }
+            (
+                Self::ActorLook { token, .. },
+                RuntimeLineOperation::ActorLook {
+                    site, character, ..
+                },
+                Host::Stage(Stage::SetCharacterLook {
+                    cue,
+                    character: actual,
+                    ..
+                }),
+            ) => {
+                token == cue
+                    && token.activation() == issued.command().activation()
+                    && token.site() == *site
+                    && character == actual
+            }
+            (
+                Self::StartVoice { .. },
+                RuntimeLineOperation::VoiceHandle { .. },
+                Host::Voice(Voice::StartDialogueVoice { .. }),
+            ) => true,
+            _ => false,
+        }
+    }
 }
 
 /// Sole engine execution owner of dialogue frames and their line-runtime
@@ -1257,7 +1333,7 @@ impl DialogueActivationStore {
                 &active.frame.line_task,
             )?;
             active.frame.admit_scoped_defer_registrations(line)?;
-            active.frame.admit_reducer(activation, line, admission)
+            active.frame.admit_line_state(activation, line, admission)
         })?;
         contour.try_visit_active(|activation, active, _| {
             active.frame.admit_frame_roots(
@@ -2205,7 +2281,7 @@ mod tests {
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
         assert!(matches!(
-            second.admit_reducer(&activation(2), &RuntimeDialogueActivationState::new(), &mut admission),
+            second.admit_line_state(&activation(2), &RuntimeDialogueActivationState::new(), &mut admission),
             Err(crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame { message })
                 if message == "native reducer frame content differs from its activation"
         ));

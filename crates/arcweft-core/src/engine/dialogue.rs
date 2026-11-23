@@ -13,7 +13,7 @@ pub use store::DialogueActivationStore;
 pub(in crate::engine) use store::{
     DialogueActivationFrame, DialogueActivationScope, DialogueActivationStoreRollbackImage,
     DialogueActivationTransaction, DialogueCommitDisposition, DialogueLineTaskState,
-    PendingActivationHostCall, PendingLineOperation,
+    PendingLineOperation,
 };
 
 use super::{
@@ -103,8 +103,14 @@ pub(super) enum DialogueActivationStep {
     Execution(RuntimeStepOutput),
     Reveal(DialogueLineTaskStart),
     Deferred(super::NativeLineTaskExecutionBatch),
-    HostCall(Box<crate::step::RuntimeHostCallRequest>),
+    HostCall(Box<PreparedDialogueHostCall>),
     Effect(LineEffectRequest),
+}
+
+pub(super) struct PreparedDialogueHostCall {
+    operation: super::NativeSourceOperation,
+    sequence: u64,
+    start: crate::step::RuntimeHostCallStart,
 }
 
 enum ActivationScopeStep {
@@ -333,6 +339,7 @@ impl Engine {
         let activation = transaction.activation().clone();
         let phase = transaction.frame().phase;
         let mut execution_output = None;
+        let mut host_commit = None;
         let (start, deferred_batch, host_call, effect) = match step {
             DialogueActivationStep::Continue => (None, None, None, None),
             DialogueActivationStep::Execution(staged) => {
@@ -341,7 +348,54 @@ impl Engine {
             }
             DialogueActivationStep::Reveal(start) => (Some(start), None, None, None),
             DialogueActivationStep::Deferred(batch) => (None, Some(batch), None, None),
-            DialogueActivationStep::HostCall(request) => (None, None, Some(*request), None),
+            DialogueActivationStep::HostCall(prepared) => {
+                let proof = match self
+                    .dialogue_activations
+                    .inspect_commit_transaction(&transaction)
+                {
+                    Ok(proof) => proof,
+                    Err(error) => {
+                        self.begin_dialogue_failure(transaction, error.into(), output);
+                        return;
+                    }
+                };
+                let PreparedDialogueHostCall {
+                    operation,
+                    sequence,
+                    start,
+                } = *prepared;
+                if sequence != self.next_host_call_sequence {
+                    self.begin_dialogue_failure(
+                        transaction,
+                        DialogueExecutionError::HostCallFailed {
+                            message: "dialogue host call lost its prepared sequence".into(),
+                        },
+                        output,
+                    );
+                    return;
+                }
+                let request = match self.admit_host_call(start) {
+                    Ok(request) => request,
+                    Err(error) => {
+                        self.begin_dialogue_failure(
+                            transaction,
+                            DialogueExecutionError::HostCallFailed {
+                                message: error.to_string(),
+                            },
+                            output,
+                        );
+                        return;
+                    }
+                };
+                transaction.frame_mut().pending_host_call =
+                    Some(super::host_call::NativeHostCallContinuation {
+                        operation,
+                        sequence,
+                        correlation: request.submission().handle().correlation,
+                    });
+                host_commit = Some(proof);
+                (None, None, Some(request), None)
+            }
             DialogueActivationStep::Effect(effect) => (None, None, None, Some(effect)),
         };
         let (transaction, batch, event, commit_proof) = match start {
@@ -434,7 +488,7 @@ impl Engine {
                 );
                 (transaction, Some(batch), start.event, Some(commit_proof))
             }
-            None => (transaction, None, None, None),
+            None => (transaction, None, None, host_commit),
         };
         let committed = match commit_proof {
             Some(proof) => {
@@ -1061,22 +1115,22 @@ impl Engine {
                     }),
                 ) => {
                     if state.phase == DialogueRuntimePhase::Closing {
-                        let Some(PendingLineOperation::StartVoice {
-                            command: pending,
-                            site,
-                            ..
-                        }) = state.pending_line_operation.as_ref()
+                        let Some(pending @ PendingLineOperation::StartVoice { .. }) =
+                            state.pending_line_operation.as_ref()
                         else {
                             return Err(LineRuntimeError::StageOutcomeMismatch.into());
                         };
-                        if pending != command_id {
+                        if pending.command() != command_id {
                             return Err(LineRuntimeError::StageOutcomeMismatch.into());
                         }
+                        let (_, operation) = pending
+                            .declaration(state.activation_operation(&self.plan))
+                            .ok_or(LineRuntimeError::InvalidActivationOperation)?;
                         let site = self
                             .plan
                             .line_task_groups()
                             .get(state.task_group.index())
-                            .and_then(|group| group.handle_site(*site))
+                            .and_then(|group| group.handle_site(operation.site()))
                             .cloned()
                             .ok_or(LineRuntimeError::InvalidHandleSite)?;
                         if site.site_kind() != RuntimeLineHandleSiteKind::Voice {
@@ -1224,11 +1278,21 @@ impl Engine {
             }
             return Ok(DialogueActivationStep::Continue);
         }
-        if let Some(pending) = frame.pending_host_call.clone() {
+        if let Some(pending) = &frame.pending_host_call {
+            if frame.activation_source(&self.plan).as_ref() != Some(&pending.operation) {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            let (binding, target) = pending
+                .declaration(&self.plan)
+                .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+            let call_id = super::host_call::NativeHostCallContinuation::render_id(
+                &target.public_id,
+                pending.sequence,
+            );
             let Some(index) = input
                 .host_call_results
                 .iter()
-                .position(|result| result.id == pending.id)
+                .position(|result| result.id == call_id)
             else {
                 return Ok(DialogueActivationStep::Continue);
             };
@@ -1240,7 +1304,7 @@ impl Engine {
                 })?;
             self.plan
                 .validate_live_value(
-                    pending.result,
+                    target.result,
                     value.value(),
                     crate::entry::RuntimeSchemaLimits::engine_default(),
                 )
@@ -1250,12 +1314,12 @@ impl Engine {
             if !unique_affine_line_handles(value.value())?.is_empty() {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
             }
-            if let Some(binding) = &pending.binding {
+            if let Some(binding) = binding {
                 let bindings = crate::pattern::match_runtime_pattern_owned(
                     &self.plan,
                     binding,
                     value.into_value(),
-                    self.fiber.frame.env.function_instantiation(),
+                    frame.execution.env.function_instantiation(),
                 )?
                 .ok_or_else(|| RuntimeEvalError::PatternMismatch("host result".to_owned()))?;
                 frame.execution.env.bind_all(bindings);
@@ -1372,7 +1436,13 @@ impl Engine {
                     pure_backend,
                 )?;
             }
-            FlowOp::HostCall { binding, target } => {
+            FlowOp::HostCall { target, .. } => {
+                let sequence = self.next_host_call_sequence;
+                if sequence == u64::MAX {
+                    return Err(DialogueExecutionError::HostCallFailed {
+                        message: "host-call sequence is exhausted".into(),
+                    });
+                }
                 let (args, named_args) = self
                     .with_inline_dialogue(slot, |this| {
                         this.evaluate_host_call_arguments(&target.args, pure_backend)
@@ -1393,44 +1463,40 @@ impl Engine {
                     .get(target.result)
                     .map(|declaration| declaration.semantic_identity())
                     .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+                let operation = frame
+                    .activation_source(&plan)
+                    .ok_or(LineRuntimeError::InvalidActivationOperation)?;
                 let id = self.preview_host_call_id(&target.public_id);
-                frame.pending_host_call = Some(PendingActivationHostCall {
-                    id: id.clone(),
-                    result: target.result,
-                    binding: binding.clone(),
-                });
                 self.reconcile_activation_instruction(
                     slot.transaction_mut(),
                     &assignment_before,
                     None,
                 )?;
+                let producer = target.producer.sealed_definition().map_err(|error| {
+                    DialogueExecutionError::HostCallFailed {
+                        message: error.to_string(),
+                    }
+                })?;
+                let start = crate::step::RuntimeHostCallStart {
+                    id,
+                    producer,
+                    request: crate::task::HostTaskRequest::Custom {
+                        capability: crate::task::HostCapabilityId(target.capability.clone()),
+                        operation: target.operation.clone(),
+                        manifest_contract: target.contract,
+                        args,
+                        named_args,
+                    },
+                    result,
+                    mode: target.mode,
+                    deterministic: target.deterministic,
+                };
                 return Ok(DialogueActivationStep::HostCall(Box::new(
-                    target
-                        .producer
-                        .sealed_definition()
-                        .and_then(|producer| {
-                            crate::step::RuntimeHostCallRequest::admit(
-                                id,
-                                producer,
-                                self.generation,
-                                crate::task::HostTaskRequest::Custom {
-                                    capability: crate::task::HostCapabilityId(
-                                        target.capability.clone(),
-                                    ),
-                                    operation: target.operation.clone(),
-                                    manifest_contract: target.contract,
-                                    args,
-                                    named_args,
-                                },
-                                result,
-                                target.mode,
-                                target.deterministic,
-                                &mut self.need_producers,
-                            )
-                        })
-                        .map_err(|error| DialogueExecutionError::HostCallFailed {
-                            message: error.to_string(),
-                        })?,
+                    PreparedDialogueHostCall {
+                        operation,
+                        sequence,
+                        start,
+                    },
                 )));
             }
             FlowOp::LineOperation { binding, operation } => {
@@ -2064,7 +2130,6 @@ impl Engine {
                 activation.record_commands_prepared(prepared);
                 state.pending_line_operation = Some(PendingLineOperation::AcquireActor {
                     command,
-                    binding,
                     value,
                     token,
                 });
@@ -2246,7 +2311,6 @@ impl Engine {
                 activation.record_commands_prepared(prepared);
                 state.pending_line_operation = Some(PendingLineOperation::ActorLook {
                     command,
-                    binding,
                     value,
                     token,
                 });
@@ -2297,11 +2361,8 @@ impl Engine {
                         let prepared =
                             activation.inspect_record_commands(activation_id, &commands)?;
                         activation.record_commands_prepared(prepared);
-                        state.pending_line_operation = Some(PendingLineOperation::StartVoice {
-                            command,
-                            binding,
-                            site: site.id(),
-                        });
+                        state.pending_line_operation =
+                            Some(PendingLineOperation::StartVoice { command });
                     }
                 }
             }
@@ -2320,14 +2381,24 @@ impl Engine {
             .pending_line_operation
             .as_ref()
             .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+        let plan = std::sync::Arc::clone(&self.plan);
+        let (binding, operation) = pending
+            .declaration(state.activation_operation(&plan))
+            .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+        let command = pending.command();
+        if command.activation() != activation_id
+            || !activation
+                .issued_command(command)
+                .is_some_and(|issued| pending.matches_issued(operation, issued))
+        {
+            return Err(LineRuntimeError::UnknownCommandOutcome.into());
+        }
         match pending {
             PendingLineOperation::AcquireActor {
                 command,
-                binding,
                 value,
                 token,
             } => {
-                require_issued_command(activation_id, activation, &command)?;
                 let Some(outcome) = outcomes.iter().find_map(|outcome| match outcome {
                     RuntimeLineHostOutcome::Stage(outcome) if outcome.command() == command => {
                         Some(outcome)
@@ -2352,7 +2423,7 @@ impl Engine {
                             activation_id,
                             &mut ledger,
                             &mut commands,
-                            binding.as_ref(),
+                            binding,
                             &value,
                         )?;
                         let prepared = activation.inspect_record_commands_with_ledger(
@@ -2361,12 +2432,12 @@ impl Engine {
                             Some(command),
                             ledger,
                         )?;
-                        let Some(PendingLineOperation::AcquireActor { binding, value, .. }) =
+                        let Some(PendingLineOperation::AcquireActor { value, .. }) =
                             state.pending_line_operation.take()
                         else {
                             unreachable!("checked pending actor operation is retained")
                         };
-                        let bindings = self.bind_operation_value_owned(binding.as_ref(), value);
+                        let bindings = self.bind_operation_value_owned(binding, value);
                         activation.record_commands_prepared(prepared);
                         state.execution.env.bind_all(bindings);
                     }
@@ -2401,11 +2472,9 @@ impl Engine {
             }
             PendingLineOperation::ActorLook {
                 command,
-                binding,
                 value,
                 token,
             } => {
-                require_issued_command(activation_id, activation, &command)?;
                 let Some(outcome) = outcomes.iter().find_map(|outcome| match outcome {
                     RuntimeLineHostOutcome::Stage(outcome) if outcome.command() == command => {
                         Some(outcome)
@@ -2430,7 +2499,7 @@ impl Engine {
                             activation_id,
                             &mut ledger,
                             &mut commands,
-                            binding.as_ref(),
+                            binding,
                             &value,
                         )?;
                         let prepared = activation.inspect_record_commands_with_ledger(
@@ -2439,12 +2508,12 @@ impl Engine {
                             Some(command),
                             ledger,
                         )?;
-                        let Some(PendingLineOperation::ActorLook { binding, value, .. }) =
+                        let Some(PendingLineOperation::ActorLook { value, .. }) =
                             state.pending_line_operation.take()
                         else {
                             unreachable!("checked pending look operation is retained")
                         };
-                        let bindings = self.bind_operation_value_owned(binding.as_ref(), value);
+                        let bindings = self.bind_operation_value_owned(binding, value);
                         activation.record_commands_prepared(prepared);
                         state.execution.env.bind_all(bindings);
                     }
@@ -2477,12 +2546,7 @@ impl Engine {
                     _ => return Err(LineRuntimeError::StageOutcomeMismatch.into()),
                 }
             }
-            PendingLineOperation::StartVoice {
-                command,
-                binding,
-                site,
-            } => {
-                require_issued_command(activation_id, activation, &command)?;
+            PendingLineOperation::StartVoice { command } => {
                 let Some(outcome) = outcomes.iter().find_map(|outcome| match outcome {
                     RuntimeLineHostOutcome::Voice(outcome) if outcome.command() == command => {
                         Some(outcome)
@@ -2523,7 +2587,7 @@ impl Engine {
                     .get(state.task_group.index())
                     .ok_or(LineRuntimeError::UnknownTaskGroup)?;
                 let site = group
-                    .handle_site(*site)
+                    .handle_site(operation.site())
                     .cloned()
                     .ok_or(LineRuntimeError::InvalidHandleSite)?;
                 let mut ledger = activation.ledger().clone();
@@ -2544,7 +2608,7 @@ impl Engine {
                     activation_id,
                     &mut ledger,
                     &mut commands,
-                    binding.as_ref(),
+                    binding,
                     &value,
                 )?;
                 let prepared = activation.inspect_record_commands_with_ledger(
@@ -2553,12 +2617,7 @@ impl Engine {
                     Some(command),
                     ledger,
                 )?;
-                let Some(PendingLineOperation::StartVoice { binding, .. }) =
-                    state.pending_line_operation.take()
-                else {
-                    unreachable!("checked pending voice operation is retained")
-                };
-                let bindings = self.bind_operation_value_owned(binding.as_ref(), value);
+                let bindings = self.bind_operation_value_owned(binding, value);
                 state.voice = RuntimeDialogueVoiceState::Ready(session.clone());
                 activation.record_commands_prepared(prepared);
                 state.execution.env.bind_all(bindings);
@@ -3344,25 +3403,13 @@ fn flush_commands(
     activation.record_commands(activation_id, commands)
 }
 
-fn require_issued_command(
-    activation_id: &crate::runtime_id::DialogueActivationId,
-    activation: &NativeDialogueActivationState,
-    command: &crate::presentation::RuntimeLineCommandId,
-) -> Result<(), LineRuntimeError> {
-    if command.activation() != activation_id || activation.issued_command(command).is_none() {
-        return Err(LineRuntimeError::UnknownCommandOutcome);
-    }
-    Ok(())
-}
-
 fn pending_command_id(
     state: &DialogueActivationFrame,
 ) -> Option<&crate::presentation::RuntimeLineCommandId> {
-    match state.pending_line_operation.as_ref()? {
-        PendingLineOperation::AcquireActor { command, .. }
-        | PendingLineOperation::ActorLook { command, .. }
-        | PendingLineOperation::StartVoice { command, .. } => Some(command),
-    }
+    state
+        .pending_line_operation
+        .as_ref()
+        .map(PendingLineOperation::command)
 }
 
 fn clear_pending_command(
@@ -4169,29 +4216,163 @@ mod tests {
     }
 
     #[test]
-    fn init_host_call_request_commits_before_reply_binds_continuation() {
-        let unit = RuntimeSemanticTypeId::from_bytes([0x74; 32]);
-        let mut builder = RuntimePlanBuilder::new();
-        builder
+    fn dialogue_host_and_stage_results_resume_original_bindings_after_restore() {
+        use crate::engine::host_call::NativeHostCallContinuation;
+        use crate::line_task::RuntimeLineHandleScope;
+        use crate::plan::{
+            RuntimeFunctionDefinitionIdentity, RuntimeHostCallTargetSeed,
+            RuntimeLineHandleSiteSeed, RuntimeLineOperationSeed, RuntimeLineTaskGroupSeed,
+            RuntimeLineTaskNodeSeed, RuntimeLocalBindingDeclaration, RuntimeLocalBindingKind,
+            RuntimeLocalBindingStorage, RuntimeLocalDeclarationSource, RuntimePatternSeed,
+            RuntimePatternSeedKind,
+        };
+        use crate::presentation::{
+            RuntimeLineHostCommand, RuntimeLineHostOutcome, RuntimeStageCommand,
+            RuntimeStageCommandOutcome,
+        };
+        use crate::step::{
+            RuntimeHostCallMode, RuntimeHostCallResult, RuntimeStepInput, RuntimeStepOutput,
+        };
+        use crate::task::{
+            HostCallProducerDefinition, NeedProducerContractDigest, NeedProducerSiteDigest,
+            RuntimeProgramOwner,
+        };
+        use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload};
+
+        let unit = RuntimeSemanticTypeId::from_bytes([1; 32]);
+        let boolean = RuntimeSemanticTypeId::from_bytes([2; 32]);
+        let actor_type = RuntimeSemanticTypeId::from_bytes([0x74; 32]);
+        let (mut builder, content) = crate::plan::body_semantic::content_root_builder_fixture();
+        let admitted = builder
             .admit_type_batch(
                 [RuntimePlanTypeSeed::new(
-                    unit,
-                    RuntimePlanTypeProjection::Unit,
+                    actor_type,
+                    RuntimePlanTypeProjection::Opaque {
+                        producer: RuntimeHandleKind::StageActor.try_producer().unwrap(),
+                        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                        value_class: RuntimeOpaqueValueClass::AffineHandle(
+                            RuntimeHandleKind::StageActor,
+                        ),
+                        persistence: RuntimeOpaquePersistence::SnapshotOnly,
+                        arguments: Box::new([]),
+                    },
                 )],
-                [],
+                [(0x75, boolean), (0x76, actor_type)].map(|(id, ty)| {
+                    RuntimeLocalDeclarationSeed::new(
+                        RuntimeLocalDeclarationSource::Binding {
+                            identity: [id; 32],
+                            declaration: RuntimeLocalBindingDeclaration::new(
+                                RuntimeLocalBindingKind::PatternBinding,
+                                false,
+                                RuntimeLocalBindingStorage::Derived,
+                            ),
+                        },
+                        ty,
+                    )
+                }),
             )
-            .expect("unit type");
+            .unwrap();
+        let bind = |index, ty| {
+            RuntimePatternSeed::new(
+                ty,
+                RuntimePatternSeedKind::Bind {
+                    local: admitted.local_ids().get(index).cloned().unwrap(),
+                    mutable: false,
+                },
+            )
+        };
+        let coordinate = builder
+            .task_plan_construction()
+            .reserve_original_source()
+            .unwrap();
+        let target = RuntimeHostCallTargetSeed {
+            producer: HostCallProducerDefinition {
+                contract: NeedProducerContractDigest::from_bytes([0x78; 32]),
+                plan: coordinate,
+                site: NeedProducerSiteDigest::from_bytes([0x79; 32]),
+            },
+            public_id: "init.log".into(),
+            capability: "log".into(),
+            operation: "info".into(),
+            contract: None,
+            args: Vec::new(),
+            result: boolean,
+            mode: RuntimeHostCallMode::Suspend,
+            deterministic: true,
+        };
+        // The existing task-plan builder derives its original receipt from a
+        // function endpoint. Exercise the dialogue runtime with that sealed plan.
+        let function = builder
+            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x7a; 32]),
+                role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+                function_type: None,
+                inputs: Box::new([]),
+                result: unit,
+                body_kind: RuntimeFunctionSiteBodyKind::Executable,
+                effects: RuntimeEffectSet::empty(),
+            })
+            .unwrap();
+        builder
+            .define_function_site_seed(
+                &function,
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: Box::new([RuntimeFlowOpSeed::HostCall {
+                        binding: None,
+                        target: target.clone(),
+                    }]),
+                }),
+            )
+            .unwrap();
+        let character = arcweft_character::id::CharacterId::try_new("character.akane").unwrap();
+        let site = RuntimeLineHandleSiteId::from_zero_based(0);
+        let group = builder
+            .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+                definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x77; 32]),
+                effects: RuntimeEffectSet::empty(),
+                initial_inputs: Box::new([]),
+                activation_ops: vec![
+                    RuntimeFlowOpSeed::HostCall {
+                        binding: Some(bind(0, boolean)),
+                        target,
+                    },
+                    RuntimeFlowOpSeed::LineOperation {
+                        binding: Some(bind(1, actor_type)),
+                        operation: RuntimeLineOperationSeed::AcquireActor {
+                            site,
+                            character: character.clone(),
+                            scope: RuntimeLineHandleScope::Line,
+                        },
+                    },
+                ],
+                result_type: unit,
+                handle_sites: Box::new([RuntimeLineHandleSiteSeed {
+                    id: site,
+                    source_ordinal: 0,
+                    kind: RuntimeLineHandleSiteKind::StageActor,
+                    result_type: actor_type,
+                    character: Some(character),
+                    scheduled_child: None,
+                }]),
+                root: RuntimeLineTaskNodeSeed::Action(vec![RuntimeFlowOpSeed::Noop]),
+                cancel_rules: Box::new([]),
+                cleanup_completed: vec![],
+                cleanup_cancelled: vec![],
+                cleanup_failed: vec![],
+                cleanup_policy: Default::default(),
+            })
+            .unwrap();
+        builder
+            .attach_line_task_group_seed(&content, &group)
+            .unwrap();
         let mut engine = Engine::new(builder.finish().expect("plan"));
         let id = activation_id();
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
         let mut frame = activation_frame(&engine, local);
-        frame.activation_pc = 2;
-        let call_id = crate::step::RuntimeHostCallId("init.log".to_owned());
-        frame.pending_host_call = Some(super::PendingActivationHostCall {
-            id: call_id.clone(),
-            result: RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
-            binding: None,
-        });
+        frame.target = None;
+        frame.execution.env = Default::default();
+        let owner = RuntimeProgramOwner::Plan(engine.program_plan());
         engine
             .dialogue_activations
             .begin(id.clone(), frame)
@@ -4200,47 +4381,143 @@ mod tests {
             .dialogue_activations
             .begin_transaction(&id)
             .expect("transaction");
-        let request = engine
-            .admit_host_call(crate::step::RuntimeHostCallStart {
-                id: call_id.clone(),
-                producer: crate::tests::host_producer(),
-                request: crate::task::HostTaskRequest::custom("log", "info", []),
-                result: unit,
-                mode: crate::step::RuntimeHostCallMode::Suspend,
-                deterministic: true,
-            })
-            .unwrap();
-        let mut output = crate::step::RuntimeStepOutput::default();
-        engine.commit_and_suspend_dialogue(
-            transaction,
-            &mut output,
-            super::DialogueActivationStep::HostCall(Box::new(request.clone())),
-        );
-        assert_eq!(output.requests.host_calls, vec![request]);
-        let transaction = engine
-            .dialogue_activations
-            .begin_transaction(&id)
-            .expect("committed host call");
-        let reply = crate::step::RuntimeHostCallResult {
-            id: call_id,
-            outcome: Ok(crate::value::RuntimePayload::from(RuntimeValue::Unit)),
-        };
-        let (transaction, result) = engine.resume_dialogue_activation(
+        let mut backend = VmRuntimePureCallBackend::default();
+        let (transaction, step) = engine.resume_dialogue_activation(
             transaction,
             &[],
-            &mut crate::step::RuntimeStepInput {
-                host_call_results: vec![reply],
-                ..crate::step::RuntimeStepInput::default()
+            &mut RuntimeStepInput::default(),
+            &[],
+            &mut backend,
+        );
+        let step = step.unwrap();
+        assert!(matches!(&step, super::DialogueActivationStep::HostCall(_)));
+        assert_eq!(engine.need_producers.task_admissions().count(), 0);
+        let mut output = RuntimeStepOutput::default();
+        engine.commit_and_suspend_dialogue(transaction, &mut output, step);
+        let [request] = output.requests.host_calls.as_slice() else {
+            panic!("one issued host call")
+        };
+        let call_id = request.id.clone();
+        let mut transaction = engine.dialogue_activations.begin_transaction(&id).unwrap();
+        let pending = &mut transaction.frame_mut().pending_host_call;
+        let mut host_wire = serde_json::to_value(pending.as_ref().unwrap()).unwrap();
+        *pending = Some(serde_json::from_value(host_wire.clone()).unwrap());
+        host_wire["binding"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<NativeHostCallContinuation>(host_wire).is_err());
+        engine
+            .commit_dialogue_activation_transaction(transaction, &mut RuntimeStepOutput::default())
+            .unwrap();
+        let image = engine.inert_rollback_image().unwrap();
+        let mut forged = image.clone();
+        forged.next_host_call_sequence = 0;
+        let error = Engine::from_rollback_image(forged, &owner).unwrap_err();
+        assert!(error.contains("issued task receipt or sequence"), "{error}");
+        let mut engine = Engine::from_rollback_image(image, &owner).unwrap();
+
+        let transaction = engine.dialogue_activations.begin_transaction(&id).unwrap();
+        let (transaction, step) = engine.resume_dialogue_activation(
+            transaction,
+            &[],
+            &mut RuntimeStepInput {
+                host_call_results: vec![RuntimeHostCallResult {
+                    id: call_id,
+                    outcome: Ok(RuntimePayload(RuntimeValue::Bool(true))),
+                }],
+                ..RuntimeStepInput::default()
             },
             &[],
-            &mut VmRuntimePureCallBackend::default(),
+            &mut backend,
         );
-        assert!(matches!(
-            result,
-            Ok(super::DialogueActivationStep::Continue)
-        ));
+        assert!(matches!(step, Ok(super::DialogueActivationStep::Continue)));
         assert!(transaction.frame().pending_host_call.is_none());
-        assert_eq!(transaction.frame().activation_pc, 3);
+        assert_eq!(transaction.frame().activation_pc, 1);
+        assert!(
+            transaction
+                .frame()
+                .execution
+                .env
+                .bindings()
+                .any(|(_, value)| *value == RuntimeValue::Bool(true))
+        );
+
+        let (mut transaction, step) = engine.resume_dialogue_activation(
+            transaction,
+            &[],
+            &mut RuntimeStepInput::default(),
+            &[],
+            &mut backend,
+        );
+        let pending = &mut transaction.frame_mut().pending_line_operation;
+        // Use the existing owned-value projection for the line continuation.
+        let image = super::PendingLineOperation::<AwbcRuntimeValueSnapshot>::from_live(
+            pending.as_ref().unwrap(),
+            &owner,
+        )
+        .unwrap();
+        let mut stage_wire = serde_json::to_value(image).unwrap();
+        let mut forged_command = stage_wire.clone();
+        forged_command["AcquireActor"]["command"]["sequence"] = serde_json::json!(999);
+        let forged: super::PendingLineOperation<AwbcRuntimeValueSnapshot> =
+            serde_json::from_value(forged_command).unwrap();
+        let decoded: super::PendingLineOperation<AwbcRuntimeValueSnapshot> =
+            serde_json::from_value(stage_wire.clone()).unwrap();
+        transaction.frame_mut().pending_line_operation = Some(decoded.into_live(&owner).unwrap());
+        stage_wire["AcquireActor"]["binding"] = serde_json::Value::Null;
+        assert!(
+            serde_json::from_value::<super::PendingLineOperation<AwbcRuntimeValueSnapshot>>(
+                stage_wire
+            )
+            .is_err()
+        );
+        let mut output = RuntimeStepOutput::default();
+        engine.commit_and_suspend_dialogue(transaction, &mut output, step.unwrap());
+        let [
+            RuntimeLineHostCommand::Stage(RuntimeStageCommand::AcquireActor {
+                command, actor, ..
+            }),
+        ] = output.requests.line_commands.as_slice()
+        else {
+            panic!("one actor acquisition")
+        };
+        let outcome = RuntimeLineHostOutcome::Stage(RuntimeStageCommandOutcome::Acquired {
+            command: command.clone(),
+            actor: actor.clone(),
+        });
+        let image = engine.inert_rollback_image().unwrap();
+        let mut altered = engine.dialogue_activations.begin_transaction(&id).unwrap();
+        altered.frame_mut().pending_line_operation = Some(forged.into_live(&owner).unwrap());
+        engine
+            .commit_dialogue_activation_transaction(altered, &mut RuntimeStepOutput::default())
+            .unwrap();
+        let error = engine.inert_rollback_image().unwrap_err();
+        assert!(
+            error.contains("differs from its issued activation command"),
+            "{error}"
+        );
+        let mut engine = Engine::from_rollback_image(image, &owner).unwrap();
+        let transaction = engine.dialogue_activations.begin_transaction(&id).unwrap();
+        let (transaction, step) = engine.resume_dialogue_activation(
+            transaction,
+            &[outcome],
+            &mut RuntimeStepInput::default(),
+            &[],
+            &mut backend,
+        );
+        assert!(
+            matches!(&step, Ok(super::DialogueActivationStep::Continue)),
+            "{:?}",
+            step.err()
+        );
+        assert!(transaction.frame().pending_line_operation.is_none());
+        assert_eq!(transaction.frame().activation_pc, 2);
+        assert!(
+            transaction
+                .frame()
+                .execution
+                .env
+                .bindings()
+                .any(|(_, value)| super::token_from_value(value).as_ref() == Ok(actor))
+        );
     }
 
     #[test]
