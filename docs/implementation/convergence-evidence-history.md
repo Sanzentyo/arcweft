@@ -22367,4 +22367,17 @@ CLI SHA-256 `49a4f4623aaa8e0bf533482273b2777789e6250fbc6444da14f040a1833e362b` �
 
 Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推移的逆依存の70パッケージに、この公開差分で変更した9クレートがすべて含まれることを照合した。
 
-現行CLIで `bundle --manifest-path web/arcw.toml --profile main` を独立に実行し、35,157,520 bytesのAWFBを再生成した。SHA-256は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4` で、Chromeの5フレームを取得したAWFBと一致した。この再生成物から160 msのNativeフレーム5件を再採取し、同じWeb画像を照合する。
+現行CLIで `bundle --manifest-path web/arcw.toml --profile main` を独立に実行し、35,157,520 bytesのAWFBを再生成した。SHA-256は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4` で、Chromeの5フレームを取得したAWFBと一致した。`tools/capture-webgpu-native-frame.rs` でこの再生成物から160 ms／`rgba8unorm`のNativeフレームを撮り直した。focus／hover／press／compact／HiDPIの全5件で、Native PNGは各既存Native基準と同じSHA-256だった。同じWeb画像との比較でも通常・HiDPIは各3,686,400、縮小は2,073,600のRGBAサンプルが一致し、MSE／MAE／最大誤差／変化画素率0、SSIM 1。全5件で規定の比較器が終了0。
+
+<a id="catalog-need-callable-traversal"></a>
+
+### 素材Needの関数値と並列traverseの再現
+
+2026-11-24、追跡ファイルに未コミット差分のない `9295394906a6e08b21c2a262444ff6fbf5e3b2a3` で実CLIを検証した。実装入力は `f9921fd5d8ef0275bd05b54b53dba85f8ac61c41`、CLI SHA-256 は `2c0ff1fb892c6cf182844a64eb55e85af93f6ab89bd4bdd2c75bb417f2cb33c6`。既存の[並列traverse仕様](../01-language/traits-seq-ranges.md#traversable)の `asset.image` と、同じNeed producer roleを持つ `voice.load` を、実PNG／WAV各2件、`parallel(limit = 2u32)` で試した。
+
+- `resources.traverse(asset.image)` と `resources.traverse(voice.load)` は `compiler.runtime_plan_lower` の `environment declaration value needs its selected compiler-owned body recipe` で終了1、AWFB未生成。音声の2件目を欠落素材に変えても同じ段階で拒否された。各入力SHA-256は順に `605805cb6b6d6a52c0b4f8169d737bd61520399016f242d35c007bf8251f9067`、`ff086580ea635bb2238f0bb3e07cb88d43a75e0fec6e01c17d0a343cde78f927`、`fd5c8532cf6828594b894bbb80d0a044b2547695484859268a0158b4d8815602`。
+- `let load = voice.load` に続く `await load(@voice.alice.001)` は `compiler.runtime_semantic_projection` が関数値を直接Need producerの引数admissionに渡し、`producer receiver, function value, or attached content has no retention certificate` で終了1、AWFB未生成。入力SHA-256は `7a2b1b30b61788200896d5061e60ca15c620ff43a2c3188dcb617a6db42edd87`。
+- `resources.traverse(|item| voice.load(item))` はAWFB SHA-256 `1fc4caddb5cd03e944197ef1b300d220467b565e9b3b16c19201c0ebac57d425` を生成したが、AWBC Productはプロセス終了0でも最終状態が `failed`、Native headless VMは終了1、両者とも素材の配信0件。関数本体は `no runtime backend accepted this exact call` で停止した。入力SHA-256は `51545ace935d09f6f9da0296308fa575b8b58476f8bfc0e6ee675ecdc1b8d483`。先行試行で使った簡易PNGのCRCエラーは、同じパスに有効なPNGを生成して切り分けた。
+- 同じPNGを `asset.image` の逐次呼び出しで読む対照はAWBC ProductとNative headless VMの両方で終了0、素材完了各2件、結果 `catalog_ready`。入力SHA-256は `036ada38d02f31c2f71adff7f1d7fb735e5b20d4bafec4793509d07b9debc214`、AWFBは `626a705e63ce95cd84f3b1f751c471d8369fe149cf7741543a16b2c199564d90`。
+
+直接呼び出しは `CallableValidator::NeedProducer` から元Sourceの `StartNeedProducer` へ接続済み。関数値は `ExternalDefinition::prepare` が `Ordinary` のみを通し、関数値適用は直接producerに限る証明を要求していた。後続の修復では、受理済み宣言から既存の関数フレームを通じて同じ型付きNeed計画を発行し、関数値を呼ぶ側とproducer実行側で元Source・引数の検査をそれぞれの境界に置く。素材名を特別扱いする反復処理や新しいhost readerを追加せず、直接呼び出し、束縛、lambda、保存復元を両実行系で検証する。
