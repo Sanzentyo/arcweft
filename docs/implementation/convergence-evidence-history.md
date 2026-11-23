@@ -21982,3 +21982,25 @@ Cargo の全ターゲット・全機能の依存グラフで Sema と推移的�
 Verifier ライブラリ10件、Verify LSP ライブラリ14件、LSP の診断30件の計54件が成功し、191件選択外、終了0。Windows の `cargo clippy --locked --workspace --all-targets --all-features` は警告付きで終了0。昇格の型検査関数に `too_many_lines`（116／100）の警告が出た。
 
 検証後の `target` は173,605,409,418 bytes（約173.6 GB）。
+
+<a id="checked-promotion-obligations"></a>
+
+## 2026-11-23 — 検査済みの昇格を証明義務として公開する
+
+基点 `420ad2b3a5ade8d3b8e6b2536681a53f84903136`。開始時は追跡ファイルに変更がなく、既存の未追跡ディレクトリが一つあった。実装 `b61fc284f424c9af8e8bbc64c142b014421a5f80`、名目スキーマの拒否を確認する回帰 `81ff663092bc3a9f4da9ac13f620ebb23948041c` を通常の fast-forward で `main` へ公開し、公開 ref と変更31ファイルの blob を照合した。Supersedes [昇格拒否の型検査段階](#checked-promotion-rejection)。当時の CLI 応答と検証値は元の記録に残した。
+
+型検査は受け手とその型、到達するスコープ、元の証明宣言または最内側の監査を同じ昇格式に保持する。静的なセレクター・証明参照は実行用の引数に入らない。verifier は `lifetime_promotion` 証明義務を作り、確認済みの監査に理由と SAFETY が揃う場合は `audited_unsafe` を記録する。実行計画の生成は別に検査する。
+
+実 CLI の証明なしの safe 昇格は `--backend oxiz` で終了1、`lifetime_promotion` が1件、discharge `missing`、required `unknown` が1件。寿命関係の SMT 変換が未実装のため solver は起動せず、生の solver 出力もなし。`emit` の同じ入力は終了1、証明義務ファイル1件、SMT ファイル0件、solver check 0件。`proof = @proof.keep` は `proof_body` 1件と解決済みの `keep` を参照する `lifetime_promotion` 1件を保持し、両方が `missing`。完全な内側監査では `unsafe.inner` の `audited_unsafe` 1件で終了0、solver check は0件。
+
+`arcw check --json` は証明付き入力を `runtime-plan-lower` で終了1、`verify.promotion.execution_unavailable` と元の5ラベルを返した。実 `arcw run` は Native `bytecode-vm` と `awbc-product` の両方で同じ診断の終了1となり、Native は要求された AWFS を作成しなかった。AWBC の初回確認は Native 専用の保存オプションを渡したため終了2となり、そのオプションを外して実行入口を確認した。
+
+作業中の対象実行は46件中14件成功・32件失敗、次が40件成功・6件失敗、その後の名目スキーマを含む62件は61件成功・1件失敗。初回テストビルドの意味トランスクリプト分類漏れ、最終型検査の昇格式と静的オペランド、フィールド受け手、選択した受け手の座標を修正した。借用を持つ未選択フィールドについて、受け手の所有権検査を通過した後に名目スキーマが `BorrowRef` 型引数を拒否することを実 CLI で確認した。有効な対照2件は昇格の証明義務に到達し、借用を保持した受け手の4件は `sema.lifetime.promotion_receiver` で拒否した。
+
+昇格のない名目型で48段から Windows のスタック超過を再現し、LLDB は `NominalGraphProjection::project_nominal` から構造スキーマを経由する再帰を示した。直接の名目参照を分けた後は48段と63段で終了0、64段と180段は `ActiveNominalDepth` の observed 65／maximum 64 で終了1。`Option` を各フィールドに挟む対照は32段・48段で local-use の型所有権上限に達し、63段・64段でスタック超過が残った。
+
+Cargo の全ターゲット・全機能の依存グラフでは HIR と推移的逆依存が計23パッケージ、Sema が22、Verifier が13、Compiler が10、CLI が1。Windows の `cargo check --locked --workspace --all-targets --all-features` と同範囲の Clippy は終了0で、Clippy 警告を保持した。変更 Rust の書式検査と構造ゲートも終了0、ブロッキング違反0件。
+
+最終 nextest は3,040件中3,030件成功（うち slow 2件）、既知の Sema 型・効果制約10件失敗、685件選択外、終了100。前回の同じ10失敗 ID と照合した。成功の内訳は HIR 973、Sema 2,030、Verifier 10、CLI `check` の対象17。従来失敗していた `verify_json_reports_missing_promotion_proof` と `verify_json_records_required_solver_checks` は、現行の受け手記法と証明義務の型・必須判定を検査して通過した。`match` 式の分類コーパス、選択フィールド、深い名目型の境界も通過した。HIR の名目型形状の上限ちょうど／上限超過は400.572秒で成功。
+
+ビルド完了後の `target` は174,227,882,554 bytes（約174.2 GB）。
