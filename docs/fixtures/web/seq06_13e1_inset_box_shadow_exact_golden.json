@@ -43,6 +43,6 @@
     "environment_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.environment.json",
     "command_logs": "target/seq06.13e.1-inset-box-shadow-golden/web/command-logs/"
   },
-  "promotion_status": "promoted_from_current_pinned_browser_webgpu_review",
-  "promotion_reason": "The 2026-07-04 pinned Web run supplied the candidate PNG, observe JSON, environment fingerprint, baseline metrics, command logs, and review decision for the checked-in reference."
+  "promotion_status": "promoted_from_current_shared_fixture_review",
+  "promotion_reason": "The 2026-11-24 pinned Chrome WebGPU capture used the shared AWFB and matched every Native readback pixel. The candidate, observation, environment fingerprint, and comparison are retained in the implementation evidence."
 }

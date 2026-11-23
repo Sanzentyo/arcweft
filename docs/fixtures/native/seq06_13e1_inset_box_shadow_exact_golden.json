@@ -23,8 +23,8 @@
     "imq_json": "target/seq06.13e.1-inset-box-shadow-golden/native/seq06_13e1_inset_box_shadow.imq.json",
     "environment_json": "target/seq06.13e.1-inset-box-shadow-golden/native/seq06_13e1_inset_box_shadow.environment.json"
   },
-  "promotion_status": "promoted_from_user_approved_current_pinned_environment",
-  "promotion_reason": "The 2026-07-04 Windows pinned run supplied the candidate PNG, observe JSON, imq JSON, environment fingerprint, command logs, and review decision for the checked-in reference.",
+  "promotion_status": "promoted_from_current_shared_fixture_review",
+  "promotion_reason": "The 2026-11-24 pinned Windows capture used the shared AWFB and matched every Web readback pixel. The candidate, observation, environment fingerprint, and comparison are retained in the implementation evidence.",
   "promotion_evidence": {
     "arcweft_commit": "bd4cc31756063ba2bb863e560d9734f92fbb13be",
     "candidate_sha256": "1106d553d834d9f9f90eddd0ef2655608c9646733e63141a9646b4bc1612b95c",
