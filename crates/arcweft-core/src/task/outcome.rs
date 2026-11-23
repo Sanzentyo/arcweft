@@ -487,13 +487,23 @@ impl BoundTaskOutcome {
         self.validate_live_view(value.view())
     }
 
+    /// Returns the resource policy selected when this outcome was bound.
+    #[must_use]
+    pub fn schema_limits(&self) -> RuntimeSchemaLimits {
+        match &self.ty {
+            BoundTaskOutcomeType::Standalone(_) => RuntimeSchemaLimits::engine_default(),
+            BoundTaskOutcomeType::Program { limits, .. } => *limits,
+        }
+    }
+
     fn validate_live_view(&self, value: RuntimeValueView<'_>) -> Result<(), TaskOutcomeValueError> {
-        let (owner, limits) = match &self.ty {
-            BoundTaskOutcomeType::Standalone(_) => (None, RuntimeSchemaLimits::engine_default()),
-            BoundTaskOutcomeType::Program { owner, limits, .. } => (Some(owner), *limits),
+        let owner = match &self.ty {
+            BoundTaskOutcomeType::Standalone(_) => None,
+            BoundTaskOutcomeType::Program { owner, .. } => Some(owner),
         };
-        let mut resources =
-            crate::entry::schema::value_encoding::ValueResourceAdmission::live(limits);
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+            self.schema_limits(),
+        );
         resources.validate_view(value, 0, None)?;
         self.validate_admitted_value_view(value, owner, &mut resources)
     }
@@ -532,11 +542,7 @@ impl BoundTaskOutcome {
     fn validate_success(&self, value: RuntimeValueView<'_>) -> Result<bool, TaskOutcomeValueError> {
         let result = self.is_result_type()?;
         if result {
-            RuntimeVariantView::with_live_builtin_payload(
-                RuntimeBuiltinVariantCaseIdentity::ResultOk,
-                value,
-                |value| self.validate_live_view(value),
-            )?;
+            self.validate_result_case(RuntimeBuiltinVariantCaseIdentity::ResultOk, value)?;
         } else {
             self.validate_live_view(value)?;
         }
@@ -558,12 +564,12 @@ impl BoundTaskOutcome {
         &self,
         value: &crate::value::AwbcRuntimeValueSnapshot,
     ) -> Result<(), TaskOutcomeValueError> {
-        let (owner, limits) = match &self.ty {
-            BoundTaskOutcomeType::Standalone(_) => (None, RuntimeSchemaLimits::engine_default()),
-            BoundTaskOutcomeType::Program { owner, limits, .. } => (Some(owner), *limits),
+        let owner = match &self.ty {
+            BoundTaskOutcomeType::Standalone(_) => None,
+            BoundTaskOutcomeType::Program { owner, .. } => Some(owner),
         };
         let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
-            limits,
+            self.schema_limits(),
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
         );
         resources.validate_view(value.view(), 0, None)?;
@@ -575,22 +581,32 @@ impl BoundTaskOutcome {
         &self,
         value: RuntimeValue,
     ) -> Result<RuntimePayload, TaskOutcomeValueError> {
-        match &self.ty {
-            BoundTaskOutcomeType::Standalone(payload) => payload
-                .try_result_payload(Ok(value))
-                .map_err(TaskOutcomeValueError::Standalone),
-            BoundTaskOutcomeType::Program { payload, owner, .. } => {
-                let types = owner.types();
-                if !types.is_result_type(*payload)? {
-                    return Err(TaskOutcomeValueError::NotResult {
-                        semantic_type: *payload,
-                    });
-                }
-                let result = RuntimeValue::result_ok(value);
-                self.validate_value(&result)?;
-                Ok(result.into())
-            }
-        }
+        self.require_result_case(RuntimeBuiltinVariantCaseIdentity::ResultOk, value.view())?;
+        Ok(RuntimeValue::result_ok(value).into())
+    }
+
+    /// Moves admitted host text into the canonical Ok case without copying its buffer.
+    pub fn try_result_ok_text(
+        &self,
+        text: String,
+    ) -> Result<RuntimePayload, TaskOutcomeValueError> {
+        self.require_result_case(
+            RuntimeBuiltinVariantCaseIdentity::ResultOk,
+            RuntimeValueView::Scalar(RuntimeScalarView::String(&text)),
+        )?;
+        Ok(RuntimeValue::result_ok(RuntimeValue::String(text)).into())
+    }
+
+    /// Moves admitted host bytes into the canonical Ok case without copying their buffer.
+    pub fn try_result_ok_bytes(
+        &self,
+        bytes: Vec<u8>,
+    ) -> Result<RuntimePayload, TaskOutcomeValueError> {
+        self.require_result_case(
+            RuntimeBuiltinVariantCaseIdentity::ResultOk,
+            RuntimeValueView::Sequence(RuntimeSequenceView::Bytes(&bytes)),
+        )?;
+        Ok(RuntimeValue::result_ok(runtime_sequence_dense_bytes(bytes)).into())
     }
 
     /// Constructs and admits the canonical Result::Err carrier.
@@ -598,22 +614,36 @@ impl BoundTaskOutcome {
         &self,
         value: RuntimeValue,
     ) -> Result<RuntimePayload, TaskOutcomeValueError> {
-        match &self.ty {
-            BoundTaskOutcomeType::Standalone(payload) => payload
-                .try_result_payload(Err(value))
-                .map_err(TaskOutcomeValueError::Standalone),
-            BoundTaskOutcomeType::Program { payload, owner, .. } => {
-                let types = owner.types();
-                if !types.is_result_type(*payload)? {
-                    return Err(TaskOutcomeValueError::NotResult {
-                        semantic_type: *payload,
-                    });
-                }
-                let result = RuntimeValue::result_err(value);
-                self.validate_value(&result)?;
-                Ok(result.into())
-            }
+        self.require_result_case(RuntimeBuiltinVariantCaseIdentity::ResultErr, value.view())?;
+        Ok(RuntimeValue::result_err(value).into())
+    }
+
+    fn require_result_case(
+        &self,
+        case: RuntimeBuiltinVariantCaseIdentity,
+        value: RuntimeValueView<'_>,
+    ) -> Result<(), TaskOutcomeValueError> {
+        if !self.is_result_type()? {
+            return Err(match &self.ty {
+                BoundTaskOutcomeType::Standalone(_) => TaskOutcomeValueError::Standalone(
+                    "checked payload contract is not a Result type".to_owned(),
+                ),
+                BoundTaskOutcomeType::Program { payload, .. } => TaskOutcomeValueError::NotResult {
+                    semantic_type: *payload,
+                },
+            });
         }
+        self.validate_result_case(case, value)
+    }
+
+    fn validate_result_case(
+        &self,
+        case: RuntimeBuiltinVariantCaseIdentity,
+        value: RuntimeValueView<'_>,
+    ) -> Result<(), TaskOutcomeValueError> {
+        RuntimeVariantView::with_live_builtin_payload(case, value, |value| {
+            self.validate_live_view(value)
+        })
     }
 
     /// Projects only a Result's Err child for finite diagnostics.

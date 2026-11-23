@@ -692,39 +692,33 @@ impl TaskOutcomeContract {
     }
 
     pub fn try_payload(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
-        match self {
-            Self::Standalone { payload } if self.standalone_contract_is_valid() => {
-                payload.try_payload(value)
-            }
-            Self::Standalone { .. } => {
-                Err("standalone task outcome needs program authority".into())
-            }
-            Self::Program { .. } => Err("program task result requires its bound executable".into()),
-        }
+        self.bind_for_standalone_publication()?
+            .try_payload(value)
+            .map_err(|error| error.to_string())
     }
 
     pub fn try_result_ok(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
-        match self {
-            Self::Standalone { payload } if self.standalone_contract_is_valid() => {
-                payload.try_result_payload(Ok(value))
-            }
-            Self::Standalone { .. } => {
-                Err("standalone task outcome needs program authority".into())
-            }
-            Self::Program { .. } => Err("program task result requires its bound executable".into()),
-        }
+        self.bind_for_standalone_publication()?
+            .try_result_ok(value)
+            .map_err(|error| error.to_string())
     }
 
     pub fn try_result_err(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
-        match self {
-            Self::Standalone { payload } if self.standalone_contract_is_valid() => {
-                payload.try_result_payload(Err(value))
+        self.bind_for_standalone_publication()?
+            .try_result_err(value)
+            .map_err(|error| error.to_string())
+    }
+
+    fn bind_for_standalone_publication(&self) -> Result<BoundTaskOutcome, String> {
+        self.bind_standalone().map_err(|error| match error {
+            TaskOutcomeBindingError::InvalidStandaloneType => {
+                "standalone task outcome needs program authority".into()
             }
-            Self::Standalone { .. } => {
-                Err("standalone task outcome needs program authority".into())
+            TaskOutcomeBindingError::ProgramRequiresExecutable => {
+                "program task result requires its bound executable".into()
             }
-            Self::Program { .. } => Err("program task result requires its bound executable".into()),
-        }
+            error => error.to_string(),
+        })
     }
 
     #[must_use]

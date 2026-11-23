@@ -24,6 +24,50 @@ fn semantic(tag: u8) -> RuntimeSemanticTypeId {
 }
 
 #[test]
+fn owned_host_results_move_the_original_buffers_after_admission() {
+    let text_contract = TaskOutcomeContract::new(RuntimeCheckedType::Result {
+        ok: Box::new(RuntimeCheckedType::String),
+        error: Box::new(RuntimeCheckedType::String),
+    });
+    let text_outcome = text_contract.bind_standalone().unwrap();
+    let text = "a measured result".to_owned();
+    let text_address = text.as_ptr();
+    let ready = text_outcome.try_result_ok_text(text).unwrap();
+    let (_, Some(RuntimeValue::String(text))) = ready.value().builtin_variant_case().unwrap()
+    else {
+        panic!("admitted text must be stored in Result::Ok");
+    };
+    assert_eq!(text.as_ptr(), text_address);
+
+    let byte_outcome = TaskOutcomeContract::new(RuntimeCheckedType::Result {
+        ok: Box::new(RuntimeCheckedType::Bytes),
+        error: Box::new(RuntimeCheckedType::String),
+    })
+    .bind_standalone()
+    .unwrap();
+    let bytes = vec![1, 2, 3];
+    let byte_address = bytes.as_ptr();
+    let ready = byte_outcome.try_result_ok_bytes(bytes).unwrap();
+    let (_, Some(RuntimeValue::Seq(value))) = ready.value().builtin_variant_case().unwrap() else {
+        panic!("admitted bytes must be stored in Result::Ok");
+    };
+    assert_eq!(value.as_bytes().unwrap().as_ptr(), byte_address);
+    assert!(matches!(
+        text_outcome.try_result_ok_bytes(vec![1]),
+        Err(TaskOutcomeValueError::Standalone(_))
+    ));
+
+    let maximum = text_outcome.schema_limits().max_string_bytes as usize;
+    let oversized = RuntimeValue::String("a".repeat(maximum + 1));
+    let bound_error = text_outcome.try_result_err(oversized.clone()).unwrap_err();
+    assert!(matches!(bound_error, TaskOutcomeValueError::Resource(_)));
+    assert_eq!(
+        text_contract.try_result_err(oversized).unwrap_err(),
+        bound_error.to_string()
+    );
+}
+
+#[test]
 fn scoped_result_outcomes_keep_the_original_invocation_for_both_cases() {
     use crate::effect_row::{EffectFormula, EffectPredicate, EffectSet};
     use crate::plan::{RuntimeFunctionTypeContract, RuntimeTypeBinder, RuntimeTypeScope};

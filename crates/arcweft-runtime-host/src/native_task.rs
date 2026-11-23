@@ -3,6 +3,7 @@ use arcweft_adapter_context::{
     manifest::{AdapterHostCall, AdapterManifest},
     standard,
 };
+use arcweft_core::entry::RuntimeSchemaLimits;
 use arcweft_core::pattern::RuntimeCheckedType;
 use arcweft_core::step::{
     RuntimeHostCallError, RuntimeHostCallErrorKind, RuntimeHostCallMode, RuntimeHostCallRequest,
@@ -30,7 +31,7 @@ use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats, TaskCla
 use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 use thiserror::Error;
@@ -1390,34 +1391,20 @@ impl HostAdapter for NativeFileAdapter {
                 bound,
             ));
         }
-        let (result, metrics) = match host_request {
+        Some(match host_request {
             HostTaskRequest::FileReadText(request) => {
-                complete_read_text(&self.roots, &request.path)
+                complete_file_read(&self.roots, &request.path, NativeFileReadKind::Text, bound)
             }
             HostTaskRequest::FileWriteText(request) => {
-                return Some(complete_file_write(
-                    &self.roots,
-                    &request.path,
-                    request.text.as_bytes(),
-                    bound,
-                ));
+                complete_file_write(&self.roots, &request.path, request.text.as_bytes(), bound)
             }
             HostTaskRequest::FileReadBytes(request) => {
-                complete_read_bytes(&self.roots, &request.path)
+                complete_file_read(&self.roots, &request.path, NativeFileReadKind::Bytes, bound)
             }
             HostTaskRequest::FileWriteBytes(request) => {
-                return Some(complete_file_write(
-                    &self.roots,
-                    &request.path,
-                    &request.bytes,
-                    bound,
-                ));
+                complete_file_write(&self.roots, &request.path, &request.bytes, bound)
             }
             _ => return None,
-        };
-        Some(HostTaskOutcome {
-            completion: file_task_completion(bound, result),
-            metrics,
         })
     }
 
@@ -1526,38 +1513,30 @@ impl NativeCliAdapter {
     }
 }
 
-fn file_task_completion(
-    bound: &BoundTaskOutcome,
-    result: Result<RuntimeValue, String>,
-) -> HostTaskCompletion {
-    match result {
-        Ok(value) => bound.try_result_ok(value).map_or_else(
+fn file_task_error(bound: &BoundTaskOutcome, message: String) -> HostTaskOutcome {
+    let Ok(Some(RuntimeCheckedType::Opaque { owner })) = bound.result_error_checked() else {
+        return failed_host_task("native file task has no exact opaque domain-error contract");
+    };
+    if owner.producer().as_str() != "arcweft.adapter.native-file" {
+        return failed_host_task(format!(
+            "native file task error owner uses foreign producer `{}`",
+            owner.producer().as_str()
+        ));
+    }
+    let value = match owner.try_wrap(RuntimeValue::String(message)) {
+        Ok(value) => value,
+        Err(error) => {
+            return failed_host_task(format!(
+                "native file task could not materialize its domain error: {error}"
+            ));
+        }
+    };
+    HostTaskOutcome {
+        completion: bound.try_result_err(value).map_or_else(
             |error| HostTaskCompletion::Failed(error.to_string()),
             HostTaskCompletion::Ready,
         ),
-        Err(error) => {
-            let Ok(Some(RuntimeCheckedType::Opaque { owner })) = bound.result_error_checked()
-            else {
-                return HostTaskCompletion::Failed(
-                    "native file task has no exact opaque domain-error contract".to_owned(),
-                );
-            };
-            if owner.producer().as_str() != "arcweft.adapter.native-file" {
-                return HostTaskCompletion::Failed(format!(
-                    "native file task error owner uses foreign producer `{}`",
-                    owner.producer().as_str()
-                ));
-            }
-            match owner.try_wrap(RuntimeValue::String(error)) {
-                Ok(value) => bound.try_result_err(value).map_or_else(
-                    |error| HostTaskCompletion::Failed(error.to_string()),
-                    HostTaskCompletion::Ready,
-                ),
-                Err(error) => HostTaskCompletion::Failed(format!(
-                    "native file task could not materialize its domain error: {error}"
-                )),
-            }
-        }
+        metrics: HostTaskMetrics::default(),
     }
 }
 
@@ -1611,20 +1590,20 @@ fn complete_manifest_file_call(
         Err(message) => return failed_host_task(message),
     };
 
-    let (result, metrics) = match operation.as_str() {
+    match operation.as_str() {
         "read_text" => match arguments.as_slice() {
             [path] => match custom_file_path(path) {
-                Ok(path) => complete_read_text(roots, &path),
-                Err(message) => return failed_host_task(message),
+                Ok(path) => complete_file_read(roots, &path, NativeFileReadKind::Text, bound),
+                Err(message) => failed_host_task(message),
             },
-            _ => return failed_host_task("fs.read_text manifest requires exactly one argument"),
+            _ => failed_host_task("fs.read_text manifest requires exactly one argument"),
         },
         "read_bytes" => match arguments.as_slice() {
             [path] => match custom_file_path(path) {
-                Ok(path) => complete_read_bytes(roots, &path),
-                Err(message) => return failed_host_task(message),
+                Ok(path) => complete_file_read(roots, &path, NativeFileReadKind::Bytes, bound),
+                Err(message) => failed_host_task(message),
             },
-            _ => return failed_host_task("fs.read_bytes manifest requires exactly one argument"),
+            _ => failed_host_task("fs.read_bytes manifest requires exactly one argument"),
         },
         "write_text" => match arguments.as_slice() {
             [path, body] => {
@@ -1635,9 +1614,9 @@ fn complete_manifest_file_call(
                 let RuntimeValue::String(body) = body else {
                     return failed_host_task("fs.write_text body must be String");
                 };
-                return complete_file_write(roots, &path, body.as_bytes(), bound);
+                complete_file_write(roots, &path, body.as_bytes(), bound)
             }
-            _ => return failed_host_task("fs.write_text manifest requires exactly two arguments"),
+            _ => failed_host_task("fs.write_text manifest requires exactly two arguments"),
         },
         "write_bytes" => match arguments.as_slice() {
             [path, body] => {
@@ -1649,22 +1628,13 @@ fn complete_manifest_file_call(
                     Ok(body) => body,
                     Err(message) => return failed_host_task(message),
                 };
-                return complete_file_write(roots, &path, &body, bound);
+                complete_file_write(roots, &path, &body, bound)
             }
-            _ => {
-                return failed_host_task("fs.write_bytes manifest requires exactly two arguments");
-            }
+            _ => failed_host_task("fs.write_bytes manifest requires exactly two arguments"),
         },
-        _ => {
-            return failed_host_task(format!(
-                "native file adapter does not implement host call `{host_call_id}`"
-            ));
-        }
-    };
-
-    HostTaskOutcome {
-        completion: file_task_completion(bound, result),
-        metrics,
+        _ => failed_host_task(format!(
+            "native file adapter does not implement host call `{host_call_id}`"
+        )),
     }
 }
 
@@ -1953,47 +1923,111 @@ fn complete_task(
     }
 }
 
-fn complete_read_text(
-    roots: &NativeFileRoots,
-    path: &str,
-) -> (Result<RuntimeValue, String>, HostTaskMetrics) {
-    match virtual_path(roots, path, NativeFileAccess::Read)
-        .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
-    {
-        Ok(text) => {
-            let bytes_read = text.len();
-            (
-                Ok(RuntimeValue::String(text)),
-                HostTaskMetrics {
-                    read_ops: 1,
-                    bytes_read,
-                    ..HostTaskMetrics::default()
-                },
-            )
-        }
-        Err(error) => (Err(error), HostTaskMetrics::default()),
+#[derive(Clone, Copy)]
+enum NativeFileReadKind {
+    Text,
+    Bytes,
+}
+
+impl NativeFileReadKind {
+    // Every body byte spends at least one encoded byte. A byte sequence also
+    // spends one logical item, node, and validation step per element.
+    fn body_limit(self, limits: RuntimeSchemaLimits) -> usize {
+        let shape_limit = match self {
+            Self::Text => limits.max_string_bytes.min(u64::from(u32::MAX)),
+            Self::Bytes => u64::from(limits.max_sequence_items.min(limits.max_nodes))
+                .min(limits.max_validation_work),
+        };
+        usize::try_from(shape_limit.min(limits.max_encoded_bytes)).unwrap_or(usize::MAX)
     }
 }
 
-fn complete_read_bytes(
+#[derive(Debug, Error)]
+enum NativeFileReadError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error("native file read exceeds the bound task's {limit}-byte body limit")]
+    BodyLimit { limit: usize },
+    #[error("native file read could not allocate its bounded buffer: {0}")]
+    Allocation(#[from] std::collections::TryReserveError),
+}
+
+fn complete_file_read(
     roots: &NativeFileRoots,
     path: &str,
-) -> (Result<RuntimeValue, String>, HostTaskMetrics) {
-    match virtual_path(roots, path, NativeFileAccess::Read)
-        .and_then(|path| fs::read(path).map_err(|error| error.to_string()))
+    kind: NativeFileReadKind,
+    bound: &BoundTaskOutcome,
+) -> HostTaskOutcome {
+    match bound.is_result_type() {
+        Ok(true) => {}
+        Ok(false) => return failed_host_task("native file read requires a Result outcome"),
+        Err(error) => return failed_host_task(error.to_string()),
+    }
+    let file = match virtual_path(roots, path, NativeFileAccess::Read)
+        .and_then(|path| fs::File::open(path).map_err(|error| error.to_string()))
     {
-        Ok(bytes) => {
-            let bytes_read = bytes.len();
-            (
-                Ok(runtime_sequence_dense_bytes(bytes)),
-                HostTaskMetrics {
-                    read_ops: 1,
-                    bytes_read,
-                    ..HostTaskMetrics::default()
-                },
-            )
+        Ok(file) => file,
+        Err(message) => return file_task_error(bound, message),
+    };
+    let bytes = match read_file_body(file, kind.body_limit(bound.schema_limits())) {
+        Ok(bytes) => bytes,
+        Err(NativeFileReadError::Io(error)) => return file_task_error(bound, error.to_string()),
+        Err(error) => return failed_host_task(error.to_string()),
+    };
+    let bytes_read = bytes.len();
+    let completion = match kind {
+        NativeFileReadKind::Text => match String::from_utf8(bytes) {
+            Ok(text) => bound.try_result_ok_text(text),
+            Err(_) => {
+                return file_task_error(bound, "stream did not contain valid UTF-8".to_owned());
+            }
+        },
+        NativeFileReadKind::Bytes => bound.try_result_ok_bytes(bytes),
+    };
+    HostTaskOutcome {
+        completion: completion.map_or_else(
+            |error| HostTaskCompletion::Failed(error.to_string()),
+            HostTaskCompletion::Ready,
+        ),
+        metrics: HostTaskMetrics {
+            read_ops: 1,
+            bytes_read,
+            ..HostTaskMetrics::default()
+        },
+    }
+}
+
+fn read_file_body(mut reader: impl Read, limit: usize) -> Result<Vec<u8>, NativeFileReadError> {
+    let mut buffer = Vec::new();
+    let mut filled = 0;
+    loop {
+        if filled == limit {
+            // Distinguish exact-length input from overflow without extending the retained buffer.
+            return match read_retrying_interrupted(&mut reader, &mut [0])? {
+                0 => Ok(buffer),
+                _ => Err(NativeFileReadError::BodyLimit { limit }),
+            };
         }
-        Err(error) => (Err(error), HostTaskMetrics::default()),
+        if filled == buffer.len() {
+            let next = filled.saturating_mul(2).max(8192).min(limit);
+            buffer.try_reserve_exact(next - filled)?;
+            buffer.resize(next, 0);
+        }
+        let read = read_retrying_interrupted(&mut reader, &mut buffer[filled..])?;
+        if read == 0 {
+            buffer.truncate(filled);
+            return Ok(buffer);
+        }
+        filled += read;
+    }
+}
+
+fn read_retrying_interrupted(reader: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
+    loop {
+        match reader.read(buffer) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            result => return result,
+        }
     }
 }
 
@@ -2022,10 +2056,7 @@ fn complete_file_write(
                 ..HostTaskMetrics::default()
             },
         },
-        Err(message) => HostTaskOutcome {
-            completion: file_task_completion(bound, Err(message)),
-            metrics: HostTaskMetrics::default(),
-        },
+        Err(message) => file_task_error(bound, message),
     }
 }
 
@@ -3704,6 +3735,64 @@ mod tests {
             Some(HostTaskCompletion::Failed(message))
                 if message.contains("manifest requires 1")
         ));
+    }
+
+    #[test]
+    fn native_file_reader_bounds_growth_and_probes_at_most_one_extra_byte() {
+        let maximum = 16_385;
+        let bytes: Vec<u8> = (0..65_536).map(|index| (index % 251) as u8).collect();
+        let mut oversized = io::Cursor::new(&bytes);
+        assert!(
+            matches!(read_file_body(&mut oversized, maximum), Err(NativeFileReadError::BodyLimit { limit }) if limit == maximum)
+        );
+        assert_eq!(oversized.position(), (maximum + 1) as u64);
+
+        let mut exact = io::Cursor::new(&bytes[..maximum]);
+        assert_eq!(
+            read_file_body(&mut exact, maximum).unwrap(),
+            bytes[..maximum]
+        );
+        assert_eq!(exact.position(), maximum as u64);
+        assert!(read_file_body(io::empty(), 0).unwrap().is_empty());
+        assert!(matches!(
+            read_file_body(&bytes[..1], 0),
+            Err(NativeFileReadError::BodyLimit { limit: 0 })
+        ));
+    }
+
+    #[test]
+    fn manifest_file_read_rejects_a_body_over_the_bound_text_limit() {
+        let temporary = TempNativeFileRoot::new();
+        let manifest = standard::native_file_manifest();
+        let adapter = NativeFileAdapter {
+            manifest: manifest.clone(),
+            roots: NativeFileRoots::new(temporary.path().join("assets"), temporary.path()),
+        };
+        let save = temporary.path().join("save");
+        fs::create_dir(&save).unwrap();
+        let file = fs::File::create(save.join("boundary.txt")).unwrap();
+        let path =
+            RuntimeVirtualPath::new(RuntimeVirtualPathSpace::Save, "boundary.txt").into_value();
+        let (task, bound) = manifest_file_task(
+            &manifest,
+            "bounded",
+            "read_text",
+            [("path", path)],
+            result_type(RuntimeCheckedType::String),
+        );
+        let limit = bound.schema_limits().max_string_bytes;
+        file.set_len(limit + 1).unwrap();
+        let oversized = adapter.complete(&task, &bound).unwrap();
+        assert!(
+            matches!(oversized.completion, HostTaskCompletion::Failed(message) if message.contains(&format!("{limit}-byte body limit")))
+        );
+        assert_eq!(oversized.metrics.read_ops, 0);
+
+        file.set_len(limit).unwrap();
+        drop(file);
+        let exact = adapter.complete(&task, &bound).unwrap();
+        assert!(matches!(exact.completion, HostTaskCompletion::Ready(_)));
+        assert_eq!(exact.metrics.bytes_read as u64, limit);
     }
 
     #[test]
