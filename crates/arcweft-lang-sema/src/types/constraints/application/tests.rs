@@ -574,18 +574,32 @@ fn imported_rigid_and_future_parameters_cannot_be_specialized_by_a_child() {
             let actual = context
                 .fixture_prepared_operand_in(&original, &actual, &mut effect_graph)
                 .unwrap();
-            assert!(
-                crate::types::constraints::relate_selected_call(
-                    &mut effect_graph,
-                    &expected.view(),
-                    &actual.view(),
-                    context.fork_path(&child).unwrap(),
-                    &mut context,
-                    ConstraintAcceptance::ActualAcceptsPattern
-                )
-                .unwrap()
-                .is_empty()
-            );
+            let related = crate::types::constraints::relate_selected_call(
+                &mut effect_graph,
+                &expected.view(),
+                &actual.view(),
+                context.fork_path(&child).unwrap(),
+                &mut context,
+                ConstraintAcceptance::ActualAcceptsPattern,
+            )
+            .unwrap();
+            if matches!(expected.value(), TypeKind::Function { .. }) {
+                let [candidate] = related.as_slice() else {
+                    panic!("the function shape leaves one effect relation to close");
+                };
+                let failure = candidate
+                    .close_original_path_effects(&mut effect_graph, &mut context)
+                    .err()
+                    .expect("the child must not choose a value for the imported effect");
+                let expected_failure = if future {
+                    crate::effect_row::prepared::PreparedEffectInvariant::UnresolvedFuture.into()
+                } else {
+                    crate::types::constraints::TypeConstraintRejection::EffectUnsatisfiable.into()
+                };
+                assert_eq!(failure, expected_failure);
+            } else {
+                assert!(related.is_empty());
+            }
         }
     }
 }

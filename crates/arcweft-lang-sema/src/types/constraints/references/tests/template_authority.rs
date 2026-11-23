@@ -1,13 +1,18 @@
 use std::sync::atomic::AtomicBool;
 
 use crate::{
-    effect_row::{EffectConstraintEligibility, EffectConstraintVariable, EffectFormula, EffectRow},
+    effect_row::{
+        EffectConstraintEligibility, EffectConstraintVariable, EffectFormula, EffectRow,
+        prepared::{
+            PreparedEffectGraph, PreparedEffectPredicate, PreparedEffectRow, SourceEffectParameter,
+        },
+    },
     effects::EffectSet,
     types::{
         ArrayLength, DetachedGenericOwnerId, GenericBinder, GenericConstParameterId,
         GenericConstReference, GenericEffectParameterId, GenericEffectReference,
         GenericParameterOwnerId, GenericScope, GenericTypeParameterId, GenericTypeReference,
-        TypeKind,
+        PreparedEffects, TypeKind,
         constraints::{
             ConstraintDomain, ConstraintGenericParameterId, TypeConstraintConstEligibility,
             TypeConstraintEffectScope, TypeConstraintParameterEligibility,
@@ -173,6 +178,63 @@ fn values(keys: &[ConstraintGenericParameterId; 3], context: &mut Context<'_>) -
     ]
 }
 
+fn assert_opened_type(
+    mut actual: TypeKind<PreparedEffects>,
+    expected: &TypeKind,
+    graph: &PreparedEffectGraph,
+    context: &mut Context<'_>,
+) {
+    let canonical = context.prepare_fixture_type(expected).unwrap();
+    if let (
+        TypeKind::Function {
+            effects, predicate, ..
+        },
+        TypeKind::Function {
+            effects: PreparedEffectRow::Canonical(expected_row),
+            predicate: PreparedEffectPredicate::Canonical(expected_predicate),
+            ..
+        },
+    ) = (&mut actual, &canonical)
+    {
+        let mut row_references = expected_row.variables().unwrap();
+        if let Some(reference @ GenericEffectReference::Inference(_)) = row_references.next() {
+            assert!(row_references.next().is_none());
+            let mut introductions = Vec::new();
+            graph
+                .read()
+                .visit_row_source_parameters(effects, context, &mut |parameter, _| {
+                    let SourceEffectParameter::Introduction(owner) = parameter else {
+                        panic!("the opened effect is an application of its introducing owner");
+                    };
+                    introductions.push(owner.clone());
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(introductions, [reference.clone()]);
+            *effects = PreparedEffectRow::Canonical(expected_row.clone());
+        }
+        for reference in expected_predicate.variables() {
+            if !matches!(reference, GenericEffectReference::Inference(_)) {
+                continue;
+            }
+            let mut introductions = Vec::new();
+            graph
+                .read()
+                .visit_predicate_source_parameters(predicate, context, &mut |parameter, _| {
+                    let SourceEffectParameter::Introduction(owner) = parameter else {
+                        panic!("the opened predicate uses its introducing owner");
+                    };
+                    introductions.push(owner.clone());
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(introductions, [reference.clone()]);
+            *predicate = PreparedEffectPredicate::Canonical(expected_predicate.clone());
+        }
+    }
+    assert_eq!(actual, canonical);
+}
+
 #[test]
 fn a_template_cannot_borrow_another_applications_rigid_or_inference_inventory() {
     let mut effect_graph = crate::effect_row::prepared::PreparedEffectGraph::default();
@@ -198,13 +260,10 @@ fn a_template_cannot_borrow_another_applications_rigid_or_inference_inventory() 
             .admit_application(path, child, &mut effect_graph)
             .unwrap();
         for (index, value) in values(&expected, &mut context).into_iter().enumerate() {
-            let expected_value = context.prepare_fixture_type(&value).unwrap();
-            assert_eq!(
-                context
-                    .open_fixture_template_type(&value, &path, child_id, &mut effect_graph)
-                    .unwrap(),
-                expected_value
-            );
+            let result = context
+                .open_fixture_template_type(&value, &path, child_id, &mut effect_graph)
+                .unwrap();
+            assert_opened_type(result, &value, &effect_graph, &mut context);
             let [
                 ConstraintGenericParameterId::Type(ty),
                 ConstraintGenericParameterId::Const(length),
@@ -261,13 +320,10 @@ fn a_template_can_read_its_original_sources_exact_imported_scope() {
             .admit_application(path, child, &mut effect_graph)
             .unwrap();
         for value in values(&expected, &mut context) {
-            let expected_value = context.prepare_fixture_type(&value).unwrap();
-            assert_eq!(
-                context
-                    .open_fixture_template_type(&value, &path, child_id, &mut effect_graph)
-                    .unwrap(),
-                expected_value
-            );
+            let result = context
+                .open_fixture_template_type(&value, &path, child_id, &mut effect_graph)
+                .unwrap();
+            assert_opened_type(result, &value, &effect_graph, &mut context);
         }
     }
 }
