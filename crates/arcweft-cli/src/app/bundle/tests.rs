@@ -697,13 +697,10 @@ flow main() -> String { return "done" }
 
 #[test]
 fn collect_bundle_image_assets_decodes_static_and_animated_webp_metadata() {
-    let assets = collect_bundle_image_assets(
-        &[
-            sample_image_virtual_file("bg/poster.webp"),
-            sample_image_virtual_file("bg/loop.webp"),
-        ],
-        &[],
-    )
+    let assets = collect_bundle_image_assets(&[
+        sample_image_virtual_file("bg/poster.webp"),
+        sample_image_virtual_file("bg/loop.webp"),
+    ])
     .expect("sample image assets decode");
 
     let poster = assets
@@ -727,7 +724,7 @@ fn collect_bundle_image_assets_decodes_static_and_animated_webp_metadata() {
 fn collect_bundle_image_assets_rejects_invalid_stable_identity_components() {
     let mut file = sample_image_virtual_file("bg/poster.webp");
     file.path = "bg/main menu.webp".to_owned();
-    assert!(collect_bundle_image_assets(&[file], &[]).is_err());
+    assert!(collect_bundle_image_assets(&[file]).is_err());
 }
 
 #[test]
@@ -736,11 +733,11 @@ fn collect_bundle_image_assets_rejects_normalized_identity_collisions() {
     dashed.path = "ui/main-menu.webp".to_owned();
     let mut underscored = sample_image_virtual_file("bg/room.png");
     underscored.path = "ui/main_menu.png".to_owned();
-    assert!(collect_bundle_image_assets(&[dashed, underscored], &[]).is_err());
+    assert!(collect_bundle_image_assets(&[dashed, underscored]).is_err());
 
     let mut uppercase = sample_image_virtual_file("bg/poster.webp");
     uppercase.path = "images/Hero.webp".to_owned();
     let mut lowercase = sample_image_virtual_file("bg/room.png");
     lowercase.path = "images/hero.png".to_owned();
-    assert!(collect_bundle_image_assets(&[uppercase, lowercase], &[]).is_err());
+    assert!(collect_bundle_image_assets(&[uppercase, lowercase]).is_err());
 }
