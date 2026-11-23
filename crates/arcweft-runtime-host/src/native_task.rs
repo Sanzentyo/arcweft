@@ -1395,13 +1395,23 @@ impl HostAdapter for NativeFileAdapter {
                 complete_read_text(&self.roots, &request.path)
             }
             HostTaskRequest::FileWriteText(request) => {
-                complete_write_text(&self.roots, &request.path, &request.text)
+                return Some(complete_file_write(
+                    &self.roots,
+                    &request.path,
+                    request.text.as_bytes(),
+                    bound,
+                ));
             }
             HostTaskRequest::FileReadBytes(request) => {
                 complete_read_bytes(&self.roots, &request.path)
             }
             HostTaskRequest::FileWriteBytes(request) => {
-                complete_write_bytes(&self.roots, &request.path, &request.bytes)
+                return Some(complete_file_write(
+                    &self.roots,
+                    &request.path,
+                    &request.bytes,
+                    bound,
+                ));
             }
             _ => return None,
         };
@@ -1502,14 +1512,15 @@ impl NativeCliAdapter {
         text: &str,
         bound: &BoundTaskOutcome,
     ) -> HostTaskCompletion {
+        let ready = match bound.try_payload(RuntimeValue::Unit) {
+            Ok(value) => HostTaskCompletion::Ready(value),
+            Err(error) => return HostTaskCompletion::Failed(error.to_string()),
+        };
         match writer
             .write_all(text.as_bytes())
             .and_then(|()| writer.flush())
         {
-            Ok(()) => bound.try_payload(RuntimeValue::Unit).map_or_else(
-                |error| HostTaskCompletion::Failed(error.to_string()),
-                HostTaskCompletion::Ready,
-            ),
+            Ok(()) => ready,
             Err(error) => HostTaskCompletion::Failed(error.to_string()),
         }
     }
@@ -1517,10 +1528,10 @@ impl NativeCliAdapter {
 
 fn file_task_completion(
     bound: &BoundTaskOutcome,
-    result: Result<RuntimePayload, String>,
+    result: Result<RuntimeValue, String>,
 ) -> HostTaskCompletion {
     match result {
-        Ok(value) => bound.try_result_ok(value.value().clone()).map_or_else(
+        Ok(value) => bound.try_result_ok(value).map_or_else(
             |error| HostTaskCompletion::Failed(error.to_string()),
             HostTaskCompletion::Ready,
         ),
@@ -1624,7 +1635,7 @@ fn complete_manifest_file_call(
                 let RuntimeValue::String(body) = body else {
                     return failed_host_task("fs.write_text body must be String");
                 };
-                complete_write_text(roots, &path, body)
+                return complete_file_write(roots, &path, body.as_bytes(), bound);
             }
             _ => return failed_host_task("fs.write_text manifest requires exactly two arguments"),
         },
@@ -1638,7 +1649,7 @@ fn complete_manifest_file_call(
                     Ok(body) => body,
                     Err(message) => return failed_host_task(message),
                 };
-                complete_write_bytes(roots, &path, &body)
+                return complete_file_write(roots, &path, &body, bound);
             }
             _ => {
                 return failed_host_task("fs.write_bytes manifest requires exactly two arguments");
@@ -1945,14 +1956,14 @@ fn complete_task(
 fn complete_read_text(
     roots: &NativeFileRoots,
     path: &str,
-) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
+) -> (Result<RuntimeValue, String>, HostTaskMetrics) {
     match virtual_path(roots, path, NativeFileAccess::Read)
         .and_then(|path| fs::read_to_string(path).map_err(|error| error.to_string()))
     {
         Ok(text) => {
             let bytes_read = text.len();
             (
-                Ok(RuntimePayload::from(text)),
+                Ok(RuntimeValue::String(text)),
                 HostTaskMetrics {
                     read_ops: 1,
                     bytes_read,
@@ -1967,14 +1978,14 @@ fn complete_read_text(
 fn complete_read_bytes(
     roots: &NativeFileRoots,
     path: &str,
-) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
+) -> (Result<RuntimeValue, String>, HostTaskMetrics) {
     match virtual_path(roots, path, NativeFileAccess::Read)
         .and_then(|path| fs::read(path).map_err(|error| error.to_string()))
     {
         Ok(bytes) => {
             let bytes_read = bytes.len();
             (
-                Ok(RuntimePayload::new(runtime_sequence_dense_bytes(bytes))),
+                Ok(runtime_sequence_dense_bytes(bytes)),
                 HostTaskMetrics {
                     read_ops: 1,
                     bytes_read,
@@ -1986,50 +1997,36 @@ fn complete_read_bytes(
     }
 }
 
-fn complete_write_text(
-    roots: &NativeFileRoots,
-    path: &str,
-    text: &str,
-) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
-    let result = virtual_path(roots, path, NativeFileAccess::Write).and_then(|path| {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        fs::write(path, text).map_err(|error| error.to_string())?;
-        Ok(RuntimePayload::new(RuntimeValue::Unit))
-    });
-    let stats = result.as_ref().map_or_else(
-        |_| HostTaskMetrics::default(),
-        |_| HostTaskMetrics {
-            write_ops: 1,
-            bytes_written: text.len(),
-            ..HostTaskMetrics::default()
-        },
-    );
-    (result, stats)
-}
-
-fn complete_write_bytes(
+fn complete_file_write(
     roots: &NativeFileRoots,
     path: &str,
     bytes: &[u8],
-) -> (Result<RuntimePayload, String>, HostTaskMetrics) {
+    bound: &BoundTaskOutcome,
+) -> HostTaskOutcome {
+    let ready = match bound.try_result_ok(RuntimeValue::Unit) {
+        Ok(value) => HostTaskCompletion::Ready(value),
+        Err(error) => return failed_host_task(error.to_string()),
+    };
     let result = virtual_path(roots, path, NativeFileAccess::Write).and_then(|path| {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
-        fs::write(path, bytes).map_err(|error| error.to_string())?;
-        Ok(RuntimePayload::new(RuntimeValue::Unit))
+        fs::write(path, bytes).map_err(|error| error.to_string())
     });
-    let stats = result.as_ref().map_or_else(
-        |_| HostTaskMetrics::default(),
-        |_| HostTaskMetrics {
-            write_ops: 1,
-            bytes_written: bytes.len(),
-            ..HostTaskMetrics::default()
+    match result {
+        Ok(()) => HostTaskOutcome {
+            completion: ready,
+            metrics: HostTaskMetrics {
+                write_ops: 1,
+                bytes_written: bytes.len(),
+                ..HostTaskMetrics::default()
+            },
         },
-    );
-    (result, stats)
+        Err(message) => HostTaskOutcome {
+            completion: file_task_completion(bound, Err(message)),
+            metrics: HostTaskMetrics::default(),
+        },
+    }
 }
 
 fn is_io_task(request: &HostTaskRequest) -> bool {
@@ -3710,6 +3707,75 @@ mod tests {
     }
 
     #[test]
+    fn native_file_write_checks_the_success_type_before_touching_disk() {
+        let temporary = TempNativeFileRoot::new();
+        let manifest = standard::native_file_manifest();
+        let adapter = NativeFileAdapter {
+            manifest: manifest.clone(),
+            roots: NativeFileRoots::new(temporary.path().join("assets"), temporary.path()),
+        };
+        let save = temporary.path().join("save");
+        fs::create_dir_all(&save).expect("save directory is created");
+        let original = save.join("profile.txt");
+        fs::write(&original, "original").expect("fixture is written");
+        let path = RuntimeVirtualPath::new(RuntimeVirtualPathSpace::Save, "profile.txt");
+        let (manifest_write, manifest_bound) = manifest_file_task(
+            &manifest,
+            "wrong-result",
+            "write_text",
+            [
+                ("path", path.into_value()),
+                ("body", RuntimeValue::String("changed".to_owned())),
+            ],
+            result_type(RuntimeCheckedType::String),
+        );
+        let direct_write = task(
+            "wrong-result-bytes",
+            HostTaskRequest::FileWriteBytes(arcweft_core::task::FileWriteBytesRequest {
+                path: "save:nested/new.bin".to_owned(),
+                bytes: vec![1, 2],
+            }),
+        );
+        let direct_bound = direct_write.outcome.bind_standalone().unwrap();
+        for (request, bound) in [
+            (&manifest_write, &manifest_bound),
+            (&direct_write, &direct_bound),
+        ] {
+            let outcome = adapter
+                .complete(request, bound)
+                .expect("write is recognized");
+            assert!(matches!(outcome.completion, HostTaskCompletion::Failed(_)));
+            assert_eq!(outcome.metrics.write_ops, 0);
+        }
+        assert_eq!(
+            fs::read_to_string(&original).expect("original remains"),
+            "original"
+        );
+        assert!(!save.join("nested").exists());
+    }
+
+    #[test]
+    fn native_cli_output_checks_the_success_type_before_writing() {
+        let invalid = TaskOutcomeContract::new(RuntimeCheckedType::String)
+            .bind_standalone()
+            .unwrap();
+        let valid = TaskOutcomeContract::new(RuntimeCheckedType::Unit)
+            .bind_standalone()
+            .unwrap();
+        let mut bytes = Vec::new();
+        assert!(matches!(
+            NativeCliAdapter::write_output(&mut bytes, "rejected", &invalid),
+            HostTaskCompletion::Failed(_)
+        ));
+        assert!(bytes.is_empty());
+        assert_eq!(
+            NativeCliAdapter::write_output(&mut bytes, "accepted", &valid),
+            HostTaskCompletion::Ready(RuntimePayload::new(RuntimeValue::Unit))
+        );
+        assert_eq!(bytes, b"accepted");
+    }
+
+    #[test]
     fn native_file_roots_separate_read_only_assets_from_mutable_state() {
         let roots = NativeFileRoots::new("project/assets", "project/.arcweft");
 
@@ -3956,6 +4022,10 @@ mod tests {
                 })
                 .collect(),
             HostTaskRequest::SystemInfo(_) => Vec::new(),
+            HostTaskRequest::FileWriteBytes(request) => vec![
+                RuntimeValue::String(request.path.clone()),
+                runtime_sequence_dense_bytes(request.bytes.clone()),
+            ],
             _ => panic!("fixture request requires an explicit typed argument inventory"),
         };
         let producer = NeedProducerSpec::new(
