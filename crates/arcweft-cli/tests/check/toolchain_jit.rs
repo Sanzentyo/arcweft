@@ -1957,12 +1957,16 @@ fn other() -> i64 { return 2i64 }
 
 mod scalar_live_budget_owner_tests {
     use arcweft_core::engine::{Engine, FlowFiberStatus};
-    use arcweft_core::plan::FlowOp;
+    use arcweft_core::plan::{
+        FlowOp, RuntimeFunctionSemanticRole, RuntimeFunctionSiteBody, RuntimePlan,
+        RuntimePlanTypeProjection,
+    };
     use arcweft_core::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
+    use arcweft_core::scope::RuntimeScopeIdentity;
     use arcweft_core::step::{
         RuntimeStepBudget, RuntimeStepMode, RuntimeStepOptions, RuntimeStepStopReason,
     };
-    use arcweft_core::value::RuntimeValue;
+    use arcweft_core::value::{RuntimeSignedIntWidth, RuntimeValue};
     use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureBackendMode};
     use std::sync::Arc;
 
@@ -2243,6 +2247,34 @@ flow main() -> String { return "ok" }
         }
     }
 
+    fn three_input_i64_body(plan: &RuntimePlan) -> &[FlowOp] {
+        let mut bodies = plan
+            .function_sites()
+            .iter_with_ids()
+            .filter_map(|(_, site)| {
+                if site.role() != RuntimeFunctionSemanticRole::Ordinary || site.inputs().len() != 3
+                {
+                    return None;
+                }
+                let result = plan.type_table().get(site.result())?;
+                if !matches!(
+                    result.projection(),
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64)
+                ) {
+                    return None;
+                }
+                let RuntimeFunctionSiteBody::Executable(body) = site.body() else {
+                    return None;
+                };
+                Some(body.ops())
+            });
+        let body = bodies
+            .next()
+            .expect("the admitted three-input executable score body");
+        assert!(bodies.next().is_none(), "the score body is unique");
+        body
+    }
+
     #[test]
     fn successful_scoped_branch_completion_charges_generated_scopes_and_discards_return_suffixes() {
         let selected = source_program(
@@ -2268,60 +2300,34 @@ flow main() -> String { return "ok" }
         );
         // Both authored branch blocks have an emitted lexical scope in
         // addition to the Engine's generated branch frame.
-        assert!(
-            selected
-                .plan()
-                .function_sites()
-                .iter_with_ids()
-                .any(|(_, site)| {
-                    if site.role() != arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary
-                        || site.inputs().len() != 3
-                    {
-                        return false;
-                    }
-                    let Some(result) = selected.plan().type_table().get(site.result()) else {
-                        return false;
-                    };
-                    if !matches!(
-                        result.projection(),
-                        arcweft_core::plan::RuntimePlanTypeProjection::Signed(
-                            arcweft_core::value::RuntimeSignedIntWidth::I64
-                        )
-                    ) {
-                        return false;
-                    }
-                    let arcweft_core::plan::RuntimeFunctionSiteBody::Executable(body) = site.body()
-                    else {
-                        return false;
-                    };
-                    let [
+        let [
+            FlowOp::EnterScope {
+                identity: RuntimeScopeIdentity::Named(_),
+            },
+            FlowOp::If {
+                then_ops, else_ops, ..
+            },
+            FlowOp::ExitScope,
+        ] = three_input_i64_body(selected.plan())
+        else {
+            panic!("the score body retains the named scope and its discarded exit");
+        };
+        for branch in [then_ops, else_ops] {
+            assert!(
+                matches!(
+                    branch.as_slice(),
+                    [
                         FlowOp::EnterScope {
-                            identity: arcweft_core::scope::RuntimeScopeIdentity::Named(_),
+                            identity: RuntimeScopeIdentity::Anonymous
                         },
-                        FlowOp::If {
-                            then_ops, else_ops, ..
-                        },
-                        FlowOp::ExitScope,
-                    ] = body.ops()
-                    else {
-                        return false;
-                    };
-                    [then_ops, else_ops].into_iter().all(|ops| {
-                        matches!(
-                            ops.as_slice(),
-                            [
-                                FlowOp::EnterScope {
-                                    identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous
-                                },
-                                FlowOp::Let { .. },
-                                FlowOp::ReturnExpr(_),
-                                FlowOp::ExitScope
-                            ]
-                        )
-                    })
-                }),
-            "the admitted three-formal numeric body retains emitted scope entry, both early-return arms, and its discarded lexical exit"
-        );
+                        FlowOp::Let { .. },
+                        FlowOp::ReturnExpr(_),
+                        FlowOp::ExitScope
+                    ]
+                ),
+                "both early-return arms retain their own emitted scope and discarded exit"
+            );
+        }
         let options = RuntimeStepOptions {
             mode: RuntimeStepMode::Drain,
             budget: RuntimeStepBudget { max_ops: 64 },
@@ -2359,6 +2365,64 @@ flow main() -> String { return "ok" }
             }
         }
     }
+    fn moves_unit_through_scope_exits(plan: &RuntimePlan, ops: &[FlowOp]) -> bool {
+        use arcweft_core::pattern::{RuntimePattern, RuntimePatternKind};
+        use arcweft_core::value::{RuntimeExpr, RuntimeExprKind, RuntimeLocalReadMode};
+
+        fn moves_binding(expr: &RuntimeExpr, pattern: &RuntimePattern) -> bool {
+            let RuntimePatternKind::Bind { binding, .. } = pattern.kind() else {
+                return false;
+            };
+            matches!(expr.kind(), RuntimeExprKind::Local(read)
+                    if read.local() == binding.local() && read.fields().is_empty()
+                        && read.mode() == RuntimeLocalReadMode::Move)
+        }
+
+        let [
+            FlowOp::EnterScope {
+                identity: RuntimeScopeIdentity::Anonymous,
+            },
+            FlowOp::Let { .. },
+            FlowOp::ExitScopeBind {
+                pattern: branch_unit,
+                expr: unit_value,
+            },
+            FlowOp::ExitScopeBind {
+                pattern: outer_unit,
+                expr: branch_move,
+            },
+            FlowOp::Let {
+                pattern: discard,
+                expr: outer_move,
+            },
+            FlowOp::ReturnExpr(result),
+        ] = ops
+        else {
+            return false;
+        };
+        let Some(unit) = plan.type_table().get(unit_value.ty()) else {
+            return false;
+        };
+        matches!(unit.projection(), RuntimePlanTypeProjection::Unit)
+            && matches!(
+                unit_value.kind(),
+                RuntimeExprKind::Value(RuntimeValue::Unit)
+            )
+            && [
+                branch_unit.ty(),
+                outer_unit.ty(),
+                branch_move.ty(),
+                discard.ty(),
+                outer_move.ty(),
+            ]
+            .into_iter()
+            .all(|ty| ty == unit_value.ty())
+            && matches!(discard.kind(), RuntimePatternKind::Discard)
+            && moves_binding(branch_move, branch_unit)
+            && moves_binding(outer_move, outer_unit)
+            && result.ty() != unit_value.ty()
+    }
+
     #[test]
     fn successful_fallthrough_scopes_charge_generated_exit_operations() {
         let selected = source_program(
@@ -2381,107 +2445,24 @@ pub fn root(value: i64, unused: i64) -> i64 effects {} {
 flow main() -> String { return "ok" }
 "#,
         );
-        fn unit_continuation(plan: &arcweft_core::plan::RuntimePlan, ops: &[FlowOp]) -> bool {
-            use arcweft_core::pattern::{RuntimePattern, RuntimePatternKind};
-            use arcweft_core::value::{RuntimeExpr, RuntimeExprKind, RuntimeLocalReadMode};
-
-            fn moves_binding(expr: &RuntimeExpr, pattern: &RuntimePattern) -> bool {
-                let RuntimePatternKind::Bind { binding, .. } = pattern.kind() else {
-                    return false;
-                };
-                matches!(expr.kind(), RuntimeExprKind::Local(read)
-                    if read.local() == binding.local() && read.fields().is_empty()
-                        && read.mode() == RuntimeLocalReadMode::Move)
-            }
-
-            let [
-                FlowOp::EnterScope {
-                    identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
-                },
-                FlowOp::Let { .. },
-                FlowOp::ExitScopeBind {
-                    pattern: branch_unit,
-                    expr: unit_value,
-                },
-                FlowOp::ExitScopeBind {
-                    pattern: outer_unit,
-                    expr: branch_move,
-                },
-                FlowOp::Let {
-                    pattern: discard,
-                    expr: outer_move,
-                },
-                FlowOp::ReturnExpr(result),
-            ] = ops
-            else {
-                return false;
-            };
-            let Some(unit) = plan.type_table().get(unit_value.ty()) else {
-                return false;
-            };
-            matches!(
-                unit.projection(),
-                arcweft_core::plan::RuntimePlanTypeProjection::Unit
-            ) && matches!(
-                unit_value.kind(),
-                RuntimeExprKind::Value(RuntimeValue::Unit)
-            ) && [
-                branch_unit.ty(),
-                outer_unit.ty(),
-                branch_move.ty(),
-                discard.ty(),
-                outer_move.ty(),
-            ]
-            .into_iter()
-            .all(|ty| ty == unit_value.ty())
-                && matches!(discard.kind(), RuntimePatternKind::Discard)
-                && moves_binding(branch_move, branch_unit)
-                && moves_binding(outer_move, outer_unit)
-                && result.ty() != unit_value.ty()
+        let [
+            FlowOp::EnterScope {
+                identity: RuntimeScopeIdentity::Named(_),
+            },
+            FlowOp::Let { .. },
+            FlowOp::If {
+                then_ops, else_ops, ..
+            },
+        ] = three_input_i64_body(selected.plan())
+        else {
+            panic!("the score body retains the named scope and both fallthrough branches");
+        };
+        for branch in [then_ops, else_ops] {
+            assert!(
+                moves_unit_through_scope_exits(selected.plan(), branch),
+                "both branches must move and consume Unit across both lexical scopes before the numeric return"
+            );
         }
-        assert!(
-            selected
-                .plan()
-                .function_sites()
-                .iter_with_ids()
-                .any(|(_, site)| {
-                    if site.role() != arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary
-                        || site.inputs().len() != 3
-                    {
-                        return false;
-                    }
-                    let Some(result) = selected.plan().type_table().get(site.result()) else {
-                        return false;
-                    };
-                    if !matches!(
-                        result.projection(),
-                        arcweft_core::plan::RuntimePlanTypeProjection::Signed(
-                            arcweft_core::value::RuntimeSignedIntWidth::I64
-                        )
-                    ) {
-                        return false;
-                    }
-                    let arcweft_core::plan::RuntimeFunctionSiteBody::Executable(body) = site.body()
-                    else {
-                        return false;
-                    };
-                    let [
-                        FlowOp::EnterScope {
-                            identity: arcweft_core::scope::RuntimeScopeIdentity::Named(_),
-                        },
-                        FlowOp::Let { .. },
-                        FlowOp::If {
-                            then_ops, else_ops, ..
-                        },
-                    ] = body.ops()
-                    else {
-                        return false;
-                    };
-                    unit_continuation(selected.plan(), then_ops)
-                        && unit_continuation(selected.plan(), else_ops)
-                }),
-            "both admitted branches exit both lexical scopes, move and consume the typed Unit result, then reach the outer numeric return"
-        );
         let options = RuntimeStepOptions {
             mode: RuntimeStepMode::Drain,
             budget: RuntimeStepBudget { max_ops: 64 },
