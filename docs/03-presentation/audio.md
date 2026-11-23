@@ -62,15 +62,17 @@ pub cue @cue.voice.alice.001 from "audio/voice/alice/001.ogg" {
 
 Place recorded voice files under `audio/voice/` inside the authored asset root.
 For example, `audio/voice/alice/001.wav` defines `@voice.alice.001` and is
-packaged in the audio graph as `asset.voice.alice.001`. Path components use
-the same lowercase and hyphen normalization as other catalog assets. Paths
-that normalize to the same voice ID make packaging fail.
+packaged in the audio graph as `asset.voice.alice.001`. The catalog drops the
+file extension, joins path components with dots, lowercases ASCII letters,
+and replaces hyphens with underscores. Packaging rejects two recordings that
+normalize to the same voice ID. Packaging recognizes the filename extensions
+defined by [`AudioFormat`](../../crates/arcweft-audio-core/src/graph.rs).
 
-`voice.load` loads a voice resource and has type
-`Need<Result<AudioHandle, VoiceError>>`. Its successful result is an
-`AudioHandle`, which carries the bundled asset identity. A missing recording
-produces a `VoiceError`. `line.voice_handle()` returns the line-scoped
-`VoiceHandle` playback lease described in
+`voice.load` takes `Ref<Voice>` and returns `Need<Result<AudioHandle, VoiceError>>`.
+Awaiting the request requires `asset.read`. The host checks the encoded audio
+before returning an `AudioHandle` bound to the bundled asset identity. A missing
+recording or one the host cannot decode produces a `VoiceError`.
+`line.voice_handle()` returns the line-scoped `VoiceHandle` playback lease. See
 [line handles and returns](../01-language/dialogue-line-handles-and-returns.md).
 
 ```arcw

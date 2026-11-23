@@ -159,8 +159,8 @@ let voice_audio = try (await voice.load(@voice.alice.001) with:
     .field("line", @say.opening.001)
 ```
 
-`voice.load` returns `Need<Result<AudioHandle, VoiceError>>`; after a successful
-await, `voice_audio` is the loaded audio resource handle.
+On success, `voice_audio` is the loaded audio resource handle. See
+[voice resource loading](../03-presentation/audio.md#voice-resource-loading).
 
 On `Option<T>`:
 
