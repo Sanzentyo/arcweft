@@ -22377,6 +22377,8 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 
 2026-11-24、`f9921fd5d8ef0275bd05b54b53dba85f8ac61c41` 固定のWindows x64 MSVC 70パッケージは、`cargo nextest run` に解決済みの全パッケージを指定し、`--offline --locked --all-features --no-fail-fast --no-tests fail` で実行した。構築は41分54秒。Nextest `31bb3fb8-4fd7-4bc3-80b2-0cb3c8e9f699` は270バイナリで11,145件PASS（62件slow）、49件skip、3,198.730秒、終了0。終了時の現行 `c157661123f9781f333d2bec42d1831c489cb8a0` は追跡ファイルに未コミット差分がなく、固定した実装入力とのGit差分はこの履歴と現状一覧の2文書に限られた。
 
+公開 `main` は `bf17bf4f1c5977364526a72de474179c83ed02d9` から `4810c4c9c196547ae8de8bcfeec36a1dc27bf9c5` へfast-forwardした。取得した公開tree `05c045a40923cfac6aaca2e5f64927e58a930046` と、更新37パスのblobをローカルの公開対象と照合した。
+
 <a id="catalog-need-callable-traversal"></a>
 
 ### 素材Needの関数値と並列traverseの再現
@@ -22393,6 +22395,14 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 直接呼び出しは `CallableValidator::NeedProducer` から元Sourceの `StartNeedProducer` へ接続済み。関数値は `ExternalDefinition::prepare` が `Ordinary` のみを通し、関数値適用は直接producerに限る証明を要求していた。`callable_effect_graph` は直接Need構築を `ExpressionCompatible` に分類するため、closureと名前付き関数でもpure helperへ流れる。後続の修復では、終端のNeed構築を実行フレームが必要な操作として分類し、既存の関数フレームでも受理済み宣言から同じ型付きNeed計画を発行する。関数値を呼ぶ側とproducer実行側で元Source・引数をそれぞれの境界で検査し、直接呼び出し、束縛、lambda、保存復元を両実行系で検証する。
 
 実行フレーム選択だけを強制する切り分けも行った。同じ音声lambdaとWindows全機能CLI（SHA-256 `2cc82365523f43da3fba187fca4b7137af7f8bdd6a8742b8adac578bd33bb40c`）で、`runtime_closure_instance_fact` の結果を受けた後にLLDBでCompilerの関数本体を executable 側へ分岐させた。バンドルは `compiler.runtime_semantic_projection` の `project-function execution family disagrees with its checked suspension/control role` で終了1、AWFB未生成。実行計画の整合検査がSemaの分類を照合することを確認した。
+
+`80b5f54f6f5cccb2d861ab39f1d2faa6ed720625` は、終端の素材Need構築をSemaで実行フレームが必要な操作として分類する。直接呼び出しと宣言値のフレームは、同じ `CallableNeedProducerRole` から型付きタスク計画を構築する。選択した宣言値の適用は位置／名前付き引数を既存のABIで束縛し、activeなtask planは生成した宣言フレームが所有する。別のmanifest host宣言は、従来の契約で同じフレーム機構を使う。
+
+2026-11-24、追跡ファイルに未コミット差分のない同じコミットのクリーンビルド（`CARGO_INCREMENTAL=0`）で、Windows全機能のNextest `0b517872-8c7c-4a07-8a98-800708374875` は3バイナリの8件PASS、59件skip、終了0。素材の位置／名前付き別名、bare `asset.image`／`voice.load`、名前付きプロジェクト関数、lambda、欠落素材を実PNG／WAVで検証した。既存のexternal宣言値・引数順・捕捉・AWBC復元3件、直接音声loadの既存回帰、共有prefixの3件も含む。書式と構造ゲートは終了0、blocking violation 0件。
+
+同じCLI（SHA-256 `47c94b127a3821d649be654f25dee8de0e5b55a5249c7bf6b96ae782e4bef673`）で入力 `484233c49fc937c275a59d26cfcb8b529c069a403586584b548e45835c6899ef` を2回独立にパッケージし、AWFB SHA-256 `a7823e9b028bd37ce1775c0416eae1daf7592163f35546c0e0ece89e8571328a` で一致した。Native VMは7ステップ、AWBCは16ステップで素材10件を完了して `catalog_ready`。AWBCは1ステップ最大1操作の別実行でも261ステップ、素材10件、同じ戻り値。Native VMで位置／名前付き音声要求2件が完了し、並列画像2件が待機した時点で保存した。別プロセスのAOTはステップ3から、元のタスクID・キー・画像IDが一致する2件だけを再配信し、残り8件すべてを完了した。AWFS SHA-256 `4518672507e24ce5afa6aa5ca45437181fc248c331e620e32c67cce2f69b0d49` は復元で変化0。
+
+Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザーの観測上限にも使ったため、17ステップ・素材8件の途中で終了した。fixture用HTTPサーバーのfavicon応答も404だった。同じAWFBとWasmで、既定の起動上限10秒と実行制限を維持し、faviconへ204応答を返して論理ステップを24まで観測した。Chromeは `catalog_ready`、要求・配信は10件、全配信ID／sequence／順序がNative AWBCと一致し、ブラウザーエラー0件、終了0。Web製品239パッケージのnormal／buildグラフに今回変更したクレートは含まれず、使用Wasm SHA-256 `f4f49ea723aea7bd246da308892fb011a2af0e26264de1b278c43c30d4605b98` は先行公開検証のものと一致した。
 
 <a id="retained-prefix-nested-argument"></a>
 
@@ -22412,6 +22422,8 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 2026-11-24、追跡ファイルに未コミット差分のない `d111f94b9c76aea3c6e9a2fc97894bff94d8c953` で、同じ入れ子の実WAV入力とCLIをNative headlessでも実行した。VMと別プロセスのAOTの双方で、元initializerの再評価4回だけをLLDBで飛ばした。VMは2ステップで素材1件完了・1件待機を保存し終了0。AOTはインデックス2から元の要求1件だけを再発行し、残りの素材1件を完了して `voice_prefix_restored`、終了0。タスクIDは `6521190482ad2734ed55451a34e8e14bb9669f33311301efb8c3eb5599fde637`、キーは `704a6d8a1d28b35298515ef1748f1c247513af89ad58315ebe39523943e7fc6e`。保存前後で待機要求の全フィールドが一致し、AWFS SHA-256 `8e0622b37df321e102454a304b646d5cede95b158875289c55238a6b9f28df61` は復元後も変化0。両LLDB実行は、対象CLIの終了後に残った続行命令によって終了1だった。
 
 正の実WAV対照を `--mode one-op --max-ops 1` でも検証した。Native VMは17ステップで完了し、2件目を配信した直後の12ステップ分で保存すると、AOTはインデックス12から同じ要求だけを再開して同じ値へ到達した。連続実行、復元後とも実行操作数の最大は1。AWFS SHA-256は `9c25318266ec71b99c34bd35846d5da5f8b15ad8a4d4277783e157cb187fda86`。同じAWFBのAWBC初回64ステップはまだ `running`。操作上限1を維持し、256ステップまで観測する実行では76ステップで完了し、音声要求を26／42で発行し、`voice_prefix_restored` を返した。AWBCの実行操作数の最大も1。
+
+修正 `d740612396ba69873a0cce35e5441c64231e4c39` では、元initializerのチェック済みfactとprepared call graphを保持し、既に得た出所を別の引数候補の文脈から再評価しない。`80b5f54f6f5cccb2d861ab39f1d2faa6ed720625` の通常ビルドで、純粋な入れ子形式の型付き結果をジェネリック／型固定の両方でNativeとAWBCから得た。実WAV版は既存の直接loadテストを保持した上で追加し、別プロセスのVM→AOTとpackaged AWBCで終了0。選択と結果は [素材Needの対象実行](#catalog-need-callable-traversal) のNextestに記録した。
 
 <a id="hir-tier2-production-boundaries-2026-11-24"></a>
 
