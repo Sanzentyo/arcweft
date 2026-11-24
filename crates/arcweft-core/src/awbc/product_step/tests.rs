@@ -6631,6 +6631,7 @@ fn await_many_original_request_operation_is_identical_in_native_and_decoded_awbc
     ] {
         let plan = await_many_original_program_with_child_request(output, false, operation.clone());
         let invocation = plan
+            .clone()
             .seal_flow_invocation(
                 crate::plan::FlowRuntimeId::canonical("main").unwrap(),
                 [RuntimeFlowParameterBinding {

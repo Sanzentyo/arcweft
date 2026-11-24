@@ -121,6 +121,26 @@ fn template_materialization_keeps_original_metadata_and_rejects_foreign_or_faile
             checked.payload_type().as_bytes()
         );
         assert!(matches!(
+            base.template_task_spec(&checked, generation, vec![], &mut admission),
+            Err(RuntimeTaskProducerSourceError::ArgumentCount {
+                actual: 0,
+                expected: 2
+            })
+        ));
+        let mut wrong_type_bank = bank(&program, RuntimeSchemaLimits::engine_default());
+        assert!(matches!(
+            base.template_task_spec(
+                &checked,
+                generation,
+                vec![
+                    RuntimeValue::String("wrong role type".to_owned()),
+                    captures[1].clone()
+                ],
+                &mut wrong_type_bank,
+            ),
+            Err(RuntimeTaskProducerSourceError::Admission(_))
+        ));
+        assert!(matches!(
             child.template_task_spec(&checked, generation, captures.to_vec(), &mut admission),
             Err(RuntimeTaskProducerSourceError::OriginalProgram)
         ));

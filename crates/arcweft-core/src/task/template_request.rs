@@ -286,3 +286,6 @@ fn pairs(value: RuntimeValue) -> Result<Vec<(String, String)>, String> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;
