@@ -53,9 +53,8 @@ use super::{
 use crate::callable::{
     CallableCandidateId, DialogueCallableId, EnclosingGenericParameterScope,
     PreparedCallGraphIngress, PreparedCallResult, PreparedCaptureIdentityRow,
-    PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginProducer,
-    PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginPurpose,
-    PreparedFunctionValueOriginQueryError,
+    PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginProgress,
+    PreparedFunctionValueOriginPurpose, PreparedFunctionValueOriginQueryError,
     prepare_function_value_origin_query_with_pending_captures, prepare_presentation_callee_id,
 };
 use crate::final_analysis::CandidateFactTransactionViolation;
@@ -4380,15 +4379,10 @@ impl Analyzer<'_, '_, '_> {
         .map_err(|error| self.map_function_value_origin_query_error(expression, error))?;
         loop {
             match progress {
-                PreparedFunctionValueOriginProgress::Ready(evidence) => {
-                    if let PreparedFunctionValueOriginProducer::Call(
-                        crate::callable::CheckedCallSite::HirCall(origin),
-                    ) = evidence.producer()
-                    {
-                        self.evaluate_expression(context, *origin, None)?;
-                    }
-                    return Ok(evidence);
-                }
+                // The producer's checked fact and prepared call graph already
+                // own the initializer. Re-entering it through an argument
+                // candidate can replace the shared continuation's type.
+                PreparedFunctionValueOriginProgress::Ready(evidence) => return Ok(evidence),
                 PreparedFunctionValueOriginProgress::Need(need) => {
                     let owner = need.expression();
                     // The origin query follows the callee's lexical binding to its

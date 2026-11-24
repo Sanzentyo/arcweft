@@ -147,6 +147,36 @@ fn same_type_recursion_reuses_the_single_allowed_instance() {
 }
 
 #[test]
+fn retained_prefix_remains_reusable_after_a_nested_argument_application() {
+    let generic = r#"
+entry cli @entry.main { goto @flow.main }
+fn choose<A, B>(first: A)(second: B) -> B { second }
+fn keep(text: String) -> String { text }
+flow main() -> bool {
+    let prefix = choose(7i64)
+    let text = keep(prefix("text"))
+    let integer = prefix(42i64)
+    return text == "text" && integer == 42i64
+}
+"#;
+    let fixed = r#"
+entry cli @entry.main { goto @flow.main }
+fn choose(first: i64)(second: String) -> String { second }
+fn keep(text: String) -> String { text }
+flow main() -> bool {
+    let prefix = choose(7i64)
+    let text = keep(prefix("text"))
+    let later = prefix("later")
+    return text == "text" && later == "later"
+}
+"#;
+    for source in [generic, fixed] {
+        execution::assert_native_return(source, "true");
+        execution::assert_awbc_return(source, RuntimeValue::Bool(true));
+    }
+}
+
+#[test]
 fn shared_curried_prefix_keeps_one_lineage_and_one_closed_instance_key() {
     let compiled = compile_source(
         r#"

@@ -271,14 +271,7 @@ flow main() -> String effects { asset.read } {
 
 #[test]
 fn authored_voice_load_restarts_native_and_resolves_the_same_awfb_resource() {
-    let directory = tempfile::tempdir().unwrap();
-    let source = directory.path().join("voice-checkpoint.arcw");
-    let assets = directory.path().join("assets/audio/voice/alice");
-    std::fs::create_dir_all(&assets).unwrap();
-    let samples = mono_voice_wav();
-    std::fs::write(assets.join("001.wav"), &samples).unwrap();
-    std::fs::write(
-        &source,
+    assert_voice_load_survives_native_restart(
         r#"
 entry cli @entry.main { goto @flow.main }
 flow main() -> String effects { asset.read } {
@@ -291,8 +284,38 @@ flow main() -> String effects { asset.read } {
     }
 }
 "#,
-    )
-    .unwrap();
+    );
+}
+
+#[test]
+fn retained_prefix_in_nested_voice_load_arguments_survives_native_restart() {
+    assert_voice_load_survives_native_restart(
+        r#"
+entry cli @entry.main { goto @flow.main }
+fn choose<A, B>(first: A)(second: B) -> B { second }
+flow main() -> String effects { asset.read } {
+    let prefix = choose(7i64)
+    let before = prefix("kept")
+    let loaded = await voice.load(prefix(@voice.alice.001))
+    let missing = await voice.load(prefix(@voice:.alice.missing))
+    let after = prefix(42i64)
+    return match (loaded, missing, before == "kept", after == 42i64) {
+        (.Ok(_), .Err(_), true, true) => "voice_ready"
+        _ => "voice_result_mismatch"
+    }
+}
+"#,
+    );
+}
+
+fn assert_voice_load_survives_native_restart(source_text: &str) {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("voice-checkpoint.arcw");
+    let assets = directory.path().join("assets/audio/voice/alice");
+    std::fs::create_dir_all(&assets).unwrap();
+    let samples = mono_voice_wav();
+    std::fs::write(assets.join("001.wav"), &samples).unwrap();
+    std::fs::write(&source, source_text).unwrap();
 
     let output_bundle = directory.path().join("voice.awfb");
     let packaged = Command::new(env!("CARGO_BIN_EXE_arcw"))
