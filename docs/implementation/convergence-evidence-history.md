@@ -22398,4 +22398,6 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 
 同じCLIをデバッガーで追い、純粋な最小入力は `Analyzer::stage_function_value_origin` から `PreparedFunctionValueOriginNeed::resume` を通り、`PreparedFunctionValueOriginQuery::advance_with_fact` が推論済み局所参照型と元initializerのfact型を比較する分岐で `Invalid` を返すことを確認した。
 
+原因の切り分けでは、同じCLIの最初の `stage_function_value_origin` で、既に選んだinitializerを候補文脈から再評価する一文だけをLLDBで飛ばした。型照合は有効なまま `bundle` が終了0。生成された診断用AWFB SHA-256 `c6a3e2e1a517561ec2c540743a4eaa4fe6835e8b23c1aa4a5abbddfb209dbb30` を同じCLIで実行すると、最大1操作／ステップを守り40ステップで `true`、終了0。同じ入力を通常起動で再バンドルすると元の診断と終了1を再現した。式factを書き込む時点で元のcall siteは既存のprepared graphに結び付いており、実際の継続選択はそのgraphを読み、引き続き元の型を照合する。
+
 正の実WAV対照を `--mode one-op --max-ops 1` でも検証した。Native VMは17ステップで完了し、2件目を配信した直後の12ステップ分で保存すると、AOTはインデックス12から同じ要求だけを再開して同じ値へ到達した。連続実行、復元後とも実行操作数の最大は1。AWFS SHA-256は `9c25318266ec71b99c34bd35846d5da5f8b15ad8a4d4277783e157cb187fda86`。同じAWFBのAWBC初回64ステップはまだ `running`。操作上限1を維持し、256ステップまで観測する実行では76ステップで完了し、音声要求を26／42で発行し、`voice_prefix_restored` を返した。AWBCの実行操作数の最大も1。
