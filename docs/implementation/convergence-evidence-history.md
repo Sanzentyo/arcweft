@@ -22402,6 +22402,8 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 
 同じ実装入力で `cargo check --workspace --all-targets --all-features --offline --locked` と同じ対象の `cargo clippy` はどちらも終了0。ビルドロック待ちを含む経過はそれぞれ1,552.9秒、1,259.1秒。`cargo test -p arcweft-lang-sema --doc --all-features --offline --locked` は2件PASS、終了0。
 
+Windows x64 MSVCの全機能で `arcweft-lang-sema` と推移的逆依存22パッケージをCargoグラフから選択した。`80b5f54f6f5cccb2d861ab39f1d2faa6ed720625` のNextest `192794f6-7fae-4e85-a020-b4574eb38eed` は `--offline --locked --all-features --no-fail-fast --no-tests fail` で実行し、116バイナリの5,107件PASS（62件slow）、24件skip、2,443.815秒、終了0。構築は15分14秒。終了時の `0f0216b74ff5c7290684bc467589bb85c59a6fca` に未コミットの追跡差分はなく、固定した実装入力との差分は仕様・履歴・現状一覧の3文書だけだった。
+
 同じCLI（SHA-256 `47c94b127a3821d649be654f25dee8de0e5b55a5249c7bf6b96ae782e4bef673`）で入力 `484233c49fc937c275a59d26cfcb8b529c069a403586584b548e45835c6899ef` を2回独立にパッケージし、AWFB SHA-256 `a7823e9b028bd37ce1775c0416eae1daf7592163f35546c0e0ece89e8571328a` で一致した。Native VMは7ステップ、AWBCは16ステップで素材10件を完了して `catalog_ready`。AWBCは1ステップ最大1操作の別実行でも261ステップ、素材10件、同じ戻り値。Native VMで位置／名前付き音声要求2件が完了し、並列画像2件が待機した時点で保存した。別プロセスのAOTはステップ3から、元のタスクID・キー・画像IDが一致する2件だけを再配信し、残り8件すべてを完了した。AWFS SHA-256 `4518672507e24ce5afa6aa5ca45437181fc248c331e620e32c67cce2f69b0d49` は復元で変化0。
 
 Nativeの1操作モードでも、連続実行の100ステップと、22ステップで保存した後の別プロセスAOTの78ステップを照合した。待機中の画像要求1件を、以降の新規要求に先行して再発行し、連続実行の残りと要求の順序・ID・キーが一致した。両実行とも実行操作数は最大1、復元後の素材完了8件、同じ最終結果だった。AWFS SHA-256 `1bc7fff175feef4fe29ae9a4912d7cc7569d2263fcc7f21375680cf87d57ce6f` は復元で変化0。
