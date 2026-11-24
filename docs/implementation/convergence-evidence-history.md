@@ -22371,6 +22371,8 @@ CLI SHA-256 `49a4f4623aaa8e0bf533482273b2777789e6250fbc6444da14f040a1833e362b` �
 
 Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推移的逆依存の70パッケージに、この公開差分で変更した9クレートがすべて含まれることを照合した。
 
+全ターゲットの同じ逆依存グラフは71パッケージで、Windowsとの差は `arcweft-render-web` 1件。`wasm32-unknown-unknown` の `arcweft-player-web` が解決する normal／build の239パッケージにこのクレートが入る。Chromeの実行に使ったRelease Wasmの構築元 `ca43c6f7385a860017f08b7da43d209f1b2b979d` から実行対象CLIの `f9921fd5d8ef0275bd05b54b53dba85f8ac61c41` まで、この239パッケージ内の変更はCoreの `#[cfg(test)]` モジュール3件に限られ、Cargoの依存定義・lockfileにも差分0。Webの実測は同じWeb製品入力で照合した。
+
 現行CLIで `bundle --manifest-path web/arcw.toml --profile main` を独立に実行し、35,157,520 bytesのAWFBを再生成した。SHA-256は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4` で、Chromeの5フレームを取得したAWFBと一致した。`tools/capture-webgpu-native-frame.rs` でこの再生成物から160 ms／`rgba8unorm`のNativeフレームを撮り直した。focus／hover／press／compact／HiDPIの全5件で、Native PNGは各既存Native基準と同じSHA-256だった。同じWeb画像との比較でも通常・HiDPIは各3,686,400、縮小は2,073,600のRGBAサンプルが一致し、MSE／MAE／最大誤差／変化画素率0、SSIM 1。全5件で規定の比較器が終了0。
 
 <a id="catalog-need-callable-traversal"></a>
