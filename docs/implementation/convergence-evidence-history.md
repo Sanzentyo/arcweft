@@ -22438,3 +22438,7 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 2026-11-24、`a2b9dcd24ad0b4ea144bb0292f33bd731bc8c374` の追跡入力622件（入力ダイジェスト `0b09b6db20c2a34063b8e79814af9ed19c5a9ac953f98a101d0eba214e1068dd`）で Windows の HIR Tier 2 を再実行した。`arcweft_lang_hir-628437e91384d33f.exe` の SHA-256 は `48a0336381aaebbd64986a7b25ad53b55d1dbfc431d0626a5c93e5b91d8f1dfe`。Nextest `2a8324ff-aed7-4ecb-bcc4-59f4eca0082c` は 18,752.943秒で8件PASS（6件slow、973件skip）。選択した本番上限6件と、attached Flow／Thread expression の65,536件受入・65,537件拒否およびrollbackの2件を実行した。
 
 終了時に追跡ファイルの未コミット差分はなかった。ラッパーは起動時のコミットと現行 `e2a9c0a34454332c208fd1f7c2da7270b09a8bbc` を照合し、`Cargo.lock`、`crates/arcweft-id/src/catalog_resource.rs`、`crates/arcweft-id/src/lib.rs`、`crates/arcweft-lang-hir/src/leaf.rs` の変更を検出して終了1。差分はCLIへの `arcweft-audio-core` 依存と、録音音声カタログのIDおよびHIRの参照投影だった。上記8件の実行結果は起動時のコミットの履歴として保持する。
+
+### Native CLI の system capability の仕様訂正
+
+2026-11-24、追跡ファイルに未コミット差分のない `65821fc5bd1b247bc264c4e21702393005f580ca` で、Native CLIの `system.available_parallelism()` を実行した。固定した実装入力は `80b5f54f6f5cccb2d861ab39f1d2faa6ed720625`。`Need<Result<String, SystemError>>` を宣言した入力（SHA-256 `a6e0e068b0beb4f6a4405345c499e58f9aca334d78760216833da2a8158c86d3`）は、Native VMとパッケージ済みAWBCの両方で要求1件を完了し、文字列 `"20"` を返した。Nativeのホスト計測値は20。CLI／AWFB SHA-256は `9a829d7a7a48b4957ac892e3fba4b157a01b4626cf58cf4217770519d9e66be9`／`0c7cb53f5df23695bcdff64e6c302446124918b26f519539210f686e6083128d`。旧仕様の「SystemInfoへ直接lowerし、数値型のreadyを返す」という説明は、標準manifestの宣言とNative adapterによる文字列結果の検査に合わせて訂正した。[現行仕様](../02-runtime/async-scheduler.md)。
