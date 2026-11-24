@@ -21,8 +21,8 @@ use arcweft_core::plan::{
 use arcweft_core::value::{RuntimeCallArgumentMode, RuntimeLocalReadMode};
 use arcweft_lang_sema::{
     callable::{
-        CallableParameter, CallableParameterPassing, CallableParameterPresence, CallableValidator,
-        CheckedCallableDigest,
+        CallableNeedProducerRole, CallableParameter, CallableParameterPassing,
+        CallableParameterPresence, CallableValidator, CheckedCallableDigest,
     },
     final_analysis::CheckedExternalCallableValueProjection,
     types::{SemanticTypeDigest, TypeKind},
@@ -152,9 +152,9 @@ impl<'a> ExternalParameterBinding<'a> {
     fn prepare(
         parameter: &CallableParameter,
         abi: &'a RuntimeNormalizedType,
-        host: bool,
+        request_abi: bool,
     ) -> Result<Self, RuntimePlanLowerError> {
-        if host || parameter.presence() == CallableParameterPresence::Required {
+        if request_abi || parameter.presence() == CallableParameterPresence::Required {
             return Ok(Self::Fixed(abi));
         }
         let error = |message: &str| RuntimePlanLowerError::new(message);
@@ -220,6 +220,16 @@ struct ExternalDefinition<'a> {
     terminal: usize,
     result: &'a RuntimeNormalizedType,
     effects: RuntimeEffectSet,
+    request: Option<ExternalRequest>,
+}
+
+enum ExternalRequest {
+    Manifest {
+        capability: arcweft_core::task::HostCapabilityId,
+        operation: String,
+        contract: arcweft_core::step::HostCallContractDigest,
+    },
+    StandardNeed(CallableNeedProducerRole),
 }
 
 pub(super) struct ExternalCallableDefinitions<'a> {
@@ -288,20 +298,14 @@ impl<'a> ExternalCallableDefinitions<'a> {
                         parameter.binding.ty().identity(),
                     )
                 })
-                .chain(
-                    definition
-                        .value
-                        .declaration()
-                        .host_call_contract()
-                        .map(|_| {
-                            RuntimeLocalDeclarationSeed::new(
-                                arcweft_core::plan::RuntimeLocalDeclarationSource::EvaluatedResult(
-                                    identity,
-                                ),
-                                definition.result.identity(),
-                            )
-                        }),
-                )
+                .chain(definition.request.as_ref().map(|_| {
+                    RuntimeLocalDeclarationSeed::new(
+                        arcweft_core::plan::RuntimeLocalDeclarationSource::EvaluatedResult(
+                            identity,
+                        ),
+                        definition.result.identity(),
+                    )
+                }))
         })
     }
 
@@ -312,14 +316,7 @@ impl<'a> ExternalCallableDefinitions<'a> {
         self.definitions
             .iter()
             .map(|(key, definition)| {
-                let count = definition.parameters.len()
-                    + usize::from(
-                        definition
-                            .value
-                            .declaration()
-                            .host_call_contract()
-                            .is_some(),
-                    );
+                let count = definition.parameters.len() + usize::from(definition.request.is_some());
                 let rows = (0..count)
                     .map(|_| {
                         admitted.next().ok_or_else(|| {
@@ -351,8 +348,9 @@ impl<'a> ExternalCallableDefinitions<'a> {
 }
 
 impl<'a> ExternalDefinition<'a> {
-    fn host_body(
+    fn request_body(
         &self,
+        request: &ExternalRequest,
         locals: &[RuntimeLocalSeedId],
         builder: &RuntimePlanBuilder,
     ) -> Result<RuntimeFunctionSiteBodySeed, RuntimePlanLowerError> {
@@ -361,36 +359,11 @@ impl<'a> ExternalDefinition<'a> {
         };
         use arcweft_core::step::RuntimeHostCallMode;
         use arcweft_core::task::{
-            CancelScopeId, HostCallProducerDefinition, HostCapabilityId, HostRestartPolicy,
+            CancelScopeId, HostCallProducerDefinition, HostRestartPolicy,
             NeedProducerContractDigest, NeedProducerRequestProjection, NeedProducerSiteDigest,
             NeedProducerTaskPlan, RuntimeRequestRoleIdentity, TaskClass, TaskPolicy, TaskPriority,
         };
-        use arcweft_lang_hir::symbol::CallableDeclarationKey;
-        use arcweft_lang_sema::callable::CheckedCallableDeclaration;
         let error = |message: &str| RuntimePlanLowerError::new(message);
-        let CheckedCallableDeclaration::Project(CallableDeclarationKey::Existing(declaration)) =
-            self.value.declaration().id().declaration()
-        else {
-            return Err(error(
-                "external Host value has no checked declaration owner",
-            ));
-        };
-        let capability = declaration
-            .owner_path()
-            .iter()
-            .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str)
-            .collect::<Vec<_>>()
-            .join(".");
-        if capability.is_empty() {
-            return Err(error("external Host value has no capability path"));
-        }
-        let operation = declaration.name().to_owned();
-        let host_contract = self
-            .value
-            .declaration()
-            .host_call_contract()
-            .ok_or_else(|| error("external Host value lost its manifest contract"))?;
-        let contract = NeedProducerContractDigest::from_bytes(*host_contract.as_bytes());
         let identity = self.identity();
         let site = NeedProducerSiteDigest::from_bytes(*identity.as_bytes());
         let task_plan = builder
@@ -437,61 +410,97 @@ impl<'a> ExternalDefinition<'a> {
                 mutable: false,
             },
         );
-        let operation = if let RuntimeTypeShape::Need(payload) = self.result.shape() {
-            // This generated original function owns the complete checked input
-            // ABI. Its Source admits actual values before issuing a Host Need;
-            // no synthetic selected-call or argument certificate is fabricated.
-            let plan = NeedProducerTaskPlan::try_new(
-                contract,
-                site,
-                NeedProducerRequestProjection::ExternCapability {
-                    capability: HostCapabilityId(capability),
-                    operation,
-                    contract: host_contract,
-                    argument_names: self
-                        .parameters
-                        .iter()
-                        .map(|parameter| parameter.name.map(str::to_owned))
-                        .collect(),
-                },
-                self.parameters
-                    .iter()
-                    .map(|parameter| parameter.binding.ty().identity())
-                    .collect(),
-                payload.identity(),
-                TaskPolicy::AlwaysStart,
-                HostRestartPolicy::MustBeQuiescent,
-                TaskClass::Background,
-                TaskPriority(0),
-                CancelScopeId("flow".into()),
-            )
-            .map_err(|cause| error(&cause.to_string()))?;
-            RuntimeFlowOpSeed::StartNeedProducer {
-                binding,
-                target: RuntimeNeedProducerStartTargetSeed {
-                    plan,
-                    task_plan,
-                    arguments,
-                },
-            }
-        } else {
-            RuntimeFlowOpSeed::HostCall {
-                binding: Some(binding),
-                target: RuntimeHostCallTargetSeed {
-                    producer: HostCallProducerDefinition {
-                        contract,
-                        plan: task_plan,
+        let operation = match (request, self.result.shape()) {
+            (ExternalRequest::StandardNeed(role), RuntimeTypeShape::Need(payload)) => {
+                let plan = role
+                    .try_task_plan(
+                        self.value.declaration().signature().semantic_digest(),
                         site,
+                        self.parameters
+                            .iter()
+                            .map(|parameter| parameter.binding.ty().identity())
+                            .collect(),
+                        payload.identity(),
+                    )
+                    .map_err(|cause| error(&cause.to_string()))?;
+                RuntimeFlowOpSeed::StartNeedProducer {
+                    binding,
+                    target: RuntimeNeedProducerStartTargetSeed {
+                        plan,
+                        task_plan,
+                        arguments,
                     },
-                    public_id: format!("{capability}.{operation}"),
+                }
+            }
+            (ExternalRequest::StandardNeed(_), _) => {
+                return Err(error("standard Need producer has no checked Need result"));
+            }
+            (
+                ExternalRequest::Manifest {
                     capability,
                     operation,
-                    contract: Some(host_contract),
-                    args: arguments,
-                    result: self.result.identity(),
-                    mode: RuntimeHostCallMode::Immediate,
-                    deterministic: false,
+                    contract: host_contract,
                 },
+                shape,
+            ) => {
+                let contract = NeedProducerContractDigest::from_bytes(*host_contract.as_bytes());
+                if let RuntimeTypeShape::Need(payload) = shape {
+                    // This generated original function owns the complete checked input
+                    // ABI. Its Source admits actual values before issuing a Host Need;
+                    // no synthetic selected-call or argument certificate is fabricated.
+                    let plan = NeedProducerTaskPlan::try_new(
+                        contract,
+                        site,
+                        NeedProducerRequestProjection::ExternCapability {
+                            capability: capability.clone(),
+                            operation: operation.clone(),
+                            contract: *host_contract,
+                            argument_names: self
+                                .parameters
+                                .iter()
+                                .map(|parameter| parameter.name.map(str::to_owned))
+                                .collect(),
+                        },
+                        self.parameters
+                            .iter()
+                            .map(|parameter| parameter.binding.ty().identity())
+                            .collect(),
+                        payload.identity(),
+                        TaskPolicy::AlwaysStart,
+                        HostRestartPolicy::MustBeQuiescent,
+                        TaskClass::Background,
+                        TaskPriority(0),
+                        CancelScopeId("flow".into()),
+                    )
+                    .map_err(|cause| error(&cause.to_string()))?;
+                    RuntimeFlowOpSeed::StartNeedProducer {
+                        binding,
+                        target: RuntimeNeedProducerStartTargetSeed {
+                            plan,
+                            task_plan,
+                            arguments,
+                        },
+                    }
+                } else {
+                    RuntimeFlowOpSeed::HostCall {
+                        binding: Some(binding),
+                        target: RuntimeHostCallTargetSeed {
+                            producer: HostCallProducerDefinition {
+                                contract,
+                                plan: task_plan,
+                                site,
+                            },
+                            public_id: format!("{}.{operation}", capability.0),
+                            capability: capability.0.clone(),
+                            operation: operation.clone(),
+                            contract: Some(*host_contract),
+                            args: arguments,
+                            result: self.result.identity(),
+                            mode: RuntimeHostCallMode::Immediate,
+                            deterministic: false,
+                        },
+                    }
+                }
             }
         };
         Ok(RuntimeFunctionSiteBodySeed::Executable(
@@ -524,11 +533,44 @@ impl<'a> ExternalDefinition<'a> {
                 "environment declaration source type or group authority differs",
             ));
         }
-        if schema.validator() != &CallableValidator::Ordinary {
-            return Err(error(
-                "environment declaration value needs its selected compiler-owned body recipe",
-            ));
-        }
+        let request = match (schema.validator(), value.declaration().host_call_contract()) {
+            (CallableValidator::Ordinary, None) => None,
+            (CallableValidator::Ordinary, Some(contract)) => {
+                use arcweft_lang_hir::symbol::CallableDeclarationKey;
+                use arcweft_lang_sema::callable::CheckedCallableDeclaration;
+
+                let CheckedCallableDeclaration::Project(CallableDeclarationKey::Existing(
+                    declaration,
+                )) = value.declaration().id().declaration()
+                else {
+                    return Err(error(
+                        "external Host value has no checked declaration owner",
+                    ));
+                };
+                let capability = declaration
+                    .owner_path()
+                    .iter()
+                    .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str)
+                    .collect::<Vec<_>>()
+                    .join(".");
+                if capability.is_empty() {
+                    return Err(error("external Host value has no capability path"));
+                }
+                Some(ExternalRequest::Manifest {
+                    capability: arcweft_core::task::HostCapabilityId(capability),
+                    operation: declaration.name().to_owned(),
+                    contract,
+                })
+            }
+            (CallableValidator::NeedProducer(role), None) => {
+                Some(ExternalRequest::StandardNeed(*role))
+            }
+            _ => {
+                return Err(error(
+                    "environment declaration value needs its selected compiler-owned body recipe",
+                ));
+            }
+        };
         let count = schema
             .groups()
             .iter()
@@ -537,9 +579,7 @@ impl<'a> ExternalDefinition<'a> {
             })
             .filter(|count| {
                 count
-                    .checked_add(usize::from(
-                        value.declaration().host_call_contract().is_some(),
-                    ))
+                    .checked_add(usize::from(request.is_some()))
                     .is_some_and(|locals| u32::try_from(locals).is_ok())
             })
             .ok_or_else(|| error("environment whole-formal count exceeds its coordinate"))?;
@@ -583,11 +623,7 @@ impl<'a> ExternalDefinition<'a> {
                         parameter: u32::try_from(parameter.index().get())
                             .map_err(|_| error("environment formal exceeds its coordinate"))?,
                     },
-                    binding: ExternalParameterBinding::prepare(
-                        parameter,
-                        ty,
-                        value.declaration().host_call_contract().is_some(),
-                    )?,
+                    binding: ExternalParameterBinding::prepare(parameter, ty, request.is_some())?,
                     name: if parameter.passing() == CallableParameterPassing::NamedOnly {
                         Some(
                             parameter
@@ -611,6 +647,7 @@ impl<'a> ExternalDefinition<'a> {
             terminal: schema.groups().len() - 1,
             result: arrow,
             effects,
+            request,
         })
     }
 
@@ -628,8 +665,7 @@ impl<'a> ExternalDefinition<'a> {
         builder: &mut RuntimePlanBuilder,
     ) -> Result<Box<[RuntimeCallableStateSeedId]>, RuntimePlanLowerError> {
         let error = |message: &str| RuntimePlanLowerError::new(message);
-        let host = self.value.declaration().host_call_contract().is_some();
-        if locals.len() != self.parameters.len() + usize::from(host) {
+        if locals.len() != self.parameters.len() + usize::from(self.request.is_some()) {
             return Err(error(
                 "environment frame differs from its whole-formal inventory",
             ));
@@ -677,7 +713,7 @@ impl<'a> ExternalDefinition<'a> {
                 },
             )
             .collect();
-        let body_kind = if self.effects.is_empty() && !host {
+        let body_kind = if self.effects.is_empty() && self.request.is_none() {
             RuntimeFunctionSiteBodyKind::Expression
         } else {
             RuntimeFunctionSiteBodyKind::Executable
@@ -693,8 +729,8 @@ impl<'a> ExternalDefinition<'a> {
                 effects: self.effects.clone(),
             })
             .map_err(|cause| error(&cause.to_string()))?;
-        let body = if host {
-            self.host_body(locals, builder)?
+        let body = if let Some(request) = &self.request {
+            self.request_body(request, locals, builder)?
         } else {
             let arguments = self
                 .parameters

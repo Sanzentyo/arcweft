@@ -222,6 +222,11 @@ impl CallableEffectGraph {
             let immediate_map = !application.retains_inputs()
                 && matches!(selected.schema().validator(),
                     crate::callable::CallableValidator::StandardMap(family) if family.callback_is_immediate());
+            let starts_need_producer = !application.retains_inputs()
+                && matches!(
+                    selected.schema().validator(),
+                    crate::callable::CallableValidator::NeedProducer(_)
+                );
             let producer = if immediate_map {
                 let mut prefix = node.prefix();
                 loop {
@@ -336,6 +341,7 @@ impl CallableEffectGraph {
                         == Some(&CallableDeclarationOwner::Function)
                         || selected.requires_value_callee()
                         || immediate_map
+                        || starts_need_producer
                     {
                         crate::final_analysis::CheckedExecutableControlRole::FlowRequired
                     } else {

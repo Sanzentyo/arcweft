@@ -7,7 +7,14 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_core::task::{AssetLoadKind, HostRestartPolicy, NeedProducerOperation, TaskPolicy};
+use arcweft_core::{
+    pattern::RuntimeSemanticTypeId,
+    task::{
+        AssetLoadKind, CancelScopeId, HostRestartPolicy, NeedProducerContractDigest,
+        NeedProducerOperation, NeedProducerPlanError, NeedProducerRequestProjection,
+        NeedProducerSiteDigest, NeedProducerTaskPlan, TaskClass, TaskPolicy, TaskPriority,
+    },
+};
 use arcweft_lang_hir::symbol::{CallableDeclarationKey, CallableDeclarationOwner};
 use arcweft_lang_syntax::name::CallArgumentName;
 use arcweft_presentation::rich_text::{
@@ -2217,6 +2224,43 @@ impl CallableNeedProducerRole {
     #[must_use]
     pub const fn request_argument_name(self) -> &'static str {
         self.request_argument_name
+    }
+
+    /// Materializes this checked role for a direct call site or an admitted
+    /// declaration-value body. The original source owns the site and types.
+    ///
+    /// # Errors
+    /// Returns the task-plan error if the arguments do not fit the request
+    /// projection.
+    pub fn try_task_plan(
+        self,
+        contract: super::CallableSignatureSchemaDigest,
+        site: NeedProducerSiteDigest,
+        argument_types: Box<[RuntimeSemanticTypeId]>,
+        payload_type: RuntimeSemanticTypeId,
+    ) -> Result<NeedProducerTaskPlan, NeedProducerPlanError> {
+        let contract = NeedProducerContractDigest::from_bytes(*contract.as_bytes());
+        let (request, class) = match self.operation {
+            NeedProducerOperation::AssetLoad { kind } => (
+                NeedProducerRequestProjection::AssetLoad {
+                    kind,
+                    argument_name: self.request_argument_name.to_owned(),
+                },
+                TaskClass::AssetDecode,
+            ),
+        };
+        NeedProducerTaskPlan::try_new(
+            contract,
+            site,
+            request,
+            argument_types,
+            payload_type,
+            self.policy,
+            self.restart,
+            class,
+            TaskPriority(0),
+            CancelScopeId("flow".to_owned()),
+        )
     }
 }
 

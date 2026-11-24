@@ -361,6 +361,82 @@ fn assert_voice_load_survives_native_restart(source_text: &str) {
     assert_eq!(report["final_status"], "done return voice_ready");
 }
 
+#[test]
+fn catalog_need_callables_execute_through_values_and_parallel_traversal() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("catalog-callables.arcw");
+    let voices = directory.path().join("assets/audio/voice/alice");
+    let images = directory.path().join("assets/bg");
+    std::fs::create_dir_all(&voices).unwrap();
+    std::fs::create_dir_all(&images).unwrap();
+    for voice in 1..=7 {
+        std::fs::write(voices.join(format!("{voice:03}.wav")), mono_voice_wav()).unwrap();
+    }
+    std::fs::write(images.join("blue.png"), single_pixel_png([0, 0, 255, 255])).unwrap();
+    std::fs::write(images.join("red.png"), single_pixel_png([255, 0, 0, 255])).unwrap();
+    std::fs::write(
+        &source,
+        r#"
+fn load_voice(recording: Ref<Voice>) -> Need<Result<AudioHandle, VoiceError>> {
+    voice.load(recording)
+}
+entry cli @entry.main { goto @flow.main }
+flow main() -> String effects { asset.read } {
+    let load = voice.load
+    let single = await load(@voice.alice.001)
+    let named_argument = await load(voice = @voice.alice.007)
+    let images = await [@asset.bg.blue, @asset.bg.red].traverse(asset.image).parallel(limit = 2u32)
+    let voices = await [@voice.alice.002, @voice.alice.003].traverse(voice.load).parallel(limit = 2u32)
+    let named = await [@voice.alice.004, @voice.alice.005].traverse(load_voice).parallel(limit = 2u32)
+    let closure = await [@voice.alice.006, @voice.alice.missing].traverse(|item| voice.load(item)).parallel(limit = 2u32)
+    return match (single, named_argument, images, voices, named, closure) {
+        (.Ok(_), .Ok(_), .Ok(_), .Ok(_), .Ok(_), .Err(_)) => "catalog_ready"
+        _ => "catalog_error"
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let native = run_headless_asset_steps(&source, "bytecode-vm", "32", &[]);
+    assert_eq!(native["final_status"], "done Return(\"catalog_ready\")");
+    assert_eq!(
+        native["native_io"]["scheduler"]["dispatched_by_class"]["asset_decode"],
+        10
+    );
+
+    let bundle = directory.path().join("catalog-callables.awfb");
+    let packaged = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bundle")
+        .arg(&source)
+        .arg("--output")
+        .arg(&bundle)
+        .output()
+        .unwrap();
+    assert!(packaged.status.success(), "{packaged:?}");
+    let product = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run-bundle")
+        .arg(&bundle)
+        .args([
+            "--entry",
+            "entry.main",
+            "--steps",
+            "32",
+            "--max-ops",
+            "64",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(product.status.success(), "{product:?}");
+    let report: serde_json::Value = serde_json::from_slice(&product.stdout).unwrap();
+    assert_eq!(report["final_status"], "done return catalog_ready");
+    assert_eq!(
+        report["native_io"]["scheduler"]["dispatched_by_class"]["asset_decode"],
+        10
+    );
+}
+
 fn mono_voice_wav() -> Vec<u8> {
     let mut bytes = b"RIFF\xc4\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00".to_vec();
     bytes.extend_from_slice(&8_000_u32.to_le_bytes());

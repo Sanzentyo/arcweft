@@ -7276,8 +7276,12 @@ fn runtime_call(
             })?,
         None => call,
     };
-    let producer_role = match selected.schema().validator() {
-        CallableValidator::NeedProducer(role) => Some(*role),
+    let producer_role = match (application.core().callee(), selected.schema().validator()) {
+        (CheckedCallCalleeExecution::Direct, CallableValidator::NeedProducer(role))
+            if !application.core().retains_inputs() =>
+        {
+            Some(*role)
+        }
         _ => None,
     };
     let extern_host = match call.dispatch() {
@@ -7375,34 +7379,25 @@ fn runtime_call(
                 });
             }
         }
-        let argument_names = call
+        let argument_types = call
             .operands()
             .iter()
-            .map(|operand| match operand.binding() {
-                arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandBinding::Positional => None,
-                arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandBinding::Named(name) => {
-                    Some(name.as_str().to_owned())
-                }
-            })
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        let (contract, request, policy, restart, class) = if let Some(role) = producer_role {
-            let request = match role.operation() {
-                arcweft_core::task::NeedProducerOperation::AssetLoad { kind } => {
-                    arcweft_core::task::NeedProducerRequestProjection::AssetLoad {
-                        kind,
-                        argument_name: role.request_argument_name().to_owned(),
-                    }
-                }
-            };
-            (
-                arcweft_core::task::NeedProducerContractDigest::from_bytes(
-                    *selected.schema().semantic_digest().as_bytes(),
-                ),
-                request,
-                role.policy(),
-                role.restart(),
-                arcweft_core::task::TaskClass::AssetDecode,
+            .map(|operand| operand.ty().identity())
+            .collect();
+        let arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Need(payload_type) =
+            need_type.shape()
+        else {
+            return Err(RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "selected Need producer result has no Need<T> item".to_owned(),
+            });
+        };
+        let plan = if let Some(role) = producer_role {
+            role.try_task_plan(
+                selected.schema().semantic_digest(),
+                admission.site(),
+                argument_types,
+                payload_type.identity(),
             )
         } else {
             let host = extern_host.ok_or_else(|| RuntimeSemanticProjectionError::Call {
@@ -7415,45 +7410,36 @@ fn runtime_call(
                         owner,
                         reason: "manifest Need producer has no selected host contract".to_owned(),
                     })?;
-            (
+            let argument_names = call
+                .operands()
+                .iter()
+                .map(|operand| match operand.binding() {
+                    arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandBinding::Positional => None,
+                    arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandBinding::Named(name) => {
+                        Some(name.as_str().to_owned())
+                    }
+                })
+                .collect();
+            arcweft_core::task::NeedProducerTaskPlan::try_new(
                 arcweft_core::task::NeedProducerContractDigest::from_bytes(
                     *host_contract.as_bytes(),
                 ),
+                admission.site(),
                 arcweft_core::task::NeedProducerRequestProjection::ExternCapability {
                     capability: arcweft_core::task::HostCapabilityId(host.capability().to_owned()),
                     operation: host.operation().to_owned(),
                     contract: host_contract,
                     argument_names,
                 },
+                argument_types,
+                payload_type.identity(),
                 arcweft_core::task::TaskPolicy::AlwaysStart,
                 arcweft_core::task::HostRestartPolicy::MustBeQuiescent,
                 arcweft_core::task::TaskClass::Background,
+                arcweft_core::task::TaskPriority(0),
+                arcweft_core::task::CancelScopeId("flow".to_owned()),
             )
-        };
-        let arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Need(payload_type) =
-            need_type.shape()
-        else {
-            return Err(RuntimeSemanticProjectionError::Call {
-                owner,
-                reason: "selected Need producer result has no Need<T> item".to_owned(),
-            });
-        };
-        let plan = arcweft_core::task::NeedProducerTaskPlan::try_new(
-            contract,
-            admission.site(),
-            request,
-            call.operands()
-                .iter()
-                .map(|operand| operand.ty().identity())
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-            payload_type.identity(),
-            policy,
-            restart,
-            class,
-            arcweft_core::task::TaskPriority(0),
-            arcweft_core::task::CancelScopeId("flow".to_owned()),
-        )
+        }
         .map_err(|error| RuntimeSemanticProjectionError::Call {
             owner,
             reason: format!("selected Need producer plan is invalid: {error}"),

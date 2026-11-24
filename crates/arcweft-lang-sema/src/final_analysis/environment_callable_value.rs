@@ -107,7 +107,10 @@ impl FinalSemanticAnalysis {
             .map_err(|_| Error::MissingDeclaration { owner })?;
         let schema = checked.signature();
         if checked.host_call_contract().is_some()
-            || !matches!(schema.validator(), CallableValidator::Ordinary)
+            || !matches!(
+                schema.validator(),
+                CallableValidator::Ordinary | CallableValidator::NeedProducer(_)
+            )
         {
             return Ok(None);
         }
