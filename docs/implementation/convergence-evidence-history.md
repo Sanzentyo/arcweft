@@ -22375,6 +22375,8 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 
 現行CLIで `bundle --manifest-path web/arcw.toml --profile main` を独立に実行し、35,157,520 bytesのAWFBを再生成した。SHA-256は `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4` で、Chromeの5フレームを取得したAWFBと一致した。`tools/capture-webgpu-native-frame.rs` でこの再生成物から160 ms／`rgba8unorm`のNativeフレームを撮り直した。focus／hover／press／compact／HiDPIの全5件で、Native PNGは各既存Native基準と同じSHA-256だった。同じWeb画像との比較でも通常・HiDPIは各3,686,400、縮小は2,073,600のRGBAサンプルが一致し、MSE／MAE／最大誤差／変化画素率0、SSIM 1。全5件で規定の比較器が終了0。
 
+2026-11-24、`f9921fd5d8ef0275bd05b54b53dba85f8ac61c41` 固定のWindows x64 MSVC 70パッケージは、`cargo nextest run` に解決済みの全パッケージを指定し、`--offline --locked --all-features --no-fail-fast --no-tests fail` で実行した。構築は41分54秒。Nextest `31bb3fb8-4fd7-4bc3-80b2-0cb3c8e9f699` は270バイナリで11,145件PASS（62件slow）、49件skip、3,198.730秒、終了0。終了時の現行 `c157661123f9781f333d2bec42d1831c489cb8a0` は追跡ファイルに未コミット差分がなく、固定した実装入力とのGit差分はこの履歴と現状一覧の2文書に限られた。
+
 <a id="catalog-need-callable-traversal"></a>
 
 ### 素材Needの関数値と並列traverseの再現
