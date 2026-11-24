@@ -22388,6 +22388,8 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 
 直接呼び出しは `CallableValidator::NeedProducer` から元Sourceの `StartNeedProducer` へ接続済み。関数値は `ExternalDefinition::prepare` が `Ordinary` のみを通し、関数値適用は直接producerに限る証明を要求していた。`callable_effect_graph` は直接Need構築を `ExpressionCompatible` に分類するため、closureと名前付き関数でもpure helperへ流れる。後続の修復では、終端のNeed構築を実行フレームが必要な操作として分類し、既存の関数フレームでも受理済み宣言から同じ型付きNeed計画を発行する。関数値を呼ぶ側とproducer実行側で元Source・引数をそれぞれの境界で検査し、直接呼び出し、束縛、lambda、保存復元を両実行系で検証する。
 
+実行フレーム選択だけを強制する切り分けも行った。同じ音声lambdaとWindows全機能CLI（SHA-256 `2cc82365523f43da3fba187fca4b7137af7f8bdd6a8742b8adac578bd33bb40c`）で、`runtime_closure_instance_fact` の結果を受けた後にLLDBでCompilerの関数本体を executable 側へ分岐させた。バンドルは `compiler.runtime_semantic_projection` の `project-function execution family disagrees with its checked suspension/control role` で終了1、AWFB未生成。実行計画の整合検査がSemaの分類を照合することを確認した。
+
 <a id="retained-prefix-nested-argument"></a>
 
 ### 別の呼び出しの引数内で段階適用した関数値の再利用
@@ -22406,3 +22408,11 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 2026-11-24、追跡ファイルに未コミット差分のない `d111f94b9c76aea3c6e9a2fc97894bff94d8c953` で、同じ入れ子の実WAV入力とCLIをNative headlessでも実行した。VMと別プロセスのAOTの双方で、元initializerの再評価4回だけをLLDBで飛ばした。VMは2ステップで素材1件完了・1件待機を保存し終了0。AOTはインデックス2から元の要求1件だけを再発行し、残りの素材1件を完了して `voice_prefix_restored`、終了0。タスクIDは `6521190482ad2734ed55451a34e8e14bb9669f33311301efb8c3eb5599fde637`、キーは `704a6d8a1d28b35298515ef1748f1c247513af89ad58315ebe39523943e7fc6e`。保存前後で待機要求の全フィールドが一致し、AWFS SHA-256 `8e0622b37df321e102454a304b646d5cede95b158875289c55238a6b9f28df61` は復元後も変化0。両LLDB実行は、対象CLIの終了後に残った続行命令によって終了1だった。
 
 正の実WAV対照を `--mode one-op --max-ops 1` でも検証した。Native VMは17ステップで完了し、2件目を配信した直後の12ステップ分で保存すると、AOTはインデックス12から同じ要求だけを再開して同じ値へ到達した。連続実行、復元後とも実行操作数の最大は1。AWFS SHA-256は `9c25318266ec71b99c34bd35846d5da5f8b15ad8a4d4277783e157cb187fda86`。同じAWFBのAWBC初回64ステップはまだ `running`。操作上限1を維持し、256ステップまで観測する実行では76ステップで完了し、音声要求を26／42で発行し、`voice_prefix_restored` を返した。AWBCの実行操作数の最大も1。
+
+<a id="hir-tier2-production-boundaries-2026-11-24"></a>
+
+### HIR本番上限の再実行
+
+2026-11-24、`a2b9dcd24ad0b4ea144bb0292f33bd731bc8c374` の追跡入力622件（入力ダイジェスト `0b09b6db20c2a34063b8e79814af9ed19c5a9ac953f98a101d0eba214e1068dd`）で Windows の HIR Tier 2 を再実行した。`arcweft_lang_hir-628437e91384d33f.exe` の SHA-256 は `48a0336381aaebbd64986a7b25ad53b55d1dbfc431d0626a5c93e5b91d8f1dfe`。Nextest `2a8324ff-aed7-4ecb-bcc4-59f4eca0082c` は 18,752.943秒で8件PASS（6件slow、973件skip）。選択した本番上限6件と、attached Flow／Thread expression の65,536件受入・65,537件拒否およびrollbackの2件を実行した。
+
+終了時に追跡ファイルの未コミット差分はなかった。ラッパーは起動時のコミットと現行 `e2a9c0a34454332c208fd1f7c2da7270b09a8bbc` を照合し、`Cargo.lock`、`crates/arcweft-id/src/catalog_resource.rs`、`crates/arcweft-id/src/lib.rs`、`crates/arcweft-lang-hir/src/leaf.rs` の変更を検出して終了1。差分はCLIへの `arcweft-audio-core` 依存と、録音音声カタログのIDおよびHIRの参照投影だった。上記8件の実行結果は起動時のコミットの履歴として保持する。
