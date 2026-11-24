@@ -35,6 +35,8 @@ pub(crate) enum RuntimeTaskProducerSourceError {
     Admission(#[from] AwbcRuntimeValueSnapshotError),
     #[error(transparent)]
     Request(#[from] crate::task::NeedProducerRequestError),
+    #[error("original Host template rejected its evaluated arguments: {0}")]
+    TemplateRequest(String),
     #[error(transparent)]
     Identity(#[from] crate::task::TaskIdentityError),
     #[error(transparent)]

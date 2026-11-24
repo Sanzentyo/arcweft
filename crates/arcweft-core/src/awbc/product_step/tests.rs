@@ -6617,6 +6617,75 @@ impl ResultFanoutExecutor {
 }
 
 #[test]
+fn await_many_original_request_operation_is_identical_in_native_and_decoded_awbc() {
+    use crate::task::{HostTaskRequest, HostTaskTemplateOperation, ShaderRequest};
+
+    let generation = GenerationId::new(7);
+    let output = AwaitManyFixtureOutput::Sequence;
+    for operation in [
+        HostTaskTemplateOperation::ShaderCompile,
+        HostTaskTemplateOperation::Custom {
+            capability: "shader".into(),
+            operation: "compile".into(),
+        },
+    ] {
+        let plan = await_many_original_program_with_child_request(output, false, operation.clone());
+        let invocation = plan
+            .seal_flow_invocation(
+                crate::plan::FlowRuntimeId::canonical("main").unwrap(),
+                [RuntimeFlowParameterBinding {
+                    parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+                    value: await_many_items(),
+                }],
+            )
+            .unwrap();
+        let native = ResultFanoutExecutor::Native(Box::new(
+            crate::engine::Engine::for_flow_invocation_with_generation(invocation, generation)
+                .unwrap(),
+        ));
+        let program = await_many_product_program_from_original(plan, output);
+        let bytes = program.encode_canonical().unwrap();
+        let decoded =
+            AwbcProgram::decode_canonical(&bytes, crate::awbc::codec::AwbcDecodeBudget::default())
+                .unwrap();
+        let awbc = ResultFanoutExecutor::Product(Box::new(await_many_executor(
+            &decoded,
+            await_many_items(),
+            generation,
+        )));
+
+        let expected: Vec<_> = ["one", "two", "three"]
+            .into_iter()
+            .map(|id| match operation {
+                HostTaskTemplateOperation::ShaderCompile => {
+                    HostTaskRequest::ShaderCompile(ShaderRequest {
+                        id: id.into(),
+                        entry: None,
+                    })
+                }
+                _ => HostTaskRequest::custom_with_named_args(
+                    "shader",
+                    "compile",
+                    [RuntimePayload::new(RuntimeValue::String(id.into()))],
+                    [],
+                ),
+            })
+            .collect();
+        for executor in [native, awbc] {
+            let (_, result) = executor.step(RuntimeStepInput::default(), false);
+            let requests: Vec<_> = result
+                .output
+                .requests
+                .tasks
+                .iter()
+                .map(|task| task.spec().request.as_host().unwrap())
+                .collect();
+            assert_eq!(requests, expected.iter().collect::<Vec<_>>());
+        }
+    }
+}
+
+#[test]
 fn await_many_result_aggregation_runs_native_and_product_with_ordered_errors_and_public_restore() {
     for backend in 0..3 {
         for case in 0..3 {
@@ -6885,13 +6954,28 @@ fn await_many_original_program_for(output: AwaitManyFixtureOutput) -> crate::pla
     await_many_original_program_with_thread(output, false)
 }
 
+fn await_many_original_program_with_thread(
+    output: AwaitManyFixtureOutput,
+    threaded: bool,
+) -> crate::plan::RuntimePlan {
+    await_many_original_program_with_child_request(
+        output,
+        threaded,
+        crate::task::HostTaskTemplateOperation::Custom {
+            capability: "probe".into(),
+            operation: "read".into(),
+        },
+    )
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "one Source fixture keeps root and independently scheduled fanout contracts together"
 )]
-fn await_many_original_program_with_thread(
+fn await_many_original_program_with_child_request(
     output: AwaitManyFixtureOutput,
     threaded: bool,
+    child_request: crate::task::HostTaskTemplateOperation,
 ) -> crate::plan::RuntimePlan {
     use crate::plan::*;
     use crate::task::{
@@ -7017,8 +7101,14 @@ fn await_many_original_program_with_thread(
                 debug_label: "product-await-many".into(),
             },
             request: RuntimeHostTaskRequestTemplateSeed {
-                capability: HostCapabilityId("probe".into()),
-                operation: "read".into(),
+                operation: if family == NeedProducerFamily::AwaitManyChild {
+                    child_request.clone()
+                } else {
+                    crate::task::HostTaskTemplateOperation::Custom {
+                        capability: HostCapabilityId("probe".into()),
+                        operation: "read".into(),
+                    }
+                },
                 args,
             },
         }
@@ -7199,15 +7289,24 @@ fn await_many_product_program_for(output: AwaitManyFixtureOutput) -> AwbcProgram
     await_many_product_program_with_thread(output, false)
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "one Source-backed fixture keeps payload rows, request kernels and original task keys together"
-)]
 fn await_many_product_program_with_thread(
     output: AwaitManyFixtureOutput,
     threaded: bool,
 ) -> AwbcProgram {
-    let original = await_many_original_program_with_thread(output, threaded);
+    await_many_product_program_from_original(
+        await_many_original_program_with_thread(output, threaded),
+        output,
+    )
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "one Source-backed fixture keeps payload rows, request kernels and original task keys together"
+)]
+fn await_many_product_program_from_original(
+    original: crate::plan::RuntimePlan,
+    output: AwaitManyFixtureOutput,
+) -> AwbcProgram {
     let first = &original
         .function_sites()
         .iter()
@@ -7235,11 +7334,17 @@ fn await_many_product_program_with_thread(
     };
     let item_ty = AwbcTypeId(1);
     let sequence_ty = AwbcTypeId(2);
+    let child_namespace = target.child.request.operation.capability();
+    let (child_capability, child_string) = if child_namespace == "probe" {
+        (AwbcStringId(1), "read")
+    } else {
+        (AwbcStringId(2), child_namespace)
+    };
     let mut program = AwbcProgram {
         strings: vec![
             "entry.main".to_owned(),
             "probe".to_owned(),
-            "read".to_owned(),
+            child_string.to_owned(),
             "flow".to_owned(),
         ],
         runtime_types: vec![
@@ -7361,9 +7466,8 @@ fn await_many_product_program_with_thread(
             execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
                 crate::awbc::schema::AwbcHostTaskPlan {
                     signature: AwbcSignatureId(2),
-                            request: AwbcTaskRequestProjection::CustomCapability {
+                            request: AwbcTaskRequestProjection::SourceTemplate {
                         capability: AwbcStringId(1),
-                        operation: AwbcStringId(2),
                     },
                             arguments: vec![],
                             kind: AwbcHostTaskPlanKind::AwaitMany {
@@ -7409,9 +7513,8 @@ fn await_many_product_program_with_thread(
         execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
             crate::awbc::schema::AwbcHostTaskPlan {
                 signature: AwbcSignatureId(1),
-                request: AwbcTaskRequestProjection::CustomCapability {
-                    capability: AwbcStringId(1),
-                    operation: AwbcStringId(2),
+                request: AwbcTaskRequestProjection::SourceTemplate {
+                    capability: child_capability,
                 },
                 arguments: vec![AwbcHostArgument {
                     name: None,

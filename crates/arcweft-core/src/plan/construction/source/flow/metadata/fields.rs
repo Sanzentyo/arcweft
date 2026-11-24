@@ -583,8 +583,32 @@ impl Reader<'_, '_> {
             size_of::<crate::plan::RuntimeHostTaskRequestTemplateSeed>()
                 + size_of::<crate::task::HostTaskRequestTemplate>(),
         )?;
-        self.text()?;
-        self.text()?;
+        use crate::task::{AssetLoadKind, HostTaskRequestKind, SystemInfoKind};
+        let tag = self.metadata.byte()?;
+        match HostTaskRequestKind::from_semantic_tag(tag).ok_or(Error::Tag {
+            kind: "Host task template operation",
+            tag,
+        })? {
+            HostTaskRequestKind::AssetLoad => {
+                let tag = self.metadata.byte()?;
+                AssetLoadKind::from_semantic_tag(tag).ok_or(Error::Tag {
+                    kind: "asset request kind",
+                    tag,
+                })?;
+            }
+            HostTaskRequestKind::SystemInfo => {
+                let tag = self.metadata.byte()?;
+                SystemInfoKind::from_semantic_tag(tag).ok_or(Error::Tag {
+                    kind: "system info kind",
+                    tag,
+                })?;
+            }
+            HostTaskRequestKind::Custom => {
+                self.text()?;
+                self.text()?;
+            }
+            _ => {}
+        }
         let before = self.counts.footprint;
         self.arguments()?;
         let units = (self.counts.footprint.nodes - before.nodes)

@@ -523,13 +523,12 @@ fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut
                 capability,
                 operation,
                 ..
-            }
-            | AwbcTaskRequestProjection::CustomCapability {
-                capability,
-                operation,
             } => {
                 visit_string_id(capability, visitor);
                 visit_string_id(operation, visitor);
+            }
+            AwbcTaskRequestProjection::SourceTemplate { capability } => {
+                visit_string_id(capability, visitor);
             }
         }
         for argument in &mut host.arguments {
@@ -2949,9 +2948,8 @@ pub enum AwbcProgramFanoutInput {
 }
 
 /// Request shape is recorded exactly once on the common task-plan row.
-/// NeedProducer verification admits only selected asset-load or manifest
-/// capability requests; AwaitMany may additionally use an explicit custom
-/// capability request without a manifest contract.
+/// A template retains its executable capability assertion here. The sealed
+/// original Source owns the complete operation and its argument roles.
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum AwbcTaskRequestProjection {
     AssetLoad {
@@ -2963,9 +2961,8 @@ pub enum AwbcTaskRequestProjection {
         operation: AwbcStringId,
         contract: crate::step::HostCallContractDigest,
     },
-    CustomCapability {
+    SourceTemplate {
         capability: AwbcStringId,
-        operation: AwbcStringId,
     },
 }
 

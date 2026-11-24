@@ -79,8 +79,10 @@ fn fanout_plan() -> (RuntimePlan, FlowRuntimeId) {
                 debug_label: "native-await-many".into(),
             },
             request: RuntimeHostTaskRequestTemplateSeed {
-                capability: HostCapabilityId("fixture".into()),
-                operation: "run".into(),
+                operation: crate::task::HostTaskTemplateOperation::Custom {
+                    capability: HostCapabilityId("fixture".into()),
+                    operation: "run".into(),
+                },
                 args: vec![],
             },
         }

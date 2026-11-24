@@ -566,9 +566,14 @@ Allowed ids without a registered native implementation also produce
 deterministic task error events, so an adapter mismatch is observable instead of
 becoming an implicit compatibility fallback.
 
-Recognized capability calls such as `fs.read_text(...)`, `http.fetch(...)`,
-`asset.image(...)`, `shader.compile(...)`, `audio.decode(...)`,
-`tts.synthesize(...)`, `process.run(...)`, and `wasm.call(...)` lower to
-dedicated `HostTaskRequest` variants. Unknown awaited call namespaces lower to
-`HostTaskRequest::Custom` with structured argument payloads.
+An original Host task template selects a typed operation. The selection and
+its ordered argument roles participate in the original executable seal. Native
+and AWBC evaluate the arguments, then construct the same request through that
+original template. An AWBC template row carries a capability assertion checked
+against the original selection. Custom templates explicitly declare their
+capability and operation.
+
+Selected `asset.image` and `voice.load` callables construct `AssetLoad`
+requests from checked catalog references. Selected extern calls retain the
+manifest contract alongside their structured arguments in a custom request.
 

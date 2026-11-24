@@ -1404,13 +1404,12 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                 capability,
                 operation,
                 ..
-            }
-            | AwbcTaskRequestProjection::CustomCapability {
-                capability,
-                operation,
             } => {
                 check_capability(verifier, *capability, &at)?;
                 check_string(program, *operation, &at)?;
+            }
+            AwbcTaskRequestProjection::SourceTemplate { capability } => {
+                check_capability(verifier, *capability, &at)?;
             }
         }
         match &host.kind {
@@ -1439,7 +1438,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                             && request_contract.as_bytes() == contract.as_bytes()
                             && u32::try_from(host.arguments.len()).is_ok()
                     }
-                    AwbcTaskRequestProjection::CustomCapability { .. } => false,
+                    AwbcTaskRequestProjection::SourceTemplate { .. } => false,
                 };
                 if !valid {
                     return Err(AwbcVerifyError::InvalidInvariant {
@@ -1457,13 +1456,12 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             } => {
                 if !matches!(
                     &host.request,
-                    AwbcTaskRequestProjection::CustomCapability { .. }
+                    AwbcTaskRequestProjection::SourceTemplate { .. }
                 ) {
                     return Err(AwbcVerifyError::InvalidInvariant {
                         at,
-                        message:
-                            "AwaitMany task plans require an explicit custom capability request"
-                                .to_owned(),
+                        message: "AwaitMany task plans require an original Source template"
+                            .to_owned(),
                     });
                 }
                 check_index(program.task_plans.len(), child.0, "task_plans", &at)?;
@@ -1534,6 +1532,16 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             AwbcHostTaskPlanKind::Template {
                 request_function, ..
             } => {
+                if !matches!(
+                    host.request,
+                    AwbcTaskRequestProjection::SourceTemplate { .. }
+                ) {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "Host template task plans require an original Source template"
+                            .into(),
+                    });
+                }
                 check_index(
                     program.functions.len(),
                     request_function.0,

@@ -22,7 +22,7 @@ use crate::runtime_id::{
 };
 use crate::scope::RuntimeScopeIdentity;
 use crate::stream::StreamRuntimeId;
-use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+use crate::task::{NeedId, NeedProducerTaskPlan, TaskId};
 use crate::value::{
     RuntimeAgentCompareOp, RuntimeAgentField, RuntimeBinaryOp, RuntimeCallArgumentMode,
     RuntimeCallTarget, RuntimeEntityReference, RuntimeEntityReferenceField, RuntimeFmtParameterId,
@@ -1331,8 +1331,7 @@ pub type RuntimeNeedProducerTemplateSeed = crate::task::NeedProducerTemplate<
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeHostTaskRequestTemplateSeed {
-    pub capability: HostCapabilityId,
-    pub operation: String,
+    pub operation: crate::task::HostTaskTemplateOperation,
     pub args: Vec<RuntimeHostArgumentSeed>,
 }
 

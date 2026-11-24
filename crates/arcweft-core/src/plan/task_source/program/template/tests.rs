@@ -145,8 +145,10 @@ fn original_with_other_child(other: bool) -> RuntimePlan {
                     debug_label: "template source fixture".into(),
                 },
                 request: RuntimeHostTaskRequestTemplateSeed {
-                    capability: HostCapabilityId("source".into()),
-                    operation: "request".into(),
+                    operation: crate::task::HostTaskTemplateOperation::Custom {
+                        capability: HostCapabilityId("source".into()),
+                        operation: "request".into(),
+                    },
                     args,
                 },
             }
@@ -357,9 +359,8 @@ pub(in crate::plan::task_source) fn executable() -> AwbcProgram {
             execution: crate::awbc::schema::AwbcTaskPlanExecution::Host(
                 crate::awbc::schema::AwbcHostTaskPlan {
                     signature: AwbcSignatureId(0),
-                    request: AwbcTaskRequestProjection::CustomCapability {
+                    request: AwbcTaskRequestProjection::SourceTemplate {
                         capability: string("source"),
-                        operation: string("request"),
                     },
                     arguments: vec![
                         AwbcHostArgument {
@@ -723,7 +724,6 @@ fn awbc_templates_reject_independently_valid_metadata_and_capture_changes() {
         Field::Contract,
         Field::Site,
         Field::Capability,
-        Field::Operation,
         Field::Class,
         Field::Priority,
         Field::CancelScope,
@@ -756,20 +756,11 @@ fn awbc_templates_reject_independently_valid_metadata_and_capture_changes() {
                 *site = NeedProducerSiteDigest::from_bytes([0; 32]);
             }
             Field::Capability => {
-                let AwbcTaskRequestProjection::CustomCapability { capability, .. } =
-                    &mut host.request
+                let AwbcTaskRequestProjection::SourceTemplate { capability } = &mut host.request
                 else {
                     unreachable!()
                 };
                 *capability = wrong;
-            }
-            Field::Operation => {
-                let AwbcTaskRequestProjection::CustomCapability { operation, .. } =
-                    &mut host.request
-                else {
-                    unreachable!()
-                };
-                *operation = wrong;
             }
             Field::Class => row.class = AwbcTaskClass::Io,
             Field::Priority => row.priority += 1,

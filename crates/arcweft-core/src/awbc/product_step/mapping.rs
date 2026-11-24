@@ -1,7 +1,7 @@
 use super::ProductStepError;
 use crate::awbc::schema::{
     AwbcConstant, AwbcContentUnitId, AwbcEffectKind, AwbcEffectPlanId, AwbcProgram,
-    AwbcResourceResidency, AwbcStringId, AwbcTaskPlanId, AwbcTaskRequestProjection,
+    AwbcResourceResidency, AwbcStringId,
 };
 use crate::awbc::vm::constant_value;
 use crate::effect::{
@@ -13,10 +13,7 @@ use crate::step::{
     RuntimeContentRequest, RuntimeContentResidency, RuntimeContentResourceRequest,
     RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeDiagnosticSource,
 };
-use crate::task::HostTaskRequest;
-use crate::value::{
-    RuntimePayload, RuntimeValue, runtime_value_into_sequence_values, runtime_value_label,
-};
+use crate::value::{RuntimeValue, runtime_value_label};
 use arcweft_interaction_model::audio::AudioCommand;
 
 pub(super) enum MappedEffect {
@@ -353,63 +350,6 @@ pub(super) fn content_request(
     Ok(RuntimeContentRequest { content, resources })
 }
 
-pub(super) fn task_request(
-    program: &AwbcProgram,
-    plan: AwbcTaskPlanId,
-    args: Vec<RuntimeValue>,
-) -> Result<HostTaskRequest, ProductStepError> {
-    let record = program
-        .task_plans
-        .get(plan.index())
-        .ok_or_else(|| ProductStepError::Internal("task plan is absent".into()))?;
-    let host = record.host().ok_or_else(|| {
-        ProductStepError::Internal("Host request requires a Host task execution contract".into())
-    })?;
-    let string = |id: AwbcStringId| {
-        program
-            .strings
-            .get(id.index())
-            .cloned()
-            .ok_or_else(|| ProductStepError::Internal("task string is absent".into()))
-    };
-    let AwbcTaskRequestProjection::CustomCapability {
-        capability,
-        operation,
-    } = host.request
-    else {
-        return Err(ProductStepError::Internal(
-            "template requires a custom task request".into(),
-        ));
-    };
-    if args.len() != host.arguments.len() {
-        return Err(ProductStepError::Input(
-            "task request kernel result has the wrong arity".into(),
-        ));
-    }
-    let mut positional = Vec::new();
-    let mut named = Vec::new();
-    for (argument, value) in host.arguments.iter().zip(args) {
-        if argument.spread {
-            let values = runtime_value_into_sequence_values(value).map_err(|value| {
-                ProductStepError::Type(format!(
-                    "spread task argument requires sequence, found {}",
-                    runtime_value_label(&value)
-                ))
-            })?;
-            positional.extend(values.into_iter().map(RuntimePayload::from));
-        } else if let Some(name) = argument.name {
-            named.push((string(name)?, RuntimePayload::from(value)));
-        } else {
-            positional.push(RuntimePayload::from(value));
-        }
-    }
-    Ok(HostTaskRequest::custom_with_named_args(
-        string(capability)?,
-        string(operation)?,
-        positional,
-        named,
-    ))
-}
 pub(super) fn source_diagnostic(
     program: &AwbcProgram,
     source_map: Option<crate::awbc::schema::AwbcSourceMapId>,

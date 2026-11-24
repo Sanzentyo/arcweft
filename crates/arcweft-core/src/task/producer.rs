@@ -141,6 +141,41 @@ pub enum AssetLoadKind {
 }
 
 impl AssetLoadKind {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Image => 0,
+            Self::Voice => 1,
+        }
+    }
+
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Image),
+            1 => Some(Self::Voice),
+            _ => None,
+        }
+    }
+
+    pub(super) fn project_catalog_request(
+        self,
+        reference: &RuntimeEntityReference,
+    ) -> Result<AssetRequest, NeedProducerRequestError> {
+        let argument = self
+            .argument_id(reference)
+            .ok_or(NeedProducerRequestError::InvalidCatalogResource)?;
+        let id = match self {
+            Self::Image => AssetId::try_from(argument.clone())
+                .map_err(|_| NeedProducerRequestError::InvalidCatalogResource)?,
+            Self::Voice => VoiceResourceId::try_from(argument.clone())
+                .map_err(|_| NeedProducerRequestError::InvalidCatalogResource)?
+                .bundle_asset_id(),
+        };
+        Ok(AssetRequest {
+            id: RuntimeBundleAssetResourceId::from_asset_id(id),
+            kind: self,
+        })
+    }
+
     fn argument_id(self, reference: &RuntimeEntityReference) -> Option<&PublicId> {
         let family = match self {
             Self::Image => DeclarationIdentityFamily::Asset,
@@ -730,20 +765,8 @@ impl NeedProducerTaskPlan {
                 let RuntimeValue::EntityRef(reference) = &arguments[0].value else {
                     return Err(NeedProducerRequestError::ExpectedEntityReference);
                 };
-                let argument = kind
-                    .argument_id(reference)
-                    .ok_or(NeedProducerRequestError::InvalidCatalogResource)?;
-                let id = match kind {
-                    AssetLoadKind::Image => AssetId::try_from(argument.clone())
-                        .map_err(|_| NeedProducerRequestError::InvalidCatalogResource)?,
-                    AssetLoadKind::Voice => VoiceResourceId::try_from(argument.clone())
-                        .map_err(|_| NeedProducerRequestError::InvalidCatalogResource)?
-                        .bundle_asset_id(),
-                };
-                Ok(HostTaskRequest::AssetLoad(AssetRequest {
-                    id: RuntimeBundleAssetResourceId::from_asset_id(id),
-                    kind: *kind,
-                }))
+                kind.project_catalog_request(reference)
+                    .map(HostTaskRequest::AssetLoad)
             }
             NeedProducerRequestProjection::ExternCapability {
                 capability,
@@ -915,10 +938,7 @@ impl NeedProducerTaskPlan {
                 argument_name,
             } => {
                 encoder.tag(0);
-                encoder.tag(match kind {
-                    AssetLoadKind::Image => 0,
-                    AssetLoadKind::Voice => 1,
-                });
+                encoder.tag(kind.semantic_tag());
                 encoder.string(argument_name);
             }
             NeedProducerRequestProjection::ExternCapability {

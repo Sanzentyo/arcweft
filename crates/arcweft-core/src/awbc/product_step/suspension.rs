@@ -705,16 +705,10 @@ impl AwbcProductStepExecutor {
                     &mut admission,
                 )
                 .map_err(|error| ProductStepError::Input(error.to_string()))?;
-            let args = self.evaluate_task_request(
-                state.plan,
-                request_function,
-                &state.captured,
-                None,
-                backend,
-            )?;
-            let request = super::mapping::task_request(&self.program, state.plan, args)?;
+            let args =
+                self.evaluate_task_request(request_function, &state.captured, None, backend)?;
             let spec = base_source
-                .template_task_spec(&checked, generation, request, &mut admission)
+                .template_task_spec(&checked, generation, args, &mut admission)
                 .map_err(|error| ProductStepError::Input(error.to_string()))?;
             let accepted = self
                 .need_producers
@@ -770,16 +764,10 @@ impl AwbcProductStepExecutor {
                     &mut admission,
                 )
                 .map_err(|error| ProductStepError::Input(error.to_string()))?;
-            let args = self.evaluate_task_request(
-                child,
-                request_function,
-                &state.captured,
-                Some(item),
-                backend,
-            )?;
-            let request = super::mapping::task_request(&self.program, child, args)?;
+            let args =
+                self.evaluate_task_request(request_function, &state.captured, Some(item), backend)?;
             let spec = child_source
-                .template_task_spec(&checked, generation, request, &mut admission)
+                .template_task_spec(&checked, generation, args, &mut admission)
                 .map_err(|error| ProductStepError::Input(error.to_string()))?;
             let accepted = self
                 .need_producers
@@ -811,7 +799,6 @@ impl AwbcProductStepExecutor {
 
     fn evaluate_task_request(
         &mut self,
-        plan: crate::awbc::schema::AwbcTaskPlanId,
         function: AwbcFunctionId,
         captured: &[RuntimeValue],
         item: Option<&RuntimeValue>,
@@ -844,29 +831,6 @@ impl AwbcProductStepExecutor {
                 "task request kernel must return its argument tuple".into(),
             ));
         };
-        let record = &self.program.task_plans[plan.index()];
-        let host = record.host().ok_or_else(|| {
-            ProductStepError::Internal("request kernel requires a Host execution contract".into())
-        })?;
-        let signature = self
-            .program
-            .signatures
-            .get(host.signature.index())
-            .ok_or_else(|| ProductStepError::Internal("task signature is absent".into()))?;
-        if signature.params.len() != args.len() {
-            return Err(ProductStepError::Type(
-                "task request kernel arity mismatch".into(),
-            ));
-        }
-        for (ty, value) in signature.params.iter().zip(&args) {
-            self.program
-                .validate_live_value(
-                    *ty,
-                    value,
-                    crate::entry::RuntimeSchemaLimits::engine_default(),
-                )
-                .map_err(|error| ProductStepError::Type(error.to_string()))?;
-        }
         Ok(args)
     }
     pub(super) fn resume_await_many(

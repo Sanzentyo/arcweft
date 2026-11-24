@@ -81,8 +81,10 @@ pub use failure::{
 pub use publication::RuntimeTaskPublication;
 pub use publication::{ProgramTaskValuePhase, RuntimeNeedPublicationCursor};
 mod template;
+mod template_request;
 pub use semantic::TaskSemanticEncodingError;
 pub use template::{HostCallProducerDefinition, NeedProducerDefinition, NeedProducerTemplate};
+pub use template_request::HostTaskTemplateOperation;
 mod fanout;
 pub(crate) use fanout::RuntimeFanoutProgress;
 
@@ -799,8 +801,7 @@ pub struct AwaitManyTarget {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostTaskRequestTemplate {
-    pub capability: HostCapabilityId,
-    pub operation: String,
+    pub operation: HostTaskTemplateOperation,
     pub args: Vec<RuntimeHostArgumentTemplate>,
     pub(crate) captures: Vec<RuntimeLocalDeclarationId>,
 }
@@ -1055,7 +1056,7 @@ pub enum HostTaskRequestKind {
 }
 
 impl HostTaskRequestKind {
-    const fn semantic_tag(self) -> u8 {
+    pub(crate) const fn semantic_tag(self) -> u8 {
         match self {
             Self::FileReadText => 0,
             Self::FileReadBytes => 1,
@@ -1071,6 +1072,26 @@ impl HostTaskRequestKind {
             Self::WasmCall => 11,
             Self::SystemInfo => 12,
             Self::Custom => 13,
+        }
+    }
+
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::FileReadText),
+            1 => Some(Self::FileReadBytes),
+            2 => Some(Self::FileWriteText),
+            3 => Some(Self::FileWriteBytes),
+            4 => Some(Self::HttpFetch),
+            5 => Some(Self::HttpRespond),
+            6 => Some(Self::ProcessRun),
+            7 => Some(Self::AssetLoad),
+            8 => Some(Self::ShaderCompile),
+            9 => Some(Self::AudioDecode),
+            10 => Some(Self::TtsSynthesis),
+            11 => Some(Self::WasmCall),
+            12 => Some(Self::SystemInfo),
+            13 => Some(Self::Custom),
+            _ => None,
         }
     }
 }
@@ -1565,7 +1586,7 @@ pub struct SystemInfoRequest {
     pub kind: SystemInfoKind,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum SystemInfoKind {
     CoreCount,
     ThreadCount,
@@ -2148,6 +2169,23 @@ impl HostTaskRequest {
 }
 
 impl SystemInfoKind {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::CoreCount => 0,
+            Self::ThreadCount => 1,
+            Self::AvailableParallelism => 2,
+        }
+    }
+
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::CoreCount),
+            1 => Some(Self::ThreadCount),
+            2 => Some(Self::AvailableParallelism),
+            _ => None,
+        }
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::CoreCount => "core_count",

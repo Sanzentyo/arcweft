@@ -3,9 +3,9 @@ use super::dialogue::DialogueLineTaskState;
 use super::{
     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
     Engine, FlowEvent, FlowExit, FlowFiberStatus, HostCallState, LineEffectRequest,
-    RuntimeDiagnostic, RuntimeEvalError, RuntimePayload, RuntimeSeq, RuntimeStepInput,
-    RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
-    TaskSpec, WaitingManyStatus, runtime_value_into_sequence_values,
+    RuntimeDiagnostic, RuntimeEvalError, RuntimePayload, RuntimeStepInput, RuntimeStepOutput,
+    RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
+    WaitingManyStatus, runtime_value_into_sequence_values,
 };
 use crate::line_task::{
     cancel_live_line_task_group, finalize_live_line_task_close, finish_live_line_task_group,
@@ -16,18 +16,11 @@ use crate::plan::task_source::RuntimeTaskSourceProgram;
 use crate::pure::RuntimeCallBackend;
 use crate::step::RuntimeDiagnosticCategory;
 use crate::task::{
-    AssetLoadKind, AssetRequest, AudioDecodeRequest, AwaitManyTarget, FileReadBytesRequest,
-    FileReadTextRequest, FileWriteBytesRequest, FileWriteTextRequest, HostTaskRequest,
-    HostTaskRequestTemplate, HttpFetchRequest, HttpRespondRequest, NeedId,
-    NeedProducerRuntimeArgument, NeedProducerTaskDisposition, ProcessRunRequest,
+    AwaitManyTarget, NeedId, NeedProducerRuntimeArgument, NeedProducerTaskDisposition,
     RuntimeHostArgumentTemplate, RuntimeNeedProducerState, RuntimeNeedPublication,
-    RuntimeTaskTemplateArguments, ShaderRequest, SystemInfoKind, SystemInfoRequest, TaskId,
-    TtsRequest, WasmCallRequest,
+    RuntimeTaskTemplateArguments, TaskId,
 };
-use crate::value::{
-    DenseSeq, RuntimeFieldValue, RuntimeRetainedValueAdmission, RuntimeValueSource,
-    RuntimeVirtualPath,
-};
+use crate::value::{RuntimeRetainedValueAdmission, RuntimeValueSource};
 use arcweft_need::Need;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -1357,8 +1350,8 @@ impl Engine {
                 return;
             }
         };
-        let request =
-            match self.evaluate_host_task_request_template(&target.base.request, pure_backend) {
+        let arguments =
+            match self.evaluate_host_task_arguments(&target.base.request.args, pure_backend) {
                 Ok(request) => request,
                 Err(error) => {
                     self.fail_eval(error, output);
@@ -1366,7 +1359,7 @@ impl Engine {
                 }
             };
         let spec =
-            match source.template_task_spec(&checked, self.generation, request, &mut admission) {
+            match source.template_task_spec(&checked, self.generation, arguments, &mut admission) {
                 Ok(spec) => spec,
                 Err(error) => {
                     self.fail_eval(error, output);
@@ -1716,20 +1709,19 @@ impl Engine {
                 value: value.clone(),
             })
             .collect::<Vec<_>>();
-        let request = self.with_temp_bindings(bindings, |this| {
+        let arguments = self.with_temp_bindings(bindings, |this| {
             this.with_temp_binding_ref(target.item_binding, item, |this| {
-                this.evaluate_host_task_request_template(&target.child.request, pure_backend)
-                    .map_err(|message| RuntimeEvalError::HostTaskRequest { message })
+                this.evaluate_host_task_arguments(&target.child.request.args, pure_backend)
             })
         });
-        let request = match request {
-            Ok(request) => request,
+        let arguments = match arguments {
+            Ok(arguments) => arguments,
             Err(error) => {
                 self.fail_eval(format!("await many item {index}: {error}"), output);
                 return None;
             }
         };
-        match source.template_task_spec(&checked, self.generation, request, &mut admission) {
+        match source.template_task_spec(&checked, self.generation, arguments, &mut admission) {
             Ok(spec) => Some(spec),
             Err(error) => {
                 self.fail_eval(error, output);
@@ -1737,438 +1729,15 @@ impl Engine {
             }
         }
     }
-    fn evaluate_host_task_request_template(
+    fn evaluate_host_task_arguments(
         &mut self,
-        template: &HostTaskRequestTemplate,
+        arguments: &[RuntimeHostArgumentTemplate],
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<HostTaskRequest, String> {
-        let args = self.evaluate_host_task_args(&template.args, pure_backend)?;
-        let call = EvaluatedHostCall {
-            capability: template.capability.0.as_str(),
-            operation: template.operation.as_str(),
-            args: &args,
-        };
-        lower_evaluated_host_request(&call)
-    }
-
-    fn evaluate_host_task_args(
-        &mut self,
-        args: &[RuntimeHostArgumentTemplate],
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<Vec<EvaluatedHostArg>, String> {
-        let mut evaluated = Vec::new();
-        for arg in args {
-            let value = self
-                .evaluate_expr_with_backend(arg.value(), pure_backend)
-                .map_err(|error| error.to_string())?;
-            if arg.is_spread() {
-                for value in spread_host_arg_values(value)? {
-                    evaluated.push(EvaluatedHostArg { name: None, value });
-                }
-            } else {
-                evaluated.push(EvaluatedHostArg {
-                    name: arg.name().map(str::to_owned),
-                    value,
-                });
-            }
-        }
-        Ok(evaluated)
-    }
-}
-
-struct EvaluatedHostArg {
-    name: Option<String>,
-    value: RuntimeValue,
-}
-
-struct EvaluatedHostCall<'a> {
-    capability: &'a str,
-    operation: &'a str,
-    args: &'a [EvaluatedHostArg],
-}
-
-fn spread_host_arg_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, String> {
-    match runtime_value_into_sequence_values(value) {
-        Ok(items) => Ok(items),
-        Err(value) => Err(format!(
-            "spread host argument requires a tuple or bracket sequence, found {}",
-            super::runtime_value_label(&value)
-        )),
-    }
-}
-
-fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTaskRequest, String> {
-    match (call.capability, call.operation) {
-        ("file" | "fs", "read_text") => Ok(HostTaskRequest::FileReadText(FileReadTextRequest {
-            path: positional_virtual_path(call.args, 0)?,
-        })),
-        ("file" | "fs", "read_bytes") => Ok(HostTaskRequest::FileReadBytes(FileReadBytesRequest {
-            path: positional_virtual_path(call.args, 0)?,
-        })),
-        ("file" | "fs", "write_text") => Ok(HostTaskRequest::FileWriteText(FileWriteTextRequest {
-            path: positional_virtual_path(call.args, 0)?,
-            text: positional_string(call.args, 1)?,
-        })),
-        ("file" | "fs", "write_bytes") => {
-            Ok(HostTaskRequest::FileWriteBytes(FileWriteBytesRequest {
-                path: positional_virtual_path(call.args, 0)?,
-                bytes: positional_bytes(call.args, 1)?,
-            }))
-        }
-        ("file" | "fs", "write") => lower_file_write_request(call.args),
-        ("http", "fetch") => Ok(HostTaskRequest::HttpFetch(HttpFetchRequest {
-            url: positional_string(call.args, 0)?,
-            method: named_string(call.args, "method").unwrap_or_else(|| "GET".to_owned()),
-            headers: named_headers(call.args, "headers").unwrap_or_default(),
-            body: named_payload(call.args, "body"),
-        })),
-        ("http", "respond") => Ok(HostTaskRequest::HttpRespond(HttpRespondRequest {
-            request_id: positional_string(call.args, 0)?,
-            status: named_u16(call.args, "status").unwrap_or(200),
-            headers: named_headers(call.args, "headers").unwrap_or_default(),
-            body: named_payload(call.args, "body"),
-        })),
-        ("process", "run") => Ok(HostTaskRequest::ProcessRun(ProcessRunRequest {
-            program: positional_string(call.args, 0)?,
-            args: named_string_seq(call.args, "args").unwrap_or_default(),
-            env: named_headers(call.args, "env").unwrap_or_default(),
-        })),
-        ("asset", operation) => {
-            let kind = AssetLoadKind::from_request_name(operation)
-                .ok_or_else(|| format!("unsupported asset operation `{operation}`"))?;
-            Ok(HostTaskRequest::AssetLoad(AssetRequest {
-                id: crate::value::RuntimeBundleAssetResourceId::try_new(positional_string(
-                    call.args, 0,
-                )?)
-                .map_err(|error| error.to_string())?,
-                kind,
-            }))
-        }
-        ("voice", "load") => Ok(HostTaskRequest::AssetLoad(AssetRequest {
-            id: crate::value::RuntimeBundleAssetResourceId::try_new(positional_string(
-                call.args, 0,
-            )?)
-            .map_err(|error| error.to_string())?,
-            kind: AssetLoadKind::Voice,
-        })),
-        ("shader", "compile") => Ok(HostTaskRequest::ShaderCompile(ShaderRequest {
-            id: positional_string(call.args, 0)?,
-            entry: named_string(call.args, "entry"),
-        })),
-        ("audio", "decode") => Ok(HostTaskRequest::AudioDecode(AudioDecodeRequest {
-            id: positional_string(call.args, 0)?,
-        })),
-        ("tts", "synthesize" | "synthesis") => Ok(HostTaskRequest::TtsSynthesis(TtsRequest {
-            voice: named_string(call.args, "voice"),
-            text: named_string(call.args, "text")
-                .map_or_else(|| positional_string(call.args, 0), Ok)?,
-        })),
-        ("wasm", "call") => Ok(HostTaskRequest::WasmCall(WasmCallRequest {
-            module: positional_string(call.args, 0)?,
-            function: positional_string(call.args, 1)?,
-            args: positional_after(call.args, 2)
-                .into_iter()
-                .map(|value| RuntimePayload::new(value.clone()))
-                .collect(),
-        })),
-        ("system" | "runtime", "core_count") => Ok(system_info_request(SystemInfoKind::CoreCount)),
-        ("system" | "runtime", "thread_count") => {
-            Ok(system_info_request(SystemInfoKind::ThreadCount))
-        }
-        ("system" | "runtime", "available_parallelism") => {
-            Ok(system_info_request(SystemInfoKind::AvailableParallelism))
-        }
-        _ => Ok(HostTaskRequest::custom_with_named_args(
-            call.capability,
-            call.operation,
-            call.args
-                .iter()
-                .filter(|arg| arg.name.is_none())
-                .map(|arg| RuntimePayload::new(arg.value.clone())),
-            call.args.iter().filter_map(|arg| {
-                Some((arg.name.clone()?, RuntimePayload::new(arg.value.clone())))
-            }),
-        )),
-    }
-}
-
-fn system_info_request(kind: SystemInfoKind) -> HostTaskRequest {
-    HostTaskRequest::SystemInfo(SystemInfoRequest { kind })
-}
-
-fn lower_file_write_request(args: &[EvaluatedHostArg]) -> Result<HostTaskRequest, String> {
-    let path = positional_virtual_path(args, 0)?;
-    let body =
-        positional_arg(args, 1).ok_or_else(|| "missing positional argument #1".to_owned())?;
-    match body {
-        RuntimeValue::String(text) => Ok(HostTaskRequest::FileWriteText(FileWriteTextRequest {
-            path,
-            text: text.clone(),
-        })),
-        RuntimeValue::Seq(_) => Ok(HostTaskRequest::FileWriteBytes(FileWriteBytesRequest {
-            path,
-            bytes: runtime_value_to_bytes(body)?,
-        })),
-        value => Err(format!(
-            "fs.write body must be String or byte sequence, found {}",
-            super::runtime_value_label(value)
-        )),
-    }
-}
-
-fn positional_after(args: &[EvaluatedHostArg], count: usize) -> Vec<&RuntimeValue> {
-    args.iter()
-        .filter(|arg| arg.name.is_none())
-        .skip(count)
-        .map(|arg| &arg.value)
-        .collect()
-}
-
-fn positional_virtual_path(args: &[EvaluatedHostArg], index: usize) -> Result<String, String> {
-    let value = positional_arg(args, index)
-        .ok_or_else(|| format!("missing positional task argument {index}"))?;
-    RuntimeVirtualPath::try_from(value)
-        .map(|path| path.runtime_label())
-        .map_err(|error| error.to_string())
-}
-
-fn positional_string(args: &[EvaluatedHostArg], index: usize) -> Result<String, String> {
-    positional_arg(args, index)
-        .map(runtime_value_to_string)
-        .ok_or_else(|| format!("missing positional task argument {index}"))
-}
-
-fn positional_bytes(args: &[EvaluatedHostArg], index: usize) -> Result<Vec<u8>, String> {
-    let Some(value) = positional_arg(args, index) else {
-        return Err(format!("missing positional task argument {index}"));
-    };
-    runtime_value_to_bytes(value)
-}
-
-fn positional_arg(args: &[EvaluatedHostArg], index: usize) -> Option<&RuntimeValue> {
-    args.iter()
-        .filter(|arg| arg.name.is_none())
-        .nth(index)
-        .map(|arg| &arg.value)
-}
-
-fn named_arg<'a>(args: &'a [EvaluatedHostArg], name: &str) -> Option<&'a RuntimeValue> {
-    args.iter()
-        .find(|arg| arg.name.as_deref() == Some(name))
-        .map(|arg| &arg.value)
-}
-
-fn named_string(args: &[EvaluatedHostArg], name: &str) -> Option<String> {
-    named_arg(args, name).map(runtime_value_to_string)
-}
-
-fn named_payload(args: &[EvaluatedHostArg], name: &str) -> Option<RuntimePayload> {
-    named_arg(args, name).cloned().map(RuntimePayload::new)
-}
-
-fn named_u16(args: &[EvaluatedHostArg], name: &str) -> Option<u16> {
-    named_arg(args, name).and_then(|value| match value {
-        RuntimeValue::Int(value) => value
-            .try_into_i64()
-            .and_then(|value| u16::try_from(value).ok()),
-        RuntimeValue::UInt(value) => value
-            .try_into_i64()
-            .and_then(|value| u16::try_from(value).ok()),
-        value => runtime_value_to_string(value).parse().ok(),
-    })
-}
-
-fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>> {
-    named_arg(args, name).map(|value| match value {
-        RuntimeValue::Seq(RuntimeSeq::Values(items)) | RuntimeValue::Tuple(items) => {
-            items.iter().map(runtime_value_to_string).collect()
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(items)) => match items {
-            DenseSeq::Units(len) => (0..*len).map(|_| "()".to_owned()).collect(),
-            DenseSeq::I8(items) => items.as_slice().iter().map(i8::to_string).collect(),
-            DenseSeq::I16(items) => items.as_slice().iter().map(i16::to_string).collect(),
-            DenseSeq::I32(items) => items.as_slice().iter().map(i32::to_string).collect(),
-            DenseSeq::I64(items) => items.as_slice().iter().map(i64::to_string).collect(),
-            DenseSeq::ISize(items) => items
-                .as_slice()
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
-            DenseSeq::I128(items) => items.as_slice().iter().map(i128::to_string).collect(),
-            DenseSeq::U8(items) | DenseSeq::Bytes(items) => {
-                items.as_slice().iter().map(u8::to_string).collect()
-            }
-            DenseSeq::U16(items) => items.as_slice().iter().map(u16::to_string).collect(),
-            DenseSeq::U32(items) => items.as_slice().iter().map(u32::to_string).collect(),
-            DenseSeq::U64(items) => items.as_slice().iter().map(u64::to_string).collect(),
-            DenseSeq::USize(items) => items
-                .as_slice()
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
-            DenseSeq::U128(items) => items.as_slice().iter().map(u128::to_string).collect(),
-            DenseSeq::F32(items) => items
-                .as_slice()
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
-            DenseSeq::F64(items) => items
-                .as_slice()
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
-            DenseSeq::Bool(items) => items.as_slice().iter().map(bool::to_string).collect(),
-            DenseSeq::Chars(items) => items.as_slice().iter().map(char::to_string).collect(),
-            DenseSeq::Durations(items) => items
-                .as_slice()
-                .iter()
-                .map(|value| format!("{}ns", value.as_nanos()))
-                .collect(),
-            DenseSeq::Strings(items) => items.as_slice().to_vec(),
-            DenseSeq::EntityRefs(items) => items
-                .as_slice()
-                .iter()
-                .map(crate::value::RuntimeEntityReference::runtime_label)
-                .collect(),
-        },
-        value => vec![runtime_value_to_string(value)],
-    })
-}
-
-fn named_headers(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<(String, String)>> {
-    named_arg(args, name).and_then(runtime_value_to_headers)
-}
-
-fn runtime_value_to_headers(value: &RuntimeValue) -> Option<Vec<(String, String)>> {
-    match value {
-        RuntimeValue::Record(fields) => fields
+    ) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
+        arguments
             .iter()
-            .map(|field| {
-                Some((
-                    field.name().to_owned(),
-                    runtime_value_to_string(field.value()),
-                ))
-            })
-            .collect(),
-        RuntimeValue::Seq(RuntimeSeq::Values(items)) | RuntimeValue::Tuple(items) => {
-            items.iter().map(runtime_value_to_header_pair).collect()
-        }
-        _ => None,
-    }
-}
-
-fn runtime_value_to_header_pair(value: &RuntimeValue) -> Option<(String, String)> {
-    match value {
-        RuntimeValue::Tuple(items) if items.len() == 2 => Some((
-            runtime_value_to_string(&items[0]),
-            runtime_value_to_string(&items[1]),
-        )),
-        RuntimeValue::Record(fields) => {
-            let key = record_field(fields.fields(), "key")
-                .or_else(|| record_field(fields.fields(), "name"))
-                .map(runtime_value_to_string)?;
-            let value = record_field(fields.fields(), "value").map(runtime_value_to_string)?;
-            Some((key, value))
-        }
-        _ => None,
-    }
-}
-
-fn record_field<'a>(fields: &'a [RuntimeFieldValue], name: &str) -> Option<&'a RuntimeValue> {
-    fields
-        .iter()
-        .find(|field| field.name() == name)
-        .map(RuntimeFieldValue::value)
-}
-
-fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
-    match value {
-        RuntimeValue::Seq(RuntimeSeq::Values(items)) => items
-            .iter()
-            .map(|item| match item {
-                RuntimeValue::Int(value) => value
-                    .try_into_i64()
-                    .and_then(|value| u8::try_from(value).ok())
-                    .ok_or_else(|| format!("byte value `{value}` is outside u8 range")),
-                RuntimeValue::UInt(value) => value
-                    .try_into_i64()
-                    .and_then(|value| u8::try_from(value).ok())
-                    .ok_or_else(|| format!("byte value `{value}` is outside u8 range")),
-                value => Err(format!(
-                    "byte payload item must be Int, found {}",
-                    super::runtime_value_label(value)
-                )),
-            })
-            .collect(),
-        RuntimeValue::Seq(RuntimeSeq::Dense(items)) => match items {
-            DenseSeq::Bytes(items) | DenseSeq::U8(items) => Ok(items.as_slice().to_vec()),
-            DenseSeq::I64(items) => items
-                .as_slice()
-                .iter()
-                .map(|value| {
-                    u8::try_from(*value)
-                        .map_err(|_| format!("byte value `{value}` is outside u8 range"))
-                })
-                .collect(),
-            DenseSeq::Units(_)
-            | DenseSeq::I8(_)
-            | DenseSeq::I16(_)
-            | DenseSeq::I32(_)
-            | DenseSeq::I128(_)
-            | DenseSeq::ISize(_)
-            | DenseSeq::U16(_)
-            | DenseSeq::U32(_)
-            | DenseSeq::U64(_)
-            | DenseSeq::U128(_)
-            | DenseSeq::USize(_)
-            | DenseSeq::F32(_)
-            | DenseSeq::F64(_)
-            | DenseSeq::Bool(_)
-            | DenseSeq::Chars(_)
-            | DenseSeq::Durations(_)
-            | DenseSeq::Strings(_)
-            | DenseSeq::EntityRefs(_) => Err(format!(
-                "byte payload item must be Int, found {}",
-                super::runtime_value_label(value)
-            )),
-        },
-        _ => Err("byte payload must be a bracket sequence".to_owned()),
-    }
-}
-
-fn runtime_value_to_string(value: &RuntimeValue) -> String {
-    match value {
-        RuntimeValue::String(value) => value.clone(),
-        RuntimeValue::EntityRef(value) => value.runtime_label(),
-        RuntimeValue::Char(value) => value.to_string(),
-        RuntimeValue::Int(value) => value.to_string(),
-        RuntimeValue::UInt(value) => value.to_string(),
-        RuntimeValue::F32(value) => value.to_string(),
-        RuntimeValue::F64(value) => value.to_string(),
-        RuntimeValue::Bool(value) => value.to_string(),
-        RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
-        RuntimeValue::Progress(value) => value
-            .label()
-            .map_or_else(|| value.ratio().to_string(), str::to_owned),
-        RuntimeValue::Unit
-        | RuntimeValue::NeedHandle(_)
-        | RuntimeValue::Range(_)
-        | RuntimeValue::Iterator(_)
-        | RuntimeValue::MatrixF32(_)
-        | RuntimeValue::MatrixF64(_)
-        | RuntimeValue::TensorF32(_)
-        | RuntimeValue::TensorF64(_)
-        | RuntimeValue::Color(_)
-        | RuntimeValue::Tuple(_)
-        | RuntimeValue::Seq(_)
-        | RuntimeValue::Record(_)
-        | RuntimeValue::NominalRecord(_)
-        | RuntimeValue::Opaque(_)
-        | RuntimeValue::PresentationResource(_)
-        | RuntimeValue::Agent(_)
-        | RuntimeValue::Reduction(_)
-        | RuntimeValue::Callable(_)
-        | RuntimeValue::Variant(_) => super::runtime_value_label(value),
+            .map(|argument| self.evaluate_expr_with_backend(argument.value(), pure_backend))
+            .collect()
     }
 }
 

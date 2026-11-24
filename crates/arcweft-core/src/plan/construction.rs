@@ -184,6 +184,8 @@ pub enum RuntimePlanBuildError {
     Poisoned,
     #[error("internal flow construction invariant failed: {context}")]
     FlowLoweringInvariant { context: &'static str },
+    #[error("a custom Host task template requires a nonempty capability and operation")]
+    InvalidHostTaskTemplateIdentity,
     #[error(
         "registry read requires a reached Flow or Line scope, with an Option result for optional access"
     )]

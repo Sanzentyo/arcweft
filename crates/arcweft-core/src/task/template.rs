@@ -145,8 +145,7 @@ impl NeedProducerTemplate {
         encoder: &mut super::semantic::TaskSemanticEncoder<'_>,
     ) {
         self.definition.encode_control_metadata(encoder);
-        encoder.string(&self.request.capability.0);
-        encoder.string(&self.request.operation);
+        self.request.operation.encode_control(encoder);
         encoder.count(self.request.captures.len());
         for capture in &self.request.captures {
             if encoder.status().is_err() {

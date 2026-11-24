@@ -130,14 +130,13 @@ impl RuntimeTaskSourceRef<'_> {
         Ok(())
     }
 
-    /// Materializes only the original template's scheduling metadata after its
-    /// complete operand admission. An equal digest from another lease cannot
-    /// supply either the source endpoint or a caller-selected task policy.
+    /// Both executors evaluate the original argument expressions and hand the
+    /// values back to the same sealed template for request construction.
     pub(crate) fn template_task_spec(
         &self,
         checked: &NeedProducerSpec<RuntimeTaskSource>,
         generation: crate::task::GenerationId,
-        request: crate::task::HostTaskRequest,
+        values: Vec<crate::value::RuntimeValue>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<crate::task::TaskSpec, RuntimeTaskProducerSourceError> {
         admission.status()?;
@@ -155,6 +154,29 @@ impl RuntimeTaskSourceRef<'_> {
         };
         let definition = &template.definition;
         admission.validate_metadata_string(&definition.debug_label)?;
+        let arguments = &template.request.args;
+        admission.validate_metadata_collection(values.len())?;
+        if arguments.len() != values.len() {
+            return Err(RuntimeTaskProducerSourceError::ArgumentCount {
+                actual: values.len(),
+                expected: arguments.len(),
+            });
+        }
+        let types = checked.source().program().original().type_table();
+        for (argument, value) in arguments.iter().zip(&values) {
+            let ty = types
+                .get(argument.value().ty())
+                .ok_or(RuntimeTaskProducerSourceError::OriginalProgram)?;
+            admission.validate_typed_borrowed_in_invocation(
+                value.borrowed_value(),
+                ty.semantic_identity(),
+                checked.binding(),
+            )?;
+        }
+        let request = template
+            .request
+            .project_evaluated(values)
+            .map_err(RuntimeTaskProducerSourceError::TemplateRequest)?;
         let spec = crate::task::TaskSpec {
             generation,
             producer: crate::task::NeedProducerInstance::try_from(checked)?,
@@ -286,11 +308,23 @@ impl RuntimeTaskSourceRef<'_> {
             producer.policy,
         ))?;
         if let RuntimeBodyTaskSource::Producer(template) = task_source {
+            use crate::task::HostTaskTemplateOperation as Operation;
+            let operation = &template.request.operation;
             admission.validate_metadata(&(
-                &template.request.capability,
-                &template.request.operation,
+                operation.kind().semantic_tag(),
                 &template.definition.debug_label,
             ))?;
+            match operation {
+                Operation::AssetLoad(kind) => admission.validate_metadata(&kind.semantic_tag())?,
+                Operation::SystemInfo(kind) => admission.validate_metadata(&kind.semantic_tag())?,
+                Operation::Custom {
+                    capability,
+                    operation,
+                } => {
+                    admission.validate_metadata(&(capability, operation))?;
+                }
+                _ => {}
+            }
         }
         // Inspect only the source container header before any capture value is
         // projected. Children stay borrowed until its complete role preflight.

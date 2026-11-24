@@ -43,8 +43,10 @@ fn producer(
             },
         ),
         request: RuntimeHostTaskRequestTemplateSeed {
-            capability: HostCapabilityId("test".to_owned()),
-            operation: "request".to_owned(),
+            operation: crate::task::HostTaskTemplateOperation::Custom {
+                capability: HostCapabilityId("test".to_owned()),
+                operation: "request".to_owned(),
+            },
             args: arguments,
         },
     }

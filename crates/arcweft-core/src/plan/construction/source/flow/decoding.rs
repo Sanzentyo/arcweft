@@ -476,8 +476,7 @@ impl Reader<'_, '_, '_> {
             size_of::<RuntimeHostTaskRequestTemplateSeed>()
                 + size_of::<crate::task::HostTaskRequestTemplate>(),
         )?;
-        let capability = HostCapabilityId(self.text()?);
-        let operation = self.text()?;
+        let operation = self.template_operation()?;
         let before = self.counts.footprint;
         let args = self.arguments()?;
         let units = (self.counts.footprint.nodes - before.nodes)
@@ -493,12 +492,56 @@ impl Reader<'_, '_, '_> {
         )?;
         Ok(RuntimeNeedProducerTemplateSeed {
             definition,
-            request: RuntimeHostTaskRequestTemplateSeed {
-                capability,
-                operation,
-                args,
-            },
+            request: RuntimeHostTaskRequestTemplateSeed { operation, args },
         })
+    }
+
+    fn template_operation(&mut self) -> Result<crate::task::HostTaskTemplateOperation, Error> {
+        use crate::task::{
+            AssetLoadKind, HostTaskRequestKind as Kind, HostTaskTemplateOperation as Operation,
+            SystemInfoKind,
+        };
+        let tag = self.metadata.byte()?;
+        Ok(
+            match Kind::from_semantic_tag(tag).ok_or(Error::Tag {
+                kind: "Host task template operation",
+                tag,
+            })? {
+                Kind::FileReadText => Operation::FileReadText,
+                Kind::FileReadBytes => Operation::FileReadBytes,
+                Kind::FileWriteText => Operation::FileWriteText,
+                Kind::FileWriteBytes => Operation::FileWriteBytes,
+                Kind::HttpFetch => Operation::HttpFetch,
+                Kind::HttpRespond => Operation::HttpRespond,
+                Kind::ProcessRun => Operation::ProcessRun,
+                Kind::AssetLoad => {
+                    let tag = self.metadata.byte()?;
+                    Operation::AssetLoad(AssetLoadKind::from_semantic_tag(tag).ok_or(
+                        Error::Tag {
+                            kind: "asset request kind",
+                            tag,
+                        },
+                    )?)
+                }
+                Kind::ShaderCompile => Operation::ShaderCompile,
+                Kind::AudioDecode => Operation::AudioDecode,
+                Kind::TtsSynthesis => Operation::TtsSynthesis,
+                Kind::WasmCall => Operation::WasmCall,
+                Kind::SystemInfo => {
+                    let tag = self.metadata.byte()?;
+                    Operation::SystemInfo(SystemInfoKind::from_semantic_tag(tag).ok_or(
+                        Error::Tag {
+                            kind: "system info kind",
+                            tag,
+                        },
+                    )?)
+                }
+                Kind::Custom => Operation::Custom {
+                    capability: HostCapabilityId(self.text()?),
+                    operation: self.text()?,
+                },
+            },
+        )
     }
     fn fields(&mut self) -> Result<Box<[RuntimeRecordFieldSeedId]>, Error> {
         let count = self.metadata.u32()? as usize;

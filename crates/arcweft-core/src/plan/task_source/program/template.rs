@@ -28,7 +28,6 @@ pub(crate) enum RuntimeAwbcTemplateSourceField {
     Site,
     RequestProjection,
     Capability,
-    Operation,
     Class,
     Priority,
     CancelScope,
@@ -345,21 +344,12 @@ impl<'program> TemplateAdmission<'program, '_> {
         self.check(task, Field::Contract, contract == producer.contract)?;
         self.check(task, Field::Site, site == producer.producer_site)?;
         match &host.request {
-            AwbcTaskRequestProjection::CustomCapability {
-                capability,
-                operation,
-            } => {
+            AwbcTaskRequestProjection::SourceTemplate { capability } => {
                 self.text(
                     task,
                     Field::Capability,
                     &executable.strings[capability.index()],
-                    &template.request.capability.0,
-                )?;
-                self.text(
-                    task,
-                    Field::Operation,
-                    &executable.strings[operation.index()],
-                    &template.request.operation,
+                    template.request.operation.capability(),
                 )?;
             }
             _ => {

@@ -454,13 +454,9 @@ impl Wire for AwbcTaskRequestProjection {
                 operation.write_wire(writer)?;
                 contract.write_wire(writer)?;
             }
-            Self::CustomCapability {
-                capability,
-                operation,
-            } => {
+            Self::SourceTemplate { capability } => {
                 writer.write_u8(2);
                 capability.write_wire(writer)?;
-                operation.write_wire(writer)?;
             }
         }
         Ok(())
@@ -478,9 +474,8 @@ impl Wire for AwbcTaskRequestProjection {
                 operation: AwbcStringId::read_wire(reader)?,
                 contract: crate::step::HostCallContractDigest::read_wire(reader)?,
             }),
-            2 => Ok(Self::CustomCapability {
+            2 => Ok(Self::SourceTemplate {
                 capability: AwbcStringId::read_wire(reader)?,
-                operation: AwbcStringId::read_wire(reader)?,
             }),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "task request projection",

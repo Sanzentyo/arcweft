@@ -92,21 +92,20 @@ fn template_materialization_keeps_original_metadata_and_rejects_foreign_or_faile
                 &mut admission,
             )
             .unwrap();
-        let request = || {
-            HostTaskRequest::custom_with_named_args(
-                "source",
-                "request",
-                [crate::value::RuntimePayload(captures[0].clone())],
-                [(
-                    "条件".into(),
-                    crate::value::RuntimePayload(captures[1].clone()),
-                )],
-            )
-        };
+        let expected_request = HostTaskRequest::custom_with_named_args(
+            "source",
+            "request",
+            [crate::value::RuntimePayload(captures[0].clone())],
+            [(
+                "条件".into(),
+                crate::value::RuntimePayload(captures[1].clone()),
+            )],
+        );
         let generation = GenerationId::new(13);
         let spec = base
-            .template_task_spec(&checked, generation, request(), &mut admission)
+            .template_task_spec(&checked, generation, captures.to_vec(), &mut admission)
             .unwrap();
+        assert_eq!(spec.request.as_host(), Some(&expected_request));
         assert_eq!(spec.generation, generation);
         assert_eq!(
             spec.producer,
@@ -122,7 +121,7 @@ fn template_materialization_keeps_original_metadata_and_rejects_foreign_or_faile
             checked.payload_type().as_bytes()
         );
         assert!(matches!(
-            child.template_task_spec(&checked, generation, request(), &mut admission),
+            child.template_task_spec(&checked, generation, captures.to_vec(), &mut admission),
             Err(RuntimeTaskProducerSourceError::OriginalProgram)
         ));
 
@@ -133,14 +132,19 @@ fn template_materialization_keeps_original_metadata_and_rejects_foreign_or_faile
         let foreign_base = source(&foreign, false);
         assert_eq!(base.task_plan().key(), foreign_base.task_plan().key());
         assert!(matches!(
-            foreign_base.template_task_spec(&checked, generation, request(), &mut admission),
+            foreign_base.template_task_spec(
+                &checked,
+                generation,
+                captures.to_vec(),
+                &mut admission
+            ),
             Err(RuntimeTaskProducerSourceError::OriginalProgram)
         ));
         assert!(matches!(
             base.template_task_spec(
                 &checked,
                 generation,
-                request(),
+                captures.to_vec(),
                 &mut bank(&foreign, RuntimeSchemaLimits::engine_default())
             ),
             Err(RuntimeTaskProducerSourceError::OriginalProgram)
@@ -150,7 +154,7 @@ fn template_materialization_keeps_original_metadata_and_rejects_foreign_or_faile
             .validate_metadata_collection(usize::MAX)
             .unwrap_err();
         let Err(RuntimeTaskProducerSourceError::Admission(retained)) =
-            base.template_task_spec(&checked, generation, request(), &mut admission)
+            base.template_task_spec(&checked, generation, captures.to_vec(), &mut admission)
         else {
             panic!("a failed shared bank cannot construct a task specification")
         };
@@ -176,17 +180,13 @@ fn host_template_sources_cannot_be_relabelled_as_program_work() {
                 &mut admission,
             )
             .unwrap();
-        let request = HostTaskRequest::custom_with_named_args(
-            "source",
-            "request",
-            [crate::value::RuntimePayload(captures[0].clone())],
-            [(
-                "条件".into(),
-                crate::value::RuntimePayload(captures[1].clone()),
-            )],
-        );
         let mut spec = original
-            .template_task_spec(&checked, GenerationId::new(13), request, &mut admission)
+            .template_task_spec(
+                &checked,
+                GenerationId::new(13),
+                captures.to_vec(),
+                &mut admission,
+            )
             .unwrap();
         assert!(matches!(
             spec.producer.handle_type(),

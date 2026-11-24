@@ -181,8 +181,21 @@ impl Writer {
         plan: &RuntimePlan,
     ) -> Result<(), Error> {
         self.producer_definition(&template.definition, plan)?;
-        self.text(&template.request.capability.0)?;
-        self.text(&template.request.operation)?;
+        use crate::task::HostTaskTemplateOperation as Operation;
+        let operation = &template.request.operation;
+        self.byte(operation.kind().semantic_tag())?;
+        match operation {
+            Operation::AssetLoad(kind) => self.byte(kind.semantic_tag())?,
+            Operation::SystemInfo(kind) => self.byte(kind.semantic_tag())?,
+            Operation::Custom {
+                capability,
+                operation,
+            } => {
+                self.text(&capability.0)?;
+                self.text(operation)?;
+            }
+            _ => {}
+        }
         self.argument_roles(&template.request.args)
     }
     fn producer_definition(

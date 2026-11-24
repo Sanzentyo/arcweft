@@ -1913,7 +1913,7 @@ impl AwbcInventory {
             function,
             inputs: inputs.into_boxed_slice(),
             arguments: request.args.iter().map(|arg| arg.value().clone()).collect(),
-            path: format!("task_request.{}", request.operation),
+            path: format!("task_request.{}", request.operation.capability()),
         });
         function
     }
@@ -1952,9 +1952,8 @@ impl AwbcInventory {
             execution: arcweft_core::awbc::schema::AwbcTaskPlanExecution::Host(
                 arcweft_core::awbc::schema::AwbcHostTaskPlan {
                     signature,
-                    request: AwbcTaskRequestProjection::CustomCapability {
-                        capability: self.intern_string(&template.request.capability.0),
-                        operation: self.intern_string(&template.request.operation),
+                    request: AwbcTaskRequestProjection::SourceTemplate {
+                        capability: self.intern_string(template.request.operation.capability()),
                     },
                     arguments,
                     kind,

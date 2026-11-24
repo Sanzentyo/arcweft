@@ -5111,6 +5111,14 @@ impl RuntimePlanBodyConstruction<'_> {
         request: RuntimeHostTaskRequestTemplateSeed,
         bound: &[super::RuntimeLocalSeedId],
     ) -> Result<HostTaskRequestTemplate, RuntimePlanBuildError> {
+        if let crate::task::HostTaskTemplateOperation::Custom {
+            capability,
+            operation,
+        } = &request.operation
+            && (capability.0.is_empty() || operation.is_empty())
+        {
+            return Err(RuntimePlanBuildError::InvalidHostTaskTemplateIdentity);
+        }
         Ok(HostTaskRequestTemplate {
             captures: request
                 .free_locals(bound)
@@ -5122,7 +5130,6 @@ impl RuntimePlanBodyConstruction<'_> {
                         .ok_or(RuntimePlanBuildError::ForeignLocalSeed)
                 })
                 .collect::<Result<_, _>>()?,
-            capability: request.capability,
             operation: request.operation,
             args: request
                 .args
