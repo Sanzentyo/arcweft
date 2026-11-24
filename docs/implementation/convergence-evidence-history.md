@@ -22402,6 +22402,10 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 
 同じCLI（SHA-256 `47c94b127a3821d649be654f25dee8de0e5b55a5249c7bf6b96ae782e4bef673`）で入力 `484233c49fc937c275a59d26cfcb8b529c069a403586584b548e45835c6899ef` を2回独立にパッケージし、AWFB SHA-256 `a7823e9b028bd37ce1775c0416eae1daf7592163f35546c0e0ece89e8571328a` で一致した。Native VMは7ステップ、AWBCは16ステップで素材10件を完了して `catalog_ready`。AWBCは1ステップ最大1操作の別実行でも261ステップ、素材10件、同じ戻り値。Native VMで位置／名前付き音声要求2件が完了し、並列画像2件が待機した時点で保存した。別プロセスのAOTはステップ3から、元のタスクID・キー・画像IDが一致する2件だけを再配信し、残り8件すべてを完了した。AWFS SHA-256 `4518672507e24ce5afa6aa5ca45437181fc248c331e620e32c67cce2f69b0d49` は復元で変化0。
 
+Nativeの1操作モードでも、連続実行の100ステップと、22ステップで保存した後の別プロセスAOTの78ステップを照合した。待機中の画像要求1件を、以降の新規要求に先行して再発行し、連続実行の残りと要求の順序・ID・キーが一致した。両実行とも実行操作数は最大1、復元後の素材完了8件、同じ最終結果だった。AWFS SHA-256 `1bc7fff175feef4fe29ae9a4912d7cc7569d2263fcc7f21375680cf87d57ce6f` は復元で変化0。
+
+同じCLIで、束縛した `voice.load` に `Ref<Asset>` を渡す入力と、`Ref<Voice>` 配列の `traverse` に `asset.image` を渡す入力は、どちらも `sema.final_analysis` で終了1、AWFB生成0件。入力SHA-256は順に `578d1e16fe74693070d17061cccbc126ee2211646748cb28722a8ee43870a8f8` と `8b4f942b549109a2ada5da0cac0d377d495cedffc7191e470d636bfe493a2697`。
+
 Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザーの観測上限にも使ったため、17ステップ・素材8件の途中で終了した。fixture用HTTPサーバーのfavicon応答も404だった。同じAWFBとWasmで、既定の起動上限10秒と実行制限を維持し、faviconへ204応答を返して論理ステップを24まで観測した。Chromeは `catalog_ready`、要求・配信は10件、全配信ID／sequence／順序がNative AWBCと一致し、ブラウザーエラー0件、終了0。Web製品239パッケージのnormal／buildグラフに今回変更したクレートは含まれず、使用Wasm SHA-256 `f4f49ea723aea7bd246da308892fb011a2af0e26264de1b278c43c30d4605b98` は先行公開検証のものと一致した。
 
 <a id="retained-prefix-nested-argument"></a>
