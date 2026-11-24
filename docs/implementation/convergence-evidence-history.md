@@ -22400,6 +22400,8 @@ Windows x64 MSVC全機能のCargo解決グラフで、`arcweft-id` とその推�
 
 2026-11-24、追跡ファイルに未コミット差分のない同じコミットのクリーンビルド（`CARGO_INCREMENTAL=0`）で、Windows全機能のNextest `0b517872-8c7c-4a07-8a98-800708374875` は3バイナリの8件PASS、59件skip、終了0。素材の位置／名前付き別名、bare `asset.image`／`voice.load`、名前付きプロジェクト関数、lambda、欠落素材を実PNG／WAVで検証した。既存のexternal宣言値・引数順・捕捉・AWBC復元3件、直接音声loadの既存回帰、共有prefixの3件も含む。書式と構造ゲートは終了0、blocking violation 0件。
 
+同じ実装入力で `cargo check --workspace --all-targets --all-features --offline --locked` と同じ対象の `cargo clippy` はどちらも終了0。ビルドロック待ちを含む経過はそれぞれ1,552.9秒、1,259.1秒。`cargo test -p arcweft-lang-sema --doc --all-features --offline --locked` は2件PASS、終了0。
+
 同じCLI（SHA-256 `47c94b127a3821d649be654f25dee8de0e5b55a5249c7bf6b96ae782e4bef673`）で入力 `484233c49fc937c275a59d26cfcb8b529c069a403586584b548e45835c6899ef` を2回独立にパッケージし、AWFB SHA-256 `a7823e9b028bd37ce1775c0416eae1daf7592163f35546c0e0ece89e8571328a` で一致した。Native VMは7ステップ、AWBCは16ステップで素材10件を完了して `catalog_ready`。AWBCは1ステップ最大1操作の別実行でも261ステップ、素材10件、同じ戻り値。Native VMで位置／名前付き音声要求2件が完了し、並列画像2件が待機した時点で保存した。別プロセスのAOTはステップ3から、元のタスクID・キー・画像IDが一致する2件だけを再配信し、残り8件すべてを完了した。AWFS SHA-256 `4518672507e24ce5afa6aa5ca45437181fc248c331e620e32c67cce2f69b0d49` は復元で変化0。
 
 Nativeの1操作モードでも、連続実行の100ステップと、22ステップで保存した後の別プロセスAOTの78ステップを照合した。待機中の画像要求1件を、以降の新規要求に先行して再発行し、連続実行の残りと要求の順序・ID・キーが一致した。両実行とも実行操作数は最大1、復元後の素材完了8件、同じ最終結果だった。AWFS SHA-256 `1bc7fff175feef4fe29ae9a4912d7cc7569d2263fcc7f21375680cf87d57ce6f` は復元で変化0。
