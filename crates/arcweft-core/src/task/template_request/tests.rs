@@ -21,6 +21,60 @@ fn catalog(family: DeclarationIdentityFamily, id: &str) -> RuntimeValue {
 }
 
 #[test]
+fn original_template_counts_combined_spreads_before_expansion() {
+    use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+    use crate::task::{RuntimeProgramOwner, RuntimeRequestRoleIdentity};
+
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+        crate::awbc::schema::AwbcProgram::default(),
+    ));
+    let roles = [
+        RuntimeHostArgumentTemplate::spread(
+            RuntimeRequestRoleIdentity::from_accepted_identity([1; 32]),
+            (),
+        ),
+        RuntimeHostArgumentTemplate::spread(
+            RuntimeRequestRoleIdentity::from_accepted_identity([2; 32]),
+            (),
+        ),
+    ];
+    let values = || {
+        vec![
+            runtime_sequence_values(vec![text("first"), text("second")]),
+            RuntimeValue::Tuple(vec![text("third"), text("fourth")]),
+        ]
+    };
+    let bank = |max_sequence_items| {
+        RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_sequence_items,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        )
+    };
+    let mut exact = bank(4);
+    let args = EvaluatedArguments::admit_and_group(&roles, values(), &mut exact).unwrap();
+    assert_eq!(
+        args.positional,
+        VecDeque::from([text("first"), text("second"), text("third"), text("fourth")])
+    );
+
+    let mut one_short = bank(3);
+    let expected = RuntimeSchemaError::BudgetExceeded {
+        budget: "sequence_items",
+    }
+    .into();
+    let Err(RuntimeTaskProducerSourceError::Admission(actual)) =
+        EvaluatedArguments::admit_and_group(&roles, values(), &mut one_short)
+    else {
+        panic!("two individually admitted spreads exceed the combined limit");
+    };
+    assert_eq!(actual, expected);
+    assert_eq!(one_short.status(), Err(expected));
+}
+
+#[test]
 fn original_template_projects_each_typed_request_family_and_preserves_fields() {
     use HostTaskTemplateOperation as Operation;
     let logical_path = "save:fixture.txt";

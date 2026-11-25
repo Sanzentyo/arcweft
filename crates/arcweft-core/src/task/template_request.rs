@@ -4,11 +4,12 @@ use super::{
     AssetLoadKind, AudioDecodeRequest, FileReadBytesRequest, FileReadTextRequest,
     FileWriteBytesRequest, FileWriteTextRequest, HostCapabilityId, HostTaskRequest,
     HostTaskRequestKind, HostTaskRequestTemplate, HttpFetchRequest, HttpRespondRequest,
-    ProcessRunRequest, ShaderRequest, SystemInfoKind, SystemInfoRequest, TtsRequest,
-    WasmCallRequest,
+    ProcessRunRequest, RuntimeHostArgumentTemplate, RuntimeTaskProducerSourceError, ShaderRequest,
+    SystemInfoKind, SystemInfoRequest, TtsRequest, WasmCallRequest,
 };
 use crate::value::{
-    RuntimePayload, RuntimeValue, RuntimeVirtualPath, runtime_value_into_sequence_values,
+    RuntimePayload, RuntimeRetainedValueAdmission, RuntimeValue, RuntimeVirtualPath,
+    runtime_value_into_sequence_values,
 };
 use std::collections::VecDeque;
 
@@ -97,28 +98,67 @@ impl HostTaskRequestTemplate {
     pub(crate) fn project_evaluated(
         &self,
         values: Vec<RuntimeValue>,
-    ) -> Result<HostTaskRequest, String> {
-        let mut arguments = EvaluatedArguments::default();
-        for (argument, value) in self.args.iter().zip(values) {
-            if argument.is_spread() {
-                arguments.positional.extend(sequence(value)?);
-            } else if let Some(name) = argument.name() {
-                arguments.named.push((name.to_owned(), value));
-            } else {
-                arguments.positional.push_back(value);
-            }
-        }
-        arguments.project(&self.operation)
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<HostTaskRequest, RuntimeTaskProducerSourceError> {
+        EvaluatedArguments::admit_and_group(&self.args, values, admission)?
+            .project(&self.operation)
+            .map_err(RuntimeTaskProducerSourceError::TemplateRequest)
     }
 }
 
-#[derive(Default)]
 struct EvaluatedArguments {
     positional: VecDeque<RuntimeValue>,
     named: Vec<(String, RuntimeValue)>,
 }
 
 impl EvaluatedArguments {
+    fn admit_and_group<Expression>(
+        roles: &[RuntimeHostArgumentTemplate<Expression>],
+        values: Vec<RuntimeValue>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<Self, RuntimeTaskProducerSourceError> {
+        use RuntimeTaskProducerSourceError::TemplateRequest;
+        let mut positional_count = 0_usize;
+        let mut named_count = 0;
+        for (role, value) in roles.iter().zip(&values) {
+            if role.name().is_some() {
+                named_count += 1;
+                continue;
+            }
+            let count = if role.is_spread() {
+                match value {
+                    RuntimeValue::Seq(items) => items.len(),
+                    RuntimeValue::Tuple(items) => items.len(),
+                    _ => {
+                        return Err(TemplateRequest(
+                            "task request spread requires a sequence".into(),
+                        ));
+                    }
+                }
+            } else {
+                1
+            };
+            positional_count = positional_count.checked_add(count).ok_or_else(|| {
+                TemplateRequest("expanded task request argument count overflows".into())
+            })?;
+        }
+        admission.validate_metadata_collection(positional_count)?;
+        admission.validate_metadata_collection(named_count)?;
+
+        let mut positional = VecDeque::with_capacity(positional_count);
+        let mut named = Vec::with_capacity(named_count);
+        for (role, value) in roles.iter().zip(values) {
+            if role.is_spread() {
+                positional.extend(sequence(value).map_err(TemplateRequest)?);
+            } else if let Some(name) = role.name() {
+                named.push((name.to_owned(), value));
+            } else {
+                positional.push_back(value);
+            }
+        }
+        Ok(Self { positional, named })
+    }
+
     fn required(&mut self) -> Result<RuntimeValue, String> {
         self.positional
             .pop_front()

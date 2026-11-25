@@ -173,10 +173,7 @@ impl RuntimeTaskSourceRef<'_> {
                 checked.binding(),
             )?;
         }
-        let request = template
-            .request
-            .project_evaluated(values)
-            .map_err(RuntimeTaskProducerSourceError::TemplateRequest)?;
+        let request = template.request.project_evaluated(values, admission)?;
         let spec = crate::task::TaskSpec {
             generation,
             producer: crate::task::NeedProducerInstance::try_from(checked)?,

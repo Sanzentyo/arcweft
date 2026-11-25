@@ -22446,3 +22446,17 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 ### Native CLI の system capability の仕様訂正
 
 2026-11-24、追跡ファイルに未コミット差分のない `65821fc5bd1b247bc264c4e21702393005f580ca` で、Native CLIの `system.available_parallelism()` を実行した。固定した実装入力は `80b5f54f6f5cccb2d861ab39f1d2faa6ed720625`。`Need<Result<String, SystemError>>` を宣言した入力（SHA-256 `a6e0e068b0beb4f6a4405345c499e58f9aca334d78760216833da2a8158c86d3`）は、Native VMとパッケージ済みAWBCの両方で要求1件を完了し、文字列 `"20"` を返した。Nativeのホスト計測値は20。CLI／AWFB SHA-256は `9a829d7a7a48b4957ac892e3fba4b157a01b4626cf58cf4217770519d9e66be9`／`0c7cb53f5df23695bcdff64e6c302446124918b26f519539210f686e6083128d`。旧仕様の「SystemInfoへ直接lowerし、数値型のreadyを返す」という説明は、標準manifestの宣言とNative adapterによる文字列結果の検査に合わせて訂正した。[現行仕様](../02-runtime/async-scheduler.md)。
+
+<a id="typed-original-host-templates"></a>
+
+### AwaitMany の型付きHost要求
+
+2026-11-24、追跡ファイルに未コミット差分のない公開 `02b541f98b5e388fb1c957b9aa4f62e0d37b1d1d` では、Nativeの `lower_evaluated_host_request` がテンプレートのcapability／operation文字列を標準要求へ投影し、AWBCの `mapping::task_request` が同じテンプレートを常に `Custom` へ投影していた。両者が別々に生成した要求を共通の `template_task_spec` が受け取っていた。
+
+実装 `e058a7e4d9de78d9222ceaa35f301898f7acf993` では、元テンプレートの型付き操作をSourceの意味ハッシュとversion 1 codecへ含め、AWBCは元操作のcapabilityを照合する。両実行系は元の引数式を評価し、元の型で検査してから同じテンプレートで要求を構築する。選択済みexternのmanifest契約と既受入のProgram fanoutはそれぞれの経路を使う。
+
+初回の型チェックは `SystemInfoKind` の `Eq` が不足して終了101。実装コミットに修正を含めた。初回Nextestは新規fixtureがNative起動で消費したPlanをAWBC構築に渡し `E0382` で終了101。`2015ff8b114f03d3ff085a57a43184619427e273` はfixtureの所有権を修正し、14要求familyの全フィールド投影、素材family不一致、異なる評価済み引数型の拒否テストを追加した。同Sourceで `just structure-audit-gate` はblocking violation 0件、終了0。Windows全機能のCargo解決グラフではCoreの逆依存52パッケージがRuntimePlanの逆依存16パッケージを含む。
+
+同じ `2015ff8b114f03d3ff085a57a43184619427e273` のCore／RuntimePlanライブラリを全機能で選択したNextest `3f06cbb1-ce77-4b91-b8bc-9e82ea6ecda8` は123件PASS、2,434件skip、終了0。Nativeとデコード済みAWBCで、型付き `ShaderCompile` と同じcapability／operationを持つ明示的な `Custom` の両方を走らせ、各3件の要求が宣言どおりになることを照合した。14種の投影テストは画像と音声を別に照合した。保存復元・元Source拒否・型検査拒否と共通task image codecの選択例も通過した。
+
+続いて、元引数の型を検査した後に、spreadを展開した位置引数の合計と名前付き引数の件数を同じadmission bankで検査してから割り当てる。個別に2項目のspreadを二つ渡し、上限4で順序を保って受理し、上限3で同じbankを失敗状態にする回帰を追加した。
