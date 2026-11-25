@@ -22462,3 +22462,15 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 続いて、元引数の型を検査した後に、spreadを展開した位置引数の合計と名前付き引数の件数を同じadmission bankで検査してから割り当てる。個別に2項目のspreadを二つ渡し、上限4で順序を保って受理し、上限3で同じbankを失敗状態にする回帰を追加した。
 
 2026-11-25、実装入力 `1e8aa18c5e130b8fb35d95be3a3c9dda7f4cfa67` のNextest `288cfed8-7d92-4b9e-a45f-b1fdc93046c0` は、Windows全機能のCore／RuntimePlanで新しい上限回帰を含む124件PASS、2,434件skip、終了0。展開前の境界回帰と、先行123件の選択は同じ実行で通過した。
+
+同じ `1e8aa18c5e130b8fb35d95be3a3c9dda7f4cfa67` で開始したWindows逆依存52パッケージの初回Nextestは、CLIのバンドル生成が旧テンプレートの文字列フィールドを参照し、コンパイルエラー4件で終了101。テストは起動しなかった。`190ffcbf3467b9dfab8dd49aa5a4d24e08cc6084` で、アダプター用の呼出しIDとバンドルの画像参照を元の型付き要求に接続し、コンパイラの公開API拒否fixtureも新しい構造へ合わせた。録音音声のグラフは既存の録音カタログから構築する。`just structure-audit-gate` はblocking violation 0件、終了0。
+
+`190ffcbf3467b9dfab8dd49aa5a4d24e08cc6084` のWindowsワークスペース全ターゲット・全機能の `cargo check --workspace --all-targets --all-features --offline --locked` は終了0。修正した公開API拒否fixtureを同じCoreのメタデータで直接コンパイルし、`policy` フィールドを拒否する期待診断 `E0560` と `E0559`、およびその行番号を照合した。
+
+同じ実装入力から `wasm32-unknown-unknown` のWebリリースを構築し、`wasm-bindgen` と実Chrome WebGPUのスモーク8件が終了0。5場面のWebキャプチャを取得した。Release WasmのSHA-256は `05cd847bbab55c8eeba4889b53e79eec3fa7af880fdb92075ce76973cab7f9d1`。同じ入力のデバッグCLI（SHA-256 `cf79bfa4a1fe1dd06f889a294422dd9df83d734dc2b4a4fe6ca7af05b5dee92d`）で `web/arcw.toml` の `main` を別出力へビルドし、実Chromeが使った追跡済みAWFBと同じSHA-256 `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4` を得た。
+
+同じ実装入力のNative offscreenと実Chrome WebGPUで、focus／hover／press／compact／HiDPIの5場面を取得し、`verify-webgpu-parity` と `imq` を全件通過した。全RGBAのMSE／MAE／最大誤差と変化画素率はすべて0。Windows全機能のCoreテストバイナリから実行した対象5件もPASS。14種の要求と呼出しID、展開上限、Nativeとデコード済みAWBCの要求一致、AWBC checkpointの元Sourceとoperand照合を含む。書式と差分の検査は終了0。
+
+### 保持Need の SystemInfo 操作識別
+
+2026-11-25、`190ffcbf3467b9dfab8dd49aa5a4d24e08cc6084` のCoreを使い、同じproducerと同じスケジュール設定で `CoreCount`、`ThreadCount`、`AvailableParallelism` の公開 `RuntimeNeedHandle` を別々に構築した。`RuntimeValue::try_digest(4096)` は3件すべてで同じ `9c7a905bb166b77591d600fa2e10a04b083d9a9362273c64d074dfbab55064f2` を返し、3種を要求した再現テストは識別数1で終了101。共有descriptorのSystemInfo分岐が操作種別の位置へ固定値0を書いていた。
