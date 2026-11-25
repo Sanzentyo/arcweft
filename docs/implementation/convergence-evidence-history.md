@@ -22500,3 +22500,5 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 同じ実装入力のRelease Wasm（SHA-256 `448cf36970c2de29109f9820b7301ebc5ed51450c08afe133b50be139b0fe70c`）で `wasm-bindgen` とChromeのスモーク8件が終了0。同じAWFB（SHA-256 `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4`）でNative offscreenと実Chrome WebGPUのfocus／hover／press／compact／HiDPIを取得した。5場面の全RGBAは一致し、MSE／MAE／最大誤差と変化画素率はすべて0。
 
 同じ実装入力のWindows全ターゲット・全機能の `cargo check --workspace --all-targets --all-features --offline --locked` は終了0。CLIや両ホストの利用箇所を含めて型検査した。
+
+2026-11-25、`aa2ccb09641ba3aa3244a3ce859d6d18e7025626` を `main` へ公開した。取得した公開tree `665a03000cc3e12a4eef0c2ef9cc99f8c664f9bb` と変更9パスのblobを照合した。同じ実装を含む公開入力のWindows全ターゲット・全機能のworkspace Clippyは終了0、Core doctestは82件PASS、終了0。
