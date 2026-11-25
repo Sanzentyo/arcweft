@@ -22460,3 +22460,5 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 同じ `2015ff8b114f03d3ff085a57a43184619427e273` のCore／RuntimePlanライブラリを全機能で選択したNextest `3f06cbb1-ce77-4b91-b8bc-9e82ea6ecda8` は123件PASS、2,434件skip、終了0。Nativeとデコード済みAWBCで、型付き `ShaderCompile` と同じcapability／operationを持つ明示的な `Custom` の両方を走らせ、各3件の要求が宣言どおりになることを照合した。14種の投影テストは画像と音声を別に照合した。保存復元・元Source拒否・型検査拒否と共通task image codecの選択例も通過した。
 
 続いて、元引数の型を検査した後に、spreadを展開した位置引数の合計と名前付き引数の件数を同じadmission bankで検査してから割り当てる。個別に2項目のspreadを二つ渡し、上限4で順序を保って受理し、上限3で同じbankを失敗状態にする回帰を追加した。
+
+2026-11-25、実装入力 `1e8aa18c5e130b8fb35d95be3a3c9dda7f4cfa67` のNextest `288cfed8-7d92-4b9e-a45f-b1fdc93046c0` は、Windows全機能のCore／RuntimePlanで新しい上限回帰を含む124件PASS、2,434件skip、終了0。展開前の境界回帰と、先行123件の選択は同じ実行で通過した。
