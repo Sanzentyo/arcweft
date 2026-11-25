@@ -22484,3 +22484,19 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 実装 `433ff34c50671be2fc276e92bca706fca003381a` は共有descriptorの操作種別に `SystemInfoKind::semantic_tag()` を使う。初回の修正後Nextest `cff6db6b-b7ba-4c34-89d2-acbd962c522d` は4ライブラリで2,656件PASS、1件FAIL、1件skip、終了100。失敗したテストはdescriptorの代わりに `RuntimeValue::try_digest` を使っていた。このAPIは `NeedId` を記録し、同じproducerのNeedは同じダイジェストになる。診断を訂正し、固定値の問題をlive／inertの共有descriptorで直接検証する。汎用ダイジェストの契約は維持する。
 
 検証入力 `cb066a561f96f1ea3434ca13369e1238c2db1806` のNextest `8582be5b-e366-4975-a13f-4e5932b51f16` は、Windows全機能のCore／RuntimePlan／Save／RuntimeDriverライブラリで2,657件PASS、1件skip、終了0。version 1共有descriptorの `SystemInfo` family tag 12に続く操作tag 0／1／2がliveとinertで一致し、復元後の要求も元どおりになることを直接照合した。実装入力の構造ゲートはblocking violation 0件、終了0。
+
+2026-11-25、公開 `eaf7e80c5e6a0bb1dbb1930141367e1de0372c3e` の取得tree `5f0842219c4ced87773e1f59e54f2e8da65ed403` と変更4パスのblobを照合した。
+
+<a id="await-many-retained-host-operation"></a>
+
+### AwaitMany 復元時の元Host操作照合
+
+2026-11-25、公開 `eaf7e80c5e6a0bb1dbb1930141367e1de0372c3e` とテスト1件の差分で、AWBCのbase起動直後のcheckpointから同じNeedの `probe.read` を `probe.substituted` に差し替えた。無変更のcheckpointと操作を入れ替えたcheckpointの両方が復元を通過したため、Nextest `544dee14-1e2a-4fb8-945f-e7d0bd0fb115` は期待拒否のアサーションで1件FAIL、終了100。先行の `a1a2cc5b-6822-4fe4-85c5-593d25192877` は完全一致filterに短いテスト名を指定して0件、終了4。元Source検査はproducerのidentity・スケジュール・結果契約を確認していたが、保持済み要求の操作を照合していなかった。
+
+実装 `2f0b1badd3f9240ac345821c6c287f1f3c43ecc9` は、Native rollbackとAWBCのbase／child検査が使う元Sourceの照合に、保持済み要求の型付き操作を追加する。生存中と保存中のdescriptorから操作を借用し、標準種別と下位種別、明示的なCustomのcapability／operationを照合する。アダプター用の文字列IDは両方の表現から同じ規則で得る。
+
+同じ実装入力のNextest `8ce80ebc-d320-469c-b34a-1d07ae1f381c` はWindows全機能のCore／RuntimePlan／Save／RuntimeDriverライブラリで2,659件PASS（1件slow）、1件skip、終了0。元checkpointを復元し、相関を保った操作差し替えを拒否し、元の状態も一致することを照合した。14要求familyの投影と、同じアダプターIDの標準／Customを区別するテストもPASS。書式・差分・構造ゲートは終了0、構造blocking violation 0件。
+
+同じ実装入力のRelease Wasm（SHA-256 `448cf36970c2de29109f9820b7301ebc5ed51450c08afe133b50be139b0fe70c`）で `wasm-bindgen` とChromeのスモーク8件が終了0。同じAWFB（SHA-256 `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4`）でNative offscreenと実Chrome WebGPUのfocus／hover／press／compact／HiDPIを取得した。5場面の全RGBAは一致し、MSE／MAE／最大誤差と変化画素率はすべて0。
+
+同じ実装入力のWindows全ターゲット・全機能の `cargo check --workspace --all-targets --all-features --offline --locked` は終了0。CLIや両ホストの利用箇所を含めて型検査した。
