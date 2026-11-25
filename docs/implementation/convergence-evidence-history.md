@@ -22482,3 +22482,5 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 2026-11-25、`190ffcbf3467b9dfab8dd49aa5a4d24e08cc6084` のCoreを使い、同じproducerと同じスケジュール設定で `CoreCount`、`ThreadCount`、`AvailableParallelism` の公開 `RuntimeNeedHandle` を別々に構築した。`RuntimeValue::try_digest(4096)` は3件すべてで同じ `9c7a905bb166b77591d600fa2e10a04b083d9a9362273c64d074dfbab55064f2` を返し、3種を要求した再現テストは識別数1で終了101。共有descriptorのSystemInfo分岐は操作種別の位置へ固定値0を書いていた。
 
 実装 `433ff34c50671be2fc276e92bca706fca003381a` は共有descriptorの操作種別に `SystemInfoKind::semantic_tag()` を使う。初回の修正後Nextest `cff6db6b-b7ba-4c34-89d2-acbd962c522d` は4ライブラリで2,656件PASS、1件FAIL、1件skip、終了100。失敗したテストはdescriptorの代わりに `RuntimeValue::try_digest` を使っていた。このAPIは `NeedId` を記録し、同じproducerのNeedは同じダイジェストになる。診断を訂正し、固定値の問題をlive／inertの共有descriptorで直接検証する。汎用ダイジェストの契約は維持する。
+
+検証入力 `cb066a561f96f1ea3434ca13369e1238c2db1806` のNextest `8582be5b-e366-4975-a13f-4e5932b51f16` は、Windows全機能のCore／RuntimePlan／Save／RuntimeDriverライブラリで2,657件PASS、1件skip、終了0。version 1共有descriptorの `SystemInfo` family tag 12に続く操作tag 0／1／2がliveとinertで一致し、復元後の要求も元どおりになることを直接照合した。実装入力の構造ゲートはblocking violation 0件、終了0。
