@@ -1,12 +1,12 @@
 use arcweft_core::task::{
-    HostCapabilityId, HostTaskRequest, HostTaskRequestTemplate,
+    HostCapabilityId, HostTaskRequest, HostTaskRequestTemplate, HostTaskTemplateOperation,
 };
 
 fn main() {
     let _ = HostTaskRequestTemplate {
-        capability: HostCapabilityId::default(),
-        operation: String::new(),
+        operation: HostTaskTemplateOperation::FileReadText,
         args: Vec::new(),
+        captures: Vec::new(),
         policy: (),
     };
     let _ = HostTaskRequest::Custom {

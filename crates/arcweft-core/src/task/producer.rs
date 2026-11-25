@@ -156,7 +156,8 @@ impl AssetLoadKind {
         }
     }
 
-    pub(super) fn project_catalog_request(
+    /// Resolve this operation's catalog reference to the bundle asset it requests.
+    pub fn project_catalog_request(
         self,
         reference: &RuntimeEntityReference,
     ) -> Result<AssetRequest, NeedProducerRequestError> {

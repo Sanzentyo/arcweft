@@ -46,6 +46,10 @@ use arcweft_compiler::view::CompiledViewProduct;
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
     plan::{EntryRuntimeId, FlowOp, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan},
+    task::{
+        AssetLoadKind, HostTaskRequestTemplate, HostTaskTemplateOperation,
+        NeedProducerRequestProjection,
+    },
     value::{RuntimeExpr, RuntimeExprKind, RuntimeValue},
 };
 use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, PublicId};
@@ -460,25 +464,19 @@ fn hydrate_default_view_localization(
 fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {
     let mut calls = Vec::new();
     plan.visit_flow_ops(&mut |op| match op {
-        FlowOp::StartNeedProducer { target, .. } => {
-            use arcweft_core::task::NeedProducerRequestProjection;
-            match target.plan().request() {
-                NeedProducerRequestProjection::AssetLoad { kind, .. } => {
-                    calls.push(host_call_id_for_template("asset", kind.as_str()));
-                }
-                NeedProducerRequestProjection::ExternCapability {
-                    capability,
-                    operation,
-                    ..
-                } => calls.push(host_call_id_for_template(&capability.0, operation)),
+        FlowOp::StartNeedProducer { target, .. } => match target.plan().request() {
+            NeedProducerRequestProjection::AssetLoad { kind, .. } => {
+                calls.push(host_call_id_for_template("asset", kind.as_str()));
             }
-        }
+            NeedProducerRequestProjection::ExternCapability {
+                capability,
+                operation,
+                ..
+            } => calls.push(host_call_id_for_template(&capability.0, operation)),
+        },
         FlowOp::AwaitMany { target, .. } => {
             for template in [&target.base.request, &target.child.request] {
-                calls.push(host_call_id_for_template(
-                    template.capability.0.as_str(),
-                    template.operation.as_str(),
-                ));
+                calls.push(template.operation.host_call_id());
             }
         }
         FlowOp::HostCall { target, .. } => calls.push(target.public_id.clone()),
@@ -815,8 +813,8 @@ fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
         FlowOp::StartNeedProducer { target, .. } => {
             if matches!(
                 target.plan().request(),
-                arcweft_core::task::NeedProducerRequestProjection::AssetLoad {
-                    kind: arcweft_core::task::AssetLoadKind::Image,
+                NeedProducerRequestProjection::AssetLoad {
+                    kind: AssetLoadKind::Image,
                     ..
                 }
             ) && let Some(argument) = target.arguments().first()
@@ -842,25 +840,27 @@ fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
     refs
 }
 
-fn static_image_asset_ref_for_template(
-    request: &arcweft_core::task::HostTaskRequestTemplate,
-) -> Option<String> {
-    if request.capability.0 != "asset" || request.operation != "image" {
+fn static_image_asset_ref_for_template(request: &HostTaskRequestTemplate) -> Option<String> {
+    if request.operation != HostTaskTemplateOperation::AssetLoad(AssetLoadKind::Image) {
         return None;
     }
     request
         .args
-        .first()
+        .iter()
+        .find(|arg| arg.name().is_none())
+        .filter(|arg| !arg.is_spread())
         .and_then(|arg| static_image_asset_ref_expr(arg.value()))
 }
 
 fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
-    match expr.kind() {
-        RuntimeExprKind::EntityRef(id) => Some(id.runtime_label()),
-        RuntimeExprKind::Value(RuntimeValue::EntityRef(id)) => Some(id.runtime_label()),
-        RuntimeExprKind::Value(RuntimeValue::String(id)) => Some(id.clone()),
-        _ => None,
-    }
+    let reference = match expr.kind() {
+        RuntimeExprKind::EntityRef(id) | RuntimeExprKind::Value(RuntimeValue::EntityRef(id)) => id,
+        _ => return None,
+    };
+    let request = AssetLoadKind::Image
+        .project_catalog_request(reference)
+        .ok()?;
+    Some(request.id.as_str().to_owned())
 }
 
 fn collect_line_effects_static_image_asset_refs<'a>(

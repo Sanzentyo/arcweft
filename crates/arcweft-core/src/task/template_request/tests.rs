@@ -242,6 +242,7 @@ fn original_template_projects_each_typed_request_family_and_preserves_fields() {
         ),
     ];
     let mut kinds = std::collections::BTreeSet::new();
+    let mut call_ids = std::collections::BTreeSet::new();
     for (operation, positional, named, expected) in examples {
         let arguments = EvaluatedArguments {
             positional: positional.into(),
@@ -250,10 +251,33 @@ fn original_template_projects_each_typed_request_family_and_preserves_fields() {
                 .map(|(name, value)| (name.into(), value))
                 .collect(),
         };
-        assert_eq!(arguments.project(&operation).unwrap(), expected);
+        let request = arguments.project(&operation).unwrap();
+        assert_eq!(request, expected);
+        let call_id = operation.host_call_id();
+        assert_eq!(request.host_call_id(), call_id);
+        call_ids.insert(call_id);
         kinds.insert(operation.kind());
     }
     assert_eq!(kinds.len(), 14);
+    assert_eq!(
+        call_ids.iter().map(String::as_str).collect::<Vec<_>>(),
+        [
+            "asset.image",
+            "asset.voice",
+            "audio.decode",
+            "fs.read_bytes",
+            "fs.read_text",
+            "fs.write_bytes",
+            "fs.write_text",
+            "http.fetch",
+            "http.respond",
+            "process.run",
+            "shader.compile",
+            "system.available_parallelism",
+            "tts.synthesize",
+            "wasm.call",
+        ]
+    );
 }
 
 #[test]

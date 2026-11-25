@@ -2126,26 +2126,28 @@ impl<P> HostTaskRequest<P> {
 
 impl HostTaskRequest {
     pub fn host_call_id(&self) -> String {
-        match self {
-            Self::FileReadText(_) => "fs.read_text".to_owned(),
-            Self::FileReadBytes(_) => "fs.read_bytes".to_owned(),
-            Self::FileWriteText(_) => "fs.write_text".to_owned(),
-            Self::FileWriteBytes(_) => "fs.write_bytes".to_owned(),
-            Self::HttpFetch(_) => "http.fetch".to_owned(),
-            Self::HttpRespond(_) => "http.respond".to_owned(),
-            Self::ProcessRun(_) => "process.run".to_owned(),
-            Self::AssetLoad(request) => format!("asset.{}", request.kind.as_str()),
-            Self::ShaderCompile(_) => "shader.compile".to_owned(),
-            Self::AudioDecode(_) => "audio.decode".to_owned(),
-            Self::TtsSynthesis(_) => "tts.synthesize".to_owned(),
-            Self::WasmCall(_) => "wasm.call".to_owned(),
-            Self::SystemInfo(request) => format!("system.{}", request.kind.as_str()),
+        use HostTaskTemplateOperation as Operation;
+        let operation = match self {
+            Self::FileReadText(_) => Operation::FileReadText,
+            Self::FileReadBytes(_) => Operation::FileReadBytes,
+            Self::FileWriteText(_) => Operation::FileWriteText,
+            Self::FileWriteBytes(_) => Operation::FileWriteBytes,
+            Self::HttpFetch(_) => Operation::HttpFetch,
+            Self::HttpRespond(_) => Operation::HttpRespond,
+            Self::ProcessRun(_) => Operation::ProcessRun,
+            Self::AssetLoad(request) => Operation::AssetLoad(request.kind),
+            Self::ShaderCompile(_) => Operation::ShaderCompile,
+            Self::AudioDecode(_) => Operation::AudioDecode,
+            Self::TtsSynthesis(_) => Operation::TtsSynthesis,
+            Self::WasmCall(_) => Operation::WasmCall,
+            Self::SystemInfo(request) => Operation::SystemInfo(request.kind),
             Self::Custom {
                 capability,
                 operation,
                 ..
-            } => format!("{}.{}", capability.0, operation),
-        }
+            } => return format!("{}.{}", capability.0, operation),
+        };
+        operation.host_call_id()
     }
 
     pub const fn task_class(&self) -> TaskClass {

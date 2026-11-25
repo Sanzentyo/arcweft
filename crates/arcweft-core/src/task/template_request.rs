@@ -40,20 +40,35 @@ impl HostTaskTemplateOperation {
     /// Namespace used for the executable capability check.
     #[must_use]
     pub fn capability(&self) -> &str {
+        self.host_call_parts().0
+    }
+
+    /// The adapter-facing call ID declared by the original operation.
+    #[must_use]
+    pub fn host_call_id(&self) -> String {
+        let (capability, operation) = self.host_call_parts();
+        format!("{capability}.{operation}")
+    }
+
+    fn host_call_parts(&self) -> (&str, &str) {
         match self {
-            Self::FileReadText
-            | Self::FileReadBytes
-            | Self::FileWriteText
-            | Self::FileWriteBytes => "fs",
-            Self::HttpFetch | Self::HttpRespond => "http",
-            Self::ProcessRun => "process",
-            Self::AssetLoad(_) => "asset",
-            Self::ShaderCompile => "shader",
-            Self::AudioDecode => "audio",
-            Self::TtsSynthesis => "tts",
-            Self::WasmCall => "wasm",
-            Self::SystemInfo(_) => "system",
-            Self::Custom { capability, .. } => &capability.0,
+            Self::FileReadText => ("fs", "read_text"),
+            Self::FileReadBytes => ("fs", "read_bytes"),
+            Self::FileWriteText => ("fs", "write_text"),
+            Self::FileWriteBytes => ("fs", "write_bytes"),
+            Self::HttpFetch => ("http", "fetch"),
+            Self::HttpRespond => ("http", "respond"),
+            Self::ProcessRun => ("process", "run"),
+            Self::AssetLoad(kind) => ("asset", kind.as_str()),
+            Self::ShaderCompile => ("shader", "compile"),
+            Self::AudioDecode => ("audio", "decode"),
+            Self::TtsSynthesis => ("tts", "synthesize"),
+            Self::WasmCall => ("wasm", "call"),
+            Self::SystemInfo(kind) => ("system", kind.as_str()),
+            Self::Custom {
+                capability,
+                operation,
+            } => (&capability.0, operation),
         }
     }
 
