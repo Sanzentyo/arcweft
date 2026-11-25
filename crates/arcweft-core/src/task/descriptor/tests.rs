@@ -172,28 +172,63 @@ fn every_request_family_uses_the_same_live_inert_descriptor_and_limits() {
 }
 
 #[test]
-fn system_info_operations_have_distinct_retained_need_digests() {
+fn system_info_retains_the_operation_field_in_live_and_saved_descriptors() {
+    #[derive(Default)]
+    struct FixedFields(Vec<u8>);
+
+    impl TaskDescriptorVisitor for FixedFields {
+        fn node(&mut self, _depth: usize) -> Result<(), RuntimeSchemaError> {
+            Ok(())
+        }
+
+        fn fixed(&mut self, bytes: &[u8], _depth: usize) -> Result<(), RuntimeSchemaError> {
+            self.0.extend_from_slice(bytes);
+            Ok(())
+        }
+
+        fn string(&mut self, _text: &str, _depth: usize) -> Result<(), RuntimeSchemaError> {
+            panic!("SystemInfo has no string fields")
+        }
+
+        fn collection(&mut self, _count: usize, _depth: usize) -> Result<(), RuntimeSchemaError> {
+            panic!("SystemInfo has no collections")
+        }
+
+        fn blob(&mut self, _bytes: &[u8], _depth: usize) -> Result<(), RuntimeSchemaError> {
+            panic!("SystemInfo has no byte arrays")
+        }
+    }
+
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(
         crate::awbc::schema::AwbcProgram::default(),
     ));
-    let mut digests = std::collections::BTreeSet::new();
-    for kind in [
-        SystemInfoKind::CoreCount,
-        SystemInfoKind::ThreadCount,
-        SystemInfoKind::AvailableParallelism,
+    for (kind, tag) in [
+        (SystemInfoKind::CoreCount, 0),
+        (SystemInfoKind::ThreadCount, 1),
+        (SystemInfoKind::AvailableParallelism, 2),
     ] {
-        let spec = specification(HostTaskRequest::SystemInfo(SystemInfoRequest { kind }));
+        let request = HostTaskRequest::SystemInfo(SystemInfoRequest { kind });
+        let mut live_fields = FixedFields::default();
+        request.visit_descriptor(&mut live_fields, 0).unwrap();
+        assert_eq!(live_fields.0, [12, tag]);
+
+        let spec = specification(request);
         let value = RuntimeValue::NeedHandle(RuntimeNeedHandle::try_from(spec).unwrap());
-        let digest = value.try_digest(4096).unwrap();
         let saved =
             AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
-        let restored = saved.into_runtime_value_for_program(&owner).unwrap();
-        assert_eq!(restored, value);
-        assert_eq!(restored.try_digest(4096).unwrap(), digest);
-        assert!(
-            digests.insert(*digest.as_bytes()),
-            "{kind:?} shares a digest"
-        );
+        let AwbcRuntimeValueSnapshot::NeedHandle(handle) = &saved else {
+            panic!("Need snapshot required")
+        };
+        let mut saved_fields = FixedFields::default();
+        handle
+            .spec()
+            .request
+            .as_host()
+            .unwrap()
+            .visit_descriptor(&mut saved_fields, 0)
+            .unwrap();
+        assert_eq!(saved_fields.0, live_fields.0);
+        assert_eq!(saved.into_runtime_value_for_program(&owner).unwrap(), value);
     }
 }
 
