@@ -172,6 +172,32 @@ fn every_request_family_uses_the_same_live_inert_descriptor_and_limits() {
 }
 
 #[test]
+fn system_info_operations_have_distinct_retained_need_digests() {
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+        crate::awbc::schema::AwbcProgram::default(),
+    ));
+    let mut digests = std::collections::BTreeSet::new();
+    for kind in [
+        SystemInfoKind::CoreCount,
+        SystemInfoKind::ThreadCount,
+        SystemInfoKind::AvailableParallelism,
+    ] {
+        let spec = specification(HostTaskRequest::SystemInfo(SystemInfoRequest { kind }));
+        let value = RuntimeValue::NeedHandle(RuntimeNeedHandle::try_from(spec).unwrap());
+        let digest = value.try_digest(4096).unwrap();
+        let saved =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+        let restored = saved.into_runtime_value_for_program(&owner).unwrap();
+        assert_eq!(restored, value);
+        assert_eq!(restored.try_digest(4096).unwrap(), digest);
+        assert!(
+            digests.insert(*digest.as_bytes()),
+            "{kind:?} shares a digest"
+        );
+    }
+}
+
+#[test]
 fn later_request_payload_budget_failure_precedes_earlier_callable_construction() {
     let spec = specification(HostTaskRequest::custom("h", "f", []));
     let mut saved = crate::task::TaskSpecSaveSnapshot::from_live(&spec, None).unwrap();

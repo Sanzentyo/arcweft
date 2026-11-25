@@ -300,15 +300,12 @@ impl<P> HostTaskRequest<P> {
                 visitor.string(&r.function, next)?;
                 visitor.collection(r.args.len(), next)?;
             }
-            Self::SystemInfo(_) => {
+            Self::SystemInfo(request) => {
                 visitor.fixed(
                     &[super::HostTaskRequestKind::SystemInfo.semantic_tag()],
                     next,
                 )?;
-                visitor.fixed(
-                    &[super::HostTaskRequestKind::FileReadText.semantic_tag()],
-                    next,
-                )?;
+                visitor.fixed(&[request.kind.semantic_tag()], next)?;
             }
             Self::Custom {
                 capability,
