@@ -1829,11 +1829,7 @@ impl NativeEngineRollbackImage {
         observed: Option<crate::task::TaskPublicationCursor>,
     ) -> Result<(), String> {
         let correlation = handle.correlation();
-        if handle.requires_producer_custody()
-            && !receipts
-                .task_spec(correlation)
-                .is_some_and(|accepted| handle.spec().matches_source_bound_receipt(accepted))
-        {
+        if handle.requires_producer_custody() && !receipts.matches_saved_handle(handle) {
             return Err("native wait handle differs from its accepted task receipt".into());
         }
         if observed.is_some_and(|observed| {

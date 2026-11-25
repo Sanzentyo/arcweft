@@ -71,18 +71,26 @@ impl TryFrom<&NeedProducerSpec<crate::plan::RuntimeTaskSource>> for NeedProducer
     fn try_from(
         input: &NeedProducerSpec<crate::plan::RuntimeTaskSource>,
     ) -> Result<Self, Self::Error> {
-        Ok(Self {
-            key: input.instance_key()?,
-            contract: input.contract(),
-            plan: input.source().task_plan().key(),
-            handle_type: input.handle_type(),
-            arguments: input.arguments(),
-            binding: input.binding().cloned(),
-        })
+        Self::from_admitted_source_arguments(input, input.arguments())
     }
 }
 
 impl NeedProducerInstance {
+    /// Issues a source instance with the arguments of the accepted execution.
+    pub(super) fn from_admitted_source_arguments(
+        input: &NeedProducerSpec<crate::plan::RuntimeTaskSource>,
+        arguments: RuntimeValueDigest,
+    ) -> Result<Self, TaskIdentityError> {
+        Ok(Self {
+            key: input.instance_key_with_arguments(arguments)?,
+            contract: input.contract(),
+            plan: input.source().task_plan().key(),
+            handle_type: input.handle_type(),
+            arguments,
+            binding: input.binding().cloned(),
+        })
+    }
+
     /// Called after the enclosing source/value batch is admitted. The issued
     /// key and immutable invocation metadata become original-source assertions.
     pub(crate) fn plan_assertion(&self) -> NeedProducerInstance<super::ExpectedTaskPlanKey> {

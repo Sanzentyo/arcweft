@@ -576,6 +576,11 @@ Native rollback and AWBC checkpoint admission compare each retained base and
 child request with the original template operation before accepting the restored
 handle. The comparison preserves built-in variants, their subkinds, and the
 explicit custom capability and operation.
+The producer instance identity for a template launch commits the admitted source
+operands and the evaluated request together. The shared descriptor supplies the
+request metadata and its ordered payloads in both live and saved storage. A
+complete rollback or save restore reconciles each retained AwaitMany handle with
+its accepted task receipt before materializing the executor state.
 
 Selected `asset.image` and `voice.load` callables construct `AssetLoad`
 requests from checked catalog references. Selected extern calls retain the

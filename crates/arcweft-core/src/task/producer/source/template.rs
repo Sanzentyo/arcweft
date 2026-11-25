@@ -8,7 +8,7 @@ use crate::plan::FlowOp;
 use crate::plan::body_semantic::flow::RuntimeBodyTaskSource;
 use crate::plan::body_semantic::function::EndpointKind;
 use crate::program_types::RuntimeFunctionEffectInstantiation;
-use crate::task::NeedProducerSpec;
+use crate::task::{NeedProducerInstance, NeedProducerSpec};
 use crate::value::{
     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue,
     RuntimeTupleView, RuntimeValueSource, RuntimeValueView,
@@ -97,7 +97,7 @@ fn await_many_base_digest(
 
 impl RuntimeTaskSourceRef<'_> {
     /// Checks a retained handle against the original template and admitted
-    /// operand identity without cloning a request or constructing a `TaskSpec`.
+    /// operand and request identity without reconstructing a `TaskSpec`.
     pub(crate) fn validate_template_handle(
         &self,
         checked: &NeedProducerSpec<RuntimeTaskSource>,
@@ -118,13 +118,24 @@ impl RuntimeTaskSourceRef<'_> {
             return Err(RuntimeTaskProducerSourceError::RequestKind);
         };
         let definition = &template.definition;
-        if !handle.matches_host_template_operation(&template.request.operation)
-            || handle.class() != &definition.class
+        if handle.class() != &definition.class
             || handle.priority() != definition.priority
             || handle.cancel_scope() != &definition.cancel_scope
             || handle.policy() != definition.policy
             || handle.outcome() != &definition.outcome()
-            || handle.producer() != &crate::task::NeedProducerInstance::try_from(checked)?
+        {
+            return Err(RuntimeTaskProducerSourceError::Specification);
+        }
+        let Some(arguments) = handle.admitted_host_template_arguments(
+            &template.request.operation,
+            checked.arguments(),
+            admission,
+        )?
+        else {
+            return Err(RuntimeTaskProducerSourceError::Specification);
+        };
+        if handle.producer()
+            != &NeedProducerInstance::from_admitted_source_arguments(checked, arguments)?
         {
             return Err(RuntimeTaskProducerSourceError::Specification);
         }
@@ -175,9 +186,11 @@ impl RuntimeTaskSourceRef<'_> {
             )?;
         }
         let request = template.request.project_evaluated(values, admission)?;
+        let arguments =
+            admission.admitted_host_template_arguments(checked.arguments(), &request)?;
         let spec = crate::task::TaskSpec {
             generation,
-            producer: crate::task::NeedProducerInstance::try_from(checked)?,
+            producer: NeedProducerInstance::from_admitted_source_arguments(checked, arguments)?,
             class: definition.class.clone(),
             priority: definition.priority,
             cancel_scope: definition.cancel_scope.clone(),

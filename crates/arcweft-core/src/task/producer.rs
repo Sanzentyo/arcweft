@@ -333,7 +333,7 @@ impl NeedProducerSpec {
 
     /// Derives the fixed producer-instance identity from this complete spec.
     pub fn instance_key(&self) -> Result<NeedProducerInstanceKey, TaskIdentityError> {
-        self.instance_key_with_plan(self.plan)
+        self.instance_key_with_plan(self.plan, self.arguments)
     }
 
     pub const fn plan(&self) -> TaskPlanSemanticDigest {
@@ -345,6 +345,7 @@ impl<Plan> NeedProducerSpec<Plan> {
     fn instance_key_with_plan(
         &self,
         plan: TaskPlanSemanticDigest,
+        arguments: RuntimeValueDigest,
     ) -> Result<NeedProducerInstanceKey, TaskIdentityError> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"arcweft.need.producer-instance.v1\0");
@@ -354,7 +355,7 @@ impl<Plan> NeedProducerSpec<Plan> {
         hasher.update(self.producer_site.as_bytes());
         hasher.update(&[self.handle_type.semantic_tag()]);
         hasher.update(self.handle_type.payload_type().as_bytes());
-        hasher.update(self.arguments.as_bytes());
+        hasher.update(arguments.as_bytes());
         match &self.binding {
             None => {
                 hasher.update(&[0]);
@@ -421,7 +422,14 @@ impl NeedProducerSpec<crate::plan::task_source::RuntimeTaskSource> {
     }
 
     pub fn instance_key(&self) -> Result<NeedProducerInstanceKey, TaskIdentityError> {
-        self.instance_key_with_plan(self.plan.task_plan().key())
+        self.instance_key_with_arguments(self.arguments)
+    }
+
+    pub(super) fn instance_key_with_arguments(
+        &self,
+        arguments: RuntimeValueDigest,
+    ) -> Result<NeedProducerInstanceKey, TaskIdentityError> {
+        self.instance_key_with_plan(self.plan.task_plan().key(), arguments)
     }
 
     /// The retained lease proves admission; its pointer is not an instance
@@ -1776,6 +1784,16 @@ impl<P, S: super::TaskExecutionSource> RetainedTaskReceiptIndex<'_, P, S> {
 
     pub(crate) fn executing_program_count(&self) -> usize {
         self.executing_programs.len()
+    }
+}
+
+impl RetainedTaskReceiptIndex<'_, AwbcRuntimeValueSnapshot> {
+    pub(crate) fn matches_saved_handle(
+        &self,
+        handle: &super::RuntimeNeedHandleSaveSnapshot,
+    ) -> bool {
+        self.task_spec(handle.correlation())
+            .is_some_and(|accepted| handle.spec().matches_source_bound_receipt(accepted))
     }
 }
 

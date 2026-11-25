@@ -175,7 +175,7 @@ impl<P> HostTaskRequest<P> {
         clippy::too_many_lines,
         reason = "The closed fourteen-family request grammar owns all metadata and collection bounds"
     )]
-    pub(super) fn visit_descriptor(
+    pub(crate) fn visit_descriptor(
         &self,
         visitor: &mut impl TaskDescriptorVisitor,
         depth: usize,

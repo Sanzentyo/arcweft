@@ -1,9 +1,13 @@
 //! Borrowed Need payloads retain the task owner's descriptor.
 
 use super::RuntimeValueView;
+use crate::entry::RuntimeValueDigest;
 use crate::task::{
     HostTaskTemplateOperation, NeedId, RuntimeNeedHandle, RuntimeNeedHandleSaveSnapshot,
-    TaskOutcomeContract,
+    TaskOutcomeContract, TaskRequest,
+};
+use crate::value::{
+    AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -124,21 +128,27 @@ impl<'a> RuntimeNeedView<'a> {
         }
     }
 
-    pub(crate) fn matches_host_template_operation(
+    pub(crate) fn admitted_host_template_arguments(
         self,
         operation: &HostTaskTemplateOperation,
-    ) -> bool {
+        operands: RuntimeValueDigest,
+        admission: &RuntimeRetainedValueAdmission,
+    ) -> Result<Option<RuntimeValueDigest>, AwbcRuntimeValueSnapshotError> {
+        fn bind<P: RuntimeStoredValue, S>(
+            request: &TaskRequest<P, S>,
+            operation: &HostTaskTemplateOperation,
+            operands: RuntimeValueDigest,
+            admission: &RuntimeRetainedValueAdmission,
+        ) -> Result<Option<RuntimeValueDigest>, AwbcRuntimeValueSnapshotError> {
+            request
+                .as_host()
+                .filter(|request| request.matches_template_operation(operation))
+                .map(|request| admission.admitted_host_template_arguments(operands, request))
+                .transpose()
+        }
         match self {
-            Self::Live(value) => value
-                .spec()
-                .request
-                .as_host()
-                .is_some_and(|request| request.matches_template_operation(operation)),
-            Self::Snapshot(value) => value
-                .spec()
-                .request
-                .as_host()
-                .is_some_and(|request| request.matches_template_operation(operation)),
+            Self::Live(value) => bind(&value.spec().request, operation, operands, admission),
+            Self::Snapshot(value) => bind(&value.spec().request, operation, operands, admission),
         }
     }
 

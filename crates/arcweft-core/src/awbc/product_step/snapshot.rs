@@ -1787,22 +1787,24 @@ impl AwbcProductExecutorSnapshot {
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;
-        if let Err(error) = snapshot.need_producers.admit_retained(admission) {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+        let receipts = snapshot
+            .need_producers
+            .admit_retained_with_receipts(admission)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: format!("invalid Need producer registry snapshot: {error}"),
-            });
-        }
+            })?;
         snapshot
             .observations
             .admit_retained(admission)
             .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         validate_need_publication_cursors(snapshot, &snapshot.need_producers)?;
 
-        snapshot.fiber.admit_retained(admission).map_err(|error| {
-            AwbcProductStepBuildError::RestoreSnapshot {
+        snapshot
+            .fiber
+            .admit_retained_with_await_many_receipts(&receipts, admission)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         for child in &snapshot.child_fibers {
             admission
                 .validate_metadata(&(
@@ -1813,11 +1815,12 @@ impl AwbcProductExecutorSnapshot {
                 .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                     message: error.to_string(),
                 })?;
-            child.fiber.admit_retained(admission).map_err(|error| {
-                AwbcProductStepBuildError::RestoreSnapshot {
+            child
+                .fiber
+                .admit_retained_with_await_many_receipts(&receipts, admission)
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                     message: error.to_string(),
-                }
-            })?;
+                })?;
             Self::validate_child_owner(program, &child.owner)?;
             let host_call =
                 child

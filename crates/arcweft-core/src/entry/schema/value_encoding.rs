@@ -1139,6 +1139,36 @@ pub(super) fn visit_retained_identity<S: CanonicalSink + ?Sized, V: ValueValidat
     )
 }
 
+/// Binds the admitted operand group and the executed request in one transcript.
+/// Both storage roles use the request descriptor and its ordered payloads.
+pub(crate) fn retained_host_template_arguments_digest<P: crate::value::RuntimeStoredValue>(
+    operands: super::RuntimeValueDigest,
+    request: &crate::task::HostTaskRequest<P>,
+    max_encoded_bytes: u64,
+) -> Result<super::RuntimeValueDigest, RuntimeSchemaError> {
+    let mut sink = super::CanonicalBlake3Sink::default();
+    let mut writer = CanonicalWriter {
+        sink: &mut sink,
+        max_encoded_bytes,
+        max_string_bytes: None,
+    };
+    writer.extend(b"arcweft.need.host-template-arguments.v1\0")?;
+    writer.extend(operands.as_bytes())?;
+    let mut validation = NoSchemaValidation::default();
+    request.visit_descriptor(
+        &mut DescriptorAdmission {
+            writer: &mut writer,
+            budget: None,
+            validation: &mut validation,
+        },
+        0,
+    )?;
+    for payload in request.payloads() {
+        visit_retained_identity(payload.borrowed_view(), &mut writer, &mut validation, ())?;
+    }
+    Ok(super::RuntimeValueDigest::from_bytes(sink.finish()))
+}
+
 fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
     root: RuntimeValueView<'_>,
     depth: usize,

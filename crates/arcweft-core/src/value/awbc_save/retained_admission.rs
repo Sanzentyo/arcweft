@@ -637,6 +637,21 @@ impl RuntimeRetainedValueAdmission {
         .map_err(Into::into)
     }
 
+    /// Called after the original template operands and the request are admitted.
+    pub(crate) fn admitted_host_template_arguments<P: crate::value::RuntimeStoredValue>(
+        &self,
+        operands: crate::entry::RuntimeValueDigest,
+        request: &crate::task::HostTaskRequest<P>,
+    ) -> Result<crate::entry::RuntimeValueDigest, AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        crate::entry::schema::value_encoding::retained_host_template_arguments_digest(
+            operands,
+            request,
+            self.work().limits().max_encoded_bytes,
+        )
+        .map_err(Into::into)
+    }
+
     pub(crate) fn admit_partial_record_header(
         &mut self,
         header: &crate::value::RuntimePlaceRecordHeader,

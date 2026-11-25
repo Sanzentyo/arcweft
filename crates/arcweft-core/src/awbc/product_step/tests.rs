@@ -5313,6 +5313,90 @@ fn await_many_checkpoint_rejects_a_substituted_original_host_operation() {
 }
 
 #[test]
+fn await_many_product_restore_rejects_a_substituted_host_argument() {
+    use crate::awbc::fiber::FiberSuspensionReason;
+    use crate::value::AwbcRuntimeValueSnapshot;
+
+    let generation = GenerationId::new(7);
+    let program = await_many_product_program();
+    let mut running = await_many_executor(&program, await_many_items(), generation);
+    let step = running.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            max_new_task_requests: 1,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    assert_eq!(step.output.requests.tasks.len(), 1);
+    let correlation = step.output.requests.tasks[0].handle().correlation;
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &running.snapshot_for_save().unwrap(),
+        running.admitted_program(),
+    )
+    .unwrap();
+    let change_argument = |image: &mut serde_json::Value| {
+        let value = &mut image["spec"]["request"]["Host"]["Custom"]["args"][0];
+        assert_eq!(
+            *value,
+            serde_json::to_value(AwbcRuntimeValueSnapshot::String("one".into())).unwrap()
+        );
+        *value = serde_json::to_value(AwbcRuntimeValueSnapshot::String("altered".into())).unwrap();
+    };
+
+    let mut accepted_mutations = Vec::new();
+    for (change_fiber, change_journal) in
+        [(false, false), (true, false), (false, true), (true, true)]
+    {
+        let mut image = saved.clone();
+        if change_fiber {
+            let FiberSuspensionReason::AwaitMany(state) =
+                &mut image.fiber.suspension.as_mut().unwrap().reason
+            else {
+                panic!("expected a suspended AwaitMany")
+            };
+            let handle = &mut state.in_flight[0].handle;
+            assert_eq!(handle.correlation(), correlation);
+            let mut wire = serde_json::to_value(&*handle).unwrap();
+            change_argument(&mut wire);
+            *handle = serde_json::from_value(wire).unwrap();
+            assert_eq!(handle.correlation(), correlation);
+        }
+        if change_journal {
+            let row = image
+                .need_producers
+                .task_admissions
+                .iter_mut()
+                .find(|row| row.handle().correlation == correlation)
+                .unwrap();
+            let mut wire = serde_json::to_value(&*row).unwrap();
+            change_argument(&mut wire);
+            *row = serde_json::from_value(wire).unwrap();
+            assert_eq!(row.handle().correlation, correlation);
+        }
+        let cold = await_many_executor(&program, await_many_items(), generation);
+        let before = cold.snapshot().unwrap();
+        let result = match image.into_live_for_program(cold.admitted_program()) {
+            Ok(image) => cold.restore_snapshot_owned(image),
+            Err(error) => Err((cold, error)),
+        };
+        match result {
+            Ok(_) if change_fiber || change_journal => {
+                accepted_mutations.push((change_fiber, change_journal));
+            }
+            Ok(_) => {}
+            Err((original, error)) => {
+                assert!(change_fiber || change_journal, "unmodified save: {error}");
+                assert_eq!(original.snapshot().unwrap(), before);
+            }
+        }
+    }
+    assert!(
+        accepted_mutations.is_empty(),
+        "accepted (fiber, journal) mutations: {accepted_mutations:?}"
+    );
+}
+
+#[test]
 fn await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted() {
     let generation = GenerationId::new(7);
     let program = await_many_product_program();

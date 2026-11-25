@@ -136,6 +136,9 @@ fn every_request_family_uses_the_same_live_inert_descriptor_and_limits() {
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(
         crate::awbc::schema::AwbcProgram::default(),
     ));
+    let original_operands = crate::entry::RuntimeValueDigest::from_bytes([0x85; 32]);
+    let descriptor_limits = RuntimeSchemaLimits::engine_default();
+    let mut request_identities = std::collections::BTreeSet::new();
     for request in requests() {
         let mut spec = specification(request);
         if matches!(spec.request.as_host(), Some(HostTaskRequest::SystemInfo(_))) {
@@ -144,6 +147,22 @@ fn every_request_family_uses_the_same_live_inert_descriptor_and_limits() {
         let saved = crate::task::TaskSpecSaveSnapshot::from_live(&spec, None).unwrap();
         let encoded = serde_json::to_vec(&saved).unwrap();
         let decoded: crate::task::TaskSpecSaveSnapshot = serde_json::from_slice(&encoded).unwrap();
+        let live_identity =
+            crate::entry::schema::value_encoding::retained_host_template_arguments_digest(
+                original_operands,
+                spec.request.as_host().unwrap(),
+                descriptor_limits.max_encoded_bytes,
+            )
+            .unwrap();
+        let inert_identity =
+            crate::entry::schema::value_encoding::retained_host_template_arguments_digest(
+                original_operands,
+                decoded.request.as_host().unwrap(),
+                descriptor_limits.max_encoded_bytes,
+            )
+            .unwrap();
+        assert_eq!(live_identity, inert_identity);
+        assert!(request_identities.insert(*live_identity.as_bytes()));
         assert_eq!(decoded.into_live(&owner).unwrap(), spec);
         let limits = RuntimeSchemaLimits {
             max_string_bytes: 7,

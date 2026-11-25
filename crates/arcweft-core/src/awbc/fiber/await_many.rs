@@ -10,6 +10,35 @@ use crate::task::{RuntimeNeedHandle, RuntimeNeedHandleSaveSnapshot, RuntimeProgr
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimeNeedView, RuntimeValue, RuntimeValueView};
 use serde::{Deserialize, Serialize};
 
+impl super::AwbcFiberStateSnapshot {
+    pub(crate) fn admit_retained_with_await_many_receipts(
+        &self,
+        receipts: &crate::task::RetainedTaskReceiptIndex<'_, AwbcRuntimeValueSnapshot>,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> super::AwbcSaveResult<()> {
+        self.admit_retained(admission)?;
+        if let Some(super::FiberSuspensionReason::AwaitMany(state)) = self
+            .suspension
+            .as_ref()
+            .map(|suspension| &suspension.reason)
+        {
+            for handle in state
+                .base
+                .iter()
+                .chain(state.in_flight.iter().map(|row| &row.handle))
+            {
+                if !receipts.matches_saved_handle(handle) {
+                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "saved AwaitMany handle differs from its accepted task receipt"
+                            .into(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// All launched, pending and completed item ownership for one occurrence.
 /// Only inert carriers have a save codec.
 ///
