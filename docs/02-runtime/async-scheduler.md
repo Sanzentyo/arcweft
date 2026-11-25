@@ -572,6 +572,10 @@ and AWBC evaluate the arguments, then construct the same request through that
 original template. An AWBC template row carries a capability assertion checked
 against the original selection. Custom templates explicitly declare their
 capability and operation.
+Native rollback and AWBC checkpoint admission compare each retained base and
+child request with the original template operation before accepting the restored
+handle. The comparison preserves built-in variants, their subkinds, and the
+explicit custom capability and operation.
 
 Selected `asset.image` and `voice.load` callables construct `AssetLoad`
 requests from checked catalog references. Selected extern calls retain the

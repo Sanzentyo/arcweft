@@ -16,7 +16,7 @@ use std::collections::VecDeque;
 /// The complete operation selected by an original template before seal.
 /// A custom capability is an explicit operation in its own right.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum HostTaskTemplateOperation {
+pub enum HostTaskTemplateOperation<Capability = HostCapabilityId, Operation = String> {
     FileReadText,
     FileReadBytes,
     FileWriteText,
@@ -31,44 +31,49 @@ pub enum HostTaskTemplateOperation {
     WasmCall,
     SystemInfo(SystemInfoKind),
     Custom {
-        capability: HostCapabilityId,
-        operation: String,
+        capability: Capability,
+        operation: Operation,
     },
 }
+
+type HostTaskOperationRef<'a> = HostTaskTemplateOperation<&'a HostCapabilityId, &'a str>;
 
 impl HostTaskTemplateOperation {
     /// Namespace used for the executable capability check.
     #[must_use]
     pub fn capability(&self) -> &str {
-        self.host_call_parts().0
+        self.borrowed().host_call_parts().0
     }
 
     /// The adapter-facing call ID declared by the original operation.
     #[must_use]
     pub fn host_call_id(&self) -> String {
-        let (capability, operation) = self.host_call_parts();
-        format!("{capability}.{operation}")
+        self.borrowed().format_host_call_id()
     }
 
-    fn host_call_parts(&self) -> (&str, &str) {
+    fn borrowed(&self) -> HostTaskOperationRef<'_> {
+        use HostTaskOperationRef as Borrowed;
         match self {
-            Self::FileReadText => ("fs", "read_text"),
-            Self::FileReadBytes => ("fs", "read_bytes"),
-            Self::FileWriteText => ("fs", "write_text"),
-            Self::FileWriteBytes => ("fs", "write_bytes"),
-            Self::HttpFetch => ("http", "fetch"),
-            Self::HttpRespond => ("http", "respond"),
-            Self::ProcessRun => ("process", "run"),
-            Self::AssetLoad(kind) => ("asset", kind.as_str()),
-            Self::ShaderCompile => ("shader", "compile"),
-            Self::AudioDecode => ("audio", "decode"),
-            Self::TtsSynthesis => ("tts", "synthesize"),
-            Self::WasmCall => ("wasm", "call"),
-            Self::SystemInfo(kind) => ("system", kind.as_str()),
+            Self::FileReadText => Borrowed::FileReadText,
+            Self::FileReadBytes => Borrowed::FileReadBytes,
+            Self::FileWriteText => Borrowed::FileWriteText,
+            Self::FileWriteBytes => Borrowed::FileWriteBytes,
+            Self::HttpFetch => Borrowed::HttpFetch,
+            Self::HttpRespond => Borrowed::HttpRespond,
+            Self::ProcessRun => Borrowed::ProcessRun,
+            Self::AssetLoad(kind) => Borrowed::AssetLoad(*kind),
+            Self::ShaderCompile => Borrowed::ShaderCompile,
+            Self::AudioDecode => Borrowed::AudioDecode,
+            Self::TtsSynthesis => Borrowed::TtsSynthesis,
+            Self::WasmCall => Borrowed::WasmCall,
+            Self::SystemInfo(kind) => Borrowed::SystemInfo(*kind),
             Self::Custom {
                 capability,
                 operation,
-            } => (&capability.0, operation),
+            } => Borrowed::Custom {
+                capability,
+                operation,
+            },
         }
     }
 
@@ -105,6 +110,81 @@ impl HostTaskTemplateOperation {
                 encoder.string(operation);
             }
             _ => {}
+        }
+    }
+}
+
+impl<'a> HostTaskOperationRef<'a> {
+    fn format_host_call_id(self) -> String {
+        let (capability, operation) = self.host_call_parts();
+        format!("{capability}.{operation}")
+    }
+
+    fn host_call_parts(self) -> (&'a str, &'a str) {
+        match self {
+            Self::FileReadText => ("fs", "read_text"),
+            Self::FileReadBytes => ("fs", "read_bytes"),
+            Self::FileWriteText => ("fs", "write_text"),
+            Self::FileWriteBytes => ("fs", "write_bytes"),
+            Self::HttpFetch => ("http", "fetch"),
+            Self::HttpRespond => ("http", "respond"),
+            Self::ProcessRun => ("process", "run"),
+            Self::AssetLoad(kind) => ("asset", kind.as_str()),
+            Self::ShaderCompile => ("shader", "compile"),
+            Self::AudioDecode => ("audio", "decode"),
+            Self::TtsSynthesis => ("tts", "synthesize"),
+            Self::WasmCall => ("wasm", "call"),
+            Self::SystemInfo(kind) => ("system", kind.as_str()),
+            Self::Custom {
+                capability,
+                operation,
+            } => (&capability.0, operation),
+        }
+    }
+}
+
+impl HostTaskRequest {
+    #[must_use]
+    pub fn host_call_id(&self) -> String {
+        self.operation().format_host_call_id()
+    }
+}
+
+impl<P> HostTaskRequest<P> {
+    pub(crate) fn matches_template_operation(&self, operation: &HostTaskTemplateOperation) -> bool {
+        !matches!(
+            self,
+            Self::Custom {
+                manifest_contract: Some(_),
+                ..
+            }
+        ) && self.operation() == operation.borrowed()
+    }
+
+    fn operation(&self) -> HostTaskOperationRef<'_> {
+        use HostTaskOperationRef as Operation;
+        match self {
+            Self::FileReadText(_) => Operation::FileReadText,
+            Self::FileReadBytes(_) => Operation::FileReadBytes,
+            Self::FileWriteText(_) => Operation::FileWriteText,
+            Self::FileWriteBytes(_) => Operation::FileWriteBytes,
+            Self::HttpFetch(_) => Operation::HttpFetch,
+            Self::HttpRespond(_) => Operation::HttpRespond,
+            Self::ProcessRun(_) => Operation::ProcessRun,
+            Self::AssetLoad(request) => Operation::AssetLoad(request.kind),
+            Self::ShaderCompile(_) => Operation::ShaderCompile,
+            Self::AudioDecode(_) => Operation::AudioDecode,
+            Self::TtsSynthesis(_) => Operation::TtsSynthesis,
+            Self::WasmCall(_) => Operation::WasmCall,
+            Self::SystemInfo(request) => Operation::SystemInfo(request.kind),
+            Self::Custom {
+                capability,
+                operation,
+                ..
+            } => Operation::Custom {
+                capability,
+                operation,
+            },
         }
     }
 }

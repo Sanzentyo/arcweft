@@ -118,12 +118,13 @@ impl RuntimeTaskSourceRef<'_> {
             return Err(RuntimeTaskProducerSourceError::RequestKind);
         };
         let definition = &template.definition;
-        if handle.producer() != &crate::task::NeedProducerInstance::try_from(checked)?
+        if !handle.matches_host_template_operation(&template.request.operation)
             || handle.class() != &definition.class
             || handle.priority() != definition.priority
             || handle.cancel_scope() != &definition.cancel_scope
             || handle.policy() != definition.policy
             || handle.outcome() != &definition.outcome()
+            || handle.producer() != &crate::task::NeedProducerInstance::try_from(checked)?
         {
             return Err(RuntimeTaskProducerSourceError::Specification);
         }

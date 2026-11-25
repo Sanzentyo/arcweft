@@ -2125,31 +2125,6 @@ impl<P> HostTaskRequest<P> {
 }
 
 impl HostTaskRequest {
-    pub fn host_call_id(&self) -> String {
-        use HostTaskTemplateOperation as Operation;
-        let operation = match self {
-            Self::FileReadText(_) => Operation::FileReadText,
-            Self::FileReadBytes(_) => Operation::FileReadBytes,
-            Self::FileWriteText(_) => Operation::FileWriteText,
-            Self::FileWriteBytes(_) => Operation::FileWriteBytes,
-            Self::HttpFetch(_) => Operation::HttpFetch,
-            Self::HttpRespond(_) => Operation::HttpRespond,
-            Self::ProcessRun(_) => Operation::ProcessRun,
-            Self::AssetLoad(request) => Operation::AssetLoad(request.kind),
-            Self::ShaderCompile(_) => Operation::ShaderCompile,
-            Self::AudioDecode(_) => Operation::AudioDecode,
-            Self::TtsSynthesis(_) => Operation::TtsSynthesis,
-            Self::WasmCall(_) => Operation::WasmCall,
-            Self::SystemInfo(request) => Operation::SystemInfo(request.kind),
-            Self::Custom {
-                capability,
-                operation,
-                ..
-            } => return format!("{}.{}", capability.0, operation),
-        };
-        operation.host_call_id()
-    }
-
     pub const fn task_class(&self) -> TaskClass {
         match self {
             Self::FileReadText(_)

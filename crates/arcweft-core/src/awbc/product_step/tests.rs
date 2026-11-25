@@ -5258,6 +5258,61 @@ fn await_many_checkpoint_requires_the_original_source_lease_and_rejects_changed_
 }
 
 #[test]
+fn await_many_checkpoint_rejects_a_substituted_original_host_operation() {
+    use crate::awbc::fiber::{AwbcFiberStateSnapshot, FiberSuspensionReason};
+
+    let mut executor = await_many_executor(
+        &await_many_product_program(),
+        await_many_items(),
+        GenerationId::new(7),
+    );
+    let step = executor.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            max_new_task_requests: 1,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    assert_eq!(step.output.requests.tasks.len(), 1);
+    let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &executor.fiber,
+        &mut executor.program.retained_value_admission(limits),
+    )
+    .unwrap();
+    assert!(
+        executor
+            .program
+            .restore_fiber_snapshot(snapshot.clone())
+            .is_ok()
+    );
+
+    let mut altered = snapshot.clone();
+    let FiberSuspensionReason::AwaitMany(state) = &mut altered.suspension.as_mut().unwrap().reason
+    else {
+        panic!("AwaitMany suspension")
+    };
+    let handle = state.base.as_mut().unwrap();
+    let original_correlation = handle.correlation();
+    let mut image = serde_json::to_value(&*handle).unwrap();
+    let operation = &mut image["spec"]["request"]["Host"]["Custom"]["operation"];
+    assert_eq!(*operation, "read");
+    *operation = "substituted".into();
+    *handle = serde_json::from_value(image).unwrap();
+    assert_eq!(handle.correlation(), original_correlation);
+
+    assert!(executor.program.restore_fiber_snapshot(altered).is_err());
+    assert_eq!(
+        AwbcFiberStateSnapshot::from_live(
+            &executor.fiber,
+            &mut executor.program.retained_value_admission(limits),
+        )
+        .unwrap(),
+        snapshot,
+    );
+}
+
+#[test]
 fn await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted() {
     let generation = GenerationId::new(7);
     let program = await_many_product_program();

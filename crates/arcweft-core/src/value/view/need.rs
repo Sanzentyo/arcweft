@@ -1,7 +1,10 @@
 //! Borrowed Need payloads retain the task owner's descriptor.
 
 use super::RuntimeValueView;
-use crate::task::{NeedId, RuntimeNeedHandle, RuntimeNeedHandleSaveSnapshot, TaskOutcomeContract};
+use crate::task::{
+    HostTaskTemplateOperation, NeedId, RuntimeNeedHandle, RuntimeNeedHandleSaveSnapshot,
+    TaskOutcomeContract,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RuntimeNeedView<'a> {
@@ -118,6 +121,24 @@ impl<'a> RuntimeNeedView<'a> {
         match self {
             Self::Live(v) => v.spec().priority,
             Self::Snapshot(v) => v.spec().priority,
+        }
+    }
+
+    pub(crate) fn matches_host_template_operation(
+        self,
+        operation: &HostTaskTemplateOperation,
+    ) -> bool {
+        match self {
+            Self::Live(value) => value
+                .spec()
+                .request
+                .as_host()
+                .is_some_and(|request| request.matches_template_operation(operation)),
+            Self::Snapshot(value) => value
+                .spec()
+                .request
+                .as_host()
+                .is_some_and(|request| request.matches_template_operation(operation)),
         }
     }
 

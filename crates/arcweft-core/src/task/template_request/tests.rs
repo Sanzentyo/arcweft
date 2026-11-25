@@ -253,6 +253,7 @@ fn original_template_projects_each_typed_request_family_and_preserves_fields() {
         };
         let request = arguments.project(&operation).unwrap();
         assert_eq!(request, expected);
+        assert!(request.matches_template_operation(&operation));
         let call_id = operation.host_call_id();
         assert_eq!(request.host_call_id(), call_id);
         call_ids.insert(call_id);
@@ -278,6 +279,24 @@ fn original_template_projects_each_typed_request_family_and_preserves_fields() {
             "wasm.call",
         ]
     );
+}
+
+#[test]
+fn template_operation_matching_distinguishes_builtin_and_custom_with_the_same_call_id() {
+    let builtin = HostTaskRequest::ShaderCompile(ShaderRequest {
+        id: "shader.fixture".into(),
+        entry: None,
+    });
+    let custom = HostTaskRequest::custom("shader", "compile", []);
+    let builtin_operation = HostTaskTemplateOperation::ShaderCompile;
+    let custom_operation = HostTaskTemplateOperation::Custom {
+        capability: "shader".into(),
+        operation: "compile".into(),
+    };
+
+    assert_eq!(builtin.host_call_id(), custom.host_call_id());
+    assert!(!builtin.matches_template_operation(&custom_operation));
+    assert!(!custom.matches_template_operation(&builtin_operation));
 }
 
 #[test]
