@@ -22471,6 +22471,12 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 
 同じ実装入力のNative offscreenと実Chrome WebGPUで、focus／hover／press／compact／HiDPIの5場面を取得し、`verify-webgpu-parity` と `imq` を全件通過した。全RGBAのMSE／MAE／最大誤差と変化画素率はすべて0。Windows全機能のCoreテストバイナリから実行した対象5件もPASS。14種の要求と呼出しID、展開上限、Nativeとデコード済みAWBCの要求一致、AWBC checkpointの元Sourceとoperand照合を含む。書式と差分の検査は終了0。
 
+2026-11-25、`8ff9ff20a399b371532f468d896d4f4613ed80ed` を `main` へ公開した。取得した公開tree `4af0a2adfdabb1a3260ec6ca75f53d839c1172ed` と、公開前 `02b541f98b5e388fb1c957b9aa4f62e0d37b1d1d` から変更した31パスのblobを照合した。実装入力 `190ffcbf3467b9dfab8dd49aa5a4d24e08cc6084` の全ターゲット・全機能のworkspace Clippyは終了0。Core doctestは82件PASS、終了0。
+
+同じ実装入力のWindows全機能の逆依存52パッケージで、Nextest `b7e1d812-4e9d-421b-9c80-28bfb1315996` は225バイナリ、8,982件PASS（41件slow）、41件skip、1,175.459秒、終了0。コンパイラ・Core・RuntimePlanの公開API拒否、実IMEバンドルの決定的な再生成、AWBCの復元を含む。Nextest終了までRust実装の差分はなかった。
+
+<a id="retained-system-info-identity"></a>
+
 ### 保持Need の SystemInfo 操作識別
 
 2026-11-25、`190ffcbf3467b9dfab8dd49aa5a4d24e08cc6084` のCoreを使い、同じproducerと同じスケジュール設定で `CoreCount`、`ThreadCount`、`AvailableParallelism` の公開 `RuntimeNeedHandle` を別々に構築した。`RuntimeValue::try_digest(4096)` は3件すべてで同じ `9c7a905bb166b77591d600fa2e10a04b083d9a9362273c64d074dfbab55064f2` を返し、3種を要求した再現テストは識別数1で終了101。共有descriptorのSystemInfo分岐が操作種別の位置へ固定値0を書いていた。
