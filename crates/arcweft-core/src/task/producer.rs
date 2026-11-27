@@ -3,7 +3,9 @@
 // canonical TaskSpec, Need/Task identity, restart policy, and publication state.
 use super::*;
 use crate::entry::RuntimeValueDigest;
-use crate::value::{AwbcRuntimeValueSnapshot, RuntimeBundleAssetResourceId, RuntimeEntityReference};
+use crate::value::{
+    AwbcRuntimeValueSnapshot, RuntimeBundleAssetResourceId, RuntimeEntityReference,
+};
 use arcweft_id::{AssetId, DeclarationIdentityFamily, PublicId, VoiceResourceId};
 use std::collections::BTreeSet;
 

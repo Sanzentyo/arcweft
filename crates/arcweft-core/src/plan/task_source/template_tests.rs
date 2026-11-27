@@ -107,10 +107,22 @@ fn template_materialization_keeps_original_metadata_and_rejects_foreign_or_faile
             .unwrap();
         assert_eq!(spec.request.as_host(), Some(&expected_request));
         assert_eq!(spec.generation, generation);
-        assert_eq!(
-            spec.producer,
-            NeedProducerInstance::try_from(&checked).unwrap()
-        );
+        let operands = NeedProducerInstance::try_from(&checked).unwrap();
+        assert_eq!(spec.producer.plan(), operands.plan());
+        assert_eq!(spec.producer.contract(), operands.contract());
+        assert_eq!(spec.producer.handle_type(), operands.handle_type());
+        assert_eq!(spec.producer.binding(), operands.binding());
+        assert_ne!(spec.producer.key(), operands.key());
+        let repeated = base
+            .template_task_spec(&checked, generation, captures.to_vec(), &mut admission)
+            .unwrap();
+        assert_eq!(repeated.producer, spec.producer);
+        let mut changed_arguments = captures.to_vec();
+        changed_arguments[1] = RuntimeValue::Bool(true);
+        let changed = base
+            .template_task_spec(&checked, generation, changed_arguments, &mut admission)
+            .unwrap();
+        assert_ne!(changed.producer.key(), spec.producer.key());
         assert_eq!(spec.class, TaskClass::Cpu);
         assert_eq!(spec.priority, TaskPriority(-3));
         assert_eq!(spec.cancel_scope, CancelScopeId("元scope".into()));
