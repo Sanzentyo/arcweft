@@ -22521,8 +22521,12 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 
 2026-11-27、`6737ba82039893b0100e4820fd8ac2348bd72b94` を `main` へ公開し、取得tree `8403b8fbc69a6937b7fcac33d2f93a6c6f36cd0b` と変更16パスのblobを照合した。
 
+実装入力 `08a2a5e5aac9a5fff8875e9efc2a6a08a557cc5a` の逆依存52パッケージのNextest `b6529f75-34c6-45a5-bf9c-34f2199493f6` はWindows MSVC全機能の225バイナリで8,986件PASS（40件slow）、41件skip、1,087.116秒、終了0。対象にはCompiler／CLI、実IMEバンドルの決定的な再生成、元Source付きAWBCの公開復元、CoreとRuntimePlanの公開API拒否が含まれる。終了時に実装入力からのRustソース・Cargo定義・lockfileの差分がないことを確認した。
+
 <a id="awbc-pending-host-call-restore-proof"></a>
 
 ### AWBC の通常HostCall保留応答と復元
 
 2026-11-27、実装 `08a2a5e5aac9a5fff8875e9efc2a6a08a557cc5a` のCoreライブラリを使い、既存の決定的な `host_call_program` fixtureから公開保存を作った。正規保存は復元に成功した。保留応答IDだけを発行済み `host.probe` から未発行 `unissued.probe` に差し替えた保存も、元の実行プログラムで復元に成功した。期待拒否の合成入力テストは終了101。上位の復元検査は保存したHostCall座標の存在を確認し、通常HostCallの応答待機は保存した文字列を照合に使っていた。
+
+同じCoreと正規保存から差分を1条件ずつ加えた追加テストでは、応答IDの差し替え、次の発行番号の `1` から `0` への変更、対応する受理記録とその割当行の両方を削除する条件が復元を通過した。受理記録のみを削除すると拒否された。4条件の比較は期待拒否3件で終了101。
