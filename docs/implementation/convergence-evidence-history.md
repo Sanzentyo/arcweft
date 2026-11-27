@@ -22502,3 +22502,19 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 同じ実装入力のWindows全ターゲット・全機能の `cargo check --workspace --all-targets --all-features --offline --locked` は終了0。CLIや両ホストの利用箇所を含めて型検査した。
 
 2026-11-25、`aa2ccb09641ba3aa3244a3ce859d6d18e7025626` を `main` へ公開した。取得した公開tree `665a03000cc3e12a4eef0c2ef9cc99f8c664f9bb` と変更9パスのblobを照合した。同じ実装を含む公開入力のWindows全ターゲット・全機能のworkspace Clippyは終了0、Core doctestは82件PASS、終了0。
+
+<a id="await-many-retained-host-arguments"></a>
+
+### AwaitMany の評価済み要求と起動 identity
+
+2026-11-25、公開 `5b86dc6c923bd12411329ee11edc756436d81993` に回帰テスト1件を加え、起動中の子の操作と相関を維持して、公開Product保存画像の `probe.read` の第1引数を同じ型の文字列に差し替えた。ファイバーの保持記録のみ、起動台帳のみ、両方の3条件ですべて復元を通過した。Nextest `3775b7db-0b86-49df-b643-cb140819142c` は期待拒否に失敗し、1件FAIL、終了100。無変更の保存画像の復元は成功した。
+
+実装 `188aa74bef5c584d1f1fd5df75883d24cc80d3b4` は、元Sourceが受理した入力と評価済みの要求を共通descriptorで起動のproducer identityに記録する。生存中と保存中の要求を同じ記述とpayload順で照合し、公開AWBC復元ではAwaitManyのbase／子と既存の起動台帳を実体化前に照合する。初回ビルドはinert型のimport不足で終了101。`90b4fca18fa0d8eac17b7b97c40b8054d00db1ce` で宣言を修正した。version 1の保存形状を使い、新しいキーを受入時に算出する。
+
+2026-11-27、`90b4fca18fa0d8eac17b7b97c40b8054d00db1ce` のNextest `fbe82455-9bfb-4713-b847-77c7baa87203` は4ライブラリで2,659件PASS、1件FAIL、1件skip、終了100。公開復元の回帰は3種の差し替えを拒否し、無変更の保存を受理した。失敗した元Source fixtureは評価済み要求を含む起動キーを、元入力だけのキーと比較していた。同入力の `cargo fmt --all --check` は追加importの折返しで終了1。`08a2a5e5aac9a5fff8875e9efc2a6a08a557cc5a` はimportを整形し、fixtureでSourceのplan・型・契約・bindingを照合する。同じ評価済み要求の反復でキーが一致し、1引数の変更で別のキーになることも確認する。
+
+実装入力 `90b4fca18fa0d8eac17b7b97c40b8054d00db1ce` からRelease Wasm（SHA-256 `46dac3cd307270bac808ce4e162272d4cc66a89049a3b5fdb8a26a38326ee582`）とNativeのキャプチャを生成した。`wasm-bindgen` とChromeのスモーク8件が終了0。同じAWFB（SHA-256 `5015414fbf0a1080342ea36d474865c87e3ef2a9a4ee4de7cdd7333786af38a4`）のfocus／hover／press／compact／HiDPIの5場面で全RGBAが一致し、MSE・MAE・最大誤差・変化画素率はすべて0。以後のCoreの差分はimport整形と元Sourceのテスト修正の2ファイル。
+
+`08a2a5e5aac9a5fff8875e9efc2a6a08a557cc5a` のNextest `f597baec-b60c-4026-8161-b3483bca08c4` はWindows全機能のCore／RuntimePlan／Save／RuntimeDriverライブラリで2,660件PASS、1件skip、終了0。公開復元の3種の差し替え拒否と失敗原子性、同一要求の反復と引数変更によるidentityの差、14 familyのlive／inertでの記述一致を照合した。同入力のWindows全ターゲット・全機能のworkspace checkは終了0。書式・差分・構造ゲートは終了0、構造blocking violationは0件。
+
+同入力のWindows全ターゲット・全機能のworkspace Clippyは終了0、Core doctestは82件PASS、終了0。CargoのWindows MSVC全機能・normal／build／dev依存から選んだCoreの逆依存は所有クレートを含む52パッケージ。`08a2a5e5aac9a5fff8875e9efc2a6a08a557cc5a` で全52パッケージの再検証を開始した。

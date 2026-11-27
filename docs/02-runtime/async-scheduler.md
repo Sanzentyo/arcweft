@@ -581,6 +581,8 @@ operands and the evaluated request together. The shared descriptor supplies the
 request metadata and its ordered payloads in both live and saved storage. A
 complete rollback or save restore reconciles each retained AwaitMany handle with
 its accepted task receipt before materializing the executor state.
+Restoration rejects in-flight AwaitMany saves whose issued identities commit
+only the source operands. The save format version is 1.
 
 Selected `asset.image` and `voice.load` callables construct `AssetLoad`
 requests from checked catalog references. Selected extern calls retain the
