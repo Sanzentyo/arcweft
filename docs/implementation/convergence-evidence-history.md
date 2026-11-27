@@ -22518,3 +22518,11 @@ Chrome WebGPUの初回照合は、Native AWBCの16ステップをブラウザー
 `08a2a5e5aac9a5fff8875e9efc2a6a08a557cc5a` のNextest `f597baec-b60c-4026-8161-b3483bca08c4` はWindows全機能のCore／RuntimePlan／Save／RuntimeDriverライブラリで2,660件PASS、1件skip、終了0。公開復元の3種の差し替え拒否と失敗原子性、同一要求の反復と引数変更によるidentityの差、14 familyのlive／inertでの記述一致を照合した。同入力のWindows全ターゲット・全機能のworkspace checkは終了0。書式・差分・構造ゲートは終了0、構造blocking violationは0件。
 
 同入力のWindows全ターゲット・全機能のworkspace Clippyは終了0、Core doctestは82件PASS、終了0。CargoのWindows MSVC全機能・normal／build／dev依存から選んだCoreの逆依存は所有クレートを含む52パッケージ。`08a2a5e5aac9a5fff8875e9efc2a6a08a557cc5a` で全52パッケージの再検証を開始した。
+
+2026-11-27、`6737ba82039893b0100e4820fd8ac2348bd72b94` を `main` へ公開し、取得tree `8403b8fbc69a6937b7fcac33d2f93a6c6f36cd0b` と変更16パスのblobを照合した。
+
+<a id="awbc-pending-host-call-restore-proof"></a>
+
+### AWBC の通常HostCall保留応答と復元
+
+2026-11-27、実装 `08a2a5e5aac9a5fff8875e9efc2a6a08a557cc5a` のCoreライブラリを使い、既存の決定的な `host_call_program` fixtureから公開保存を作った。正規保存は復元に成功した。保留応答IDだけを発行済み `host.probe` から未発行 `unissued.probe` に差し替えた保存も、元の実行プログラムで復元に成功した。期待拒否の合成入力テストは終了101。上位の復元検査は保存したHostCall座標の存在を確認し、通常HostCallの応答待機は保存した文字列を照合に使っていた。
